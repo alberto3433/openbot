@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
-import random  # NEW
+import random
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,9 +39,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ---------- Pydantic models for chat / menu ----------
 
+
 class ChatStartResponse(BaseModel):
     session_id: str
-    message: str  # NEW: initial greeting from Sammy
+    message: str  # initial greeting from Sammy
 
 
 class ChatMessageRequest(BaseModel):
@@ -69,7 +70,26 @@ class MenuItemOut(BaseModel):
         orm_mode = True
 
 
+class MenuItemCreate(BaseModel):
+    name: str
+    category: str
+    is_signature: bool = False
+    base_price: float
+    available_qty: int = 0
+    metadata: Dict[str, Any] = {}
+
+
+class MenuItemUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    is_signature: Optional[bool] = None
+    base_price: Optional[float] = None
+    available_qty: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 # ---------- Pydantic models for orders admin UI ----------
+
 
 class OrderSummaryOut(BaseModel):
     id: int
@@ -125,6 +145,7 @@ class OrderListResponse(BaseModel):
 
 
 # ---------- Health ----------
+
 
 @app.get("/health")
 def health() -> Dict[str, str]:
@@ -196,7 +217,9 @@ def chat_message(
 
     # Apply deterministic business logic
     try:
-        updated_order_state = apply_intent_to_order_state(order_state, intent, slots, menu_index)
+        updated_order_state = apply_intent_to_order_state(
+            order_state, intent, slots, menu_index
+        )
     except OutOfStockError as e:
         reply = str(e)
     else:
@@ -220,7 +243,8 @@ def chat_message(
 
 # ---------- Persist confirmed orders ----------
 
-def persist_confirmed_order(db: Session, order_state: Dict[str, Any]) -> Order:
+
+def persist_confirmed_order(db: Session, order_state: Dict[str, Any]) -> Optional[Order]:
     """
     Persist a confirmed order + its items to the database.
     """
@@ -264,26 +288,101 @@ def persist_confirmed_order(db: Session, order_state: Dict[str, Any]) -> Order:
     return order
 
 
-# ---------- Admin menu endpoint ----------
+
+def serialize_menu_item(item: MenuItem) -> MenuItemOut:
+    """
+    Safely convert a MenuItem ORM instance into MenuItemOut, making sure that
+    the metadata field is always a plain dict (and not SQLAlchemy's MetaData).
+    """
+    raw_meta = getattr(item, "metadata", None)
+    if isinstance(raw_meta, dict):
+        meta = raw_meta
+    else:
+        # Some models expose Base.metadata here; ignore and default to empty.
+        meta = {}
+
+    return MenuItemOut(
+        id=item.id,
+        name=item.name,
+        category=item.category,
+        is_signature=item.is_signature,
+        base_price=item.base_price,
+        available_qty=item.available_qty,
+        metadata=meta,
+    )
+
+
+# ---------- Admin menu endpoints ----------
+
 
 @app.get("/admin/menu", response_model=List[MenuItemOut])
 def admin_menu(db: Session = Depends(get_db)) -> List[MenuItemOut]:
-    items = db.query(MenuItem).all()
-    return [
-        MenuItemOut(
-            id=m.id,
-            name=m.name,
-            category=m.category,
-            is_signature=m.is_signature,
-            base_price=m.base_price,
-            available_qty=m.available_qty,
-            metadata=m.metadata or {},
-        )
-        for m in items
-    ]
+    items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
+    return [serialize_menu_item(m) for m in items]
+
+
+@app.post("/admin/menu", response_model=MenuItemOut)
+def create_menu_item(payload: MenuItemCreate, db: Session = Depends(get_db)) -> MenuItemOut:
+    item = MenuItem(
+        name=payload.name,
+        category=payload.category,
+        is_signature=payload.is_signature,
+        base_price=payload.base_price,
+        available_qty=payload.available_qty,
+        metadata=payload.metadata or {},
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return serialize_menu_item(item)
+
+
+@app.get("/admin/menu/{item_id}", response_model=MenuItemOut)
+def get_menu_item(item_id: int, db: Session = Depends(get_db)) -> MenuItemOut:
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return serialize_menu_item(item)
+
+
+@app.put("/admin/menu/{item_id}", response_model=MenuItemOut)
+def update_menu_item(
+    item_id: int, payload: MenuItemUpdate, db: Session = Depends(get_db)
+) -> MenuItemOut:
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+
+    if payload.name is not None:
+        item.name = payload.name
+    if payload.category is not None:
+        item.category = payload.category
+    if payload.is_signature is not None:
+        item.is_signature = payload.is_signature
+    if payload.base_price is not None:
+        item.base_price = payload.base_price
+    if payload.available_qty is not None:
+        item.available_qty = payload.available_qty
+    if payload.metadata is not None:
+        item.metadata = payload.metadata
+
+    db.commit()
+    db.refresh(item)
+    return serialize_menu_item(item)
+
+
+@app.delete("/admin/menu/{item_id}", status_code=204)
+def delete_menu_item(item_id: int, db: Session = Depends(get_db)) -> None:
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    db.delete(item)
+    db.commit()
+    return None
 
 
 # ---------- Admin orders endpoints (for UI) ----------
+
 
 @app.get("/admin/orders", response_model=OrderListResponse)
 def list_orders(

@@ -1,0 +1,1 @@
+uvicorn sandwich_bot.main:app --reload

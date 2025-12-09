@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sandwich Menu Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .layout {
+      display: flex;
+      height: calc(100vh - 52px);
+    }
+    .sidebar {
+      width: 40%;
+      max-width: 520px;
+      border-right: 1px solid #ddd;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    .sidebar-header input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .sidebar-header select {
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .sidebar-header button {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: none;
+      background: #1976d2;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .sidebar-header button:hover {
+      background: #115293;
+    }
+    .list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .item-row {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .item-row:hover {
+      background: #e3f2fd;
+    }
+    .item-row.active {
+      background: #bbdefb;
+    }
+    .item-main {
+      display: flex;
+      flex-direction: column;
+    }
+    .item-name {
+      font-weight: 600;
+    }
+    .item-meta {
+      font-size: 12px;
+      color: #666;
+    }
+    .item-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: #ffecb3;
+      color: #795548;
+      margin-left: 6px;
+    }
+    .empty-state {
+      padding: 20px;
+      text-align: center;
+      color: #777;
+      font-size: 14px;
+    }
+    .detail {
+      flex: 1;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .detail-nav button {
+      padding: 4px 8px;
+      margin-left: 4px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .detail-nav button:hover {
+      background: #e0e0e0;
+    }
+    .field-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .field {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+    }
+    .field label {
+      margin-bottom: 2px;
+      font-weight: 500;
+    }
+    .field input[type="text"],
+    .field input[type="number"],
+    .field select,
+    .field textarea {
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+    }
+    .field textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: monospace;
+      white-space: pre;
+    }
+    .field-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+    .detail-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .detail-footer .buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .detail-footer button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: none;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #1976d2;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #115293;
+    }
+    .btn-danger {
+      background: #d32f2f;
+      color: #fff;
+    }
+    .btn-danger:hover {
+      background: #9a0007;
+    }
+    .btn-secondary {
+      background: #e0e0e0;
+      color: #000;
+    }
+    .btn-secondary:hover {
+      background: #bdbdbd;
+    }
+    .status-text {
+      font-size: 12px;
+      color: #666;
+    }
+    .ingredients {
+      font-size: 13px;
+      background: #f1f8e9;
+      border-radius: 4px;
+      padding: 6px 8px;
+      border: 1px solid #c5e1a5;
+    }
+    .ingredients strong {
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div>Sandwich Menu Admin</div>
+    <div>
+      <a href="/static/index.html" target="_blank">Customer chat</a>
+      <a href="/static/admin_orders.html" target="_blank">Orders admin</a>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <input id="searchInput" type="text" placeholder="Search by name or category..." />
+        <select id="categoryFilter">
+          <option value="">All categories</option>
+        </select>
+        <button id="newItemBtn">+ New</button>
+      </div>
+      <div id="menuList" class="list"></div>
+    </div>
+
+    <div class="detail">
+      <div class="detail-header">
+        <div class="detail-title" id="detailTitle">No item selected</div>
+        <div class="detail-nav">
+          <button id="prevBtn">&larr; Prev</button>
+          <button id="nextBtn">Next &rarr;</button>
+        </div>
+      </div>
+
+      <div id="detailBody" style="flex: 1; overflow-y: auto;">
+        <div class="field-row">
+          <div class="field">
+            <label for="itemId">ID</label>
+            <input id="itemId" type="text" readonly />
+          </div>
+          <div class="field">
+            <label for="itemName">Name</label>
+            <input id="itemName" type="text" />
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="itemCategory">Category</label>
+            <input id="itemCategory" type="text" placeholder="e.g. signature, classic, drink" />
+          </div>
+          <div class="field">
+            <label for="itemPrice">Base price ($)</label>
+            <input id="itemPrice" type="number" step="0.01" />
+          </div>
+          <div class="field">
+            <label for="itemQty">Available qty</label>
+            <input id="itemQty" type="number" />
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-checkbox">
+            <input id="itemSignature" type="checkbox" />
+            <label for="itemSignature">Signature sandwich</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="itemMetadata">Metadata (JSON: default ingredients, etc.)</label>
+          <textarea id="itemMetadata" placeholder='{"bread": "wheat", "protein": "turkey", "toppings": ["lettuce","tomato"]}'></textarea>
+        </div>
+
+        <div class="field">
+          <label>Default ingredients (from metadata)</label>
+          <div id="ingredientsView" class="ingredients">
+            No metadata yet.
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-footer">
+        <div class="status-text" id="statusText"></div>
+        <div class="buttons">
+          <button class="btn-secondary" id="resetBtn">Reset</button>
+          <button class="btn-danger" id="deleteBtn">Delete</button>
+          <button class="btn-primary" id="saveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "";
+    let allItems = [];
+    let filteredItems = [];
+    let currentIndex = -1;
+
+    const menuListEl = document.getElementById("menuList");
+    const categoryFilterEl = document.getElementById("categoryFilter");
+    const searchInputEl = document.getElementById("searchInput");
+    const detailTitleEl = document.getElementById("detailTitle");
+    const statusTextEl = document.getElementById("statusText");
+    const ingredientsViewEl = document.getElementById("ingredientsView");
+
+    const itemIdEl = document.getElementById("itemId");
+    const itemNameEl = document.getElementById("itemName");
+    const itemCategoryEl = document.getElementById("itemCategory");
+    const itemPriceEl = document.getElementById("itemPrice");
+    const itemQtyEl = document.getElementById("itemQty");
+    const itemSignatureEl = document.getElementById("itemSignature");
+    const itemMetadataEl = document.getElementById("itemMetadata");
+
+    document.getElementById("newItemBtn").addEventListener("click", () => {
+      selectItemByIndex(-1, true);
+    });
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      if (filteredItems.length === 0) return;
+      if (currentIndex <= 0) {
+        selectItemByIndex(filteredItems.length - 1);
+      } else {
+        selectItemByIndex(currentIndex - 1);
+      }
+    });
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      if (filteredItems.length === 0) return;
+      if (currentIndex >= filteredItems.length - 1) {
+        selectItemByIndex(0);
+      } else {
+        selectItemByIndex(currentIndex + 1);
+      }
+    });
+    document.getElementById("saveBtn").addEventListener("click", saveCurrentItem);
+    document.getElementById("deleteBtn").addEventListener("click", deleteCurrentItem);
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      if (currentIndex >= 0) {
+        selectItemByIndex(currentIndex);
+      } else {
+        clearDetailForm();
+      }
+    });
+
+    searchInputEl.addEventListener("input", applyFilters);
+    categoryFilterEl.addEventListener("change", applyFilters);
+    itemMetadataEl.addEventListener("input", () => {
+      updateIngredientsViewSafe();
+    });
+
+    function setStatus(msg, isError = false) {
+      statusTextEl.textContent = msg || "";
+      statusTextEl.style.color = isError ? "#d32f2f" : "#666";
+    }
+
+    async function loadMenuItems() {
+      setStatus("Loading menu...");
+      try {
+        const resp = await fetch(`${API_BASE}/admin/menu`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        allItems = data;
+        buildCategoryFilter(allItems);
+        applyFilters();
+        if (filteredItems.length > 0) {
+          selectItemByIndex(0);
+        } else {
+          selectItemByIndex(-1);
+        }
+        setStatus("Menu loaded.");
+      } catch (err) {
+        console.error("Error loading menu:", err);
+        setStatus("Error loading menu. See console.", true);
+      }
+    }
+
+    function buildCategoryFilter(items) {
+      const categories = Array.from(new Set(items.map(i => i.category || "").filter(Boolean))).sort();
+      categoryFilterEl.innerHTML = '<option value="">All categories</option>';
+      categories.forEach(cat => {
+        const opt = document.createElement("option");
+        opt.value = cat;
+        opt.textContent = cat;
+        categoryFilterEl.appendChild(opt);
+      });
+    }
+
+    function applyFilters() {
+      const query = searchInputEl.value.toLowerCase();
+      const cat = categoryFilterEl.value;
+      filteredItems = allItems.filter(item => {
+        const matchesText =
+          !query ||
+          (item.name && item.name.toLowerCase().includes(query)) ||
+          (item.category && item.category.toLowerCase().includes(query));
+        const matchesCat = !cat || item.category === cat;
+        return matchesText && matchesCat;
+      });
+      renderList();
+    }
+
+    function renderList() {
+      menuListEl.innerHTML = "";
+      if (filteredItems.length === 0) {
+        const div = document.createElement("div");
+        div.className = "empty-state";
+        div.textContent = "No menu items. Click + New to create one.";
+        menuListEl.appendChild(div);
+        return;
+      }
+      filteredItems.forEach((item, idx) => {
+        const row = document.createElement("div");
+        row.className = "item-row" + (idx === currentIndex ? " active" : "");
+        row.addEventListener("click", () => selectItemByIndex(idx));
+
+        const main = document.createElement("div");
+        main.className = "item-main";
+        const name = document.createElement("div");
+        name.className = "item-name";
+        name.textContent = item.name;
+        main.appendChild(name);
+
+        const meta = document.createElement("div");
+        meta.className = "item-meta";
+        meta.textContent = `${item.category || "uncategorized"} • $${item.base_price.toFixed(2)} • qty: ${item.available_qty}`;
+        main.appendChild(meta);
+
+        row.appendChild(main);
+
+        if (item.is_signature) {
+          const badge = document.createElement("span");
+          badge.className = "item-badge";
+          badge.textContent = "signature";
+          row.appendChild(badge);
+        }
+
+        menuListEl.appendChild(row);
+      });
+    }
+
+    function clearDetailForm() {
+      detailTitleEl.textContent = "New menu item";
+      itemIdEl.value = "";
+      itemNameEl.value = "";
+      itemCategoryEl.value = "";
+      itemPriceEl.value = "";
+      itemQtyEl.value = "";
+      itemSignatureEl.checked = false;
+      itemMetadataEl.value = "";
+      ingredientsViewEl.textContent = "No metadata yet.";
+    }
+
+    function selectItemByIndex(idx, newItem = false) {
+      currentIndex = idx;
+      document.querySelectorAll(".item-row").forEach((row, i) => {
+        row.classList.toggle("active", i === currentIndex);
+      });
+
+      if (newItem) {
+        clearDetailForm();
+        return;
+      }
+
+      if (currentIndex < 0 || currentIndex >= filteredItems.length) {
+        clearDetailForm();
+        return;
+      }
+
+      const item = filteredItems[currentIndex];
+      detailTitleEl.textContent = item.name || "Menu item";
+      itemIdEl.value = item.id || "";
+      itemNameEl.value = item.name || "";
+      itemCategoryEl.value = item.category || "";
+      itemPriceEl.value = item.base_price != null ? item.base_price : "";
+      itemQtyEl.value = item.available_qty != null ? item.available_qty : "";
+      itemSignatureEl.checked = !!item.is_signature;
+      itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
+      updateIngredientsViewSafe();
+    }
+
+    function parseMetadata() {
+      const raw = itemMetadataEl.value.trim();
+      if (!raw) return {};
+      try {
+        const obj = JSON.parse(raw);
+        return obj && typeof obj === "object" ? obj : {};
+      } catch (e) {
+        throw new Error("Metadata must be valid JSON.");
+      }
+    }
+
+    function updateIngredientsViewSafe() {
+      try {
+        const meta = parseMetadata();
+        renderIngredients(meta);
+      } catch (err) {
+        ingredientsViewEl.textContent = "Invalid JSON: " + err.message;
+      }
+    }
+
+    function renderIngredients(meta) {
+      if (!meta || typeof meta !== "object" || Object.keys(meta).length === 0) {
+        ingredientsViewEl.textContent = "No metadata yet.";
+        return;
+      }
+      const parts = [];
+      if (meta.bread) parts.push(`<strong>Bread:</strong> ${meta.bread}`);
+      if (meta.protein) parts.push(`<strong>Protein:</strong> ${meta.protein}`);
+      if (meta.cheese) parts.push(`<strong>Cheese:</strong> ${meta.cheese}`);
+      if (Array.isArray(meta.toppings) && meta.toppings.length) {
+        parts.push(`<strong>Toppings:</strong> ${meta.toppings.join(", ")}`);
+      }
+      if (Array.isArray(meta.sauces) && meta.sauces.length) {
+        parts.push(`<strong>Sauces:</strong> ${meta.sauces.join(", ")}`);
+      }
+      if (parts.length === 0) {
+        ingredientsViewEl.innerHTML = "Metadata keys: " + Object.keys(meta).join(", ");
+      } else {
+        ingredientsViewEl.innerHTML = parts.join("<br/>");
+      }
+    }
+
+    async function saveCurrentItem() {
+      const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
+      const payload = {
+        name: itemNameEl.value.trim(),
+        category: itemCategoryEl.value.trim(),
+        is_signature: itemSignatureEl.checked,
+        base_price: parseFloat(itemPriceEl.value || "0"),
+        available_qty: parseInt(itemQtyEl.value || "0", 10),
+        metadata: null
+      };
+
+      if (!payload.name) {
+        setStatus("Name is required.", true);
+        return;
+      }
+
+      try {
+        payload.metadata = parseMetadata();
+      } catch (err) {
+        setStatus(err.message, true);
+        return;
+      }
+
+      const method = id ? "PUT" : "POST";
+      const url = id ? `${API_BASE}/admin/menu/${id}` : `${API_BASE}/admin/menu`;
+
+      setStatus("Saving item...");
+      try {
+        const resp = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const saved = await resp.json();
+        setStatus("Saved.");
+        await loadMenuItems();
+        const idx = filteredItems.findIndex(i => i.id === saved.id);
+        if (idx !== -1) {
+          selectItemByIndex(idx);
+        }
+      } catch (err) {
+        console.error("Error saving item:", err);
+        setStatus("Error saving item. See console.", true);
+      }
+    }
+
+    async function deleteCurrentItem() {
+      const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
+      if (!id) {
+        setStatus("Nothing to delete.", true);
+        return;
+      }
+      if (!confirm("Delete this menu item?")) return;
+
+      setStatus("Deleting item...");
+      try {
+        const resp = await fetch(`${API_BASE}/admin/menu/${id}`, {
+          method: "DELETE",
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        await loadMenuItems();
+        selectItemByIndex(0);
+        setStatus("Item deleted.");
+      } catch (err) {
+        console.error("Error deleting item:", err);
+        setStatus("Error deleting item. See console.", true);
+      }
+    }
+
+    loadMenuItems();
+  </script>
+</body>
+</html>

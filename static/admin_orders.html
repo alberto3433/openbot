@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sandwich Orders Admin</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      background: #f5f5f7;
+      color: #222;
+    }
+
+    .sidebar {
+      width: 45%;
+      max-width: 600px;
+      border-right: 1px solid #ddd;
+      padding: 16px;
+      box-sizing: border-box;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    select, button {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      cursor: pointer;
+      background: #fafafa;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+    }
+
+    button[disabled] {
+      background: #ccc;
+      cursor: default;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    tr:hover {
+      background: #f0f4ff;
+      cursor: pointer;
+    }
+
+    tr.selected {
+      background: #dbeafe;
+    }
+
+    .pagination {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .details {
+      flex: 1;
+      padding: 16px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .details-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .details-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .details-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .status-pill {
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-pending {
+      background: #fef9c3;
+      color: #92400e;
+    }
+
+    .status-confirmed {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 4px 16px;
+      font-size: 13px;
+    }
+
+    .items-list {
+      margin-top: 8px;
+    }
+
+    .item-card {
+      border-top: 1px solid #eee;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+
+    .item-card:first-child {
+      border-top: none;
+    }
+
+    .nav-buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="header">
+      <h1 style="font-size:18px; margin:0;">Orders</h1>
+      <div class="filter-group">
+        <label for="statusFilter" style="font-size:13px;">Status:</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+        </select>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Phone</th>
+          <th>Status</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody id="ordersBody">
+        <!-- Rows injected here -->
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <div>
+        <button id="prevPage">Prev</button>
+        <button id="nextPage">Next</button>
+      </div>
+      <div id="pageInfo" class="muted"></div>
+    </div>
+  </div>
+
+  <div class="details">
+    <div class="details-card" id="detailsCard">
+      <div class="details-header">
+        <h2>Order details</h2>
+        <span id="statusPill" class="status-pill status-pending" style="display:none;"></span>
+      </div>
+      <div id="detailsContent" class="muted">
+        Select an order from the list to view details.
+      </div>
+    </div>
+
+    <div class="nav-buttons">
+      <button id="prevOrder" disabled>Prev order</button>
+      <button id="nextOrder" disabled>Next order</button>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    let currentPage = 1;
+    let currentStatus = "";
+    let lastPageSize = 10;
+    let ordersCache = [];
+    let selectedIndex = -1;
+
+    const statusFilter = document.getElementById("statusFilter");
+    const ordersBody = document.getElementById("ordersBody");
+    const prevPageBtn = document.getElementById("prevPage");
+    const nextPageBtn = document.getElementById("nextPage");
+    const pageInfo = document.getElementById("pageInfo");
+    const detailsContent = document.getElementById("detailsContent");
+    const statusPill = document.getElementById("statusPill");
+    const prevOrderBtn = document.getElementById("prevOrder");
+    const nextOrderBtn = document.getElementById("nextOrder");
+
+    statusFilter.addEventListener("change", () => {
+      currentStatus = statusFilter.value;
+      currentPage = 1;
+      selectedIndex = -1;
+      fetchOrders();
+    });
+
+    prevPageBtn.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        selectedIndex = -1;
+        fetchOrders();
+      }
+    });
+
+    nextPageBtn.addEventListener("click", () => {
+      if (!nextPageBtn.disabled) {
+        currentPage++;
+        selectedIndex = -1;
+        fetchOrders();
+      }
+    });
+
+    prevOrderBtn.addEventListener("click", () => {
+      if (selectedIndex > 0) {
+        selectOrder(selectedIndex - 1);
+      }
+    });
+
+    nextOrderBtn.addEventListener("click", () => {
+      if (selectedIndex >= 0 && selectedIndex < ordersCache.length - 1) {
+        selectOrder(selectedIndex + 1);
+      }
+    });
+
+    async function fetchOrders() {
+      try {
+        const params = new URLSearchParams();
+        params.append("page", String(currentPage));
+        params.append("page_size", String(lastPageSize));
+        if (currentStatus) {
+          params.append("status", currentStatus);
+        }
+
+        const resp = await fetch(`${API_BASE}/admin/orders?${params.toString()}`);
+        if (!resp.ok) {
+          throw new Error(`Failed to load orders: ${resp.status}`);
+        }
+        const data = await resp.json();
+
+        ordersCache = data.items;
+        lastPageSize = data.page_size || 10;
+
+        renderOrdersTable();
+        pageInfo.textContent = `Page ${data.page} • ${data.total} total orders`;
+        prevPageBtn.disabled = data.page <= 1;
+        nextPageBtn.disabled = !data.has_next;
+
+        if (selectedIndex === -1) {
+          detailsContent.textContent = "Select an order from the list to view details.";
+          statusPill.style.display = "none";
+          prevOrderBtn.disabled = true;
+          nextOrderBtn.disabled = true;
+        }
+      } catch (err) {
+        console.error(err);
+        ordersBody.innerHTML = `<tr><td colspan="5" style="color:red;">Error loading orders</td></tr>`;
+      }
+    }
+
+    function renderOrdersTable() {
+      ordersBody.innerHTML = "";
+
+      if (!ordersCache.length) {
+        ordersBody.innerHTML = `<tr><td colspan="5" class="muted">No orders found</td></tr>`;
+        return;
+      }
+
+      ordersCache.forEach((order, idx) => {
+        const tr = document.createElement("tr");
+        if (idx === selectedIndex) {
+          tr.classList.add("selected");
+        }
+
+        tr.innerHTML = `
+          <td>${order.id}</td>
+          <td>${order.customer_name || ""}</td>
+          <td>${order.phone || ""}</td>
+          <td>${order.status}</td>
+          <td>$${order.total_price.toFixed(2)}</td>
+        `;
+
+        tr.addEventListener("click", () => {
+          selectOrder(idx);
+        });
+
+        ordersBody.appendChild(tr);
+      });
+    }
+
+    async function selectOrder(idx) {
+      if (idx < 0 || idx >= ordersCache.length) return;
+
+      selectedIndex = idx;
+      renderOrdersTable();
+
+      const order = ordersCache[idx];
+      await loadOrderDetails(order.id);
+
+      prevOrderBtn.disabled = selectedIndex <= 0;
+      nextOrderBtn.disabled = selectedIndex >= ordersCache.length - 1;
+    }
+
+    async function loadOrderDetails(orderId) {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/orders/${orderId}`);
+        if (!resp.ok) {
+          throw new Error(`Failed to load order ${orderId}: ${resp.status}`);
+        }
+        const order = await resp.json();
+
+        const statusClass =
+          order.status === "confirmed"
+            ? "status-confirmed"
+            : "status-pending";
+
+        statusPill.style.display = "inline-block";
+        statusPill.className = `status-pill ${statusClass}`;
+        statusPill.textContent = order.status;
+
+        const itemsHtml = order.items
+          .map((item) => {
+            const extras = [];
+            if (item.size) extras.push(item.size);
+            if (item.bread) extras.push(item.bread);
+            if (item.protein) extras.push(item.protein);
+            if (item.cheese) extras.push(item.cheese);
+            const extrasStr = extras.join(" • ");
+
+            const toppings = item.toppings && item.toppings.length
+              ? `Toppings: ${item.toppings.join(", ")}`
+              : "";
+            const sauces = item.sauces && item.sauces.length
+              ? `Sauces: ${item.sauces.join(", ")}`
+              : "";
+
+            return `
+              <div class="item-card">
+                <div><strong>${item.quantity}× ${item.menu_item_name}</strong></div>
+                <div class="muted">${extrasStr}</div>
+                <div class="muted">
+                  ${toppings}<br/>
+                  ${sauces}
+                </div>
+                <div><strong>$${item.line_total.toFixed(2)}</strong></div>
+              </div>
+            `;
+          })
+          .join("");
+
+        detailsContent.innerHTML = `
+          <div class="details-grid">
+            <div><strong>Order ID:</strong> ${order.id}</div>
+            <div><strong>Name:</strong> ${order.customer_name || ""}</div>
+            <div><strong>Phone:</strong> ${order.phone || ""}</div>
+            <div><strong>Pickup:</strong> ${order.pickup_time || ""}</div>
+            <div><strong>Total:</strong> $${order.total_price.toFixed(2)}</div>
+            <div><strong>Created:</strong> ${order.created_at || ""}</div>
+          </div>
+          <div class="items-list">
+            <h3 style="font-size:14px; margin:8px 0 4px;">Items</h3>
+            ${itemsHtml || '<div class="muted">No items on this order</div>'}
+          </div>
+        `;
+      } catch (err) {
+        console.error(err);
+        detailsContent.innerHTML = `<span style="color:red;">Error loading order details</span>`;
+        statusPill.style.display = "none";
+      }
+    }
+
+    fetchOrders();
+  </script>
+</body>
+</html>

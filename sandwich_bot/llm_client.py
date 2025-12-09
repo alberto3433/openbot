@@ -1,16 +1,33 @@
 import json
+import os
+from pathlib import Path
 from typing import List, Dict, Any
-from openai import OpenAI
 
 from dotenv import load_dotenv
-import os
+from openai import OpenAI
 
-# Load variables from .env into environment
-load_dotenv()
+# --------------------------------------------------------------------------------------
+# Load .env explicitly from the project root (one level above sandwich_bot/)
+# --------------------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent  # project root (where .env lives)
+env_path = BASE_DIR / ".env"
+load_dotenv(dotenv_path=env_path)
 
+api_key = os.getenv("OPENAI_API_KEY")
+
+print("Using OPENAI_API_KEY prefix:", (api_key or "")[:12])
+
+if not api_key:
+    # Fail fast with a clear error if the key is missing
+    raise RuntimeError(
+        f"OPENAI_API_KEY not found in {env_path}. "
+        "Create a .env file with OPENAI_API_KEY=sk-proj-... at the project root."
+    )
+
+# Explicitly pass the key so we don't depend on any global environment
+client = OpenAI(api_key=api_key)
 
 SYSTEM_PROMPT = """You are 'Sammy', a concise polite sandwich-order bot."""
-
 
 USER_PROMPT_TEMPLATE = """CONVERSATION HISTORY:
 {conversation_history}
@@ -28,7 +45,6 @@ JSON SCHEMA:
 {schema}
 """
 
-
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -36,9 +52,16 @@ RESPONSE_SCHEMA = {
         "intent": {
             "type": "string",
             "enum": [
-                "add_sandwich", "update_sandwich", "add_side", "add_drink",
-                "collect_customer_info", "review_order", "confirm_order",
-                "cancel_order", "small_talk", "unknown"
+                "add_sandwich",
+                "update_sandwich",
+                "add_side",
+                "add_drink",
+                "collect_customer_info",
+                "review_order",
+                "confirm_order",
+                "cancel_order",
+                "small_talk",
+                "unknown",
             ],
         },
         "slots": {
@@ -62,42 +85,28 @@ RESPONSE_SCHEMA = {
                 "cancel_reason": {"type": ["string", "null"]},
             },
             "required": [
-                "item_type", "menu_item_name", "size", "bread", "protein",
-                "cheese", "toppings", "sauces", "toasted", "quantity",
-                "item_index", "customer_name", "phone", "pickup_time",
-                "confirm", "cancel_reason"
-            ]
-        }
+                "item_type",
+                "menu_item_name",
+                "size",
+                "bread",
+                "protein",
+                "cheese",
+                "toppings",
+                "sauces",
+                "toasted",
+                "quantity",
+                "item_index",
+                "customer_name",
+                "phone",
+                "pickup_time",
+                "confirm",
+                "cancel_reason",
+            ],
+        },
     },
-    "required": ["reply", "intent", "slots"]
+    "required": ["reply", "intent", "slots"],
 }
 
-# -------- OpenAI client handling --------
-
-_client: OpenAI | None = None
-
-
-def get_client() -> OpenAI:
-    """
-    Lazily create and return a singleton OpenAI client.
-
-    This:
-    - Reads OPENAI_API_KEY from environment (loaded via .env)
-    - Avoids failing at import time if the key is missing
-    """
-    global _client
-    if _client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. "
-                "Set it in your environment or .env file."
-            )
-        _client = OpenAI(api_key=api_key)
-    return _client
-
-
-# -------- Prompt helpers + main call --------
 
 def render_history(history: List[Dict[str, str]]) -> str:
     if not history:
@@ -106,21 +115,19 @@ def render_history(history: List[Dict[str, str]]) -> str:
 
 
 def call_sandwich_bot(
-    history: List[Dict[str, str]],
-    order_state: Dict[str, Any],
-    menu_json: Dict[str, Any],
-    user_message: str,
+    conversation_history,
+    current_order_state,
+    menu_json,
+    user_message,
     model: str = "gpt-4.1",
 ) -> Dict[str, Any]:
     """
-    Call the OpenAI chat model and return the parsed JSON response
-    matching RESPONSE_SCHEMA.
+    Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
     """
-    client = get_client()
 
     prompt = USER_PROMPT_TEMPLATE.format(
-        conversation_history=render_history(history),
-        order_state=json.dumps(order_state, indent=2),
+        conversation_history=render_history(conversation_history),
+        order_state=json.dumps(current_order_state, indent=2),
         menu_json=json.dumps(menu_json, indent=2),
         user_message=user_message,
         schema=json.dumps(RESPONSE_SCHEMA, indent=2),

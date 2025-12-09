@@ -1,7 +1,11 @@
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,7 +19,36 @@ from .llm_client import call_sandwich_bot
 # Ensure tables exist (menu_items at least)
 Base.metadata.create_all(bind=engine)
 
+# Base paths for static files
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = BASE_DIR / "static"
+
 app = FastAPI(title="Sandwich Bot API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # for local dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static files (for the web chat UI)
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def serve_root():
+    """
+    Serve the chat UI at the root path.
+    Expects static/index.html to exist under the project root.
+    """
+    index_file = STATIC_DIR / "index.html"
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="index.html not found")
+    return FileResponse(str(index_file))
+
 
 # Simple in-memory session storage for MVP
 SESSIONS: Dict[str, Dict[str, Any]] = {}

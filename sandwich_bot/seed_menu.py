@@ -34,7 +34,7 @@ def seed_menu():
                 is_signature=True,
                 base_price=8.99,
                 available_qty=10,
-                metadata=json.dumps(
+                extra_metadata=json.dumps(
                     signature_default(
                         bread="wheat",
                         protein="turkey",
@@ -50,7 +50,7 @@ def seed_menu():
                 is_signature=True,
                 base_price=9.49,
                 available_qty=10,
-                metadata=json.dumps(
+                extra_metadata=json.dumps(
                     signature_default(
                         bread="white",
                         protein="salami",
@@ -66,7 +66,7 @@ def seed_menu():
                 is_signature=True,
                 base_price=7.99,
                 available_qty=10,
-                metadata=json.dumps(
+                extra_metadata=json.dumps(
                     signature_default(
                         bread="multigrain",
                         protein="none",
@@ -88,7 +88,7 @@ def seed_menu():
                 is_signature=True,
                 base_price=9.99,
                 available_qty=10,
-                metadata=json.dumps(
+                extra_metadata=json.dumps(
                     signature_default(
                         bread="white",
                         protein="chicken",
@@ -104,7 +104,7 @@ def seed_menu():
                 is_signature=True,
                 base_price=8.49,
                 available_qty=10,
-                metadata=json.dumps(
+                extra_metadata=json.dumps(
                     signature_default(
                         bread="italian",
                         protein="meatball",
@@ -121,7 +121,7 @@ def seed_menu():
                 is_signature=False,
                 base_price=1.99,
                 available_qty=50,
-                metadata=json.dumps({"sizes": ["small", "medium", "large"]}),
+                extra_metadata=json.dumps({"sizes": ["small", "medium", "large"]}),
             ),
             MenuItem(
                 name="Bottled Water",
@@ -129,7 +129,7 @@ def seed_menu():
                 is_signature=False,
                 base_price=1.49,
                 available_qty=50,
-                metadata=json.dumps({}),
+                extra_metadata=json.dumps({}),
             ),
             # Sides
             MenuItem(
@@ -138,7 +138,7 @@ def seed_menu():
                 is_signature=False,
                 base_price=1.29,
                 available_qty=40,
-                metadata=json.dumps({"flavors": ["bbq", "sea salt", "sour cream & onion"]}),
+                extra_metadata=json.dumps({"flavors": ["bbq", "sea salt", "sour cream & onion"]}),
             ),
             MenuItem(
                 name="Cookie",
@@ -146,7 +146,7 @@ def seed_menu():
                 is_signature=False,
                 base_price=1.79,
                 available_qty=30,
-                metadata=json.dumps({"types": ["chocolate chip", "oatmeal raisin"]}),
+                extra_metadata=json.dumps({"types": ["chocolate chip", "oatmeal raisin"]}),
             ),
         ]
 

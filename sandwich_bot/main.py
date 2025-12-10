@@ -15,6 +15,7 @@ from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index
 from .inventory import apply_inventory_decrement_on_confirm, OutOfStockError
+import json
 
 # Create tables on startup (for local dev / simple deployment)
 Base.metadata.create_all(bind=engine)
@@ -211,6 +212,8 @@ def chat_message(
         req.message,
     )
 
+    print("LLM RESULT:", llm_result)
+
     intent = llm_result.get("intent", "unknown")
     slots = llm_result.get("slots", {})
     reply = llm_result.get("reply", "")
@@ -220,14 +223,38 @@ def chat_message(
         updated_order_state = apply_intent_to_order_state(
             order_state, intent, slots, menu_index
         )
+
+        # 🔥 FIX: save updated state back into the session
+        session["order"] = updated_order_state
+
+        print("ORDER BEFORE APPLY:", order_state)
+        print("ORDER AFTER APPLY:", updated_order_state)
+
     except OutOfStockError as e:
         reply = str(e)
     else:
         # If confirming order, decrement inventory and persist
-        if intent == "confirm_order" and updated_order_state.get("status") == "confirmed":
+        customer_name = (
+                updated_order_state.get("customer", {}).get("name")
+                or slots.get("customer_name")
+        )
+        customer_phone = (
+                updated_order_state.get("customer", {}).get("phone")
+                or slots.get("phone")
+        )
+
+        if (
+                intent == "confirm_order"
+                and updated_order_state.get("status") == "confirmed"
+                and customer_name
+                and customer_phone
+        ):
+            updated_order_state.setdefault("customer", {})
+            updated_order_state["customer"]["name"] = customer_name
+            updated_order_state["customer"]["phone"] = customer_phone
+
             apply_inventory_decrement_on_confirm(db, updated_order_state)
-            persist_confirmed_order(db, updated_order_state)
-        session["order"] = updated_order_state
+            persist_confirmed_order(db, updated_order_state, slots)
 
     # Update history
     history.append({"role": "user", "content": req.message})
@@ -241,34 +268,110 @@ def chat_message(
     )
 
 
-# ---------- Persist confirmed orders ----------
-
-
-def persist_confirmed_order(db: Session, order_state: Dict[str, Any]) -> Optional[Order]:
+def persist_confirmed_order(
+    db: Session,
+    order_state: Dict[str, Any],
+    slots: Optional[Dict[str, Any]] = None,
+) -> Optional[Order]:
     """
     Persist a confirmed order + its items to the database.
+
+    Idempotent:
+      - If order_state has a db_order_id and that row exists, we UPDATE it.
+      - Otherwise, we CREATE a new Order and store its id back into order_state["db_order_id"].
     """
     if order_state.get("status") != "confirmed":
         return None  # nothing to persist
 
-    customer = order_state.get("customer", {}) or {}
-    items = order_state.get("items", []) or []
+    slots = slots or {}
+    items = order_state.get("items") or []
+    customer_block = order_state.get("customer") or {}
 
-    order = Order(
-        status="confirmed",
-        customer_name=customer.get("name"),
-        phone=customer.get("phone"),
-        pickup_time=customer.get("pickup_time"),
-        total_price=order_state.get("total_price", 0.0),
-        created_at=datetime.utcnow(),
+    def first_non_empty(*vals):
+        for v in vals:
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return None
+
+    # Where can name/phone/pickup_time live?
+    customer_name = first_non_empty(
+        customer_block.get("name"),
+        order_state.get("customer_name"),
+        order_state.get("name"),
+        slots.get("customer_name"),
+        slots.get("name"),
     )
-    db.add(order)
-    db.flush()  # assign order.id
+
+    phone = first_non_empty(
+        customer_block.get("phone"),
+        order_state.get("phone"),
+        slots.get("phone"),
+        slots.get("phone_number"),
+    )
+
+    pickup_time = first_non_empty(
+        customer_block.get("pickup_time"),
+        order_state.get("pickup_time"),
+        slots.get("pickup_time"),
+        slots.get("pickup_time_str"),
+    )
+
+    # Total price: try state, then slots, then sum of line_totals
+    total_price = order_state.get("total_price")
+    if not isinstance(total_price, (int, float)) or total_price <= 0:
+        slots_total = slots.get("total_price")
+        if isinstance(slots_total, (int, float)) and slots_total > 0:
+            total_price = float(slots_total)
+        else:
+            total_price = sum((it.get("line_total") or 0.0) for it in items)
+
+    # --- Create or update Order row ---
+    existing_id = order_state.get("db_order_id")
+    order: Optional[Order] = None
+
+    if existing_id:
+        # SQLAlchemy 1.4/2.0 compatible get
+        order = db.get(Order, existing_id)
+        if order is None:
+            # stale id: fall back to creating a new one below
+            existing_id = None
+
+    if not existing_id:
+        # New order
+        order = Order(
+            status="confirmed",
+            customer_name=customer_name,
+            phone=phone,
+            pickup_time=pickup_time,
+            total_price=total_price,
+        )
+        db.add(order)
+        db.flush()  # assign order.id
+        order_state["db_order_id"] = order.id
+    else:
+        # Update existing order
+        order.status = "confirmed"
+        order.customer_name = customer_name
+        order.phone = phone
+        order.pickup_time = pickup_time
+        order.total_price = total_price
+
+    # --- Replace order items with the latest items ---
+    # Clear any previous items for this order
+    db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
 
     for it in items:
+        menu_item_name = (
+            it.get("menu_item_name")
+            or it.get("name")
+            or it.get("item_type")
+            or "Unknown item"
+        )
+
         oi = OrderItem(
             order_id=order.id,
-            menu_item_name=it.get("menu_item_name") or it.get("name"),
+            menu_item_id=it.get("menu_item_id"),
+            menu_item_name=menu_item_name,
             item_type=it.get("item_type"),
             size=it.get("size"),
             bread=it.get("bread"),
@@ -288,17 +391,21 @@ def persist_confirmed_order(db: Session, order_state: Dict[str, Any]) -> Optiona
     return order
 
 
-
 def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """
     Safely convert a MenuItem ORM instance into MenuItemOut, making sure that
-    the metadata field is always a plain dict (and not SQLAlchemy's MetaData).
+    the metadata field is always a plain dict.
     """
-    raw_meta = getattr(item, "metadata", None)
+    raw_meta = getattr(item, "extra_metadata", None)
+
     if isinstance(raw_meta, dict):
         meta = raw_meta
+    elif isinstance(raw_meta, str) and raw_meta.strip():
+        try:
+            meta = json.loads(raw_meta)
+        except json.JSONDecodeError:
+            meta = {}
     else:
-        # Some models expose Base.metadata here; ignore and default to empty.
         meta = {}
 
     return MenuItemOut(
@@ -310,7 +417,6 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         available_qty=item.available_qty,
         metadata=meta,
     )
-
 
 # ---------- Admin menu endpoints ----------
 
@@ -329,7 +435,7 @@ def create_menu_item(payload: MenuItemCreate, db: Session = Depends(get_db)) -> 
         is_signature=payload.is_signature,
         base_price=payload.base_price,
         available_qty=payload.available_qty,
-        metadata=payload.metadata or {},
+        extra_metadata=json.dumps(payload.metadata or {}),
     )
     db.add(item)
     db.commit()
@@ -364,7 +470,7 @@ def update_menu_item(
     if payload.available_qty is not None:
         item.available_qty = payload.available_qty
     if payload.metadata is not None:
-        item.metadata = payload.metadata
+        item.extra_metadata = json.dumps(payload.metadata)
 
     db.commit()
     db.refresh(item)

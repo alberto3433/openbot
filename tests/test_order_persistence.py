@@ -4,9 +4,11 @@ from sqlalchemy.pool import StaticPool
 
 from sandwich_bot.models import Base, MenuItem, Order, OrderItem
 from sandwich_bot.inventory import apply_inventory_decrement_on_confirm
+from sandwich_bot.main import persist_confirmed_order
 
 
-def test_persist_confirmed_order_creates_order_and_items():
+def test_inventory_decrement_only():
+    """Test that apply_inventory_decrement_on_confirm only decrements inventory."""
     # In-memory SQLite shared connection
     engine = create_engine(
         "sqlite:///:memory:",
@@ -26,7 +28,7 @@ def test_persist_confirmed_order_creates_order_and_items():
         is_signature=True,
         base_price=8.0,
         available_qty=5,
-        extra_metadata={},
+        extra_metadata="{}",
     )
     db.add(m)
     db.commit()
@@ -61,6 +63,68 @@ def test_persist_confirmed_order_creates_order_and_items():
     refreshed = db.query(MenuItem).filter_by(name="Turkey Club").one()
     assert refreshed.available_qty == 3
 
+    # apply_inventory_decrement_on_confirm does NOT create orders
+    orders = db.query(Order).all()
+    assert len(orders) == 0
+
+    db.close()
+
+
+def test_persist_confirmed_order_creates_order_and_items():
+    """Test that persist_confirmed_order creates Order and OrderItem records."""
+    # In-memory SQLite shared connection
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+
+    # Seed one menu item
+    m = MenuItem(
+        name="Turkey Club",
+        category="sandwich",
+        is_signature=True,
+        base_price=8.0,
+        available_qty=5,
+        extra_metadata="{}",
+    )
+    db.add(m)
+    db.commit()
+
+    # Build a confirmed order_state with 2 of that item
+    order_state = {
+        "status": "confirmed",
+        "customer": {
+            "name": "Alice",
+            "phone": "555-1234",
+            "pickup_time": "ASAP",
+        },
+        "total_price": 16.0,
+        "items": [
+            {
+                "menu_item_name": "Turkey Club",
+                "quantity": 2,
+                "unit_price": 8.0,
+                "line_total": 16.0,
+                "size": '6"',
+                "bread": "wheat",
+                "protein": "turkey",
+                "cheese": "cheddar",
+                "toppings": [],
+                "sauces": [],
+                "toasted": True,
+            }
+        ],
+    }
+
+    # persist_confirmed_order is what creates Order and OrderItem records
+    persist_confirmed_order(db, order_state)
+
     # There should be one persisted Order and one OrderItem
     orders = db.query(Order).all()
     assert len(orders) == 1
@@ -73,8 +137,8 @@ def test_persist_confirmed_order_creates_order_and_items():
     assert items[0].quantity == 2
     assert items[0].line_total == 16.0
 
-    # And the order_state should now have the order_id
-    assert "order_id" in order_state
-    assert order_state["order_id"] == orders[0].id
+    # And the order_state should now have the db_order_id
+    assert "db_order_id" in order_state
+    assert order_state["db_order_id"] == orders[0].id
 
     db.close()

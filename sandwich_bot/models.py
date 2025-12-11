@@ -161,3 +161,25 @@ class RecipeChoiceItem(Base):
 
     choice_group = relationship("RecipeChoiceGroup", back_populates="choices")
     ingredient = relationship("Ingredient", back_populates="choice_for")
+
+
+# --- Chat Session model for persistence ---
+
+class ChatSession(Base):
+    """
+    Persists chat sessions to the database so they survive server restarts.
+    """
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, nullable=False, index=True)  # UUID string
+
+    # Store conversation history as JSON
+    history = Column(JSON, nullable=False, default=list)
+
+    # Store order state as JSON
+    order_state = Column(JSON, nullable=False, default=dict)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

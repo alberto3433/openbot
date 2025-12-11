@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 from pathlib import Path
 from typing import List, Dict, Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------------------
 # Load .env explicitly from the project root (one level above sandwich_bot/)
@@ -15,7 +18,13 @@ load_dotenv(dotenv_path=env_path)
 
 api_key = os.getenv("OPENAI_API_KEY")
 
-print("Using OPENAI_API_KEY prefix:", (api_key or "")[:12])
+# Configurable model name - defaults to gpt-4o (valid as of 2024)
+# Other valid options: gpt-4-turbo, gpt-4, gpt-3.5-turbo
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+
+# Log configuration at DEBUG level (no sensitive data in INFO or higher)
+logger.debug("OpenAI API key configured: %s", "Yes" if api_key else "No")
+logger.debug("Using model: %s", DEFAULT_MODEL)
 
 if not api_key:
     # Fail fast with a clear error if the key is missing
@@ -154,11 +163,20 @@ def call_sandwich_bot(
     current_order_state,
     menu_json,
     user_message,
-    model: str = "gpt-4.1",
+    model: str = None,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
+
+    Args:
+        conversation_history: List of previous messages
+        current_order_state: Current order state dict
+        menu_json: Menu data for LLM context
+        user_message: The user's message
+        model: OpenAI model to use (defaults to OPENAI_MODEL env var or gpt-4o)
     """
+    if model is None:
+        model = DEFAULT_MODEL
 
     prompt = USER_PROMPT_TEMPLATE.format(
         conversation_history=render_history(conversation_history),

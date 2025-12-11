@@ -2,20 +2,71 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
 import random
+import secrets
+import os
+import logging
+import json
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from .db import engine, get_db
-from .models import Base, MenuItem, Order, OrderItem
+from .models import Base, MenuItem, Order, OrderItem, ChatSession
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index
 from .inventory import apply_inventory_decrement_on_confirm, OutOfStockError
-import json
+from .logging_config import setup_logging
+
+# Configure logging at module load time
+setup_logging()
+
+logger = logging.getLogger(__name__)
+
+# ---------- Admin Authentication ----------
+
+security = HTTPBasic()
+
+# Load admin credentials from environment variables
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
+
+def verify_admin_credentials(
+    credentials: HTTPBasicCredentials = Depends(security),
+) -> str:
+    """
+    Verify HTTP Basic Auth credentials for admin endpoints.
+    Returns the username if valid, raises 401 if invalid.
+    """
+    if not ADMIN_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin authentication not configured. Set ADMIN_PASSWORD environment variable.",
+        )
+
+    # Use secrets.compare_digest to prevent timing attacks
+    username_correct = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        ADMIN_USERNAME.encode("utf-8"),
+    )
+    password_correct = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        ADMIN_PASSWORD.encode("utf-8"),
+    )
+
+    if not (username_correct and password_correct):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    return credentials.username
 
 # Create tables on startup (for local dev / simple deployment)
 Base.metadata.create_all(bind=engine)
@@ -31,8 +82,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory session store for MVP
-SESSIONS: Dict[str, Dict[str, Any]] = {}
+# Session cache for performance (backed by database)
+# This acts as a write-through cache - reads check DB if not in cache
+SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get session from cache or database. Returns None if not found.
+    """
+    # Check cache first
+    if session_id in SESSION_CACHE:
+        return SESSION_CACHE[session_id]
+
+    # Check database
+    db_session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+    if db_session:
+        session_data = {
+            "history": db_session.history or [],
+            "order": db_session.order_state or {},
+        }
+        SESSION_CACHE[session_id] = session_data
+        return session_data
+
+    return None
+
+
+def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> None:
+    """
+    Save session to both cache and database.
+    """
+    # Update cache
+    SESSION_CACHE[session_id] = session_data
+
+    # Update or create in database
+    db_session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+    if db_session:
+        db_session.history = session_data.get("history", [])
+        db_session.order_state = session_data.get("order", {})
+    else:
+        db_session = ChatSession(
+            session_id=session_id,
+            history=session_data.get("history", []),
+            order_state=session_data.get("order", {}),
+        )
+        db.add(db_session)
+
+    db.commit()
 
 # Mount static files (chat UI, admin UI)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -59,6 +155,8 @@ class ChatMessageResponse(BaseModel):
 
 
 class MenuItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     category: str
@@ -66,9 +164,6 @@ class MenuItemOut(BaseModel):
     base_price: float
     available_qty: int
     metadata: Dict[str, Any]
-
-    class Config:
-        orm_mode = True
 
 
 class MenuItemCreate(BaseModel):
@@ -93,6 +188,8 @@ class MenuItemUpdate(BaseModel):
 
 
 class OrderSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     status: str
     customer_name: Optional[str] = None
@@ -100,11 +197,10 @@ class OrderSummaryOut(BaseModel):
     pickup_time: Optional[str] = None
     total_price: float
 
-    class Config:
-        orm_mode = True
-
 
 class OrderItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     menu_item_name: str
     item_type: Optional[str] = None
@@ -119,11 +215,10 @@ class OrderItemOut(BaseModel):
     unit_price: float
     line_total: float
 
-    class Config:
-        orm_mode = True
-
 
 class OrderDetailOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     status: str
     customer_name: Optional[str] = None
@@ -132,9 +227,6 @@ class OrderDetailOut(BaseModel):
     total_price: float
     created_at: str
     items: List[OrderItemOut]
-
-    class Config:
-        orm_mode = True
 
 
 class OrderListResponse(BaseModel):
@@ -157,11 +249,19 @@ def health() -> Dict[str, str]:
 
 
 @app.post("/chat/start", response_model=ChatStartResponse)
-def chat_start() -> ChatStartResponse:
+def chat_start(db: Session = Depends(get_db)) -> ChatStartResponse:
     session_id = str(uuid.uuid4())
-    # Initialize order state
-    SESSIONS[session_id] = {
-        "history": [],
+
+    # Sammy starts the conversation
+    greetings = [
+        "Hello, how can I help you?",
+        "Hi! Would you like to try one of our signature sandwiches or build your own?",
+    ]
+    welcome = random.choice(greetings)
+
+    # Initialize session data
+    session_data = {
+        "history": [{"role": "assistant", "content": welcome}],
         "order": {
             "status": "pending",
             "items": [],
@@ -174,17 +274,10 @@ def chat_start() -> ChatStartResponse:
         },
     }
 
-    # Sammy starts the conversation
-    greetings = [
-        "Hello, how can I help you?",
-        "Hi! Would you like to try one of our signature sandwiches or build your own?",
-    ]
-    welcome = random.choice(greetings)
+    # Save to database and cache
+    save_session(db, session_id, session_data)
 
-    # Store initial assistant message in history
-    SESSIONS[session_id]["history"].append(
-        {"role": "assistant", "content": welcome}
-    )
+    logger.info("New chat session started: %s", session_id[:8])
 
     return ChatStartResponse(session_id=session_id, message=welcome)
 
@@ -194,7 +287,8 @@ def chat_message(
     req: ChatMessageRequest,
     db: Session = Depends(get_db),
 ) -> ChatMessageResponse:
-    session = SESSIONS.get(req.session_id)
+    # Get session from cache or database
+    session = get_or_create_session(db, req.session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Invalid session_id")
 
@@ -212,7 +306,8 @@ def chat_message(
         req.message,
     )
 
-    print("LLM RESULT:", llm_result)
+    # Log LLM result at DEBUG level (may contain order details)
+    logger.debug("LLM result - intent: %s", llm_result.get("intent"))
 
     intent = llm_result.get("intent", "unknown")
     slots = llm_result.get("slots", {})
@@ -224,11 +319,12 @@ def chat_message(
             order_state, intent, slots, menu_index
         )
 
-        # 🔥 FIX: save updated state back into the session
+        # Save updated state back into the session
         session["order"] = updated_order_state
 
-        print("ORDER BEFORE APPLY:", order_state)
-        print("ORDER AFTER APPLY:", updated_order_state)
+        logger.debug("Order state updated - status: %s, items: %d",
+                    updated_order_state.get("status"),
+                    len(updated_order_state.get("items", [])))
 
     except OutOfStockError as e:
         reply = str(e)
@@ -259,6 +355,9 @@ def chat_message(
     # Update history
     history.append({"role": "user", "content": req.message})
     history.append({"role": "assistant", "content": reply})
+
+    # Persist session to database
+    save_session(db, req.session_id, session)
 
     return ChatMessageResponse(
         reply=reply,
@@ -422,13 +521,20 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
 
 
 @app.get("/admin/menu", response_model=List[MenuItemOut])
-def admin_menu(db: Session = Depends(get_db)) -> List[MenuItemOut]:
+def admin_menu(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[MenuItemOut]:
     items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
     return [serialize_menu_item(m) for m in items]
 
 
 @app.post("/admin/menu", response_model=MenuItemOut)
-def create_menu_item(payload: MenuItemCreate, db: Session = Depends(get_db)) -> MenuItemOut:
+def create_menu_item(
+    payload: MenuItemCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> MenuItemOut:
     item = MenuItem(
         name=payload.name,
         category=payload.category,
@@ -444,7 +550,11 @@ def create_menu_item(payload: MenuItemCreate, db: Session = Depends(get_db)) -> 
 
 
 @app.get("/admin/menu/{item_id}", response_model=MenuItemOut)
-def get_menu_item(item_id: int, db: Session = Depends(get_db)) -> MenuItemOut:
+def get_menu_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> MenuItemOut:
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
@@ -453,7 +563,10 @@ def get_menu_item(item_id: int, db: Session = Depends(get_db)) -> MenuItemOut:
 
 @app.put("/admin/menu/{item_id}", response_model=MenuItemOut)
 def update_menu_item(
-    item_id: int, payload: MenuItemUpdate, db: Session = Depends(get_db)
+    item_id: int,
+    payload: MenuItemUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
 ) -> MenuItemOut:
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
@@ -478,7 +591,11 @@ def update_menu_item(
 
 
 @app.delete("/admin/menu/{item_id}", status_code=204)
-def delete_menu_item(item_id: int, db: Session = Depends(get_db)) -> None:
+def delete_menu_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
@@ -493,6 +610,7 @@ def delete_menu_item(item_id: int, db: Session = Depends(get_db)) -> None:
 @app.get("/admin/orders", response_model=OrderListResponse)
 def list_orders(
     db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
     status: Optional[str] = Query(
         None,
         description="Filter by status: pending, confirmed, or leave empty for all",
@@ -542,12 +660,16 @@ def list_orders(
 
 
 @app.get("/admin/orders/{order_id}", response_model=OrderDetailOut)
-def get_order_detail(order_id: int, db: Session = Depends(get_db)) -> OrderDetailOut:
+def get_order_detail(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> OrderDetailOut:
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    items_out = [OrderItemOut.from_orm(item) for item in order.items]
+    items_out = [OrderItemOut.model_validate(item) for item in order.items]
 
     created_at_str = ""
     if getattr(order, "created_at", None):

@@ -3,7 +3,15 @@
     "allow": [
       "Bash(python -m pytest:*)",
       "Bash(python:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(alembic init:*)",
+      "Bash(alembic upgrade:*)",
+      "Bash(alembic current:*)",
+      "Bash(copy:*)",
+      "Bash(del app.db)",
+      "Bash(cmd /c \"copy app.db app.db.backup && del app.db\")"
     ]
   }
 }

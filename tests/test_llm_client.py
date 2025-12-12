@@ -130,3 +130,71 @@ class TestLLMResponseParsing:
             assert result["reply"] == expected_response["reply"]
             assert result["intent"] == expected_response["intent"]
             assert "slots" in result
+
+    def test_call_sandwich_bot_handles_malformed_json(self):
+        """Test that call_sandwich_bot returns fallback response when LLM returns invalid JSON."""
+        from sandwich_bot import llm_client
+
+        mock_completion = MagicMock()
+        # Return malformed JSON (missing closing brace)
+        mock_completion.choices = [
+            MagicMock(message=MagicMock(content='{"reply": "Hello", "actions": [{"intent": "small_talk"'))
+        ]
+
+        with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
+            result = llm_client.call_sandwich_bot(
+                conversation_history=[],
+                current_order_state={"status": "pending", "items": []},
+                menu_json={"signature_sandwiches": []},
+                user_message="Hello",
+            )
+
+            # Should return fallback response instead of crashing
+            assert "actions" in result
+            assert result["actions"][0]["intent"] == "unknown"
+            assert "trouble understanding" in result["reply"].lower()
+
+    def test_call_sandwich_bot_handles_empty_response(self):
+        """Test that call_sandwich_bot handles empty LLM response."""
+        from sandwich_bot import llm_client
+
+        mock_completion = MagicMock()
+        mock_completion.choices = [
+            MagicMock(message=MagicMock(content=''))
+        ]
+
+        with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
+            result = llm_client.call_sandwich_bot(
+                conversation_history=[],
+                current_order_state={"status": "pending", "items": []},
+                menu_json={"signature_sandwiches": []},
+                user_message="Hello",
+            )
+
+            # Should return fallback response
+            assert "actions" in result
+            assert result["actions"][0]["intent"] == "unknown"
+            assert "slots" in result["actions"][0]
+
+    def test_call_sandwich_bot_handles_non_json_response(self):
+        """Test that call_sandwich_bot handles plain text LLM response."""
+        from sandwich_bot import llm_client
+
+        mock_completion = MagicMock()
+        # Return plain text instead of JSON
+        mock_completion.choices = [
+            MagicMock(message=MagicMock(content='Hello! I am Sammy the sandwich bot.'))
+        ]
+
+        with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
+            result = llm_client.call_sandwich_bot(
+                conversation_history=[],
+                current_order_state={"status": "pending", "items": []},
+                menu_json={"signature_sandwiches": []},
+                user_message="Hello",
+            )
+
+            # Should return fallback response
+            assert "actions" in result
+            assert result["actions"][0]["intent"] == "unknown"
+            assert "trouble understanding" in result["reply"].lower()

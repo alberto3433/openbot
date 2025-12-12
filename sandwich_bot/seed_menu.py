@@ -1,11 +1,11 @@
 import json
-from sandwich_bot.db import SessionLocal, engine
-from sandwich_bot.models import Base, MenuItem
+from sandwich_bot.db import SessionLocal
+from sandwich_bot.models import MenuItem
 
 
 def seed_menu():
-    # Make sure tables exist
-    Base.metadata.create_all(bind=engine)
+    # Note: Tables should be created via Alembic migrations.
+    # Run `alembic upgrade head` before seeding if database is empty.
 
     db = SessionLocal()
     try:

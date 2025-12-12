@@ -1,5 +1,7 @@
 # sandwich_bot/menu_index_builder.py
 
+import hashlib
+import json
 from typing import Dict, Any, List
 
 from sqlalchemy.orm import Session
@@ -148,3 +150,21 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
     index["sauce_types"] = [ing.name for ing in sauce_ingredients]
 
     return index
+
+
+def get_menu_version(menu_index: Dict[str, Any]) -> str:
+    """
+    Generate a deterministic hash of the menu for version tracking.
+
+    Used to detect if the menu has changed since it was last sent to the LLM,
+    allowing us to skip sending the menu again if it hasn't changed.
+
+    Args:
+        menu_index: The menu dictionary from build_menu_index()
+
+    Returns:
+        A 12-character hex string hash of the menu
+    """
+    # Sort keys for deterministic serialization
+    menu_str = json.dumps(menu_index, sort_keys=True)
+    return hashlib.md5(menu_str.encode()).hexdigest()[:12]

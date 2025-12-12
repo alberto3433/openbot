@@ -109,6 +109,27 @@
       color: #777;
       padding: 4px 16px 8px;
     }
+    /* Typing indicator styles */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 14px;
+    }
+    .typing-indicator .dot {
+      width: 8px;
+      height: 8px;
+      background: #999;
+      border-radius: 50%;
+      animation: typing-bounce 1.4s infinite ease-in-out both;
+    }
+    .typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+    .typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+    @keyframes typing-bounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -144,6 +165,8 @@
     let sessionId = null;
     let connected = false;
 
+    let typingIndicatorEl = null;
+
     function addMessage(role, text) {
       const row = document.createElement("div");
       row.className = "msg-row " + role;
@@ -155,6 +178,30 @@
       row.appendChild(bubble);
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function showTypingIndicator() {
+      if (typingIndicatorEl) return; // Already showing
+
+      const row = document.createElement("div");
+      row.className = "msg-row assistant";
+
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble typing-indicator";
+      bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      typingIndicatorEl = row;
+    }
+
+    function hideTypingIndicator() {
+      if (typingIndicatorEl) {
+        typingIndicatorEl.remove();
+        typingIndicatorEl = null;
+      }
     }
 
     function setStatus(text) {
@@ -195,6 +242,7 @@
       }
       addMessage("user", text);
       setStatus("Sending...");
+      showTypingIndicator();
 
       try {
         const resp = await fetch("/chat/message", {
@@ -202,6 +250,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId, message: text }),
         });
+        hideTypingIndicator();
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);
         }
@@ -211,6 +260,7 @@
         }
         setStatus("Connected");
       } catch (err) {
+        hideTypingIndicator();
         console.error("Error sending message:", err);
         addMessage("assistant", "Oops, something went wrong talking to the backend.");
         setStatus("Backend error");

@@ -1,16 +1,17 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, JSON, DateTime, ForeignKey, func
-from sqlalchemy.orm import declarative_base, relationship
-
 from sqlalchemy import (
     Column,
     Integer,
     String,
     Float,
     Boolean,
+    JSON,
+    DateTime,
     ForeignKey,
     Text,
+    Index,
+    func,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -19,21 +20,26 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    status = Column(String, nullable=False, default="confirmed")  # e.g., draft/confirmed/cancelled
+    status = Column(String, nullable=False, default="confirmed", index=True)  # e.g., draft/confirmed/cancelled
     customer_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     pickup_time = Column(String, nullable=True)
     total_price = Column(Float, nullable=False, default=0.0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+
+    # Composite index for common query pattern: filtering by status and sorting by date
+    __table_args__ = (
+        Index("ix_orders_status_created_at", "status", "created_at"),
+    )
 
 
 class OrderItem(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
     menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=True)
 
     menu_item_name = Column(String, nullable=False)
@@ -63,7 +69,7 @@ class MenuItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    category = Column(String, nullable=False)  # 'sandwich', 'side', 'drink', 'dessert', etc.
+    category = Column(String, nullable=False, index=True)  # 'sandwich', 'side', 'drink', 'dessert', etc.
     is_signature = Column(Boolean, default=False, nullable=False)
     base_price = Column(Float, nullable=False)
     available_qty = Column(Integer, default=0, nullable=False)
@@ -179,6 +185,10 @@ class ChatSession(Base):
 
     # Store order state as JSON
     order_state = Column(JSON, nullable=False, default=dict)
+
+    # Track which menu version was sent in system prompt (for token optimization)
+    # If None, menu hasn't been sent yet; otherwise contains menu hash
+    menu_version_sent = Column(String, nullable=True, default=None)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

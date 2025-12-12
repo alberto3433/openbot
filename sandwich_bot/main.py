@@ -1,25 +1,31 @@
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import random
 import secrets
 import os
 import logging
 import json
+import time
+import threading
 
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .db import engine, get_db
 from .models import Base, MenuItem, Order, OrderItem, ChatSession
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
-from .menu_index_builder import build_menu_index
-from .inventory import apply_inventory_decrement_on_confirm, OutOfStockError
+from .menu_index_builder import build_menu_index, get_menu_version
+from .inventory import apply_inventory_decrement_on_confirm, check_inventory_for_item, OutOfStockError
 from .logging_config import setup_logging
 
 # Configure logging at module load time
@@ -68,15 +74,57 @@ def verify_admin_credentials(
 
     return credentials.username
 
-# Create tables on startup (for local dev / simple deployment)
-Base.metadata.create_all(bind=engine)
+# Database migrations are handled by Alembic.
+# Run `alembic upgrade head` to apply migrations before starting the server.
+# For fresh databases, this creates all tables. For existing databases, it applies any pending migrations.
+
+# ---------- Rate Limiting Configuration ----------
+# Rate limits can be configured via environment variables
+# Format: "X per Y" where Y is second, minute, hour, day
+# Examples: "20 per minute", "100 per hour", "5 per second"
+RATE_LIMIT_CHAT = os.getenv("RATE_LIMIT_CHAT", "30 per minute")
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+
+
+def get_rate_limit_chat() -> str:
+    """Return the current chat rate limit (allows dynamic override in tests)."""
+    return RATE_LIMIT_CHAT
+
+
+def get_session_id_or_ip(request: Request) -> str:
+    """
+    Get rate limit key from session_id (if in request body) or fall back to IP.
+    This allows rate limiting per session for chat endpoints.
+    """
+    # For chat endpoints, try to get session_id from the cached body
+    if hasattr(request.state, "body_json") and request.state.body_json:
+        session_id = request.state.body_json.get("session_id")
+        if session_id:
+            return f"session:{session_id}"
+    # Fall back to IP address
+    return get_remote_address(request)
+
+
+# Create limiter - uses in-memory storage by default
+# For production with multiple workers, use Redis: Limiter(key_func=..., storage_uri="redis://...")
+limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 
 app = FastAPI(title="Sandwich Bot API")
 
-# Allow local static HTML and JS to call the API
+# Add rate limit exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS configuration
+# In production, set CORS_ORIGINS environment variable to restrict allowed origins
+# Example: CORS_ORIGINS="https://myshop.com,https://admin.myshop.com"
+# Default allows all origins for local development
+_cors_origins_env = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -84,16 +132,61 @@ app.add_middleware(
 
 # Session cache for performance (backed by database)
 # This acts as a write-through cache - reads check DB if not in cache
+# Sessions expire from cache after SESSION_TTL_SECONDS (still persisted in DB)
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))  # Default 1 hour
+SESSION_MAX_CACHE_SIZE = int(os.getenv("SESSION_MAX_CACHE_SIZE", "1000"))  # Max cached sessions
+
+# Cache structure: {session_id: {"data": {...}, "last_access": timestamp}}
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cleanup_expired_sessions() -> int:
+    """Remove expired sessions from cache. Returns number of sessions removed."""
+    now = time.time()
+    expired = []
+    with _cache_lock:
+        for sid, entry in SESSION_CACHE.items():
+            if now - entry.get("last_access", 0) > SESSION_TTL_SECONDS:
+                expired.append(sid)
+        for sid in expired:
+            del SESSION_CACHE[sid]
+    if expired:
+        logger.debug("Cleaned up %d expired sessions from cache", len(expired))
+    return len(expired)
+
+
+def _evict_oldest_sessions(count: int) -> None:
+    """Evict the oldest sessions from cache to make room for new ones."""
+    with _cache_lock:
+        if len(SESSION_CACHE) <= SESSION_MAX_CACHE_SIZE:
+            return
+        # Sort by last_access and remove oldest
+        sorted_sessions = sorted(
+            SESSION_CACHE.items(),
+            key=lambda x: x[1].get("last_access", 0)
+        )
+        to_remove = sorted_sessions[:count]
+        for sid, _ in to_remove:
+            del SESSION_CACHE[sid]
+        logger.debug("Evicted %d oldest sessions from cache", len(to_remove))
 
 
 def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
     """
     Get session from cache or database. Returns None if not found.
+    Updates last_access time on cache hit.
     """
+    # Periodic cleanup (roughly every 100 calls)
+    if random.randint(1, 100) == 1:
+        _cleanup_expired_sessions()
+
     # Check cache first
-    if session_id in SESSION_CACHE:
-        return SESSION_CACHE[session_id]
+    with _cache_lock:
+        if session_id in SESSION_CACHE:
+            entry = SESSION_CACHE[session_id]
+            entry["last_access"] = time.time()
+            return entry["data"]
 
     # Check database
     db_session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
@@ -101,8 +194,16 @@ def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, An
         session_data = {
             "history": db_session.history or [],
             "order": db_session.order_state or {},
+            "menu_version": db_session.menu_version_sent,  # Track which menu version was sent
         }
-        SESSION_CACHE[session_id] = session_data
+        # Add to cache
+        with _cache_lock:
+            if len(SESSION_CACHE) >= SESSION_MAX_CACHE_SIZE:
+                _evict_oldest_sessions(SESSION_MAX_CACHE_SIZE // 10)  # Evict 10%
+            SESSION_CACHE[session_id] = {
+                "data": session_data,
+                "last_access": time.time(),
+            }
         return session_data
 
     return None
@@ -112,19 +213,27 @@ def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> 
     """
     Save session to both cache and database.
     """
-    # Update cache
-    SESSION_CACHE[session_id] = session_data
+    # Update cache with TTL tracking
+    with _cache_lock:
+        if len(SESSION_CACHE) >= SESSION_MAX_CACHE_SIZE and session_id not in SESSION_CACHE:
+            _evict_oldest_sessions(SESSION_MAX_CACHE_SIZE // 10)  # Evict 10%
+        SESSION_CACHE[session_id] = {
+            "data": session_data,
+            "last_access": time.time(),
+        }
 
     # Update or create in database
     db_session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
     if db_session:
         db_session.history = session_data.get("history", [])
         db_session.order_state = session_data.get("order", {})
+        db_session.menu_version_sent = session_data.get("menu_version")
     else:
         db_session = ChatSession(
             session_id=session_id,
             history=session_data.get("history", []),
             order_state=session_data.get("order", {}),
+            menu_version_sent=session_data.get("menu_version"),
         )
         db.add(db_session)
 
@@ -142,16 +251,28 @@ class ChatStartResponse(BaseModel):
     message: str  # initial greeting from Sammy
 
 
+# Maximum allowed message length (characters) - prevents excessive LLM token usage
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
+
+
 class ChatMessageRequest(BaseModel):
     session_id: str
-    message: str
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
+
+
+class ActionOut(BaseModel):
+    """A single action performed on the order."""
+    intent: str
+    slots: Dict[str, Any]
 
 
 class ChatMessageResponse(BaseModel):
     reply: str
     order_state: Dict[str, Any]
-    intent: str
-    slots: Dict[str, Any]
+    actions: List[ActionOut] = Field(default_factory=list, description="List of actions performed")
+    # Keep these for backward compatibility
+    intent: Optional[str] = Field(None, description="Primary intent (deprecated, use actions)")
+    slots: Optional[Dict[str, Any]] = Field(None, description="Primary slots (deprecated, use actions)")
 
 
 class MenuItemOut(BaseModel):
@@ -249,7 +370,8 @@ def health() -> Dict[str, str]:
 
 
 @app.post("/chat/start", response_model=ChatStartResponse)
-def chat_start(db: Session = Depends(get_db)) -> ChatStartResponse:
+@limiter.limit(get_rate_limit_chat)
+def chat_start(request: Request, db: Session = Depends(get_db)) -> ChatStartResponse:
     session_id = str(uuid.uuid4())
 
     # Sammy starts the conversation
@@ -272,6 +394,7 @@ def chat_start(db: Session = Depends(get_db)) -> ChatStartResponse:
             },
             "total_price": 0.0,
         },
+        "menu_version": None,  # Will be set on first message when menu is sent to LLM
     }
 
     # Save to database and cache
@@ -283,7 +406,9 @@ def chat_start(db: Session = Depends(get_db)) -> ChatStartResponse:
 
 
 @app.post("/chat/message", response_model=ChatMessageResponse)
+@limiter.limit(get_rate_limit_chat)
 def chat_message(
+    request: Request,
     req: ChatMessageRequest,
     db: Session = Depends(get_db),
 ) -> ChatMessageResponse:
@@ -298,59 +423,152 @@ def chat_message(
     # Build menu index for LLM
     menu_index = build_menu_index(db)
 
-    # Call OpenAI (LLM)
-    llm_result = call_sandwich_bot(
-        history,
-        order_state,
-        menu_index,
-        req.message,
+    # Determine if menu needs to be sent in system prompt
+    # Send menu if: first message (no menu_version yet) OR menu has changed
+    current_menu_version = get_menu_version(menu_index)
+    session_menu_version = session.get("menu_version")
+    include_menu_in_system = (
+        session_menu_version is None or
+        session_menu_version != current_menu_version
     )
 
-    # Log LLM result at DEBUG level (may contain order details)
-    logger.debug("LLM result - intent: %s", llm_result.get("intent"))
+    if include_menu_in_system:
+        logger.debug("Including menu in system prompt (version: %s)", current_menu_version)
+    else:
+        logger.debug("Skipping menu in system prompt (already sent version: %s)", session_menu_version)
 
-    intent = llm_result.get("intent", "unknown")
-    slots = llm_result.get("slots", {})
+    # Call OpenAI (LLM) with error handling
+    try:
+        llm_result = call_sandwich_bot(
+            history,
+            order_state,
+            menu_index,
+            req.message,
+            include_menu_in_system=include_menu_in_system,
+        )
+        # Update menu version in session if we sent it
+        if include_menu_in_system:
+            session["menu_version"] = current_menu_version
+    except Exception as e:
+        logger.error("LLM call failed: %s", str(e))
+        # Return a friendly error message without exposing internal details
+        return ChatMessageResponse(
+            reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+            order_state=order_state,
+            actions=[],
+            intent="error",
+            slots={},
+        )
+
+    # Log LLM result at DEBUG level (may contain order details)
+    logger.debug("LLM result - actions: %d", len(llm_result.get("actions", [])))
+
+    # Extract actions from the LLM response
+    # Support both new format (actions array) and old format (single intent/slots)
+    actions = llm_result.get("actions", [])
     reply = llm_result.get("reply", "")
 
-    # Apply deterministic business logic
-    try:
-        updated_order_state = apply_intent_to_order_state(
-            order_state, intent, slots, menu_index
-        )
+    # Backward compatibility: if no actions but has intent/slots, convert to actions format
+    if not actions and llm_result.get("intent"):
+        actions = [
+            {
+                "intent": llm_result.get("intent"),
+                "slots": llm_result.get("slots", {}),
+            }
+        ]
+        logger.debug("Converted legacy intent/slots to actions format")
 
-        # Save updated state back into the session
-        session["order"] = updated_order_state
+    # Track all processed actions for the response
+    processed_actions: List[ActionOut] = []
+    updated_order_state = order_state
 
-        logger.debug("Order state updated - status: %s, items: %d",
-                    updated_order_state.get("status"),
-                    len(updated_order_state.get("items", [])))
+    # Intents that add items to the order
+    ADD_INTENTS = {"add_sandwich", "add_side", "add_drink"}
 
-    except OutOfStockError as e:
-        reply = str(e)
-    else:
-        # If confirming order, decrement inventory and persist
-        customer_name = (
-                updated_order_state.get("customer", {}).get("name")
-                or slots.get("customer_name")
-        )
-        customer_phone = (
-                updated_order_state.get("customer", {}).get("phone")
-                or slots.get("phone")
-        )
+    # Apply each action sequentially
+    out_of_stock_errors: List[str] = []
+    for action in actions:
+        intent = action.get("intent", "unknown")
+        slots = action.get("slots", {})
 
-        if (
-                intent == "confirm_order"
-                and updated_order_state.get("status") == "confirmed"
-                and customer_name
-                and customer_phone
-        ):
-            updated_order_state.setdefault("customer", {})
-            updated_order_state["customer"]["name"] = customer_name
-            updated_order_state["customer"]["phone"] = customer_phone
+        logger.debug("Processing action - intent: %s, menu_item: %s",
+                    intent, slots.get("menu_item_name"))
 
-            apply_inventory_decrement_on_confirm(db, updated_order_state)
-            persist_confirmed_order(db, updated_order_state, slots)
+        # Check inventory BEFORE adding items
+        if intent in ADD_INTENTS:
+            item_name = slots.get("menu_item_name")
+            quantity = slots.get("quantity") or 1
+            try:
+                check_inventory_for_item(db, item_name, quantity)
+            except OutOfStockError as e:
+                out_of_stock_errors.append(str(e))
+                logger.warning("Out of stock: %s", str(e))
+                # Skip this action - don't add to order
+                continue
+
+        try:
+            updated_order_state = apply_intent_to_order_state(
+                updated_order_state, intent, slots, menu_index
+            )
+            processed_actions.append(ActionOut(intent=intent, slots=slots))
+
+        except OutOfStockError as e:
+            out_of_stock_errors.append(str(e))
+            logger.warning("Out of stock for item: %s", slots.get("menu_item_name"))
+
+    # Save updated state back into the session
+    session["order"] = updated_order_state
+
+    logger.debug("Order state updated - status: %s, items: %d",
+                updated_order_state.get("status"),
+                len(updated_order_state.get("items", [])))
+
+    # If there were out of stock errors, replace the reply with error info
+    if out_of_stock_errors:
+        error_messages = " ".join(out_of_stock_errors)
+        reply = error_messages
+
+    # Check if we should persist the order
+    # This happens when:
+    # 1. A confirm_order action was processed, OR
+    # 2. The order is already confirmed and we just received customer info
+    confirm_action = next(
+        (a for a in actions if a.get("intent") == "confirm_order"),
+        None
+    )
+    customer_info_action = next(
+        (a for a in actions if a.get("intent") == "collect_customer_info"),
+        None
+    )
+
+    # Gather customer info from various sources
+    all_slots = {}
+    for action in actions:
+        all_slots.update(action.get("slots", {}))
+
+    customer_name = (
+        updated_order_state.get("customer", {}).get("name")
+        or all_slots.get("customer_name")
+    )
+    customer_phone = (
+        updated_order_state.get("customer", {}).get("phone")
+        or all_slots.get("phone")
+    )
+
+    # Persist if order is confirmed AND we have customer info
+    # (either from this request or from a previous request)
+    order_is_confirmed = updated_order_state.get("status") == "confirmed"
+    has_customer_info = customer_name and customer_phone
+    order_not_yet_persisted = "db_order_id" not in updated_order_state
+
+    if order_is_confirmed and has_customer_info and order_not_yet_persisted:
+        updated_order_state.setdefault("customer", {})
+        updated_order_state["customer"]["name"] = customer_name
+        updated_order_state["customer"]["phone"] = customer_phone
+
+        apply_inventory_decrement_on_confirm(db, updated_order_state)
+        persist_confirmed_order(db, updated_order_state, all_slots)
+        logger.info("Order persisted for customer: %s", customer_name)
 
     # Update history
     history.append({"role": "user", "content": req.message})
@@ -359,11 +577,16 @@ def chat_message(
     # Persist session to database
     save_session(db, req.session_id, session)
 
+    # For backward compatibility, set primary intent/slots from first action
+    primary_intent = processed_actions[0].intent if processed_actions else "unknown"
+    primary_slots = processed_actions[0].slots if processed_actions else {}
+
     return ChatMessageResponse(
         reply=reply,
         order_state=session["order"],
-        intent=intent,
-        slots=slots,
+        actions=processed_actions,
+        intent=primary_intent,
+        slots=primary_slots,
     )
 
 

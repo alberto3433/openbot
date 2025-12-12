@@ -12,9 +12,28 @@ class OutOfStockError(Exception):
         self.item_name = item_name
         self.requested = requested
         self.available = available
-        super().__init__(
-            f"Not enough inventory for {item_name}: requested {requested}, available {available}"
-        )
+        if available == 0:
+            message = f"Sorry, {item_name} is currently out of stock."
+        else:
+            message = f"Sorry, we only have {available} {item_name}(s) available, but you requested {requested}."
+        super().__init__(message)
+
+
+def check_inventory_for_item(db: Session, item_name: str, quantity: int = 1) -> None:
+    """Check if enough inventory exists for an item before adding to order.
+
+    Raises OutOfStockError if not enough inventory.
+    """
+    if not item_name or quantity <= 0:
+        return
+
+    menu_item = db.query(MenuItem).filter_by(name=item_name).one_or_none()
+    if menu_item is None:
+        # Item not in database - allow it (might be a custom item or typo)
+        return
+
+    if menu_item.available_qty < quantity:
+        raise OutOfStockError(item_name, quantity, menu_item.available_qty)
 
 
 def apply_inventory_decrement_on_confirm(db: Session, order_state: Dict[str, Any]) -> None:

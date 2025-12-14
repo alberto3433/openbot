@@ -109,6 +109,54 @@
       color: #777;
       padding: 4px 16px 8px;
     }
+    /* Caller ID simulation */
+    .caller-id-panel {
+      padding: 10px 16px;
+      background: #fff3cd;
+      border-bottom: 1px solid #ffc107;
+      font-size: 13px;
+    }
+    .caller-id-panel summary {
+      cursor: pointer;
+      color: #856404;
+      font-weight: 500;
+    }
+    .caller-id-panel summary:hover {
+      text-decoration: underline;
+    }
+    .caller-id-content {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .caller-id-content input {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .caller-id-content button {
+      padding: 6px 12px;
+      background: #ffc107;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .caller-id-content button:hover {
+      background: #e0a800;
+    }
+    .returning-customer-badge {
+      background: #28a745;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 8px;
+    }
     /* Typing indicator styles */
     .typing-indicator {
       display: flex;
@@ -139,6 +187,22 @@
   </div>
 
   <div class="chat-container">
+    <!-- Caller ID Simulation Panel (Dev/Demo Mode) -->
+    <details class="caller-id-panel" id="caller-id-panel">
+      <summary>Simulate Incoming Call (Dev Mode)</summary>
+      <div class="caller-id-content">
+        <input
+          type="tel"
+          id="caller-id-input"
+          placeholder="Enter phone number (e.g., 555-123-4567)"
+        />
+        <button type="button" id="start-with-caller-id">Start Call</button>
+      </div>
+      <div style="margin-top: 6px; color: #666; font-size: 12px;">
+        Enter a phone number to simulate caller ID. If the number has ordered before, you'll be greeted as a returning customer.
+      </div>
+    </details>
+
     <div class="chat-header" id="chat-header">
       Connecting...
     </div>
@@ -161,9 +225,13 @@
     const statusEl = document.getElementById("status-bar");
     const formEl = document.getElementById("chat-form");
     const inputEl = document.getElementById("chat-input");
+    const callerIdPanel = document.getElementById("caller-id-panel");
+    const callerIdInput = document.getElementById("caller-id-input");
+    const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
 
     let sessionId = null;
     let connected = false;
+    let currentCallerId = null;
 
     let typingIndicatorEl = null;
 
@@ -217,10 +285,18 @@
       statusEl.textContent = text;
     }
 
-    async function startSession() {
+    async function startSession(callerId = null) {
       try {
         setStatus("Starting session...");
-        const resp = await fetch("/chat/start", {
+
+        // Build URL with optional caller_id
+        let url = "/chat/start";
+        if (callerId) {
+          url += `?caller_id=${encodeURIComponent(callerId)}`;
+          currentCallerId = callerId;
+        }
+
+        const resp = await fetch(url, {
           method: "POST",
         });
         if (!resp.ok) {
@@ -231,8 +307,23 @@
         connected = true;
         sessionStartTime = Date.now();
 
-        headerEl.textContent = "New session started: " + sessionId;
+        // Update header with caller ID info if present
+        let headerText = "Session: " + sessionId.substring(0, 8);
+        if (callerId) {
+          headerText += ` | Caller: ${callerId}`;
+        }
+        if (data.returning_customer && data.returning_customer.name) {
+          headerText += ` | ${data.returning_customer.name}`;
+          // Add returning customer badge
+          headerEl.innerHTML = headerText + '<span class="returning-customer-badge">Returning Customer</span>';
+        } else {
+          headerEl.textContent = headerText;
+        }
+
         setStatus("Connected");
+
+        // Collapse the caller ID panel after starting
+        callerIdPanel.removeAttribute("open");
 
         // 🔹 Show Sammy's initial greeting from backend
         if (data.message) {
@@ -240,6 +331,11 @@
           lastBotMessage = data.message;
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.message });
+        }
+
+        // Log returning customer info if present
+        if (data.returning_customer) {
+          console.log("Returning customer:", data.returning_customer);
         }
       } catch (err) {
         console.error("Error starting session:", err);
@@ -301,7 +397,30 @@
       sendMessage(text);
     });
 
-    // Start session on page load
+    // Handle "Start Call" button click with caller ID
+    startWithCallerIdBtn.addEventListener("click", () => {
+      const callerId = callerIdInput.value.trim();
+      if (!callerId) {
+        alert("Please enter a phone number to simulate caller ID");
+        return;
+      }
+      // Reset session state if we already had a session
+      if (sessionId) {
+        sessionId = null;
+        connected = false;
+        messagesEl.innerHTML = "";
+        messageCount = 0;
+        orderState = { status: "pending", items: [], total_price: 0 };
+        lastBotMessage = null;
+        lastUserMessage = null;
+        orderConfirmed = false;
+        conversationHistory = [];
+        abandonAnalyticsSent = false;
+      }
+      startSession(callerId);
+    });
+
+    // Start session on page load (without caller ID - simulates walk-in customer)
     window.addEventListener("load", () => {
       startSession();
     });

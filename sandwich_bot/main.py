@@ -299,9 +299,19 @@ admin_analytics_router = APIRouter(prefix="/admin/analytics", tags=["Admin - Ana
 # ---------- Pydantic models for chat / menu ----------
 
 
+class ReturningCustomerInfo(BaseModel):
+    """Info about a returning customer identified by caller ID."""
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    order_count: int = 0
+    last_order_items: List[Dict[str, Any]] = []
+    last_order_date: Optional[str] = None
+
+
 class ChatStartResponse(BaseModel):
     session_id: str
     message: str  # initial greeting from Sammy
+    returning_customer: Optional[ReturningCustomerInfo] = None  # Present if caller ID matched a returning customer
 
 
 # Maximum allowed message length (characters) - prevents excessive LLM token usage
@@ -510,14 +520,110 @@ def health() -> Dict[str, str]:
 # ---------- Chat endpoints ----------
 
 
+def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
+    """
+    Look up a returning customer by phone number.
+    Returns customer info and order history if found.
+    """
+    if not phone:
+        return None
+
+    # Normalize phone number (remove common formatting)
+    normalized_phone = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    # Use last 10 digits for matching (handles +1 country code)
+    phone_suffix = normalized_phone[-10:] if len(normalized_phone) >= 10 else normalized_phone
+
+    # Use SQL func.replace to normalize stored phone numbers for comparison
+    from sqlalchemy import func
+    normalized_db_phone = func.replace(
+        func.replace(
+            func.replace(
+                func.replace(Order.phone, "-", ""),
+                " ", ""
+            ),
+            "(", ""
+        ),
+        ")", ""
+    )
+
+    # Find most recent order with this phone number
+    recent_order = (
+        db.query(Order)
+        .filter(Order.phone.isnot(None))
+        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .order_by(Order.created_at.desc())
+        .first()
+    )
+
+    if not recent_order:
+        return None
+
+    # Get order history count (using same normalized phone matching)
+    order_count = (
+        db.query(Order)
+        .filter(Order.phone.isnot(None))
+        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .count()
+    )
+
+    # Get last order items for "usual" feature
+    last_order_items = []
+    if recent_order.items:
+        for item in recent_order.items:
+            last_order_items.append({
+                "menu_item_name": item.menu_item_name,
+                "item_type": item.item_type,
+                "bread": item.bread,
+                "protein": item.protein,
+                "cheese": item.cheese,
+                "toppings": item.toppings,
+                "sauces": item.sauces,
+                "toasted": item.toasted,
+            })
+
+    return {
+        "name": recent_order.customer_name,
+        "phone": recent_order.phone,
+        "order_count": order_count,
+        "last_order_items": last_order_items,
+        "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
+    }
+
+
 @chat_router.post("/start", response_model=ChatStartResponse)
 @limiter.limit(get_rate_limit_chat)
-def chat_start(request: Request, db: Session = Depends(get_db)) -> ChatStartResponse:
-    """Start a new chat session. Returns a session ID and welcome message."""
+def chat_start(
+    request: Request,
+    db: Session = Depends(get_db),
+    caller_id: Optional[str] = Query(None, description="Simulated caller ID / phone number"),
+) -> ChatStartResponse:
+    """
+    Start a new chat session. Returns a session ID and welcome message.
+
+    Args:
+        caller_id: Optional phone number to simulate caller identification.
+                   If provided, looks up returning customer and personalizes greeting.
+    """
     session_id = str(uuid.uuid4())
 
-    # Sammy starts the conversation
-    welcome = "Hi, welcome to Subby's! Would you like to try one of our signature sandwiches or build your own?"
+    # Check for returning customer if caller_id is provided
+    returning_customer = None
+    if caller_id:
+        returning_customer = _lookup_customer_by_phone(db, caller_id)
+        logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
+
+    # Generate personalized greeting for returning customers
+    if returning_customer and returning_customer.get("name"):
+        customer_name = returning_customer["name"]
+        order_count = returning_customer.get("order_count", 0)
+
+        if order_count > 1:
+            welcome = f"Welcome back, {customer_name}! Great to hear from you again. Would you like your usual, or would you like to try something different today?"
+        else:
+            welcome = f"Welcome back, {customer_name}! Would you like to try one of our signature sandwiches or build your own?"
+    else:
+        # Default greeting for new customers
+        welcome = "Hi, welcome to Subby's! Would you like to try one of our signature sandwiches or build your own?"
 
     # Initialize session data
     session_data = {
@@ -526,21 +632,27 @@ def chat_start(request: Request, db: Session = Depends(get_db)) -> ChatStartResp
             "status": "pending",
             "items": [],
             "customer": {
-                "name": None,
-                "phone": None,
+                "name": returning_customer.get("name") if returning_customer else None,
+                "phone": returning_customer.get("phone") if returning_customer else None,
                 "pickup_time": None,
             },
             "total_price": 0.0,
         },
         "menu_version": None,  # Will be set on first message when menu is sent to LLM
+        "caller_id": caller_id,  # Store for reference
+        "returning_customer": returning_customer,  # Store customer history for LLM context
     }
 
     # Save to database and cache
     save_session(db, session_id, session_data)
 
-    logger.info("New chat session started: %s", session_id[:8])
+    logger.info("New chat session started: %s (caller_id: %s)", session_id[:8], caller_id or "none")
 
-    return ChatStartResponse(session_id=session_id, message=welcome)
+    return ChatStartResponse(
+        session_id=session_id,
+        message=welcome,
+        returning_customer=returning_customer,  # Include in response for frontend
+    )
 
 
 @chat_router.post("/message", response_model=ChatMessageResponse)

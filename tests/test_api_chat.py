@@ -1104,3 +1104,108 @@ def test_modification_first_sandwich_by_index(client, monkeypatch):
     assert len(items) == 2
     assert items[0]["bread"] == "Sourdough"  # Changed
     assert items[1]["bread"] == "Wheat"  # Unchanged
+
+
+def test_chat_start_with_caller_id(client):
+    """Test that caller_id parameter is accepted and returning_customer info is returned."""
+    # Start session with caller ID (no prior orders, so no returning customer info)
+    resp = client.post("/chat/start?caller_id=555-123-4567")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "session_id" in data
+    assert "message" in data
+    # returning_customer should be None or have order_count=0 for new callers
+    if data.get("returning_customer"):
+        assert data["returning_customer"]["order_count"] == 0
+
+
+def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeypatch):
+    """Test that returning customers are recognized by phone number."""
+    from sandwich_bot import main as main_mod
+    from sandwich_bot.models import Order, OrderItem
+
+    # First, create a prior order with a phone number
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Mock LLM to confirm order with phone number
+    def fake_confirm_order(*args, **kwargs):
+        return {
+            "reply": "Order confirmed! Thank you, John!",
+            "actions": [
+                {
+                    "intent": "confirm_order",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": None,
+                        "size": None,
+                        "bread": None,
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": [],
+                        "sauces": [],
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": None,
+                        "customer_name": "John",
+                        "phone": "555-987-6543",
+                        "pickup_time": None,
+                        "confirm": True,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    # First add a sandwich to the order
+    def fake_add_sandwich(*args, **kwargs):
+        return {
+            "reply": "Got it, one Turkey Club.",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "Turkey Club",
+                        "size": None,
+                        "bread": "White",
+                        "protein": "Turkey",
+                        "cheese": None,
+                        "toppings": [],
+                        "sauces": [],
+                        "toasted": False,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "I want a Turkey Club"},
+    )
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_confirm_order)
+    client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Confirm the order, my name is John and phone is 555-987-6543"},
+    )
+
+    # Now start a new session with the same phone number
+    resp = client.post("/chat/start?caller_id=555-987-6543")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Should recognize returning customer
+    assert data.get("returning_customer") is not None
+    assert data["returning_customer"]["name"] == "John"
+    assert data["returning_customer"]["order_count"] >= 1
+    # Greeting should be personalized
+    assert "John" in data["message"] or "welcome back" in data["message"].lower()

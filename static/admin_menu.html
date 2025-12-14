@@ -234,6 +234,116 @@
     .ingredients strong {
       font-weight: 600;
     }
+    /* Config Builder Styles */
+    .config-builder {
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 4px;
+    }
+    .config-builder.hidden {
+      display: none;
+    }
+    .config-section {
+      margin-bottom: 12px;
+    }
+    .config-section:last-child {
+      margin-bottom: 0;
+    }
+    .config-section-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .config-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .config-field {
+      display: flex;
+      flex-direction: column;
+      min-width: 120px;
+    }
+    .config-field label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 3px;
+    }
+    .config-field select {
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .checkbox-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .checkbox-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border: 1px solid #ccc;
+      border-radius: 16px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.15s;
+    }
+    .checkbox-chip:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+    .checkbox-chip.selected {
+      background: #e3f2fd;
+      border-color: #1976d2;
+      color: #1565c0;
+    }
+    .checkbox-chip input[type="checkbox"] {
+      display: none;
+    }
+    .toasted-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .toasted-toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+    .toasted-toggle label {
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .config-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .config-toggle button {
+      padding: 4px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .config-toggle button.active {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .config-toggle button:hover:not(.active) {
+      background: #f5f5f5;
+    }
   </style>
 </head>
 <body>
@@ -300,14 +410,75 @@
         </div>
 
         <div class="field">
-          <label for="itemMetadata">Metadata (JSON: default ingredients, etc.)</label>
-          <textarea id="itemMetadata" placeholder='{"bread": "wheat", "protein": "turkey", "toppings": ["lettuce","tomato"]}'></textarea>
+          <label>Default Configuration</label>
+          <div class="config-toggle">
+            <button type="button" id="visualModeBtn" class="active">Visual Builder</button>
+            <button type="button" id="jsonModeBtn">Raw JSON</button>
+          </div>
+
+          <!-- Visual Config Builder -->
+          <div id="configBuilder" class="config-builder">
+            <div class="config-section">
+              <div class="config-row">
+                <div class="config-field">
+                  <label>Size</label>
+                  <select id="configSize">
+                    <option value="">None</option>
+                    <option value="6&quot;">6"</option>
+                    <option value="12&quot;">12"</option>
+                  </select>
+                </div>
+                <div class="config-field">
+                  <label>Bread</label>
+                  <select id="configBread">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="config-field">
+                  <label>Protein</label>
+                  <select id="configProtein">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="config-field">
+                  <label>Cheese</label>
+                  <select id="configCheese">
+                    <option value="">None</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <div class="config-section-label">Toppings</div>
+              <div id="toppingsGrid" class="checkbox-grid">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <div class="config-section">
+              <div class="config-section-label">Sauces</div>
+              <div id="saucesGrid" class="checkbox-grid">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <div class="config-section">
+              <div class="toasted-toggle">
+                <input type="checkbox" id="configToasted" />
+                <label for="configToasted">Toasted</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Raw JSON (hidden by default) -->
+          <textarea id="itemMetadata" class="hidden" placeholder='{"default_config": {"bread": "wheat", "protein": "turkey", "toppings": ["lettuce","tomato"]}}'></textarea>
         </div>
 
         <div class="field">
-          <label>Default ingredients (from metadata)</label>
+          <label>Preview</label>
           <div id="ingredientsView" class="ingredients">
-            No metadata yet.
+            No configuration yet.
           </div>
         </div>
       </div>
@@ -328,6 +499,8 @@
     let allItems = [];
     let filteredItems = [];
     let currentIndex = -1;
+    let ingredientsByCategory = {};
+    let isVisualMode = true;
 
     const menuListEl = document.getElementById("menuList");
     const categoryFilterEl = document.getElementById("categoryFilter");
@@ -342,6 +515,18 @@
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
     const itemMetadataEl = document.getElementById("itemMetadata");
+
+    // Config builder elements
+    const configBuilderEl = document.getElementById("configBuilder");
+    const visualModeBtnEl = document.getElementById("visualModeBtn");
+    const jsonModeBtnEl = document.getElementById("jsonModeBtn");
+    const configSizeEl = document.getElementById("configSize");
+    const configBreadEl = document.getElementById("configBread");
+    const configProteinEl = document.getElementById("configProtein");
+    const configCheeseEl = document.getElementById("configCheese");
+    const configToastedEl = document.getElementById("configToasted");
+    const toppingsGridEl = document.getElementById("toppingsGrid");
+    const saucesGridEl = document.getElementById("saucesGrid");
 
     document.getElementById("newItemBtn").addEventListener("click", () => {
       selectItemByIndex(-1, true);
@@ -377,6 +562,187 @@
     itemMetadataEl.addEventListener("input", () => {
       updateIngredientsViewSafe();
     });
+
+    // Mode toggle handlers
+    visualModeBtnEl.addEventListener("click", () => {
+      if (!isVisualMode) {
+        // Switching from JSON to Visual - parse JSON and populate visual builder
+        try {
+          const meta = parseMetadata();
+          populateVisualFromMeta(meta);
+        } catch (err) {
+          setStatus("Cannot switch: " + err.message, true);
+          return;
+        }
+      }
+      isVisualMode = true;
+      visualModeBtnEl.classList.add("active");
+      jsonModeBtnEl.classList.remove("active");
+      configBuilderEl.classList.remove("hidden");
+      itemMetadataEl.classList.add("hidden");
+    });
+
+    jsonModeBtnEl.addEventListener("click", () => {
+      if (isVisualMode) {
+        // Switching from Visual to JSON - sync visual to JSON first
+        syncVisualToJson();
+      }
+      isVisualMode = false;
+      jsonModeBtnEl.classList.add("active");
+      visualModeBtnEl.classList.remove("active");
+      itemMetadataEl.classList.remove("hidden");
+      configBuilderEl.classList.add("hidden");
+    });
+
+    // Config builder change handlers
+    configSizeEl.addEventListener("change", onConfigChange);
+    configBreadEl.addEventListener("change", onConfigChange);
+    configProteinEl.addEventListener("change", onConfigChange);
+    configCheeseEl.addEventListener("change", onConfigChange);
+    configToastedEl.addEventListener("change", onConfigChange);
+
+    function onConfigChange() {
+      syncVisualToJson();
+      updateIngredientsViewSafe();
+    }
+
+    // Load ingredients for config builder
+    async function loadIngredients() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        // Group by category
+        ingredientsByCategory = {};
+        data.forEach(ing => {
+          const cat = ing.category || "other";
+          if (!ingredientsByCategory[cat]) {
+            ingredientsByCategory[cat] = [];
+          }
+          ingredientsByCategory[cat].push(ing.name);
+        });
+
+        // Populate dropdowns
+        populateDropdown(configBreadEl, ingredientsByCategory.bread || []);
+        populateDropdown(configProteinEl, ingredientsByCategory.protein || []);
+        populateDropdown(configCheeseEl, ingredientsByCategory.cheese || []);
+
+        // Populate checkbox grids
+        populateCheckboxGrid(toppingsGridEl, ingredientsByCategory.topping || [], "topping");
+        populateCheckboxGrid(saucesGridEl, ingredientsByCategory.sauce || [], "sauce");
+
+      } catch (err) {
+        console.error("Error loading ingredients:", err);
+      }
+    }
+
+    function populateDropdown(selectEl, items) {
+      // Keep the "None" option
+      selectEl.innerHTML = '<option value="">None</option>';
+      items.forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = item.toLowerCase();
+        opt.textContent = item;
+        selectEl.appendChild(opt);
+      });
+    }
+
+    function populateCheckboxGrid(gridEl, items, category) {
+      gridEl.innerHTML = "";
+      items.forEach(item => {
+        const chip = document.createElement("label");
+        chip.className = "checkbox-chip";
+        chip.innerHTML = `
+          <input type="checkbox" value="${item.toLowerCase()}" data-category="${category}" />
+          ${item}
+        `;
+        chip.querySelector("input").addEventListener("change", (e) => {
+          chip.classList.toggle("selected", e.target.checked);
+          onConfigChange();
+        });
+        gridEl.appendChild(chip);
+      });
+    }
+
+    function syncVisualToJson() {
+      const config = {};
+
+      if (configSizeEl.value) config.size = configSizeEl.value;
+      if (configBreadEl.value) config.bread = configBreadEl.value;
+      if (configProteinEl.value) config.protein = configProteinEl.value;
+      if (configCheeseEl.value) config.cheese = configCheeseEl.value;
+
+      // Get selected toppings
+      const toppings = [];
+      toppingsGridEl.querySelectorAll("input:checked").forEach(cb => {
+        toppings.push(cb.value);
+      });
+      if (toppings.length > 0) config.toppings = toppings;
+
+      // Get selected sauces
+      const sauces = [];
+      saucesGridEl.querySelectorAll("input:checked").forEach(cb => {
+        sauces.push(cb.value);
+      });
+      if (sauces.length > 0) config.sauces = sauces;
+
+      config.toasted = configToastedEl.checked;
+
+      // Build the full metadata object
+      const meta = Object.keys(config).length > 0 ? { default_config: config } : {};
+      itemMetadataEl.value = Object.keys(meta).length > 0 ? JSON.stringify(meta, null, 2) : "";
+    }
+
+    function populateVisualFromMeta(meta) {
+      // Clear all fields first
+      configSizeEl.value = "";
+      configBreadEl.value = "";
+      configProteinEl.value = "";
+      configCheeseEl.value = "";
+      configToastedEl.checked = false;
+      toppingsGridEl.querySelectorAll("input").forEach(cb => {
+        cb.checked = false;
+        cb.closest(".checkbox-chip").classList.remove("selected");
+      });
+      saucesGridEl.querySelectorAll("input").forEach(cb => {
+        cb.checked = false;
+        cb.closest(".checkbox-chip").classList.remove("selected");
+      });
+
+      // Get config from metadata (handle both old and new formats)
+      const config = meta.default_config || meta;
+      if (!config || typeof config !== "object") return;
+
+      // Populate single selects
+      if (config.size) configSizeEl.value = config.size;
+      if (config.bread) configBreadEl.value = config.bread.toLowerCase();
+      if (config.protein) configProteinEl.value = config.protein.toLowerCase();
+      if (config.cheese) configCheeseEl.value = config.cheese.toLowerCase();
+      if (config.toasted !== undefined) configToastedEl.checked = config.toasted;
+
+      // Populate toppings
+      if (Array.isArray(config.toppings)) {
+        config.toppings.forEach(t => {
+          const cb = toppingsGridEl.querySelector(`input[value="${t.toLowerCase()}"]`);
+          if (cb) {
+            cb.checked = true;
+            cb.closest(".checkbox-chip").classList.add("selected");
+          }
+        });
+      }
+
+      // Populate sauces
+      if (Array.isArray(config.sauces)) {
+        config.sauces.forEach(s => {
+          const cb = saucesGridEl.querySelector(`input[value="${s.toLowerCase()}"]`);
+          if (cb) {
+            cb.checked = true;
+            cb.closest(".checkbox-chip").classList.add("selected");
+          }
+        });
+      }
+    }
 
     function setStatus(msg, isError = false) {
       statusTextEl.textContent = msg || "";
@@ -476,7 +842,29 @@
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
       itemMetadataEl.value = "";
-      ingredientsViewEl.textContent = "No metadata yet.";
+      ingredientsViewEl.textContent = "No configuration yet.";
+
+      // Reset visual config builder
+      configSizeEl.value = "";
+      configBreadEl.value = "";
+      configProteinEl.value = "";
+      configCheeseEl.value = "";
+      configToastedEl.checked = false;
+      toppingsGridEl.querySelectorAll("input").forEach(cb => {
+        cb.checked = false;
+        cb.closest(".checkbox-chip")?.classList.remove("selected");
+      });
+      saucesGridEl.querySelectorAll("input").forEach(cb => {
+        cb.checked = false;
+        cb.closest(".checkbox-chip")?.classList.remove("selected");
+      });
+
+      // Ensure visual mode is active
+      isVisualMode = true;
+      visualModeBtnEl.classList.add("active");
+      jsonModeBtnEl.classList.remove("active");
+      configBuilderEl.classList.remove("hidden");
+      itemMetadataEl.classList.add("hidden");
     }
 
     function selectItemByIndex(idx, newItem = false) {
@@ -503,6 +891,22 @@
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
       itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
+
+      // Populate visual config builder from metadata
+      if (item.metadata && isVisualMode) {
+        populateVisualFromMeta(item.metadata);
+      } else {
+        // Reset visual builder if no metadata
+        populateVisualFromMeta({});
+      }
+
+      // Ensure visual mode is active
+      isVisualMode = true;
+      visualModeBtnEl.classList.add("active");
+      jsonModeBtnEl.classList.remove("active");
+      configBuilderEl.classList.remove("hidden");
+      itemMetadataEl.classList.add("hidden");
+
       updateIngredientsViewSafe();
     }
 
@@ -528,18 +932,26 @@
 
     function renderIngredients(meta) {
       if (!meta || typeof meta !== "object" || Object.keys(meta).length === 0) {
-        ingredientsViewEl.textContent = "No metadata yet.";
+        ingredientsViewEl.textContent = "No configuration yet.";
         return;
       }
+
+      // Handle both old format (direct config) and new format (wrapped in default_config)
+      const config = meta.default_config || meta;
+
       const parts = [];
-      if (meta.bread) parts.push(`<strong>Bread:</strong> ${meta.bread}`);
-      if (meta.protein) parts.push(`<strong>Protein:</strong> ${meta.protein}`);
-      if (meta.cheese) parts.push(`<strong>Cheese:</strong> ${meta.cheese}`);
-      if (Array.isArray(meta.toppings) && meta.toppings.length) {
-        parts.push(`<strong>Toppings:</strong> ${meta.toppings.join(", ")}`);
+      if (config.size) parts.push(`<strong>Size:</strong> ${config.size}`);
+      if (config.bread) parts.push(`<strong>Bread:</strong> ${config.bread}`);
+      if (config.protein) parts.push(`<strong>Protein:</strong> ${config.protein}`);
+      if (config.cheese) parts.push(`<strong>Cheese:</strong> ${config.cheese}`);
+      if (Array.isArray(config.toppings) && config.toppings.length) {
+        parts.push(`<strong>Toppings:</strong> ${config.toppings.join(", ")}`);
       }
-      if (Array.isArray(meta.sauces) && meta.sauces.length) {
-        parts.push(`<strong>Sauces:</strong> ${meta.sauces.join(", ")}`);
+      if (Array.isArray(config.sauces) && config.sauces.length) {
+        parts.push(`<strong>Sauces:</strong> ${config.sauces.join(", ")}`);
+      }
+      if (config.toasted !== undefined) {
+        parts.push(`<strong>Toasted:</strong> ${config.toasted ? "Yes" : "No"}`);
       }
       if (parts.length === 0) {
         ingredientsViewEl.innerHTML = "Metadata keys: " + Object.keys(meta).join(", ");
@@ -549,6 +961,11 @@
     }
 
     async function saveCurrentItem() {
+      // Sync visual builder to JSON before saving
+      if (isVisualMode) {
+        syncVisualToJson();
+      }
+
       const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
       const payload = {
         name: itemNameEl.value.trim(),
@@ -617,7 +1034,12 @@
       }
     }
 
-    loadMenuItems();
+    // Initialize: load ingredients first, then menu items
+    async function init() {
+      await loadIngredients();
+      await loadMenuItems();
+    }
+    init();
   </script>
 </body>
 </html>

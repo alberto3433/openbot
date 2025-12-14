@@ -340,6 +340,7 @@ class AbandonedSessionRequest(BaseModel):
     last_user_message: Optional[str] = None
     reason: str = "browser_close"  # browser_close, refresh, navigation
     session_duration_seconds: Optional[int] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None  # Full conversation [{role, content}, ...]
 
 
 class MenuItemOut(BaseModel):
@@ -413,6 +414,7 @@ class SessionAnalyticsOut(BaseModel):
     item_count: int
     cart_total: float
     order_status: str
+    conversation_history: Optional[List[Dict[str, str]]] = None  # Full conversation
     last_bot_message: Optional[str] = None
     last_user_message: Optional[str] = None
     reason: Optional[str] = None  # For abandoned sessions
@@ -730,6 +732,7 @@ def chat_message(
             item_count=len(items),
             cart_total=updated_order_state.get("total_price", 0.0),
             order_status="confirmed",
+            conversation_history=history,  # Store full conversation
             last_bot_message=reply[:500] if reply else None,
             last_user_message=req.message[:500] if req.message else None,
             reason=None,  # No abandonment reason for completed orders
@@ -788,6 +791,7 @@ def log_abandoned_session(
         item_count=payload.item_count,
         cart_total=payload.cart_total,
         order_status=payload.order_status,
+        conversation_history=payload.conversation_history,  # Store full conversation
         last_bot_message=payload.last_bot_message[:500] if payload.last_bot_message else None,
         last_user_message=payload.last_user_message[:500] if payload.last_user_message else None,
         reason=payload.reason,
@@ -1281,6 +1285,7 @@ def list_sessions(
             item_count=s.item_count,
             cart_total=s.cart_total,
             order_status=s.order_status,
+            conversation_history=s.conversation_history,
             last_bot_message=s.last_bot_message,
             last_user_message=s.last_user_message,
             reason=s.reason,

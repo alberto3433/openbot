@@ -217,7 +217,10 @@ class SessionAnalytics(Base):
     cart_total = Column(Float, nullable=False, default=0.0)  # Cart/order value
     order_status = Column(String, nullable=False, default="pending")  # pending, confirmed, etc.
 
-    # Last interaction details
+    # Full conversation history (JSON array of {role, content} objects)
+    conversation_history = Column(JSON, nullable=True, default=list)
+
+    # Last interaction details (kept for backward compatibility and quick queries)
     last_bot_message = Column(Text, nullable=True)  # What was the bot's last message?
     last_user_message = Column(Text, nullable=True)  # What did user say last?
 

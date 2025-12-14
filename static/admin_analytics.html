@@ -292,6 +292,134 @@
     .legend-dot.abandoned {
       background: #f44336;
     }
+
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      max-width: 700px;
+      width: 90%;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: #333;
+    }
+
+    .modal-body {
+      padding: 16px 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .session-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .info-item {
+      font-size: 13px;
+    }
+
+    .info-item label {
+      color: #666;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .info-item .val {
+      font-weight: 500;
+    }
+
+    .conversation {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conv-msg {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .conv-msg.user {
+      align-self: flex-end;
+      background: #1976d2;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .conv-msg.assistant {
+      align-self: flex-start;
+      background: #f0f0f0;
+      color: #333;
+      border-bottom-left-radius: 4px;
+    }
+
+    .conv-empty {
+      color: #888;
+      font-style: italic;
+      text-align: center;
+      padding: 20px;
+    }
+
+    tr.clickable {
+      cursor: pointer;
+    }
+
+    tr.clickable:hover {
+      background: #e3f2fd !important;
+    }
   </style>
 </head>
 <body>
@@ -378,6 +506,7 @@
         </select>
       </div>
 
+      <p class="muted" style="font-size: 12px; margin-bottom: 8px;">Click on a row to view the full conversation</p>
       <table>
         <thead>
           <tr>
@@ -388,7 +517,6 @@
             <th>Messages</th>
             <th>Items</th>
             <th>Value</th>
-            <th>Last Bot Message</th>
           </tr>
         </thead>
         <tbody id="sessionsBody"></tbody>
@@ -404,6 +532,20 @@
     </div>
   </div>
 
+  <!-- Conversation Modal -->
+  <div class="modal-overlay" id="conversationModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Session Conversation</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="session-info" id="modalSessionInfo"></div>
+        <div class="conversation" id="modalConversation"></div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_BASE = "http://127.0.0.1:8000";
 
@@ -411,6 +553,7 @@
     let currentStatus = "";
     let currentReason = "";
     let currentHadItems = "";
+    let sessionsData = [];  // Store sessions for modal access
 
     const totalSessionsEl = document.getElementById("totalSessions");
     const completedSessionsEl = document.getElementById("completedSessions");
@@ -429,6 +572,9 @@
     const prevPageBtn = document.getElementById("prevPage");
     const nextPageBtn = document.getElementById("nextPage");
     const pageInfoEl = document.getElementById("pageInfo");
+    const modalEl = document.getElementById("conversationModal");
+    const modalSessionInfoEl = document.getElementById("modalSessionInfo");
+    const modalConversationEl = document.getElementById("modalConversation");
 
     statusFilterEl.addEventListener("change", () => {
       currentStatus = statusFilterEl.value;
@@ -547,6 +693,7 @@
         const resp = await fetch(`${API_BASE}/admin/analytics/sessions?${params.toString()}`);
         if (!resp.ok) throw new Error("Failed to load sessions");
         const data = await resp.json();
+        sessionsData = data.items;  // Store for modal access
 
         renderSessionsTable(data.items);
         pageInfoEl.textContent = `Page ${data.page} of ${Math.ceil(data.total / data.page_size) || 1} (${data.total} total)`;
@@ -561,11 +708,11 @@
 
     function renderSessionsTable(sessions) {
       if (!sessions.length) {
-        sessionsBodyEl.innerHTML = `<tr><td colspan="8" class="muted">No sessions found</td></tr>`;
+        sessionsBodyEl.innerHTML = `<tr><td colspan="7" class="muted">No sessions found</td></tr>`;
         return;
       }
 
-      sessionsBodyEl.innerHTML = sessions.map(s => {
+      sessionsBodyEl.innerHTML = sessions.map((s, index) => {
         const time = new Date(s.ended_at).toLocaleString();
 
         const statusClass = s.status === "completed" ? "status-completed" : "status-abandoned";
@@ -588,7 +735,7 @@
         const itemsText = s.had_items_in_cart ? `${s.item_count} items` : "None";
 
         return `
-          <tr>
+          <tr class="clickable" onclick="openSessionModal(${index})">
             <td>${time}</td>
             <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
             <td>${reasonHtml}</td>
@@ -596,10 +743,98 @@
             <td>${s.message_count}</td>
             <td class="${itemsClass}">${itemsText}</td>
             <td>${s.cart_total > 0 ? `$${s.cart_total.toFixed(2)}` : "-"}</td>
-            <td class="message-preview" title="${s.last_bot_message || ''}">${s.last_bot_message || "-"}</td>
           </tr>
         `;
       }).join("");
+    }
+
+    function openSessionModal(index) {
+      const session = sessionsData[index];
+      if (!session) return;
+
+      // Render session info
+      const time = new Date(session.ended_at).toLocaleString();
+      const statusLabel = session.status === "completed" ? "Completed" : "Abandoned";
+      const reasonLabels = {
+        browser_close: "Browser Close",
+        refresh: "Refresh",
+        navigation: "Navigation"
+      };
+      const reason = session.reason ? (reasonLabels[session.reason] || session.reason) : "-";
+      const duration = session.session_duration_seconds
+        ? `${Math.floor(session.session_duration_seconds / 60)}m ${session.session_duration_seconds % 60}s`
+        : "-";
+
+      modalSessionInfoEl.innerHTML = `
+        <div class="info-item">
+          <label>Time</label>
+          <span class="val">${time}</span>
+        </div>
+        <div class="info-item">
+          <label>Status</label>
+          <span class="val">${statusLabel}</span>
+        </div>
+        <div class="info-item">
+          <label>Reason</label>
+          <span class="val">${reason}</span>
+        </div>
+        <div class="info-item">
+          <label>Duration</label>
+          <span class="val">${duration}</span>
+        </div>
+        <div class="info-item">
+          <label>Messages</label>
+          <span class="val">${session.message_count}</span>
+        </div>
+        <div class="info-item">
+          <label>Cart Value</label>
+          <span class="val">${session.cart_total > 0 ? `$${session.cart_total.toFixed(2)}` : "-"}</span>
+        </div>
+        ${session.customer_name ? `
+          <div class="info-item">
+            <label>Customer</label>
+            <span class="val">${session.customer_name}${session.customer_phone ? ' (' + session.customer_phone + ')' : ''}</span>
+          </div>
+        ` : ''}
+      `;
+
+      // Render conversation
+      const conversation = session.conversation_history || [];
+      if (conversation.length === 0) {
+        modalConversationEl.innerHTML = '<div class="conv-empty">No conversation history available</div>';
+      } else {
+        modalConversationEl.innerHTML = conversation.map(msg => `
+          <div class="conv-msg ${msg.role}">
+            ${escapeHtml(msg.content)}
+          </div>
+        `).join("");
+      }
+
+      modalEl.classList.add("active");
+    }
+
+    function closeModal() {
+      modalEl.classList.remove("active");
+    }
+
+    // Close modal when clicking outside
+    modalEl.addEventListener("click", (e) => {
+      if (e.target === modalEl) {
+        closeModal();
+      }
+    });
+
+    // Close modal on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modalEl.classList.contains("active")) {
+        closeModal();
+      }
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     // Initial load

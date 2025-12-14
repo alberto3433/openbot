@@ -529,48 +529,8 @@
   </div>
 
   <script>
-    // Default store data (used on first load)
-    const DEFAULT_STORES = [
-      {
-        id: "store_eb_001",
-        name: "Sammy's Subs - East Brunswick",
-        address: "123 Main Street",
-        city: "East Brunswick",
-        state: "NJ",
-        zip: "08816",
-        phone: "(732) 555-0101",
-        hours: "Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM",
-        status: "open",
-        paymentMethods: ["cash", "credit"]
-      },
-      {
-        id: "store_nb_002",
-        name: "Sammy's Subs - New Brunswick",
-        address: "456 George Street",
-        city: "New Brunswick",
-        state: "NJ",
-        zip: "08901",
-        phone: "(732) 555-0202",
-        hours: "Mon-Fri 9:00 AM - 10:00 PM, Sat-Sun 10:00 AM - 8:00 PM",
-        status: "open",
-        paymentMethods: ["cash", "credit", "bitcoin"]
-      },
-      {
-        id: "store_pr_003",
-        name: "Sammy's Subs - Princeton",
-        address: "789 Nassau Street",
-        city: "Princeton",
-        state: "NJ",
-        zip: "08540",
-        phone: "(609) 555-0303",
-        hours: "Mon-Sun 11:00 AM - 8:00 PM",
-        status: "closed",
-        paymentMethods: ["cash", "credit"]
-      }
-    ];
-
-    // Storage key
-    const STORAGE_KEY = "sandwich_bot_stores";
+    // API base URL
+    const API_BASE = "/admin/stores";
 
     // DOM elements
     const statusBar = document.getElementById("statusBar");
@@ -590,28 +550,35 @@
     let editingStoreId = null;
     let deletingStoreId = null;
 
-    // Load stores from localStorage or use defaults
-    function loadStores() {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        stores = JSON.parse(stored);
-        // Migration: Add default payment methods to stores that don't have them
-        let needsSave = false;
-        stores.forEach(store => {
-          if (!store.paymentMethods) {
-            store.paymentMethods = ["cash", "credit"];
-            needsSave = true;
-          }
-        });
-        if (needsSave) {
-          saveStores();
+    // Load stores from API
+    async function loadStores() {
+      try {
+        const response = await fetch(API_BASE);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      } else {
-        stores = [...DEFAULT_STORES];
-        saveStores();
+        const data = await response.json();
+        // Map API response to local format
+        stores = data.map(s => ({
+          id: s.store_id,
+          name: s.name,
+          address: s.address,
+          city: s.city,
+          state: s.state,
+          zip: s.zip_code,
+          phone: s.phone,
+          hours: s.hours,
+          status: s.status,
+          paymentMethods: s.payment_methods || ["cash", "credit"],
+          deletedAt: s.deleted_at
+        }));
+        renderStores();
+        renderDeletedStores();
+      } catch (error) {
+        console.error("Failed to load stores:", error);
+        showStatus("Failed to load stores from server", "error");
+        storeList.innerHTML = '<li class="empty-state">Failed to load stores. Please refresh the page.</li>';
       }
-      renderStores();
-      renderDeletedStores();
     }
 
     // Get active (non-deleted) stores
@@ -622,18 +589,6 @@
     // Get deleted stores
     function getDeletedStores() {
       return stores.filter(s => s.deletedAt);
-    }
-
-    // Save stores to localStorage
-    function saveStores() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(stores));
-    }
-
-    // Generate a unique store ID
-    function generateStoreId() {
-      const timestamp = Date.now().toString(36);
-      const random = Math.random().toString(36).substring(2, 6);
-      return `store_${timestamp}_${random}`;
     }
 
     // Show status message
@@ -812,7 +767,7 @@
     }
 
     // Save the store (add or update)
-    function saveStore() {
+    async function saveStore() {
       // Validate form
       const name = document.getElementById("storeName").value.trim();
       const address = document.getElementById("storeAddress").value.trim();
@@ -837,45 +792,49 @@
       }
       hidePaymentError();
 
-      if (editingStoreId) {
-        // Update existing store
-        const index = stores.findIndex(s => s.id === editingStoreId);
-        if (index !== -1) {
-          stores[index] = {
-            ...stores[index],
-            name,
-            address,
-            city,
-            state,
-            zip,
-            phone,
-            hours,
-            status,
-            paymentMethods
-          };
-          showStatus(`"${name}" has been updated`, "success");
-        }
-      } else {
-        // Add new store
-        const newStore = {
-          id: generateStoreId(),
-          name,
-          address,
-          city,
-          state,
-          zip,
-          phone,
-          hours,
-          status,
-          paymentMethods
-        };
-        stores.push(newStore);
-        showStatus(`"${name}" has been added`, "success");
-      }
+      // Prepare API payload
+      const payload = {
+        name,
+        address,
+        city,
+        state,
+        zip_code: zip,
+        phone,
+        hours: hours || null,
+        status,
+        payment_methods: paymentMethods
+      };
 
-      saveStores();
-      renderStores();
-      closeModal();
+      try {
+        let response;
+        if (editingStoreId) {
+          // Update existing store
+          response = await fetch(`${API_BASE}/${editingStoreId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          // Create new store
+          response = await fetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        showStatus(editingStoreId ? `"${name}" has been updated` : `"${name}" has been added`, "success");
+        closeModal();
+        await loadStores(); // Reload from server
+      } catch (error) {
+        console.error("Failed to save store:", error);
+        showStatus(`Failed to save store: ${error.message}`, "error");
+      }
     }
 
     // Open delete confirmation
@@ -892,54 +851,64 @@
     }
 
     // Soft delete the store (mark as deleted)
-    function deleteStore() {
+    async function deleteStore() {
       if (!deletingStoreId) return;
 
-      const index = stores.findIndex(s => s.id === deletingStoreId);
-      if (index === -1) return;
+      const store = stores.find(s => s.id === deletingStoreId);
+      if (!store) return;
 
-      const storeName = stores[index].name;
+      const storeName = store.name;
 
-      // Soft delete: add deletedAt timestamp instead of removing
-      stores[index] = {
-        ...stores[index],
-        deletedAt: new Date().toISOString(),
-        deletedBy: "admin" // Could be actual user in a real system
-      };
+      try {
+        const response = await fetch(`${API_BASE}/${deletingStoreId}`, {
+          method: "DELETE"
+        });
 
-      saveStores();
-      renderStores();
-      renderDeletedStores();
-      closeDeleteModal();
-      showStatus(`"${storeName}" has been archived`, "success");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        closeDeleteModal();
+        showStatus(`"${storeName}" has been archived`, "success");
+        await loadStores(); // Reload from server
+      } catch (error) {
+        console.error("Failed to delete store:", error);
+        showStatus(`Failed to delete store: ${error.message}`, "error");
+      }
     }
 
     // Restore a deleted store
-    function restoreStore(storeId) {
-      const index = stores.findIndex(s => s.id === storeId);
-      if (index === -1) return;
+    async function restoreStore(storeId) {
+      const store = stores.find(s => s.id === storeId);
+      if (!store) return;
 
-      const storeName = stores[index].name;
+      const storeName = store.name;
 
-      // Remove deletion fields
-      const { deletedAt, deletedBy, ...restoredStore } = stores[index];
-      stores[index] = restoredStore;
+      try {
+        const response = await fetch(`${API_BASE}/${storeId}/restore`, {
+          method: "POST"
+        });
 
-      saveStores();
-      renderStores();
-      renderDeletedStores();
-      showStatus(`"${storeName}" has been restored`, "success");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        showStatus(`"${storeName}" has been restored`, "success");
+        await loadStores(); // Reload from server
+      } catch (error) {
+        console.error("Failed to restore store:", error);
+        showStatus(`Failed to restore store: ${error.message}`, "error");
+      }
     }
 
-    // Permanently delete a store (hard delete)
-    function permanentlyDeleteStore(storeId) {
+    // Permanently delete a store (hard delete) - Note: API only supports soft delete for now
+    async function permanentlyDeleteStore(storeId) {
       const store = stores.find(s => s.id === storeId);
       const storeName = store ? store.name : "Store";
 
-      stores = stores.filter(s => s.id !== storeId);
-      saveStores();
-      renderDeletedStores();
-      showStatus(`"${storeName}" has been permanently deleted`, "success");
+      // For now, show a message that permanent deletion isn't supported via API
+      // In a real implementation, you'd add a hard delete endpoint
+      showStatus("Permanent deletion is disabled. Stores remain archived.", "info");
     }
 
     // Render the deleted stores section

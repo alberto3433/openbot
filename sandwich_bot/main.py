@@ -22,7 +22,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .db import engine, get_db
-from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability
+from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
@@ -327,6 +327,10 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 admin_orders_router = APIRouter(prefix="/admin/orders", tags=["Admin - Orders"])
 admin_ingredients_router = APIRouter(prefix="/admin/ingredients", tags=["Admin - Ingredients"])
 admin_analytics_router = APIRouter(prefix="/admin/analytics", tags=["Admin - Analytics"])
+admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
+
+# Public router for store list (used by customer chat)
+public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
 
 
 # ---------- Pydantic models for chat / menu ----------
@@ -480,6 +484,55 @@ class MenuItemAvailabilityUpdate(BaseModel):
     """Payload for toggling menu item availability."""
     is_available: bool
     store_id: Optional[str] = None  # If provided, updates per-store availability
+
+
+# ---------- Pydantic models for Store management ----------
+
+
+class StoreOut(BaseModel):
+    """Response model for store data."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    store_id: str
+    name: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    phone: str
+    hours: Optional[str] = None
+    status: str
+    payment_methods: List[str] = []
+    deleted_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class StoreCreate(BaseModel):
+    """Payload for creating a new store."""
+    name: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    phone: str
+    hours: Optional[str] = None
+    status: str = "open"
+    payment_methods: List[str] = ["cash", "credit"]
+
+
+class StoreUpdate(BaseModel):
+    """Payload for updating a store."""
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    phone: Optional[str] = None
+    hours: Optional[str] = None
+    status: Optional[str] = None
+    payment_methods: Optional[List[str]] = None
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -1850,6 +1903,218 @@ def get_analytics_summary(
     )
 
 
+# ---------- Admin Store Management Endpoints ----------
+
+
+def generate_store_id() -> str:
+    """Generate a unique store ID."""
+    import time
+    import random
+    timestamp = hex(int(time.time()))[2:]
+    random_part = hex(random.randint(0, 0xFFFF))[2:].zfill(4)
+    return f"store_{timestamp}_{random_part}"
+
+
+def seed_default_stores(db: Session) -> None:
+    """Seed default stores if the stores table is empty."""
+    existing = db.query(Store).first()
+    if existing:
+        return  # Already has stores
+
+    default_stores = [
+        {
+            "store_id": "store_eb_001",
+            "name": "Sammy's Subs - East Brunswick",
+            "address": "123 Main Street",
+            "city": "East Brunswick",
+            "state": "NJ",
+            "zip_code": "08816",
+            "phone": "(732) 555-0101",
+            "hours": "Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM",
+            "status": "open",
+            "payment_methods": ["cash", "credit"],
+        },
+        {
+            "store_id": "store_nb_002",
+            "name": "Sammy's Subs - New Brunswick",
+            "address": "456 George Street",
+            "city": "New Brunswick",
+            "state": "NJ",
+            "zip_code": "08901",
+            "phone": "(732) 555-0202",
+            "hours": "Mon-Fri 9:00 AM - 10:00 PM, Sat-Sun 10:00 AM - 8:00 PM",
+            "status": "open",
+            "payment_methods": ["cash", "credit", "bitcoin"],
+        },
+        {
+            "store_id": "store_pr_003",
+            "name": "Sammy's Subs - Princeton",
+            "address": "789 Nassau Street",
+            "city": "Princeton",
+            "state": "NJ",
+            "zip_code": "08540",
+            "phone": "(609) 555-0303",
+            "hours": "Mon-Sun 11:00 AM - 8:00 PM",
+            "status": "closed",
+            "payment_methods": ["cash", "credit"],
+        },
+    ]
+
+    for store_data in default_stores:
+        store = Store(**store_data)
+        db.add(store)
+
+    db.commit()
+    logger.info("Seeded %d default stores", len(default_stores))
+
+
+@admin_stores_router.get("", response_model=List[StoreOut])
+def list_stores(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    include_deleted: bool = Query(False, description="Include deleted stores"),
+) -> List[StoreOut]:
+    """List all stores. Requires admin authentication."""
+    # Seed default stores if table is empty
+    seed_default_stores(db)
+
+    query = db.query(Store)
+    if not include_deleted:
+        query = query.filter(Store.deleted_at.is_(None))
+    stores = query.order_by(Store.name).all()
+    return stores
+
+
+@admin_stores_router.post("", response_model=StoreOut, status_code=201)
+def create_store(
+    payload: StoreCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> StoreOut:
+    """Create a new store. Requires admin authentication."""
+    store = Store(
+        store_id=generate_store_id(),
+        name=payload.name,
+        address=payload.address,
+        city=payload.city,
+        state=payload.state.upper(),
+        zip_code=payload.zip_code,
+        phone=payload.phone,
+        hours=payload.hours,
+        status=payload.status,
+        payment_methods=payload.payment_methods,
+    )
+    db.add(store)
+    db.commit()
+    db.refresh(store)
+    logger.info("Created store: %s (%s)", store.name, store.store_id)
+    return store
+
+
+@admin_stores_router.get("/{store_id}", response_model=StoreOut)
+def get_store(
+    store_id: str,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> StoreOut:
+    """Get a single store by ID. Requires admin authentication."""
+    store = db.query(Store).filter(Store.store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return store
+
+
+@admin_stores_router.put("/{store_id}", response_model=StoreOut)
+def update_store(
+    store_id: str,
+    payload: StoreUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> StoreOut:
+    """Update a store. Requires admin authentication."""
+    store = db.query(Store).filter(Store.store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    # Update only provided fields
+    if payload.name is not None:
+        store.name = payload.name
+    if payload.address is not None:
+        store.address = payload.address
+    if payload.city is not None:
+        store.city = payload.city
+    if payload.state is not None:
+        store.state = payload.state.upper()
+    if payload.zip_code is not None:
+        store.zip_code = payload.zip_code
+    if payload.phone is not None:
+        store.phone = payload.phone
+    if payload.hours is not None:
+        store.hours = payload.hours
+    if payload.status is not None:
+        store.status = payload.status
+    if payload.payment_methods is not None:
+        store.payment_methods = payload.payment_methods
+
+    db.commit()
+    db.refresh(store)
+    logger.info("Updated store: %s (%s)", store.name, store.store_id)
+    return store
+
+
+@admin_stores_router.delete("/{store_id}", status_code=204)
+def delete_store(
+    store_id: str,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
+    """Soft delete a store. Requires admin authentication."""
+    store = db.query(Store).filter(Store.store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    store.deleted_at = datetime.now()
+    db.commit()
+    logger.info("Soft deleted store: %s (%s)", store.name, store.store_id)
+    return None
+
+
+@admin_stores_router.post("/{store_id}/restore", response_model=StoreOut)
+def restore_store(
+    store_id: str,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> StoreOut:
+    """Restore a soft-deleted store. Requires admin authentication."""
+    store = db.query(Store).filter(Store.store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    store.deleted_at = None
+    db.commit()
+    db.refresh(store)
+    logger.info("Restored store: %s (%s)", store.name, store.store_id)
+    return store
+
+
+# ---------- Public Store Endpoints (for customer chat) ----------
+
+
+@public_stores_router.get("", response_model=List[StoreOut])
+def list_available_stores(
+    db: Session = Depends(get_db),
+) -> List[StoreOut]:
+    """List all active and open stores. Used by customer chat for store selection."""
+    # Seed default stores if table is empty
+    seed_default_stores(db)
+
+    stores = db.query(Store).filter(
+        Store.deleted_at.is_(None),
+        Store.status == "open"
+    ).order_by(Store.name).all()
+    return stores
+
+
 # ---------- Include Routers with API Version Prefix ----------
 # All API endpoints are available under /api/v1/
 # Example: /api/v1/chat/start, /api/v1/admin/menu, etc.
@@ -1860,6 +2125,8 @@ api_v1_router.include_router(admin_menu_router)
 api_v1_router.include_router(admin_orders_router)
 api_v1_router.include_router(admin_ingredients_router)
 api_v1_router.include_router(admin_analytics_router)
+api_v1_router.include_router(admin_stores_router)
+api_v1_router.include_router(public_stores_router)
 
 app.include_router(api_v1_router)
 
@@ -1870,3 +2137,5 @@ app.include_router(admin_menu_router)
 app.include_router(admin_orders_router)
 app.include_router(admin_ingredients_router)
 app.include_router(admin_analytics_router)
+app.include_router(admin_stores_router)
+app.include_router(public_stores_router)

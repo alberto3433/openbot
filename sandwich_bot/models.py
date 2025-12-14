@@ -294,3 +294,35 @@ class SessionAnalytics(Base):
 
 # Alias for backward compatibility
 AbandonedSession = SessionAnalytics
+
+
+# --- Store model for multi-location support ---
+
+class Store(Base):
+    """
+    Represents a physical store location.
+    Stores are managed via the admin interface and used for:
+    - Store selection in customer chat
+    - Per-store ingredient/menu item availability (86 system)
+    - Order attribution
+    """
+    __tablename__ = "stores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(String, unique=True, nullable=False, index=True)  # e.g., "store_eb_001"
+    name = Column(String, nullable=False)  # e.g., "Sammy's Subs - East Brunswick"
+    address = Column(String, nullable=False)
+    city = Column(String, nullable=False)
+    state = Column(String(2), nullable=False)  # e.g., "NJ"
+    zip_code = Column(String(10), nullable=False)
+    phone = Column(String, nullable=False)
+    hours = Column(Text, nullable=True)  # Store hours description
+    status = Column(String, nullable=False, default="open")  # "open" or "closed"
+    payment_methods = Column(JSON, nullable=False, default=list)  # ["cash", "credit", "bitcoin"]
+
+    # Soft delete support
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

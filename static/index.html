@@ -236,48 +236,37 @@
     const storeSelect = document.getElementById("store-select");
     const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
 
-    // Storage key (same as admin_stores.html)
-    const STORES_STORAGE_KEY = "sandwich_bot_stores";
-
-    // Default stores (fallback if localStorage is empty)
-    const DEFAULT_STORES = [
-      { id: "store_eb_001", name: "Sammy's Subs - East Brunswick", status: "open" },
-      { id: "store_nb_002", name: "Sammy's Subs - New Brunswick", status: "open" },
-      { id: "store_pr_003", name: "Sammy's Subs - Princeton", status: "open" }
-    ];
-
     // Store name mapping (built dynamically)
     let STORE_NAMES = {};
 
-    // Load stores from localStorage and populate dropdown
-    function loadStoresAndPopulateDropdown() {
+    // Load stores from API and populate dropdown
+    async function loadStoresAndPopulateDropdown() {
       let stores = [];
-      const stored = localStorage.getItem(STORES_STORAGE_KEY);
 
-      console.log("[Store Loader] Raw localStorage:", stored ? "found" : "not found");
-
-      if (stored) {
-        try {
-          stores = JSON.parse(stored);
-          console.log("[Store Loader] Parsed stores:", stores.length, "total");
-        } catch (e) {
-          console.error("[Store Loader] Failed to parse stores:", e);
-          stores = DEFAULT_STORES;
+      try {
+        // Fetch available (open, non-deleted) stores from API
+        const response = await fetch("/stores");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      } else {
-        console.log("[Store Loader] Using default stores");
-        stores = DEFAULT_STORES;
+        stores = await response.json();
+        console.log("[Store Loader] Loaded stores from API:", stores.length);
+      } catch (error) {
+        console.error("[Store Loader] Failed to load stores from API:", error);
+        // Fallback to defaults if API fails
+        stores = [
+          { store_id: "store_eb_001", name: "Sammy's Subs - East Brunswick" },
+          { store_id: "store_nb_002", name: "Sammy's Subs - New Brunswick" }
+        ];
       }
 
-      // Filter: only active (non-deleted) and open stores
-      const availableStores = stores.filter(s => {
-        const isActive = !s.deletedAt;
-        const isOpen = s.status !== "closed";
-        console.log(`[Store Loader] ${s.name}: active=${isActive}, open=${isOpen}, status="${s.status}"`);
-        return isActive && isOpen;
-      });
+      // Map API response to available stores (already filtered by API)
+      const availableStores = stores.map(s => ({
+        id: s.store_id,
+        name: s.name
+      }));
 
-      console.log("[Store Loader] Available stores after filter:", availableStores.length);
+      console.log("[Store Loader] Available stores:", availableStores.length);
 
       // Build STORE_NAMES mapping
       STORE_NAMES = {};
@@ -510,9 +499,9 @@
     });
 
     // Start session on page load - check URL params first
-    window.addEventListener("load", () => {
-      // Load stores from localStorage and populate dropdown
-      const availableStores = loadStoresAndPopulateDropdown();
+    window.addEventListener("load", async () => {
+      // Load stores from API and populate dropdown
+      const availableStores = await loadStoresAndPopulateDropdown();
 
       const urlParams = new URLSearchParams(window.location.search);
       const storeIdParam = urlParams.get("store") || urlParams.get("store_id");

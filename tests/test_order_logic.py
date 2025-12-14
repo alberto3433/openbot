@@ -632,3 +632,196 @@ def test_price_modifier_unknown_option_no_extra():
 
     # Only base price since unknown option has no extra
     assert new["items"][0]["unit_price"] == 8.0
+
+
+# ---- Tests for mid-order modifications (Modify/Edit Support) ----
+
+
+def test_update_sandwich_add_topping():
+    """Test adding a topping to an existing sandwich (simulates 'add pickles')."""
+    state = {
+        "status": "collecting_items",
+        "items": [
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "Turkey Club",
+                "bread": "White",
+                "cheese": "American",
+                "protein": None,
+                "toppings": ["Lettuce", "Tomato"],  # Current toppings
+                "sauces": ["Mayo"],
+                "toasted": False,
+                "quantity": 1,
+                "unit_price": 8.0,
+                "line_total": 8.0,
+            }
+        ],
+        "customer": {},
+    }
+    # LLM should compute new list: existing + Pickles
+    slots = {"toppings": ["Lettuce", "Tomato", "Pickles"]}
+    menu = _make_sandwich_menu_with_extras()
+
+    new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
+
+    assert new["items"][0]["toppings"] == ["Lettuce", "Tomato", "Pickles"]
+    # Other fields unchanged
+    assert new["items"][0]["bread"] == "White"
+    assert new["items"][0]["sauces"] == ["Mayo"]
+
+
+def test_update_sandwich_remove_topping():
+    """Test removing a topping from an existing sandwich (simulates 'no tomato')."""
+    state = {
+        "status": "collecting_items",
+        "items": [
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "Turkey Club",
+                "bread": "White",
+                "cheese": "American",
+                "protein": None,
+                "toppings": ["Lettuce", "Tomato", "Onion"],
+                "sauces": [],
+                "toasted": True,
+                "quantity": 1,
+                "unit_price": 8.0,
+                "line_total": 8.0,
+            }
+        ],
+        "customer": {},
+    }
+    # LLM should compute new list: existing minus Tomato
+    slots = {"toppings": ["Lettuce", "Onion"]}
+    menu = _make_sandwich_menu_with_extras()
+
+    new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
+
+    assert new["items"][0]["toppings"] == ["Lettuce", "Onion"]
+    # Other fields unchanged
+    assert new["items"][0]["toasted"] is True
+
+
+def test_update_sandwich_add_and_remove_toppings():
+    """Test both adding and removing toppings (simulates 'add onions, remove tomato')."""
+    state = {
+        "status": "collecting_items",
+        "items": [
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "Turkey Club",
+                "bread": "Wheat",
+                "cheese": "Swiss",
+                "protein": None,
+                "toppings": ["Lettuce", "Tomato"],
+                "sauces": [],
+                "toasted": False,
+                "quantity": 1,
+                "unit_price": 9.0,
+                "line_total": 9.0,
+            }
+        ],
+        "customer": {},
+    }
+    # LLM computes: remove Tomato, add Onion → ["Lettuce", "Onion"]
+    slots = {"toppings": ["Lettuce", "Onion"]}
+    menu = _make_sandwich_menu_with_extras()
+
+    new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
+
+    assert new["items"][0]["toppings"] == ["Lettuce", "Onion"]
+
+
+def test_update_sandwich_change_to_different_sandwich():
+    """Test changing the sandwich type (simulates 'actually make that a BLT')."""
+    menu = _make_menu_index([
+        {
+            "name": "Turkey Club",
+            "category": "sandwich",
+            "is_signature": True,
+            "base_price": 8.0,
+            "recipe": {"choice_groups": []}
+        },
+        {
+            "name": "BLT",
+            "category": "sandwich",
+            "is_signature": True,
+            "base_price": 7.0,
+            "recipe": {"choice_groups": []}
+        }
+    ])
+
+    state = {
+        "status": "collecting_items",
+        "items": [
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "Turkey Club",
+                "bread": "White",
+                "cheese": None,
+                "protein": None,
+                "toppings": ["Lettuce"],
+                "sauces": [],
+                "toasted": False,
+                "quantity": 1,
+                "unit_price": 8.0,
+                "line_total": 8.0,
+            }
+        ],
+        "customer": {},
+    }
+    slots = {"menu_item_name": "BLT"}
+
+    new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
+
+    assert new["items"][0]["menu_item_name"] == "BLT"
+    assert new["items"][0]["unit_price"] == 7.0
+    assert new["items"][0]["line_total"] == 7.0
+
+
+def test_update_first_sandwich_by_index():
+    """Test modifying the first sandwich when multiple exist (simulates 'change my first sandwich')."""
+    state = {
+        "status": "collecting_items",
+        "items": [
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "Turkey Club",
+                "bread": "White",
+                "cheese": "American",
+                "protein": None,
+                "toppings": ["Lettuce"],
+                "sauces": [],
+                "toasted": False,
+                "quantity": 1,
+                "unit_price": 8.0,
+                "line_total": 8.0,
+            },
+            {
+                "item_type": "sandwich",
+                "menu_item_name": "BLT",
+                "bread": "Wheat",
+                "cheese": None,
+                "protein": None,
+                "toppings": ["Lettuce", "Tomato"],
+                "sauces": ["Mayo"],
+                "toasted": True,
+                "quantity": 1,
+                "unit_price": 7.0,
+                "line_total": 7.0,
+            },
+        ],
+        "customer": {},
+    }
+    # Modify first sandwich (index 0)
+    slots = {"item_index": 0, "bread": "Sourdough", "toasted": True}
+    menu = _make_sandwich_menu_with_extras()
+
+    new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
+
+    # First sandwich should be updated
+    assert new["items"][0]["bread"] == "Sourdough"
+    assert new["items"][0]["toasted"] is True
+    # Second sandwich should be unchanged
+    assert new["items"][1]["bread"] == "Wheat"
+    assert new["items"][1]["toasted"] is True

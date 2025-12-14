@@ -825,3 +825,142 @@ def test_update_first_sandwich_by_index():
     # Second sandwich should be unchanged
     assert new["items"][1]["bread"] == "Wheat"
     assert new["items"][1]["toasted"] is True
+
+
+# ---- Tests for Custom Sandwich Pricing ----
+
+
+def _make_custom_sandwich_menu():
+    """Create a menu index with custom sandwich support."""
+    return {
+        "signature_sandwiches": [
+            {
+                "name": "Turkey Club",
+                "category": "sandwich",
+                "is_signature": True,
+                "base_price": 8.99,
+                "recipe": {"choice_groups": []},
+            },
+        ],
+        "custom_sandwiches": [
+            {
+                "name": "Custom Sandwich",
+                "category": "sandwich",
+                "is_signature": False,
+                "base_price": 5.99,
+                "recipe": {"choice_groups": []},
+            },
+        ],
+        "sides": [],
+        "drinks": [],
+        "desserts": [],
+        "other": [],
+        "protein_types": ["Turkey", "Ham", "Roast Beef", "Chicken", "Steak"],
+        "protein_prices": {
+            "turkey": 2.50,
+            "ham": 2.50,
+            "roast beef": 3.50,
+            "chicken": 3.00,
+            "steak": 4.00,
+        },
+        "bread_types": ["White", "Wheat", "Ciabatta"],
+        "bread_prices": {
+            "white": 0.0,
+            "wheat": 0.0,
+            "ciabatta": 1.00,
+        },
+    }
+
+
+def test_custom_sandwich_by_protein_name():
+    """Test that 'turkey sandwich' is treated as a custom sandwich with correct pricing."""
+    state = {"status": "draft", "items": [], "customer": {}}
+    slots = {
+        "menu_item_name": "Turkey Sandwich",
+        "bread": "White",
+        "protein": "Turkey",
+        "cheese": "American",
+        "toppings": ["Lettuce"],
+        "sauces": ["Mayo"],
+        "toasted": True,
+        "quantity": 1,
+    }
+    menu = _make_custom_sandwich_menu()
+
+    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
+
+    # Should be treated as custom sandwich
+    assert new["items"][0]["is_custom"] is True
+    # Price should be: base (5.99) + turkey (2.50) + white bread (0.00) = 8.49
+    assert new["items"][0]["unit_price"] == 8.49
+    assert new["items"][0]["menu_item_name"] == "Custom Turkey Sandwich"
+
+
+def test_custom_sandwich_with_premium_bread():
+    """Test custom sandwich pricing with premium bread."""
+    state = {"status": "draft", "items": [], "customer": {}}
+    slots = {
+        "menu_item_name": "Ham Sub",
+        "bread": "Ciabatta",
+        "protein": "Ham",
+        "cheese": "Swiss",
+        "toppings": [],
+        "sauces": [],
+        "toasted": False,
+        "quantity": 1,
+    }
+    menu = _make_custom_sandwich_menu()
+
+    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
+
+    # Price should be: base (5.99) + ham (2.50) + ciabatta (1.00) = 9.49
+    assert new["items"][0]["unit_price"] == 9.49
+    assert new["items"][0]["is_custom"] is True
+
+
+def test_custom_sandwich_protein_extracted_from_name():
+    """Test that protein is extracted from item name when not explicitly provided."""
+    state = {"status": "draft", "items": [], "customer": {}}
+    slots = {
+        "menu_item_name": "Steak Sandwich",  # Protein in name, not in slots
+        "bread": "Wheat",
+        "protein": None,  # Not provided explicitly
+        "cheese": None,
+        "toppings": [],
+        "sauces": [],
+        "toasted": True,
+        "quantity": 1,
+    }
+    menu = _make_custom_sandwich_menu()
+
+    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
+
+    # Should extract "Steak" from the name
+    assert new["items"][0]["protein"] == "Steak"
+    # Price should be: base (5.99) + steak (4.00) + wheat (0.00) = 9.99
+    assert new["items"][0]["unit_price"] == 9.99
+    assert new["items"][0]["is_custom"] is True
+
+
+def test_signature_sandwich_not_treated_as_custom():
+    """Test that signature sandwiches are NOT treated as custom."""
+    state = {"status": "draft", "items": [], "customer": {}}
+    slots = {
+        "menu_item_name": "Turkey Club",  # This is a signature sandwich
+        "bread": "Wheat",
+        "protein": None,
+        "cheese": None,
+        "toppings": ["Lettuce"],
+        "sauces": [],
+        "toasted": True,
+        "quantity": 1,
+    }
+    menu = _make_custom_sandwich_menu()
+
+    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
+
+    # Should NOT be custom - it's a signature sandwich
+    assert new["items"][0].get("is_custom") is False
+    # Price should be the signature base price
+    assert new["items"][0]["unit_price"] == 8.99
+    assert new["items"][0]["menu_item_name"] == "Turkey Club"

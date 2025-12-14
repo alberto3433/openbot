@@ -96,6 +96,7 @@ class Ingredient(Base):
     category = Column(String, nullable=False)   # 'bread', 'protein', 'cheese', 'topping', 'sauce', 'side', 'drink', etc.
     unit = Column(String, nullable=False)       # 'slice', 'piece', 'oz', 'bag', 'ml', etc.
     track_inventory = Column(Boolean, nullable=False, default=True)
+    base_price = Column(Float, nullable=False, default=0.0)  # Price for custom sandwiches (proteins mainly)
 
     # relationships
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")

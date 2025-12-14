@@ -81,6 +81,7 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
 
     index: Dict[str, Any] = {
         "signature_sandwiches": [],
+        "custom_sandwiches": [],  # Build-your-own sandwiches
         "sides": [],
         "drinks": [],
         "desserts": [],
@@ -103,6 +104,8 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
         cat = (item.category or "").lower()
         if cat == "sandwich" and item.is_signature:
             index["signature_sandwiches"].append(item_json)
+        elif cat == "sandwich" and not item.is_signature:
+            index["custom_sandwiches"].append(item_json)
         elif cat == "side":
             index["sides"].append(item_json)
         elif cat == "drink":
@@ -143,7 +146,7 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
     )
     index["sauce_types"] = [ing.name for ing in sauce_ingredients]
 
-    # Protein types - all ingredients with category 'protein'
+    # Protein types - all ingredients with category 'protein' (include prices for custom sandwiches)
     protein_ingredients = (
         db.query(Ingredient)
         .filter(Ingredient.category == "protein")
@@ -151,6 +154,10 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
         .all()
     )
     index["protein_types"] = [ing.name for ing in protein_ingredients]
+    index["protein_prices"] = {ing.name.lower(): ing.base_price for ing in protein_ingredients}
+
+    # Bread prices for custom sandwiches
+    index["bread_prices"] = {ing.name.lower(): ing.base_price for ing in bread_ingredients}
 
     # Topping types - all ingredients with category 'topping'
     topping_ingredients = (

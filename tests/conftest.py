@@ -54,11 +54,43 @@ def client():
         extra_metadata="{}",
     ))
     session.add(MenuItem(
+        name="Veggie Delight",
+        category="sandwich",
+        is_signature=True,
+        base_price=7.99,
+        available_qty=10,
+        extra_metadata="{}",
+    ))
+    session.add(MenuItem(
+        name="Italian Stallion",
+        category="sandwich",
+        is_signature=True,
+        base_price=9.49,
+        available_qty=10,
+        extra_metadata="{}",
+    ))
+    session.add(MenuItem(
+        name="Custom Sandwich",
+        category="sandwich",
+        is_signature=False,
+        base_price=5.99,
+        available_qty=100,
+        extra_metadata='{"is_custom": true}',
+    ))
+    session.add(MenuItem(
         name="soda",
         category="drink",
         is_signature=False,
         base_price=2.5,
         available_qty=10,
+        extra_metadata="{}",
+    ))
+    session.add(MenuItem(
+        name="Chips",
+        category="side",
+        is_signature=False,
+        base_price=1.29,
+        available_qty=40,
         extra_metadata="{}",
     ))
     session.commit()

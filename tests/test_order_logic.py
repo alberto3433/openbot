@@ -58,9 +58,9 @@ def test_add_side():
 def test_add_side_default_quantity():
     """Test that quantity defaults to 1 if not provided."""
     state = {"status": "draft", "items": [], "customer": {}}
-    slots = {"menu_item_name": "Cookie"}
+    slots = {"menu_item_name": "Chocolate Chip Cookie"}
     menu = _make_menu_index([
-        {"name": "Cookie", "category": "side", "base_price": 1.79}
+        {"name": "Chocolate Chip Cookie", "category": "side", "base_price": 1.79}
     ])
     new = apply_intent_to_order_state(state, "add_side", slots, menu)
     assert new["items"][0]["quantity"] == 1

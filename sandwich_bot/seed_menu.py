@@ -185,12 +185,11 @@ def seed_menu():
                 extra_metadata=json.dumps({"flavors": ["bbq", "sea salt", "sour cream & onion"]}),
             ),
             MenuItem(
-                name="Cookie",
+                name="Chocolate Chip Cookie",
                 category="dessert",
                 is_signature=False,
                 base_price=1.79,
                 available_qty=30,
-                extra_metadata=json.dumps({"types": ["chocolate chip", "oatmeal raisin"]}),
             ),
         ]
 

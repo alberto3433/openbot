@@ -218,4 +218,56 @@ All quick wins have been implemented and tested:
 
 ---
 
-*Last updated: 2025-12-12*
+## Proposed Enhancements (Customer Interaction)
+
+These are planned improvements to enhance the customer interaction experience:
+
+### 1. Order Summary Before Confirmation
+- Repeat full order details before finalizing
+- "Just to confirm: one Turkey Club with Swiss on wheat, toasted, with a Coke. Total is $14.49. Sound good?"
+
+### 2. Upselling/Suggestions
+- "Would you like to make that a combo with chips and a drink for $2 more?"
+- Suggest popular pairings based on order
+
+### 3. Modify/Edit Support *(In Progress)*
+- Natural modification requests like "Actually, change the bread to wheat"
+- Easier mid-order modifications
+- Support requests like "Remove the tomato from my first sandwich"
+- "Add extra cheese to that"
+
+### 4. Returning Customer Memory
+- Remember preferences across sessions: "Welcome back! Want your usual Turkey Club?"
+- Store favorite orders per phone number
+
+### 5. Favorites/Quick Orders
+- "Order my usual" or "Same as last time"
+- Named favorites: "My lunch combo"
+
+### 6. Graceful Confusion Handling
+- Better recovery when conversation goes off-track
+- "I'm not sure I understood that. Would you like to add something to your order or make a change?"
+
+### 7. Out-of-Stock Alternatives
+- Suggest alternatives when items are unavailable
+- "We're out of wheat bread today. Would white or Italian work instead?"
+
+### 8. One-Shot Ordering
+- Parse complex single-message orders efficiently
+- "I want a Turkey Club on wheat with no tomato, toasted, with chips and a Diet Coke"
+
+### 9. Order Ahead / Pickup Time
+- "When would you like to pick this up?"
+- Schedule orders for specific times
+
+### 10. Conversation Quality Scoring
+- Track conversation efficiency metrics
+- Identify friction points in ordering flow
+
+### 11. Popular Items Dashboard
+- Admin view showing most ordered items
+- Peak ordering times and trends
+
+---
+
+*Last updated: 2025-12-13*

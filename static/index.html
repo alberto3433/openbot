@@ -167,6 +167,14 @@
 
     let typingIndicatorEl = null;
 
+    // Analytics tracking
+    let sessionStartTime = null;
+    let messageCount = 0;
+    let orderState = { status: "pending", items: [], total_price: 0 };
+    let lastBotMessage = null;
+    let lastUserMessage = null;
+    let orderConfirmed = false;
+
     function addMessage(role, text) {
       const row = document.createElement("div");
       row.className = "msg-row " + role;
@@ -220,6 +228,7 @@
         const data = await resp.json();
         sessionId = data.session_id;
         connected = true;
+        sessionStartTime = Date.now();
 
         headerEl.textContent = "New session started: " + sessionId;
         setStatus("Connected");
@@ -227,6 +236,8 @@
         // 🔹 Show Sammy's initial greeting from backend
         if (data.message) {
           addMessage("assistant", data.message);
+          lastBotMessage = data.message;
+          messageCount++;
         }
       } catch (err) {
         console.error("Error starting session:", err);
@@ -241,6 +252,8 @@
         return;
       }
       addMessage("user", text);
+      lastUserMessage = text;
+      messageCount++;
       setStatus("Sending...");
       showTypingIndicator();
 
@@ -257,6 +270,15 @@
         const data = await resp.json();
         if (data.reply) {
           addMessage("assistant", data.reply);
+          lastBotMessage = data.reply;
+          messageCount++;
+        }
+        // Track order state for analytics
+        if (data.order_state) {
+          orderState = data.order_state;
+          if (orderState.status === "confirmed") {
+            orderConfirmed = true;
+          }
         }
         setStatus("Connected");
       } catch (err) {
@@ -278,6 +300,55 @@
     // Start session on page load
     window.addEventListener("load", () => {
       startSession();
+    });
+
+    // Track abandoned sessions (simulates "hang up")
+    function sendAbandonAnalytics(reason) {
+      // Don't send if no session or order was already confirmed
+      if (!sessionId || orderConfirmed) {
+        return;
+      }
+
+      const items = orderState.items || [];
+      const sessionDuration = sessionStartTime
+        ? Math.floor((Date.now() - sessionStartTime) / 1000)
+        : null;
+
+      const payload = {
+        session_id: sessionId,
+        message_count: messageCount,
+        had_items_in_cart: items.length > 0,
+        item_count: items.length,
+        cart_total: orderState.total_price || 0,
+        order_status: orderState.status || "pending",
+        last_bot_message: lastBotMessage,
+        last_user_message: lastUserMessage,
+        reason: reason,
+        session_duration_seconds: sessionDuration,
+      };
+
+      // Use sendBeacon for reliability during page unload
+      // It's fire-and-forget and works even when the page is closing
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      navigator.sendBeacon("/chat/abandon", blob);
+
+      console.log("Abandon analytics sent:", reason);
+    }
+
+    // Detect page unload (refresh, close, or navigation)
+    window.addEventListener("beforeunload", (event) => {
+      // Detect if this is a refresh vs close
+      const navEntry = performance.getEntriesByType("navigation")[0];
+      const reason = navEntry && navEntry.type === "reload" ? "refresh" : "browser_close";
+
+      sendAbandonAnalytics(reason);
+    });
+
+    // Also track when user navigates away (e.g., clicks a link)
+    window.addEventListener("pagehide", (event) => {
+      if (!event.persisted) {
+        sendAbandonAnalytics("navigation");
+      }
     });
   </script>
 </body>

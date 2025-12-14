@@ -1,6 +1,6 @@
 import json
 from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import MenuItem
+from sandwich_bot.models import MenuItem, Ingredient
 
 
 def seed_menu():
@@ -116,12 +116,44 @@ def seed_menu():
             ),
             # Drinks
             MenuItem(
-                name="Fountain Soda",
+                name="Coke",
                 category="drink",
                 is_signature=False,
-                base_price=1.99,
+                base_price=2.29,
                 available_qty=50,
-                extra_metadata=json.dumps({"sizes": ["small", "medium", "large"]}),
+                extra_metadata=json.dumps({"type": "soda", "size": "20oz"}),
+            ),
+            MenuItem(
+                name="Diet Coke",
+                category="drink",
+                is_signature=False,
+                base_price=2.29,
+                available_qty=50,
+                extra_metadata=json.dumps({"type": "soda", "size": "20oz"}),
+            ),
+            MenuItem(
+                name="Coke Zero",
+                category="drink",
+                is_signature=False,
+                base_price=2.29,
+                available_qty=50,
+                extra_metadata=json.dumps({"type": "soda", "size": "20oz"}),
+            ),
+            MenuItem(
+                name="Sprite",
+                category="drink",
+                is_signature=False,
+                base_price=2.29,
+                available_qty=50,
+                extra_metadata=json.dumps({"type": "soda", "size": "20oz"}),
+            ),
+            MenuItem(
+                name="Orange Fanta",
+                category="drink",
+                is_signature=False,
+                base_price=2.29,
+                available_qty=50,
+                extra_metadata=json.dumps({"type": "soda", "size": "20oz"}),
             ),
             MenuItem(
                 name="Bottled Water",
@@ -157,5 +189,68 @@ def seed_menu():
         db.close()
 
 
+def seed_ingredients():
+    """Seed initial ingredients (breads, cheeses, proteins, toppings, sauces)."""
+    db = SessionLocal()
+    try:
+        existing = db.query(Ingredient).count()
+        if existing > 0:
+            print(f"Ingredients table already has {existing} items. Not seeding again.")
+            return
+
+        ingredients = [
+            # Breads
+            Ingredient(name="White", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Wheat", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Italian", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Multigrain", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Ciabatta", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Sourdough", category="bread", unit="piece", track_inventory=False),
+            # Cheeses
+            Ingredient(name="Cheddar", category="cheese", unit="slice", track_inventory=False),
+            Ingredient(name="Swiss", category="cheese", unit="slice", track_inventory=False),
+            Ingredient(name="Provolone", category="cheese", unit="slice", track_inventory=False),
+            Ingredient(name="Pepper Jack", category="cheese", unit="slice", track_inventory=False),
+            Ingredient(name="Mozzarella", category="cheese", unit="slice", track_inventory=False),
+            Ingredient(name="American", category="cheese", unit="slice", track_inventory=False),
+            # Proteins
+            Ingredient(name="Turkey", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Ham", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Roast Beef", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Chicken", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Salami", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Bacon", category="protein", unit="strip", track_inventory=False),
+            Ingredient(name="Meatball", category="protein", unit="piece", track_inventory=False),
+            Ingredient(name="Tuna Salad", category="protein", unit="scoop", track_inventory=False),
+            # Toppings
+            Ingredient(name="Lettuce", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Tomato", category="topping", unit="slice", track_inventory=False),
+            Ingredient(name="Onion", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Pickles", category="topping", unit="slice", track_inventory=False),
+            Ingredient(name="Cucumber", category="topping", unit="slice", track_inventory=False),
+            Ingredient(name="Olives", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Banana Peppers", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Jalapenos", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Green Peppers", category="topping", unit="portion", track_inventory=False),
+            # Sauces
+            Ingredient(name="Mayo", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Mustard", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Ranch", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Italian Vinaigrette", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Oil & Vinegar", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Marinara", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Pesto", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Buffalo", category="sauce", unit="portion", track_inventory=False),
+            Ingredient(name="Honey Mustard", category="sauce", unit="portion", track_inventory=False),
+        ]
+
+        db.add_all(ingredients)
+        db.commit()
+        print(f"Seeded {len(ingredients)} ingredients.")
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     seed_menu()
+    seed_ingredients()

@@ -86,13 +86,24 @@ This document outlines potential improvements and enhancements for the OpenBot c
 
 - **Mobile Responsiveness**: Test and improve mobile layout.
 
-### 8. API Improvements
+### ~~8. API Improvements~~ **DONE**
 
-- **No API Versioning**: Add `/api/v1/` prefix for future compatibility.
+- ~~**No API Versioning**: Add `/api/v1/` prefix for future compatibility.~~ **DONE** - Implemented:
+  - All API endpoints now available under `/api/v1/` prefix (e.g., `/api/v1/chat/start`)
+  - Backward compatibility maintained - endpoints also available at root level
+  - `/health` remains at root (standard practice for health checks)
 
-- **Missing OpenAPI Tags**: Add tags to group endpoints in Swagger docs.
+- ~~**Missing OpenAPI Tags**: Add tags to group endpoints in Swagger docs.~~ **DONE** - Implemented:
+  - Added OpenAPI tags: "Health", "Chat", "Admin - Menu", "Admin - Orders"
+  - Added docstrings to all endpoints for better API documentation
+  - FastAPI auto-generates grouped Swagger UI at `/docs`
 
-- **No Request IDs**: Add request ID tracking for debugging and log correlation.
+- ~~**No Request IDs**: Add request ID tracking for debugging and log correlation.~~ **DONE** - Implemented:
+  - Added `RequestIDMiddleware` that generates unique UUID for each request
+  - Request ID available in `request.state.request_id` for use in endpoints
+  - Request ID returned in `X-Request-ID` response header
+  - Clients can provide their own `X-Request-ID` header for tracing
+  - 4 new tests added for request ID and API versioning
 
 ---
 
@@ -196,14 +207,14 @@ All quick wins have been implemented and tested:
 | Category | Count | Status |
 |----------|-------|--------|
 | High Priority | 4 | Partially addressed |
-| Medium Priority | 4 | **1 COMPLETED** (LLM optimization) |
+| Medium Priority | 4 | **2 COMPLETED** (LLM optimization, API improvements) |
 | Low Priority | 4 | Pending |
 | Architecture | 2 | Pending |
 | Quick Wins | 7 | **COMPLETED** |
 
-**Test Coverage**: 78 tests passing
+**Test Coverage**: 82 tests passing
 
-**Next Steps**: Focus on remaining medium priority items (frontend improvements, API improvements).
+**Next Steps**: Focus on remaining medium priority items (frontend improvements).
 
 ---
 

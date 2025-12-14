@@ -12,7 +12,6 @@ from .models import (
     Recipe,
     RecipeIngredient,
     RecipeChoiceGroup,
-    RecipeChoiceItem,
 )
 
 
@@ -114,40 +113,53 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
             index["other"].append(item_json)
 
     # Convenience lists for quick questions like "what breads do you have?"
-    # We derive them from the choice groups + ingredient categories.
+    # These are pulled directly from the Ingredient table by category,
+    # allowing admins to manage options independently of recipes.
 
-    # Bread types that appear in any choice group
+    # Bread types - all ingredients with category 'bread'
     bread_ingredients = (
         db.query(Ingredient)
-        .join(RecipeChoiceItem, RecipeChoiceItem.ingredient_id == Ingredient.id)
-        .join(RecipeChoiceGroup, RecipeChoiceGroup.id == RecipeChoiceItem.choice_group_id)
         .filter(Ingredient.category == "bread")
-        .distinct()
+        .order_by(Ingredient.name)
         .all()
     )
     index["bread_types"] = [ing.name for ing in bread_ingredients]
 
-    # Cheese types that appear in any choice group
+    # Cheese types - all ingredients with category 'cheese'
     cheese_ingredients = (
         db.query(Ingredient)
-        .join(RecipeChoiceItem, RecipeChoiceItem.ingredient_id == Ingredient.id)
-        .join(RecipeChoiceGroup, RecipeChoiceGroup.id == RecipeChoiceItem.choice_group_id)
         .filter(Ingredient.category == "cheese")
-        .distinct()
+        .order_by(Ingredient.name)
         .all()
     )
     index["cheese_types"] = [ing.name for ing in cheese_ingredients]
 
-    # (Optional) Sauce types
+    # Sauce types - all ingredients with category 'sauce'
     sauce_ingredients = (
         db.query(Ingredient)
-        .join(RecipeChoiceItem, RecipeChoiceItem.ingredient_id == Ingredient.id)
-        .join(RecipeChoiceGroup, RecipeChoiceGroup.id == RecipeChoiceItem.choice_group_id)
         .filter(Ingredient.category == "sauce")
-        .distinct()
+        .order_by(Ingredient.name)
         .all()
     )
     index["sauce_types"] = [ing.name for ing in sauce_ingredients]
+
+    # Protein types - all ingredients with category 'protein'
+    protein_ingredients = (
+        db.query(Ingredient)
+        .filter(Ingredient.category == "protein")
+        .order_by(Ingredient.name)
+        .all()
+    )
+    index["protein_types"] = [ing.name for ing in protein_ingredients]
+
+    # Topping types - all ingredients with category 'topping'
+    topping_ingredients = (
+        db.query(Ingredient)
+        .filter(Ingredient.category == "topping")
+        .order_by(Ingredient.name)
+        .all()
+    )
+    index["topping_types"] = [ing.name for ing in topping_ingredients]
 
     return index
 

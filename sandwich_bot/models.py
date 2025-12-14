@@ -193,3 +193,45 @@ class ChatSession(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# --- Session Analytics model for tracking all sessions ---
+
+class SessionAnalytics(Base):
+    """
+    Tracks all sessions for analytics - both abandoned and completed.
+    Used to analyze user behavior and identify UX issues.
+    """
+    __tablename__ = "session_analytics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, nullable=False, index=True)  # UUID string from chat session
+
+    # Session outcome
+    status = Column(String, nullable=False, default="abandoned", index=True)  # 'abandoned' or 'completed'
+
+    # Session state at end
+    message_count = Column(Integer, nullable=False, default=0)  # How many messages exchanged
+    had_items_in_cart = Column(Boolean, nullable=False, default=False)  # Were there items in cart?
+    item_count = Column(Integer, nullable=False, default=0)  # Number of items in cart
+    cart_total = Column(Float, nullable=False, default=0.0)  # Cart/order value
+    order_status = Column(String, nullable=False, default="pending")  # pending, confirmed, etc.
+
+    # Last interaction details
+    last_bot_message = Column(Text, nullable=True)  # What was the bot's last message?
+    last_user_message = Column(Text, nullable=True)  # What did user say last?
+
+    # Session details
+    reason = Column(String, nullable=True)  # For abandoned: browser_close, refresh, navigation. For completed: null
+    session_duration_seconds = Column(Integer, nullable=True)  # How long was the session?
+
+    # Customer info (for completed orders)
+    customer_name = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
+
+    # Timestamp
+    ended_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+# Alias for backward compatibility
+AbandonedSession = SessionAnalytics

@@ -1207,5 +1207,6 @@ def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeyp
     assert data.get("returning_customer") is not None
     assert data["returning_customer"]["name"] == "John"
     assert data["returning_customer"]["order_count"] >= 1
-    # Greeting should be personalized
-    assert "John" in data["message"] or "welcome back" in data["message"].lower()
+    # Greeting should be personalized with name and offer to repeat order
+    assert "John" in data["message"]
+    assert "repeat your last order" in data["message"]

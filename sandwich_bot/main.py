@@ -615,12 +615,7 @@ def chat_start(
     # Generate personalized greeting for returning customers
     if returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
-        order_count = returning_customer.get("order_count", 0)
-
-        if order_count > 1:
-            welcome = f"Welcome back, {customer_name}! Great to hear from you again. Would you like your usual, or would you like to try something different today?"
-        else:
-            welcome = f"Welcome back, {customer_name}! Would you like to try one of our signature sandwiches or build your own?"
+        welcome = f"Hi {customer_name}, welcome to Subby's! Would you like to repeat your last order or place a new order?"
     else:
         # Default greeting for new customers
         welcome = "Hi, welcome to Subby's! Would you like to try one of our signature sandwiches or build your own?"

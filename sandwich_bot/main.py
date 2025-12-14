@@ -707,6 +707,10 @@ def chat_message(
         or all_slots.get("phone")
     )
 
+    # Update history FIRST (before logging analytics, so conversation is complete)
+    history.append({"role": "user", "content": req.message})
+    history.append({"role": "assistant", "content": reply})
+
     # Persist if order is confirmed AND we have customer info
     # (either from this request or from a previous request)
     order_is_confirmed = updated_order_state.get("status") == "confirmed"
@@ -732,7 +736,7 @@ def chat_message(
             item_count=len(items),
             cart_total=updated_order_state.get("total_price", 0.0),
             order_status="confirmed",
-            conversation_history=history,  # Store full conversation
+            conversation_history=history,  # Now includes current exchange
             last_bot_message=reply[:500] if reply else None,
             last_user_message=req.message[:500] if req.message else None,
             reason=None,  # No abandonment reason for completed orders
@@ -742,10 +746,6 @@ def chat_message(
         db.add(session_record)
         db.commit()
         logger.info("Completed session logged: %s", req.session_id[:8])
-
-    # Update history
-    history.append({"role": "user", "content": req.message})
-    history.append({"role": "assistant", "content": reply})
 
     # Persist session to database
     save_session(db, req.session_id, session)

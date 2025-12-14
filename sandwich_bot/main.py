@@ -665,6 +665,7 @@ def chat_message(
 
     history: List[Dict[str, str]] = session["history"]
     order_state: Dict[str, Any] = session["order"]
+    returning_customer: Dict[str, Any] = session.get("returning_customer")
 
     # Build menu index for LLM
     menu_index = build_menu_index(db)
@@ -691,6 +692,7 @@ def chat_message(
             menu_index,
             req.message,
             include_menu_in_system=include_menu_in_system,
+            returning_customer=returning_customer,
         )
         # Update menu version in session if we sent it
         if include_menu_in_system:
@@ -767,7 +769,7 @@ def chat_message(
 
         try:
             updated_order_state = apply_intent_to_order_state(
-                updated_order_state, intent, slots, menu_index
+                updated_order_state, intent, slots, menu_index, returning_customer
             )
             processed_actions.append(ActionOut(intent=intent, slots=slots))
 

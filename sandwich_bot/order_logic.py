@@ -180,7 +180,7 @@ def _calculate_customization_extras(
     return total_extra
 
 
-def apply_intent_to_order_state(order_state, intent, slots, menu_index=None):
+def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, returning_customer=None):
     state = deepcopy(order_state)
 
     if intent == "add_sandwich":
@@ -200,6 +200,50 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None):
 
     if intent == "confirm_order":
         return _confirm(state, slots, menu_index)
+
+    if intent == "repeat_order":
+        return _repeat_order(state, slots, menu_index, returning_customer)
+
+    return state
+
+
+def _repeat_order(state, slots, menu_index, returning_customer):
+    """
+    Repeat the customer's previous order by copying all items.
+    """
+    if not returning_customer:
+        return state
+
+    last_order_items = returning_customer.get("last_order_items", [])
+    if not last_order_items:
+        return state
+
+    # Copy all items from the previous order
+    total_price = 0.0
+    for prev_item in last_order_items:
+        item = {
+            "item_type": prev_item.get("item_type", "sandwich"),
+            "menu_item_name": prev_item.get("menu_item_name"),
+            "bread": prev_item.get("bread"),
+            "protein": prev_item.get("protein"),
+            "cheese": prev_item.get("cheese"),
+            "toppings": prev_item.get("toppings") or [],
+            "sauces": prev_item.get("sauces") or [],
+            "toasted": prev_item.get("toasted", False),
+            "quantity": prev_item.get("quantity", 1),
+            "unit_price": prev_item.get("price", 0.0),
+        }
+        state["items"].append(item)
+        total_price += item["unit_price"] * item["quantity"]
+
+    state["total_price"] = total_price
+    state["status"] = "building"
+
+    # Also copy the customer info from the returning customer
+    if returning_customer.get("name"):
+        state["customer"]["name"] = returning_customer["name"]
+    if returning_customer.get("phone"):
+        state["customer"]["phone"] = returning_customer["phone"]
 
     return state
 

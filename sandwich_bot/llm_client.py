@@ -132,6 +132,23 @@ RETURNING CUSTOMER IN SAME SESSION:
   * If they want different info, ask for the new name/phone.
 - CRITICAL: When the customer confirms using existing info, you MUST return a confirm_order action. Do NOT just say "I'll confirm" without the actual intent.
 
+RETURNING CUSTOMER - REPEAT LAST ORDER:
+- If "PREVIOUS ORDER" section is present in the prompt, this is a returning customer with order history.
+- When a returning customer says "repeat my last order", "same as last time", "my usual", or similar:
+  1. Use the "repeat_order" intent - this will copy all items from their previous order.
+  2. In your reply, list ALL items from the PREVIOUS ORDER with their details and the total price.
+  3. Ask if they want to confirm the order or make any changes.
+  4. Example reply format:
+     "Sure! Your last order was:
+      - Turkey Club on wheat with lettuce, tomato ($8.00)
+      - Chips ($1.29)
+      - Coke ($2.50)
+      Total: $11.79
+      Would you like me to place the same order, or would you like to make any changes?"
+- IMPORTANT: The repeat_order intent will automatically populate the order with previous items.
+  Your reply should echo the details from PREVIOUS ORDER so the customer can review.
+- If there is no PREVIOUS ORDER section, apologize and offer to help them place a new order.
+
 MULTI-ITEM ORDERS:
 - When a user orders multiple items in one message (e.g., "I want a turkey club, chips, and a coke"),
   you MUST return a SEPARATE action for EACH item in the "actions" array.
@@ -252,13 +269,56 @@ JSON SCHEMA:
 # Slim template without menu - used when menu is in system prompt
 USER_PROMPT_TEMPLATE_SLIM = """ORDER STATE:
 {order_state}
-
+{previous_order_section}
 USER MESSAGE:
 {user_message}
 
 JSON SCHEMA:
 {schema}
 """
+
+
+def format_previous_order_section(returning_customer: Dict[str, Any] = None) -> str:
+    """
+    Format the previous order section for the LLM prompt.
+    Returns empty string if no returning customer or no order history.
+    """
+    if not returning_customer:
+        return ""
+
+    last_order_items = returning_customer.get("last_order_items", [])
+    if not last_order_items:
+        return ""
+
+    # Format the previous order items
+    lines = ["\nPREVIOUS ORDER (customer's last order):"]
+    total = 0.0
+    for item in last_order_items:
+        item_type = item.get("item_type", "item")
+        name = item.get("menu_item_name", "Unknown")
+        price = item.get("price", 0.0)
+        quantity = item.get("quantity", 1)
+        total += price * quantity
+
+        # Build item description
+        details = []
+        if item.get("bread"):
+            details.append(f"on {item['bread']}")
+        toppings = item.get("toppings")
+        if toppings:
+            if isinstance(toppings, list):
+                details.append(f"with {', '.join(toppings)}")
+            else:
+                details.append(f"with {toppings}")
+
+        detail_str = " ".join(details) if details else ""
+        qty_str = f" x{quantity}" if quantity > 1 else ""
+        lines.append(f"  - {name}{qty_str} {detail_str} (${price:.2f})")
+
+    lines.append(f"  Total: ${total:.2f}")
+    lines.append("")  # Empty line after
+
+    return "\n".join(lines)
 
 # Legacy template for backward compatibility (same as WITH_MENU)
 USER_PROMPT_TEMPLATE = """CONVERSATION HISTORY:
@@ -288,6 +348,7 @@ INTENT_TYPES = [
     "review_order",
     "confirm_order",
     "cancel_order",
+    "repeat_order",  # Repeat a returning customer's previous order
     "small_talk",
     "unknown",
 ]
@@ -370,6 +431,7 @@ def call_sandwich_bot(
     user_message,
     model: str = None,
     include_menu_in_system: bool = True,
+    returning_customer: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
@@ -387,6 +449,7 @@ def call_sandwich_bot(
         model: OpenAI model to use (defaults to OPENAI_MODEL env var or gpt-4o)
         include_menu_in_system: If True, include menu in system prompt (saves tokens
             on subsequent messages). If False, include menu in user message.
+        returning_customer: Optional dict with returning customer info including last_order_items
     """
     if model is None:
         model = DEFAULT_MODEL
@@ -410,10 +473,14 @@ def call_sandwich_bot(
         })
 
     # 3. Build current user message
+    # Include previous order section if returning customer has order history
+    previous_order_section = format_previous_order_section(returning_customer)
+
     if include_menu_in_system:
         # Menu already in system prompt - use slim template
         user_content = USER_PROMPT_TEMPLATE_SLIM.format(
             order_state=json.dumps(current_order_state, indent=2),
+            previous_order_section=previous_order_section,
             user_message=user_message,
             schema=json.dumps(RESPONSE_SCHEMA, indent=2),
         )
@@ -426,6 +493,12 @@ def call_sandwich_bot(
             user_message=user_message,
             schema=json.dumps(RESPONSE_SCHEMA, indent=2),
         )
+        # Append previous order section if present
+        if previous_order_section:
+            user_content = user_content.replace(
+                "USER MESSAGE:",
+                f"{previous_order_section}\nUSER MESSAGE:"
+            )
 
     messages.append({"role": "user", "content": user_content})
 

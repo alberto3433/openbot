@@ -964,3 +964,87 @@ def test_signature_sandwich_not_treated_as_custom():
     # Price should be the signature base price
     assert new["items"][0]["unit_price"] == 8.99
     assert new["items"][0]["menu_item_name"] == "Turkey Club"
+
+
+def test_repeat_order_copies_previous_order_items():
+    """Test that repeat_order copies all items from the customer's previous order."""
+    state = {"status": "pending", "items": [], "customer": {"name": None, "phone": None}, "total_price": 0.0}
+    menu = _make_menu_index([])
+
+    # Simulated returning customer with previous order
+    returning_customer = {
+        "name": "John",
+        "phone": "555-123-4567",
+        "order_count": 2,
+        "last_order_items": [
+            {
+                "menu_item_name": "Turkey Club",
+                "item_type": "sandwich",
+                "bread": "Wheat",
+                "protein": "Turkey",
+                "toppings": ["Lettuce", "Tomato"],
+                "price": 8.00,
+                "quantity": 1,
+            },
+            {
+                "menu_item_name": "Chips",
+                "item_type": "side",
+                "price": 1.29,
+                "quantity": 1,
+            },
+            {
+                "menu_item_name": "Coke",
+                "item_type": "drink",
+                "price": 2.50,
+                "quantity": 2,
+            },
+        ],
+    }
+
+    new = apply_intent_to_order_state(state, "repeat_order", {}, menu, returning_customer)
+
+    # Should have 3 items
+    assert len(new["items"]) == 3
+
+    # Check each item was copied correctly
+    assert new["items"][0]["menu_item_name"] == "Turkey Club"
+    assert new["items"][0]["bread"] == "Wheat"
+    assert new["items"][0]["toppings"] == ["Lettuce", "Tomato"]
+    assert new["items"][0]["unit_price"] == 8.00
+
+    assert new["items"][1]["menu_item_name"] == "Chips"
+    assert new["items"][1]["unit_price"] == 1.29
+
+    assert new["items"][2]["menu_item_name"] == "Coke"
+    assert new["items"][2]["quantity"] == 2
+    assert new["items"][2]["unit_price"] == 2.50
+
+    # Total price should be calculated correctly (8.00 + 1.29 + 2.50*2 = 14.29)
+    assert new["total_price"] == 14.29
+
+    # Customer info should be copied
+    assert new["customer"]["name"] == "John"
+    assert new["customer"]["phone"] == "555-123-4567"
+
+    # Status should be "building"
+    assert new["status"] == "building"
+
+
+def test_repeat_order_with_no_previous_order():
+    """Test that repeat_order does nothing if no previous order exists."""
+    state = {"status": "pending", "items": [], "customer": {"name": None, "phone": None}, "total_price": 0.0}
+    menu = _make_menu_index([])
+
+    # Returning customer with no previous order items
+    returning_customer = {
+        "name": "Jane",
+        "phone": "555-999-8888",
+        "order_count": 0,
+        "last_order_items": [],
+    }
+
+    new = apply_intent_to_order_state(state, "repeat_order", {}, menu, returning_customer)
+
+    # Should have no items (order unchanged)
+    assert len(new["items"]) == 0
+    assert new["status"] == "pending"

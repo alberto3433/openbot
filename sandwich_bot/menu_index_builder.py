@@ -13,6 +13,7 @@ from .models import (
     RecipeIngredient,
     RecipeChoiceGroup,
     IngredientStoreAvailability,
+    MenuItemStoreAvailability,
 )
 
 
@@ -204,6 +205,26 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             for ing in unavailable
         ]
     index["unavailable_ingredients"] = unavailable_ingredients
+
+    # Unavailable menu items (86'd items) - so LLM knows what menu items are out of stock
+    # Menu items are only tracked per-store (no global fallback)
+    unavailable_menu_items = []
+    if store_id:
+        # Get menu items that are 86'd for this specific store
+        store_unavail_items = (
+            db.query(MenuItemStoreAvailability)
+            .filter(
+                MenuItemStoreAvailability.store_id == store_id,
+                MenuItemStoreAvailability.is_available == False
+            )
+            .all()
+        )
+        unavail_item_ids = {sa.menu_item_id for sa in store_unavail_items}
+        for item_id in unavail_item_ids:
+            item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+            if item:
+                unavailable_menu_items.append({"name": item.name, "category": item.category})
+    index["unavailable_menu_items"] = unavailable_menu_items
 
     return index
 

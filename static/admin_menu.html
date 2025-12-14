@@ -290,10 +290,6 @@
             <label for="itemPrice">Base price ($)</label>
             <input id="itemPrice" type="number" step="0.01" />
           </div>
-          <div class="field">
-            <label for="itemQty">Available qty</label>
-            <input id="itemQty" type="number" />
-          </div>
         </div>
 
         <div class="field-row">
@@ -344,7 +340,6 @@
     const itemNameEl = document.getElementById("itemName");
     const itemCategoryEl = document.getElementById("itemCategory");
     const itemPriceEl = document.getElementById("itemPrice");
-    const itemQtyEl = document.getElementById("itemQty");
     const itemSignatureEl = document.getElementById("itemSignature");
     const itemMetadataEl = document.getElementById("itemMetadata");
 
@@ -457,7 +452,7 @@
 
         const meta = document.createElement("div");
         meta.className = "item-meta";
-        meta.textContent = `${item.category || "uncategorized"} • $${item.base_price.toFixed(2)} • qty: ${item.available_qty}`;
+        meta.textContent = `${item.category || "uncategorized"} • $${item.base_price.toFixed(2)}`;
         main.appendChild(meta);
 
         row.appendChild(main);
@@ -479,7 +474,6 @@
       itemNameEl.value = "";
       itemCategoryEl.value = "";
       itemPriceEl.value = "";
-      itemQtyEl.value = "";
       itemSignatureEl.checked = false;
       itemMetadataEl.value = "";
       ingredientsViewEl.textContent = "No metadata yet.";
@@ -507,7 +501,6 @@
       itemNameEl.value = item.name || "";
       itemCategoryEl.value = item.category || "";
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
-      itemQtyEl.value = item.available_qty != null ? item.available_qty : "";
       itemSignatureEl.checked = !!item.is_signature;
       itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
       updateIngredientsViewSafe();
@@ -562,7 +555,6 @@
         category: itemCategoryEl.value.trim(),
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
-        available_qty: parseInt(itemQtyEl.value || "0", 10),
         metadata: null
       };
 

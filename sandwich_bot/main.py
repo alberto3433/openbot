@@ -22,7 +22,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .db import engine, get_db
-from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability
+from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
@@ -457,6 +457,23 @@ class IngredientStoreAvailabilityOut(BaseModel):
     unit: str
     track_inventory: bool
     is_available: bool  # Store-specific availability (or global if no store specified)
+
+
+class MenuItemStoreAvailabilityOut(BaseModel):
+    """Response model for menu item with store-specific availability."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category: str
+    base_price: float
+    is_available: bool  # Store-specific availability
+
+
+class MenuItemAvailabilityUpdate(BaseModel):
+    """Payload for toggling menu item availability."""
+    is_available: bool
+    store_id: Optional[str] = None  # If provided, updates per-store availability
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -1541,6 +1558,119 @@ def delete_ingredient(
     db.delete(ingredient)
     db.commit()
     return None
+
+
+# ---------- Admin menu item availability endpoints (86 system) ----------
+
+
+@admin_ingredients_router.get("/menu-items", response_model=List[MenuItemStoreAvailabilityOut])
+def list_menu_items_availability(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    store_id: Optional[str] = Query(None, description="Store ID to check availability for"),
+) -> List[MenuItemStoreAvailabilityOut]:
+    """List all menu items with store-specific availability. Used by admin_ingredients page."""
+    items = db.query(MenuItem).order_by(MenuItem.category, MenuItem.name).all()
+
+    result = []
+    for item in items:
+        # Determine availability: check store-specific first, then default to True (available)
+        is_available = True  # Default: available
+        if store_id:
+            store_avail = db.query(MenuItemStoreAvailability).filter(
+                MenuItemStoreAvailability.menu_item_id == item.id,
+                MenuItemStoreAvailability.store_id == store_id
+            ).first()
+            if store_avail:
+                is_available = store_avail.is_available
+
+        result.append(MenuItemStoreAvailabilityOut(
+            id=item.id,
+            name=item.name,
+            category=item.category,
+            base_price=item.base_price,
+            is_available=is_available,
+        ))
+    return result
+
+
+@admin_ingredients_router.get("/menu-items/unavailable", response_model=List[MenuItemStoreAvailabilityOut])
+def list_unavailable_menu_items(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    store_id: Optional[str] = Query(None, description="Store ID to check availability for"),
+) -> List[MenuItemStoreAvailabilityOut]:
+    """List all menu items that are currently out of stock (86'd) for a store."""
+    if not store_id:
+        # No store specified, return empty list (menu items are per-store only)
+        return []
+
+    # Get menu items that are 86'd for this specific store
+    store_unavail = db.query(MenuItemStoreAvailability).filter(
+        MenuItemStoreAvailability.store_id == store_id,
+        MenuItemStoreAvailability.is_available == False
+    ).all()
+    item_ids = [sa.menu_item_id for sa in store_unavail]
+    items = db.query(MenuItem).filter(MenuItem.id.in_(item_ids)).order_by(MenuItem.category, MenuItem.name).all()
+
+    return [MenuItemStoreAvailabilityOut(
+        id=item.id,
+        name=item.name,
+        category=item.category,
+        base_price=item.base_price,
+        is_available=False,  # These are all unavailable
+    ) for item in items]
+
+
+@admin_ingredients_router.patch("/menu-items/{item_id}/availability", response_model=MenuItemStoreAvailabilityOut)
+def update_menu_item_availability(
+    item_id: int,
+    payload: MenuItemAvailabilityUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> MenuItemStoreAvailabilityOut:
+    """
+    Quick toggle for menu item availability (86 system).
+    Use this to mark menu items as out of stock or back in stock for a specific store.
+    store_id is required for menu items (they are tracked per-store only).
+    Requires admin authentication.
+    """
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+
+    if not payload.store_id:
+        raise HTTPException(status_code=400, detail="store_id is required for menu item availability")
+
+    # Update per-store availability
+    store_avail = db.query(MenuItemStoreAvailability).filter(
+        MenuItemStoreAvailability.menu_item_id == item_id,
+        MenuItemStoreAvailability.store_id == payload.store_id
+    ).first()
+
+    if store_avail:
+        store_avail.is_available = payload.is_available
+    else:
+        # Create new entry
+        store_avail = MenuItemStoreAvailability(
+            menu_item_id=item_id,
+            store_id=payload.store_id,
+            is_available=payload.is_available
+        )
+        db.add(store_avail)
+
+    db.commit()
+
+    status = "available" if payload.is_available else "86'd (out of stock)"
+    logger.info("Menu item '%s' marked as %s for store %s", item.name, status, payload.store_id)
+
+    return MenuItemStoreAvailabilityOut(
+        id=item.id,
+        name=item.name,
+        category=item.category,
+        base_price=item.base_price,
+        is_available=payload.is_available,
+    )
 
 
 # ---------- Admin analytics endpoints ----------

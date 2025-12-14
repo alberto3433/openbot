@@ -87,6 +87,28 @@ class MenuItem(Base):
         back_populates="menu_item",
         cascade="all, delete-orphan",
     )
+    store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
+
+
+# --- Per-store menu item availability (86 system) ---
+
+class MenuItemStoreAvailability(Base):
+    """Tracks menu item availability per store. If no entry exists for a store+item, assume available."""
+    __tablename__ = "menu_item_store_availability"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(String, nullable=False, index=True)
+    is_available = Column(Boolean, nullable=False, default=True)
+
+    # Unique constraint: one entry per menu item per store
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "store_id", name="uix_menu_item_store"),
+    )
+
+    # relationships
+    menu_item = relationship("MenuItem", back_populates="store_availability")
+
 
 # --- New Ingredient model ---
 

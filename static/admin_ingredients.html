@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Ingredient Availability (86 System)</title>
+  <title>Availability Manager (86 System)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -196,7 +196,7 @@
 </head>
 <body>
   <div class="app-header">
-    <div>Ingredient Availability (86 System)</div>
+    <div>Availability Manager (86 System)</div>
     <div>
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_menu.html">Menu</a>
@@ -220,14 +220,25 @@
 
     <div id="statusBar" class="status-bar" style="display: none;"></div>
 
-    <!-- Out of Stock Section -->
+    <!-- Out of Stock Section - Ingredients -->
     <div class="section" id="outOfStockSection">
       <div class="section-header danger">
-        <span>Currently 86'd (Out of Stock)</span>
+        <span>Ingredients 86'd (Out of Stock)</span>
         <span class="count" id="outOfStockCount">0</span>
       </div>
       <ul class="ingredient-list" id="outOfStockList">
         <li class="empty-state good">All ingredients are available!</li>
+      </ul>
+    </div>
+
+    <!-- Out of Stock Section - Menu Items -->
+    <div class="section" id="outOfStockMenuItemsSection">
+      <div class="section-header danger">
+        <span>Menu Items 86'd (Out of Stock)</span>
+        <span class="count" id="outOfStockMenuItemsCount">0</span>
+      </div>
+      <ul class="ingredient-list" id="outOfStockMenuItemsList">
+        <li class="empty-state good">All menu items are available!</li>
       </ul>
     </div>
 
@@ -248,20 +259,45 @@
       </div>
       <div id="ingredientsList"></div>
     </div>
+
+    <!-- Filter Bar for Menu Items -->
+    <div class="filter-bar">
+      <input type="text" id="menuItemSearchInput" placeholder="Search menu items..." />
+      <select id="menuItemCategoryFilter">
+        <option value="">All categories</option>
+      </select>
+    </div>
+
+    <!-- All Menu Items Section -->
+    <div class="section" id="allMenuItemsSection">
+      <div class="section-header">
+        <span>All Menu Items</span>
+        <span class="count" id="menuItemTotalCount">0</span>
+      </div>
+      <div id="menuItemsList"></div>
+    </div>
   </div>
 
   <script>
     const API_BASE = "";
     let allIngredients = [];
     let filteredIngredients = [];
+    let allMenuItems = [];
+    let filteredMenuItems = [];
 
     const statusBar = document.getElementById("statusBar");
     const outOfStockList = document.getElementById("outOfStockList");
     const outOfStockCount = document.getElementById("outOfStockCount");
+    const outOfStockMenuItemsList = document.getElementById("outOfStockMenuItemsList");
+    const outOfStockMenuItemsCount = document.getElementById("outOfStockMenuItemsCount");
     const ingredientsList = document.getElementById("ingredientsList");
     const totalCount = document.getElementById("totalCount");
+    const menuItemsList = document.getElementById("menuItemsList");
+    const menuItemTotalCount = document.getElementById("menuItemTotalCount");
     const searchInput = document.getElementById("searchInput");
     const categoryFilter = document.getElementById("categoryFilter");
+    const menuItemSearchInput = document.getElementById("menuItemSearchInput");
+    const menuItemCategoryFilter = document.getElementById("menuItemCategoryFilter");
     const storeSelector = document.getElementById("storeSelector");
 
     // Store name mapping for display
@@ -290,7 +326,6 @@
 
     async function loadIngredients() {
       const storeId = getCurrentStoreId();
-      showStatus(`Loading ingredients for ${getCurrentStoreName()}...`);
       try {
         const resp = await fetch(`${API_BASE}/admin/ingredients?store_id=${storeId}`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -298,7 +333,6 @@
         buildCategoryFilter();
         applyFilters();
         renderOutOfStock();
-        statusBar.style.display = "none";
       } catch (err) {
         console.error("Error loading ingredients:", err);
         showStatus("Error loading ingredients. Make sure you're logged in as admin.", "error");
@@ -437,14 +471,178 @@
       }
     }
 
-    // Event listeners
+    // ========== MENU ITEMS FUNCTIONS ==========
+
+    async function loadMenuItems() {
+      const storeId = getCurrentStoreId();
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items?store_id=${storeId}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        allMenuItems = await resp.json();
+        buildMenuItemCategoryFilter();
+        applyMenuItemFilters();
+        renderOutOfStockMenuItems();
+      } catch (err) {
+        console.error("Error loading menu items:", err);
+        showStatus("Error loading menu items. See console.", "error");
+      }
+    }
+
+    function buildMenuItemCategoryFilter() {
+      const categories = [...new Set(allMenuItems.map(i => i.category))].sort();
+      menuItemCategoryFilter.innerHTML = '<option value="">All categories</option>';
+      categories.forEach(cat => {
+        const opt = document.createElement("option");
+        opt.value = cat;
+        opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+        menuItemCategoryFilter.appendChild(opt);
+      });
+    }
+
+    function applyMenuItemFilters() {
+      const query = menuItemSearchInput.value.toLowerCase();
+      const cat = menuItemCategoryFilter.value;
+
+      filteredMenuItems = allMenuItems.filter(item => {
+        const matchesQuery = !query || item.name.toLowerCase().includes(query);
+        const matchesCat = !cat || item.category === cat;
+        return matchesQuery && matchesCat;
+      });
+
+      renderMenuItemsList();
+    }
+
+    function renderOutOfStockMenuItems() {
+      const unavailable = allMenuItems.filter(i => !i.is_available);
+      outOfStockMenuItemsCount.textContent = unavailable.length;
+
+      if (unavailable.length === 0) {
+        outOfStockMenuItemsList.innerHTML = '<li class="empty-state good">All menu items are available!</li>';
+        return;
+      }
+
+      outOfStockMenuItemsList.innerHTML = unavailable.map(item => `
+        <li class="ingredient-item">
+          <div class="ingredient-info">
+            <span class="ingredient-name">${item.name}</span>
+            <span class="ingredient-meta">${item.category} - $${item.base_price.toFixed(2)}</span>
+          </div>
+          <button class="toggle-btn unavailable" data-id="${item.id}" data-available="false" data-type="menu-item">
+            86'd - Click to Restock
+          </button>
+        </li>
+      `).join("");
+
+      // Add click handlers
+      outOfStockMenuItemsList.querySelectorAll(".toggle-btn").forEach(btn => {
+        btn.addEventListener("click", () => toggleMenuItemAvailability(btn));
+      });
+    }
+
+    function renderMenuItemsList() {
+      menuItemTotalCount.textContent = filteredMenuItems.length;
+
+      if (filteredMenuItems.length === 0) {
+        menuItemsList.innerHTML = '<div class="empty-state">No menu items found.</div>';
+        return;
+      }
+
+      // Group by category
+      const grouped = {};
+      filteredMenuItems.forEach(item => {
+        if (!grouped[item.category]) grouped[item.category] = [];
+        grouped[item.category].push(item);
+      });
+
+      const categories = Object.keys(grouped).sort();
+
+      menuItemsList.innerHTML = categories.map(cat => `
+        <div class="category-group">
+          <div class="category-title">${cat} (${grouped[cat].length})</div>
+          <ul class="ingredient-list">
+            ${grouped[cat].map(item => `
+              <li class="ingredient-item">
+                <div class="ingredient-info">
+                  <span class="ingredient-name">${item.name}</span>
+                  <span class="ingredient-meta">$${item.base_price.toFixed(2)}</span>
+                </div>
+                <button class="toggle-btn ${item.is_available ? 'available' : 'unavailable'}"
+                        data-id="${item.id}"
+                        data-available="${item.is_available}"
+                        data-type="menu-item">
+                  ${item.is_available ? 'Available' : "86'd"}
+                </button>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      `).join("");
+
+      // Add click handlers
+      menuItemsList.querySelectorAll(".toggle-btn").forEach(btn => {
+        btn.addEventListener("click", () => toggleMenuItemAvailability(btn));
+      });
+    }
+
+    async function toggleMenuItemAvailability(btn) {
+      const id = btn.dataset.id;
+      const currentlyAvailable = btn.dataset.available === "true";
+      const newAvailable = !currentlyAvailable;
+      const storeId = getCurrentStoreId();
+
+      btn.disabled = true;
+      btn.textContent = "Updating...";
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items/${id}/availability`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_available: newAvailable, store_id: storeId })
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        const updated = await resp.json();
+        showStatus(`${updated.name} is now ${newAvailable ? 'available' : "86'd"} at ${getCurrentStoreName()}`, "success");
+
+        // Update local data and re-render
+        const idx = allMenuItems.findIndex(i => i.id === updated.id);
+        if (idx !== -1) {
+          allMenuItems[idx] = updated;
+        }
+        applyMenuItemFilters();
+        renderOutOfStockMenuItems();
+
+      } catch (err) {
+        console.error("Error updating menu item availability:", err);
+        showStatus("Error updating menu item. See console.", "error");
+        btn.disabled = false;
+        btn.textContent = currentlyAvailable ? 'Available' : "86'd";
+      }
+    }
+
+    // ========== COMBINED LOAD FUNCTION ==========
+
+    async function loadAll() {
+      showStatus(`Loading data for ${getCurrentStoreName()}...`);
+      await Promise.all([loadIngredients(), loadMenuItems()]);
+      statusBar.style.display = "none";
+    }
+
+    // Event listeners - Ingredients
     searchInput.addEventListener("input", applyFilters);
     categoryFilter.addEventListener("change", applyFilters);
-    document.getElementById("refreshBtn").addEventListener("click", loadIngredients);
-    storeSelector.addEventListener("change", loadIngredients);
+
+    // Event listeners - Menu Items
+    menuItemSearchInput.addEventListener("input", applyMenuItemFilters);
+    menuItemCategoryFilter.addEventListener("change", applyMenuItemFilters);
+
+    // Event listeners - Common
+    document.getElementById("refreshBtn").addEventListener("click", loadAll);
+    storeSelector.addEventListener("change", loadAll);
 
     // Initial load
-    loadIngredients();
+    loadAll();
   </script>
 </body>
 </html>

@@ -303,11 +303,15 @@
     });
 
     // Track abandoned sessions (simulates "hang up")
+    let abandonAnalyticsSent = false;  // Prevent duplicate sends
+
     function sendAbandonAnalytics(reason) {
-      // Don't send if no session or order was already confirmed
-      if (!sessionId || orderConfirmed) {
+      // Don't send if already sent, no session, or order was confirmed
+      if (abandonAnalyticsSent || !sessionId || orderConfirmed) {
         return;
       }
+
+      abandonAnalyticsSent = true;  // Mark as sent to prevent duplicates
 
       const items = orderState.items || [];
       const sessionDuration = sessionStartTime
@@ -336,19 +340,11 @@
     }
 
     // Detect page unload (refresh, close, or navigation)
+    // Use only beforeunload as it's most reliable and fires first
     window.addEventListener("beforeunload", (event) => {
-      // Detect if this is a refresh vs close
-      const navEntry = performance.getEntriesByType("navigation")[0];
-      const reason = navEntry && navEntry.type === "reload" ? "refresh" : "browser_close";
-
-      sendAbandonAnalytics(reason);
-    });
-
-    // Also track when user navigates away (e.g., clicks a link)
-    window.addEventListener("pagehide", (event) => {
-      if (!event.persisted) {
-        sendAbandonAnalytics("navigation");
-      }
+      // Detect if this is a refresh vs close/navigation
+      // Note: We can't perfectly distinguish close vs navigation in beforeunload
+      sendAbandonAnalytics("browser_close");
     });
   </script>
 </body>

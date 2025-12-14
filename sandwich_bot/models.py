@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Text,
     Index,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -103,6 +104,27 @@ class Ingredient(Base):
     # relationships
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     choice_for = relationship("RecipeChoiceItem", back_populates="ingredient", cascade="all, delete-orphan")
+    store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
+
+
+# --- Per-store ingredient availability (86 system) ---
+
+class IngredientStoreAvailability(Base):
+    """Tracks ingredient availability per store. If no entry exists for a store+ingredient, assume available."""
+    __tablename__ = "ingredient_store_availability"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(String, nullable=False, index=True)
+    is_available = Column(Boolean, nullable=False, default=True)
+
+    # Unique constraint: one entry per ingredient per store
+    __table_args__ = (
+        UniqueConstraint("ingredient_id", "store_id", name="uix_ingredient_store"),
+    )
+
+    # relationships
+    ingredient = relationship("Ingredient", back_populates="store_availability")
 
 
 # --- New Recipe model ---

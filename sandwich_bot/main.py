@@ -22,7 +22,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .db import engine, get_db
-from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics
+from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
@@ -444,6 +444,19 @@ class IngredientUpdate(BaseModel):
 class IngredientAvailabilityUpdate(BaseModel):
     """Simple payload for quickly toggling ingredient availability."""
     is_available: bool
+    store_id: Optional[str] = None  # If provided, updates per-store availability; otherwise updates global
+
+
+class IngredientStoreAvailabilityOut(BaseModel):
+    """Response model for ingredient with store-specific availability."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category: str
+    unit: str
+    track_inventory: bool
+    is_available: bool  # Store-specific availability (or global if no store specified)
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -713,9 +726,10 @@ def chat_message(
     history: List[Dict[str, str]] = session["history"]
     order_state: Dict[str, Any] = session["order"]
     returning_customer: Dict[str, Any] = session.get("returning_customer")
+    session_store_id: Optional[str] = session.get("store_id")
 
-    # Build menu index for LLM
-    menu_index = build_menu_index(db)
+    # Build menu index for LLM (with store-specific ingredient availability)
+    menu_index = build_menu_index(db, store_id=session_store_id)
 
     # Determine if menu needs to be sent in system prompt
     # Send menu if: first message (no menu_version yet) OR menu has changed
@@ -1306,18 +1320,40 @@ def get_order_detail(
 # ---------- Admin ingredients endpoints ----------
 
 
-@admin_ingredients_router.get("", response_model=List[IngredientOut])
+@admin_ingredients_router.get("", response_model=List[IngredientStoreAvailabilityOut])
 def list_ingredients(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
     category: Optional[str] = Query(None, description="Filter by category: bread, protein, cheese, topping, sauce"),
-) -> List[IngredientOut]:
-    """List all ingredients, optionally filtered by category. Requires admin authentication."""
+    store_id: Optional[str] = Query(None, description="Store ID to check availability for"),
+) -> List[IngredientStoreAvailabilityOut]:
+    """List all ingredients, optionally filtered by category. If store_id provided, returns store-specific availability."""
     query = db.query(Ingredient)
     if category:
         query = query.filter(Ingredient.category == category.lower())
     ingredients = query.order_by(Ingredient.category, Ingredient.name).all()
-    return [IngredientOut.model_validate(ing) for ing in ingredients]
+
+    result = []
+    for ing in ingredients:
+        # Determine availability: check store-specific first, then fall back to global
+        is_available = ing.is_available  # Global default
+        if store_id:
+            store_avail = db.query(IngredientStoreAvailability).filter(
+                IngredientStoreAvailability.ingredient_id == ing.id,
+                IngredientStoreAvailability.store_id == store_id
+            ).first()
+            if store_avail:
+                is_available = store_avail.is_available
+
+        result.append(IngredientStoreAvailabilityOut(
+            id=ing.id,
+            name=ing.name,
+            category=ing.category,
+            unit=ing.unit,
+            track_inventory=ing.track_inventory,
+            is_available=is_available,
+        ))
+    return result
 
 
 @admin_ingredients_router.post("", response_model=IngredientOut, status_code=201)
@@ -1345,14 +1381,33 @@ def create_ingredient(
     return IngredientOut.model_validate(ingredient)
 
 
-@admin_ingredients_router.get("/unavailable", response_model=List[IngredientOut])
+@admin_ingredients_router.get("/unavailable", response_model=List[IngredientStoreAvailabilityOut])
 def list_unavailable_ingredients(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[IngredientOut]:
-    """List all ingredients that are currently out of stock (86'd). Requires admin authentication."""
-    ingredients = db.query(Ingredient).filter(Ingredient.is_available == False).order_by(Ingredient.category, Ingredient.name).all()
-    return [IngredientOut.model_validate(ing) for ing in ingredients]
+    store_id: Optional[str] = Query(None, description="Store ID to check availability for"),
+) -> List[IngredientStoreAvailabilityOut]:
+    """List all ingredients that are currently out of stock (86'd) for a store. Requires admin authentication."""
+    if store_id:
+        # Get ingredients that are 86'd for this specific store
+        store_unavail = db.query(IngredientStoreAvailability).filter(
+            IngredientStoreAvailability.store_id == store_id,
+            IngredientStoreAvailability.is_available == False
+        ).all()
+        ingredient_ids = [sa.ingredient_id for sa in store_unavail]
+        ingredients = db.query(Ingredient).filter(Ingredient.id.in_(ingredient_ids)).order_by(Ingredient.category, Ingredient.name).all()
+    else:
+        # Fall back to global unavailable
+        ingredients = db.query(Ingredient).filter(Ingredient.is_available == False).order_by(Ingredient.category, Ingredient.name).all()
+
+    return [IngredientStoreAvailabilityOut(
+        id=ing.id,
+        name=ing.name,
+        category=ing.category,
+        unit=ing.unit,
+        track_inventory=ing.track_inventory,
+        is_available=False,  # These are all unavailable
+    ) for ing in ingredients]
 
 
 @admin_ingredients_router.get("/{ingredient_id}", response_model=IngredientOut)
@@ -1403,30 +1458,72 @@ def update_ingredient(
     return IngredientOut.model_validate(ingredient)
 
 
-@admin_ingredients_router.patch("/{ingredient_id}/availability", response_model=IngredientOut)
+@admin_ingredients_router.patch("/{ingredient_id}/availability", response_model=IngredientStoreAvailabilityOut)
 def update_ingredient_availability(
     ingredient_id: int,
     payload: IngredientAvailabilityUpdate,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> IngredientOut:
+) -> IngredientStoreAvailabilityOut:
     """
     Quick toggle for ingredient availability (86 system).
     Use this to mark ingredients as out of stock or back in stock.
+    If store_id is provided in payload, updates per-store availability.
+    Otherwise updates the global availability.
     Requires admin authentication.
     """
     ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
 
-    ingredient.is_available = payload.is_available
-    db.commit()
-    db.refresh(ingredient)
+    if payload.store_id:
+        # Update per-store availability
+        store_avail = db.query(IngredientStoreAvailability).filter(
+            IngredientStoreAvailability.ingredient_id == ingredient_id,
+            IngredientStoreAvailability.store_id == payload.store_id
+        ).first()
 
-    status = "available" if payload.is_available else "86'd (out of stock)"
-    logger.info("Ingredient '%s' marked as %s", ingredient.name, status)
+        if store_avail:
+            store_avail.is_available = payload.is_available
+        else:
+            # Create new entry
+            store_avail = IngredientStoreAvailability(
+                ingredient_id=ingredient_id,
+                store_id=payload.store_id,
+                is_available=payload.is_available
+            )
+            db.add(store_avail)
 
-    return IngredientOut.model_validate(ingredient)
+        db.commit()
+
+        status = "available" if payload.is_available else "86'd (out of stock)"
+        logger.info("Ingredient '%s' marked as %s for store %s", ingredient.name, status, payload.store_id)
+
+        return IngredientStoreAvailabilityOut(
+            id=ingredient.id,
+            name=ingredient.name,
+            category=ingredient.category,
+            unit=ingredient.unit,
+            track_inventory=ingredient.track_inventory,
+            is_available=payload.is_available,
+        )
+    else:
+        # Update global availability
+        ingredient.is_available = payload.is_available
+        db.commit()
+        db.refresh(ingredient)
+
+        status = "available" if payload.is_available else "86'd (out of stock)"
+        logger.info("Ingredient '%s' marked as %s (global)", ingredient.name, status)
+
+        return IngredientStoreAvailabilityOut(
+            id=ingredient.id,
+            name=ingredient.name,
+            category=ingredient.category,
+            unit=ingredient.unit,
+            track_inventory=ingredient.track_inventory,
+            is_available=ingredient.is_available,
+        )
 
 
 @admin_ingredients_router.delete("/{ingredient_id}", status_code=204)

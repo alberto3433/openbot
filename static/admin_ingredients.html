@@ -207,6 +207,17 @@
   </div>
 
   <div class="container">
+    <!-- Store Selector -->
+    <div class="filter-bar" style="margin-bottom: 20px; background: #fff3cd; padding: 12px 16px; border-radius: 8px;">
+      <label for="storeSelector" style="font-weight: 600; margin-right: 10px;">Managing availability for:</label>
+      <select id="storeSelector" style="flex: none; min-width: 200px;">
+        <option value="store_eb_001">East Brunswick</option>
+        <option value="store_nb_002">New Brunswick</option>
+        <option value="store_pr_003">Princeton</option>
+      </select>
+      <span style="color: #856404; font-size: 13px; margin-left: 10px;">Changes only affect the selected store</span>
+    </div>
+
     <div id="statusBar" class="status-bar" style="display: none;"></div>
 
     <!-- Out of Stock Section -->
@@ -251,6 +262,22 @@
     const totalCount = document.getElementById("totalCount");
     const searchInput = document.getElementById("searchInput");
     const categoryFilter = document.getElementById("categoryFilter");
+    const storeSelector = document.getElementById("storeSelector");
+
+    // Store name mapping for display
+    const STORE_NAMES = {
+      "store_eb_001": "East Brunswick",
+      "store_nb_002": "New Brunswick",
+      "store_pr_003": "Princeton"
+    };
+
+    function getCurrentStoreId() {
+      return storeSelector.value;
+    }
+
+    function getCurrentStoreName() {
+      return STORE_NAMES[getCurrentStoreId()] || getCurrentStoreId();
+    }
 
     function showStatus(message, type = "info") {
       statusBar.textContent = message;
@@ -262,9 +289,10 @@
     }
 
     async function loadIngredients() {
-      showStatus("Loading ingredients...");
+      const storeId = getCurrentStoreId();
+      showStatus(`Loading ingredients for ${getCurrentStoreName()}...`);
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients`);
+        const resp = await fetch(`${API_BASE}/admin/ingredients?store_id=${storeId}`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         allIngredients = await resp.json();
         buildCategoryFilter();
@@ -376,6 +404,7 @@
       const id = btn.dataset.id;
       const currentlyAvailable = btn.dataset.available === "true";
       const newAvailable = !currentlyAvailable;
+      const storeId = getCurrentStoreId();
 
       btn.disabled = true;
       btn.textContent = "Updating...";
@@ -384,13 +413,13 @@
         const resp = await fetch(`${API_BASE}/admin/ingredients/${id}/availability`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_available: newAvailable })
+          body: JSON.stringify({ is_available: newAvailable, store_id: storeId })
         });
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
         const updated = await resp.json();
-        showStatus(`${updated.name} is now ${newAvailable ? 'available' : "86'd"}`, "success");
+        showStatus(`${updated.name} is now ${newAvailable ? 'available' : "86'd"} at ${getCurrentStoreName()}`, "success");
 
         // Update local data and re-render
         const idx = allIngredients.findIndex(i => i.id === updated.id);
@@ -412,6 +441,7 @@
     searchInput.addEventListener("input", applyFilters);
     categoryFilter.addEventListener("change", applyFilters);
     document.getElementById("refreshBtn").addEventListener("click", loadIngredients);
+    storeSelector.addEventListener("change", loadIngredients);
 
     // Initial load
     loadIngredients();

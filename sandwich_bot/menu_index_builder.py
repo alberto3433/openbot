@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from .models import (
     Recipe,
     RecipeIngredient,
     RecipeChoiceGroup,
+    IngredientStoreAvailability,
 )
 
 
@@ -63,7 +64,7 @@ def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
     }
 
 
-def build_menu_index(db: Session) -> Dict[str, Any]:
+def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Build a rich, LLM-friendly menu JSON structure. Example shape:
 
@@ -76,6 +77,10 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
       "bread_types": ["White", "Wheat", "Rye"],
       "cheese_types": ["Cheddar", "Swiss", "Provolone"],
     }
+
+    Args:
+        db: Database session
+        store_id: Optional store ID for store-specific ingredient availability
     """
     items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
 
@@ -169,16 +174,36 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
     index["topping_types"] = [ing.name for ing in topping_ingredients]
 
     # Unavailable ingredients (86'd items) - so LLM knows what's out of stock
-    unavailable = (
-        db.query(Ingredient)
-        .filter(Ingredient.is_available == False)
-        .order_by(Ingredient.category, Ingredient.name)
-        .all()
-    )
-    index["unavailable_ingredients"] = [
-        {"name": ing.name, "category": ing.category}
-        for ing in unavailable
-    ]
+    # Check store-specific availability if store_id provided
+    unavailable_ingredients = []
+    if store_id:
+        # Get ingredients that are 86'd for this specific store
+        store_unavail = (
+            db.query(IngredientStoreAvailability)
+            .filter(
+                IngredientStoreAvailability.store_id == store_id,
+                IngredientStoreAvailability.is_available == False
+            )
+            .all()
+        )
+        unavail_ids = {sa.ingredient_id for sa in store_unavail}
+        for ing_id in unavail_ids:
+            ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
+            if ing:
+                unavailable_ingredients.append({"name": ing.name, "category": ing.category})
+    else:
+        # Fall back to global unavailable
+        unavailable = (
+            db.query(Ingredient)
+            .filter(Ingredient.is_available == False)
+            .order_by(Ingredient.category, Ingredient.name)
+            .all()
+        )
+        unavailable_ingredients = [
+            {"name": ing.name, "category": ing.category}
+            for ing in unavailable
+        ]
+    index["unavailable_ingredients"] = unavailable_ingredients
 
     return index
 

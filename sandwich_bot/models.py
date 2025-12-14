@@ -26,6 +26,7 @@ class Order(Base):
     pickup_time = Column(String, nullable=True)
     total_price = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    store_id = Column(String, nullable=True, index=True)  # Store identifier (e.g., "store_eb_001")
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
@@ -233,6 +234,9 @@ class SessionAnalytics(Base):
     # Customer info (for completed orders)
     customer_name = Column(String, nullable=True)
     customer_phone = Column(String, nullable=True)
+
+    # Store info
+    store_id = Column(String, nullable=True, index=True)  # Store identifier (e.g., "store_eb_001")
 
     # Timestamp
     ended_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

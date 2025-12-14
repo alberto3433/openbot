@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Store Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .store-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .store-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .store-item:last-child {
+      border-bottom: none;
+    }
+    .store-item:hover {
+      background: #fafafa;
+    }
+    .store-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+    .store-name {
+      font-weight: 600;
+      font-size: 16px;
+      color: #1976d2;
+    }
+    .store-address {
+      font-size: 14px;
+      color: #333;
+    }
+    .store-phone {
+      font-size: 13px;
+      color: #666;
+    }
+    .store-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 6px;
+    }
+    .store-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .store-badge.open {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .store-badge.closed {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .store-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .action-btn {
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      min-width: 80px;
+      transition: all 0.2s;
+    }
+    .action-btn:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+    .action-btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .action-btn.primary:hover {
+      background: #1565c0;
+    }
+    .action-btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .action-btn.danger:hover {
+      background: #ffebee;
+    }
+    .status-bar {
+      padding: 10px 16px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+      border-radius: 4px;
+    }
+    .status-bar.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-bar.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .add-btn {
+      padding: 10px 20px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .add-btn:hover {
+      background: #43a047;
+    }
+    .store-hours {
+      font-size: 12px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .store-id {
+      font-size: 11px;
+      color: #999;
+      font-family: monospace;
+    }
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: #666;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+    .form-row .form-group {
+      flex: 1;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #c62828;
+      color: #fff;
+      border-color: #c62828;
+    }
+    .btn.danger:hover {
+      background: #b71c1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div>Store Management</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="statusBar" class="status-bar" style="display: none;"></div>
+
+    <button class="add-btn" id="addStoreBtn">+ Add New Store</button>
+
+    <div class="section">
+      <div class="section-header">
+        <span>All Stores</span>
+        <span class="count" id="storeCount">0</span>
+      </div>
+      <ul class="store-list" id="storeList">
+        <li class="empty-state">Loading stores...</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Add/Edit Store Modal -->
+  <div class="modal-overlay" id="storeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add New Store</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="storeForm">
+          <input type="hidden" id="storeId" />
+
+          <div class="form-group">
+            <label for="storeName">Store Name *</label>
+            <input type="text" id="storeName" required placeholder="e.g., Sammy's Subs - East Brunswick" />
+          </div>
+
+          <div class="form-group">
+            <label for="storeAddress">Street Address *</label>
+            <input type="text" id="storeAddress" required placeholder="e.g., 123 Main Street" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="storeCity">City *</label>
+              <input type="text" id="storeCity" required placeholder="e.g., East Brunswick" />
+            </div>
+            <div class="form-group">
+              <label for="storeState">State *</label>
+              <input type="text" id="storeState" required placeholder="e.g., NJ" maxlength="2" style="text-transform: uppercase;" />
+            </div>
+            <div class="form-group">
+              <label for="storeZip">ZIP Code *</label>
+              <input type="text" id="storeZip" required placeholder="e.g., 08816" maxlength="10" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="storePhone">Phone Number *</label>
+            <input type="tel" id="storePhone" required placeholder="e.g., (732) 555-0101" />
+          </div>
+
+          <div class="form-group">
+            <label for="storeHours">Store Hours</label>
+            <textarea id="storeHours" placeholder="e.g., Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM"></textarea>
+            <div class="hint">Enter the store's operating hours</div>
+          </div>
+
+          <div class="form-group">
+            <label for="storeStatus">Status</label>
+            <select id="storeStatus">
+              <option value="open">Open</option>
+              <option value="closed">Temporarily Closed</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="cancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete Store</button>
+        <button type="button" class="btn primary" id="saveBtn">Save Store</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Store</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteStoreName"></strong>?</p>
+        <p style="color: #666; font-size: 13px;">The store will be archived and can be restored later.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deleted Stores Section (shown when there are deleted stores) -->
+  <div class="container" id="deletedStoresContainer" style="display: none;">
+    <div class="section">
+      <div class="section-header" style="background: #fff3e0; color: #e65100;">
+        <span>Archived Stores</span>
+        <span class="count" id="deletedStoreCount" style="background: #ffcc80; color: #e65100;">0</span>
+      </div>
+      <ul class="store-list" id="deletedStoreList"></ul>
+    </div>
+  </div>
+
+  <script>
+    // Default store data (used on first load)
+    const DEFAULT_STORES = [
+      {
+        id: "store_eb_001",
+        name: "Sammy's Subs - East Brunswick",
+        address: "123 Main Street",
+        city: "East Brunswick",
+        state: "NJ",
+        zip: "08816",
+        phone: "(732) 555-0101",
+        hours: "Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM",
+        status: "open"
+      },
+      {
+        id: "store_nb_002",
+        name: "Sammy's Subs - New Brunswick",
+        address: "456 George Street",
+        city: "New Brunswick",
+        state: "NJ",
+        zip: "08901",
+        phone: "(732) 555-0202",
+        hours: "Mon-Fri 9:00 AM - 10:00 PM, Sat-Sun 10:00 AM - 8:00 PM",
+        status: "open"
+      },
+      {
+        id: "store_pr_003",
+        name: "Sammy's Subs - Princeton",
+        address: "789 Nassau Street",
+        city: "Princeton",
+        state: "NJ",
+        zip: "08540",
+        phone: "(609) 555-0303",
+        hours: "Mon-Sun 11:00 AM - 8:00 PM",
+        status: "closed"
+      }
+    ];
+
+    // Storage key
+    const STORAGE_KEY = "sandwich_bot_stores";
+
+    // DOM elements
+    const statusBar = document.getElementById("statusBar");
+    const storeList = document.getElementById("storeList");
+    const storeCount = document.getElementById("storeCount");
+    const storeModal = document.getElementById("storeModal");
+    const deleteModal = document.getElementById("deleteModal");
+    const modalTitle = document.getElementById("modalTitle");
+    const storeForm = document.getElementById("storeForm");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const deletedStoresContainer = document.getElementById("deletedStoresContainer");
+    const deletedStoreList = document.getElementById("deletedStoreList");
+    const deletedStoreCount = document.getElementById("deletedStoreCount");
+
+    // Current state
+    let stores = [];
+    let editingStoreId = null;
+    let deletingStoreId = null;
+
+    // Load stores from localStorage or use defaults
+    function loadStores() {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        stores = JSON.parse(stored);
+      } else {
+        stores = [...DEFAULT_STORES];
+        saveStores();
+      }
+      renderStores();
+      renderDeletedStores();
+    }
+
+    // Get active (non-deleted) stores
+    function getActiveStores() {
+      return stores.filter(s => !s.deletedAt);
+    }
+
+    // Get deleted stores
+    function getDeletedStores() {
+      return stores.filter(s => s.deletedAt);
+    }
+
+    // Save stores to localStorage
+    function saveStores() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stores));
+    }
+
+    // Generate a unique store ID
+    function generateStoreId() {
+      const timestamp = Date.now().toString(36);
+      const random = Math.random().toString(36).substring(2, 6);
+      return `store_${timestamp}_${random}`;
+    }
+
+    // Show status message
+    function showStatus(message, type = "info") {
+      statusBar.textContent = message;
+      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
+      statusBar.style.display = "block";
+      if (type !== "error") {
+        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+      }
+    }
+
+    // Format full address
+    function formatAddress(store) {
+      return `${store.address}, ${store.city}, ${store.state} ${store.zip}`;
+    }
+
+    // Render the store list (active stores only)
+    function renderStores() {
+      const activeStores = getActiveStores();
+      storeCount.textContent = activeStores.length;
+
+      if (activeStores.length === 0) {
+        storeList.innerHTML = '<li class="empty-state">No stores found. Click "Add New Store" to create one.</li>';
+        return;
+      }
+
+      storeList.innerHTML = activeStores.map(store => `
+        <li class="store-item" data-id="${store.id}">
+          <div class="store-info">
+            <span class="store-name">${escapeHtml(store.name)}</span>
+            <span class="store-address">${escapeHtml(formatAddress(store))}</span>
+            <span class="store-phone">${escapeHtml(store.phone)}</span>
+            ${store.hours ? `<div class="store-hours">Hours: ${escapeHtml(store.hours)}</div>` : ''}
+            <div class="store-meta">
+              <span class="store-badge ${store.status === 'open' ? 'open' : 'closed'}">
+                ${store.status === 'open' ? 'Open' : 'Closed'}
+              </span>
+              <span class="store-id">ID: ${store.id}</span>
+            </div>
+          </div>
+          <div class="store-actions">
+            <button class="action-btn primary edit-btn" data-id="${store.id}">Edit</button>
+            <button class="action-btn">View Orders</button>
+          </div>
+        </li>
+      `).join("");
+
+      // Add click handlers for edit buttons
+      document.querySelectorAll(".edit-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openEditModal(btn.dataset.id);
+        });
+      });
+
+      // Add click handlers for View Orders (placeholder)
+      document.querySelectorAll(".action-btn:not(.edit-btn):not(.primary)").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const storeName = e.target.closest(".store-item").querySelector(".store-name").textContent;
+          showStatus(`View Orders for "${storeName}" - Coming soon!`, "info");
+        });
+      });
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Open the modal for adding a new store
+    function openAddModal() {
+      editingStoreId = null;
+      modalTitle.textContent = "Add New Store";
+      deleteBtn.style.display = "none";
+      storeForm.reset();
+      document.getElementById("storeId").value = "";
+      storeModal.classList.add("active");
+    }
+
+    // Open the modal for editing an existing store
+    function openEditModal(storeId) {
+      const store = stores.find(s => s.id === storeId);
+      if (!store) {
+        showStatus("Store not found", "error");
+        return;
+      }
+
+      editingStoreId = storeId;
+      modalTitle.textContent = "Edit Store";
+      deleteBtn.style.display = "inline-block";
+
+      // Populate form fields
+      document.getElementById("storeId").value = store.id;
+      document.getElementById("storeName").value = store.name;
+      document.getElementById("storeAddress").value = store.address;
+      document.getElementById("storeCity").value = store.city;
+      document.getElementById("storeState").value = store.state;
+      document.getElementById("storeZip").value = store.zip;
+      document.getElementById("storePhone").value = store.phone;
+      document.getElementById("storeHours").value = store.hours || "";
+      document.getElementById("storeStatus").value = store.status;
+
+      storeModal.classList.add("active");
+    }
+
+    // Close the store modal
+    function closeModal() {
+      storeModal.classList.remove("active");
+      editingStoreId = null;
+    }
+
+    // Close the delete modal
+    function closeDeleteModal() {
+      deleteModal.classList.remove("active");
+      deletingStoreId = null;
+    }
+
+    // Save the store (add or update)
+    function saveStore() {
+      // Validate form
+      const name = document.getElementById("storeName").value.trim();
+      const address = document.getElementById("storeAddress").value.trim();
+      const city = document.getElementById("storeCity").value.trim();
+      const state = document.getElementById("storeState").value.trim().toUpperCase();
+      const zip = document.getElementById("storeZip").value.trim();
+      const phone = document.getElementById("storePhone").value.trim();
+      const hours = document.getElementById("storeHours").value.trim();
+      const status = document.getElementById("storeStatus").value;
+
+      if (!name || !address || !city || !state || !zip || !phone) {
+        showStatus("Please fill in all required fields", "error");
+        return;
+      }
+
+      if (editingStoreId) {
+        // Update existing store
+        const index = stores.findIndex(s => s.id === editingStoreId);
+        if (index !== -1) {
+          stores[index] = {
+            ...stores[index],
+            name,
+            address,
+            city,
+            state,
+            zip,
+            phone,
+            hours,
+            status
+          };
+          showStatus(`"${name}" has been updated`, "success");
+        }
+      } else {
+        // Add new store
+        const newStore = {
+          id: generateStoreId(),
+          name,
+          address,
+          city,
+          state,
+          zip,
+          phone,
+          hours,
+          status
+        };
+        stores.push(newStore);
+        showStatus(`"${name}" has been added`, "success");
+      }
+
+      saveStores();
+      renderStores();
+      closeModal();
+    }
+
+    // Open delete confirmation
+    function openDeleteConfirmation() {
+      if (!editingStoreId) return;
+
+      const store = stores.find(s => s.id === editingStoreId);
+      if (!store) return;
+
+      deletingStoreId = editingStoreId;
+      document.getElementById("deleteStoreName").textContent = store.name;
+      closeModal();
+      deleteModal.classList.add("active");
+    }
+
+    // Soft delete the store (mark as deleted)
+    function deleteStore() {
+      if (!deletingStoreId) return;
+
+      const index = stores.findIndex(s => s.id === deletingStoreId);
+      if (index === -1) return;
+
+      const storeName = stores[index].name;
+
+      // Soft delete: add deletedAt timestamp instead of removing
+      stores[index] = {
+        ...stores[index],
+        deletedAt: new Date().toISOString(),
+        deletedBy: "admin" // Could be actual user in a real system
+      };
+
+      saveStores();
+      renderStores();
+      renderDeletedStores();
+      closeDeleteModal();
+      showStatus(`"${storeName}" has been archived`, "success");
+    }
+
+    // Restore a deleted store
+    function restoreStore(storeId) {
+      const index = stores.findIndex(s => s.id === storeId);
+      if (index === -1) return;
+
+      const storeName = stores[index].name;
+
+      // Remove deletion fields
+      const { deletedAt, deletedBy, ...restoredStore } = stores[index];
+      stores[index] = restoredStore;
+
+      saveStores();
+      renderStores();
+      renderDeletedStores();
+      showStatus(`"${storeName}" has been restored`, "success");
+    }
+
+    // Permanently delete a store (hard delete)
+    function permanentlyDeleteStore(storeId) {
+      const store = stores.find(s => s.id === storeId);
+      const storeName = store ? store.name : "Store";
+
+      stores = stores.filter(s => s.id !== storeId);
+      saveStores();
+      renderDeletedStores();
+      showStatus(`"${storeName}" has been permanently deleted`, "success");
+    }
+
+    // Render the deleted stores section
+    function renderDeletedStores() {
+      const deletedStores = getDeletedStores();
+      deletedStoreCount.textContent = deletedStores.length;
+
+      if (deletedStores.length === 0) {
+        deletedStoresContainer.style.display = "none";
+        return;
+      }
+
+      deletedStoresContainer.style.display = "block";
+
+      deletedStoreList.innerHTML = deletedStores.map(store => {
+        const deletedDate = new Date(store.deletedAt).toLocaleDateString();
+        return `
+          <li class="store-item" data-id="${store.id}" style="opacity: 0.7;">
+            <div class="store-info">
+              <span class="store-name" style="color: #666;">${escapeHtml(store.name)}</span>
+              <span class="store-address">${escapeHtml(formatAddress(store))}</span>
+              <span class="store-phone">${escapeHtml(store.phone)}</span>
+              <div class="store-meta">
+                <span class="store-badge closed">Archived ${deletedDate}</span>
+                <span class="store-id">ID: ${store.id}</span>
+              </div>
+            </div>
+            <div class="store-actions">
+              <button class="action-btn primary restore-btn" data-id="${store.id}">Restore</button>
+              <button class="action-btn danger perm-delete-btn" data-id="${store.id}">Delete Forever</button>
+            </div>
+          </li>
+        `;
+      }).join("");
+
+      // Add click handlers for restore buttons
+      document.querySelectorAll(".restore-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          restoreStore(btn.dataset.id);
+        });
+      });
+
+      // Add click handlers for permanent delete buttons
+      document.querySelectorAll(".perm-delete-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const store = stores.find(s => s.id === btn.dataset.id);
+          if (store && confirm(`Permanently delete "${store.name}"? This cannot be undone.`)) {
+            permanentlyDeleteStore(btn.dataset.id);
+          }
+        });
+      });
+    }
+
+    // Event listeners
+    document.getElementById("addStoreBtn").addEventListener("click", openAddModal);
+    document.getElementById("modalClose").addEventListener("click", closeModal);
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("saveBtn").addEventListener("click", saveStore);
+    document.getElementById("deleteBtn").addEventListener("click", openDeleteConfirmation);
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", deleteStore);
+
+    // Close modals when clicking outside
+    storeModal.addEventListener("click", (e) => {
+      if (e.target === storeModal) closeModal();
+    });
+    deleteModal.addEventListener("click", (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    // Close modals on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeModal();
+        closeDeleteModal();
+      }
+    });
+
+    // Handle form submission with Enter key
+    storeForm.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        saveStore();
+      }
+    });
+
+    // Initial load
+    loadStores();
+  </script>
+</body>
+</html>

@@ -191,6 +191,14 @@
     <details class="caller-id-panel" id="caller-id-panel">
       <summary>Simulate Incoming Call (Dev Mode)</summary>
       <div class="caller-id-content">
+        <label for="store-select" style="white-space: nowrap;">Store:</label>
+        <select id="store-select" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+          <option value="store_eb_001">East Brunswick</option>
+          <option value="store_nb_002">New Brunswick</option>
+          <option value="store_pr_003">Princeton</option>
+        </select>
+      </div>
+      <div class="caller-id-content" style="margin-top: 8px;">
         <input
           type="tel"
           id="caller-id-input"
@@ -199,7 +207,7 @@
         <button type="button" id="start-with-caller-id">Start Call</button>
       </div>
       <div style="margin-top: 6px; color: #666; font-size: 12px;">
-        Enter a phone number to simulate caller ID. If the number has ordered before, you'll be greeted as a returning customer.
+        Select a store and optionally enter a phone number. URL params: <code>?store=store_eb_001&caller_id=555-123-4567</code>
       </div>
     </details>
 
@@ -227,11 +235,20 @@
     const inputEl = document.getElementById("chat-input");
     const callerIdPanel = document.getElementById("caller-id-panel");
     const callerIdInput = document.getElementById("caller-id-input");
+    const storeSelect = document.getElementById("store-select");
     const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
+
+    // Store name mapping
+    const STORE_NAMES = {
+      "store_eb_001": "East Brunswick",
+      "store_nb_002": "New Brunswick",
+      "store_pr_003": "Princeton"
+    };
 
     let sessionId = null;
     let connected = false;
     let currentCallerId = null;
+    let currentStoreId = null;
 
     let typingIndicatorEl = null;
 
@@ -285,15 +302,23 @@
       statusEl.textContent = text;
     }
 
-    async function startSession(callerId = null) {
+    async function startSession(callerId = null, storeId = null) {
       try {
         setStatus("Starting session...");
 
-        // Build URL with optional caller_id
+        // Build URL with optional parameters
         let url = "/chat/start";
+        const params = new URLSearchParams();
         if (callerId) {
-          url += `?caller_id=${encodeURIComponent(callerId)}`;
+          params.append("caller_id", callerId);
           currentCallerId = callerId;
+        }
+        if (storeId) {
+          params.append("store_id", storeId);
+          currentStoreId = storeId;
+        }
+        if (params.toString()) {
+          url += "?" + params.toString();
         }
 
         const resp = await fetch(url, {
@@ -307,8 +332,11 @@
         connected = true;
         sessionStartTime = Date.now();
 
-        // Update header with caller ID info if present
+        // Update header with store and caller ID info
         let headerText = "Session: " + sessionId.substring(0, 8);
+        if (storeId && STORE_NAMES[storeId]) {
+          headerText += ` | ${STORE_NAMES[storeId]}`;
+        }
         if (callerId) {
           headerText += ` | Caller: ${callerId}`;
         }
@@ -397,13 +425,11 @@
       sendMessage(text);
     });
 
-    // Handle "Start Call" button click with caller ID
+    // Handle "Start Call" button click with caller ID and store
     startWithCallerIdBtn.addEventListener("click", () => {
       const callerId = callerIdInput.value.trim();
-      if (!callerId) {
-        alert("Please enter a phone number to simulate caller ID");
-        return;
-      }
+      const storeId = storeSelect.value;
+
       // Reset session state if we already had a session
       if (sessionId) {
         sessionId = null;
@@ -417,12 +443,28 @@
         conversationHistory = [];
         abandonAnalyticsSent = false;
       }
-      startSession(callerId);
+      startSession(callerId || null, storeId);
     });
 
-    // Start session on page load (without caller ID - simulates walk-in customer)
+    // Start session on page load - check URL params first
     window.addEventListener("load", () => {
-      startSession();
+      const urlParams = new URLSearchParams(window.location.search);
+      const storeIdParam = urlParams.get("store") || urlParams.get("store_id");
+      const callerIdParam = urlParams.get("caller_id");
+
+      // Set dropdown value if store param provided
+      if (storeIdParam && STORE_NAMES[storeIdParam]) {
+        storeSelect.value = storeIdParam;
+      }
+
+      // Set caller ID input if provided
+      if (callerIdParam) {
+        callerIdInput.value = callerIdParam;
+      }
+
+      // Start session with params (store defaults to first option if not specified)
+      const storeId = storeIdParam || storeSelect.value;
+      startSession(callerIdParam || null, storeId);
     });
 
     // Track abandoned sessions (simulates "hang up")
@@ -453,6 +495,7 @@
         reason: reason,
         session_duration_seconds: sessionDuration,
         conversation_history: conversationHistory,  // Include full conversation
+        store_id: currentStoreId,  // Include store for analytics
       };
 
       // Use sendBeacon for reliability during page unload

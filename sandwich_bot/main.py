@@ -34,6 +34,33 @@ setup_logging()
 
 logger = logging.getLogger(__name__)
 
+# ---------- Store Configuration ----------
+# Default store IDs (matching frontend admin_stores.html)
+DEFAULT_STORE_IDS = [
+    "store_eb_001",  # East Brunswick
+    "store_nb_002",  # New Brunswick
+    "store_pr_003",  # Princeton
+]
+
+# Store ID to name mapping
+STORE_NAMES = {
+    "store_eb_001": "Sammy's Subs East Brunswick",
+    "store_nb_002": "Sammy's Subs New Brunswick",
+    "store_pr_003": "Sammy's Subs Princeton",
+}
+
+
+def get_random_store_id() -> str:
+    """Get a random store ID for session/order assignment."""
+    return random.choice(DEFAULT_STORE_IDS)
+
+
+def get_store_name(store_id: Optional[str]) -> str:
+    """Get store name from store_id, with fallback to default."""
+    if store_id and store_id in STORE_NAMES:
+        return STORE_NAMES[store_id]
+    return "Sammy's Subs"  # Default name if no store specified
+
 # ---------- Admin Authentication ----------
 
 security = HTTPBasic()
@@ -351,6 +378,7 @@ class AbandonedSessionRequest(BaseModel):
     reason: str = "browser_close"  # browser_close, refresh, navigation
     session_duration_seconds: Optional[int] = None
     conversation_history: Optional[List[Dict[str, str]]] = None  # Full conversation [{role, content}, ...]
+    store_id: Optional[str] = None  # Store identifier for analytics
 
 
 class MenuItemOut(BaseModel):
@@ -439,6 +467,7 @@ class SessionAnalyticsOut(BaseModel):
     session_duration_seconds: Optional[int] = None
     customer_name: Optional[str] = None  # For completed sessions
     customer_phone: Optional[str] = None  # For completed sessions
+    store_id: Optional[str] = None  # Store identifier
     ended_at: str  # ISO format string
 
 
@@ -606,6 +635,7 @@ def chat_start(
     request: Request,
     db: Session = Depends(get_db),
     caller_id: Optional[str] = Query(None, description="Simulated caller ID / phone number"),
+    store_id: Optional[str] = Query(None, description="Store identifier (e.g., store_eb_001)"),
 ) -> ChatStartResponse:
     """
     Start a new chat session. Returns a session ID and welcome message.
@@ -613,8 +643,12 @@ def chat_start(
     Args:
         caller_id: Optional phone number to simulate caller identification.
                    If provided, looks up returning customer and personalizes greeting.
+        store_id: Optional store identifier to customize greeting with store name.
     """
     session_id = str(uuid.uuid4())
+
+    # Get store name for greeting
+    store_name = get_store_name(store_id)
 
     # Check for returning customer if caller_id is provided
     returning_customer = None
@@ -625,10 +659,10 @@ def chat_start(
     # Generate personalized greeting for returning customers
     if returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
-        welcome = f"Hi {customer_name}, welcome to Subby's! Would you like to repeat your last order or place a new order?"
+        welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new order?"
     else:
         # Default greeting for new customers
-        welcome = "Hi, welcome to Subby's! Would you like to try one of our signature sandwiches or build your own?"
+        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our signature sandwiches or build your own?"
 
     # Initialize session data
     session_data = {
@@ -645,13 +679,14 @@ def chat_start(
         },
         "menu_version": None,  # Will be set on first message when menu is sent to LLM
         "caller_id": caller_id,  # Store for reference
+        "store_id": store_id,  # Store identifier for analytics
         "returning_customer": returning_customer,  # Store customer history for LLM context
     }
 
     # Save to database and cache
     save_session(db, session_id, session_data)
 
-    logger.info("New chat session started: %s (caller_id: %s)", session_id[:8], caller_id or "none")
+    logger.info("New chat session started: %s (store: %s, caller_id: %s)", session_id[:8], store_id or "default", caller_id or "none")
 
     return ChatStartResponse(
         session_id=session_id,
@@ -847,6 +882,8 @@ def chat_message(
 
         # Log completed session for analytics
         items = updated_order_state.get("items", [])
+        # Get store_id from session, fallback to random if not set
+        session_store_id = session.get("store_id") or get_random_store_id()
         session_record = SessionAnalytics(
             session_id=req.session_id,
             status="completed",
@@ -861,6 +898,7 @@ def chat_message(
             reason=None,  # No abandonment reason for completed orders
             customer_name=customer_name,
             customer_phone=customer_phone,
+            store_id=session_store_id,
         )
         db.add(session_record)
         db.commit()
@@ -902,6 +940,8 @@ def log_abandoned_session(
         return None
 
     # Create the session analytics record with status='abandoned'
+    # Use store_id from payload, fallback to random if not provided
+    abandon_store_id = payload.store_id or get_random_store_id()
     session_record = SessionAnalytics(
         session_id=payload.session_id,
         status="abandoned",
@@ -915,6 +955,7 @@ def log_abandoned_session(
         last_user_message=payload.last_user_message[:500] if payload.last_user_message else None,
         reason=payload.reason,
         session_duration_seconds=payload.session_duration_seconds,
+        store_id=abandon_store_id,
     )
 
     db.add(session_record)
@@ -1450,6 +1491,7 @@ def list_sessions(
             session_duration_seconds=s.session_duration_seconds,
             customer_name=s.customer_name,
             customer_phone=s.customer_phone,
+            store_id=s.store_id,
             ended_at=s.ended_at.isoformat() if s.ended_at else "",
         ))
 

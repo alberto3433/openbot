@@ -429,6 +429,7 @@
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients (86)</a>
       <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html"><strong>Analytics</strong></a>
     </div>
 
@@ -513,6 +514,7 @@
         <thead>
           <tr>
             <th>Time</th>
+            <th>Store</th>
             <th>Status</th>
             <th>Reason</th>
             <th>Customer</th>
@@ -550,6 +552,18 @@
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
+
+    // Store ID to name mapping (matches admin_stores.html)
+    const STORE_NAMES = {
+      "store_eb_001": "East Brunswick",
+      "store_nb_002": "New Brunswick",
+      "store_pr_003": "Princeton"
+    };
+
+    function getStoreName(storeId) {
+      if (!storeId) return "-";
+      return STORE_NAMES[storeId] || storeId;
+    }
 
     let currentPage = 1;
     let currentStatus = "";
@@ -710,12 +724,13 @@
 
     function renderSessionsTable(sessions) {
       if (!sessions.length) {
-        sessionsBodyEl.innerHTML = `<tr><td colspan="7" class="muted">No sessions found</td></tr>`;
+        sessionsBodyEl.innerHTML = `<tr><td colspan="8" class="muted">No sessions found</td></tr>`;
         return;
       }
 
       sessionsBodyEl.innerHTML = sessions.map((s, index) => {
         const time = new Date(s.ended_at).toLocaleString();
+        const storeName = getStoreName(s.store_id);
 
         const statusClass = s.status === "completed" ? "status-completed" : "status-abandoned";
         const statusLabel = s.status === "completed" ? "Completed" : "Abandoned";
@@ -739,6 +754,7 @@
         return `
           <tr class="clickable" onclick="openSessionModal(${index})">
             <td>${time}</td>
+            <td>${storeName}</td>
             <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
             <td>${reasonHtml}</td>
             <td>${customerInfo}</td>
@@ -767,10 +783,16 @@
         ? `${Math.floor(session.session_duration_seconds / 60)}m ${session.session_duration_seconds % 60}s`
         : "-";
 
+      const storeName = getStoreName(session.store_id);
+
       modalSessionInfoEl.innerHTML = `
         <div class="info-item">
           <label>Time</label>
           <span class="val">${time}</span>
+        </div>
+        <div class="info-item">
+          <label>Store</label>
+          <span class="val">${storeName}</span>
         </div>
         <div class="info-item">
           <label>Status</label>

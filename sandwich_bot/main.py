@@ -727,6 +727,7 @@ def chat_message(
     order_state: Dict[str, Any] = session["order"]
     returning_customer: Dict[str, Any] = session.get("returning_customer")
     session_store_id: Optional[str] = session.get("store_id")
+    session_caller_id: Optional[str] = session.get("caller_id")
 
     # Build menu index for LLM (with store-specific ingredient availability)
     menu_index = build_menu_index(db, store_id=session_store_id)
@@ -754,6 +755,7 @@ def chat_message(
             req.message,
             include_menu_in_system=include_menu_in_system,
             returning_customer=returning_customer,
+            caller_id=session_caller_id,
         )
         # Update menu version in session if we sent it
         if include_menu_in_system:

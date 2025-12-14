@@ -131,6 +131,20 @@ ORDER CONFIRMATION - CRITICAL:
 - If the user provides name and phone in the same message as "confirm", include them in the confirm_order slots.
 - NEVER confirm an order without customer contact information.
 
+CALLER ID - PHONE NUMBER FROM INCOMING CALL:
+- If "CALLER ID" section is present in the prompt, we already have the customer's phone number from the incoming call.
+- When asking for customer info:
+  * Instead of asking for both name AND phone, say something like:
+    "I have your number as [CALLER_ID]. Is that correct? And can I get a name for the order?"
+  * Or: "I see you're calling from [CALLER_ID]. Can I get a name for the order, and is that the best number for pickup?"
+- If the customer confirms the caller ID is correct, use it as the phone number.
+- If the customer says it's a different number or provides a different number, use the new number they provide.
+- Example flow with caller ID:
+  1. (CALLER ID: 555-123-4567)
+  2. User: "confirm my order" → Ask: "I have your number as 555-123-4567. Is that correct? And what name should I put this under?"
+  3. User: "Yes, it's John" → Use confirm_order with customer_name="John" and phone="555-123-4567"
+  4. User: "Actually use 555-999-8888, name is John" → Use confirm_order with customer_name="John" and phone="555-999-8888"
+
 RETURNING CUSTOMER IN SAME SESSION:
 - Check the ORDER STATE for existing customer information (name and phone).
 - If the customer already provided their name and phone earlier in the session (visible in ORDER STATE),
@@ -228,7 +242,8 @@ Example modification flow:
 RESPONSE STYLE - ALWAYS END WITH A CLEAR NEXT STEP:
 - EVERY reply MUST end with a question or clear call-to-action so the user knows what to do next.
 - After adding items: "Would you like anything else, or is that everything for today?"
-- When order seems complete (no existing customer info): "Can I get a name and phone number for the order?"
+- When order seems complete (no existing customer info, no caller ID): "Can I get a name and phone number for the order?"
+- When order seems complete (no existing customer info, but CALLER ID present): "I have your number as [CALLER_ID]. Is that correct? And what name should I put this under?"
 - When order seems complete (customer info exists in ORDER STATE): "Should I put this under the same name, [name]?"
 - After collecting/confirming name/phone: "Great! I'll get that order in for you. Your total is $X.XX."
 - NEVER leave the user hanging without knowing what to do next.
@@ -288,13 +303,23 @@ JSON SCHEMA:
 # Slim template without menu - used when menu is in system prompt
 USER_PROMPT_TEMPLATE_SLIM = """ORDER STATE:
 {order_state}
-{previous_order_section}
+{caller_id_section}{previous_order_section}
 USER MESSAGE:
 {user_message}
 
 JSON SCHEMA:
 {schema}
 """
+
+
+def format_caller_id_section(caller_id: str = None) -> str:
+    """
+    Format the caller ID section for the LLM prompt.
+    Returns empty string if no caller ID.
+    """
+    if not caller_id:
+        return ""
+    return f"\nCALLER ID: {caller_id}"
 
 
 def format_previous_order_section(returning_customer: Dict[str, Any] = None) -> str:
@@ -451,6 +476,7 @@ def call_sandwich_bot(
     model: str = None,
     include_menu_in_system: bool = True,
     returning_customer: Dict[str, Any] = None,
+    caller_id: str = None,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
@@ -469,6 +495,7 @@ def call_sandwich_bot(
         include_menu_in_system: If True, include menu in system prompt (saves tokens
             on subsequent messages). If False, include menu in user message.
         returning_customer: Optional dict with returning customer info including last_order_items
+        caller_id: Optional phone number from incoming call (caller ID)
     """
     if model is None:
         model = DEFAULT_MODEL
@@ -494,11 +521,13 @@ def call_sandwich_bot(
     # 3. Build current user message
     # Include previous order section if returning customer has order history
     previous_order_section = format_previous_order_section(returning_customer)
+    caller_id_section = format_caller_id_section(caller_id)
 
     if include_menu_in_system:
         # Menu already in system prompt - use slim template
         user_content = USER_PROMPT_TEMPLATE_SLIM.format(
             order_state=json.dumps(current_order_state, indent=2),
+            caller_id_section=caller_id_section,
             previous_order_section=previous_order_section,
             user_message=user_message,
             schema=json.dumps(RESPONSE_SCHEMA, indent=2),
@@ -512,11 +541,12 @@ def call_sandwich_bot(
             user_message=user_message,
             schema=json.dumps(RESPONSE_SCHEMA, indent=2),
         )
-        # Append previous order section if present
-        if previous_order_section:
+        # Append caller ID and previous order sections if present
+        extra_sections = caller_id_section + previous_order_section
+        if extra_sections:
             user_content = user_content.replace(
                 "USER MESSAGE:",
-                f"{previous_order_section}\nUSER MESSAGE:"
+                f"{extra_sections}\nUSER MESSAGE:"
             )
 
     messages.append({"role": "user", "content": user_content})

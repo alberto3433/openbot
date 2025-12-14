@@ -253,14 +253,31 @@
     function loadStoresAndPopulateDropdown() {
       let stores = [];
       const stored = localStorage.getItem(STORES_STORAGE_KEY);
+
+      console.log("[Store Loader] Raw localStorage:", stored ? "found" : "not found");
+
       if (stored) {
-        stores = JSON.parse(stored);
+        try {
+          stores = JSON.parse(stored);
+          console.log("[Store Loader] Parsed stores:", stores.length, "total");
+        } catch (e) {
+          console.error("[Store Loader] Failed to parse stores:", e);
+          stores = DEFAULT_STORES;
+        }
       } else {
+        console.log("[Store Loader] Using default stores");
         stores = DEFAULT_STORES;
       }
 
       // Filter: only active (non-deleted) and open stores
-      const availableStores = stores.filter(s => !s.deletedAt && s.status !== "closed");
+      const availableStores = stores.filter(s => {
+        const isActive = !s.deletedAt;
+        const isOpen = s.status !== "closed";
+        console.log(`[Store Loader] ${s.name}: active=${isActive}, open=${isOpen}, status="${s.status}"`);
+        return isActive && isOpen;
+      });
+
+      console.log("[Store Loader] Available stores after filter:", availableStores.length);
 
       // Build STORE_NAMES mapping
       STORE_NAMES = {};

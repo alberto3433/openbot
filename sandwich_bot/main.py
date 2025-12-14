@@ -579,6 +579,8 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
                 "toppings": item.toppings,
                 "sauces": item.sauces,
                 "toasted": item.toasted,
+                "quantity": item.quantity,
+                "price": item.unit_price,  # Unit price for repeat order calculations
             })
 
     return {

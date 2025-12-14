@@ -1257,6 +1257,7 @@ def list_orders(
             phone=o.phone,
             pickup_time=o.pickup_time,
             total_price=o.total_price,
+            store_id=o.store_id,
         )
         for o in orders
     ]
@@ -1296,6 +1297,7 @@ def get_order_detail(
         phone=order.phone,
         pickup_time=order.pickup_time,
         total_price=order.total_price,
+        store_id=order.store_id,
         created_at=created_at_str,
         items=items_out,
     )

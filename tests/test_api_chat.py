@@ -642,3 +642,465 @@ def test_rate_limit_can_be_disabled(client, monkeypatch):
     for _ in range(5):
         resp = client.post("/chat/start")
         assert resp.status_code == 200
+
+
+# ---- Integration tests for mid-order modifications ----
+
+
+def test_modification_add_topping_to_existing_sandwich(client, monkeypatch):
+    """Test full flow: add sandwich, then add a topping mid-order."""
+    from sandwich_bot import main as main_mod
+
+    # Start session
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Step 1: Add a sandwich with initial toppings
+    def fake_add_sandwich(*args, **kwargs):
+        return {
+            "reply": "Got it, one Turkey Club with lettuce and tomato.",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "Turkey Club",
+                        "size": None,
+                        "bread": "White",
+                        "protein": "Turkey",
+                        "cheese": "American",
+                        "toppings": ["Lettuce", "Tomato"],
+                        "sauces": ["Mayo"],
+                        "toasted": False,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    resp1 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Turkey club with lettuce and tomato"},
+    )
+    assert resp1.status_code == 200
+    items = resp1.json()["order_state"]["items"]
+    assert len(items) == 1
+    assert items[0]["toppings"] == ["Lettuce", "Tomato"]
+
+    # Step 2: Add pickles (LLM computes new list: existing + Pickles)
+    def fake_add_topping(*args, **kwargs):
+        return {
+            "reply": "I've added pickles to your sandwich.",
+            "actions": [
+                {
+                    "intent": "update_sandwich",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": None,
+                        "size": None,
+                        "bread": None,
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": ["Lettuce", "Tomato", "Pickles"],
+                        "sauces": None,
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_topping)
+    resp2 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Add pickles"},
+    )
+    assert resp2.status_code == 200
+    data = resp2.json()
+
+    # Verify final order has all 3 toppings
+    items = data["order_state"]["items"]
+    assert len(items) == 1
+    assert items[0]["toppings"] == ["Lettuce", "Tomato", "Pickles"]
+    # Other fields should be preserved
+    assert items[0]["bread"] == "White"
+    assert items[0]["sauces"] == ["Mayo"]
+
+
+def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch):
+    """Test full flow: add sandwich, then remove a topping mid-order."""
+    from sandwich_bot import main as main_mod
+
+    # Start session
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Step 1: Add a sandwich with toppings
+    def fake_add_sandwich(*args, **kwargs):
+        return {
+            "reply": "Got it, one Turkey Club.",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "Turkey Club",
+                        "size": None,
+                        "bread": "Wheat",
+                        "protein": "Turkey",
+                        "cheese": "Swiss",
+                        "toppings": ["Lettuce", "Tomato", "Onion"],
+                        "sauces": [],
+                        "toasted": True,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    resp1 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Turkey club with everything"},
+    )
+    assert resp1.json()["order_state"]["items"][0]["toppings"] == ["Lettuce", "Tomato", "Onion"]
+
+    # Step 2: Remove tomato (LLM computes: existing minus Tomato)
+    def fake_remove_topping(*args, **kwargs):
+        return {
+            "reply": "No problem, I've removed the tomato.",
+            "actions": [
+                {
+                    "intent": "update_sandwich",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": None,
+                        "size": None,
+                        "bread": None,
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": ["Lettuce", "Onion"],  # Tomato removed
+                        "sauces": None,
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_remove_topping)
+    resp2 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Actually, no tomato"},
+    )
+    assert resp2.status_code == 200
+    data = resp2.json()
+
+    # Verify tomato was removed
+    items = data["order_state"]["items"]
+    assert len(items) == 1
+    assert items[0]["toppings"] == ["Lettuce", "Onion"]
+    assert "Tomato" not in items[0]["toppings"]
+
+
+def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch):
+    """Test full flow: add sandwich, then add and remove toppings in one request."""
+    from sandwich_bot import main as main_mod
+
+    # Start session
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Step 1: Add a sandwich
+    def fake_add_sandwich(*args, **kwargs):
+        return {
+            "reply": "Got it!",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "BLT",
+                        "size": None,
+                        "bread": "White",
+                        "protein": "Bacon",
+                        "cheese": None,
+                        "toppings": ["Lettuce", "Tomato"],
+                        "sauces": ["Mayo"],
+                        "toasted": True,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    client.post("/chat/message", json={"session_id": session_id, "message": "BLT please"})
+
+    # Step 2: Add onion and remove tomato
+    def fake_modify_toppings(*args, **kwargs):
+        return {
+            "reply": "I've added onion and removed the tomato.",
+            "actions": [
+                {
+                    "intent": "update_sandwich",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": None,
+                        "size": None,
+                        "bread": None,
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": ["Lettuce", "Onion"],  # +Onion, -Tomato
+                        "sauces": None,
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_modify_toppings)
+    resp = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Add onion and remove the tomato"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Verify final toppings
+    items = data["order_state"]["items"]
+    assert items[0]["toppings"] == ["Lettuce", "Onion"]
+
+
+def test_modification_change_sandwich_type(client, monkeypatch):
+    """Test full flow: add sandwich, then change to different sandwich type."""
+    from sandwich_bot import main as main_mod
+
+    # Start session
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Step 1: Add a Turkey Club
+    def fake_add_sandwich(*args, **kwargs):
+        return {
+            "reply": "Got it, one Turkey Club.",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "Turkey Club",
+                        "size": None,
+                        "bread": "White",
+                        "protein": "Turkey",
+                        "cheese": "American",
+                        "toppings": ["Lettuce"],
+                        "sauces": [],
+                        "toasted": False,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    resp1 = client.post("/chat/message", json={"session_id": session_id, "message": "Turkey Club"})
+    assert resp1.json()["order_state"]["items"][0]["menu_item_name"] == "Turkey Club"
+
+    # Step 2: Change to Italian Stallion
+    def fake_change_sandwich(*args, **kwargs):
+        return {
+            "reply": "Changed to Italian Stallion.",
+            "actions": [
+                {
+                    "intent": "update_sandwich",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": "Italian Stallion",
+                        "size": None,
+                        "bread": None,
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": None,
+                        "sauces": None,
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_change_sandwich)
+    resp2 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Actually make that an Italian Stallion"},
+    )
+    assert resp2.status_code == 200
+    data = resp2.json()
+
+    # Verify sandwich type changed
+    items = data["order_state"]["items"]
+    assert len(items) == 1
+    assert items[0]["menu_item_name"] == "Italian Stallion"
+
+
+def test_modification_first_sandwich_by_index(client, monkeypatch):
+    """Test full flow: add two sandwiches, modify the first one by index."""
+    from sandwich_bot import main as main_mod
+
+    # Start session
+    start_resp = client.post("/chat/start")
+    session_id = start_resp.json()["session_id"]
+
+    # Step 1: Add two sandwiches
+    def fake_add_two_sandwiches(*args, **kwargs):
+        return {
+            "reply": "Added Turkey Club and BLT.",
+            "actions": [
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "Turkey Club",
+                        "size": None,
+                        "bread": "White",
+                        "protein": "Turkey",
+                        "cheese": "American",
+                        "toppings": ["Lettuce"],
+                        "sauces": [],
+                        "toasted": False,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                },
+                {
+                    "intent": "add_sandwich",
+                    "slots": {
+                        "item_type": "sandwich",
+                        "menu_item_name": "BLT",
+                        "size": None,
+                        "bread": "Wheat",
+                        "protein": "Bacon",
+                        "cheese": None,
+                        "toppings": ["Lettuce", "Tomato"],
+                        "sauces": ["Mayo"],
+                        "toasted": True,
+                        "quantity": 1,
+                        "item_index": None,
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                },
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_two_sandwiches)
+    resp1 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Turkey Club and a BLT"},
+    )
+    items = resp1.json()["order_state"]["items"]
+    assert len(items) == 2
+    assert items[0]["bread"] == "White"
+    assert items[1]["bread"] == "Wheat"
+
+    # Step 2: Modify first sandwich (index 0) - change bread to Sourdough
+    def fake_modify_first(*args, **kwargs):
+        return {
+            "reply": "Changed the first sandwich to sourdough.",
+            "actions": [
+                {
+                    "intent": "update_sandwich",
+                    "slots": {
+                        "item_type": None,
+                        "menu_item_name": None,
+                        "size": None,
+                        "bread": "Sourdough",
+                        "protein": None,
+                        "cheese": None,
+                        "toppings": None,
+                        "sauces": None,
+                        "toasted": None,
+                        "quantity": None,
+                        "item_index": 0,  # First sandwich
+                        "customer_name": None,
+                        "phone": None,
+                        "pickup_time": None,
+                        "confirm": None,
+                        "cancel_reason": None,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_modify_first)
+    resp2 = client.post(
+        "/chat/message",
+        json={"session_id": session_id, "message": "Change my first sandwich to sourdough"},
+    )
+    assert resp2.status_code == 200
+    data = resp2.json()
+
+    # Verify only first sandwich changed
+    items = data["order_state"]["items"]
+    assert len(items) == 2
+    assert items[0]["bread"] == "Sourdough"  # Changed
+    assert items[1]["bread"] == "Wheat"  # Unchanged

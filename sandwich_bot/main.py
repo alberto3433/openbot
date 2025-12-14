@@ -504,6 +504,7 @@ class OrderSummaryOut(BaseModel):
     phone: Optional[str] = None
     pickup_time: Optional[str] = None
     total_price: float
+    store_id: Optional[str] = None
 
 
 class OrderItemOut(BaseModel):
@@ -533,6 +534,7 @@ class OrderDetailOut(BaseModel):
     phone: Optional[str] = None
     pickup_time: Optional[str] = None
     total_price: float
+    store_id: Optional[str] = None
     created_at: str
     items: List[OrderItemOut]
 

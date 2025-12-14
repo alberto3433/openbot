@@ -216,6 +216,7 @@
       <thead>
         <tr>
           <th>ID</th>
+          <th>Store</th>
           <th>Customer</th>
           <th>Phone</th>
           <th>Status</th>
@@ -256,6 +257,18 @@
 
   <script>
     const API_BASE = "";
+
+    // Store ID to name mapping
+    const STORE_NAMES = {
+      "store_eb_001": "East Brunswick",
+      "store_nb_002": "New Brunswick",
+      "store_pr_003": "Princeton"
+    };
+
+    function getStoreName(storeId) {
+      if (!storeId) return "-";
+      return STORE_NAMES[storeId] || storeId;
+    }
 
     let currentPage = 1;
     let currentStatus = "";
@@ -339,7 +352,7 @@
         }
       } catch (err) {
         console.error(err);
-        ordersBody.innerHTML = `<tr><td colspan="5" style="color:red;">Error loading orders</td></tr>`;
+        ordersBody.innerHTML = `<tr><td colspan="6" style="color:red;">Error loading orders</td></tr>`;
       }
     }
 
@@ -347,7 +360,7 @@
       ordersBody.innerHTML = "";
 
       if (!ordersCache.length) {
-        ordersBody.innerHTML = `<tr><td colspan="5" class="muted">No orders found</td></tr>`;
+        ordersBody.innerHTML = `<tr><td colspan="6" class="muted">No orders found</td></tr>`;
         return;
       }
 
@@ -359,6 +372,7 @@
 
         tr.innerHTML = `
           <td>${order.id}</td>
+          <td>${getStoreName(order.store_id)}</td>
           <td>${order.customer_name || ""}</td>
           <td>${order.phone || ""}</td>
           <td>${order.status}</td>
@@ -436,6 +450,7 @@
         detailsContent.innerHTML = `
           <div class="details-grid">
             <div><strong>Order ID:</strong> ${order.id}</div>
+            <div><strong>Store:</strong> ${getStoreName(order.store_id)}</div>
             <div><strong>Name:</strong> ${order.customer_name || ""}</div>
             <div><strong>Phone:</strong> ${order.phone || ""}</div>
             <div><strong>Pickup:</strong> ${order.pickup_time || ""}</div>

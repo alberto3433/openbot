@@ -168,6 +168,18 @@ def build_menu_index(db: Session) -> Dict[str, Any]:
     )
     index["topping_types"] = [ing.name for ing in topping_ingredients]
 
+    # Unavailable ingredients (86'd items) - so LLM knows what's out of stock
+    unavailable = (
+        db.query(Ingredient)
+        .filter(Ingredient.is_available == False)
+        .order_by(Ingredient.category, Ingredient.name)
+        .all()
+    )
+    index["unavailable_ingredients"] = [
+        {"name": ing.name, "category": ing.category}
+        for ing in unavailable
+    ]
+
     return index
 
 

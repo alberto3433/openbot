@@ -394,6 +394,7 @@ class IngredientOut(BaseModel):
     category: str
     unit: str
     track_inventory: bool
+    is_available: bool  # False = "86'd" / out of stock
 
 
 class IngredientCreate(BaseModel):
@@ -401,6 +402,7 @@ class IngredientCreate(BaseModel):
     category: str  # 'bread', 'protein', 'cheese', 'topping', 'sauce', etc.
     unit: str = "piece"
     track_inventory: bool = False
+    is_available: bool = True
 
 
 class IngredientUpdate(BaseModel):
@@ -408,6 +410,12 @@ class IngredientUpdate(BaseModel):
     category: Optional[str] = None
     unit: Optional[str] = None
     track_inventory: Optional[bool] = None
+    is_available: Optional[bool] = None  # Set to False to "86" an item
+
+
+class IngredientAvailabilityUpdate(BaseModel):
+    """Simple payload for quickly toggling ingredient availability."""
+    is_available: bool
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -1284,11 +1292,22 @@ def create_ingredient(
         category=payload.category.lower(),
         unit=payload.unit,
         track_inventory=payload.track_inventory,
+        is_available=payload.is_available,
     )
     db.add(ingredient)
     db.commit()
     db.refresh(ingredient)
     return IngredientOut.model_validate(ingredient)
+
+
+@admin_ingredients_router.get("/unavailable", response_model=List[IngredientOut])
+def list_unavailable_ingredients(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[IngredientOut]:
+    """List all ingredients that are currently out of stock (86'd). Requires admin authentication."""
+    ingredients = db.query(Ingredient).filter(Ingredient.is_available == False).order_by(Ingredient.category, Ingredient.name).all()
+    return [IngredientOut.model_validate(ing) for ing in ingredients]
 
 
 @admin_ingredients_router.get("/{ingredient_id}", response_model=IngredientOut)
@@ -1331,9 +1350,37 @@ def update_ingredient(
         ingredient.unit = payload.unit
     if payload.track_inventory is not None:
         ingredient.track_inventory = payload.track_inventory
+    if payload.is_available is not None:
+        ingredient.is_available = payload.is_available
 
     db.commit()
     db.refresh(ingredient)
+    return IngredientOut.model_validate(ingredient)
+
+
+@admin_ingredients_router.patch("/{ingredient_id}/availability", response_model=IngredientOut)
+def update_ingredient_availability(
+    ingredient_id: int,
+    payload: IngredientAvailabilityUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> IngredientOut:
+    """
+    Quick toggle for ingredient availability (86 system).
+    Use this to mark ingredients as out of stock or back in stock.
+    Requires admin authentication.
+    """
+    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    ingredient.is_available = payload.is_available
+    db.commit()
+    db.refresh(ingredient)
+
+    status = "available" if payload.is_available else "86'd (out of stock)"
+    logger.info("Ingredient '%s' marked as %s", ingredient.name, status)
+
     return IngredientOut.model_validate(ingredient)
 
 

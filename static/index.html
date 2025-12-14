@@ -193,9 +193,7 @@
       <div class="caller-id-content">
         <label for="store-select" style="white-space: nowrap;">Store:</label>
         <select id="store-select" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
-          <option value="store_eb_001">East Brunswick</option>
-          <option value="store_nb_002">New Brunswick</option>
-          <option value="store_pr_003">Princeton</option>
+          <!-- Populated dynamically from localStorage -->
         </select>
       </div>
       <div class="caller-id-content" style="margin-top: 8px;">
@@ -238,12 +236,60 @@
     const storeSelect = document.getElementById("store-select");
     const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
 
-    // Store name mapping
-    const STORE_NAMES = {
-      "store_eb_001": "East Brunswick",
-      "store_nb_002": "New Brunswick",
-      "store_pr_003": "Princeton"
-    };
+    // Storage key (same as admin_stores.html)
+    const STORES_STORAGE_KEY = "sandwich_bot_stores";
+
+    // Default stores (fallback if localStorage is empty)
+    const DEFAULT_STORES = [
+      { id: "store_eb_001", name: "Sammy's Subs - East Brunswick", status: "open" },
+      { id: "store_nb_002", name: "Sammy's Subs - New Brunswick", status: "open" },
+      { id: "store_pr_003", name: "Sammy's Subs - Princeton", status: "open" }
+    ];
+
+    // Store name mapping (built dynamically)
+    let STORE_NAMES = {};
+
+    // Load stores from localStorage and populate dropdown
+    function loadStoresAndPopulateDropdown() {
+      let stores = [];
+      const stored = localStorage.getItem(STORES_STORAGE_KEY);
+      if (stored) {
+        stores = JSON.parse(stored);
+      } else {
+        stores = DEFAULT_STORES;
+      }
+
+      // Filter: only active (non-deleted) and open stores
+      const availableStores = stores.filter(s => !s.deletedAt && s.status !== "closed");
+
+      // Build STORE_NAMES mapping
+      STORE_NAMES = {};
+      availableStores.forEach(store => {
+        // Extract short name (e.g., "East Brunswick" from "Sammy's Subs - East Brunswick")
+        const shortName = store.name.includes(" - ")
+          ? store.name.split(" - ").pop()
+          : store.name;
+        STORE_NAMES[store.id] = shortName;
+      });
+
+      // Populate dropdown
+      storeSelect.innerHTML = "";
+      if (availableStores.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No stores available";
+        storeSelect.appendChild(opt);
+      } else {
+        availableStores.forEach(store => {
+          const opt = document.createElement("option");
+          opt.value = store.id;
+          opt.textContent = STORE_NAMES[store.id];
+          storeSelect.appendChild(opt);
+        });
+      }
+
+      return availableStores;
+    }
 
     let sessionId = null;
     let connected = false;
@@ -448,11 +494,14 @@
 
     // Start session on page load - check URL params first
     window.addEventListener("load", () => {
+      // Load stores from localStorage and populate dropdown
+      const availableStores = loadStoresAndPopulateDropdown();
+
       const urlParams = new URLSearchParams(window.location.search);
       const storeIdParam = urlParams.get("store") || urlParams.get("store_id");
       const callerIdParam = urlParams.get("caller_id");
 
-      // Set dropdown value if store param provided
+      // Set dropdown value if store param provided and store is available
       if (storeIdParam && STORE_NAMES[storeIdParam]) {
         storeSelect.value = storeIdParam;
       }
@@ -463,8 +512,13 @@
       }
 
       // Start session with params (store defaults to first option if not specified)
-      const storeId = storeIdParam || storeSelect.value;
-      startSession(callerIdParam || null, storeId);
+      const storeId = storeIdParam && STORE_NAMES[storeIdParam] ? storeIdParam : storeSelect.value;
+      if (storeId) {
+        startSession(callerIdParam || null, storeId);
+      } else {
+        headerEl.textContent = "No stores available";
+        setStatus("Please add stores in Store Management");
+      }
     });
 
     // Track abandoned sessions (simulates "hang up")

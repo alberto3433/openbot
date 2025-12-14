@@ -329,6 +329,62 @@
     .btn.danger:hover {
       background: #b71c1c;
     }
+    /* Payment Methods Checkbox Styles */
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 6px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .checkbox-item:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+    .checkbox-item.selected {
+      background: #e3f2fd;
+      border-color: #1976d2;
+    }
+    .checkbox-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .checkbox-item label {
+      margin: 0;
+      font-size: 14px;
+      font-weight: normal;
+      cursor: pointer;
+    }
+    .form-error {
+      color: #c62828;
+      font-size: 12px;
+      margin-top: 6px;
+      display: none;
+    }
+    .form-error.visible {
+      display: block;
+    }
+    .payment-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+      background: #e0e0e0;
+      color: #555;
+    }
+    .payment-badge.cash { background: #e8f5e9; color: #2e7d32; }
+    .payment-badge.credit { background: #e3f2fd; color: #1565c0; }
+    .payment-badge.bitcoin { background: #fff3e0; color: #e65100; }
   </style>
 </head>
 <body>
@@ -413,6 +469,26 @@
               <option value="closed">Temporarily Closed</option>
             </select>
           </div>
+
+          <div class="form-group">
+            <label>Accepted Payment Methods *</label>
+            <div class="checkbox-group" id="paymentMethodsGroup">
+              <div class="checkbox-item" data-value="cash">
+                <input type="checkbox" id="paymentCash" value="cash" />
+                <label for="paymentCash">Cash</label>
+              </div>
+              <div class="checkbox-item" data-value="credit">
+                <input type="checkbox" id="paymentCredit" value="credit" />
+                <label for="paymentCredit">Credit Card</label>
+              </div>
+              <div class="checkbox-item" data-value="bitcoin">
+                <input type="checkbox" id="paymentBitcoin" value="bitcoin" />
+                <label for="paymentBitcoin">Bitcoin</label>
+              </div>
+            </div>
+            <div class="form-error" id="paymentMethodsError">Please select at least one payment method</div>
+            <div class="hint">Select all payment methods accepted at this store</div>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -464,7 +540,8 @@
         zip: "08816",
         phone: "(732) 555-0101",
         hours: "Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM",
-        status: "open"
+        status: "open",
+        paymentMethods: ["cash", "credit"]
       },
       {
         id: "store_nb_002",
@@ -475,7 +552,8 @@
         zip: "08901",
         phone: "(732) 555-0202",
         hours: "Mon-Fri 9:00 AM - 10:00 PM, Sat-Sun 10:00 AM - 8:00 PM",
-        status: "open"
+        status: "open",
+        paymentMethods: ["cash", "credit", "bitcoin"]
       },
       {
         id: "store_pr_003",
@@ -486,7 +564,8 @@
         zip: "08540",
         phone: "(609) 555-0303",
         hours: "Mon-Sun 11:00 AM - 8:00 PM",
-        status: "closed"
+        status: "closed",
+        paymentMethods: ["cash", "credit"]
       }
     ];
 
@@ -516,6 +595,17 @@
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         stores = JSON.parse(stored);
+        // Migration: Add default payment methods to stores that don't have them
+        let needsSave = false;
+        stores.forEach(store => {
+          if (!store.paymentMethods) {
+            store.paymentMethods = ["cash", "credit"];
+            needsSave = true;
+          }
+        });
+        if (needsSave) {
+          saveStores();
+        }
       } else {
         stores = [...DEFAULT_STORES];
         saveStores();
@@ -582,6 +672,7 @@
               <span class="store-badge ${store.status === 'open' ? 'open' : 'closed'}">
                 ${store.status === 'open' ? 'Open' : 'Closed'}
               </span>
+              ${formatPaymentMethods(store.paymentMethods)}
               <span class="store-id">ID: ${store.id}</span>
             </div>
           </div>
@@ -617,6 +708,47 @@
       return div.innerHTML;
     }
 
+    // Format payment methods for display
+    function formatPaymentMethods(methods) {
+      if (!methods || methods.length === 0) {
+        return '';
+      }
+      const labels = {
+        cash: 'Cash',
+        credit: 'Credit',
+        bitcoin: 'Bitcoin'
+      };
+      return methods.map(m =>
+        `<span class="payment-badge ${m}">${labels[m] || m}</span>`
+      ).join('');
+    }
+
+    // Get selected payment methods from checkboxes
+    function getSelectedPaymentMethods() {
+      const methods = [];
+      document.querySelectorAll('#paymentMethodsGroup input[type="checkbox"]:checked').forEach(cb => {
+        methods.push(cb.value);
+      });
+      return methods;
+    }
+
+    // Set payment method checkboxes
+    function setPaymentMethodCheckboxes(methods) {
+      const allCheckboxes = document.querySelectorAll('#paymentMethodsGroup input[type="checkbox"]');
+      allCheckboxes.forEach(cb => {
+        cb.checked = methods && methods.includes(cb.value);
+        updateCheckboxItemStyle(cb);
+      });
+    }
+
+    // Update checkbox item visual style
+    function updateCheckboxItemStyle(checkbox) {
+      const item = checkbox.closest('.checkbox-item');
+      if (item) {
+        item.classList.toggle('selected', checkbox.checked);
+      }
+    }
+
     // Open the modal for adding a new store
     function openAddModal() {
       editingStoreId = null;
@@ -624,7 +756,19 @@
       deleteBtn.style.display = "none";
       storeForm.reset();
       document.getElementById("storeId").value = "";
+      setPaymentMethodCheckboxes(["cash", "credit"]); // Default payment methods
+      hidePaymentError();
       storeModal.classList.add("active");
+    }
+
+    // Hide payment methods error
+    function hidePaymentError() {
+      document.getElementById("paymentMethodsError").classList.remove("visible");
+    }
+
+    // Show payment methods error
+    function showPaymentError() {
+      document.getElementById("paymentMethodsError").classList.add("visible");
     }
 
     // Open the modal for editing an existing store
@@ -649,6 +793,8 @@
       document.getElementById("storePhone").value = store.phone;
       document.getElementById("storeHours").value = store.hours || "";
       document.getElementById("storeStatus").value = store.status;
+      setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
+      hidePaymentError();
 
       storeModal.classList.add("active");
     }
@@ -676,11 +822,20 @@
       const phone = document.getElementById("storePhone").value.trim();
       const hours = document.getElementById("storeHours").value.trim();
       const status = document.getElementById("storeStatus").value;
+      const paymentMethods = getSelectedPaymentMethods();
 
       if (!name || !address || !city || !state || !zip || !phone) {
         showStatus("Please fill in all required fields", "error");
         return;
       }
+
+      // Validate at least one payment method is selected
+      if (paymentMethods.length === 0) {
+        showPaymentError();
+        showStatus("Please select at least one payment method", "error");
+        return;
+      }
+      hidePaymentError();
 
       if (editingStoreId) {
         // Update existing store
@@ -695,7 +850,8 @@
             zip,
             phone,
             hours,
-            status
+            status,
+            paymentMethods
           };
           showStatus(`"${name}" has been updated`, "success");
         }
@@ -710,7 +866,8 @@
           zip,
           phone,
           hours,
-          status
+          status,
+          paymentMethods
         };
         stores.push(newStore);
         showStatus(`"${name}" has been added`, "success");
@@ -870,6 +1027,26 @@
         e.preventDefault();
         saveStore();
       }
+    });
+
+    // Add event listeners for payment method checkboxes
+    document.querySelectorAll('#paymentMethodsGroup input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener("change", () => {
+        updateCheckboxItemStyle(cb);
+        hidePaymentError(); // Clear error when user interacts
+      });
+    });
+
+    // Allow clicking on the checkbox-item div to toggle the checkbox
+    document.querySelectorAll('#paymentMethodsGroup .checkbox-item').forEach(item => {
+      item.addEventListener("click", (e) => {
+        // Don't double-toggle if clicking directly on checkbox or label
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+        const cb = item.querySelector('input[type="checkbox"]');
+        cb.checked = !cb.checked;
+        updateCheckboxItemStyle(cb);
+        hidePaymentError();
+      });
     });
 
     // Initial load

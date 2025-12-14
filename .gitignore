@@ -2,4 +2,4 @@
 tests/__pycache__/*.*
 sandwich_bot/__pycache__/*.*
 __pycache__/
-.env
+.envapp.db

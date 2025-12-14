@@ -237,6 +237,12 @@ class ChatSession(Base):
     # If None, menu hasn't been sent yet; otherwise contains menu hash
     menu_version_sent = Column(String, nullable=True, default=None)
 
+    # Store identifier for per-store availability (86 system)
+    store_id = Column(String, nullable=True, index=True)
+
+    # Caller ID for returning customer identification
+    caller_id = Column(String, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

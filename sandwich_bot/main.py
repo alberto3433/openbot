@@ -262,6 +262,8 @@ def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, An
             "history": db_session.history or [],
             "order": db_session.order_state or {},
             "menu_version": db_session.menu_version_sent,  # Track which menu version was sent
+            "store_id": db_session.store_id,  # Restore store_id for per-store availability
+            "caller_id": db_session.caller_id,  # Restore caller_id for returning customer
         }
         # Add to cache
         with _cache_lock:
@@ -295,12 +297,16 @@ def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> 
         db_session.history = session_data.get("history", [])
         db_session.order_state = session_data.get("order", {})
         db_session.menu_version_sent = session_data.get("menu_version")
+        db_session.store_id = session_data.get("store_id")
+        db_session.caller_id = session_data.get("caller_id")
     else:
         db_session = ChatSession(
             session_id=session_id,
             history=session_data.get("history", []),
             order_state=session_data.get("order", {}),
             menu_version_sent=session_data.get("menu_version"),
+            store_id=session_data.get("store_id"),
+            caller_id=session_data.get("caller_id"),
         )
         db.add(db_session)
 

@@ -238,7 +238,7 @@ def seed_ingredients():
             # Toppings
             Ingredient(name="Lettuce", category="topping", unit="portion", track_inventory=False),
             Ingredient(name="Tomato", category="topping", unit="slice", track_inventory=False),
-            Ingredient(name="Onion", category="topping", unit="portion", track_inventory=False),
+            Ingredient(name="Red Onion", category="topping", unit="portion", track_inventory=False),
             Ingredient(name="Pickles", category="topping", unit="slice", track_inventory=False),
             Ingredient(name="Cucumber", category="topping", unit="slice", track_inventory=False),
             Ingredient(name="Olives", category="topping", unit="portion", track_inventory=False),

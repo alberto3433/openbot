@@ -681,7 +681,7 @@ def test_update_sandwich_remove_topping():
                 "bread": "White",
                 "cheese": "American",
                 "protein": None,
-                "toppings": ["Lettuce", "Tomato", "Onion"],
+                "toppings": ["Lettuce", "Tomato", "Red Onion"],
                 "sauces": [],
                 "toasted": True,
                 "quantity": 1,
@@ -692,12 +692,12 @@ def test_update_sandwich_remove_topping():
         "customer": {},
     }
     # LLM should compute new list: existing minus Tomato
-    slots = {"toppings": ["Lettuce", "Onion"]}
+    slots = {"toppings": ["Lettuce", "Red Onion"]}
     menu = _make_sandwich_menu_with_extras()
 
     new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
 
-    assert new["items"][0]["toppings"] == ["Lettuce", "Onion"]
+    assert new["items"][0]["toppings"] == ["Lettuce", "Red Onion"]
     # Other fields unchanged
     assert new["items"][0]["toasted"] is True
 
@@ -723,13 +723,13 @@ def test_update_sandwich_add_and_remove_toppings():
         ],
         "customer": {},
     }
-    # LLM computes: remove Tomato, add Onion → ["Lettuce", "Onion"]
-    slots = {"toppings": ["Lettuce", "Onion"]}
+    # LLM computes: remove Tomato, add Red Onion → ["Lettuce", "Red Onion"]
+    slots = {"toppings": ["Lettuce", "Red Onion"]}
     menu = _make_sandwich_menu_with_extras()
 
     new = apply_intent_to_order_state(state, "update_sandwich", slots, menu)
 
-    assert new["items"][0]["toppings"] == ["Lettuce", "Onion"]
+    assert new["items"][0]["toppings"] == ["Lettuce", "Red Onion"]
 
 
 def test_update_sandwich_change_to_different_sandwich():

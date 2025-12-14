@@ -762,7 +762,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch)
                         "bread": "Wheat",
                         "protein": "Turkey",
                         "cheese": "Swiss",
-                        "toppings": ["Lettuce", "Tomato", "Onion"],
+                        "toppings": ["Lettuce", "Tomato", "Red Onion"],
                         "sauces": [],
                         "toasted": True,
                         "quantity": 1,
@@ -782,7 +782,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch)
         "/chat/message",
         json={"session_id": session_id, "message": "Turkey club with everything"},
     )
-    assert resp1.json()["order_state"]["items"][0]["toppings"] == ["Lettuce", "Tomato", "Onion"]
+    assert resp1.json()["order_state"]["items"][0]["toppings"] == ["Lettuce", "Tomato", "Red Onion"]
 
     # Step 2: Remove tomato (LLM computes: existing minus Tomato)
     def fake_remove_topping(*args, **kwargs):
@@ -798,7 +798,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch)
                         "bread": None,
                         "protein": None,
                         "cheese": None,
-                        "toppings": ["Lettuce", "Onion"],  # Tomato removed
+                        "toppings": ["Lettuce", "Red Onion"],  # Tomato removed
                         "sauces": None,
                         "toasted": None,
                         "quantity": None,
@@ -824,7 +824,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch)
     # Verify tomato was removed
     items = data["order_state"]["items"]
     assert len(items) == 1
-    assert items[0]["toppings"] == ["Lettuce", "Onion"]
+    assert items[0]["toppings"] == ["Lettuce", "Red Onion"]
     assert "Tomato" not in items[0]["toppings"]
 
 
@@ -882,7 +882,7 @@ def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch
                         "bread": None,
                         "protein": None,
                         "cheese": None,
-                        "toppings": ["Lettuce", "Onion"],  # +Onion, -Tomato
+                        "toppings": ["Lettuce", "Red Onion"],  # +Red Onion, -Tomato
                         "sauces": None,
                         "toasted": None,
                         "quantity": None,
@@ -907,7 +907,7 @@ def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch
 
     # Verify final toppings
     items = data["order_state"]["items"]
-    assert items[0]["toppings"] == ["Lettuce", "Onion"]
+    assert items[0]["toppings"] == ["Lettuce", "Red Onion"]
 
 
 def test_modification_change_sandwich_type(client, monkeypatch):

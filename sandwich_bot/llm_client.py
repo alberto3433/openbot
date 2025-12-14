@@ -218,7 +218,7 @@ How to handle modifications:
 3. REMOVING TOPPINGS:
    - Look at the ORDER STATE to find the current toppings for that sandwich
    - Return update_sandwich with toppings = [existing toppings minus the removed one]
-   - Example: If current toppings are ["Lettuce", "Tomato", "Onion"] and user says "no onion":
+   - Example: If current toppings are ["Lettuce", "Tomato", "Red Onion"] and user says "no onion":
      → {"intent": "update_sandwich", "slots": {"toppings": ["Lettuce", "Tomato"], ...}}
 
 4. CHANGING WHICH SANDWICH:
@@ -237,7 +237,7 @@ then compute and return the FULL updated list. Never return just the added/remov
 Example modification flow:
 - ORDER STATE shows: items: [{"menu_item_name": "Turkey Club", "toppings": ["Lettuce", "Tomato"], ...}]
 - User: "add onions and remove the tomato"
-- You should return: {"intent": "update_sandwich", "slots": {"toppings": ["Lettuce", "Onion"], ...}}
+- You should return: {"intent": "update_sandwich", "slots": {"toppings": ["Lettuce", "Red Onion"], ...}}
 
 RESPONSE STYLE - ALWAYS END WITH A CLEAR NEXT STEP:
 - EVERY reply MUST end with a question or clear call-to-action so the user knows what to do next.

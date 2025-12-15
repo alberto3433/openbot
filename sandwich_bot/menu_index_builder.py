@@ -97,6 +97,15 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
 
+        # Parse extra_metadata to get default_config (ingredients for signature sandwiches)
+        default_config = None
+        if item.extra_metadata:
+            try:
+                meta = json.loads(item.extra_metadata)
+                default_config = meta.get("default_config")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         item_json = {
             "id": item.id,
             "name": item.name,
@@ -105,6 +114,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "base_price": float(item.base_price),
             "available_qty": int(item.available_qty),
             "recipe": recipe_json,
+            "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
         }
 
         cat = (item.category or "").lower()

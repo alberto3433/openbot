@@ -970,14 +970,15 @@ def chat_message(
         updated_order_state["customer"]["name"] = customer_name
         updated_order_state["customer"]["phone"] = customer_phone
 
+        # Get store_id from session for the order
+        session_store_id = session.get("store_id") or get_random_store_id()
+
         apply_inventory_decrement_on_confirm(db, updated_order_state)
-        persist_confirmed_order(db, updated_order_state, all_slots)
-        logger.info("Order persisted for customer: %s", customer_name)
+        persist_confirmed_order(db, updated_order_state, all_slots, store_id=session_store_id)
+        logger.info("Order persisted for customer: %s (store: %s)", customer_name, session_store_id)
 
         # Log completed session for analytics
         items = updated_order_state.get("items", [])
-        # Get store_id from session, fallback to random if not set
-        session_store_id = session.get("store_id") or get_random_store_id()
         session_record = SessionAnalytics(
             session_id=req.session_id,
             status="completed",
@@ -1071,6 +1072,7 @@ def persist_confirmed_order(
     db: Session,
     order_state: Dict[str, Any],
     slots: Optional[Dict[str, Any]] = None,
+    store_id: Optional[str] = None,
 ) -> Optional[Order]:
     """
     Persist a confirmed order + its items to the database.
@@ -1078,6 +1080,12 @@ def persist_confirmed_order(
     Idempotent:
       - If order_state has a db_order_id and that row exists, we UPDATE it.
       - Otherwise, we CREATE a new Order and store its id back into order_state["db_order_id"].
+
+    Args:
+        db: Database session
+        order_state: Current order state dict
+        slots: Optional slots from the LLM action
+        store_id: Optional store identifier (e.g., "store_eb_001")
     """
     if order_state.get("status") != "confirmed":
         return None  # nothing to persist
@@ -1143,6 +1151,7 @@ def persist_confirmed_order(
             phone=phone,
             pickup_time=pickup_time,
             total_price=total_price,
+            store_id=store_id,
         )
         db.add(order)
         db.flush()  # assign order.id

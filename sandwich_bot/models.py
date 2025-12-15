@@ -17,6 +17,127 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+# --- Generic Item Type System ---
+
+class ItemType(Base):
+    """
+    Defines a type of menu item (sandwich, pizza, taco, drink, etc.).
+
+    An ItemType with is_configurable=True has attribute definitions that allow
+    customization (e.g., sandwiches have bread, protein, toppings).
+    Items with is_configurable=False are simple items (e.g., chips, soda).
+    """
+    __tablename__ = "item_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sandwich", "pizza", "drink"
+    display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
+    is_configurable = Column(Boolean, nullable=False, default=True)  # True = has attributes to customize
+
+    # Relationships
+    attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
+    menu_items = relationship("MenuItem", back_populates="item_type")
+
+
+class AttributeDefinition(Base):
+    """
+    Defines a customizable attribute for an item type.
+
+    Examples for sandwich: bread, size, protein, cheese, toppings, sauces, toasted
+    Examples for pizza: size, crust, sauce, toppings
+    """
+    __tablename__ = "attribute_definitions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    slug = Column(String, nullable=False)  # e.g., "bread", "protein", "toppings"
+    display_name = Column(String, nullable=False)  # e.g., "Bread", "Protein", "Toppings"
+
+    # Input type determines UI and validation
+    # "single_select": Pick exactly one (e.g., bread type)
+    # "multi_select": Pick multiple (e.g., toppings)
+    # "boolean": Yes/no (e.g., toasted)
+    input_type = Column(String, nullable=False, default="single_select")
+
+    # Validation rules
+    is_required = Column(Boolean, nullable=False, default=True)  # Must be specified
+    allow_none = Column(Boolean, nullable=False, default=False)  # Can select "none" option
+    min_selections = Column(Integer, nullable=True)  # For multi_select: minimum selections
+    max_selections = Column(Integer, nullable=True)  # For multi_select: maximum selections
+
+    # Display order (lower = shown first)
+    display_order = Column(Integer, nullable=False, default=0)
+
+    # Unique constraint: one definition per slug per item type
+    __table_args__ = (
+        UniqueConstraint("item_type_id", "slug", name="uix_item_type_attr_slug"),
+    )
+
+    # Relationships
+    item_type = relationship("ItemType", back_populates="attribute_definitions")
+    options = relationship("AttributeOption", back_populates="attribute_definition", cascade="all, delete-orphan")
+
+
+class AttributeOption(Base):
+    """
+    An available option for an attribute definition.
+
+    Examples for bread attribute: white, wheat, italian, wrap
+    Examples for toppings attribute: lettuce, tomato, onion, pickle
+    """
+    __tablename__ = "attribute_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    attribute_definition_id = Column(Integer, ForeignKey("attribute_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    slug = Column(String, nullable=False)  # e.g., "white", "wheat", "lettuce"
+    display_name = Column(String, nullable=False)  # e.g., "White Bread", "Wheat Bread", "Lettuce"
+
+    price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
+    is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
+    is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
+
+    # Display order (lower = shown first)
+    display_order = Column(Integer, nullable=False, default=0)
+
+    # Unique constraint: one option per slug per attribute definition
+    __table_args__ = (
+        UniqueConstraint("attribute_definition_id", "slug", name="uix_attr_def_option_slug"),
+    )
+
+    # Relationships
+    attribute_definition = relationship("AttributeDefinition", back_populates="options")
+    ingredient_links = relationship("AttributeOptionIngredient", back_populates="attribute_option", cascade="all, delete-orphan")
+
+
+class AttributeOptionIngredient(Base):
+    """
+    Links an attribute option to an ingredient for inventory tracking.
+
+    This allows the 86 system to work with generic attributes - when an ingredient
+    runs out, all attribute options using that ingredient become unavailable.
+
+    An option can use multiple ingredients (e.g., a "loaded" topping option).
+    """
+    __tablename__ = "attribute_option_ingredients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    attribute_option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="CASCADE"), nullable=False, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    quantity = Column(Float, nullable=False, default=1.0)  # Amount of ingredient used
+
+    # Unique constraint: one link per option per ingredient
+    __table_args__ = (
+        UniqueConstraint("attribute_option_id", "ingredient_id", name="uix_attr_option_ingredient"),
+    )
+
+    # Relationships
+    attribute_option = relationship("AttributeOption", back_populates="ingredient_links")
+    ingredient = relationship("Ingredient", back_populates="attribute_option_links")
+
+
 class Order(Base):
     __tablename__ = "orders"
 
@@ -46,8 +167,16 @@ class OrderItem(Base):
 
     menu_item_name = Column(String, nullable=False)
 
-    # 🔹 New columns to match persist_confirmed_order and OrderItemOut
-    item_type = Column(String, nullable=True)
+    # Generic item type system
+    item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)
+
+    # Generic item configuration (JSON)
+    # e.g., {"bread": "italian", "protein": "turkey", "cheese": "provolone", "toppings": ["lettuce", "tomato"], "toasted": true}
+    item_config = Column(JSON, nullable=True)
+
+    # Legacy columns (kept for backward compatibility during migration)
+    # TODO: Remove these after full migration to generic system
+    item_type = Column(String, nullable=True)  # Legacy: "sandwich", "side", "drink"
     size = Column(String, nullable=True)
     bread = Column(String, nullable=True)
     protein = Column(String, nullable=True)
@@ -78,10 +207,17 @@ class MenuItem(Base):
 
     extra_metadata = Column(Text, nullable=True)
 
+    # Link to generic item type system (optional - for migration compatibility)
+    item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)
+    item_type = relationship("ItemType", back_populates="menu_items")
+
+    # Default configuration for this menu item (JSON)
+    # e.g., {"bread": "italian", "protein": "turkey", "cheese": "provolone", "toasted": true}
+    default_config = Column(JSON, nullable=True)
+
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
     recipe = relationship("Recipe", back_populates="menu_items")
 
-    # 🔹 Add this block:
     order_items = relationship(
         "OrderItem",
         back_populates="menu_item",
@@ -127,6 +263,7 @@ class Ingredient(Base):
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     choice_for = relationship("RecipeChoiceItem", back_populates="ingredient", cascade="all, delete-orphan")
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
+    attribute_option_links = relationship("AttributeOptionIngredient", back_populates="ingredient", cascade="all, delete-orphan")
 
 
 # --- Per-store ingredient availability (86 system) ---

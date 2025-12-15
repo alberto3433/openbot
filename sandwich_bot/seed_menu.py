@@ -1,6 +1,13 @@
 import json
 from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import MenuItem, Ingredient
+from sandwich_bot.models import (
+    MenuItem,
+    Ingredient,
+    ItemType,
+    AttributeDefinition,
+    AttributeOption,
+    AttributeOptionIngredient,
+)
 
 
 def seed_menu():
@@ -263,6 +270,303 @@ def seed_ingredients():
         db.close()
 
 
+def seed_item_types():
+    """Seed the generic item type system with sandwich-specific configuration."""
+    db = SessionLocal()
+    try:
+        # Check if already seeded
+        existing = db.query(ItemType).count()
+        if existing > 0:
+            print(f"ItemType table already has {existing} items. Not seeding again.")
+            return
+
+        # Create item types
+        item_types = [
+            ItemType(slug="sandwich", display_name="Sandwich", is_configurable=True),
+            ItemType(slug="side", display_name="Side", is_configurable=False),
+            ItemType(slug="drink", display_name="Drink", is_configurable=False),
+            ItemType(slug="dessert", display_name="Dessert", is_configurable=False),
+        ]
+        db.add_all(item_types)
+        db.flush()  # Get IDs
+
+        sandwich_type = db.query(ItemType).filter(ItemType.slug == "sandwich").first()
+
+        # Create attribute definitions for sandwich
+        attr_defs = [
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="size",
+                display_name="Size",
+                input_type="single_select",
+                is_required=True,
+                allow_none=False,
+                display_order=1,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="bread",
+                display_name="Bread",
+                input_type="single_select",
+                is_required=True,
+                allow_none=False,
+                display_order=2,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="protein",
+                display_name="Protein",
+                input_type="single_select",
+                is_required=False,
+                allow_none=True,  # Can have no protein (veggie)
+                display_order=3,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="cheese",
+                display_name="Cheese",
+                input_type="single_select",
+                is_required=False,
+                allow_none=True,  # Can have no cheese
+                display_order=4,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="toppings",
+                display_name="Toppings",
+                input_type="multi_select",
+                is_required=False,
+                allow_none=True,
+                min_selections=0,
+                max_selections=10,
+                display_order=5,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="sauces",
+                display_name="Sauces",
+                input_type="multi_select",
+                is_required=False,
+                allow_none=True,
+                min_selections=0,
+                max_selections=5,
+                display_order=6,
+            ),
+            AttributeDefinition(
+                item_type_id=sandwich_type.id,
+                slug="toasted",
+                display_name="Toasted",
+                input_type="boolean",
+                is_required=False,
+                allow_none=False,
+                display_order=7,
+            ),
+        ]
+        db.add_all(attr_defs)
+        db.flush()
+
+        # Get attribute definitions for option creation
+        size_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "size"
+        ).first()
+        bread_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "bread"
+        ).first()
+        protein_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "protein"
+        ).first()
+        cheese_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "cheese"
+        ).first()
+        toppings_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "toppings"
+        ).first()
+        sauces_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "sauces"
+        ).first()
+        toasted_def = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == sandwich_type.id,
+            AttributeDefinition.slug == "toasted"
+        ).first()
+
+        # Create size options (no ingredient link needed)
+        size_options = [
+            AttributeOption(
+                attribute_definition_id=size_def.id,
+                slug="6inch",
+                display_name='6"',
+                price_modifier=0.0,
+                is_default=True,
+                display_order=1,
+            ),
+            AttributeOption(
+                attribute_definition_id=size_def.id,
+                slug="12inch",
+                display_name='12"',
+                price_modifier=4.00,
+                is_default=False,
+                display_order=2,
+            ),
+        ]
+        db.add_all(size_options)
+
+        # Create toasted options (no ingredient link needed)
+        toasted_options = [
+            AttributeOption(
+                attribute_definition_id=toasted_def.id,
+                slug="yes",
+                display_name="Yes",
+                price_modifier=0.0,
+                is_default=False,
+                display_order=1,
+            ),
+            AttributeOption(
+                attribute_definition_id=toasted_def.id,
+                slug="no",
+                display_name="No",
+                price_modifier=0.0,
+                is_default=True,
+                display_order=2,
+            ),
+        ]
+        db.add_all(toasted_options)
+
+        # Create options linked to ingredients
+        # Get all ingredients by category
+        breads = db.query(Ingredient).filter(Ingredient.category == "bread").all()
+        proteins = db.query(Ingredient).filter(Ingredient.category == "protein").all()
+        cheeses = db.query(Ingredient).filter(Ingredient.category == "cheese").all()
+        toppings = db.query(Ingredient).filter(Ingredient.category == "topping").all()
+        sauces = db.query(Ingredient).filter(Ingredient.category == "sauce").all()
+
+        # Helper to create option + ingredient link
+        def create_option_with_ingredient(attr_def_id, ingredient, display_order, is_default=False):
+            slug = ingredient.name.lower().replace(" ", "_").replace("&", "and")
+            option = AttributeOption(
+                attribute_definition_id=attr_def_id,
+                slug=slug,
+                display_name=ingredient.name,
+                price_modifier=ingredient.base_price,
+                is_default=is_default,
+                display_order=display_order,
+            )
+            db.add(option)
+            db.flush()
+            # Link to ingredient
+            link = AttributeOptionIngredient(
+                attribute_option_id=option.id,
+                ingredient_id=ingredient.id,
+                quantity=1.0,
+            )
+            db.add(link)
+            return option
+
+        # Create bread options
+        for i, bread in enumerate(breads):
+            create_option_with_ingredient(bread_def.id, bread, i + 1, is_default=(bread.name == "White"))
+
+        # Create protein options (with "none" option)
+        none_protein = AttributeOption(
+            attribute_definition_id=protein_def.id,
+            slug="none",
+            display_name="No Protein",
+            price_modifier=0.0,
+            is_default=False,
+            display_order=0,
+        )
+        db.add(none_protein)
+        for i, protein in enumerate(proteins):
+            create_option_with_ingredient(protein_def.id, protein, i + 1, is_default=(protein.name == "Turkey"))
+
+        # Create cheese options (with "none" option)
+        none_cheese = AttributeOption(
+            attribute_definition_id=cheese_def.id,
+            slug="none",
+            display_name="No Cheese",
+            price_modifier=0.0,
+            is_default=False,
+            display_order=0,
+        )
+        db.add(none_cheese)
+        for i, cheese in enumerate(cheeses):
+            create_option_with_ingredient(cheese_def.id, cheese, i + 1)
+
+        # Create topping options
+        for i, topping in enumerate(toppings):
+            create_option_with_ingredient(toppings_def.id, topping, i + 1)
+
+        # Create sauce options
+        for i, sauce in enumerate(sauces):
+            create_option_with_ingredient(sauces_def.id, sauce, i + 1)
+
+        db.commit()
+        print("Seeded generic item type system successfully.")
+        print(f"  - {len(item_types)} item types")
+        print(f"  - {len(attr_defs)} attribute definitions")
+        print(f"  - {len(size_options) + len(toasted_options) + len(breads) + len(proteins) + 1 + len(cheeses) + 1 + len(toppings) + len(sauces)} attribute options")
+
+    finally:
+        db.close()
+
+
+def link_menu_items_to_item_types():
+    """Update existing menu items to link to the generic item type system."""
+    db = SessionLocal()
+    try:
+        # Get item types
+        sandwich_type = db.query(ItemType).filter(ItemType.slug == "sandwich").first()
+        side_type = db.query(ItemType).filter(ItemType.slug == "side").first()
+        drink_type = db.query(ItemType).filter(ItemType.slug == "drink").first()
+        dessert_type = db.query(ItemType).filter(ItemType.slug == "dessert").first()
+
+        if not sandwich_type:
+            print("Item types not seeded yet. Run seed_item_types() first.")
+            return
+
+        # Map category to item type
+        category_to_type = {
+            "signature": sandwich_type,
+            "sandwich": sandwich_type,
+            "side": side_type,
+            "drink": drink_type,
+            "dessert": dessert_type,
+        }
+
+        # Update all menu items
+        menu_items = db.query(MenuItem).all()
+        updated = 0
+        for item in menu_items:
+            if item.item_type_id is None:
+                item_type = category_to_type.get(item.category)
+                if item_type:
+                    item.item_type_id = item_type.id
+
+                    # Migrate extra_metadata to default_config for sandwiches
+                    if item_type.slug == "sandwich" and item.extra_metadata:
+                        try:
+                            metadata = json.loads(item.extra_metadata)
+                            if "default_config" in metadata:
+                                item.default_config = metadata["default_config"]
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                    updated += 1
+
+        db.commit()
+        print(f"Linked {updated} menu items to item types.")
+
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     seed_menu()
     seed_ingredients()
+    seed_item_types()
+    link_menu_items_to_item_types()

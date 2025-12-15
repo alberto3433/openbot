@@ -2,13 +2,16 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Generator
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, APITimeoutError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+# Default timeout for LLM calls (in seconds)
+DEFAULT_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
 
 # --------------------------------------------------------------------------------------
 # Load .env explicitly from the project root (two levels above sandwich_bot/sammy/)
@@ -35,7 +38,8 @@ if not api_key:
     )
 
 # Explicitly pass the key so we don't depend on any global environment
-client = OpenAI(api_key=api_key)
+# Set default timeout to prevent hanging requests
+client = OpenAI(api_key=api_key, timeout=DEFAULT_TIMEOUT)
 
 SYSTEM_PROMPT_TEMPLATE = """
 You are '__BOT_NAME__', a concise, polite sandwich-order bot for __COMPANY_NAME__.
@@ -588,6 +592,7 @@ def call_sandwich_bot(
     company_name: str = None,
     db: Optional[Session] = None,
     use_dynamic_prompt: bool = False,
+    timeout: float = None,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
@@ -611,6 +616,7 @@ def call_sandwich_bot(
         company_name: The company name (e.g., "Sammy's Subs") - defaults to "a single sandwich shop"
         db: Optional database session for dynamic prompt building
         use_dynamic_prompt: If True and db provided, use dynamic prompt builder
+        timeout: Request timeout in seconds (defaults to DEFAULT_TIMEOUT)
     """
     if model is None:
         model = DEFAULT_MODEL
@@ -670,14 +676,23 @@ def call_sandwich_bot(
 
     messages.append({"role": "user", "content": user_content})
 
-    # Call OpenAI
-    completion = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        response_format={"type": "json_object"},
-        temperature=0.0,
-    )
-    content = completion.choices[0].message.content
+    # Call OpenAI with timeout
+    request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.0,
+            timeout=request_timeout,
+        )
+        content = completion.choices[0].message.content
+    except APITimeoutError:
+        logger.error("LLM request timed out after %s seconds", request_timeout)
+        return {
+            "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
+            "actions": [],
+        }
 
     try:
         return json.loads(content)
@@ -710,4 +725,131 @@ def call_sandwich_bot(
                     },
                 }
             ],
+        }
+
+
+def call_sandwich_bot_stream(
+    conversation_history,
+    current_order_state,
+    menu_json,
+    user_message,
+    model: str = None,
+    include_menu_in_system: bool = True,
+    returning_customer: Dict[str, Any] = None,
+    caller_id: str = None,
+    bot_name: str = None,
+    company_name: str = None,
+    db: Optional[Session] = None,
+    use_dynamic_prompt: bool = False,
+    timeout: float = None,
+) -> Generator[str, None, Dict[str, Any]]:
+    """
+    Streaming version of call_sandwich_bot that yields tokens as they arrive.
+
+    Yields partial content as it streams, then returns the final parsed result.
+    Use this for real-time feedback to users.
+
+    Args:
+        Same as call_sandwich_bot
+
+    Yields:
+        str: Partial content tokens as they arrive
+
+    Returns:
+        Dict[str, Any]: Final parsed JSON response (same format as call_sandwich_bot)
+    """
+    if model is None:
+        model = DEFAULT_MODEL
+
+    # Build messages array (same as non-streaming version)
+    messages = []
+
+    # 1. System message - with or without menu
+    if include_menu_in_system:
+        system_content = build_system_prompt_with_menu(
+            menu_json, bot_name, company_name, db, use_dynamic_prompt
+        )
+    else:
+        system_content = build_system_prompt_with_menu(
+            None, bot_name, company_name, db, use_dynamic_prompt
+        )
+
+    messages.append({"role": "system", "content": system_content})
+
+    # 2. Add conversation history as proper message objects (last 6 messages)
+    for msg in conversation_history[-6:]:
+        messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+
+    # 3. Build current user message
+    previous_order_section = format_previous_order_section(returning_customer)
+    caller_id_section = format_caller_id_section(caller_id)
+
+    if include_menu_in_system:
+        user_content = USER_PROMPT_TEMPLATE_SLIM.format(
+            order_state=json.dumps(current_order_state, indent=2),
+            caller_id_section=caller_id_section,
+            previous_order_section=previous_order_section,
+            user_message=user_message,
+            schema=json.dumps(RESPONSE_SCHEMA, indent=2),
+        )
+    else:
+        user_content = USER_PROMPT_TEMPLATE_WITH_MENU.format(
+            conversation_history=render_history(conversation_history),
+            order_state=json.dumps(current_order_state, indent=2),
+            menu_json=json.dumps(menu_json, indent=2),
+            user_message=user_message,
+            schema=json.dumps(RESPONSE_SCHEMA, indent=2),
+        )
+        extra_sections = caller_id_section + previous_order_section
+        if extra_sections:
+            user_content = user_content.replace(
+                "USER MESSAGE:",
+                f"{extra_sections}\nUSER MESSAGE:"
+            )
+
+    messages.append({"role": "user", "content": user_content})
+
+    # Call OpenAI with streaming
+    request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+    full_content = ""
+
+    try:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.0,
+            timeout=request_timeout,
+            stream=True,
+        )
+
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                token = chunk.choices[0].delta.content
+                full_content += token
+                yield token
+
+    except APITimeoutError:
+        logger.error("LLM streaming request timed out after %s seconds", request_timeout)
+        yield json.dumps({
+            "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
+            "actions": [],
+        })
+        return {
+            "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
+            "actions": [],
+        }
+
+    # Parse the final content
+    try:
+        return json.loads(full_content)
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse streamed LLM response as JSON: %s", str(e))
+        logger.debug("Raw streamed response: %s", full_content[:500] if full_content else "(empty)")
+        return {
+            "reply": "I'm sorry, I had trouble understanding that. Could you please rephrase?",
+            "actions": [],
         }

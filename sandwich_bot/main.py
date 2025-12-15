@@ -13,6 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status, Request, API
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ from slowapi.errors import RateLimitExceeded
 
 from .db import get_db
 from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company, ItemType
-from sandwich_bot.sammy.llm_client import call_sandwich_bot
+from sandwich_bot.sammy.llm_client import call_sandwich_bot, call_sandwich_bot_stream
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
 # Inventory tracking via available_qty removed - using 86 system instead
@@ -1059,6 +1060,153 @@ def chat_message(
         actions=processed_actions,
         intent=primary_intent,
         slots=primary_slots,
+    )
+
+
+@chat_router.post("/message/stream")
+@limiter.limit(get_rate_limit_chat)
+def chat_message_stream(
+    request: Request,
+    req: ChatMessageRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Streaming version of chat message endpoint.
+
+    Uses Server-Sent Events (SSE) to stream the response as it's generated.
+    This provides immediate feedback to users instead of waiting for the full response.
+
+    Event format:
+    - data: {"token": "partial text"} - streamed tokens
+    - data: {"done": true, "reply": "full reply", "order_state": {...}, "actions": [...]} - final result
+    - data: {"error": "message"} - error occurred
+    """
+    # Get session from cache or database
+    session = get_or_create_session(db, req.session_id)
+    if session is None:
+        def error_stream():
+            yield f"data: {json.dumps({'error': 'Invalid session_id'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    history: List[Dict[str, str]] = session["history"]
+    order_state: Dict[str, Any] = session["order"]
+    returning_customer: Dict[str, Any] = session.get("returning_customer")
+    session_store_id: Optional[str] = session.get("store_id")
+    session_caller_id: Optional[str] = session.get("caller_id")
+
+    # Get company info for LLM persona
+    company = get_or_create_company(db)
+
+    # Build menu index for LLM (with store-specific ingredient availability)
+    menu_index = build_menu_index(db, store_id=session_store_id)
+
+    # Determine if menu needs to be sent in system prompt
+    current_menu_version = get_menu_version(menu_index)
+    session_menu_version = session.get("menu_version")
+    include_menu_in_system = (
+        session_menu_version is None or
+        session_menu_version != current_menu_version
+    )
+
+    def generate_stream():
+        nonlocal session, history, order_state
+
+        full_content = ""
+
+        try:
+            # Stream tokens from LLM
+            stream_gen = call_sandwich_bot_stream(
+                history,
+                order_state,
+                menu_index,
+                req.message,
+                include_menu_in_system=include_menu_in_system,
+                returning_customer=returning_customer,
+                caller_id=session_caller_id,
+                bot_name=company.bot_persona_name,
+                company_name=company.name,
+            )
+
+            # Yield tokens as they arrive
+            for token in stream_gen:
+                full_content += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+
+            # Parse the full response
+            try:
+                llm_result = json.loads(full_content)
+            except json.JSONDecodeError:
+                llm_result = {
+                    "reply": "I'm sorry, I had trouble understanding that. Could you please rephrase?",
+                    "actions": []
+                }
+
+            # Update menu version in session if we sent it
+            if include_menu_in_system:
+                session["menu_version"] = current_menu_version
+
+            # Process actions (same logic as non-streaming endpoint)
+            actions = llm_result.get("actions", [])
+            reply = llm_result.get("reply", "")
+
+            # Backward compatibility
+            if not actions and llm_result.get("intent"):
+                actions = [{
+                    "intent": llm_result.get("intent"),
+                    "slots": llm_result.get("slots", {}),
+                }]
+
+            processed_actions = []
+            updated_order_state = order_state
+
+            ADD_INTENTS = {"add_sandwich", "add_side", "add_drink"}
+
+            for action in actions:
+                intent = action.get("intent", "unknown")
+                slots = action.get("slots", {})
+
+                if intent in ADD_INTENTS:
+                    existing_items = updated_order_state.get("items", [])
+                    menu_item_name = slots.get("menu_item_name", "").lower().strip()
+                    for existing_item in existing_items:
+                        if existing_item.get("menu_item_name", "").lower().strip() == menu_item_name:
+                            intent = "noop"
+                            break
+
+                if intent != "noop":
+                    updated_order_state = apply_intent_to_order_state(
+                        updated_order_state, intent, slots, menu_index
+                    )
+
+                processed_actions.append({
+                    "intent": intent,
+                    "slots": slots
+                })
+
+            # Update session
+            history.append({"role": "user", "content": req.message})
+            history.append({"role": "assistant", "content": reply})
+            session["order"] = updated_order_state
+            save_session(db, req.session_id, session)
+
+            # Send final result
+            primary_intent = processed_actions[0]["intent"] if processed_actions else "unknown"
+            primary_slots = processed_actions[0]["slots"] if processed_actions else {}
+
+            yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions, 'intent': primary_intent, 'slots': primary_slots})}\n\n"
+
+        except Exception as e:
+            logger.error("Streaming LLM call failed: %s", str(e))
+            yield f"data: {json.dumps({'error': 'An error occurred. Please try again.'})}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
     )
 
 

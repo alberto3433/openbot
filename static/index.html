@@ -313,6 +313,9 @@
     // Store name mapping (built dynamically)
     let STORE_NAMES = {};
 
+    // Enable streaming responses for faster feedback (set to false to use original behavior)
+    const USE_STREAMING = true;
+
     // Company info (loaded from API)
     let companyInfo = {
       name: "Sammy's Subs",
@@ -541,6 +544,14 @@
       setStatus("Sending...");
       showTypingIndicator();
 
+      if (USE_STREAMING) {
+        await sendMessageStreaming(text);
+      } else {
+        await sendMessageNonStreaming(text);
+      }
+    }
+
+    async function sendMessageNonStreaming(text) {
       try {
         const resp = await fetch("/chat/message", {
           method: "POST",
@@ -570,6 +581,98 @@
         hideTypingIndicator();
         console.error("Error sending message:", err);
         addMessage("assistant", "Oops, something went wrong talking to the backend.");
+        setStatus("Backend error");
+      }
+    }
+
+    async function sendMessageStreaming(text) {
+      let streamingMessageEl = null;
+      let fullReply = "";
+
+      try {
+        const resp = await fetch("/chat/message/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, message: text }),
+        });
+
+        if (!resp.ok) {
+          throw new Error("HTTP " + resp.status);
+        }
+
+        hideTypingIndicator();
+        setStatus("Receiving...");
+
+        // Create a message element for streaming content
+        streamingMessageEl = document.createElement("div");
+        streamingMessageEl.className = "message assistant";
+        streamingMessageEl.textContent = "";
+        messagesEl.appendChild(streamingMessageEl);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const jsonStr = line.slice(6);
+              if (!jsonStr) continue;
+
+              try {
+                const event = JSON.parse(jsonStr);
+
+                if (event.token) {
+                  // Streaming token - but we're getting JSON, so we need to parse the reply
+                  // The tokens are parts of the JSON response, not the reply text directly
+                  // We'll accumulate and parse at the end
+                }
+
+                if (event.done) {
+                  // Final event with complete data
+                  fullReply = event.reply || "";
+                  streamingMessageEl.textContent = fullReply;
+
+                  if (fullReply) {
+                    lastBotMessage = fullReply;
+                    messageCount++;
+                    conversationHistory.push({ role: "assistant", content: fullReply });
+                  }
+
+                  // Track order state for analytics
+                  if (event.order_state) {
+                    orderState = event.order_state;
+                    if (orderState.status === "confirmed") {
+                      orderConfirmed = true;
+                    }
+                  }
+                  setStatus("Connected");
+                }
+
+                if (event.error) {
+                  streamingMessageEl.textContent = event.error;
+                  setStatus("Error");
+                }
+              } catch (e) {
+                console.error("Failed to parse SSE event:", e);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        hideTypingIndicator();
+        console.error("Error sending streaming message:", err);
+        if (streamingMessageEl) {
+          streamingMessageEl.textContent = "Oops, something went wrong talking to the backend.";
+        } else {
+          addMessage("assistant", "Oops, something went wrong talking to the backend.");
+        }
         setStatus("Backend error");
       }
     }

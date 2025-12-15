@@ -121,20 +121,52 @@ def _extract_protein_from_name(item_name: str, menu_index: Dict[str, Any]) -> Op
 def _get_extra_price_for_choice(
     menu_item: Dict[str, Any],
     choice_group_name: str,
-    choice_value: str
+    choice_value: str,
+    menu_index: Dict[str, Any] = None
 ) -> float:
     """
     Look up the extra_price for a specific customization choice.
+
+    First tries the generic item_types system, then falls back to recipe data.
 
     Args:
         menu_item: The menu item dict with recipe data
         choice_group_name: The group name (e.g., "Bread", "Cheese")
         choice_value: The selected choice name (e.g., "Wheat", "Swiss")
+        menu_index: Optional menu index dict containing generic item_types
 
     Returns:
         The extra_price for this choice, or 0.0 if not found
     """
-    if not menu_item or not choice_value:
+    if not choice_value:
+        return 0.0
+
+    # Try generic item_types system first (if menu_index provided)
+    if menu_index:
+        item_types = menu_index.get("item_types", {})
+        # Map choice_group_name to attribute slug
+        attr_slug = choice_group_name.lower()
+        if attr_slug == "sauce":
+            attr_slug = "sauces"
+
+        # Get the item type for the menu item (default to "sandwich")
+        item_type_slug = "sandwich"
+        if menu_item:
+            item_type_slug = menu_item.get("item_type", "sandwich") or "sandwich"
+
+        item_type_data = item_types.get(item_type_slug, {})
+        if item_type_data.get("is_configurable"):
+            for attr in item_type_data.get("attributes", []):
+                if attr.get("slug") == attr_slug:
+                    for opt in attr.get("options", []):
+                        opt_name = opt.get("display_name", "").lower()
+                        opt_slug = opt.get("slug", "").lower()
+                        choice_lower = choice_value.lower()
+                        if opt_name == choice_lower or opt_slug == choice_lower:
+                            return float(opt.get("price_modifier", 0.0))
+
+    # Fall back to recipe-based lookup
+    if not menu_item:
         return 0.0
 
     recipe = menu_item.get("recipe")
@@ -158,24 +190,27 @@ def _calculate_customization_extras(
     protein: str = None,
     toppings: List[str] = None,
     sauces: List[str] = None,
+    menu_index: Dict[str, Any] = None,
 ) -> float:
     """
     Calculate the total extra price from all customization choices.
+
+    Uses the generic item_types system when available, falls back to recipe data.
     """
     total_extra = 0.0
 
     if bread:
-        total_extra += _get_extra_price_for_choice(menu_item, "Bread", bread)
+        total_extra += _get_extra_price_for_choice(menu_item, "Bread", bread, menu_index)
     if cheese:
-        total_extra += _get_extra_price_for_choice(menu_item, "Cheese", cheese)
+        total_extra += _get_extra_price_for_choice(menu_item, "Cheese", cheese, menu_index)
     if protein:
-        total_extra += _get_extra_price_for_choice(menu_item, "Protein", protein)
+        total_extra += _get_extra_price_for_choice(menu_item, "Protein", protein, menu_index)
 
     # Toppings and sauces can have multiple selections
     for topping in (toppings or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Toppings", topping)
+        total_extra += _get_extra_price_for_choice(menu_item, "Toppings", topping, menu_index)
     for sauce in (sauces or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Sauce", sauce)
+        total_extra += _get_extra_price_for_choice(menu_item, "Sauce", sauce, menu_index)
 
     return total_extra
 
@@ -285,7 +320,7 @@ def _add_sandwich(state, slots, menu_index):
 
         # Calculate extra price from customizations
         extras = _calculate_customization_extras(
-            menu_item, bread, cheese, protein, toppings, sauces
+            menu_item, bread, cheese, protein, toppings, sauces, menu_index
         )
 
         unit_price = base + extras
@@ -434,6 +469,7 @@ def _update_sandwich(state, slots, menu_index):
             item.get("protein"),
             item.get("toppings"),
             item.get("sauces"),
+            menu_index,
         )
 
         item["unit_price"] = base + extras
@@ -507,6 +543,7 @@ def _confirm(state, slots, menu_index):
                 it.get("protein"),
                 it.get("toppings"),
                 it.get("sauces"),
+                menu_index,
             )
 
         it["unit_price"] = base + extras

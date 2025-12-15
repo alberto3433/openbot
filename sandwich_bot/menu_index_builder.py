@@ -14,6 +14,9 @@ from .models import (
     RecipeChoiceGroup,
     IngredientStoreAvailability,
     MenuItemStoreAvailability,
+    ItemType,
+    AttributeDefinition,
+    AttributeOption,
 )
 
 
@@ -97,14 +100,19 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
 
-        # Parse extra_metadata to get default_config (ingredients for signature sandwiches)
-        default_config = None
-        if item.extra_metadata:
+        # Get default_config from the new column, fall back to extra_metadata for migration
+        default_config = item.default_config
+        if default_config is None and item.extra_metadata:
             try:
                 meta = json.loads(item.extra_metadata)
                 default_config = meta.get("default_config")
             except (json.JSONDecodeError, TypeError):
                 pass
+
+        # Get item type info if available
+        item_type_slug = None
+        if item.item_type:
+            item_type_slug = item.item_type.slug
 
         item_json = {
             "id": item.id,
@@ -115,6 +123,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "available_qty": int(item.available_qty),
             "recipe": recipe_json,
             "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
+            "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
         }
 
         cat = (item.category or "").lower()
@@ -237,7 +246,89 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
                 unavailable_menu_items.append({"name": item.name, "category": item.category})
     index["unavailable_menu_items"] = unavailable_menu_items
 
+    # Add generic item type data for configurable items
+    index["item_types"] = _build_item_types_data(db, store_id)
+
     return index
+
+
+def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Build generic item type data including all attributes and options.
+
+    This provides the LLM with structured information about configurable items
+    that goes beyond the hardcoded sandwich attributes.
+
+    Args:
+        db: Database session
+        store_id: Optional store ID for availability filtering
+
+    Returns:
+        Dict mapping item type slugs to their attribute configurations
+    """
+    result = {}
+
+    item_types = db.query(ItemType).all()
+    for it in item_types:
+        if not it.is_configurable:
+            # Non-configurable items don't need attribute data
+            result[it.slug] = {
+                "display_name": it.display_name,
+                "is_configurable": False,
+                "attributes": [],
+            }
+            continue
+
+        # Get all attribute definitions for this item type
+        attr_defs = (
+            db.query(AttributeDefinition)
+            .filter(AttributeDefinition.item_type_id == it.id)
+            .order_by(AttributeDefinition.display_order)
+            .all()
+        )
+
+        attributes = []
+        for ad in attr_defs:
+            # Get options for this attribute
+            options_query = (
+                db.query(AttributeOption)
+                .filter(AttributeOption.attribute_definition_id == ad.id)
+                .order_by(AttributeOption.display_order)
+            )
+
+            # Filter by availability
+            options = options_query.filter(AttributeOption.is_available == True).all()
+
+            attr_data = {
+                "slug": ad.slug,
+                "display_name": ad.display_name,
+                "input_type": ad.input_type,
+                "is_required": ad.is_required,
+                "allow_none": ad.allow_none,
+                "options": [
+                    {
+                        "slug": opt.slug,
+                        "display_name": opt.display_name,
+                        "price_modifier": opt.price_modifier,
+                        "is_default": opt.is_default,
+                    }
+                    for opt in options
+                ],
+            }
+
+            if ad.input_type == "multi_select":
+                attr_data["min_selections"] = ad.min_selections
+                attr_data["max_selections"] = ad.max_selections
+
+            attributes.append(attr_data)
+
+        result[it.slug] = {
+            "display_name": it.display_name,
+            "is_configurable": True,
+            "attributes": attributes,
+        }
+
+    return result
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

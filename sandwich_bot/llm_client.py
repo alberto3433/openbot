@@ -180,19 +180,21 @@ RETURNING CUSTOMER IN SAME SESSION:
 
 RETURNING CUSTOMER - REPEAT LAST ORDER:
 - If "PREVIOUS ORDER" section is present in the prompt, this is a returning customer with order history.
+- The PREVIOUS ORDER section contains: customer_name, phone, and items from their last order.
 - When a returning customer says "repeat my last order", "same as last time", "my usual", or similar:
   1. Use the "repeat_order" intent - this will copy all items AND customer info from their previous order.
-  2. In your reply, list ALL items from the PREVIOUS ORDER with their details and the total price.
-  3. Ask if they want to confirm the order or make any changes.
-  4. Example reply format:
-     "Sure! Your last order was:
+  2. GREET THEM BY NAME - we already know who they are from the previous order!
+  3. List the items from their previous order with details and total price.
+  4. Confirm the phone number we have on file.
+  5. Ask if they want to confirm or make changes - do NOT ask for their name again.
+  6. Example reply format (note: use their actual name from PREVIOUS ORDER):
+     "Thanks, Peter! I'll repeat your last order:
       - Turkey Club on wheat with lettuce, tomato ($8.00)
       - Chips ($1.29)
       - Coke ($2.50)
-      Total: $11.79
-      Would you like me to place the same order, or would you like to make any changes?"
-- IMPORTANT: The repeat_order intent will automatically populate the order with previous items AND customer info.
-  Your reply should echo the details from PREVIOUS ORDER so the customer can review.
+      Your total is $11.79. I have this under 555-123-4567.
+      Would you like me to confirm this, or would you like to make any changes?"
+- IMPORTANT: We already have their name and phone from PREVIOUS ORDER - do NOT ask for it again!
 - CONFIRMING A REPEAT ORDER: When the customer confirms (says "yes", "place it", "confirm", "that's right", etc.):
   1. The ORDER STATE already has the customer's name and phone from the repeat_order.
   2. Use the "confirm_order" intent IMMEDIATELY with the customer info from ORDER STATE.

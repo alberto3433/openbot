@@ -552,7 +552,8 @@
   </div>
 
   <script>
-    const API_BASE = "http://127.0.0.1:8000";
+    // Use current origin so it works on any tenant/port
+    const API_BASE = window.location.origin;
 
     // Store ID to name mapping (matches admin_stores.html)
     const STORE_NAMES = {

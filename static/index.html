@@ -361,11 +361,8 @@
         console.log("[Store Loader] Loaded stores from API:", stores.length);
       } catch (error) {
         console.error("[Store Loader] Failed to load stores from API:", error);
-        // Fallback to defaults if API fails
-        stores = [
-          { store_id: "store_eb_001", name: "Sammy's Subs - East Brunswick" },
-          { store_id: "store_nb_002", name: "Sammy's Subs - New Brunswick" }
-        ];
+        // No fallback - empty stores is better than wrong stores for multi-tenant
+        stores = [];
       }
 
       // Map API response to available stores (already filtered by API)

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Sammy the Sandwich Bot</title>
+  <title>Order Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -240,7 +240,7 @@
 </head>
 <body>
   <div class="app-header">
-    <div>Sammy the Sandwich Bot</div>
+    <div>Order Bot</div>
     <span class="sub">Demo web chat · Local FastAPI backend</span>
   </div>
 
@@ -316,7 +316,8 @@
     // Company info (loaded from API)
     let companyInfo = {
       name: "Sammy's Subs",
-      bot_persona_name: "Sammy"
+      bot_persona_name: "Sammy",
+      primary_item_type: "Sandwich"
     };
 
     // Load company info from API
@@ -329,10 +330,11 @@
         companyInfo = await response.json();
         console.log("[Company] Loaded company info:", companyInfo.name);
 
-        // Update page title and header
-        document.title = `${companyInfo.bot_persona_name} the Sandwich Bot`;
+        // Update page title and header with dynamic item type (Pizza Bot, Sandwich Bot, etc.)
+        const itemType = companyInfo.primary_item_type || "Sandwich";
+        document.title = `${companyInfo.bot_persona_name} the ${itemType} Bot`;
         document.querySelector(".app-header > div").textContent =
-          `${companyInfo.bot_persona_name} the Sandwich Bot`;
+          `${companyInfo.bot_persona_name} the ${itemType} Bot`;
 
         return companyInfo;
       } catch (error) {

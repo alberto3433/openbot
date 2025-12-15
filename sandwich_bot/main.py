@@ -21,7 +21,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .db import get_db
-from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company
+from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company, ItemType
 from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
@@ -565,6 +565,7 @@ class CompanyOut(BaseModel):
     website: Optional[str] = None
     logo_url: Optional[str] = None
     business_hours: Optional[Dict[str, Any]] = None
+    primary_item_type: str = "Sandwich"  # Dynamic: "Pizza", "Sandwich", "Taco", etc.
 
 
 class CompanyUpdate(BaseModel):
@@ -765,6 +766,12 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     }
 
 
+def get_primary_item_type_name(db: Session) -> str:
+    """Get the display name of the primary configurable item type."""
+    primary = db.query(ItemType).filter(ItemType.is_configurable == True).first()
+    return primary.display_name if primary else "Sandwich"
+
+
 @chat_router.post("/start", response_model=ChatStartResponse)
 @limiter.limit(get_rate_limit_chat)
 def chat_start(
@@ -802,13 +809,17 @@ def chat_start(
         returning_customer = _lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
 
+    # Get the primary item type for dynamic greeting (e.g., "Pizza", "Sandwich")
+    primary_item_type = get_primary_item_type_name(db)
+    primary_item_plural = primary_item_type.lower() + ("es" if primary_item_type.lower().endswith("ch") else "s")
+
     # Generate personalized greeting for returning customers
     if returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
         welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new order?"
     else:
         # Default greeting for new customers
-        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our signature sandwiches or build your own?"
+        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our signature {primary_item_plural} or build your own?"
 
     # Initialize session data
     session_data = {
@@ -2230,7 +2241,23 @@ def get_public_company_info(
 ) -> CompanyOut:
     """Get public company information. No authentication required."""
     company = get_or_create_company(db)
-    return CompanyOut.model_validate(company)
+    primary_item_type = get_primary_item_type_name(db)
+
+    # Create response with dynamic primary_item_type
+    company_data = {
+        "id": company.id,
+        "name": company.name,
+        "bot_persona_name": company.bot_persona_name,
+        "tagline": company.tagline,
+        "headquarters_address": company.headquarters_address,
+        "corporate_phone": company.corporate_phone,
+        "corporate_email": company.corporate_email,
+        "website": company.website,
+        "logo_url": company.logo_url,
+        "business_hours": company.business_hours,
+        "primary_item_type": primary_item_type,
+    }
+    return CompanyOut(**company_data)
 
 
 # ---------- TTS (Text-to-Speech) Endpoints ----------

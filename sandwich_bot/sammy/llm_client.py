@@ -2,10 +2,11 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,8 @@ def build_system_prompt_with_menu(
     menu_json: Dict[str, Any] = None,
     bot_name: str = None,
     company_name: str = None,
+    db: Optional[Session] = None,
+    use_dynamic_prompt: bool = False,
 ) -> str:
     """
     Build the system prompt, optionally including the menu JSON.
@@ -367,10 +370,18 @@ def build_system_prompt_with_menu(
         menu_json: Menu data to include, or None to omit menu from system prompt
         bot_name: The bot's persona name (e.g., "Sammy")
         company_name: The company name (e.g., "Sammy's Subs")
+        db: Optional database session for dynamic prompt building
+        use_dynamic_prompt: If True and db provided, use dynamic prompt builder
 
     Returns:
         Complete system prompt string
     """
+    # Use dynamic prompt builder if requested and database is available
+    if use_dynamic_prompt and db is not None:
+        from ..prompt_builder import build_system_prompt_with_menu as dynamic_build
+        return dynamic_build(db, menu_json, bot_name, company_name)
+
+    # Fall back to legacy template-based prompt
     base_prompt = get_system_prompt_base(bot_name, company_name)
     if menu_json:
         menu_section = f"\n\nMENU:\n{json.dumps(menu_json, indent=2)}"
@@ -575,6 +586,8 @@ def call_sandwich_bot(
     caller_id: str = None,
     bot_name: str = None,
     company_name: str = None,
+    db: Optional[Session] = None,
+    use_dynamic_prompt: bool = False,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
@@ -596,6 +609,8 @@ def call_sandwich_bot(
         caller_id: Optional phone number from incoming call (caller ID)
         bot_name: The bot's persona name (e.g., "Sammy") - defaults to "Sammy"
         company_name: The company name (e.g., "Sammy's Subs") - defaults to "a single sandwich shop"
+        db: Optional database session for dynamic prompt building
+        use_dynamic_prompt: If True and db provided, use dynamic prompt builder
     """
     if model is None:
         model = DEFAULT_MODEL
@@ -605,9 +620,13 @@ def call_sandwich_bot(
 
     # 1. System message - with or without menu
     if include_menu_in_system:
-        system_content = build_system_prompt_with_menu(menu_json, bot_name, company_name)
+        system_content = build_system_prompt_with_menu(
+            menu_json, bot_name, company_name, db, use_dynamic_prompt
+        )
     else:
-        system_content = build_system_prompt_with_menu(None, bot_name, company_name)
+        system_content = build_system_prompt_with_menu(
+            None, bot_name, company_name, db, use_dynamic_prompt
+        )
 
     messages.append({"role": "system", "content": system_content})
 

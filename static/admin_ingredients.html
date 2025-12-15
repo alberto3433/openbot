@@ -212,9 +212,7 @@
     <div class="filter-bar" style="margin-bottom: 20px; background: #fff3cd; padding: 12px 16px; border-radius: 8px;">
       <label for="storeSelector" style="font-weight: 600; margin-right: 10px;">Managing availability for:</label>
       <select id="storeSelector" style="flex: none; min-width: 200px;">
-        <option value="store_eb_001">East Brunswick</option>
-        <option value="store_nb_002">New Brunswick</option>
-        <option value="store_pr_003">Princeton</option>
+        <!-- Populated dynamically from API -->
       </select>
       <span style="color: #856404; font-size: 13px; margin-left: 10px;">Changes only affect the selected store</span>
     </div>
@@ -301,12 +299,28 @@
     const menuItemCategoryFilter = document.getElementById("menuItemCategoryFilter");
     const storeSelector = document.getElementById("storeSelector");
 
-    // Store name mapping for display
-    const STORE_NAMES = {
-      "store_eb_001": "East Brunswick",
-      "store_nb_002": "New Brunswick",
-      "store_pr_003": "Princeton"
-    };
+    // Store name mapping - loaded dynamically from API
+    let STORE_NAMES = {};
+
+    async function loadStores() {
+      try {
+        const resp = await fetch("/stores");
+        if (resp.ok) {
+          const stores = await resp.json();
+          STORE_NAMES = {};
+          storeSelector.innerHTML = "";
+          stores.forEach(store => {
+            STORE_NAMES[store.store_id] = store.name;
+            const opt = document.createElement("option");
+            opt.value = store.store_id;
+            opt.textContent = store.name;
+            storeSelector.appendChild(opt);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load stores:", err);
+      }
+    }
 
     function getCurrentStoreId() {
       return storeSelector.value;
@@ -642,8 +656,12 @@
     document.getElementById("refreshBtn").addEventListener("click", loadAll);
     storeSelector.addEventListener("change", loadAll);
 
-    // Initial load
-    loadAll();
+    // Initial load - load stores first so dropdown is populated
+    async function init() {
+      await loadStores();
+      loadAll();
+    }
+    init();
   </script>
 </body>
 </html>

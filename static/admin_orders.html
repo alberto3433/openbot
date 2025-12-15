@@ -259,12 +259,23 @@
   <script>
     const API_BASE = "";
 
-    // Store ID to name mapping
-    const STORE_NAMES = {
-      "store_eb_001": "East Brunswick",
-      "store_nb_002": "New Brunswick",
-      "store_pr_003": "Princeton"
-    };
+    // Store ID to name mapping - loaded dynamically from API
+    let STORE_NAMES = {};
+
+    async function loadStores() {
+      try {
+        const resp = await fetch("/stores");
+        if (resp.ok) {
+          const stores = await resp.json();
+          STORE_NAMES = {};
+          stores.forEach(store => {
+            STORE_NAMES[store.store_id] = store.name;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load stores:", err);
+      }
+    }
 
     function getStoreName(storeId) {
       if (!storeId) return "-";
@@ -470,7 +481,12 @@
       }
     }
 
-    fetchOrders();
+    // Initialize - load stores first so names are available
+    async function init() {
+      await loadStores();
+      fetchOrders();
+    }
+    init();
   </script>
 </body>
 </html>

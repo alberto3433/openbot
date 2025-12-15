@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Company Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 700px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .section-body {
+      padding: 20px;
+    }
+    .status-bar {
+      padding: 10px 16px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+      border-radius: 4px;
+    }
+    .status-bar.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-bar.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+    .form-row .form-group {
+      flex: 1;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    .logo-preview {
+      width: 100px;
+      height: 100px;
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 8px;
+      overflow: hidden;
+      background: #f9f9f9;
+    }
+    .logo-preview img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .logo-preview .placeholder {
+      color: #999;
+      font-size: 12px;
+      text-align: center;
+    }
+    .company-name-display {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1976d2;
+      margin-bottom: 4px;
+    }
+    .bot-name-display {
+      font-size: 16px;
+      color: #666;
+    }
+    .tagline-display {
+      font-size: 14px;
+      color: #888;
+      font-style: italic;
+      margin-top: 8px;
+    }
+    .preview-card {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div>Company Settings</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="statusBar" class="status-bar" style="display: none;"></div>
+
+    <!-- Preview Card -->
+    <div class="preview-card" id="previewCard">
+      <div class="company-name-display" id="previewName">Loading...</div>
+      <div class="bot-name-display">Bot: <span id="previewBotName">-</span></div>
+      <div class="tagline-display" id="previewTagline"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Company Information</div>
+      <div class="section-body">
+        <div id="loadingState" class="loading">Loading company settings...</div>
+
+        <form id="companyForm" style="display: none;">
+          <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+              <label for="companyName">Company Name *</label>
+              <input type="text" id="companyName" required placeholder="e.g., Sammy's Subs" />
+              <div class="hint">This name will be displayed to customers</div>
+            </div>
+            <div class="form-group">
+              <label for="botPersonaName">Bot Persona Name *</label>
+              <input type="text" id="botPersonaName" required placeholder="e.g., Sammy" />
+              <div class="hint">The chatbot's name</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="tagline">Tagline</label>
+            <input type="text" id="tagline" placeholder="e.g., The best subs in town!" />
+            <div class="hint">A short slogan or tagline for your company</div>
+          </div>
+
+          <div class="form-group">
+            <label for="headquartersAddress">Headquarters Address</label>
+            <textarea id="headquartersAddress" placeholder="e.g., 123 Main Street, Suite 100, New Brunswick, NJ 08901"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="corporatePhone">Corporate Phone</label>
+              <input type="tel" id="corporatePhone" placeholder="e.g., (732) 555-0000" />
+            </div>
+            <div class="form-group">
+              <label for="corporateEmail">Corporate Email</label>
+              <input type="email" id="corporateEmail" placeholder="e.g., info@sammyssubs.com" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="website">Website</label>
+            <input type="url" id="website" placeholder="e.g., https://www.sammyssubs.com" />
+          </div>
+
+          <div class="form-group">
+            <label for="logoUrl">Logo URL</label>
+            <input type="url" id="logoUrl" placeholder="e.g., https://example.com/logo.png" />
+            <div class="hint">Enter a URL to your company logo image</div>
+            <div class="logo-preview" id="logoPreview">
+              <div class="placeholder">No logo</div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn" id="resetBtn">Reset</button>
+            <button type="button" class="btn primary" id="saveBtn">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API base URL
+    const API_BASE = "/admin/company";
+
+    // DOM elements
+    const statusBar = document.getElementById("statusBar");
+    const loadingState = document.getElementById("loadingState");
+    const companyForm = document.getElementById("companyForm");
+    const previewCard = document.getElementById("previewCard");
+
+    // Original company data (for reset)
+    let originalData = null;
+
+    // Show status message
+    function showStatus(message, type = "info") {
+      statusBar.textContent = message;
+      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
+      statusBar.style.display = "block";
+      if (type !== "error") {
+        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+      }
+    }
+
+    // Update preview card
+    function updatePreview() {
+      document.getElementById("previewName").textContent =
+        document.getElementById("companyName").value || "Company Name";
+      document.getElementById("previewBotName").textContent =
+        document.getElementById("botPersonaName").value || "Bot";
+      document.getElementById("previewTagline").textContent =
+        document.getElementById("tagline").value || "";
+    }
+
+    // Update logo preview
+    function updateLogoPreview() {
+      const logoUrl = document.getElementById("logoUrl").value;
+      const logoPreview = document.getElementById("logoPreview");
+
+      if (logoUrl && logoUrl.trim()) {
+        logoPreview.innerHTML = `<img src="${escapeHtml(logoUrl)}" alt="Logo" onerror="this.parentElement.innerHTML='<div class=\\'placeholder\\'>Invalid URL</div>'" />`;
+      } else {
+        logoPreview.innerHTML = '<div class="placeholder">No logo</div>';
+      }
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Populate form with company data
+    function populateForm(data) {
+      document.getElementById("companyName").value = data.name || "";
+      document.getElementById("botPersonaName").value = data.bot_persona_name || "";
+      document.getElementById("tagline").value = data.tagline || "";
+      document.getElementById("headquartersAddress").value = data.headquarters_address || "";
+      document.getElementById("corporatePhone").value = data.corporate_phone || "";
+      document.getElementById("corporateEmail").value = data.corporate_email || "";
+      document.getElementById("website").value = data.website || "";
+      document.getElementById("logoUrl").value = data.logo_url || "";
+
+      updatePreview();
+      updateLogoPreview();
+    }
+
+    // Load company data from API
+    async function loadCompany() {
+      try {
+        const response = await fetch(API_BASE);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        originalData = data;
+        populateForm(data);
+
+        loadingState.style.display = "none";
+        companyForm.style.display = "block";
+      } catch (error) {
+        console.error("Failed to load company settings:", error);
+        showStatus("Failed to load company settings from server", "error");
+        loadingState.textContent = "Failed to load. Please refresh the page.";
+      }
+    }
+
+    // Save company data to API
+    async function saveCompany() {
+      const name = document.getElementById("companyName").value.trim();
+      const botPersonaName = document.getElementById("botPersonaName").value.trim();
+
+      if (!name) {
+        showStatus("Company name is required", "error");
+        return;
+      }
+      if (!botPersonaName) {
+        showStatus("Bot persona name is required", "error");
+        return;
+      }
+
+      const payload = {
+        name,
+        bot_persona_name: botPersonaName,
+        tagline: document.getElementById("tagline").value.trim() || null,
+        headquarters_address: document.getElementById("headquartersAddress").value.trim() || null,
+        corporate_phone: document.getElementById("corporatePhone").value.trim() || null,
+        corporate_email: document.getElementById("corporateEmail").value.trim() || null,
+        website: document.getElementById("website").value.trim() || null,
+        logo_url: document.getElementById("logoUrl").value.trim() || null,
+      };
+
+      try {
+        const response = await fetch(API_BASE, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        originalData = data;
+        showStatus("Company settings saved successfully", "success");
+      } catch (error) {
+        console.error("Failed to save company settings:", error);
+        showStatus(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    // Reset form to original data
+    function resetForm() {
+      if (originalData) {
+        populateForm(originalData);
+        showStatus("Form reset to saved values", "info");
+      }
+    }
+
+    // Event listeners
+    document.getElementById("saveBtn").addEventListener("click", saveCompany);
+    document.getElementById("resetBtn").addEventListener("click", resetForm);
+
+    // Live preview updates
+    document.getElementById("companyName").addEventListener("input", updatePreview);
+    document.getElementById("botPersonaName").addEventListener("input", updatePreview);
+    document.getElementById("tagline").addEventListener("input", updatePreview);
+    document.getElementById("logoUrl").addEventListener("input", updateLogoPreview);
+    document.getElementById("logoUrl").addEventListener("change", updateLogoPreview);
+
+    // Handle form submission with Enter key
+    companyForm.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        saveCompany();
+      }
+    });
+
+    // Initial load
+    loadCompany();
+  </script>
+</body>
+</html>

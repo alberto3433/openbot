@@ -1,7 +1,6 @@
 """
 Tests for LLM client configuration and behavior.
 """
-import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -10,7 +9,7 @@ class TestModelConfiguration:
 
     def test_default_model_is_valid(self):
         """Test that DEFAULT_MODEL is set to a valid OpenAI model."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         valid_models = [
             "gpt-4o",
@@ -27,7 +26,7 @@ class TestModelConfiguration:
 
     def test_default_model_not_invalid_gpt41(self):
         """Test that we're not using the invalid 'gpt-4.1' model name."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         assert llm_client.DEFAULT_MODEL != "gpt-4.1", (
             "DEFAULT_MODEL should not be 'gpt-4.1' - this model doesn't exist!"
@@ -35,7 +34,7 @@ class TestModelConfiguration:
 
     def test_call_sandwich_bot_uses_default_model(self):
         """Test that call_sandwich_bot uses DEFAULT_MODEL when no model specified."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         # Mock the OpenAI client
         mock_completion = MagicMock()
@@ -58,7 +57,7 @@ class TestModelConfiguration:
 
     def test_call_sandwich_bot_allows_model_override(self):
         """Test that call_sandwich_bot allows overriding the model."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         mock_completion = MagicMock()
         mock_completion.choices = [
@@ -103,7 +102,7 @@ class TestLLMResponseParsing:
 
     def test_call_sandwich_bot_returns_parsed_json(self):
         """Test that call_sandwich_bot returns parsed JSON from LLM response."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         expected_response = {
             "reply": "Hello! How can I help you today?",
@@ -133,7 +132,7 @@ class TestLLMResponseParsing:
 
     def test_call_sandwich_bot_handles_malformed_json(self):
         """Test that call_sandwich_bot returns fallback response when LLM returns invalid JSON."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         mock_completion = MagicMock()
         # Return malformed JSON (missing closing brace)
@@ -156,7 +155,7 @@ class TestLLMResponseParsing:
 
     def test_call_sandwich_bot_handles_empty_response(self):
         """Test that call_sandwich_bot handles empty LLM response."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         mock_completion = MagicMock()
         mock_completion.choices = [
@@ -178,7 +177,7 @@ class TestLLMResponseParsing:
 
     def test_call_sandwich_bot_handles_non_json_response(self):
         """Test that call_sandwich_bot handles plain text LLM response."""
-        from sandwich_bot import llm_client
+        from sandwich_bot.sammy import llm_client
 
         mock_completion = MagicMock()
         # Return plain text instead of JSON

@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
 import random
 import secrets
@@ -13,7 +13,6 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status, Request, API
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
@@ -21,15 +20,15 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from .db import engine, get_db
-from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store
-from .llm_client import call_sandwich_bot
+from .db import get_db
+from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company
+from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
 # Inventory tracking via available_qty removed - using 86 system instead
 # from .inventory import apply_inventory_decrement_on_confirm, check_inventory_for_item, OutOfStockError
 from .logging_config import setup_logging
-from .tts import get_tts_provider, get_available_voices, TTSProvider
+from .tts import get_tts_provider
 
 # Configure logging at module load time
 setup_logging()
@@ -57,10 +56,15 @@ def get_random_store_id() -> str:
     return random.choice(DEFAULT_STORE_IDS)
 
 
-def get_store_name(store_id: Optional[str]) -> str:
-    """Get store name from store_id, with fallback to default."""
+def get_store_name(store_id: Optional[str], db: Optional[Session] = None) -> str:
+    """Get store name from store_id, with fallback to company name from database."""
     if store_id and store_id in STORE_NAMES:
         return STORE_NAMES[store_id]
+    # Try to get company name from database
+    if db:
+        company = db.query(Company).first()
+        if company:
+            return company.name
     return "Sammy's Subs"  # Default name if no store specified
 
 # ---------- Admin Authentication ----------
@@ -330,9 +334,13 @@ admin_orders_router = APIRouter(prefix="/admin/orders", tags=["Admin - Orders"])
 admin_ingredients_router = APIRouter(prefix="/admin/ingredients", tags=["Admin - Ingredients"])
 admin_analytics_router = APIRouter(prefix="/admin/analytics", tags=["Admin - Analytics"])
 admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
+admin_company_router = APIRouter(prefix="/admin/company", tags=["Admin - Company"])
 
 # Public router for store list (used by customer chat)
 public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
+
+# Public router for company settings (used by frontend)
+public_company_router = APIRouter(prefix="/company", tags=["Company"])
 
 # TTS router for text-to-speech endpoints
 tts_router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
@@ -540,6 +548,38 @@ class StoreUpdate(BaseModel):
     payment_methods: Optional[List[str]] = None
 
 
+# ---------- Pydantic models for company settings ----------
+
+
+class CompanyOut(BaseModel):
+    """Response model for company settings."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    bot_persona_name: str
+    tagline: Optional[str] = None
+    headquarters_address: Optional[str] = None
+    corporate_phone: Optional[str] = None
+    corporate_email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    business_hours: Optional[Dict[str, Any]] = None
+
+
+class CompanyUpdate(BaseModel):
+    """Payload for updating company settings."""
+    name: Optional[str] = None
+    bot_persona_name: Optional[str] = None
+    tagline: Optional[str] = None
+    headquarters_address: Optional[str] = None
+    corporate_phone: Optional[str] = None
+    corporate_email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    business_hours: Optional[Dict[str, Any]] = None
+
+
 # ---------- Pydantic models for analytics admin UI ----------
 
 
@@ -743,8 +783,18 @@ def chat_start(
     """
     session_id = str(uuid.uuid4())
 
-    # Get store name for greeting
-    store_name = get_store_name(store_id)
+    # Get company info for greeting
+    company = get_or_create_company(db)
+
+    # Get store name for greeting - try database first, then use company name as fallback
+    if store_id:
+        store_record = db.query(Store).filter(Store.store_id == store_id).first()
+        if store_record:
+            store_name = store_record.name
+        else:
+            store_name = company.name
+    else:
+        store_name = company.name
 
     # Check for returning customer if caller_id is provided
     returning_customer = None
@@ -810,6 +860,9 @@ def chat_message(
     session_store_id: Optional[str] = session.get("store_id")
     session_caller_id: Optional[str] = session.get("caller_id")
 
+    # Get company info for LLM persona
+    company = get_or_create_company(db)
+
     # Build menu index for LLM (with store-specific ingredient availability)
     menu_index = build_menu_index(db, store_id=session_store_id)
 
@@ -837,6 +890,8 @@ def chat_message(
             include_menu_in_system=include_menu_in_system,
             returning_customer=returning_customer,
             caller_id=session_caller_id,
+            bot_name=company.bot_persona_name,
+            company_name=company.name,
         )
         # Update menu version in session if we sent it
         if include_menu_in_system:
@@ -2105,6 +2160,79 @@ def list_available_stores(
     return stores
 
 
+# ---------- Company Settings Endpoints ----------
+
+
+def get_or_create_company(db: Session) -> Company:
+    """Get the single company record, creating it with defaults if it doesn't exist."""
+    company = db.query(Company).first()
+    if not company:
+        company = Company(
+            name="Sammy's Subs",
+            bot_persona_name="Sammy",
+            tagline="The best subs in town!",
+        )
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+        logger.info("Created default company record")
+    return company
+
+
+@admin_company_router.get("", response_model=CompanyOut)
+def get_company_settings(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> CompanyOut:
+    """Get company settings. Requires admin authentication."""
+    company = get_or_create_company(db)
+    return CompanyOut.model_validate(company)
+
+
+@admin_company_router.put("", response_model=CompanyOut)
+def update_company_settings(
+    payload: CompanyUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> CompanyOut:
+    """Update company settings. Requires admin authentication."""
+    company = get_or_create_company(db)
+
+    if payload.name is not None:
+        company.name = payload.name
+    if payload.bot_persona_name is not None:
+        company.bot_persona_name = payload.bot_persona_name
+    if payload.tagline is not None:
+        company.tagline = payload.tagline
+    if payload.headquarters_address is not None:
+        company.headquarters_address = payload.headquarters_address
+    if payload.corporate_phone is not None:
+        company.corporate_phone = payload.corporate_phone
+    if payload.corporate_email is not None:
+        company.corporate_email = payload.corporate_email
+    if payload.website is not None:
+        company.website = payload.website
+    if payload.logo_url is not None:
+        company.logo_url = payload.logo_url
+    if payload.business_hours is not None:
+        company.business_hours = payload.business_hours
+
+    db.commit()
+    db.refresh(company)
+    logger.info("Updated company settings: %s", company.name)
+
+    return CompanyOut.model_validate(company)
+
+
+@public_company_router.get("", response_model=CompanyOut)
+def get_public_company_info(
+    db: Session = Depends(get_db),
+) -> CompanyOut:
+    """Get public company information. No authentication required."""
+    company = get_or_create_company(db)
+    return CompanyOut.model_validate(company)
+
+
 # ---------- TTS (Text-to-Speech) Endpoints ----------
 
 
@@ -2203,7 +2331,9 @@ api_v1_router.include_router(admin_orders_router)
 api_v1_router.include_router(admin_ingredients_router)
 api_v1_router.include_router(admin_analytics_router)
 api_v1_router.include_router(admin_stores_router)
+api_v1_router.include_router(admin_company_router)
 api_v1_router.include_router(public_stores_router)
+api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
 
 app.include_router(api_v1_router)
@@ -2216,5 +2346,7 @@ app.include_router(admin_orders_router)
 app.include_router(admin_ingredients_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_stores_router)
+app.include_router(admin_company_router)
 app.include_router(public_stores_router)
+app.include_router(public_company_router)
 app.include_router(tts_router)

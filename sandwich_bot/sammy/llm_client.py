@@ -10,9 +10,9 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------------------
-# Load .env explicitly from the project root (one level above sandwich_bot/)
+# Load .env explicitly from the project root (two levels above sandwich_bot/sammy/)
 # --------------------------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent  # project root (where .env lives)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # project root (where .env lives)
 env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
 
@@ -36,8 +36,8 @@ if not api_key:
 # Explicitly pass the key so we don't depend on any global environment
 client = OpenAI(api_key=api_key)
 
-SYSTEM_PROMPT_BASE = """
-You are 'Sammy', a concise, polite sandwich-order bot for a single sandwich shop.
+SYSTEM_PROMPT_TEMPLATE = """
+You are '__BOT_NAME__', a concise, polite sandwich-order bot for __COMPANY_NAME__.
 
 You ALWAYS have access to the full menu via the MENU JSON.
 Never say that you don't have the menu, don't have the list of sandwiches,
@@ -327,10 +327,35 @@ Always:
 - NEVER add the same item twice. If an item is already in ORDER STATE, don't add it again.
 - The "reply" MUST directly answer the user's question using data from MENU.
 - The "reply" MUST end with a question or next step for the user.
-""".strip()
+"""
+
+# Default values for backward compatibility
+DEFAULT_BOT_NAME = "Sammy"
+DEFAULT_COMPANY_NAME = "a single sandwich shop"
 
 
-def build_system_prompt_with_menu(menu_json: Dict[str, Any] = None) -> str:
+def get_system_prompt_base(bot_name: str = None, company_name: str = None) -> str:
+    """
+    Get the system prompt base with the company/bot name filled in.
+
+    Args:
+        bot_name: The bot's persona name (e.g., "Sammy")
+        company_name: The company name (e.g., "Sammy's Subs")
+
+    Returns:
+        System prompt base string with names substituted
+    """
+    result = SYSTEM_PROMPT_TEMPLATE
+    result = result.replace("__BOT_NAME__", bot_name or DEFAULT_BOT_NAME)
+    result = result.replace("__COMPANY_NAME__", company_name or DEFAULT_COMPANY_NAME)
+    return result.strip()
+
+
+def build_system_prompt_with_menu(
+    menu_json: Dict[str, Any] = None,
+    bot_name: str = None,
+    company_name: str = None,
+) -> str:
     """
     Build the system prompt, optionally including the menu JSON.
 
@@ -340,14 +365,17 @@ def build_system_prompt_with_menu(menu_json: Dict[str, Any] = None) -> str:
 
     Args:
         menu_json: Menu data to include, or None to omit menu from system prompt
+        bot_name: The bot's persona name (e.g., "Sammy")
+        company_name: The company name (e.g., "Sammy's Subs")
 
     Returns:
         Complete system prompt string
     """
+    base_prompt = get_system_prompt_base(bot_name, company_name)
     if menu_json:
         menu_section = f"\n\nMENU:\n{json.dumps(menu_json, indent=2)}"
-        return SYSTEM_PROMPT_BASE + menu_section
-    return SYSTEM_PROMPT_BASE
+        return base_prompt + menu_section
+    return base_prompt
 
 
 # Original template with menu - used when menu must be in user message (fallback)
@@ -430,6 +458,7 @@ def format_previous_order_section(returning_customer: Dict[str, Any] = None) -> 
     lines.append("")  # Empty line after
 
     return "\n".join(lines)
+
 
 # Legacy template for backward compatibility (same as WITH_MENU)
 USER_PROMPT_TEMPLATE = """CONVERSATION HISTORY:
@@ -544,6 +573,8 @@ def call_sandwich_bot(
     include_menu_in_system: bool = True,
     returning_customer: Dict[str, Any] = None,
     caller_id: str = None,
+    bot_name: str = None,
+    company_name: str = None,
 ) -> Dict[str, Any]:
     """
     Call the OpenAI chat completion to get the bot's reply + structured intent/slots.
@@ -563,6 +594,8 @@ def call_sandwich_bot(
             on subsequent messages). If False, include menu in user message.
         returning_customer: Optional dict with returning customer info including last_order_items
         caller_id: Optional phone number from incoming call (caller ID)
+        bot_name: The bot's persona name (e.g., "Sammy") - defaults to "Sammy"
+        company_name: The company name (e.g., "Sammy's Subs") - defaults to "a single sandwich shop"
     """
     if model is None:
         model = DEFAULT_MODEL
@@ -572,9 +605,9 @@ def call_sandwich_bot(
 
     # 1. System message - with or without menu
     if include_menu_in_system:
-        system_content = build_system_prompt_with_menu(menu_json)
+        system_content = build_system_prompt_with_menu(menu_json, bot_name, company_name)
     else:
-        system_content = build_system_prompt_with_menu(None)
+        system_content = build_system_prompt_with_menu(None, bot_name, company_name)
 
     messages.append({"role": "system", "content": system_content})
 

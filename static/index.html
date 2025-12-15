@@ -313,6 +313,35 @@
     // Store name mapping (built dynamically)
     let STORE_NAMES = {};
 
+    // Company info (loaded from API)
+    let companyInfo = {
+      name: "Sammy's Subs",
+      bot_persona_name: "Sammy"
+    };
+
+    // Load company info from API
+    async function loadCompanyInfo() {
+      try {
+        const response = await fetch("/company");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        companyInfo = await response.json();
+        console.log("[Company] Loaded company info:", companyInfo.name);
+
+        // Update page title and header
+        document.title = `${companyInfo.bot_persona_name} the Sandwich Bot`;
+        document.querySelector(".app-header > div").textContent =
+          `${companyInfo.bot_persona_name} the Sandwich Bot`;
+
+        return companyInfo;
+      } catch (error) {
+        console.error("[Company] Failed to load company info:", error);
+        // Keep defaults
+        return companyInfo;
+      }
+    }
+
     // Load stores from API and populate dropdown
     async function loadStoresAndPopulateDropdown() {
       let stores = [];
@@ -574,7 +603,10 @@
 
     // Start session on page load - check URL params first
     window.addEventListener("load", async () => {
-      // Load TTS voices first (so greeting can be spoken)
+      // Load company info first (updates page title/header)
+      await loadCompanyInfo();
+
+      // Load TTS voices (so greeting can be spoken)
       await loadTTSVoices();
 
       // Load stores from API and populate dropdown

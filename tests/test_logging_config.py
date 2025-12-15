@@ -2,7 +2,6 @@
 Tests for logging configuration.
 """
 import logging
-import pytest
 
 
 class TestLoggingConfiguration:
@@ -56,7 +55,6 @@ class TestNoSensitiveDataInLogs:
         """Test that API key is not logged at INFO level."""
         with caplog.at_level(logging.INFO):
             # Import triggers the logging
-            from sandwich_bot import llm_client
 
             # Check no API key fragments in INFO logs
             for record in caplog.records:

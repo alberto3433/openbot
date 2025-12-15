@@ -326,3 +326,34 @@ class Store(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# --- Company model for company-level settings ---
+
+class Company(Base):
+    """
+    Stores company-level settings such as name, contact info, branding.
+    This is a single-row table - there should only be one company record.
+    """
+    __tablename__ = "company"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, default="Sammy's Subs")  # Company name shown to customers
+    bot_persona_name = Column(String, nullable=False, default="Sammy")  # Bot's name/persona
+    tagline = Column(String, nullable=True)  # e.g., "The best subs in town!"
+
+    # Contact info
+    headquarters_address = Column(String, nullable=True)
+    corporate_phone = Column(String, nullable=True)
+    corporate_email = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+
+    # Branding
+    logo_url = Column(String, nullable=True)  # URL to company logo
+
+    # Business hours (JSON for structured format)
+    business_hours = Column(JSON, nullable=True)  # e.g., {"mon": "9-5", "tue": "9-5", ...}
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

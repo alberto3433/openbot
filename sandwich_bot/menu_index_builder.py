@@ -118,7 +118,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         }
 
         cat = (item.category or "").lower()
-        if cat == "sandwich" and item.is_signature:
+        # Handle both "sandwich" and "signature" categories for sandwiches
+        if (cat == "sandwich" or cat == "signature") and item.is_signature:
             index["signature_sandwiches"].append(item_json)
         elif cat == "sandwich" and not item.is_signature:
             index["custom_sandwiches"].append(item_json)

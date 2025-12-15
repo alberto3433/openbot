@@ -218,6 +218,10 @@ def _repeat_order(state, slots, menu_index, returning_customer):
     if not last_order_items:
         return state
 
+    # Clear any existing items before adding the repeat order
+    # This prevents duplication if the intent is called multiple times
+    state["items"] = []
+
     # Copy all items from the previous order
     total_price = 0.0
     for prev_item in last_order_items:

@@ -178,6 +178,64 @@
       0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
       40% { transform: scale(1); opacity: 1; }
     }
+    /* TTS Controls */
+    .tts-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #f0f7ff;
+      border-bottom: 1px solid #d0e3f7;
+      font-size: 13px;
+    }
+    .tts-controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #1565c0;
+    }
+    .tts-controls select {
+      padding: 4px 8px;
+      border: 1px solid #90caf9;
+      border-radius: 4px;
+      font-size: 12px;
+      background: white;
+    }
+    .tts-mute-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border: 1px solid #90caf9;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-size: 12px;
+      color: #1565c0;
+      transition: all 0.2s;
+    }
+    .tts-mute-btn:hover {
+      background: #e3f2fd;
+    }
+    .tts-mute-btn.muted {
+      background: #ffebee;
+      border-color: #ef9a9a;
+      color: #c62828;
+    }
+    .tts-mute-btn .icon {
+      font-size: 16px;
+    }
+    .tts-status {
+      margin-left: auto;
+      font-size: 11px;
+      color: #666;
+    }
+    .tts-status.speaking {
+      color: #2e7d32;
+    }
+    .tts-status.error {
+      color: #c62828;
+    }
   </style>
 </head>
 <body>
@@ -208,6 +266,22 @@
         Select a store and optionally enter a phone number. URL params: <code>?store=store_eb_001&caller_id=555-123-4567</code>
       </div>
     </details>
+
+    <!-- TTS Voice Controls -->
+    <div class="tts-controls" id="tts-controls">
+      <label>
+        <span class="icon">🔊</span>
+        Voice:
+        <select id="tts-voice-select">
+          <option value="">Loading voices...</option>
+        </select>
+      </label>
+      <button type="button" class="tts-mute-btn" id="tts-mute-btn" title="Toggle voice on/off">
+        <span class="icon">🔊</span>
+        <span class="label">Voice On</span>
+      </button>
+      <span class="tts-status" id="tts-status"></span>
+    </div>
 
     <div class="chat-header" id="chat-header">
       Connecting...
@@ -500,6 +574,9 @@
 
     // Start session on page load - check URL params first
     window.addEventListener("load", async () => {
+      // Load TTS voices first (so greeting can be spoken)
+      await loadTTSVoices();
+
       // Load stores from API and populate dropdown
       const availableStores = await loadStoresAndPopulateDropdown();
 
@@ -573,6 +650,286 @@
       // Note: We can't perfectly distinguish close vs navigation in beforeunload
       sendAbandonAnalytics("browser_close");
     });
+
+    // =====================================================
+    // TTS (Text-to-Speech) Functionality
+    // =====================================================
+
+    const ttsVoiceSelect = document.getElementById("tts-voice-select");
+    const ttsMuteBtn = document.getElementById("tts-mute-btn");
+    const ttsStatus = document.getElementById("tts-status");
+
+    // TTS State
+    let ttsVoices = [];
+    let ttsMuted = localStorage.getItem("tts_muted") === "true";
+    let ttsSelectedVoice = localStorage.getItem("tts_voice") || null;
+    let ttsAudio = null;  // Current audio element
+    let ttsQueue = [];    // Queue of texts to speak
+    let ttsSpeaking = false;
+    let ttsReady = false; // Flag to track if TTS is initialized
+
+    // Initialize mute button state
+    function updateMuteButtonUI() {
+      if (ttsMuted) {
+        ttsMuteBtn.classList.add("muted");
+        ttsMuteBtn.querySelector(".icon").textContent = "🔇";
+        ttsMuteBtn.querySelector(".label").textContent = "Voice Off";
+      } else {
+        ttsMuteBtn.classList.remove("muted");
+        ttsMuteBtn.querySelector(".icon").textContent = "🔊";
+        ttsMuteBtn.querySelector(".label").textContent = "Voice On";
+      }
+    }
+
+    // Load available voices from API
+    async function loadTTSVoices() {
+      try {
+        const response = await fetch("/tts/voices");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        ttsVoices = data.voices || [];
+
+        // Populate voice dropdown
+        ttsVoiceSelect.innerHTML = "";
+        ttsVoices.forEach(voice => {
+          const opt = document.createElement("option");
+          opt.value = voice.id;
+          // Format: "Nova (Female, American) - Friendly and upbeat"
+          let label = voice.name;
+          if (voice.gender || voice.accent) {
+            const details = [voice.gender, voice.accent].filter(Boolean).join(", ");
+            label += ` (${details})`;
+          }
+          if (voice.description) {
+            label += ` - ${voice.description}`;
+          }
+          opt.textContent = label;
+          ttsVoiceSelect.appendChild(opt);
+        });
+
+        // Restore saved voice selection or use default
+        if (ttsSelectedVoice && ttsVoices.some(v => v.id === ttsSelectedVoice)) {
+          ttsVoiceSelect.value = ttsSelectedVoice;
+        } else if (ttsVoices.length > 0) {
+          // Default to "nova" if available, otherwise first voice
+          const defaultVoice = ttsVoices.find(v => v.id === "nova") || ttsVoices[0];
+          ttsVoiceSelect.value = defaultVoice.id;
+          ttsSelectedVoice = defaultVoice.id;
+        }
+
+        ttsReady = true;
+        console.log(`[TTS] Loaded ${ttsVoices.length} voices from ${data.provider}, selected: ${ttsSelectedVoice}`);
+      } catch (error) {
+        console.error("[TTS] Failed to load voices:", error);
+        ttsVoiceSelect.innerHTML = '<option value="">Voice unavailable</option>';
+        setTTSStatus("Voice unavailable", "error");
+        ttsReady = false;
+      }
+    }
+
+    // Set TTS status message
+    function setTTSStatus(message, type = "") {
+      ttsStatus.textContent = message;
+      ttsStatus.className = "tts-status" + (type ? ` ${type}` : "");
+      // Auto-clear status after 3 seconds (unless it's an error)
+      if (type !== "error" && message) {
+        setTimeout(() => {
+          if (ttsStatus.textContent === message) {
+            ttsStatus.textContent = "";
+            ttsStatus.className = "tts-status";
+          }
+        }, 3000);
+      }
+    }
+
+    // Synthesize and play text
+    async function speakText(text) {
+      if (ttsMuted || !text) return;
+
+      // Check if TTS is ready
+      if (!ttsReady || !ttsSelectedVoice) {
+        console.warn("[TTS] Not ready yet, skipping:", text.substring(0, 50) + "...");
+        return;
+      }
+
+      // Add to queue
+      ttsQueue.push(text);
+
+      // If already speaking, the queue will be processed
+      if (ttsSpeaking) return;
+
+      await processQueue();
+    }
+
+    async function processQueue() {
+      if (ttsQueue.length === 0) {
+        ttsSpeaking = false;
+        return;
+      }
+
+      ttsSpeaking = true;
+      const text = ttsQueue.shift();
+
+      try {
+        setTTSStatus("Speaking...", "speaking");
+
+        // Stop any currently playing audio
+        if (ttsAudio) {
+          ttsAudio.pause();
+          ttsAudio = null;
+        }
+
+        // Call TTS API
+        console.log("[TTS] Calling synthesize API with voice:", ttsSelectedVoice);
+        const response = await fetch("/tts/synthesize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: text,
+            voice: ttsSelectedVoice,
+            speed: 1.0
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("[TTS] API error:", response.status, errorText);
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        // Get audio blob and play it
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        ttsAudio = new Audio(audioUrl);
+
+        // Clean up URL when done
+        ttsAudio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          setTTSStatus("");
+          processQueue();  // Process next in queue
+        };
+
+        ttsAudio.onerror = (e) => {
+          console.error("[TTS] Audio playback error:", e);
+          URL.revokeObjectURL(audioUrl);
+          setTTSStatus("Playback error", "error");
+          processQueue();  // Continue with next item
+        };
+
+        // Handle mute during playback
+        if (ttsMuted) {
+          ttsAudio = null;
+          setTTSStatus("");
+          processQueue();
+          return;
+        }
+
+        try {
+          await ttsAudio.play();
+        } catch (playError) {
+          // Browser may block autoplay without user interaction
+          if (playError.name === 'NotAllowedError') {
+            console.warn("[TTS] Autoplay blocked by browser - waiting for user interaction");
+            setTTSStatus("Click to enable voice", "error");
+            // Don't clear this error - user needs to interact
+            URL.revokeObjectURL(audioUrl);
+            ttsAudio = null;
+            processQueue();
+            return;
+          }
+          throw playError;
+        }
+
+      } catch (error) {
+        console.error("[TTS] Synthesis error:", error.message || error);
+        setTTSStatus("Voice error", "error");
+        // Clear error status after 5 seconds
+        setTimeout(() => {
+          if (ttsStatus.textContent === "Voice error") {
+            ttsStatus.textContent = "";
+            ttsStatus.className = "tts-status";
+          }
+        }, 5000);
+        processQueue();  // Continue with next item
+      }
+    }
+
+    // Stop current speech
+    function stopSpeaking() {
+      ttsQueue = [];
+      if (ttsAudio) {
+        ttsAudio.pause();
+        ttsAudio = null;
+      }
+      ttsSpeaking = false;
+      setTTSStatus("");
+    }
+
+    // Event: Voice selection change
+    ttsVoiceSelect.addEventListener("change", () => {
+      ttsSelectedVoice = ttsVoiceSelect.value;
+      localStorage.setItem("tts_voice", ttsSelectedVoice);
+      console.log("[TTS] Voice changed to:", ttsSelectedVoice);
+    });
+
+    // Event: Mute button click
+    ttsMuteBtn.addEventListener("click", () => {
+      ttsMuted = !ttsMuted;
+      localStorage.setItem("tts_muted", ttsMuted);
+      updateMuteButtonUI();
+
+      if (ttsMuted) {
+        stopSpeaking();
+      }
+
+      console.log("[TTS] Muted:", ttsMuted);
+    });
+
+    // Initialize TTS UI (voices are loaded in the window.load handler)
+    updateMuteButtonUI();
+
+    // Enable audio after any user interaction (to bypass autoplay restrictions)
+    let audioEnabled = false;
+    let pendingGreeting = null;  // Store greeting to play after user interaction
+
+    async function enableAudioAndPlayGreeting() {
+      if (!audioEnabled) {
+        audioEnabled = true;
+        // Clear the "Click to enable voice" message if present
+        if (ttsStatus.textContent === "Click to enable voice") {
+          ttsStatus.textContent = "";
+          ttsStatus.className = "tts-status";
+        }
+        console.log("[TTS] Audio enabled after user interaction");
+
+        // Play the pending greeting if we have one
+        if (pendingGreeting && !ttsMuted) {
+          console.log("[TTS] Playing queued greeting");
+          await speakText(pendingGreeting);
+          pendingGreeting = null;
+        }
+      }
+    }
+    document.addEventListener("click", enableAudioAndPlayGreeting, { once: true });
+    document.addEventListener("keydown", enableAudioAndPlayGreeting, { once: true });
+
+    // =====================================================
+    // Integrate TTS with chat - speak bot responses
+    // =====================================================
+
+    // Override addMessage to trigger TTS for assistant messages
+    const originalAddMessage = addMessage;
+    addMessage = function(role, text) {
+      originalAddMessage(role, text);
+
+      // Speak assistant messages
+      if (role === "assistant" && text) {
+        speakText(text);
+      }
+    };
   </script>
 </body>
 </html>

@@ -26,8 +26,10 @@ from .models import Base, MenuItem, Order, OrderItem, ChatSession, Ingredient, S
 from .llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
-from .inventory import apply_inventory_decrement_on_confirm, check_inventory_for_item, OutOfStockError
+# Inventory tracking via available_qty removed - using 86 system instead
+# from .inventory import apply_inventory_decrement_on_confirm, check_inventory_for_item, OutOfStockError
 from .logging_config import setup_logging
+from .tts import get_tts_provider, get_available_voices, TTSProvider
 
 # Configure logging at module load time
 setup_logging()
@@ -331,6 +333,9 @@ admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
 
 # Public router for store list (used by customer chat)
 public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
+
+# TTS router for text-to-speech endpoints
+tts_router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
 
 
 # ---------- Pydantic models for chat / menu ----------
@@ -873,7 +878,6 @@ def chat_message(
     ADD_INTENTS = {"add_sandwich", "add_side", "add_drink"}
 
     # Apply each action sequentially
-    out_of_stock_errors: List[str] = []
     for action in actions:
         intent = action.get("intent", "unknown")
         slots = action.get("slots", {})
@@ -881,40 +885,23 @@ def chat_message(
         logger.debug("Processing action - intent: %s, menu_item: %s",
                     intent, slots.get("menu_item_name"))
 
-        # Check inventory BEFORE adding items
-        if intent in ADD_INTENTS:
-            item_name = slots.get("menu_item_name")
-            quantity = slots.get("quantity") or 1
-            try:
-                check_inventory_for_item(db, item_name, quantity)
-            except OutOfStockError as e:
-                out_of_stock_errors.append(str(e))
-                logger.warning("Out of stock: %s", str(e))
-                # Skip this action - don't add to order
-                continue
+        # If adding items to an already-persisted order, start a new order
+        # This allows customers to add more items after their first order is confirmed
+        # The customer info (name, phone) is preserved for convenience
+        if intent in ADD_INTENTS and "db_order_id" in updated_order_state:
+            logger.info("Starting new order after previous order %s was confirmed",
+                       updated_order_state["db_order_id"])
+            # Clear the db_order_id so the new order can be persisted
+            del updated_order_state["db_order_id"]
+            # Clear items from the previous order
+            updated_order_state["items"] = []
+            # Reset status
+            updated_order_state["status"] = "pending"
 
-            # If adding items to an already-persisted order, start a new order
-            # This allows customers to add more items after their first order is confirmed
-            # The customer info (name, phone) is preserved for convenience
-            if "db_order_id" in updated_order_state:
-                logger.info("Starting new order after previous order %s was confirmed",
-                           updated_order_state["db_order_id"])
-                # Clear the db_order_id so the new order can be persisted
-                del updated_order_state["db_order_id"]
-                # Clear items from the previous order
-                updated_order_state["items"] = []
-                # Reset status
-                updated_order_state["status"] = "pending"
-
-        try:
-            updated_order_state = apply_intent_to_order_state(
-                updated_order_state, intent, slots, menu_index, returning_customer
-            )
-            processed_actions.append(ActionOut(intent=intent, slots=slots))
-
-        except OutOfStockError as e:
-            out_of_stock_errors.append(str(e))
-            logger.warning("Out of stock for item: %s", slots.get("menu_item_name"))
+        updated_order_state = apply_intent_to_order_state(
+            updated_order_state, intent, slots, menu_index, returning_customer
+        )
+        processed_actions.append(ActionOut(intent=intent, slots=slots))
 
     # Save updated state back into the session
     session["order"] = updated_order_state
@@ -922,11 +909,6 @@ def chat_message(
     logger.debug("Order state updated - status: %s, items: %d",
                 updated_order_state.get("status"),
                 len(updated_order_state.get("items", [])))
-
-    # If there were out of stock errors, replace the reply with error info
-    if out_of_stock_errors:
-        error_messages = " ".join(out_of_stock_errors)
-        reply = error_messages
 
     # Check if we should persist the order
     # This happens when:
@@ -973,7 +955,6 @@ def chat_message(
         # Get store_id from session for the order
         session_store_id = session.get("store_id") or get_random_store_id()
 
-        apply_inventory_decrement_on_confirm(db, updated_order_state)
         persist_confirmed_order(db, updated_order_state, all_slots, store_id=session_store_id)
         logger.info("Order persisted for customer: %s (store: %s)", customer_name, session_store_id)
 
@@ -2124,6 +2105,93 @@ def list_available_stores(
     return stores
 
 
+# ---------- TTS (Text-to-Speech) Endpoints ----------
+
+
+class TTSSynthesizeRequest(BaseModel):
+    """Request model for TTS synthesis."""
+    text: str = Field(..., min_length=1, max_length=5000, description="Text to synthesize")
+    voice: Optional[str] = Field(None, description="Voice ID (provider-specific)")
+    speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
+
+
+class VoiceInfo(BaseModel):
+    """Information about an available voice."""
+    id: str
+    name: str
+    gender: Optional[str] = None
+    accent: Optional[str] = None
+    description: Optional[str] = None
+
+
+class VoicesResponse(BaseModel):
+    """Response containing available voices."""
+    provider: str
+    voices: List[VoiceInfo]
+
+
+@tts_router.get("/voices", response_model=VoicesResponse)
+async def list_voices() -> VoicesResponse:
+    """
+    List available TTS voices.
+
+    Returns the provider name and list of available voices with their metadata.
+    """
+    try:
+        provider = get_tts_provider()
+        voices = [
+            VoiceInfo(
+                id=v.id,
+                name=v.name,
+                gender=v.gender,
+                accent=v.accent,
+                description=v.description,
+            )
+            for v in provider.voices
+        ]
+        return VoicesResponse(provider=provider.name, voices=voices)
+    except Exception as e:
+        logger.error("Failed to get TTS voices: %s", str(e))
+        raise HTTPException(status_code=500, detail="TTS service unavailable")
+
+
+@tts_router.post("/synthesize")
+async def synthesize_speech(req: TTSSynthesizeRequest) -> Response:
+    """
+    Synthesize text to speech.
+
+    Returns audio as MP3 binary data. Use the audio/mpeg content type
+    to play the response directly in the browser.
+
+    Args:
+        text: The text to convert to speech (max 5000 characters)
+        voice: Voice ID to use (optional, uses default if not specified)
+        speed: Speech speed multiplier between 0.25 and 4.0 (default 1.0)
+    """
+    try:
+        provider = get_tts_provider()
+        audio_bytes = await provider.synthesize(
+            text=req.text,
+            voice_id=req.voice,
+            speed=req.speed,
+        )
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline",
+                "Cache-Control": "no-cache",
+            }
+        )
+    except ValueError as e:
+        logger.warning("TTS validation error: %s", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("TTS synthesis failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Speech synthesis failed")
+
+
 # ---------- Include Routers with API Version Prefix ----------
 # All API endpoints are available under /api/v1/
 # Example: /api/v1/chat/start, /api/v1/admin/menu, etc.
@@ -2136,6 +2204,7 @@ api_v1_router.include_router(admin_ingredients_router)
 api_v1_router.include_router(admin_analytics_router)
 api_v1_router.include_router(admin_stores_router)
 api_v1_router.include_router(public_stores_router)
+api_v1_router.include_router(tts_router)
 
 app.include_router(api_v1_router)
 
@@ -2148,3 +2217,4 @@ app.include_router(admin_ingredients_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_stores_router)
 app.include_router(public_stores_router)
+app.include_router(tts_router)

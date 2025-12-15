@@ -643,6 +643,11 @@
                     lastBotMessage = fullReply;
                     messageCount++;
                     conversationHistory.push({ role: "assistant", content: fullReply });
+
+                    // Trigger TTS for the assistant response
+                    if (typeof speakText === "function") {
+                      speakText(fullReply);
+                    }
                   }
 
                   // Track order state for analytics

@@ -555,12 +555,23 @@
     // Use current origin so it works on any tenant/port
     const API_BASE = window.location.origin;
 
-    // Store ID to name mapping (matches admin_stores.html)
-    const STORE_NAMES = {
-      "store_eb_001": "East Brunswick",
-      "store_nb_002": "New Brunswick",
-      "store_pr_003": "Princeton"
-    };
+    // Store ID to name mapping - loaded dynamically from API
+    let STORE_NAMES = {};
+
+    async function loadStores() {
+      try {
+        const resp = await fetch(`${API_BASE}/stores`);
+        if (resp.ok) {
+          const stores = await resp.json();
+          STORE_NAMES = {};
+          stores.forEach(store => {
+            STORE_NAMES[store.store_id] = store.name;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load stores:", err);
+      }
+    }
 
     function getStoreName(storeId) {
       if (!storeId) return "-";
@@ -863,9 +874,13 @@
       return div.innerHTML;
     }
 
-    // Initial load
-    fetchSummary();
-    fetchSessions();
+    // Initial load - load stores first so names are available
+    async function init() {
+      await loadStores();
+      fetchSummary();
+      fetchSessions();
+    }
+    init();
   </script>
 </body>
 </html>

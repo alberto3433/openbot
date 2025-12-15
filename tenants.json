@@ -21,6 +21,17 @@
         "bot_persona_name": "Sammy",
         "tagline": "Test instance - The best subs in town!"
       }
+    },
+    "tonys": {
+      "name": "Tony's Pizza",
+      "slug": "tonys",
+      "database_url": "sqlite:///./data/tonys.db",
+      "port": 8002,
+      "domains": ["localhost:8002", "tonys.localhost"],
+      "company_settings": {
+        "bot_persona_name": "Tony",
+        "tagline": "Authentic New York style pizza!"
+      }
     }
   },
   "default_tenant": "sammys"

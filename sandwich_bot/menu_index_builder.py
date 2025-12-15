@@ -73,7 +73,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     Build a rich, LLM-friendly menu JSON structure. Example shape:
 
     {
-      "signature_sandwiches": [ ... ],
+      "signature_sandwiches": [ ... ],  # or "signature_pizzas" for pizza shops
       "sides": [ ... ],
       "drinks": [ ... ],
       "desserts": [ ... ],
@@ -88,9 +88,22 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     """
     items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
 
+    # Determine the primary configurable item type for dynamic category naming
+    primary_item_type = db.query(ItemType).filter(ItemType.is_configurable == True).first()
+    primary_type_slug = primary_item_type.slug if primary_item_type else "sandwich"
+
+    # Build dynamic category names (handle pluralization correctly)
+    def pluralize(word: str) -> str:
+        if word.endswith("ch") or word.endswith("s") or word.endswith("x"):
+            return word + "es"
+        return word + "s"
+
+    signature_key = f"signature_{pluralize(primary_type_slug)}"
+    custom_key = f"custom_{pluralize(primary_type_slug)}"
+
     index: Dict[str, Any] = {
-        "signature_sandwiches": [],
-        "custom_sandwiches": [],  # Build-your-own sandwiches
+        signature_key: [],
+        custom_key: [],  # Build-your-own items
         "sides": [],
         "drinks": [],
         "desserts": [],
@@ -127,11 +140,12 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         }
 
         cat = (item.category or "").lower()
-        # Handle both "sandwich" and "signature" categories for sandwiches
-        if (cat == "sandwich" or cat == "signature") and item.is_signature:
-            index["signature_sandwiches"].append(item_json)
-        elif cat == "sandwich" and not item.is_signature:
-            index["custom_sandwiches"].append(item_json)
+        # Handle both "sandwich"/"pizza" and "signature" categories for main items
+        is_main_item_type = cat == primary_type_slug or cat == "sandwich" or cat == "signature"
+        if is_main_item_type and item.is_signature:
+            index[signature_key].append(item_json)
+        elif is_main_item_type and not item.is_signature:
+            index[custom_key].append(item_json)
         elif cat == "side":
             index["sides"].append(item_json)
         elif cat == "drink":

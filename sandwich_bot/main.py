@@ -1250,7 +1250,10 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """
     Safely convert a MenuItem ORM instance into MenuItemOut, making sure that
     the metadata field is always a plain dict.
+
+    Merges data from both extra_metadata (legacy) and default_config (new generic system).
     """
+    # Start with extra_metadata (legacy field)
     raw_meta = getattr(item, "extra_metadata", None)
 
     if isinstance(raw_meta, dict):
@@ -1262,6 +1265,12 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
             meta = {}
     else:
         meta = {}
+
+    # Merge default_config (new generic item type system) if present
+    default_config = getattr(item, "default_config", None)
+    if default_config and isinstance(default_config, dict):
+        # Wrap in default_config key for frontend compatibility
+        meta["default_config"] = default_config
 
     return MenuItemOut(
         id=item.id,

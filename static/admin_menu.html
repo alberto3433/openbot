@@ -941,9 +941,14 @@
       const config = meta.default_config || meta;
 
       const parts = [];
+      // Pizza attributes
       if (config.size) parts.push(`<strong>Size:</strong> ${config.size}`);
+      if (config.crust) parts.push(`<strong>Crust:</strong> ${config.crust}`);
+      if (config.sauce) parts.push(`<strong>Sauce:</strong> ${config.sauce}`);
+      // Sandwich attributes
       if (config.bread) parts.push(`<strong>Bread:</strong> ${config.bread}`);
       if (config.protein) parts.push(`<strong>Protein:</strong> ${config.protein}`);
+      // Common attributes
       if (config.cheese) parts.push(`<strong>Cheese:</strong> ${config.cheese}`);
       if (Array.isArray(config.toppings) && config.toppings.length) {
         parts.push(`<strong>Toppings:</strong> ${config.toppings.join(", ")}`);

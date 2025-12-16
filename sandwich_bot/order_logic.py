@@ -268,17 +268,20 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
 
 def _collect_customer_info(state, slots):
     """
-    Store customer name and phone in the order state.
+    Store customer name, phone, and email in the order state.
     """
     customer_name = slots.get("customer_name")
     phone = slots.get("phone")
+    email = slots.get("customer_email")
 
-    if customer_name or phone:
+    if customer_name or phone or email:
         state.setdefault("customer", {})
         if customer_name:
             state["customer"]["name"] = customer_name
         if phone:
             state["customer"]["phone"] = phone
+        if email:
+            state["customer"]["email"] = email
 
     return state
 
@@ -307,11 +310,18 @@ def _collect_delivery_address(state, slots):
 
 def _request_payment_link(state, slots):
     """
-    Customer requested to pay via SMS link.
+    Customer requested to pay via payment link (SMS or email).
     Sets payment_method to 'card_link' and payment_status to 'pending_payment'.
+    Also stores the delivery method (sms or email).
     """
     state["payment_method"] = "card_link"
     state["payment_status"] = "pending_payment"
+
+    # Store the delivery method for the payment link
+    link_delivery_method = slots.get("link_delivery_method")
+    if link_delivery_method in ("sms", "email"):
+        state["link_delivery_method"] = link_delivery_method
+
     return state
 
 

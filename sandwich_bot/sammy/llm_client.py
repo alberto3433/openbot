@@ -549,6 +549,9 @@ SLOTS_SCHEMA = {
         "card_number": {"type": ["string", "null"]},
         "card_expiry": {"type": ["string", "null"]},  # MM/YY format
         "card_cvv": {"type": ["string", "null"]},
+        # Payment link delivery method
+        "link_delivery_method": {"type": ["string", "null"]},  # "sms" or "email"
+        "customer_email": {"type": ["string", "null"]},  # Email for payment link
     },
     "required": [
         "item_type",

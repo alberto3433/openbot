@@ -220,6 +220,7 @@
           <th>Store</th>
           <th>Customer</th>
           <th>Phone</th>
+          <th>Email</th>
           <th>Status</th>
           <th>Total</th>
         </tr>
@@ -364,7 +365,7 @@
         }
       } catch (err) {
         console.error(err);
-        ordersBody.innerHTML = `<tr><td colspan="6" style="color:red;">Error loading orders</td></tr>`;
+        ordersBody.innerHTML = `<tr><td colspan="7" style="color:red;">Error loading orders</td></tr>`;
       }
     }
 
@@ -372,7 +373,7 @@
       ordersBody.innerHTML = "";
 
       if (!ordersCache.length) {
-        ordersBody.innerHTML = `<tr><td colspan="6" class="muted">No orders found</td></tr>`;
+        ordersBody.innerHTML = `<tr><td colspan="7" class="muted">No orders found</td></tr>`;
         return;
       }
 
@@ -387,6 +388,7 @@
           <td>${getStoreName(order.store_id)}</td>
           <td>${order.customer_name || ""}</td>
           <td>${order.phone || ""}</td>
+          <td>${order.customer_email || ""}</td>
           <td>${order.status}</td>
           <td>$${order.total_price.toFixed(2)}</td>
         `;
@@ -465,6 +467,10 @@
             <div><strong>Store:</strong> ${getStoreName(order.store_id)}</div>
             <div><strong>Name:</strong> ${order.customer_name || ""}</div>
             <div><strong>Phone:</strong> ${order.phone || ""}</div>
+            <div><strong>Email:</strong> ${order.customer_email || ""}</div>
+            <div><strong>Order Type:</strong> ${order.order_type || "pickup"}</div>
+            <div><strong>Delivery Address:</strong> ${order.delivery_address || ""}</div>
+            <div><strong>Payment:</strong> ${order.payment_method || ""} (${order.payment_status || "unpaid"})</div>
             <div><strong>Pickup:</strong> ${order.pickup_time || ""}</div>
             <div><strong>Total:</strong> $${order.total_price.toFixed(2)}</div>
             <div><strong>Created:</strong> ${order.created_at || ""}</div>

@@ -639,9 +639,14 @@ class OrderSummaryOut(BaseModel):
     status: str
     customer_name: Optional[str] = None
     phone: Optional[str] = None
+    customer_email: Optional[str] = None
     pickup_time: Optional[str] = None
     total_price: float
     store_id: Optional[str] = None
+    order_type: Optional[str] = None
+    delivery_address: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_method: Optional[str] = None
 
 
 class OrderItemOut(BaseModel):
@@ -669,9 +674,14 @@ class OrderDetailOut(BaseModel):
     status: str
     customer_name: Optional[str] = None
     phone: Optional[str] = None
+    customer_email: Optional[str] = None
     pickup_time: Optional[str] = None
     total_price: float
     store_id: Optional[str] = None
+    order_type: Optional[str] = None
+    delivery_address: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_method: Optional[str] = None
     created_at: str
     items: List[OrderItemOut]
 

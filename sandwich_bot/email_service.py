@@ -14,6 +14,7 @@ Environment variables:
 import logging
 import os
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
@@ -118,9 +119,10 @@ Thanks,
         msg.attach(MIMEText(body_text, "plain"))
         msg.attach(MIMEText(body_html, "html"))
 
-        # Connect and send
+        # Connect and send with secure SSL context
+        context = ssl.create_default_context()
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
+            server.starttls(context=context)
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
 
@@ -208,8 +210,10 @@ Thanks,
         msg["From"] = SMTP_FROM_EMAIL
         msg["To"] = to_email
 
+        # Connect and send with secure SSL context
+        context = ssl.create_default_context()
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
+            server.starttls(context=context)
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
 

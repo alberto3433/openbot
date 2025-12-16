@@ -30,6 +30,7 @@ from .menu_index_builder import build_menu_index, get_menu_version
 # from .inventory import apply_inventory_decrement_on_confirm, check_inventory_for_item, OutOfStockError
 from .logging_config import setup_logging
 from .tts import get_tts_provider
+from .email_service import send_payment_link_email
 
 # Configure logging at module load time
 setup_logging()
@@ -1005,6 +1006,35 @@ def chat_message(
         updated_order_state.get("customer", {}).get("phone")
         or all_slots.get("phone")
     )
+    customer_email = (
+        updated_order_state.get("customer", {}).get("email")
+        or all_slots.get("customer_email")
+    )
+
+    # Check if we need to send a payment link email
+    payment_link_action = next(
+        (a for a in actions if a.get("intent") == "request_payment_link"),
+        None
+    )
+    if payment_link_action:
+        link_method = (
+            updated_order_state.get("link_delivery_method")
+            or all_slots.get("link_delivery_method")
+        )
+        if link_method == "email" and customer_email:
+            # Calculate order total for the email
+            items = updated_order_state.get("items", [])
+            order_total = sum(item.get("line_total", 0) for item in items)
+
+            # Send the payment link email
+            email_result = send_payment_link_email(
+                to_email=customer_email,
+                order_id=updated_order_state.get("db_order_id", 0),
+                amount=order_total,
+                store_name=company.name if company else "Restaurant",
+                customer_name=customer_name,
+            )
+            logger.info("Payment link email sent: %s", email_result.get("status"))
 
     # Update history FIRST (before logging analytics, so conversation is complete)
     history.append({"role": "user", "content": req.message})
@@ -1221,6 +1251,35 @@ def chat_message_stream(
                 updated_order_state.get("customer", {}).get("phone")
                 or all_slots.get("phone")
             )
+            customer_email = (
+                updated_order_state.get("customer", {}).get("email")
+                or all_slots.get("customer_email")
+            )
+
+            # Check if we need to send a payment link email
+            payment_link_action = next(
+                (a for a in processed_actions if a.get("intent") == "request_payment_link"),
+                None
+            )
+            if payment_link_action:
+                link_method = (
+                    updated_order_state.get("link_delivery_method")
+                    or all_slots.get("link_delivery_method")
+                )
+                if link_method == "email" and customer_email:
+                    # Calculate order total for the email
+                    items = updated_order_state.get("items", [])
+                    order_total = sum(item.get("line_total", 0) for item in items)
+
+                    # Send the payment link email
+                    email_result = send_payment_link_email(
+                        to_email=customer_email,
+                        order_id=updated_order_state.get("db_order_id", 0),
+                        amount=order_total,
+                        store_name=company_name,
+                        customer_name=customer_name,
+                    )
+                    logger.info("Payment link email sent: %s", email_result.get("status"))
 
             # Persist if order is confirmed AND we have customer info
             order_is_confirmed = updated_order_state.get("status") == "confirmed"
@@ -1400,6 +1459,13 @@ def persist_confirmed_order(
         slots.get("phone_number"),
     )
 
+    customer_email = first_non_empty(
+        customer_block.get("email"),
+        order_state.get("customer_email"),
+        slots.get("customer_email"),
+        slots.get("email"),
+    )
+
     pickup_time = first_non_empty(
         customer_block.get("pickup_time"),
         order_state.get("pickup_time"),
@@ -1439,6 +1505,7 @@ def persist_confirmed_order(
             status="confirmed",
             customer_name=customer_name,
             phone=phone,
+            customer_email=customer_email,
             pickup_time=pickup_time,
             total_price=total_price,
             store_id=store_id,
@@ -1455,6 +1522,7 @@ def persist_confirmed_order(
         order.status = "confirmed"
         order.customer_name = customer_name
         order.phone = phone
+        order.customer_email = customer_email
         order.pickup_time = pickup_time
         order.total_price = total_price
         order.order_type = order_type

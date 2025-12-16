@@ -145,6 +145,7 @@ class Order(Base):
     status = Column(String, nullable=False, default="confirmed", index=True)  # e.g., pending/confirmed/preparing/ready/completed/cancelled
     customer_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    customer_email = Column(String, nullable=True)  # Email for payment links
     pickup_time = Column(String, nullable=True)
     total_price = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

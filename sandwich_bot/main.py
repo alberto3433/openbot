@@ -904,6 +904,8 @@ def chat_message(
             caller_id=session_caller_id,
             bot_name=company.bot_persona_name,
             company_name=company.name,
+            db=db,
+            use_dynamic_prompt=True,
         )
         # Update menu version in session if we sent it
         if include_menu_in_system:
@@ -942,7 +944,7 @@ def chat_message(
     updated_order_state = order_state
 
     # Intents that add items to the order
-    ADD_INTENTS = {"add_sandwich", "add_side", "add_drink"}
+    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink"}
 
     # Apply each action sequentially
     for action in actions:
@@ -1108,13 +1110,26 @@ def chat_message_stream(
         session_menu_version != current_menu_version
     )
 
+    # Store values we need inside the generator (before db session closes)
+    company_bot_name = company.bot_persona_name
+    company_name = company.name
+
     def generate_stream():
         nonlocal session, history, order_state
 
         full_content = ""
+        logger.info("Starting stream generation for message: %s", req.message[:50] if req.message else "(empty)")
+
+        # Create a new database session for use inside the generator
+        # (The original db session from Depends(get_db) is closed after the handler returns)
+        from .db import SessionLocal
+        logger.info("Creating stream_db session...")
+        stream_db = SessionLocal()
+        logger.info("stream_db session created successfully")
 
         try:
             # Stream tokens from LLM
+            logger.info("Calling call_sandwich_bot_stream...")
             stream_gen = call_sandwich_bot_stream(
                 history,
                 order_state,
@@ -1123,15 +1138,24 @@ def chat_message_stream(
                 include_menu_in_system=include_menu_in_system,
                 returning_customer=returning_customer,
                 caller_id=session_caller_id,
-                bot_name=company.bot_persona_name,
-                company_name=company.name,
+                bot_name=company_bot_name,
+                company_name=company_name,
+                db=stream_db,
+                use_dynamic_prompt=True,
+                timeout=20,  # 20 second timeout for LLM response
             )
+            logger.info("stream_gen created, starting to iterate tokens...")
 
             # Yield tokens as they arrive
+            token_count = 0
             for token in stream_gen:
+                token_count += 1
                 full_content += token
                 yield f"data: {json.dumps({'token': token})}\n\n"
+                if token_count == 1:
+                    logger.info("First token received")
 
+            logger.info("Stream complete, %d tokens, full_content length: %d", token_count, len(full_content))
             # Parse the full response
             try:
                 llm_result = json.loads(full_content)
@@ -1159,7 +1183,7 @@ def chat_message_stream(
             processed_actions = []
             updated_order_state = order_state
 
-            ADD_INTENTS = {"add_sandwich", "add_side", "add_drink"}
+            ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink"}
 
             for action in actions:
                 intent = action.get("intent", "unknown")
@@ -1183,21 +1207,86 @@ def chat_message_stream(
                     "slots": slots
                 })
 
+            # Check if we should persist the order to database
+            # Gather customer info from various sources
+            all_slots = {}
+            for action in processed_actions:
+                all_slots.update(action.get("slots", {}))
+
+            customer_name = (
+                updated_order_state.get("customer", {}).get("name")
+                or all_slots.get("customer_name")
+            )
+            customer_phone = (
+                updated_order_state.get("customer", {}).get("phone")
+                or all_slots.get("phone")
+            )
+
+            # Persist if order is confirmed AND we have customer info
+            order_is_confirmed = updated_order_state.get("status") == "confirmed"
+            has_customer_info = customer_name and customer_phone
+            order_not_yet_persisted = "db_order_id" not in updated_order_state
+
+            if order_is_confirmed and has_customer_info and order_not_yet_persisted:
+                updated_order_state.setdefault("customer", {})
+                updated_order_state["customer"]["name"] = customer_name
+                updated_order_state["customer"]["phone"] = customer_phone
+
+                # Get store_id from session for the order
+                order_store_id = session.get("store_id") or get_random_store_id()
+
+                persist_confirmed_order(stream_db, updated_order_state, all_slots, store_id=order_store_id)
+                logger.info("Order persisted for customer: %s (store: %s)", customer_name, order_store_id)
+
+                # Log completed session for analytics
+                items = updated_order_state.get("items", [])
+                session_record = SessionAnalytics(
+                    session_id=req.session_id,
+                    status="completed",
+                    message_count=len(history) + 2,  # +2 for current exchange
+                    had_items_in_cart=len(items) > 0,
+                    item_count=len(items),
+                    cart_total=updated_order_state.get("total_price", 0.0),
+                    order_status="confirmed",
+                    conversation_history=history + [
+                        {"role": "user", "content": req.message},
+                        {"role": "assistant", "content": reply}
+                    ],
+                    last_bot_message=reply[:500] if reply else None,
+                    last_user_message=req.message[:500] if req.message else None,
+                    reason=None,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    store_id=order_store_id,
+                )
+                stream_db.add(session_record)
+                stream_db.commit()
+                logger.info("Completed session logged: %s", req.session_id[:8])
+
             # Update session
             history.append({"role": "user", "content": req.message})
             history.append({"role": "assistant", "content": reply})
             session["order"] = updated_order_state
-            save_session(db, req.session_id, session)
+            try:
+                save_session(stream_db, req.session_id, session)
+                logger.debug("Session saved successfully")
+            except Exception as save_error:
+                logger.error("Failed to save session: %s", str(save_error), exc_info=True)
 
             # Send final result
             primary_intent = processed_actions[0]["intent"] if processed_actions else "unknown"
             primary_slots = processed_actions[0]["slots"] if processed_actions else {}
 
+            logger.info("Sending final result - intent: %s, reply length: %d", primary_intent, len(reply))
             yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions, 'intent': primary_intent, 'slots': primary_slots})}\n\n"
+            logger.info("Stream generation complete")
 
         except Exception as e:
-            logger.error("Streaming LLM call failed: %s", str(e))
+            logger.error("Streaming LLM call failed: %s", str(e), exc_info=True)
             yield f"data: {json.dumps({'error': 'An error occurred. Please try again.'})}\n\n"
+        finally:
+            # Close the database session we created for this generator
+            stream_db.close()
 
     return StreamingResponse(
         generate_stream(),
@@ -1338,6 +1427,12 @@ def persist_confirmed_order(
             # stale id: fall back to creating a new one below
             existing_id = None
 
+    # Get order type, delivery address, and payment info from state
+    order_type = order_state.get("order_type", "pickup")
+    delivery_address = order_state.get("delivery_address")
+    payment_status = order_state.get("payment_status", "unpaid")
+    payment_method = order_state.get("payment_method")
+
     if not existing_id:
         # New order
         order = Order(
@@ -1347,6 +1442,10 @@ def persist_confirmed_order(
             pickup_time=pickup_time,
             total_price=total_price,
             store_id=store_id,
+            order_type=order_type,
+            delivery_address=delivery_address,
+            payment_status=payment_status,
+            payment_method=payment_method,
         )
         db.add(order)
         db.flush()  # assign order.id
@@ -1358,6 +1457,10 @@ def persist_confirmed_order(
         order.phone = phone
         order.pickup_time = pickup_time
         order.total_price = total_price
+        order.order_type = order_type
+        order.delivery_address = delivery_address
+        order.payment_status = payment_status
+        order.payment_method = payment_method
 
     # --- Replace order items with the latest items ---
     # Clear any previous items for this order
@@ -1371,13 +1474,16 @@ def persist_confirmed_order(
             or "Unknown item"
         )
 
+        # For pizza, use crust in the bread field (they serve same purpose)
+        bread_or_crust = it.get("bread") or it.get("crust")
+
         oi = OrderItem(
             order_id=order.id,
             menu_item_id=it.get("menu_item_id"),
             menu_item_name=menu_item_name,
             item_type=it.get("item_type"),
             size=it.get("size"),
-            bread=it.get("bread"),
+            bread=bread_or_crust,
             protein=it.get("protein"),
             cheese=it.get("cheese"),
             toppings=it.get("toppings") or [],

@@ -56,12 +56,19 @@ ORDER FLOW - IMPORTANT SEQUENCE:
 Follow this order when taking orders:
 1. MAIN ITEM ORDER: Take the order, describe what it includes, ask about customizations
 2. SIDES & DRINKS: After main item is confirmed, ask "Would you like any sides or drinks with that?"
-3. NAME & PHONE: Only AFTER they've had a chance to add sides/drinks (or declined), ask for name and phone
-4. CONFIRM: Summarize complete order and confirm
+3. PICKUP OR DELIVERY: Ask "Is this for pickup or delivery?"
+   - If DELIVERY: Use set_order_type with order_type="delivery", then ask "What's the delivery address?"
+   - If PICKUP: Use set_order_type with order_type="pickup"
+4. NAME & PHONE: Collect name (phone from caller ID if available)
+5. PAYMENT: Offer payment options in this order:
+   a. "I can text you a secure payment link. Would you like that?" → If yes, use request_payment_link
+   b. "I can take your card over the phone if you prefer?" → If yes, collect card details with collect_card_payment
+   c. "No problem! You can pay with card or cash when you [pick up / we deliver]." → Use pay_at_pickup
+6. CONFIRM: Use confirm_order to finalize
 
 - Do NOT ask for name/phone right after the main item - always offer sides/drinks first!
 - If customer declines sides/drinks ("no thanks", "that's all"):
-  * THEN ask for name and phone to complete the order
+  * THEN ask about pickup/delivery
 
 OUT-OF-STOCK ITEMS (86'd):
 - Check MENU["unavailable_ingredients"] for ingredients that are currently out of stock.
@@ -76,21 +83,36 @@ DRINK ORDERS:
 - SPECIFIC DRINK NAMES - add directly WITHOUT asking for clarification.
 - GENERIC TERMS like "soda", "pop", "soft drink" - ask which specific drink they'd like.
 
-ORDER CONFIRMATION - CRITICAL:
-- You MUST have the customer's name AND phone number BEFORE confirming any order.
-- CHECK ORDER STATE for existing customer info first - don't ask again if already provided.
-- When ORDER STATE has customer info and user confirms, use confirm_order immediately.
+PAYMENT HANDLING:
+Offer payment options in this preferred order:
+1. SMS PAYMENT LINK (preferred): "I can text you a secure payment link. Would you like that?"
+   - If yes → Use request_payment_link intent
+   - Say: "Great! I'll send a payment link to [phone]. You can complete payment there."
+2. CARD OVER PHONE: "I can take your card over the phone if you prefer?"
+   - If yes → Collect card number, expiration (MM/YY), and CVV
+   - Use collect_card_payment with card_number, card_expiry, card_cvv slots
+   - Say: "Your payment has been processed. Thank you!"
+3. PAY AT PICKUP/DELIVERY: "No problem! You can pay with card or cash when you [pick up / we deliver]."
+   - Use pay_at_pickup intent
 
 CALLER ID - PHONE NUMBER FROM INCOMING CALL:
 - If "CALLER ID" section is present, we already have the customer's phone number.
-- Confirm the number is correct and ask for their name.
+- After pickup/delivery is set, ask for name: "Can I get a name for the order? I have your number as XXX-XXX-XXXX."
+- When customer provides their name:
+  1. Use collect_customer_info with customer_name and phone from CALLER ID
+  2. Proceed to PAYMENT step (offer SMS link first)
+- After payment is handled, use confirm_order
 
 RETURNING CUSTOMER - REPEAT LAST ORDER:
 - If "PREVIOUS ORDER" section is present, this is a returning customer.
+- We already have their name and phone from the previous order - DO NOT ask for them again!
 - When they say "repeat my last order", "same as last time", "my usual":
   1. Use the "repeat_order" intent
   2. GREET THEM BY NAME
-  3. List their previous items and confirm
+  3. List their previous items and ask about sides/drinks
+- After sides/drinks, ask about pickup/delivery
+- Then proceed to PAYMENT (offer SMS link first)
+- Finally use confirm_order
 
 MULTI-ITEM ORDERS:
 - When a user orders multiple items in one message, return a SEPARATE action for EACH item.
@@ -111,6 +133,40 @@ RESPONSE STYLE:
 Always return a valid JSON object matching the provided JSON SCHEMA.
 The "actions" array contains actions that MODIFY the order state.
 Return empty "actions" [] when no order modification is needed.
+
+BUILD YOUR OWN - CRITICAL EXAMPLE:
+When customer finishes selecting toppings for a custom pizza, you MUST return add_pizza with ALL collected attributes:
+
+Example conversation:
+- User: "build my own" → Ask for size
+- User: "large" → Ask for crust
+- User: "thin crust" → Ask for sauce
+- User: "marinara" → Ask for cheese
+- User: "mozzarella" → Ask for toppings
+- User: "pepperoni and mushrooms" → NOW ADD THE PIZZA!
+
+Your response MUST include this action:
+{
+  "reply": "Great! I've added your Large Thin Crust pizza with Marinara sauce, Mozzarella cheese, Pepperoni and Mushrooms. Would you like any sides or drinks?",
+  "actions": [{
+    "intent": "add_pizza",
+    "slots": {
+      "menu_item_name": "Build Your Own Pizza",
+      "size": "Large (14\")",
+      "crust": "Thin Crust",
+      "sauce": "Marinara",
+      "cheese": "Mozzarella",
+      "toppings": ["Pepperoni", "Mushrooms"],
+      "quantity": 1
+    }
+  }]
+}
+
+WRONG - Just saying "I added it" without the action does NOTHING:
+{
+  "reply": "Great! I've added your pizza...",
+  "actions": []  ← WRONG! Pizza was NOT added!
+}
 '''
 
 
@@ -163,11 +219,16 @@ def build_item_type_section(
             elif input_type == "boolean":
                 lines.append(f"  * {attr_name}: Yes/No")
 
-    # Add ordering instructions
+    # Add ordering instructions with item-type specific intents
     lines.append(f"\n- When ordering a {type_slug}:")
     lines.append(f"  * SIGNATURE ITEMS: Add immediately with add_{type_slug} intent, including default_config values")
-    lines.append(f"  * CUSTOM ITEMS: Ask for required attributes before adding")
+    lines.append(f"  * CUSTOM/BUILD YOUR OWN:")
+    lines.append(f"    1. Ask for each required attribute one at a time (size, then base options, then toppings)")
+    lines.append(f"    2. After customer provides toppings (or says they don't want any), IMMEDIATELY call add_{type_slug}")
+    lines.append(f"    3. Include ALL collected attributes in the add_{type_slug} action slots")
     lines.append(f"  * Use update_{type_slug} intent to modify items already in the order")
+    lines.append(f"  * CRITICAL: You MUST return add_{type_slug} in the actions array to add it to the cart!")
+    lines.append(f"  * Just saying 'I added it' does NOT add it - the action MUST be in the JSON response!")
 
     return "\n".join(lines)
 

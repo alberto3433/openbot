@@ -1,0 +1,1 @@
+set DATABASE_URL=sqlite:///./data/tonys.db

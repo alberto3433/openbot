@@ -496,10 +496,17 @@ JSON SCHEMA:
 INTENT_TYPES = [
     "add_sandwich",
     "update_sandwich",
+    "add_pizza",
+    "update_pizza",
     "remove_item",
     "add_side",
     "add_drink",
     "collect_customer_info",
+    "set_order_type",  # Set pickup or delivery
+    "collect_delivery_address",  # Collect address for delivery orders
+    "request_payment_link",  # Customer wants SMS payment link
+    "collect_card_payment",  # Customer provides card over phone
+    "pay_at_pickup",  # Customer will pay at pickup/delivery
     "review_order",
     "confirm_order",
     "cancel_order",
@@ -509,6 +516,11 @@ INTENT_TYPES = [
 ]
 
 # Slots schema (reused in action items)
+# Note: This schema supports multiple item types (sandwiches, pizzas, etc.)
+# - bread: used for sandwiches
+# - crust: used for pizzas
+# - sauce: used for pizzas (single select)
+# - sauces: used for sandwiches (multi select)
 SLOTS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -516,8 +528,10 @@ SLOTS_SCHEMA = {
         "menu_item_name": {"type": ["string", "null"]},
         "size": {"type": ["string", "null"]},
         "bread": {"type": ["string", "null"]},
+        "crust": {"type": ["string", "null"]},
         "protein": {"type": ["string", "null"]},
         "cheese": {"type": ["string", "null"]},
+        "sauce": {"type": ["string", "null"]},
         "toppings": {"type": "array", "items": {"type": "string"}},
         "sauces": {"type": "array", "items": {"type": "string"}},
         "toasted": {"type": ["boolean", "null"]},
@@ -528,14 +542,23 @@ SLOTS_SCHEMA = {
         "pickup_time": {"type": ["string", "null"]},
         "confirm": {"type": ["boolean", "null"]},
         "cancel_reason": {"type": ["string", "null"]},
+        # Order type and delivery
+        "order_type": {"type": ["string", "null"]},  # "pickup" or "delivery"
+        "delivery_address": {"type": ["string", "null"]},
+        # Payment card details (for card over phone)
+        "card_number": {"type": ["string", "null"]},
+        "card_expiry": {"type": ["string", "null"]},  # MM/YY format
+        "card_cvv": {"type": ["string", "null"]},
     },
     "required": [
         "item_type",
         "menu_item_name",
         "size",
         "bread",
+        "crust",
         "protein",
         "cheese",
+        "sauce",
         "toppings",
         "sauces",
         "toasted",
@@ -687,6 +710,8 @@ def call_sandwich_bot(
             timeout=request_timeout,
         )
         content = completion.choices[0].message.content
+        # Log the raw LLM response for debugging pizza order issues
+        logger.info("LLM raw response: %s", content[:1000] if content else "(empty)")
     except APITimeoutError:
         logger.error("LLM request timed out after %s seconds", request_timeout)
         return {
@@ -842,6 +867,9 @@ def call_sandwich_bot_stream(
             "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
             "actions": [],
         }
+
+    # Log the raw LLM response for debugging pizza order issues
+    logger.info("LLM streamed response: %s", full_content[:1000] if full_content else "(empty)")
 
     # Parse the final content
     try:

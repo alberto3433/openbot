@@ -221,6 +221,9 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
     if intent == "add_sandwich":
         return _add_sandwich(state, slots, menu_index)
 
+    if intent == "add_pizza":
+        return _add_pizza(state, slots, menu_index)
+
     if intent == "add_drink":
         return _add_drink(state, slots, menu_index)
 
@@ -229,6 +232,9 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
 
     if intent == "update_sandwich":
         return _update_sandwich(state, slots, menu_index)
+
+    if intent == "update_pizza":
+        return _update_pizza(state, slots, menu_index)
 
     if intent == "remove_item":
         return _remove_item(state, slots, menu_index)
@@ -239,6 +245,100 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
     if intent == "repeat_order":
         return _repeat_order(state, slots, menu_index, returning_customer)
 
+    if intent == "collect_customer_info":
+        return _collect_customer_info(state, slots)
+
+    if intent == "set_order_type":
+        return _set_order_type(state, slots)
+
+    if intent == "collect_delivery_address":
+        return _collect_delivery_address(state, slots)
+
+    if intent == "request_payment_link":
+        return _request_payment_link(state, slots)
+
+    if intent == "collect_card_payment":
+        return _collect_card_payment(state, slots)
+
+    if intent == "pay_at_pickup":
+        return _pay_at_pickup(state, slots)
+
+    return state
+
+
+def _collect_customer_info(state, slots):
+    """
+    Store customer name and phone in the order state.
+    """
+    customer_name = slots.get("customer_name")
+    phone = slots.get("phone")
+
+    if customer_name or phone:
+        state.setdefault("customer", {})
+        if customer_name:
+            state["customer"]["name"] = customer_name
+        if phone:
+            state["customer"]["phone"] = phone
+
+    return state
+
+
+def _set_order_type(state, slots):
+    """
+    Set whether the order is for pickup or delivery.
+    """
+    order_type = slots.get("order_type")
+    if order_type in ("pickup", "delivery"):
+        state["order_type"] = order_type
+    return state
+
+
+def _collect_delivery_address(state, slots):
+    """
+    Store the delivery address for delivery orders.
+    """
+    address = slots.get("delivery_address")
+    if address:
+        state["delivery_address"] = address
+        # Ensure order type is set to delivery
+        state["order_type"] = "delivery"
+    return state
+
+
+def _request_payment_link(state, slots):
+    """
+    Customer requested to pay via SMS link.
+    Sets payment_method to 'card_link' and payment_status to 'pending_payment'.
+    """
+    state["payment_method"] = "card_link"
+    state["payment_status"] = "pending_payment"
+    return state
+
+
+def _collect_card_payment(state, slots):
+    """
+    Customer provided card details over the phone.
+    In production, this would process the payment via Stripe/etc.
+    For now, we mock it as successful.
+    """
+    card_number = slots.get("card_number")
+    card_expiry = slots.get("card_expiry")
+    card_cvv = slots.get("card_cvv")
+
+    if card_number and card_expiry and card_cvv:
+        # Mock payment processing - in production, call payment processor here
+        # DO NOT store card details - pass directly to processor
+        state["payment_method"] = "card_phone"
+        state["payment_status"] = "paid"  # Mock: assume success
+    return state
+
+
+def _pay_at_pickup(state, slots):
+    """
+    Customer will pay at pickup/delivery (cash or card).
+    """
+    state["payment_method"] = "pay_later"  # Will pay at store/delivery
+    state["payment_status"] = "unpaid"
     return state
 
 
@@ -288,29 +388,31 @@ def _repeat_order(state, slots, menu_index, returning_customer):
 
 
 def _add_sandwich(state, slots, menu_index):
+    """
+    Add a sandwich to the order.
+
+    Handles both signature sandwiches and custom/build-your-own sandwiches.
+    """
     name = slots.get("menu_item_name")
     qty = slots.get("quantity") or 1
 
-    # Get customization choices
+    # Get sandwich-specific customization choices
     bread = slots.get("bread")
     protein = slots.get("protein")
     cheese = slots.get("cheese")
     toppings = slots.get("toppings") or []
     sauces = slots.get("sauces") or []
+    size = slots.get("size")
 
     # Check if this should be treated as a custom sandwich
     is_custom = _is_custom_sandwich_order(name, menu_index)
 
     if is_custom:
         # Custom sandwich pricing: base + protein + bread premium
-        # If protein not provided but name contains one (e.g., "turkey sandwich"), extract it
         if not protein:
             protein = _extract_protein_from_name(name, menu_index)
-
         unit_price = _calculate_custom_sandwich_price(menu_index, protein, bread)
         display_name = "Custom Sandwich"
-
-        # If we extracted a protein from the name, include it in display
         if protein:
             display_name = f"Custom {protein} Sandwich"
     else:
@@ -331,7 +433,7 @@ def _add_sandwich(state, slots, menu_index):
     item = {
         "item_type": "sandwich",
         "menu_item_name": display_name,
-        "size": slots.get("size"),
+        "size": size,
         "bread": bread,
         "protein": protein,
         "cheese": cheese,
@@ -341,12 +443,159 @@ def _add_sandwich(state, slots, menu_index):
         "quantity": qty,
         "unit_price": unit_price,
         "line_total": line_total,
-        "is_custom": is_custom,  # Track if this is a custom sandwich
+        "is_custom": is_custom,
     }
 
     state["items"].append(item)
     state["status"] = "collecting_items"
     return state
+
+
+def _add_pizza(state, slots, menu_index):
+    """
+    Add a pizza to the order.
+
+    Handles both signature pizzas and custom/build-your-own pizzas.
+    Pizza-specific attributes: size, crust, sauce, cheese, toppings.
+    """
+    name = slots.get("menu_item_name")
+    qty = slots.get("quantity") or 1
+
+    # Get pizza-specific customization choices
+    size = slots.get("size")
+    crust = slots.get("crust")
+    cheese = slots.get("cheese")
+    toppings = slots.get("toppings") or []
+    # Handle both single sauce (typical for pizza) and sauces array
+    sauce = slots.get("sauce")
+    sauces = slots.get("sauces") or []
+    if sauce and not sauces:
+        sauces = [sauce]
+
+    # Check if this is a custom/build-your-own pizza
+    is_custom = _is_custom_pizza_order(name, menu_index)
+
+    if is_custom:
+        # For custom pizza, use Build Your Own Pizza as the base
+        menu_item = _find_menu_item(menu_index, "Build Your Own Pizza")
+        base = menu_item.get("base_price", 10.99) if menu_item else 10.99
+
+        # Calculate price adjustments for size
+        size_extra = _get_size_price_adjustment(size, menu_item, menu_index)
+
+        # Calculate extras for toppings, cheese, etc.
+        extras = _calculate_pizza_extras(menu_item, crust, cheese, toppings, sauces, menu_index)
+
+        unit_price = base + size_extra + extras
+        display_name = "Build Your Own Pizza"
+    else:
+        # Signature pizza pricing: base price + customization extras
+        menu_item = _find_menu_item(menu_index, name)
+        base = menu_item.get("base_price", 0) if menu_item else 0
+
+        # Calculate price adjustments for size (signature pizzas also vary by size)
+        size_extra = _get_size_price_adjustment(size, menu_item, menu_index)
+
+        # Calculate extras for additional toppings, cheese upgrades, etc.
+        extras = _calculate_pizza_extras(menu_item, crust, cheese, toppings, sauces, menu_index)
+
+        unit_price = base + size_extra + extras
+        display_name = name
+
+    line_total = unit_price * qty
+
+    item = {
+        "item_type": "pizza",
+        "menu_item_name": display_name,
+        "size": size,
+        "crust": crust,
+        "cheese": cheese,
+        "toppings": toppings,
+        "sauces": sauces,
+        "quantity": qty,
+        "unit_price": unit_price,
+        "line_total": line_total,
+        "is_custom": is_custom,
+    }
+
+    state["items"].append(item)
+    state["status"] = "collecting_items"
+    return state
+
+
+def _is_custom_pizza_order(item_name: str, menu_index: Dict[str, Any]) -> bool:
+    """
+    Determine if a pizza order should be treated as a custom/build-your-own pizza.
+
+    Returns True if:
+    - The item name explicitly indicates custom/build-your-own
+    - The item name is not found in the menu as a signature pizza
+    """
+    if not item_name:
+        return True  # No name = custom pizza
+
+    name_lower = item_name.lower()
+
+    # Explicit custom indicators
+    if "custom" in name_lower or "build your own" in name_lower or "create your own" in name_lower:
+        return True
+
+    # Check if it's a known signature menu item
+    menu_item = _find_menu_item(menu_index, item_name)
+    if menu_item and menu_item.get("is_signature"):
+        return False
+
+    # If not found in menu at all, treat as custom
+    if not menu_item:
+        return True
+
+    return False
+
+
+def _calculate_pizza_extras(
+    menu_item: Dict[str, Any],
+    crust: str = None,
+    cheese: str = None,
+    toppings: List[str] = None,
+    sauces: List[str] = None,
+    menu_index: Dict[str, Any] = None
+) -> float:
+    """
+    Calculate extra price for pizza customizations.
+
+    Premium crusts, extra cheese, and premium toppings may have additional costs.
+    """
+    total_extra = 0.0
+
+    # Crust upgrades (e.g., Stuffed Crust might cost extra)
+    if crust:
+        total_extra += _get_extra_price_for_choice(menu_item, "Crust", crust, menu_index)
+
+    # Cheese upgrades (e.g., Extra Mozzarella)
+    if cheese:
+        total_extra += _get_extra_price_for_choice(menu_item, "Cheese", cheese, menu_index)
+
+    # Toppings (each topping may have a price)
+    for topping in (toppings or []):
+        total_extra += _get_extra_price_for_choice(menu_item, "Toppings", topping, menu_index)
+
+    # Sauce (usually no extra charge, but premium sauces might)
+    for sauce in (sauces or []):
+        total_extra += _get_extra_price_for_choice(menu_item, "Sauce", sauce, menu_index)
+
+    return total_extra
+
+
+def _get_size_price_adjustment(size: str, menu_item: Dict[str, Any], menu_index: Dict[str, Any]) -> float:
+    """
+    Get the price adjustment for a specific size.
+
+    Sizes typically have price modifiers (e.g., Small=0, Medium=+2, Large=+4).
+    """
+    if not size:
+        return 0.0
+
+    return _get_extra_price_for_choice(menu_item, "Size", size, menu_index)
 
 
 def _add_drink(state, slots, menu_index):
@@ -405,7 +654,7 @@ def _add_side(state, slots, menu_index):
 
 def _update_sandwich(state, slots, menu_index):
     """
-    Update an existing sandwich item in the order.
+    Update an existing sandwich in the order.
     Uses item_index to identify which item to update.
     Only updates fields that are provided (non-None) in slots.
     Recalculates price including any extra_price from customizations.
@@ -429,7 +678,7 @@ def _update_sandwich(state, slots, menu_index):
     # Track if any customization changed (for price recalculation)
     customization_changed = False
 
-    # Only update fields that are explicitly provided
+    # Only update sandwich-specific fields that are explicitly provided
     if slots.get("bread") is not None:
         item["bread"] = slots["bread"]
         customization_changed = True
@@ -473,6 +722,84 @@ def _update_sandwich(state, slots, menu_index):
         )
 
         item["unit_price"] = base + extras
+        item["line_total"] = item["unit_price"] * item["quantity"]
+
+    return state
+
+
+def _update_pizza(state, slots, menu_index):
+    """
+    Update an existing pizza in the order.
+    Uses item_index to identify which item to update.
+    Only updates fields that are provided (non-None) in slots.
+    Recalculates price including size and customization extras.
+    """
+    item_index = slots.get("item_index")
+
+    # If no index provided, try to find the last pizza in the order
+    if item_index is None:
+        for i in range(len(state["items"]) - 1, -1, -1):
+            if state["items"][i].get("item_type") == "pizza":
+                item_index = i
+                break
+
+    # Validate index
+    if item_index is None or item_index < 0 or item_index >= len(state["items"]):
+        # Can't update - no valid item found
+        return state
+
+    item = state["items"][item_index]
+
+    # Track if any customization changed (for price recalculation)
+    customization_changed = False
+
+    # Only update pizza-specific fields that are explicitly provided
+    if slots.get("size") is not None:
+        item["size"] = slots["size"]
+        customization_changed = True
+    if slots.get("crust") is not None:
+        item["crust"] = slots["crust"]
+        customization_changed = True
+    if slots.get("cheese") is not None:
+        item["cheese"] = slots["cheese"]
+        customization_changed = True
+    if slots.get("toppings") is not None:
+        item["toppings"] = slots["toppings"]
+        customization_changed = True
+    # Handle both single sauce and sauces array
+    if slots.get("sauce") is not None:
+        item["sauces"] = [slots["sauce"]]
+        customization_changed = True
+    if slots.get("sauces") is not None:
+        item["sauces"] = slots["sauces"]
+        customization_changed = True
+    if slots.get("quantity") is not None:
+        item["quantity"] = slots["quantity"]
+
+    # If changing to a different menu item
+    if slots.get("menu_item_name") is not None:
+        item["menu_item_name"] = slots["menu_item_name"]
+        customization_changed = True
+
+    # Recalculate price if customizations changed
+    if customization_changed or slots.get("quantity") is not None:
+        menu_item = _find_menu_item(menu_index, item["menu_item_name"])
+        base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
+
+        # Calculate size adjustment
+        size_extra = _get_size_price_adjustment(item.get("size"), menu_item, menu_index)
+
+        # Calculate pizza-specific extras
+        extras = _calculate_pizza_extras(
+            menu_item,
+            item.get("crust"),
+            item.get("cheese"),
+            item.get("toppings"),
+            item.get("sauces"),
+            menu_index,
+        )
+
+        item["unit_price"] = base + size_extra + extras
         item["line_total"] = item["unit_price"] * item["quantity"]
 
     return state
@@ -533,9 +860,23 @@ def _confirm(state, slots, menu_index):
         menu_item = _find_menu_item(menu_index, it["menu_item_name"])
         base = menu_item.get("base_price", 0) if menu_item else it.get("unit_price", 0)
 
-        # Calculate extras for sandwiches with customizations
+        # Calculate extras based on item type
         extras = 0.0
-        if it.get("item_type") == "sandwich":
+        item_type = it.get("item_type")
+
+        if item_type == "pizza":
+            # Pizza-specific pricing: size + crust + cheese + toppings + sauce
+            size_extra = _get_size_price_adjustment(it.get("size"), menu_item, menu_index)
+            extras = size_extra + _calculate_pizza_extras(
+                menu_item,
+                it.get("crust"),
+                it.get("cheese"),
+                it.get("toppings"),
+                it.get("sauces"),
+                menu_index,
+            )
+        elif item_type == "sandwich":
+            # Sandwich-specific pricing: bread + cheese + protein + toppings + sauces
             extras = _calculate_customization_extras(
                 menu_item,
                 it.get("bread"),

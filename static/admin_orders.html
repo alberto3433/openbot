@@ -260,17 +260,20 @@
   <script>
     const API_BASE = "";
 
-    // Store ID to name mapping - loaded dynamically from API
-    let STORE_NAMES = {};
+    // Store ID to name and timezone mapping - loaded dynamically from API
+    let STORE_DATA = {};
 
     async function loadStores() {
       try {
         const resp = await fetch("/stores");
         if (resp.ok) {
           const stores = await resp.json();
-          STORE_NAMES = {};
+          STORE_DATA = {};
           stores.forEach(store => {
-            STORE_NAMES[store.store_id] = store.name;
+            STORE_DATA[store.store_id] = {
+              name: store.name,
+              timezone: store.timezone || "America/New_York"
+            };
           });
         }
       } catch (err) {
@@ -280,7 +283,35 @@
 
     function getStoreName(storeId) {
       if (!storeId) return "-";
-      return STORE_NAMES[storeId] || storeId;
+      return STORE_DATA[storeId]?.name || storeId;
+    }
+
+    function getStoreTimezone(storeId) {
+      if (!storeId) return "America/New_York";
+      return STORE_DATA[storeId]?.timezone || "America/New_York";
+    }
+
+    // Format a UTC datetime string in the store's timezone
+    function formatInStoreTimezone(utcDateStr, storeId) {
+      if (!utcDateStr) return "";
+      try {
+        const date = new Date(utcDateStr);
+        if (isNaN(date.getTime())) return utcDateStr;
+
+        const timezone = getStoreTimezone(storeId);
+        return date.toLocaleString("en-US", {
+          timeZone: timezone,
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true
+        });
+      } catch (err) {
+        console.error("Failed to format date:", err);
+        return utcDateStr;
+      }
     }
 
     let currentPage = 1;
@@ -447,10 +478,43 @@
               ? `Sauces: ${item.sauces.join(", ")}`
               : "";
 
+            // Handle item_config for coffee/drinks
+            let configStr = "";
+            if (item.item_config) {
+              const configParts = [];
+              if (item.item_config.size) configParts.push(item.item_config.size);
+              if (item.item_config.style) {
+                configParts.push(item.item_config.style);
+              }
+              if (item.item_config.milk && item.item_config.milk.toLowerCase() !== "none") {
+                configParts.push(item.item_config.milk.replace(/_/g, " "));
+              }
+              if (item.item_config.syrup) {
+                const syrups = Array.isArray(item.item_config.syrup) ? item.item_config.syrup : [item.item_config.syrup];
+                syrups.forEach(s => {
+                  const formatted = s.replace(/_/g, " ");
+                  // Don't add "syrup" if it's already in the name
+                  configParts.push(formatted.toLowerCase().includes("syrup") ? formatted : formatted + " syrup");
+                });
+              }
+              if (item.item_config.sweetener) {
+                const sweeteners = Array.isArray(item.item_config.sweetener) ? item.item_config.sweetener : [item.item_config.sweetener];
+                sweeteners.filter(s => s).forEach(s => configParts.push(s.replace(/_/g, " ")));
+              }
+              if (item.item_config.extras) {
+                const cfgExtras = Array.isArray(item.item_config.extras) ? item.item_config.extras : [item.item_config.extras];
+                cfgExtras.filter(e => e).forEach(e => configParts.push(e.replace(/_/g, " ")));
+              }
+              configStr = configParts.join(" • ");
+            }
+
+            // For drinks with item_config, use configStr; otherwise use extrasStr
+            const displayExtras = item.item_config ? configStr : extrasStr;
+
             return `
               <div class="item-card">
                 <div><strong>${item.quantity}× ${item.menu_item_name}</strong></div>
-                <div class="muted">${extrasStr}</div>
+                <div class="muted">${displayExtras}</div>
                 <div class="muted">
                   ${toppings}<br/>
                   ${sauces}
@@ -460,6 +524,8 @@
             `;
           })
           .join("");
+
+        const formattedCreatedAt = formatInStoreTimezone(order.created_at, order.store_id);
 
         detailsContent.innerHTML = `
           <div class="details-grid">
@@ -471,9 +537,9 @@
             <div><strong>Order Type:</strong> ${order.order_type || "pickup"}</div>
             <div><strong>Delivery Address:</strong> ${order.delivery_address || ""}</div>
             <div><strong>Payment:</strong> ${order.payment_method || ""} (${order.payment_status || "unpaid"})</div>
-            <div><strong>Pickup:</strong> ${order.pickup_time || ""}</div>
+            <div><strong>Ready Time:</strong> ${order.pickup_time || ""}</div>
             <div><strong>Total:</strong> $${order.total_price.toFixed(2)}</div>
-            <div><strong>Created:</strong> ${order.created_at || ""}</div>
+            <div><strong>Created:</strong> ${formattedCreatedAt}</div>
           </div>
           <div class="items-list">
             <h3 style="font-size:14px; margin:8px 0 4px;">Items</h3>

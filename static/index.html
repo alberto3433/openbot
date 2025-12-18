@@ -104,6 +104,51 @@
       opacity: 0.6;
       cursor: default;
     }
+    /* Microphone button styles */
+    .mic-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: #f0f0f0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: all 0.2s;
+    }
+    .mic-btn:hover {
+      background: #e0e0e0;
+    }
+    .mic-btn.listening {
+      background: #ef5350;
+      animation: pulse 1.5s infinite;
+    }
+    .mic-btn.listening:hover {
+      background: #e53935;
+    }
+    .mic-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    .mic-status {
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+      min-height: 16px;
+      padding: 2px 0;
+    }
+    .mic-status.error {
+      color: #c62828;
+    }
+    .mic-status.listening {
+      color: #2e7d32;
+    }
     .status-bar {
       font-size: 12px;
       color: #777;
@@ -288,6 +333,7 @@
     </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="status-bar" id="status-bar">Disconnected</div>
+    <div class="mic-status" id="mic-status"></div>
     <form class="chat-footer" id="chat-form">
       <input
         type="text"
@@ -295,6 +341,7 @@
         autocomplete="off"
         placeholder="Type your message..."
       />
+      <button type="button" class="mic-btn" id="mic-btn" title="Voice input (click to speak)">🎤</button>
       <button type="submit">Send</button>
     </form>
   </div>
@@ -1069,6 +1116,162 @@
         speakText(text);
       }
     };
+
+    // =====================================================
+    // Speech Recognition (Voice Input) Functionality
+    // =====================================================
+
+    const micBtn = document.getElementById("mic-btn");
+    const micStatus = document.getElementById("mic-status");
+
+    // Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isListening = false;
+
+    function setMicStatus(message, type = "") {
+      micStatus.textContent = message;
+      micStatus.className = "mic-status" + (type ? ` ${type}` : "");
+      // Auto-clear non-error messages after 3 seconds
+      if (type !== "error" && message) {
+        setTimeout(() => {
+          if (micStatus.textContent === message) {
+            micStatus.textContent = "";
+            micStatus.className = "mic-status";
+          }
+        }, 3000);
+      }
+    }
+
+    if (!SpeechRecognition) {
+      // Browser doesn't support speech recognition
+      micBtn.disabled = true;
+      micBtn.title = "Speech recognition not supported in this browser";
+      setMicStatus("Voice input not supported", "error");
+      console.warn("[Speech] SpeechRecognition API not supported");
+    } else {
+      // Initialize speech recognition
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;  // Stop after user pauses
+      recognition.interimResults = true;  // Show partial results as user speaks
+      recognition.lang = "en-US";
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isListening = true;
+        micBtn.classList.add("listening");
+        micBtn.textContent = "🔴";
+        setMicStatus("Listening... speak now", "listening");
+        console.log("[Speech] Recognition started");
+
+        // Stop any TTS playback when user starts speaking
+        if (typeof stopSpeaking === "function") {
+          stopSpeaking();
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let finalTranscript = "";
+        let interimTranscript = "";
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Show interim results in the input field
+        if (interimTranscript) {
+          inputEl.value = interimTranscript;
+          setMicStatus("Listening...", "listening");
+        }
+
+        // When we have a final result, put it in the input
+        if (finalTranscript) {
+          inputEl.value = finalTranscript;
+          console.log("[Speech] Final transcript:", finalTranscript);
+        }
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        micBtn.classList.remove("listening");
+        micBtn.textContent = "🎤";
+        console.log("[Speech] Recognition ended");
+
+        // Auto-send if we have text in the input
+        const text = inputEl.value.trim();
+        if (text) {
+          setMicStatus("Sending...", "");
+          // Small delay to let user see what was transcribed
+          setTimeout(() => {
+            inputEl.value = "";
+            sendMessage(text);
+            setMicStatus("");
+          }, 300);
+        } else {
+          setMicStatus("No speech detected", "");
+        }
+      };
+
+      recognition.onerror = (event) => {
+        isListening = false;
+        micBtn.classList.remove("listening");
+        micBtn.textContent = "🎤";
+        console.error("[Speech] Recognition error:", event.error);
+
+        let errorMessage = "Voice error";
+        switch (event.error) {
+          case "no-speech":
+            errorMessage = "No speech detected";
+            break;
+          case "audio-capture":
+            errorMessage = "No microphone found";
+            break;
+          case "not-allowed":
+            errorMessage = "Microphone access denied";
+            break;
+          case "network":
+            errorMessage = "Network error";
+            break;
+          case "aborted":
+            errorMessage = ""; // User cancelled, no need to show error
+            break;
+        }
+
+        if (errorMessage) {
+          setMicStatus(errorMessage, "error");
+        }
+      };
+
+      // Mic button click handler
+      micBtn.addEventListener("click", () => {
+        if (!connected || !sessionId) {
+          setMicStatus("Start a session first", "error");
+          return;
+        }
+
+        if (isListening) {
+          // Stop listening
+          recognition.stop();
+          setMicStatus("Stopped", "");
+        } else {
+          // Start listening
+          try {
+            inputEl.value = "";  // Clear any existing text
+            recognition.start();
+          } catch (err) {
+            console.error("[Speech] Failed to start recognition:", err);
+            setMicStatus("Failed to start voice input", "error");
+          }
+        }
+      });
+
+      console.log("[Speech] Voice recognition initialized");
+    }
   </script>
 </body>
 </html>

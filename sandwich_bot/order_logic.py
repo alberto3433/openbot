@@ -224,7 +224,7 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
     if intent == "add_pizza":
         return _add_pizza(state, slots, menu_index)
 
-    if intent == "add_drink":
+    if intent == "add_drink" or intent == "add_coffee":
         return _add_drink(state, slots, menu_index)
 
     if intent == "add_side":
@@ -611,14 +611,77 @@ def _get_size_price_adjustment(size: str, menu_item: Dict[str, Any], menu_index:
 def _add_drink(state, slots, menu_index):
     name = slots.get("menu_item_name")
     qty = slots.get("quantity") or 1
+    size = slots.get("size")
+    item_config = slots.get("item_config") or {}
+
+    # LLM might put coffee attributes directly in slots instead of item_config
+    # Merge them into item_config for consistent handling
+    coffee_attrs = ["style", "milk", "syrup", "sweetener", "extras"]
+    for attr in coffee_attrs:
+        if attr in slots and slots[attr] and attr not in item_config:
+            item_config[attr] = slots[attr]
+
+    # Size can come from slots directly or from item_config
+    if not size and item_config:
+        size = item_config.get("size")
 
     menu_item = _find_menu_item(menu_index, name)
     base = menu_item.get("base_price", 0) if menu_item else 0
 
+    # Check if this is a configurable drink (like coffee with sizes and customizations)
+    item_type_slug = menu_item.get("item_type") if menu_item else None
+    total_modifier = 0.0
+
+    if item_type_slug:
+        item_type_data = menu_index.get("item_types", {}).get(item_type_slug, {})
+        if item_type_data.get("is_configurable"):
+            # Calculate price modifiers for ALL selected options
+            for attr in item_type_data.get("attributes", []):
+                attr_slug = attr.get("slug")
+                # Check item_config first, then direct slots
+                attr_value = item_config.get(attr_slug) or slots.get(attr_slug)
+
+                # Also check direct slots for size
+                if attr_slug == "size" and not attr_value:
+                    attr_value = size
+
+                if not attr_value:
+                    continue
+
+                # Handle both single values and lists (for multi_select)
+                values = attr_value if isinstance(attr_value, list) else [attr_value]
+
+                for val in values:
+                    if not val or str(val).lower() == "none":
+                        continue
+                    # Normalize the value for matching
+                    val_normalized = str(val).lower().replace(" ", "_")
+                    # Also try without common suffixes like "_syrup", "_milk"
+                    val_base = val_normalized.replace("_syrup", "").replace("_milk", "")
+
+                    for opt in attr.get("options", []):
+                        opt_slug = opt.get("slug", "")
+                        # Match on exact slug, normalized value, or base value
+                        if opt_slug == val_normalized or opt_slug == val_base or opt_slug in val_normalized:
+                            total_modifier += opt.get("price_modifier", 0.0)
+                            break
+
+    unit_price = base + total_modifier
+
+    # Build a display-friendly item config
+    display_config = {}
+    if size:
+        display_config["size"] = size
+    if item_config:
+        for key, val in item_config.items():
+            if val and str(val).lower() != "none" and key != "size":
+                display_config[key] = val
+
     item = {
         "item_type": "drink",
         "menu_item_name": name,
-        "size": None,
+        "size": size,
+        "item_config": display_config if display_config else None,
         "bread": None,
         "protein": None,
         "cheese": None,
@@ -626,8 +689,8 @@ def _add_drink(state, slots, menu_index):
         "sauces": [],
         "toasted": None,
         "quantity": qty,
-        "unit_price": base,
-        "line_total": base * qty,
+        "unit_price": unit_price,
+        "line_total": unit_price * qty,
     }
 
     state["items"].append(item)
@@ -896,6 +959,10 @@ def _confirm(state, slots, menu_index):
                 it.get("sauces"),
                 menu_index,
             )
+        elif item_type == "drink":
+            # Drink-specific pricing: use item_config for coffee modifiers
+            # Keep the existing unit_price which was calculated correctly in _add_drink
+            extras = it.get("unit_price", base) - base  # Preserve existing extras
 
         it["unit_price"] = base + extras
         it["line_total"] = it["unit_price"] * it["quantity"]

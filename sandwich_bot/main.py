@@ -31,6 +31,7 @@ from .menu_index_builder import build_menu_index, get_menu_version
 from .logging_config import setup_logging
 from .tts import get_tts_provider
 from .email_service import send_payment_link_email
+from .voice_vapi import vapi_router
 
 # Configure logging at module load time
 setup_logging()
@@ -517,6 +518,7 @@ class StoreOut(BaseModel):
     zip_code: str
     phone: str
     hours: Optional[str] = None
+    timezone: str = "America/New_York"
     status: str
     payment_methods: List[str] = []
     deleted_at: Optional[datetime] = None
@@ -533,6 +535,7 @@ class StoreCreate(BaseModel):
     zip_code: str
     phone: str
     hours: Optional[str] = None
+    timezone: str = "America/New_York"
     status: str = "open"
     payment_methods: List[str] = ["cash", "credit"]
 
@@ -546,6 +549,7 @@ class StoreUpdate(BaseModel):
     zip_code: Optional[str] = None
     phone: Optional[str] = None
     hours: Optional[str] = None
+    timezone: Optional[str] = None
     status: Optional[str] = None
     payment_methods: Optional[List[str]] = None
 
@@ -662,6 +666,7 @@ class OrderItemOut(BaseModel):
     toppings: Optional[List[str]] = None
     sauces: Optional[List[str]] = None
     toasted: Optional[bool] = None
+    item_config: Optional[Dict[str, Any]] = None  # Coffee/drink modifiers (style, milk, syrup, etc.)
     quantity: int
     unit_price: float
     line_total: float
@@ -955,7 +960,7 @@ def chat_message(
     updated_order_state = order_state
 
     # Intents that add items to the order
-    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink"}
+    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee"}
 
     # Apply each action sequentially
     for action in actions:
@@ -1158,18 +1163,14 @@ def chat_message_stream(
         nonlocal session, history, order_state
 
         full_content = ""
-        logger.info("Starting stream generation for message: %s", req.message[:50] if req.message else "(empty)")
 
         # Create a new database session for use inside the generator
         # (The original db session from Depends(get_db) is closed after the handler returns)
         from .db import SessionLocal
-        logger.info("Creating stream_db session...")
         stream_db = SessionLocal()
-        logger.info("stream_db session created successfully")
 
         try:
             # Stream tokens from LLM
-            logger.info("Calling call_sandwich_bot_stream...")
             stream_gen = call_sandwich_bot_stream(
                 history,
                 order_state,
@@ -1184,7 +1185,6 @@ def chat_message_stream(
                 use_dynamic_prompt=True,
                 timeout=20,  # 20 second timeout for LLM response
             )
-            logger.info("stream_gen created, starting to iterate tokens...")
 
             # Yield tokens as they arrive
             token_count = 0
@@ -1192,14 +1192,13 @@ def chat_message_stream(
                 token_count += 1
                 full_content += token
                 yield f"data: {json.dumps({'token': token})}\n\n"
-                if token_count == 1:
-                    logger.info("First token received")
 
-            logger.info("Stream complete, %d tokens, full_content length: %d", token_count, len(full_content))
+            logger.debug("Stream complete, %d tokens", token_count)
             # Parse the full response
             try:
                 llm_result = json.loads(full_content)
             except json.JSONDecodeError:
+                logger.error("JSON decode failed! Raw content: %s", full_content[:500])
                 llm_result = {
                     "reply": "I'm sorry, I had trouble understanding that. Could you please rephrase?",
                     "actions": []
@@ -1223,19 +1222,23 @@ def chat_message_stream(
             processed_actions = []
             updated_order_state = order_state
 
-            ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink"}
+            ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee"}
+
+            # Track items that existed BEFORE this turn - only check duplicates against these
+            # This allows ordering multiple of the same item type in one message
+            items_before_turn = [item.get("menu_item_name", "").lower().strip()
+                                 for item in order_state.get("items", [])]
 
             for action in actions:
                 intent = action.get("intent", "unknown")
                 slots = action.get("slots", {})
 
+                # Only skip if item existed BEFORE this turn (prevents re-adding on follow-up messages)
+                # Don't skip items added in this same turn (allows "two coffees" in one message)
                 if intent in ADD_INTENTS:
-                    existing_items = updated_order_state.get("items", [])
                     menu_item_name = slots.get("menu_item_name", "").lower().strip()
-                    for existing_item in existing_items:
-                        if existing_item.get("menu_item_name", "").lower().strip() == menu_item_name:
-                            intent = "noop"
-                            break
+                    if menu_item_name in items_before_turn:
+                        intent = "noop"
 
                 if intent != "noop":
                     updated_order_state = apply_intent_to_order_state(
@@ -1336,6 +1339,7 @@ def chat_message_stream(
             history.append({"role": "user", "content": req.message})
             history.append({"role": "assistant", "content": reply})
             session["order"] = updated_order_state
+
             try:
                 save_session(stream_db, req.session_id, session)
                 logger.debug("Session saved successfully")
@@ -1346,9 +1350,7 @@ def chat_message_stream(
             primary_intent = processed_actions[0]["intent"] if processed_actions else "unknown"
             primary_slots = processed_actions[0]["slots"] if processed_actions else {}
 
-            logger.info("Sending final result - intent: %s, reply length: %d", primary_intent, len(reply))
             yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions, 'intent': primary_intent, 'slots': primary_slots})}\n\n"
-            logger.info("Stream generation complete")
 
         except Exception as e:
             logger.error("Streaming LLM call failed: %s", str(e), exc_info=True)
@@ -1366,6 +1368,46 @@ def chat_message_stream(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
+
+
+@chat_router.post("/debug/add-coffee")
+def debug_add_coffee(
+    session_id: str,
+    size: str = "medium",
+    db: Session = Depends(get_db),
+):
+    """
+    DEBUG ENDPOINT: Directly add a coffee to a session, bypassing the LLM.
+    Use this to test if the order logic works correctly.
+
+    Example: POST /api/chat/debug/add-coffee?session_id=xxx&size=medium
+    """
+    session = get_or_create_session(db, session_id)
+    if session is None:
+        return {"error": "Invalid session_id"}
+
+    order_state = session["order"]
+    menu_index = build_menu_index(db)
+
+    # Directly apply add_drink intent
+    slots = {
+        "menu_item_name": "Coffee",
+        "quantity": 1,
+        "item_config": {"size": size, "style": "black"}
+    }
+
+    updated_state = apply_intent_to_order_state(order_state, "add_drink", slots, menu_index)
+
+    # Save the session
+    session["order"] = updated_state
+    save_session(db, session_id, session)
+
+    return {
+        "success": True,
+        "items_count": len(updated_state.get("items", [])),
+        "items": [{"name": i.get("menu_item_name"), "price": i.get("unit_price")} for i in updated_state.get("items", [])],
+        "order_state": updated_state,
+    }
 
 
 @chat_router.post("/abandon", status_code=204)
@@ -1567,6 +1609,7 @@ def persist_confirmed_order(
             toppings=it.get("toppings") or [],
             sauces=it.get("sauces") or [],
             toasted=it.get("toasted"),
+            item_config=it.get("item_config"),  # Coffee/drink modifiers (style, milk, syrup, etc.)
             quantity=it.get("quantity", 1),
             unit_price=it.get("unit_price", 0.0),
             line_total=it.get("line_total", 0.0),
@@ -1744,9 +1787,14 @@ def list_orders(
             status=o.status,
             customer_name=o.customer_name,
             phone=o.phone,
+            customer_email=o.customer_email,
             pickup_time=o.pickup_time,
             total_price=o.total_price,
             store_id=o.store_id,
+            order_type=o.order_type,
+            delivery_address=o.delivery_address,
+            payment_status=o.payment_status,
+            payment_method=o.payment_method,
         )
         for o in orders
     ]
@@ -1777,16 +1825,22 @@ def get_order_detail(
 
     created_at_str = ""
     if getattr(order, "created_at", None):
-        created_at_str = order.created_at.isoformat()
+        # Append 'Z' to indicate UTC so JavaScript parses it correctly
+        created_at_str = order.created_at.isoformat() + "Z"
 
     return OrderDetailOut(
         id=order.id,
         status=order.status,
         customer_name=order.customer_name,
         phone=order.phone,
+        customer_email=order.customer_email,
         pickup_time=order.pickup_time,
         total_price=order.total_price,
         store_id=order.store_id,
+        order_type=order.order_type,
+        delivery_address=order.delivery_address,
+        payment_status=order.payment_status,
+        payment_method=order.payment_method,
         created_at=created_at_str,
         items=items_out,
     )
@@ -2703,6 +2757,7 @@ api_v1_router.include_router(admin_company_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
+api_v1_router.include_router(vapi_router)
 
 app.include_router(api_v1_router)
 
@@ -2718,3 +2773,4 @@ app.include_router(admin_company_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)
+app.include_router(vapi_router)

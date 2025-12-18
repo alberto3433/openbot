@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Generator
 
 from dotenv import load_dotenv
-from openai import OpenAI, APITimeoutError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -20,26 +19,60 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent  # project root (where 
 env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
 
-api_key = os.getenv("OPENAI_API_KEY")
+# --------------------------------------------------------------------------------------
+# LLM Provider Configuration
+# Set LLM_PROVIDER=claude or LLM_PROVIDER=openai in .env to switch providers
+# --------------------------------------------------------------------------------------
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 
-# Configurable model name - defaults to gpt-4o (valid as of 2024)
-# Other valid options: gpt-4-turbo, gpt-4, gpt-3.5-turbo
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+# OpenAI configuration
+openai_api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
-# Log configuration at DEBUG level (no sensitive data in INFO or higher)
-logger.debug("OpenAI API key configured: %s", "Yes" if api_key else "No")
+# Anthropic/Claude configuration
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+
+# Set default model based on provider
+if LLM_PROVIDER == "claude":
+    DEFAULT_MODEL = ANTHROPIC_MODEL
+else:
+    DEFAULT_MODEL = OPENAI_MODEL
+
+logger.debug("LLM Provider: %s", LLM_PROVIDER)
 logger.debug("Using model: %s", DEFAULT_MODEL)
 
-if not api_key:
-    # Fail fast with a clear error if the key is missing
+# Initialize clients based on provider
+openai_client = None
+anthropic_client = None
+
+if LLM_PROVIDER == "openai":
+    if not openai_api_key:
+        raise RuntimeError(
+            f"OPENAI_API_KEY not found in {env_path}. "
+            "Create a .env file with OPENAI_API_KEY=sk-proj-... at the project root."
+        )
+    from openai import OpenAI, APITimeoutError as OpenAITimeoutError
+    openai_client = OpenAI(api_key=openai_api_key, timeout=DEFAULT_TIMEOUT)
+    logger.debug("OpenAI client initialized")
+
+elif LLM_PROVIDER == "claude":
+    if not anthropic_api_key:
+        raise RuntimeError(
+            f"ANTHROPIC_API_KEY not found in {env_path}. "
+            "Create a .env file with ANTHROPIC_API_KEY=sk-ant-... at the project root."
+        )
+    import anthropic
+    anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+    logger.debug("Anthropic/Claude client initialized")
+
+else:
     raise RuntimeError(
-        f"OPENAI_API_KEY not found in {env_path}. "
-        "Create a .env file with OPENAI_API_KEY=sk-proj-... at the project root."
+        f"Invalid LLM_PROVIDER '{LLM_PROVIDER}'. Must be 'openai' or 'claude'."
     )
 
-# Explicitly pass the key so we don't depend on any global environment
-# Set default timeout to prevent hanging requests
-client = OpenAI(api_key=api_key, timeout=DEFAULT_TIMEOUT)
+# For backward compatibility
+client = openai_client
 
 SYSTEM_PROMPT_TEMPLATE = """
 You are '__BOT_NAME__', a concise, polite sandwich-order bot for __COMPANY_NAME__.
@@ -71,6 +104,21 @@ Behavior rules:
 
 - Primary goal: help the user place a pickup order for sandwiches, sides, and drinks.
 - Keep responses short and efficient, but friendly.
+
+UPCHARGE CONFIRMATION FOR COFFEE ADD-ONS:
+When a customer requests a coffee add-on that has an upcharge, confirm the price BEFORE adding:
+- Almond/Oat/Soy Milk: +$0.50
+- Hazelnut/Vanilla Syrup: +$0.65
+- Peppermint Syrup: +$1.00
+- Extra Shot: +$2.50
+
+Example: Customer says "add hazelnut syrup to my coffee"
+→ actions: []
+→ reply: "Hazelnut syrup is +$0.65. Would you like to add that?"
+→ Customer says "yes"
+→ NOW add the coffee with the syrup
+
+NOTE: Basic coffee orders (size + black/light/dark) should be added IMMEDIATELY without asking for confirmation!
 - When the user asks about:
   * "signature sandwiches", "specials", "house favorites", etc.:
       1. Read MENU["signature_sandwiches"].
@@ -83,23 +131,43 @@ Behavior rules:
 - Stay focused on food and ordering; if the user goes off-topic, briefly respond then steer back to ordering.
 - When you need to fill slots (bread, size, protein, etc.), ask direct clarifying questions.
 
-ORDER FLOW - IMPORTANT SEQUENCE:
-Follow this order when taking orders:
-1. SANDWICH ORDER: Take the sandwich order, describe it, ask about customizations
-2. SIDES & DRINKS: After sandwich is confirmed, ask "Would you like any sides or drinks with that?"
-3. NAME & PHONE: Only AFTER they've had a chance to add sides/drinks (or declined), ask for name and phone
-4. CONFIRM: Summarize complete order and confirm
+ORDER FLOW - FLEXIBLE INTENT-BASED:
+Customers can order ANY item in ANY order. Handle each item type independently:
 
-- Do NOT ask for name/phone right after the sandwich - always offer sides/drinks first!
-- Example flow:
-  * Customer: "I'll have a Meatball Marinara"
-  * Bot: "[Describes sandwich]. Would you like to make any changes?"
-  * Customer: "That's perfect"
-  * Bot: "Great! Would you like to add any sides or drinks?" ← ASK THIS BEFORE NAME
-  * Customer: "Add chips and a Coke"
-  * Bot: "Got it! Your total is $12.07. Can I get a name for the order?" ← NOW ask for name
-- If customer declines sides/drinks ("no thanks", "that's all"):
-  * THEN ask for name and phone to complete the order
+WHEN CUSTOMER ORDERS SOMETHING - ALWAYS ADD IT IMMEDIATELY:
+- Sandwich → Use add_sandwich intent immediately
+- Coffee → Use add_drink intent immediately (ask size if not specified)
+- Soda/Water → Use add_drink intent immediately
+- Side (chips, cookie) → Use add_side intent immediately
+
+AFTER ADDING ANY ITEM:
+1. Confirm what was added
+2. Ask "Would you like anything else?" or "Can I get you anything else?"
+3. If they say "that's it" / "no" / "I'm done" → Ask for name and phone to complete order
+
+EXAMPLE FLOWS:
+
+Coffee-first order:
+  * Customer: "I'd like a coffee"
+  * Bot: "What size - small, medium, or large?"
+  * Customer: "Medium"
+  * Bot: [add_drink: Coffee, size=medium] "Got it, one medium black coffee! Would you like anything else?"
+  * Customer: "That's all"
+  * Bot: "Great! Can I get a name and phone for the order?"
+
+Sandwich-first order:
+  * Customer: "Turkey Club please"
+  * Bot: [add_sandwich: Turkey Club] "The Turkey Club comes with... Would you like any changes?"
+  * Customer: "No, that's good"
+  * Bot: "Would you like any sides or drinks with that?"
+
+Drink-only order:
+  * Customer: "Just a Coke"
+  * Bot: [add_drink: Coke] "One Coke! Anything else?"
+  * Customer: "No thanks"
+  * Bot: "Your total is $2.29. Can I get a name for pickup?"
+
+CRITICAL: Every item ordered MUST trigger an add_ action immediately. Never skip adding items!
 
 CUSTOM/BUILD-YOUR-OWN SANDWICHES:
 - Customers can order sandwiches that are NOT on our signature menu (e.g., "turkey sandwich", "ham and cheese", "roast beef sub").
@@ -163,19 +231,59 @@ OUT-OF-STOCK ITEMS (86'd):
 - If both lists are empty, everything is available.
 - Be helpful and proactive - always suggest a similar alternative.
 
-DRINK ORDERS - ASK FOR SPECIFICS:
-- Our drink menu includes: Coke, Diet Coke, Coke Zero, Sprite, Orange Fanta, and Bottled Water.
-- SPECIFIC DRINK NAMES - add directly WITHOUT asking:
-  * "Coke", "a coke", "coca-cola" → add "Coke" to order
-  * "Diet Coke", "diet" → add "Diet Coke" to order
-  * "Coke Zero", "zero" → add "Coke Zero" to order
-  * "Sprite" → add "Sprite" to order
-  * "Fanta", "Orange Fanta" → add "Orange Fanta" to order
-  * "water", "bottled water" → add "Bottled Water" to order
+DRINK ORDERS - READ FROM MENU:
+- Check MENU["drinks"] for all available drinks. Each drink has: name, base_price, item_type.
+- SIMPLE DRINKS (item_type="drink"): Sodas, water, etc. - add directly with add_drink intent.
+  * Examples: Coke, Diet Coke, Sprite, Bottled Water - add these directly when ordered.
 - GENERIC TERMS - ask for clarification:
-  * Only ask "which soda?" if they say something vague like: "soda", "pop", "soft drink", "fountain drink", "a drink"
-  * Example: "Sure! Which soda would you like - Coke, Diet Coke, Coke Zero, Sprite, or Orange Fanta?"
+  * Only ask "which drink?" if they say something vague like: "soda", "pop", "soft drink", "a drink"
+  * List options from MENU["drinks"] when clarifying.
 - IMPORTANT: "coke" by itself means Coca-Cola (the specific drink), NOT a generic term. Add it directly.
+
+COFFEE ORDERS - CONFIGURABLE DRINK:
+- Coffee is a configurable drink with sizes and optional customizations.
+- REQUIRED: Size (small, medium, large) - always ask if not specified.
+- DEFAULT: Black coffee (style: black) - no milk, no syrup, no sweetener.
+
+COFFEE ORDER FLOW - CRITICAL:
+
+STEP 1 - GATHER INFO (ask questions, no action yet):
+- If size is missing → Ask: "What size - small, medium, or large?"
+- If upcharge item requested → Ask: "Hazelnut syrup is +$0.65. Is that okay?"
+
+STEP 2 - ADD COFFEE (when you have size AND any upcharges are confirmed):
+- Return add_coffee action with ALL modifiers mentioned in the conversation
+- IMPORTANT: Include modifiers from EARLIER messages, not just the current one!
+
+REMEMBERING MODIFIERS - CRITICAL:
+When a customer says "coffee with hazelnut syrup" and you ask "what size?", you MUST remember
+the hazelnut syrup when they answer with the size. Look back at the conversation history!
+
+Example conversation:
+  User: "coffee with hazelnut syrup"
+  Bot: "Hazelnut syrup is +$0.65. What size would you like?" (actions: [])
+  User: "small"
+  Bot: "Got it!" → add_coffee with syrup: ["hazelnut"], size: "small"  ← INCLUDE THE HAZELNUT!
+
+WRONG: User asks for hazelnut, you ask size, then add coffee WITHOUT hazelnut
+RIGHT: User asks for hazelnut, you ask size, then add coffee WITH hazelnut included
+
+FREE OPTIONS (add directly, no confirmation needed):
+- Style: Black, Light, Dark
+- Milk: Whole Milk, Half N Half, Lactose Free
+- Sweetener: Sugar in the Raw, Domino Sugar, Equal, Splenda, Sweet & Low
+
+UPCHARGE OPTIONS (confirm price, then include when adding):
+- Almond Milk, Oat Milk, Soy Milk: +$0.50 each
+- Hazelnut Syrup, Vanilla Syrup: +$0.65 each
+- Peppermint Syrup: +$1.00
+- Extra Shot: +$2.50
+
+EXAMPLES:
+- "Large black coffee" → Add directly: size="large", style="black"
+- "Small coffee" → Add directly: size="small" (black is default)
+- "Coffee with hazelnut" → Ask "Hazelnut is +$0.65, what size?" → User: "small" → Add with size="small", syrup=["hazelnut"]
+- "Medium coffee with oat milk" → Ask "Oat milk is +$0.50. Is that okay?" → User: "yes" → Add with size="medium", milk="oat_milk"
 
 ORDER CONFIRMATION - CRITICAL:
 - You MUST have the customer's name AND phone number BEFORE confirming any order.
@@ -326,8 +434,13 @@ Always:
   * Return an EMPTY "actions" array [] when no order modification is needed.
   * Examples of when to return empty actions []:
     - Customer confirms their sandwich is fine ("it's okay", "that's good", "no changes")
-    - Customer answers a question ("yes", "no thanks")
+    - You're asking a clarifying question ("What size coffee?")
     - Customer asks about the menu without ordering
+    - Customer requests an upcharge add-on - ask for confirmation first
+  * Examples of when to return add_drink action:
+    - Customer specifies coffee size: "medium" → add_drink with Coffee, size=medium
+    - Customer orders "large black coffee" → add_drink immediately
+    - Customer confirms upcharge: "yes, add the hazelnut" → add_drink with syrup
 - For single-item orders, return one action. For multi-item orders, return multiple actions.
 - NEVER add the same item twice. If an item is already in ORDER STATE, don't add it again.
 - The "reply" MUST directly answer the user's question using data from MENU.
@@ -501,6 +614,7 @@ INTENT_TYPES = [
     "remove_item",
     "add_side",
     "add_drink",
+    "add_coffee",  # Alias for add_drink, specifically for coffee orders
     "collect_customer_info",
     "set_order_type",  # Set pickup or delivery
     "collect_delivery_address",  # Collect address for delivery orders
@@ -552,6 +666,8 @@ SLOTS_SCHEMA = {
         # Payment link delivery method
         "link_delivery_method": {"type": ["string", "null"]},  # "sms" or "email"
         "customer_email": {"type": ["string", "null"]},  # Email for payment link
+        # Generic item configuration for configurable items (coffee sizes, etc.)
+        "item_config": {"type": ["object", "null"]},  # e.g., {"size": "large"}
     },
     "required": [
         "item_type",
@@ -702,21 +818,35 @@ def call_sandwich_bot(
 
     messages.append({"role": "user", "content": user_content})
 
-    # Call OpenAI with timeout
+    # Call LLM based on provider
     request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
     try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.0,
-            timeout=request_timeout,
-        )
-        content = completion.choices[0].message.content
-        # Log the raw LLM response for debugging pizza order issues
+        if LLM_PROVIDER == "claude":
+            # Claude API: system message is passed separately
+            response = anthropic_client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=system_content,
+                messages=[msg for msg in messages if msg["role"] != "system"],
+                temperature=0.0,
+            )
+            content = response.content[0].text
+        else:
+            # OpenAI API
+            completion = openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                timeout=request_timeout,
+            )
+            content = completion.choices[0].message.content
+
+        # Log the raw LLM response for debugging
         logger.info("LLM raw response: %s", content[:1000] if content else "(empty)")
-    except APITimeoutError:
-        logger.error("LLM request timed out after %s seconds", request_timeout)
+    except Exception as e:
+        error_name = type(e).__name__
+        logger.error("LLM request failed (%s): %s", error_name, str(e))
         return {
             "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
             "actions": [],
@@ -840,28 +970,43 @@ def call_sandwich_bot_stream(
 
     messages.append({"role": "user", "content": user_content})
 
-    # Call OpenAI with streaming
+    # Call LLM with streaming based on provider
     request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
     full_content = ""
 
     try:
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.0,
-            timeout=request_timeout,
-            stream=True,
-        )
+        if LLM_PROVIDER == "claude":
+            # Claude streaming API
+            with anthropic_client.messages.stream(
+                model=model,
+                max_tokens=2048,
+                system=system_content,
+                messages=[msg for msg in messages if msg["role"] != "system"],
+                temperature=0.0,
+            ) as stream:
+                for text in stream.text_stream:
+                    full_content += text
+                    yield text
+        else:
+            # OpenAI streaming API
+            stream = openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                timeout=request_timeout,
+                stream=True,
+            )
 
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                token = chunk.choices[0].delta.content
-                full_content += token
-                yield token
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    full_content += token
+                    yield token
 
-    except APITimeoutError:
-        logger.error("LLM streaming request timed out after %s seconds", request_timeout)
+    except Exception as e:
+        error_name = type(e).__name__
+        logger.error("LLM streaming request failed (%s): %s", error_name, str(e))
         yield json.dumps({
             "reply": "I'm sorry, the request is taking longer than expected. Please try again.",
             "actions": [],

@@ -464,6 +464,7 @@ class Store(Base):
     zip_code = Column(String(10), nullable=False)
     phone = Column(String, nullable=False)
     hours = Column(Text, nullable=True)  # Store hours description
+    timezone = Column(String, nullable=False, default="America/New_York")  # IANA timezone, e.g., "America/Los_Angeles"
     status = Column(String, nullable=False, default="open")  # "open" or "closed"
     payment_methods = Column(JSON, nullable=False, default=list)  # ["cash", "credit", "bitcoin"]
 

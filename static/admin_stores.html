@@ -464,6 +464,19 @@
           </div>
 
           <div class="form-group">
+            <label for="storeTimezone">Timezone *</label>
+            <select id="storeTimezone" required>
+              <option value="America/New_York">Eastern Time (ET)</option>
+              <option value="America/Chicago">Central Time (CT)</option>
+              <option value="America/Denver">Mountain Time (MT)</option>
+              <option value="America/Los_Angeles">Pacific Time (PT)</option>
+              <option value="America/Anchorage">Alaska Time (AKT)</option>
+              <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
+            </select>
+            <div class="hint">Used for displaying order times correctly</div>
+          </div>
+
+          <div class="form-group">
             <label for="storeStatus">Status</label>
             <select id="storeStatus">
               <option value="open">Open</option>
@@ -569,6 +582,7 @@
           zip: s.zip_code,
           phone: s.phone,
           hours: s.hours,
+          timezone: s.timezone || "America/New_York",
           status: s.status,
           paymentMethods: s.payment_methods || ["cash", "credit"],
           deletedAt: s.deleted_at
@@ -748,6 +762,7 @@
       document.getElementById("storeZip").value = store.zip;
       document.getElementById("storePhone").value = store.phone;
       document.getElementById("storeHours").value = store.hours || "";
+      document.getElementById("storeTimezone").value = store.timezone || "America/New_York";
       document.getElementById("storeStatus").value = store.status;
       setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
       hidePaymentError();
@@ -777,6 +792,7 @@
       const zip = document.getElementById("storeZip").value.trim();
       const phone = document.getElementById("storePhone").value.trim();
       const hours = document.getElementById("storeHours").value.trim();
+      const timezone = document.getElementById("storeTimezone").value;
       const status = document.getElementById("storeStatus").value;
       const paymentMethods = getSelectedPaymentMethods();
 
@@ -802,6 +818,7 @@
         zip_code: zip,
         phone,
         hours: hours || null,
+        timezone,
         status,
         payment_methods: paymentMethods
       };

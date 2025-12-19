@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Local data and secrets
+.env
+*.db
+data/
+
+# Documentation
+*.md
+!README.md
+
+# Development files
+*.cmd
+*.bat
+nul
+
+# Claude settings
+.claude/
+
+# Misc
+.DS_Store
+Thumbs.db

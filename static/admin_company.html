@@ -358,7 +358,7 @@
     // Load company data from API
     async function loadCompany() {
       try {
-        const response = await fetch(API_BASE);
+        const response = await fetch(API_BASE, { credentials: 'include' });
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -405,7 +405,8 @@
         const response = await fetch(API_BASE, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          credentials: 'include'
         });
 
         if (!response.ok) {

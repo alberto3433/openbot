@@ -342,7 +342,7 @@
     async function loadIngredients() {
       const storeId = getCurrentStoreId();
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients?store_id=${storeId}`);
+        const resp = await fetch(`${API_BASE}/admin/ingredients?store_id=${storeId}`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         allIngredients = await resp.json();
         buildCategoryFilter();
@@ -462,7 +462,8 @@
         const resp = await fetch(`${API_BASE}/admin/ingredients/${id}/availability`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_available: newAvailable, store_id: storeId })
+          body: JSON.stringify({ is_available: newAvailable, store_id: storeId }),
+          credentials: 'include'
         });
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -491,7 +492,7 @@
     async function loadMenuItems() {
       const storeId = getCurrentStoreId();
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items?store_id=${storeId}`);
+        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items?store_id=${storeId}`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         allMenuItems = await resp.json();
         buildMenuItemCategoryFilter();
@@ -612,7 +613,8 @@
         const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items/${id}/availability`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_available: newAvailable, store_id: storeId })
+          body: JSON.stringify({ is_available: newAvailable, store_id: storeId }),
+          credentials: 'include'
         });
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

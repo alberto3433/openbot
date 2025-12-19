@@ -639,7 +639,7 @@
 
     async function fetchSummary() {
       try {
-        const resp = await fetch(`${API_BASE}/admin/analytics/summary`);
+        const resp = await fetch(`${API_BASE}/admin/analytics/summary`, { credentials: 'include' });
         if (!resp.ok) throw new Error("Failed to load summary");
         const data = await resp.json();
 
@@ -719,7 +719,7 @@
         if (currentReason) params.append("reason", currentReason);
         if (currentHadItems) params.append("had_items", currentHadItems);
 
-        const resp = await fetch(`${API_BASE}/admin/analytics/sessions?${params.toString()}`);
+        const resp = await fetch(`${API_BASE}/admin/analytics/sessions?${params.toString()}`, { credentials: 'include' });
         if (!resp.ok) throw new Error("Failed to load sessions");
         const data = await resp.json();
         sessionsData = data.items;  // Store for modal access

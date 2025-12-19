@@ -13,7 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status, Request, API
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
@@ -187,6 +187,29 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 # Add request ID middleware (before other middleware)
 app.add_middleware(RequestIDMiddleware)
 
+
+# ---------- Admin Static Files Protection Middleware ----------
+class AdminStaticProtectionMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware that blocks direct access to admin HTML files in /static/.
+    Users must access admin pages through the protected /admin-ui/{page} route.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Block direct access to admin files in /static/
+        if path.startswith("/static/admin_") and path.endswith(".html"):
+            # Redirect to the protected admin route
+            page_name = path.replace("/static/admin_", "").replace(".html", "")
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=f"/admin-ui/{page_name}", status_code=302)
+
+        return await call_next(request)
+
+
+app.add_middleware(AdminStaticProtectionMiddleware)
+
 # Add rate limit exception handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -321,8 +344,43 @@ def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> 
 
     db.commit()
 
-# Mount static files (chat UI, admin UI)
+# Mount static files (chat UI only - admin files are served through protected route)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ---------- Protected Admin Static Files ----------
+# Serve admin HTML files with basic auth protection
+# Uses /admin-ui/ prefix to avoid conflicts with /admin/* API routes
+
+ADMIN_PAGES = {
+    "menu": "admin_menu.html",
+    "orders": "admin_orders.html",
+    "ingredients": "admin_ingredients.html",
+    "analytics": "admin_analytics.html",
+    "stores": "admin_stores.html",
+    "company": "admin_company.html",
+}
+
+
+@app.get("/admin-ui/{page}", include_in_schema=False)
+async def serve_admin_page(
+    page: str,
+    _admin: str = Depends(verify_admin_credentials),
+):
+    """
+    Serve admin HTML pages with basic auth protection.
+    Maps /admin-ui/menu -> /static/admin_menu.html, etc.
+    """
+    import pathlib
+
+    if page not in ADMIN_PAGES:
+        raise HTTPException(status_code=404, detail="Admin page not found")
+
+    file_path = pathlib.Path("static") / ADMIN_PAGES[page]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Admin page not found")
+
+    return FileResponse(file_path, media_type="text/html")
 
 # ---------- API Routers with Versioning ----------
 # All API endpoints are versioned under /api/v1/

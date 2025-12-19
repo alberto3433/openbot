@@ -567,7 +567,7 @@
     // Load stores from API
     async function loadStores() {
       try {
-        const response = await fetch(API_BASE);
+        const response = await fetch(API_BASE, { credentials: 'include' });
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -830,14 +830,16 @@
           response = await fetch(`${API_BASE}/${editingStoreId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            credentials: 'include'
           });
         } else {
           // Create new store
           response = await fetch(API_BASE, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            credentials: 'include'
           });
         }
 
@@ -879,7 +881,8 @@
 
       try {
         const response = await fetch(`${API_BASE}/${deletingStoreId}`, {
-          method: "DELETE"
+          method: "DELETE",
+          credentials: 'include'
         });
 
         if (!response.ok) {
@@ -904,7 +907,8 @@
 
       try {
         const response = await fetch(`${API_BASE}/${storeId}/restore`, {
-          method: "POST"
+          method: "POST",
+          credentials: 'include'
         });
 
         if (!response.ok) {

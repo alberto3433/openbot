@@ -375,7 +375,9 @@
           params.append("status", currentStatus);
         }
 
-        const resp = await fetch(`${API_BASE}/admin/orders?${params.toString()}`);
+        const resp = await fetch(`${API_BASE}/admin/orders?${params.toString()}`, {
+          credentials: 'include'
+        });
         if (!resp.ok) {
           throw new Error(`Failed to load orders: ${resp.status}`);
         }
@@ -448,7 +450,9 @@
 
     async function loadOrderDetails(orderId) {
       try {
-        const resp = await fetch(`${API_BASE}/admin/orders/${orderId}`);
+        const resp = await fetch(`${API_BASE}/admin/orders/${orderId}`, {
+          credentials: 'include'
+        });
         if (!resp.ok) {
           throw new Error(`Failed to load order ${orderId}: ${resp.status}`);
         }

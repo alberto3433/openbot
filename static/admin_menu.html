@@ -615,7 +615,7 @@
     // Load ingredients for config builder
     async function loadIngredients() {
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients`);
+        const resp = await fetch(`${API_BASE}/admin/ingredients`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
 
@@ -758,7 +758,7 @@
     async function loadMenuItems() {
       setStatus("Loading menu...");
       try {
-        const resp = await fetch(`${API_BASE}/admin/menu`);
+        const resp = await fetch(`${API_BASE}/admin/menu`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         allItems = data;
@@ -1007,6 +1007,7 @@
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          credentials: 'include'
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const saved = await resp.json();
@@ -1034,6 +1035,7 @@
       try {
         const resp = await fetch(`${API_BASE}/admin/menu/${id}`, {
           method: "DELETE",
+          credentials: 'include'
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         await loadMenuItems();

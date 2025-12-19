@@ -25,10 +25,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import ChatSession, Store, Company
+from .models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index_builder import build_menu_index, get_menu_version
 from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
+from .email_service import send_payment_link_email
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,11 @@ def _get_or_create_phone_session(
 
     This enables returning customer detection and session continuity
     for callers who call back within the TTL window.
+
+    Session lookup priority:
+    1. In-memory cache (fastest, for same instance)
+    2. Database lookup (survives deployments)
+    3. Create new session (if no active session found)
     """
     # Periodic cleanup
     if len(_phone_sessions) > 100:
@@ -133,13 +139,55 @@ def _get_or_create_phone_session(
     # Normalize phone number (remove spaces, dashes)
     normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
 
-    # Check for existing session
+    # Check for existing session in memory cache
     if normalized_phone in _phone_sessions:
         session_data = _phone_sessions[normalized_phone]
         session_data["last_access"] = time.time()
-        logger.info("Resuming phone session for %s (session: %s)",
+        logger.info("Resuming phone session from cache for %s (session: %s)",
                    normalized_phone[-4:], session_data["session_id"][:8])
         return session_data["session_id"]
+
+    # Check database for active session from this phone (survives deployments)
+    existing_db_session = (
+        db.query(ChatSession)
+        .filter(ChatSession.caller_id == normalized_phone)
+        .order_by(ChatSession.id.desc())
+        .first()
+    )
+
+    if existing_db_session:
+        # Check if session is still active (not confirmed, has history)
+        order_state = existing_db_session.order_state or {}
+        order_status = order_state.get("status", "pending")
+
+        # Resume if order is not yet confirmed (still in progress)
+        if order_status not in ("confirmed",):
+            session_id = existing_db_session.session_id
+
+            # Rebuild session data from database
+            session_data = {
+                "history": existing_db_session.history or [],
+                "order": order_state,
+                "menu_version": existing_db_session.menu_version_sent,
+                "caller_id": normalized_phone,
+                "store_id": existing_db_session.store_id or store_id,
+                "returning_customer": None,  # Will be looked up if needed
+                "channel": "voice",
+            }
+
+            # Repopulate the cache
+            _phone_sessions[normalized_phone] = {
+                "session_id": session_id,
+                "last_access": time.time(),
+                "store_id": existing_db_session.store_id or store_id,
+                "session_data": session_data,
+            }
+
+            logger.info("Resumed phone session from database for %s (session: %s, messages: %d, items: %d)",
+                       normalized_phone[-4:], session_id[:8],
+                       len(session_data["history"]),
+                       len(order_state.get("items", [])))
+            return session_id
 
     # Create new session
     session_id = str(uuid.uuid4())
@@ -284,6 +332,127 @@ def _save_session_data(db: Session, session_id: str, session_data: Dict[str, Any
         db.commit()
 
 
+def _save_call_analytics(
+    db: Session,
+    phone_number: str,
+    ended_reason: str,
+    duration: Optional[int] = None,
+    transcript: Optional[str] = None,
+) -> None:
+    """
+    Save voice call analytics to SessionAnalytics table.
+
+    Called when a VAPI call ends to track voice session analytics
+    alongside web chat analytics.
+    """
+    # Normalize phone number
+    normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
+
+    # Look up session data from cache
+    session_data = None
+    session_id = None
+
+    if normalized_phone in _phone_sessions:
+        cached = _phone_sessions[normalized_phone]
+        session_id = cached.get("session_id")
+        session_data = cached.get("session_data", {})
+
+    if not session_id:
+        # Try to find by phone in database
+        db_session = (
+            db.query(ChatSession)
+            .filter(ChatSession.caller_id == normalized_phone)
+            .order_by(ChatSession.id.desc())
+            .first()
+        )
+        if db_session:
+            session_id = db_session.session_id
+            session_data = {
+                "history": db_session.history or [],
+                "order": db_session.order_state or {},
+                "store_id": db_session.store_id,
+            }
+
+    if not session_id:
+        logger.warning("No session found for phone %s, creating minimal analytics record", normalized_phone[-4:])
+        session_id = f"voice-{uuid.uuid4()}"
+        session_data = {"history": [], "order": {}}
+
+    # Extract analytics data from session
+    history = session_data.get("history", [])
+    order_state = session_data.get("order", {})
+    store_id = session_data.get("store_id")
+
+    items = order_state.get("items", [])
+    order_status = order_state.get("status", "pending")
+    cart_total = order_state.get("total_price", 0.0)
+    customer = order_state.get("customer", {})
+
+    # Determine session status
+    if order_status == "confirmed":
+        status = "completed"
+        reason = None
+    else:
+        status = "abandoned"
+        # Map VAPI ended reasons to our reason format
+        reason_map = {
+            "customer-ended-call": "customer_hangup",
+            "assistant-ended-call": "assistant_ended",
+            "customer-did-not-answer": "no_answer",
+            "voicemail": "voicemail",
+            "silence-timed-out": "silence_timeout",
+            "phone-call-provider-closed-websocket": "connection_lost",
+        }
+        reason = reason_map.get(ended_reason, f"voice_{ended_reason}")
+
+    # Get last messages
+    last_bot_message = None
+    last_user_message = None
+    for msg in reversed(history):
+        if msg.get("role") == "assistant" and not last_bot_message:
+            last_bot_message = msg.get("content", "")[:500]
+        elif msg.get("role") == "user" and not last_user_message:
+            last_user_message = msg.get("content", "")[:500]
+        if last_bot_message and last_user_message:
+            break
+
+    # Create analytics record
+    analytics_record = SessionAnalytics(
+        session_id=session_id,
+        status=status,
+        message_count=len([m for m in history if m.get("role") == "user"]),
+        had_items_in_cart=len(items) > 0,
+        item_count=len(items),
+        cart_total=cart_total,
+        order_status=order_status,
+        conversation_history=history,
+        last_bot_message=last_bot_message,
+        last_user_message=last_user_message,
+        reason=reason,
+        session_duration_seconds=duration,
+        customer_name=customer.get("name"),
+        customer_phone=normalized_phone,
+        store_id=store_id,
+    )
+
+    db.add(analytics_record)
+    db.commit()
+
+    logger.info(
+        "Voice session analytics saved: %s (status: %s, messages: %d, items: %d, total: $%.2f, reason: %s)",
+        session_id[:8],
+        status,
+        analytics_record.message_count,
+        len(items),
+        cart_total,
+        reason,
+    )
+
+    # Clean up phone session cache
+    if normalized_phone in _phone_sessions:
+        del _phone_sessions[normalized_phone]
+
+
 # ----- OpenAI-Compatible Streaming -----
 
 async def _generate_sse_stream(text: str, model: str = "sammy-bot"):
@@ -374,6 +543,13 @@ async def vapi_chat_completions(
 
     # Extract store_id from metadata if provided
     store_id = data.get("metadata", {}).get("store_id")
+
+    # Default to Tribeca store for VAPI calls
+    # The main VAPI phone number (732-813-9409) is for Tribeca
+    # This can be overridden by passing store_id in metadata
+    if not store_id:
+        store_id = "zuckers_tribeca"
+        logger.info("Defaulting VAPI call to Tribeca store")
 
     # Get or create session for this phone number
     session_id = _get_or_create_phone_session(db, phone_number, store_id)
@@ -472,6 +648,58 @@ async def vapi_chat_completions(
             order_state, intent, slots, menu_index, returning_customer
         )
 
+    # Check if we need to send a payment link email
+    payment_link_action = next(
+        (a for a in actions if a.get("intent") == "request_payment_link"),
+        None
+    )
+    if payment_link_action:
+        link_method = (
+            order_state.get("link_delivery_method")
+            or all_slots.get("link_delivery_method")
+        )
+        customer_email = (
+            order_state.get("customer", {}).get("email")
+            or all_slots.get("customer_email")
+        )
+        customer_name = (
+            order_state.get("customer", {}).get("name")
+            or all_slots.get("customer_name")
+        )
+        customer_phone_for_email = (
+            order_state.get("customer", {}).get("phone")
+            or phone_number
+        )
+
+        if link_method == "email" and customer_email:
+            # Calculate order total for the email
+            items = order_state.get("items", [])
+            order_total = sum(item.get("line_total", 0) for item in items)
+            order_type = order_state.get("order_type", "pickup")
+
+            # Persist order early so we have an order ID for the email
+            from .main import persist_pending_order
+            pending_order = persist_pending_order(
+                db, order_state, all_slots, store_id=session_store_id
+            )
+            order_id = pending_order.id if pending_order else 0
+
+            # Send the payment link email
+            try:
+                email_result = send_payment_link_email(
+                    to_email=customer_email,
+                    order_id=order_id,
+                    amount=order_total,
+                    store_name=company_name,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone_for_email,
+                    order_type=order_type,
+                    items=items,
+                )
+                logger.info("Voice order payment link email sent: %s", email_result.get("status"))
+            except Exception as e:
+                logger.error("Failed to send payment link email for voice order: %s", e)
+
     # Check if order should be persisted to database
     if order_state.get("status") == "confirmed":
         # Late import to avoid circular dependency
@@ -563,9 +791,14 @@ async def vapi_webhook(
         transcript = artifact.get("transcript", "")
         duration = call_info.get("duration")  # in seconds if available
 
+        # Extract phone number from call info
+        customer = call_info.get("customer", {})
+        phone_number = customer.get("number")
+
         logger.info(
-            "Call ended - ID: %s, Reason: %s, Duration: %s sec",
+            "Call ended - ID: %s, Phone: %s, Reason: %s, Duration: %s sec",
             call_id,
+            phone_number[-4:] if phone_number else "unknown",
             ended_reason,
             duration,
         )
@@ -574,8 +807,20 @@ async def vapi_webhook(
         if transcript:
             logger.debug("Transcript preview: %s...", transcript[:200])
 
-        # TODO: Save to analytics table if desired
-        # save_call_analytics(db, call_id, transcript, ended_reason, duration)
+        # Save to analytics table
+        if phone_number:
+            try:
+                _save_call_analytics(
+                    db=db,
+                    phone_number=phone_number,
+                    ended_reason=ended_reason,
+                    duration=duration,
+                    transcript=transcript,
+                )
+            except Exception as e:
+                logger.error("Failed to save call analytics: %s", e)
+        else:
+            logger.warning("No phone number in end-of-call-report, cannot save analytics")
 
     elif message_type == "status-update":
         # Call status changed

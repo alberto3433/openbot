@@ -261,6 +261,42 @@
   <script>
     const API_BASE = "";
 
+    // Auth credentials storage (cached after first successful auth)
+    let authCredentials = null;
+
+    // Authenticated fetch helper - prompts for credentials on 401
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+      }
+
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
     // Store ID to name and timezone mapping - loaded dynamically from API
     let STORE_DATA = {};
 
@@ -375,9 +411,7 @@
           params.append("status", currentStatus);
         }
 
-        const resp = await fetch(`${API_BASE}/admin/orders?${params.toString()}`, {
-          credentials: 'include'
-        });
+        const resp = await authFetch(`${API_BASE}/admin/orders?${params.toString()}`);
         if (!resp.ok) {
           throw new Error(`Failed to load orders: ${resp.status}`);
         }
@@ -450,9 +484,7 @@
 
     async function loadOrderDetails(orderId) {
       try {
-        const resp = await fetch(`${API_BASE}/admin/orders/${orderId}`, {
-          credentials: 'include'
-        });
+        const resp = await authFetch(`${API_BASE}/admin/orders/${orderId}`);
         if (!resp.ok) {
           throw new Error(`Failed to load order ${orderId}: ${resp.status}`);
         }

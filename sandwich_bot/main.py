@@ -72,7 +72,8 @@ def get_store_name(store_id: Optional[str], db: Optional[Session] = None) -> str
 
 # ---------- Admin Authentication ----------
 
-security = HTTPBasic()
+# Use a shared realm so browser caches credentials for all admin paths
+security = HTTPBasic(realm="OrderBot Admin")
 
 # Load admin credentials from environment variables
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")

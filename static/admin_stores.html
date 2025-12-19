@@ -546,6 +546,51 @@
     // API base URL
     const API_BASE = "/admin/stores";
 
+    // Auth credentials storage (cached after first successful auth)
+    let authCredentials = null;
+
+    // Authenticated fetch helper - prompts for credentials on 401
+    async function authFetch(url, options = {}) {
+      // First try with credentials: include (uses browser's cached auth)
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      // If unauthorized and we have stored credentials, try with Authorization header
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+      }
+
+      // If still unauthorized, prompt for credentials
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
     // DOM elements
     const statusBar = document.getElementById("statusBar");
     const storeList = document.getElementById("storeList");
@@ -567,7 +612,7 @@
     // Load stores from API
     async function loadStores() {
       try {
-        const response = await fetch(API_BASE, { credentials: 'include' });
+        const response = await authFetch(API_BASE);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -827,19 +872,17 @@
         let response;
         if (editingStoreId) {
           // Update existing store
-          response = await fetch(`${API_BASE}/${editingStoreId}`, {
+          response = await authFetch(`${API_BASE}/${editingStoreId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            credentials: 'include'
+            body: JSON.stringify(payload)
           });
         } else {
           // Create new store
-          response = await fetch(API_BASE, {
+          response = await authFetch(API_BASE, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            credentials: 'include'
+            body: JSON.stringify(payload)
           });
         }
 
@@ -880,9 +923,8 @@
       const storeName = store.name;
 
       try {
-        const response = await fetch(`${API_BASE}/${deletingStoreId}`, {
-          method: "DELETE",
-          credentials: 'include'
+        const response = await authFetch(`${API_BASE}/${deletingStoreId}`, {
+          method: "DELETE"
         });
 
         if (!response.ok) {
@@ -906,9 +948,8 @@
       const storeName = store.name;
 
       try {
-        const response = await fetch(`${API_BASE}/${storeId}/restore`, {
-          method: "POST",
-          credentials: 'include'
+        const response = await authFetch(`${API_BASE}/${storeId}/restore`, {
+          method: "POST"
         });
 
         if (!response.ok) {

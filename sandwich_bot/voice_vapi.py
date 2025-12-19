@@ -463,12 +463,25 @@ async def vapi_chat_completions(
         actions = [{"intent": llm_result.get("intent"), "slots": llm_result.get("slots", {})}]
 
     # Apply actions to order state
+    all_slots = {}
     for action in actions:
         intent = action.get("intent", "unknown")
         slots = action.get("slots", {})
+        all_slots.update(slots)
         order_state = apply_intent_to_order_state(
             order_state, intent, slots, menu_index, returning_customer
         )
+
+    # Check if order should be persisted to database
+    if order_state.get("status") == "confirmed":
+        # Late import to avoid circular dependency
+        from .main import persist_confirmed_order
+        persisted_order = persist_confirmed_order(
+            db, order_state, all_slots, store_id=session_store_id
+        )
+        if persisted_order:
+            logger.info("Voice order persisted for customer: %s (store: %s)",
+                       persisted_order.customer_name, session_store_id or "default")
 
     # Update session
     session_data["order"] = order_state

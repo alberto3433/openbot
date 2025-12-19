@@ -224,7 +224,7 @@ def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, ret
     if intent == "add_pizza":
         return _add_pizza(state, slots, menu_index)
 
-    if intent == "add_drink" or intent == "add_coffee":
+    if intent in ("add_drink", "add_coffee", "add_sized_beverage", "add_beverage"):
         return _add_drink(state, slots, menu_index)
 
     if intent == "add_side":

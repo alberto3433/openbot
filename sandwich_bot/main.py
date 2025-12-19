@@ -572,6 +572,7 @@ class CompanyOut(BaseModel):
     logo_url: Optional[str] = None
     business_hours: Optional[Dict[str, Any]] = None
     primary_item_type: str = "Sandwich"  # Dynamic: "Pizza", "Sandwich", "Taco", etc.
+    signature_item_label: Optional[str] = None  # Custom label for signature items (e.g., "speed menu bagel")
 
 
 class CompanyUpdate(BaseModel):
@@ -585,6 +586,7 @@ class CompanyUpdate(BaseModel):
     website: Optional[str] = None
     logo_url: Optional[str] = None
     business_hours: Optional[Dict[str, Any]] = None
+    signature_item_label: Optional[str] = None  # Custom label for signature items
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -830,13 +832,19 @@ def chat_start(
     primary_item_type = get_primary_item_type_name(db)
     primary_item_plural = primary_item_type.lower() + ("es" if primary_item_type.lower().endswith("ch") else "s")
 
+    # Get custom signature item label or use default
+    if company.signature_item_label:
+        signature_label = company.signature_item_label
+    else:
+        signature_label = f"signature {primary_item_plural}"
+
     # Generate personalized greeting for returning customers
     if returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
         welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new order?"
     else:
         # Default greeting for new customers
-        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our signature {primary_item_plural} or build your own?"
+        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our {signature_label} or build your own?"
 
     # Initialize session data
     session_data = {
@@ -960,7 +968,7 @@ def chat_message(
     updated_order_state = order_state
 
     # Intents that add items to the order
-    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee"}
+    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee", "add_sized_beverage", "add_beverage"}
 
     # Apply each action sequentially
     for action in actions:
@@ -1040,14 +1048,25 @@ def chat_message(
             # Calculate order total for the email
             items = updated_order_state.get("items", [])
             order_total = sum(item.get("line_total", 0) for item in items)
+            order_type = updated_order_state.get("order_type", "pickup")
+
+            # Persist order early so we have an order ID for the email
+            session_store_id = session.get("store_id") or get_random_store_id()
+            pending_order = persist_pending_order(
+                db, updated_order_state, all_slots, store_id=session_store_id
+            )
+            order_id = pending_order.id if pending_order else 0
 
             # Send the payment link email
             email_result = send_payment_link_email(
                 to_email=customer_email,
-                order_id=updated_order_state.get("db_order_id", 0),
+                order_id=order_id,
                 amount=order_total,
                 store_name=company.name if company else "Restaurant",
                 customer_name=customer_name,
+                customer_phone=customer_phone,
+                order_type=order_type,
+                items=items,
             )
             logger.info("Payment link email sent: %s", email_result.get("status"))
 
@@ -1059,9 +1078,9 @@ def chat_message(
     # (either from this request or from a previous request)
     order_is_confirmed = updated_order_state.get("status") == "confirmed"
     has_customer_info = customer_name and customer_phone
-    order_not_yet_persisted = "db_order_id" not in updated_order_state
+    order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
-    if order_is_confirmed and has_customer_info and order_not_yet_persisted:
+    if order_is_confirmed and has_customer_info:
         updated_order_state.setdefault("customer", {})
         updated_order_state["customer"]["name"] = customer_name
         updated_order_state["customer"]["phone"] = customer_phone
@@ -1069,30 +1088,33 @@ def chat_message(
         # Get store_id from session for the order
         session_store_id = session.get("store_id") or get_random_store_id()
 
+        # persist_confirmed_order handles both creating new orders and updating pending ones
         persist_confirmed_order(db, updated_order_state, all_slots, store_id=session_store_id)
         logger.info("Order persisted for customer: %s (store: %s)", customer_name, session_store_id)
 
-        # Log completed session for analytics
-        items = updated_order_state.get("items", [])
-        session_record = SessionAnalytics(
-            session_id=req.session_id,
-            status="completed",
-            message_count=len(history),
-            had_items_in_cart=len(items) > 0,
-            item_count=len(items),
-            cart_total=updated_order_state.get("total_price", 0.0),
-            order_status="confirmed",
-            conversation_history=history,  # Now includes current exchange
-            last_bot_message=reply[:500] if reply else None,
-            last_user_message=req.message[:500] if req.message else None,
-            reason=None,  # No abandonment reason for completed orders
-            customer_name=customer_name,
-            customer_phone=customer_phone,
-            store_id=session_store_id,
-        )
-        db.add(session_record)
-        db.commit()
-        logger.info("Completed session logged: %s", req.session_id[:8])
+        # Log completed session for analytics (only once per order)
+        if order_not_yet_confirmed:
+            updated_order_state["_confirmed_logged"] = True
+            items = updated_order_state.get("items", [])
+            session_record = SessionAnalytics(
+                session_id=req.session_id,
+                status="completed",
+                message_count=len(history),
+                had_items_in_cart=len(items) > 0,
+                item_count=len(items),
+                cart_total=updated_order_state.get("total_price", 0.0),
+                order_status="confirmed",
+                conversation_history=history,  # Now includes current exchange
+                last_bot_message=reply[:500] if reply else None,
+                last_user_message=req.message[:500] if req.message else None,
+                reason=None,  # No abandonment reason for completed orders
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                store_id=session_store_id,
+            )
+            db.add(session_record)
+            db.commit()
+            logger.info("Completed session logged: %s", req.session_id[:8])
 
     # Persist session to database
     save_session(db, req.session_id, session)
@@ -1212,6 +1234,11 @@ def chat_message_stream(
             actions = llm_result.get("actions", [])
             reply = llm_result.get("reply", "")
 
+            # Debug logging for action tracking
+            logger.info("LLM response - actions: %s, reply preview: %s", actions, reply[:100] if reply else "")
+            if not actions and "added" in reply.lower():
+                logger.warning("LLM said 'added' but returned no actions! Reply: %s", reply[:200])
+
             # Backward compatibility
             if not actions and llm_result.get("intent"):
                 actions = [{
@@ -1222,7 +1249,7 @@ def chat_message_stream(
             processed_actions = []
             updated_order_state = order_state
 
-            ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee"}
+            ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee", "add_sized_beverage", "add_beverage"}
 
             # Track items that existed BEFORE this turn - only check duplicates against these
             # This allows ordering multiple of the same item type in one message
@@ -1283,23 +1310,34 @@ def chat_message_stream(
                     # Calculate order total for the email
                     items = updated_order_state.get("items", [])
                     order_total = sum(item.get("line_total", 0) for item in items)
+                    order_type = updated_order_state.get("order_type", "pickup")
+
+                    # Persist order early so we have an order ID for the email
+                    order_store_id = session.get("store_id") or get_random_store_id()
+                    pending_order = persist_pending_order(
+                        stream_db, updated_order_state, all_slots, store_id=order_store_id
+                    )
+                    order_id = pending_order.id if pending_order else 0
 
                     # Send the payment link email
                     email_result = send_payment_link_email(
                         to_email=customer_email,
-                        order_id=updated_order_state.get("db_order_id", 0),
+                        order_id=order_id,
                         amount=order_total,
                         store_name=company_name,
                         customer_name=customer_name,
+                        customer_phone=customer_phone,
+                        order_type=order_type,
+                        items=items,
                     )
                     logger.info("Payment link email sent: %s", email_result.get("status"))
 
             # Persist if order is confirmed AND we have customer info
             order_is_confirmed = updated_order_state.get("status") == "confirmed"
             has_customer_info = customer_name and customer_phone
-            order_not_yet_persisted = "db_order_id" not in updated_order_state
+            order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
-            if order_is_confirmed and has_customer_info and order_not_yet_persisted:
+            if order_is_confirmed and has_customer_info:
                 updated_order_state.setdefault("customer", {})
                 updated_order_state["customer"]["name"] = customer_name
                 updated_order_state["customer"]["phone"] = customer_phone
@@ -1307,33 +1345,36 @@ def chat_message_stream(
                 # Get store_id from session for the order
                 order_store_id = session.get("store_id") or get_random_store_id()
 
+                # persist_confirmed_order handles both creating new orders and updating pending ones
                 persist_confirmed_order(stream_db, updated_order_state, all_slots, store_id=order_store_id)
                 logger.info("Order persisted for customer: %s (store: %s)", customer_name, order_store_id)
 
-                # Log completed session for analytics
-                items = updated_order_state.get("items", [])
-                session_record = SessionAnalytics(
-                    session_id=req.session_id,
-                    status="completed",
-                    message_count=len(history) + 2,  # +2 for current exchange
-                    had_items_in_cart=len(items) > 0,
-                    item_count=len(items),
-                    cart_total=updated_order_state.get("total_price", 0.0),
-                    order_status="confirmed",
-                    conversation_history=history + [
-                        {"role": "user", "content": req.message},
-                        {"role": "assistant", "content": reply}
-                    ],
-                    last_bot_message=reply[:500] if reply else None,
-                    last_user_message=req.message[:500] if req.message else None,
-                    reason=None,
-                    customer_name=customer_name,
-                    customer_phone=customer_phone,
-                    store_id=order_store_id,
-                )
-                stream_db.add(session_record)
-                stream_db.commit()
-                logger.info("Completed session logged: %s", req.session_id[:8])
+                # Log completed session for analytics (only once per order)
+                if order_not_yet_confirmed:
+                    updated_order_state["_confirmed_logged"] = True
+                    items = updated_order_state.get("items", [])
+                    session_record = SessionAnalytics(
+                        session_id=req.session_id,
+                        status="completed",
+                        message_count=len(history) + 2,  # +2 for current exchange
+                        had_items_in_cart=len(items) > 0,
+                        item_count=len(items),
+                        cart_total=updated_order_state.get("total_price", 0.0),
+                        order_status="confirmed",
+                        conversation_history=history + [
+                            {"role": "user", "content": req.message},
+                            {"role": "assistant", "content": reply}
+                        ],
+                        last_bot_message=reply[:500] if reply else None,
+                        last_user_message=req.message[:500] if req.message else None,
+                        reason=None,
+                        customer_name=customer_name,
+                        customer_phone=customer_phone,
+                        store_id=order_store_id,
+                    )
+                    stream_db.add(session_record)
+                    stream_db.commit()
+                    logger.info("Completed session logged: %s", req.session_id[:8])
 
             # Update session
             history.append({"role": "user", "content": req.message})
@@ -1461,6 +1502,119 @@ def log_abandoned_session(
     )
 
     return None
+
+
+def persist_pending_order(
+    db: Session,
+    order_state: Dict[str, Any],
+    slots: Optional[Dict[str, Any]] = None,
+    store_id: Optional[str] = None,
+) -> Optional[Order]:
+    """
+    Persist an order in pending_payment status (before confirmation).
+
+    Used when a payment link is requested so we have an order ID for the email.
+    If an order already exists (db_order_id set), returns that order.
+
+    Args:
+        db: Database session
+        order_state: Current order state dict
+        slots: Optional slots from the LLM action
+        store_id: Optional store identifier
+    """
+    # If order already persisted, just return it
+    existing_id = order_state.get("db_order_id")
+    if existing_id:
+        order = db.get(Order, existing_id)
+        if order:
+            return order
+
+    slots = slots or {}
+    items = order_state.get("items") or []
+    customer_block = order_state.get("customer") or {}
+
+    def first_non_empty(*vals):
+        for v in vals:
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return None
+
+    customer_name = first_non_empty(
+        customer_block.get("name"),
+        order_state.get("customer_name"),
+        order_state.get("name"),
+        slots.get("customer_name"),
+        slots.get("name"),
+    )
+
+    phone = first_non_empty(
+        customer_block.get("phone"),
+        order_state.get("phone"),
+        slots.get("phone"),
+        slots.get("phone_number"),
+    )
+
+    customer_email = first_non_empty(
+        customer_block.get("email"),
+        order_state.get("customer_email"),
+        slots.get("customer_email"),
+        slots.get("email"),
+    )
+
+    # Total price from items
+    total_price = sum((it.get("line_total") or 0.0) for it in items)
+
+    order_type = order_state.get("order_type", "pickup")
+    delivery_address = order_state.get("delivery_address")
+
+    # Create order with pending_payment status
+    order = Order(
+        status="pending_payment",
+        customer_name=customer_name,
+        phone=phone,
+        customer_email=customer_email,
+        total_price=total_price,
+        store_id=store_id,
+        order_type=order_type,
+        delivery_address=delivery_address,
+        payment_status="pending",
+        payment_method=order_state.get("payment_method"),
+    )
+    db.add(order)
+    db.flush()
+    order_state["db_order_id"] = order.id
+
+    # Add order items
+    for it in items:
+        menu_item_name = (
+            it.get("menu_item_name")
+            or it.get("name")
+            or it.get("item_type")
+            or "Unknown item"
+        )
+        bread_or_crust = it.get("bread") or it.get("crust")
+        quantity = it.get("quantity", 1)
+        line_total = it.get("line_total", 0.0)
+        unit_price = line_total / quantity if quantity > 0 else line_total
+
+        order_item = OrderItem(
+            order_id=order.id,
+            menu_item_name=menu_item_name,
+            quantity=quantity,
+            size=it.get("size"),
+            bread=bread_or_crust,
+            cheese=it.get("cheese"),
+            toppings=json.dumps(it.get("toppings")) if it.get("toppings") else None,
+            sauces=json.dumps(it.get("sauces") or it.get("sauce")) if (it.get("sauces") or it.get("sauce")) else None,
+            unit_price=unit_price,
+            line_total=line_total,
+            item_config=json.dumps(it.get("item_config")) if it.get("item_config") else None,
+        )
+        db.add(order_item)
+
+    db.commit()
+    logger.info("Pending order #%d created for payment link", order.id)
+    return order
 
 
 def persist_confirmed_order(
@@ -2622,6 +2776,8 @@ def update_company_settings(
         company.logo_url = payload.logo_url
     if payload.business_hours is not None:
         company.business_hours = payload.business_hours
+    if payload.signature_item_label is not None:
+        company.signature_item_label = payload.signature_item_label
 
     db.commit()
     db.refresh(company)
@@ -2651,6 +2807,7 @@ def get_public_company_info(
         "logo_url": company.logo_url,
         "business_hours": company.business_hours,
         "primary_item_type": primary_item_type,
+        "signature_item_label": company.signature_item_label,
     }
     return CompanyOut(**company_data)
 

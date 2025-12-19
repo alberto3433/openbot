@@ -243,6 +243,12 @@
           </div>
 
           <div class="form-group">
+            <label for="signatureItemLabel">Signature Item Label</label>
+            <input type="text" id="signatureItemLabel" placeholder="e.g., signature sandwich, speed menu bagel" />
+            <div class="hint">Custom label for featured menu items (defaults to "signature [item type]" if empty)</div>
+          </div>
+
+          <div class="form-group">
             <label for="headquartersAddress">Headquarters Address</label>
             <textarea id="headquartersAddress" placeholder="e.g., 123 Main Street, Suite 100, New Brunswick, NJ 08901"></textarea>
           </div>
@@ -338,6 +344,7 @@
       document.getElementById("companyName").value = data.name || "";
       document.getElementById("botPersonaName").value = data.bot_persona_name || "";
       document.getElementById("tagline").value = data.tagline || "";
+      document.getElementById("signatureItemLabel").value = data.signature_item_label || "";
       document.getElementById("headquartersAddress").value = data.headquarters_address || "";
       document.getElementById("corporatePhone").value = data.corporate_phone || "";
       document.getElementById("corporateEmail").value = data.corporate_email || "";
@@ -386,6 +393,7 @@
         name,
         bot_persona_name: botPersonaName,
         tagline: document.getElementById("tagline").value.trim() || null,
+        signature_item_label: document.getElementById("signatureItemLabel").value.trim() || null,
         headquarters_address: document.getElementById("headquartersAddress").value.trim() || null,
         corporate_phone: document.getElementById("corporatePhone").value.trim() || null,
         corporate_email: document.getElementById("corporateEmail").value.trim() || null,

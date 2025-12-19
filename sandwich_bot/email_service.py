@@ -40,6 +40,9 @@ def send_payment_link_email(
     amount: float,
     store_name: str,
     customer_name: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    order_type: Optional[str] = None,
+    items: Optional[list] = None,
 ) -> dict:
     """
     Send an email with a payment link to the customer.
@@ -50,6 +53,9 @@ def send_payment_link_email(
         amount: The amount to charge
         store_name: Name of the store for the message
         customer_name: Optional customer name for personalization
+        customer_phone: Optional customer phone number
+        order_type: Optional order type (pickup/delivery)
+        items: Optional list of order items
 
     Returns:
         dict with status and details
@@ -60,14 +66,93 @@ def send_payment_link_email(
     # Build the email content
     greeting = f"Hi {customer_name}," if customer_name else "Hi,"
 
+    # Build order details section
+    order_details_text = ""
+    order_details_html = ""
+
+    if customer_name or customer_phone or order_type:
+        order_details_text = "\nOrder Details:\n"
+        order_details_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Order Details</h3>"
+        order_details_html += "<table style='border-collapse: collapse; width: 100%; max-width: 400px;'>"
+
+        if customer_name:
+            order_details_text += f"  Name: {customer_name}\n"
+            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Name:</td><td style='padding: 4px 8px;'>{customer_name}</td></tr>"
+        if customer_phone:
+            order_details_text += f"  Phone: {customer_phone}\n"
+            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Phone:</td><td style='padding: 4px 8px;'>{customer_phone}</td></tr>"
+        if order_type:
+            order_details_text += f"  Order Type: {order_type.title()}\n"
+            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Order Type:</td><td style='padding: 4px 8px;'>{order_type.title()}</td></tr>"
+
+        order_details_html += "</table>"
+
+    # Build items section
+    items_text = ""
+    items_html = ""
+
+    if items:
+        items_text = "\nItems:\n"
+        items_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Items</h3>"
+        items_html += "<table style='border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #eee;'>"
+        items_html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th><th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th></tr>"
+
+        for item in items:
+            item_name = item.get("menu_item_name", "Item")
+            quantity = item.get("quantity", 1)
+            line_total = item.get("line_total", 0)
+
+            # Build details string
+            details = []
+            if item.get("size"):
+                details.append(item["size"])
+            if item.get("item_config"):
+                config = item["item_config"]
+                if config.get("style"):
+                    details.append(config["style"])
+                if config.get("milk") and str(config["milk"]).lower() != "none":
+                    details.append(str(config["milk"]).replace("_", " "))
+                if config.get("syrup"):
+                    syrups = config["syrup"] if isinstance(config["syrup"], list) else [config["syrup"]]
+                    for s in syrups:
+                        if s:
+                            formatted = str(s).replace("_", " ")
+                            details.append(formatted if "syrup" in formatted.lower() else f"{formatted} syrup")
+                if config.get("sweetener"):
+                    sweeteners = config["sweetener"] if isinstance(config["sweetener"], list) else [config["sweetener"]]
+                    for s in sweeteners:
+                        if s:
+                            details.append(str(s).replace("_", " "))
+                if config.get("extras"):
+                    extras = config["extras"] if isinstance(config["extras"], list) else [config["extras"]]
+                    for e in extras:
+                        if e:
+                            details.append(str(e).replace("_", " "))
+
+            details_str = ", ".join(details) if details else ""
+
+            # Plain text
+            items_text += f"  {quantity}x {item_name}"
+            if details_str:
+                items_text += f" ({details_str})"
+            items_text += f" - ${line_total:.2f}\n"
+
+            # HTML
+            items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
+            items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
+            items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
+
+        # Total row
+        items_html += f"<tr style='background: #f9f9f9;'><td colspan='2' style='padding: 8px; text-align: right;'><strong>Total:</strong></td><td style='padding: 8px; text-align: right;'><strong>${amount:.2f}</strong></td></tr>"
+        items_html += "</table>"
+        items_text += f"\nTotal: ${amount:.2f}\n"
+
     subject = f"Payment Link for Your {store_name} Order #{order_id}"
 
     body_text = f"""{greeting}
 
 Thank you for your order at {store_name}!
-
-Your order total is ${amount:.2f}.
-
+{order_details_text}{items_text}
 Click here to complete your payment:
 {payment_url}
 
@@ -79,14 +164,15 @@ Thanks,
 
     body_html = f"""
 <html>
-<body>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <p>{greeting}</p>
 <p>Thank you for your order at <strong>{store_name}</strong>!</p>
-<p>Your order total is <strong>${amount:.2f}</strong>.</p>
-<p><a href="{payment_url}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; display: inline-block; border-radius: 4px;">Complete Payment</a></p>
-<p>Or copy this link: {payment_url}</p>
+{order_details_html}
+{items_html}
+<p style="margin-top: 24px;"><a href="{payment_url}" style="background-color: #1976d2; color: white; padding: 14px 28px; text-decoration: none; display: inline-block; border-radius: 4px; font-weight: 500;">Complete Payment - ${amount:.2f}</a></p>
+<p style="color: #666; font-size: 13px;">Or copy this link: {payment_url}</p>
 <p>If you have any questions, please call us.</p>
-<p>Thanks,<br>{store_name}</p>
+<p>Thanks,<br><strong>{store_name}</strong></p>
 </body>
 </html>
 """

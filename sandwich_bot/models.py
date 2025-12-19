@@ -489,6 +489,7 @@ class Company(Base):
     name = Column(String, nullable=False, default="Sammy's Subs")  # Company name shown to customers
     bot_persona_name = Column(String, nullable=False, default="Sammy")  # Bot's name/persona
     tagline = Column(String, nullable=True)  # e.g., "The best subs in town!"
+    signature_item_label = Column(String, nullable=True)  # Custom label for signature items (e.g., "speed menu bagel")
 
     # Contact info
     headquarters_address = Column(String, nullable=True)

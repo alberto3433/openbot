@@ -556,15 +556,29 @@ class OrderTask(BaseTask):
         )
 
     def get_order_summary(self) -> str:
-        """Generate human-readable order summary."""
-        lines = []
+        """Generate human-readable order summary with consolidated identical items."""
+        from collections import defaultdict
 
+        # Group items by their summary string to consolidate identical items
+        item_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_price": 0.0})
         for item in self.items.get_active_items():
+            summary = item.get_summary()
             price = item.unit_price * item.quantity
-            lines.append(f"- {item.get_summary()} — ${price:.2f}")
+            item_data[summary]["count"] += 1
+            item_data[summary]["total_price"] += price
 
-        if not lines:
+        if not item_data:
             return "No items in order yet."
+
+        # Build consolidated lines
+        lines = []
+        for summary, data in item_data.items():
+            count = data["count"]
+            total_price = data["total_price"]
+            if count > 1:
+                lines.append(f"- {count}× {summary} — ${total_price:.2f}")
+            else:
+                lines.append(f"- {summary} — ${total_price:.2f}")
 
         return "\n".join(lines)
 

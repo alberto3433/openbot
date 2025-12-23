@@ -3026,10 +3026,23 @@ class OrderStateMachine:
         return None
 
     def _build_order_summary(self, order: OrderTask) -> str:
-        """Build order summary string."""
+        """Build order summary string with consolidated identical items."""
         lines = ["Here's your order:"]
+
+        # Group items by their summary string to consolidate identical items
+        from collections import Counter
+        item_counts: Counter[str] = Counter()
         for item in order.items.get_active_items():
-            lines.append(f"  - {item.get_summary()}")
+            summary = item.get_summary()
+            item_counts[summary] += 1
+
+        # Build consolidated lines
+        for summary, count in item_counts.items():
+            if count > 1:
+                lines.append(f"  - {count}× {summary}")
+            else:
+                lines.append(f"  - {summary}")
+
         return "\n".join(lines)
 
     def _lookup_bagel_price(self, bagel_type: str | None) -> float:

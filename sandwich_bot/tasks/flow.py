@@ -1173,16 +1173,33 @@ def _get_item_distinguisher(item: ItemTask) -> str | None:
 
 
 def _build_order_summary(order: OrderTask) -> str:
-    """Build a human-readable order summary."""
+    """Build a human-readable order summary with consolidated identical items."""
+    from collections import defaultdict
+
     lines = ["Here's your order:"]
 
+    # Group items by their summary string to consolidate identical items
+    # Track count and total price for each unique item summary
+    item_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_price": 0.0})
     for item in order.items.get_active_items():
         summary = item.get_summary()
         price = item.unit_price * item.quantity
-        if price > 0:
-            lines.append(f"• {summary} - ${price:.2f}")
+        item_data[summary]["count"] += 1
+        item_data[summary]["total_price"] += price
+
+    # Build consolidated lines
+    for summary, data in item_data.items():
+        count = data["count"]
+        total_price = data["total_price"]
+        if count > 1:
+            display = f"• {count}× {summary}"
         else:
-            lines.append(f"• {summary}")
+            display = f"• {summary}"
+
+        if total_price > 0:
+            lines.append(f"{display} - ${total_price:.2f}")
+        else:
+            lines.append(display)
 
     subtotal = order.items.get_subtotal()
     if subtotal > 0:

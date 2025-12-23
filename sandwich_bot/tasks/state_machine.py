@@ -2990,8 +2990,22 @@ class OrderStateMachine:
         # Ask if they want anything else
         items = order.items.get_active_items()
         if items:
+            # Count consecutive identical items at the end of the list
             last_item = items[-1]
-            summary = last_item.get_summary()
+            last_summary = last_item.get_summary()
+            count = 0
+            for item in reversed(items):
+                if item.get_summary() == last_summary:
+                    count += 1
+                else:
+                    break
+
+            # Show quantity if more than 1 identical item
+            if count > 1:
+                summary = f"{count} {last_summary}s" if not last_summary.endswith("s") else f"{count} {last_summary}"
+            else:
+                summary = last_summary
+
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
                 state=state,

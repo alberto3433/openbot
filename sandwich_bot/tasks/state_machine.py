@@ -1595,9 +1595,13 @@ class OrderStateMachine:
             # Check if we have multiple bagels with different configs
             if parsed.bagel_details and len(parsed.bagel_details) > 0:
                 # Multiple bagels with different configurations
-                return self._add_bagels_from_details(parsed.bagel_details, state, order)
+                # Pass extracted_modifiers to apply to the first bagel
+                return self._add_bagels_from_details(
+                    parsed.bagel_details, state, order, extracted_modifiers
+                )
             elif parsed.new_bagel_quantity > 1:
                 # Multiple bagels with same (or no) configuration
+                # Pass extracted_modifiers to apply to the first bagel
                 return self._add_bagels(
                     quantity=parsed.new_bagel_quantity,
                     bagel_type=parsed.new_bagel_type,
@@ -1606,6 +1610,7 @@ class OrderStateMachine:
                     spread_type=parsed.new_bagel_spread_type,
                     state=state,
                     order=order,
+                    extracted_modifiers=extracted_modifiers,
                 )
             else:
                 # Single bagel
@@ -2211,11 +2216,13 @@ class OrderStateMachine:
         spread_type: str | None,
         state: FlowState,
         order: OrderTask,
+        extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """
         Add multiple bagels with the same configuration.
 
         Creates all bagels upfront, then configures them one at a time.
+        Extracted modifiers are applied to the first bagel.
         """
         logger.info(
             "Adding %d bagels: type=%s, toasted=%s, spread=%s, spread_type=%s",
@@ -2227,15 +2234,44 @@ class OrderStateMachine:
 
         # Create all the bagels
         for i in range(quantity):
+            # Build extras list from extracted modifiers (apply to first bagel only)
+            extras: list[str] = []
+            sandwich_protein: str | None = None
+            bagel_spread = spread
+
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
+                # First protein goes to sandwich_protein field
+                if extracted_modifiers.proteins:
+                    sandwich_protein = extracted_modifiers.proteins[0]
+                    # Additional proteins go to extras
+                    extras.extend(extracted_modifiers.proteins[1:])
+
+                # Cheeses go to extras
+                extras.extend(extracted_modifiers.cheeses)
+
+                # Toppings go to extras
+                extras.extend(extracted_modifiers.toppings)
+
+                # If modifiers include a spread, use it (unless already specified)
+                if not bagel_spread and extracted_modifiers.spreads:
+                    bagel_spread = extracted_modifiers.spreads[0]
+
+                logger.info(
+                    "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
+                    sandwich_protein, extras, bagel_spread
+                )
+
             bagel = BagelItemTask(
                 bagel_type=bagel_type,
                 toasted=toasted,
-                spread=spread,
+                spread=bagel_spread,
                 spread_type=spread_type,
+                sandwich_protein=sandwich_protein,
+                extras=extras,
                 unit_price=price,
             )
             # Mark complete if all fields provided, otherwise in_progress
-            if bagel_type and toasted is not None and spread is not None:
+            if bagel_type and toasted is not None and bagel_spread is not None:
                 bagel.mark_complete()
             else:
                 bagel.mark_in_progress()
@@ -2249,11 +2285,13 @@ class OrderStateMachine:
         bagel_details: list[BagelOrderDetails],
         state: FlowState,
         order: OrderTask,
+        extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """
         Add multiple bagels with different configurations.
 
         Creates all bagels upfront, then configures incomplete ones one at a time.
+        Extracted modifiers are applied to the first bagel.
         """
         logger.info("Adding %d bagels from details", len(bagel_details))
 
@@ -2266,11 +2304,40 @@ class OrderStateMachine:
                 if menu_item:
                     price = menu_item.get("base_price", 2.50)
 
+            # Build extras list from extracted modifiers (apply to first bagel only)
+            extras: list[str] = []
+            sandwich_protein: str | None = None
+            spread = details.spread
+
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
+                # First protein goes to sandwich_protein field
+                if extracted_modifiers.proteins:
+                    sandwich_protein = extracted_modifiers.proteins[0]
+                    # Additional proteins go to extras
+                    extras.extend(extracted_modifiers.proteins[1:])
+
+                # Cheeses go to extras
+                extras.extend(extracted_modifiers.cheeses)
+
+                # Toppings go to extras
+                extras.extend(extracted_modifiers.toppings)
+
+                # If modifiers include a spread, use it (unless already specified)
+                if not spread and extracted_modifiers.spreads:
+                    spread = extracted_modifiers.spreads[0]
+
+                logger.info(
+                    "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
+                    sandwich_protein, extras, spread
+                )
+
             bagel = BagelItemTask(
                 bagel_type=details.bagel_type,
                 toasted=details.toasted,
-                spread=details.spread,
+                spread=spread,
                 spread_type=details.spread_type,
+                sandwich_protein=sandwich_protein,
+                extras=extras,
                 unit_price=price,
             )
 

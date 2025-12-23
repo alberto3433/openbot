@@ -22,7 +22,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from .db import get_db
-from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company, ItemType
+from .models import MenuItem, Order, OrderItem, ChatSession, Ingredient, SessionAnalytics, IngredientStoreAvailability, MenuItemStoreAvailability, Store, Company, ItemType, AttributeDefinition, AttributeOption
 from sandwich_bot.sammy.llm_client import call_sandwich_bot, call_sandwich_bot_stream
 from .order_logic import apply_intent_to_order_state
 from .menu_index_builder import build_menu_index, get_menu_version
@@ -32,6 +32,8 @@ from .logging_config import setup_logging
 from .tts import get_tts_provider
 from .email_service import send_payment_link_email
 from .voice_vapi import vapi_router
+from .chains.integration import process_chat_message
+from .chains.adapter import is_chain_orchestrator_enabled
 
 # Configure logging at module load time
 setup_logging()
@@ -69,6 +71,36 @@ def get_store_name(store_id: Optional[str], db: Optional[Session] = None) -> str
         if company:
             return company.name
     return "Sammy's Subs"  # Default name if no store specified
+
+
+def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Session] = None) -> Dict[str, Any]:
+    """
+    Build store_info dict with tax rates for chain orchestrator.
+
+    Args:
+        store_id: Store ID to look up
+        company_name: Fallback company name
+        db: Database session
+
+    Returns:
+        Dict with store name, id, and tax rates
+    """
+    store_info = {
+        "name": company_name,
+        "store_id": store_id,
+        "city_tax_rate": 0.0,
+        "state_tax_rate": 0.0,
+    }
+
+    if db and store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            store_info["name"] = store.name or company_name
+            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
+            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+
+    return store_info
+
 
 # ---------- Admin Authentication ----------
 
@@ -360,6 +392,7 @@ ADMIN_PAGES = {
     "analytics": "admin_analytics.html",
     "stores": "admin_stores.html",
     "company": "admin_company.html",
+    "modifiers": "admin_modifiers.html",
 }
 
 
@@ -397,6 +430,8 @@ admin_ingredients_router = APIRouter(prefix="/admin/ingredients", tags=["Admin -
 admin_analytics_router = APIRouter(prefix="/admin/analytics", tags=["Admin - Analytics"])
 admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
 admin_company_router = APIRouter(prefix="/admin/company", tags=["Admin - Company"])
+admin_testing_router = APIRouter(prefix="/admin/testing", tags=["Admin - Testing"])
+admin_modifiers_router = APIRouter(prefix="/admin/modifiers", tags=["Admin - Modifiers"])
 
 # Public router for store list (used by customer chat)
 public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
@@ -476,6 +511,7 @@ class MenuItemOut(BaseModel):
     base_price: float
     available_qty: int
     metadata: Dict[str, Any]
+    item_type_id: Optional[int] = None
 
 
 class MenuItemCreate(BaseModel):
@@ -485,6 +521,7 @@ class MenuItemCreate(BaseModel):
     base_price: float
     available_qty: int = 0
     metadata: Dict[str, Any] = {}
+    item_type_id: Optional[int] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -494,6 +531,7 @@ class MenuItemUpdate(BaseModel):
     base_price: Optional[float] = None
     available_qty: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
+    item_type_id: Optional[int] = None
 
 
 # ---------- Pydantic models for ingredients admin ----------
@@ -580,6 +618,8 @@ class StoreOut(BaseModel):
     timezone: str = "America/New_York"
     status: str
     payment_methods: List[str] = []
+    city_tax_rate: float = 0.0
+    state_tax_rate: float = 0.0
     deleted_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -597,6 +637,8 @@ class StoreCreate(BaseModel):
     timezone: str = "America/New_York"
     status: str = "open"
     payment_methods: List[str] = ["cash", "credit"]
+    city_tax_rate: float = 0.0
+    state_tax_rate: float = 0.0
 
 
 class StoreUpdate(BaseModel):
@@ -611,6 +653,8 @@ class StoreUpdate(BaseModel):
     timezone: Optional[str] = None
     status: Optional[str] = None
     payment_methods: Optional[List[str]] = None
+    city_tax_rate: Optional[float] = None
+    state_tax_rate: Optional[float] = None
 
 
 # ---------- Pydantic models for company settings ----------
@@ -646,6 +690,108 @@ class CompanyUpdate(BaseModel):
     logo_url: Optional[str] = None
     business_hours: Optional[Dict[str, Any]] = None
     signature_item_label: Optional[str] = None  # Custom label for signature items
+
+
+# ---------- Pydantic models for modifiers admin UI ----------
+
+
+class AttributeOptionOut(BaseModel):
+    """Response model for an attribute option."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+    price_modifier: float
+    is_default: bool
+    is_available: bool
+    display_order: int
+
+
+class AttributeOptionCreate(BaseModel):
+    """Payload for creating an attribute option."""
+    slug: str
+    display_name: str
+    price_modifier: float = 0.0
+    is_default: bool = False
+    is_available: bool = True
+    display_order: int = 0
+
+
+class AttributeOptionUpdate(BaseModel):
+    """Payload for updating an attribute option."""
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
+    price_modifier: Optional[float] = None
+    is_default: Optional[bool] = None
+    is_available: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class AttributeDefinitionOut(BaseModel):
+    """Response model for an attribute definition."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+    input_type: str
+    is_required: bool
+    allow_none: bool
+    min_selections: Optional[int] = None
+    max_selections: Optional[int] = None
+    display_order: int
+    options: List[AttributeOptionOut] = []
+
+
+class AttributeDefinitionCreate(BaseModel):
+    """Payload for creating an attribute definition."""
+    slug: str
+    display_name: str
+    input_type: str = "single_select"
+    is_required: bool = True
+    allow_none: bool = False
+    min_selections: Optional[int] = None
+    max_selections: Optional[int] = None
+    display_order: int = 0
+
+
+class AttributeDefinitionUpdate(BaseModel):
+    """Payload for updating an attribute definition."""
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
+    input_type: Optional[str] = None
+    is_required: Optional[bool] = None
+    allow_none: Optional[bool] = None
+    min_selections: Optional[int] = None
+    max_selections: Optional[int] = None
+    display_order: Optional[int] = None
+
+
+class ItemTypeOut(BaseModel):
+    """Response model for an item type."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+    is_configurable: bool
+    attribute_definitions: List[AttributeDefinitionOut] = []
+    menu_item_count: int = 0  # Number of menu items using this type
+
+
+class ItemTypeCreate(BaseModel):
+    """Payload for creating an item type."""
+    slug: str
+    display_name: str
+    is_configurable: bool = True
+
+
+class ItemTypeUpdate(BaseModel):
+    """Payload for updating an item type."""
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
+    is_configurable: Optional[bool] = None
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -706,6 +852,10 @@ class OrderSummaryOut(BaseModel):
     phone: Optional[str] = None
     customer_email: Optional[str] = None
     pickup_time: Optional[str] = None
+    subtotal: Optional[float] = None
+    city_tax: Optional[float] = None
+    state_tax: Optional[float] = None
+    delivery_fee: Optional[float] = None
     total_price: float
     store_id: Optional[str] = None
     order_type: Optional[str] = None
@@ -742,6 +892,10 @@ class OrderDetailOut(BaseModel):
     phone: Optional[str] = None
     customer_email: Optional[str] = None
     pickup_time: Optional[str] = None
+    subtotal: Optional[float] = None
+    city_tax: Optional[float] = None
+    state_tax: Optional[float] = None
+    delivery_fee: Optional[float] = None
     total_price: float
     store_id: Optional[str] = None
     order_type: Optional[str] = None
@@ -975,85 +1129,144 @@ def chat_message(
     else:
         logger.debug("Skipping menu in system prompt (already sent version: %s)", session_menu_version)
 
-    # Call OpenAI (LLM) with error handling
-    try:
-        llm_result = call_sandwich_bot(
-            history,
-            order_state,
-            menu_index,
-            req.message,
-            include_menu_in_system=include_menu_in_system,
-            returning_customer=returning_customer,
-            caller_id=session_caller_id,
-            bot_name=company.bot_persona_name,
-            company_name=company.name,
-            db=db,
-            use_dynamic_prompt=True,
-        )
-        # Update menu version in session if we sent it
-        if include_menu_in_system:
-            session["menu_version"] = current_menu_version
-    except Exception as e:
-        logger.error("LLM call failed: %s", str(e))
-        # Return a friendly error message without exposing internal details
-        return ChatMessageResponse(
-            reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
-            order_state=order_state,
-            actions=[],
-            intent="error",
-            slots={},
-        )
+    # Check if chain orchestrator is enabled
+    use_chain_orchestrator = is_chain_orchestrator_enabled()
 
-    # Log LLM result at DEBUG level (may contain order details)
-    logger.debug("LLM result - actions: %d", len(llm_result.get("actions", [])))
+    if use_chain_orchestrator:
+        # Use the new chain-based orchestrator for deterministic flow
+        logger.info("Using chain orchestrator for chat message")
+        try:
+            # Create LLM fallback function for complex cases
+            def llm_fallback(msg, state, hist):
+                return call_sandwich_bot(
+                    hist,
+                    state,
+                    menu_index,
+                    msg,
+                    include_menu_in_system=include_menu_in_system,
+                    returning_customer=returning_customer,
+                    caller_id=session_caller_id,
+                    bot_name=company.bot_persona_name,
+                    company_name=company.name,
+                    db=db,
+                    use_dynamic_prompt=True,
+                )
 
-    # Extract actions from the LLM response
-    # Support both new format (actions array) and old format (single intent/slots)
-    actions = llm_result.get("actions", [])
-    reply = llm_result.get("reply", "")
+            reply, updated_order_state, actions = process_chat_message(
+                user_message=req.message,
+                order_state=order_state,
+                history=history,
+                session_id=req.session_id,
+                menu_index=menu_index,
+                store_info=build_store_info(session_store_id, company.name, db),
+                returning_customer=returning_customer,
+                llm_fallback_fn=llm_fallback,
+            )
 
-    # Backward compatibility: if no actions but has intent/slots, convert to actions format
-    if not actions and llm_result.get("intent"):
-        actions = [
-            {
-                "intent": llm_result.get("intent"),
-                "slots": llm_result.get("slots", {}),
-            }
-        ]
-        logger.debug("Converted legacy intent/slots to actions format")
+            # Update menu version in session
+            if include_menu_in_system:
+                session["menu_version"] = current_menu_version
+
+        except Exception as e:
+            logger.error("Chain orchestrator failed: %s", str(e))
+            return ChatMessageResponse(
+                reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+                order_state=order_state,
+                actions=[],
+                intent="error",
+                slots={},
+            )
+    else:
+        # Use the LLM-based approach
+        try:
+            llm_result = call_sandwich_bot(
+                history,
+                order_state,
+                menu_index,
+                req.message,
+                include_menu_in_system=include_menu_in_system,
+                returning_customer=returning_customer,
+                caller_id=session_caller_id,
+                bot_name=company.bot_persona_name,
+                company_name=company.name,
+                db=db,
+                use_dynamic_prompt=True,
+            )
+            # Update menu version in session if we sent it
+            if include_menu_in_system:
+                session["menu_version"] = current_menu_version
+        except Exception as e:
+            logger.error("LLM call failed: %s", str(e))
+            # Return a friendly error message without exposing internal details
+            return ChatMessageResponse(
+                reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+                order_state=order_state,
+                actions=[],
+                intent="error",
+                slots={},
+            )
+
+        # Log LLM result at DEBUG level (may contain order details)
+        logger.debug("LLM result - actions: %d", len(llm_result.get("actions", [])))
+
+        # Extract actions from the LLM response
+        # Support both new format (actions array) and old format (single intent/slots)
+        actions = llm_result.get("actions", [])
+        reply = llm_result.get("reply", "")
+
+        # Backward compatibility: if no actions but has intent/slots, convert to actions format
+        if not actions and llm_result.get("intent"):
+            actions = [
+                {
+                    "intent": llm_result.get("intent"),
+                    "slots": llm_result.get("slots", {}),
+                }
+            ]
+            logger.debug("Converted legacy intent/slots to actions format")
 
     # Track all processed actions for the response
     processed_actions: List[ActionOut] = []
-    updated_order_state = order_state
 
-    # Intents that add items to the order
-    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee", "add_sized_beverage", "add_beverage"}
+    # For chain orchestrator, state is already updated; for LLM, we need to apply actions
+    if use_chain_orchestrator:
+        # Chain orchestrator already updated the state
+        # Convert actions list to ActionOut format
+        for action in actions:
+            intent = action.get("intent", "unknown")
+            slots = action.get("slots", {})
+            processed_actions.append(ActionOut(intent=intent, slots=slots))
+    else:
+        # LLM path: apply actions to update state
+        updated_order_state = order_state
 
-    # Apply each action sequentially
-    for action in actions:
-        intent = action.get("intent", "unknown")
-        slots = action.get("slots", {})
+        # Intents that add items to the order
+        ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee", "add_sized_beverage", "add_beverage"}
 
-        logger.debug("Processing action - intent: %s, menu_item: %s",
-                    intent, slots.get("menu_item_name"))
+        # Apply each action sequentially
+        for action in actions:
+            intent = action.get("intent", "unknown")
+            slots = action.get("slots", {})
 
-        # If adding items to an already-persisted order, start a new order
-        # This allows customers to add more items after their first order is confirmed
-        # The customer info (name, phone) is preserved for convenience
-        if intent in ADD_INTENTS and "db_order_id" in updated_order_state:
-            logger.info("Starting new order after previous order %s was confirmed",
-                       updated_order_state["db_order_id"])
-            # Clear the db_order_id so the new order can be persisted
-            del updated_order_state["db_order_id"]
-            # Clear items from the previous order
-            updated_order_state["items"] = []
-            # Reset status
-            updated_order_state["status"] = "pending"
+            logger.debug("Processing action - intent: %s, menu_item: %s",
+                        intent, slots.get("menu_item_name"))
 
-        updated_order_state = apply_intent_to_order_state(
-            updated_order_state, intent, slots, menu_index, returning_customer
-        )
-        processed_actions.append(ActionOut(intent=intent, slots=slots))
+            # If adding items to an already-persisted order, start a new order
+            # This allows customers to add more items after their first order is confirmed
+            # The customer info (name, phone) is preserved for convenience
+            if intent in ADD_INTENTS and "db_order_id" in updated_order_state:
+                logger.info("Starting new order after previous order %s was confirmed",
+                           updated_order_state["db_order_id"])
+                # Clear the db_order_id so the new order can be persisted
+                del updated_order_state["db_order_id"]
+                # Clear items from the previous order
+                updated_order_state["items"] = []
+                # Reset status
+                updated_order_state["status"] = "pending"
+
+            updated_order_state = apply_intent_to_order_state(
+                updated_order_state, intent, slots, menu_index, returning_customer
+            )
+            processed_actions.append(ActionOut(intent=intent, slots=slots))
 
     # Save updated state back into the session
     session["order"] = updated_order_state
@@ -1087,11 +1300,17 @@ def chat_message(
     customer_phone = (
         updated_order_state.get("customer", {}).get("phone")
         or all_slots.get("phone")
+        or session_caller_id  # Fallback to caller ID if no phone provided
     )
     customer_email = (
         updated_order_state.get("customer", {}).get("email")
         or all_slots.get("customer_email")
     )
+
+    # Use caller_id as phone if not explicitly provided
+    if session_caller_id and not updated_order_state.get("customer", {}).get("phone"):
+        updated_order_state.setdefault("customer", {})
+        updated_order_state["customer"]["phone"] = session_caller_id
 
     # Check if we need to send a payment link email
     payment_link_action = next(
@@ -1104,19 +1323,26 @@ def chat_message(
             or all_slots.get("link_delivery_method")
         )
         if link_method == "email" and customer_email:
-            # Calculate order total for the email
             items = updated_order_state.get("items", [])
-            order_total = sum(item.get("line_total", 0) for item in items)
             order_type = updated_order_state.get("order_type", "pickup")
 
             # Persist order early so we have an order ID for the email
+            # This also calculates the total with tax
             session_store_id = session.get("store_id") or get_random_store_id()
             pending_order = persist_pending_order(
                 db, updated_order_state, all_slots, store_id=session_store_id
             )
             order_id = pending_order.id if pending_order else 0
 
-            # Send the payment link email
+            # Use total from persisted order (includes tax) or checkout_state
+            checkout_state = updated_order_state.get("checkout_state", {})
+            order_total = (
+                pending_order.total_price if pending_order
+                else checkout_state.get("total")
+                or sum(item.get("line_total", 0) for item in items)
+            )
+
+            # Send the payment link email with tax breakdown
             email_result = send_payment_link_email(
                 to_email=customer_email,
                 order_id=order_id,
@@ -1126,6 +1352,10 @@ def chat_message(
                 customer_phone=customer_phone,
                 order_type=order_type,
                 items=items,
+                subtotal=checkout_state.get("subtotal"),
+                city_tax=checkout_state.get("city_tax", 0),
+                state_tax=checkout_state.get("state_tax", 0),
+                delivery_fee=checkout_state.get("delivery_fee", 0),
             )
             logger.info("Payment link email sent: %s", email_result.get("status"))
 
@@ -1136,7 +1366,7 @@ def chat_message(
     # Persist if order is confirmed AND we have customer info
     # (either from this request or from a previous request)
     order_is_confirmed = updated_order_state.get("status") == "confirmed"
-    has_customer_info = customer_name and customer_phone
+    has_customer_info = customer_name and (customer_phone or customer_email)
     order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
     if order_is_confirmed and has_customer_info:
@@ -1240,6 +1470,12 @@ def chat_message_stream(
     company_bot_name = company.bot_persona_name
     company_name = company.name
 
+    # Build store_info with tax rates (before db session closes)
+    store_info = build_store_info(session_store_id, company_name, db)
+
+    # Check if chain orchestrator is enabled
+    use_chain_orchestrator = is_chain_orchestrator_enabled()
+
     def generate_stream():
         nonlocal session, history, order_state
 
@@ -1251,6 +1487,113 @@ def chat_message_stream(
         stream_db = SessionLocal()
 
         try:
+            # Use chain orchestrator if enabled (doesn't stream, but we can simulate)
+            if use_chain_orchestrator:
+                logger.info("Using chain orchestrator for streaming chat message")
+                try:
+                    reply, updated_order_state, actions = process_chat_message(
+                        user_message=req.message,
+                        order_state=order_state,
+                        history=history,
+                        session_id=req.session_id,
+                        menu_index=menu_index,
+                        store_info=store_info,
+                        returning_customer=returning_customer,
+                        llm_fallback_fn=None,  # No fallback for streaming
+                    )
+
+                    # Update menu version in session if we sent it
+                    if include_menu_in_system:
+                        session["menu_version"] = current_menu_version
+
+                    # Simulate streaming by yielding word by word
+                    words = reply.split()
+                    for i, word in enumerate(words):
+                        token = word + (" " if i < len(words) - 1 else "")
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+
+                    # Update conversation history
+                    history.append({"role": "user", "content": req.message})
+                    history.append({"role": "assistant", "content": reply})
+                    session["history"] = history
+                    session["order"] = updated_order_state
+
+                    # Process actions for consistency (payment link handling, etc.)
+                    processed_actions = []
+                    for action in actions:
+                        intent = action.get("intent", "unknown")
+                        slots = action.get("slots", {})
+                        processed_actions.append({"intent": intent, "slots": slots})
+
+                    # Check for payment link/order confirmation actions
+                    all_slots = {}
+                    for action in processed_actions:
+                        all_slots.update(action.get("slots", {}))
+
+                    # Handle order confirmation and persistence
+                    order_is_confirmed = updated_order_state.get("status") == "confirmed"
+                    customer_email = updated_order_state.get("customer", {}).get("email")
+                    customer_phone = updated_order_state.get("customer", {}).get("phone") or session_caller_id
+                    customer_name = updated_order_state.get("customer", {}).get("name")
+
+                    # Use caller_id as phone if not explicitly provided
+                    if session_caller_id and not updated_order_state.get("customer", {}).get("phone"):
+                        updated_order_state.setdefault("customer", {})
+                        updated_order_state["customer"]["phone"] = session_caller_id
+
+                    if order_is_confirmed and customer_name:
+                        # Persist the confirmed order
+                        try:
+                            persist_confirmed_order(stream_db, updated_order_state, all_slots, store_id=session_store_id)
+                            logger.info("Order persisted for customer: %s (store: %s, phone: %s)", customer_name, session_store_id, customer_phone)
+
+                            # Send payment link if email provided
+                            if customer_email:
+                                db_order_id = updated_order_state.get("db_order_id")
+                                if db_order_id:
+                                    # Get order details for email
+                                    items = updated_order_state.get("items", [])
+                                    # Use checkout total (includes tax/fees) or fall back to subtotal
+                                    checkout_state = updated_order_state.get("checkout_state", {})
+                                    order_total = (
+                                        checkout_state.get("total")
+                                        or updated_order_state.get("total_price")
+                                        or sum(item.get("line_total", 0) for item in items)
+                                    )
+                                    order_type = updated_order_state.get("order_type", "pickup")
+
+                                    # Extract tax breakdown from checkout state
+                                    subtotal = checkout_state.get("subtotal")
+                                    city_tax = checkout_state.get("city_tax", 0)
+                                    state_tax = checkout_state.get("state_tax", 0)
+                                    delivery_fee = checkout_state.get("delivery_fee", 0)
+
+                                    result = send_payment_link_email(
+                                        to_email=customer_email,
+                                        order_id=db_order_id,
+                                        amount=order_total,
+                                        store_name=company_name,
+                                        customer_name=customer_name,
+                                        customer_phone=customer_phone,
+                                        order_type=order_type,
+                                        items=items,
+                                        subtotal=subtotal,
+                                        city_tax=city_tax,
+                                        state_tax=state_tax,
+                                        delivery_fee=delivery_fee,
+                                    )
+                                    logger.info("Payment link email sent: %s", result)
+                        except Exception as e:
+                            logger.error("Failed to persist order or send payment link: %s", e)
+
+                    # Yield final result
+                    yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions})}\n\n"
+                    return
+
+                except Exception as e:
+                    logger.error("Chain orchestrator failed in stream, falling back to LLM: %s", e)
+                    # Fall through to LLM streaming
+
             # Stream tokens from LLM
             stream_gen = call_sandwich_bot_stream(
                 history,
@@ -1366,19 +1709,26 @@ def chat_message_stream(
                     or all_slots.get("link_delivery_method")
                 )
                 if link_method == "email" and customer_email:
-                    # Calculate order total for the email
                     items = updated_order_state.get("items", [])
-                    order_total = sum(item.get("line_total", 0) for item in items)
                     order_type = updated_order_state.get("order_type", "pickup")
 
                     # Persist order early so we have an order ID for the email
+                    # This also calculates the total with tax
                     order_store_id = session.get("store_id") or get_random_store_id()
                     pending_order = persist_pending_order(
                         stream_db, updated_order_state, all_slots, store_id=order_store_id
                     )
                     order_id = pending_order.id if pending_order else 0
 
-                    # Send the payment link email
+                    # Use total from persisted order (includes tax) or checkout_state
+                    checkout_state = updated_order_state.get("checkout_state", {})
+                    order_total = (
+                        pending_order.total_price if pending_order
+                        else checkout_state.get("total")
+                        or sum(item.get("line_total", 0) for item in items)
+                    )
+
+                    # Send the payment link email with tax breakdown
                     email_result = send_payment_link_email(
                         to_email=customer_email,
                         order_id=order_id,
@@ -1388,12 +1738,16 @@ def chat_message_stream(
                         customer_phone=customer_phone,
                         order_type=order_type,
                         items=items,
+                        subtotal=checkout_state.get("subtotal"),
+                        city_tax=checkout_state.get("city_tax", 0),
+                        state_tax=checkout_state.get("state_tax", 0),
+                        delivery_fee=checkout_state.get("delivery_fee", 0),
                     )
                     logger.info("Payment link email sent: %s", email_result.get("status"))
 
             # Persist if order is confirmed AND we have customer info
             order_is_confirmed = updated_order_state.get("status") == "confirmed"
-            has_customer_info = customer_name and customer_phone
+            has_customer_info = customer_name and (customer_phone or customer_email)
             order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
             if order_is_confirmed and has_customer_info:
@@ -1620,11 +1974,40 @@ def persist_pending_order(
         slots.get("email"),
     )
 
-    # Total price from items
-    total_price = sum((it.get("line_total") or 0.0) for it in items)
+    # Calculate subtotal from line items
+    subtotal = sum((it.get("line_total") or 0.0) for it in items)
+
+    # Get tax rates from store
+    city_tax_rate = 0.0
+    state_tax_rate = 0.0
+    delivery_fee = 2.99  # Default delivery fee
+
+    if store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            city_tax_rate = store.city_tax_rate or 0.0
+            state_tax_rate = store.state_tax_rate or 0.0
+
+    # Calculate taxes
+    city_tax = subtotal * city_tax_rate
+    state_tax = subtotal * state_tax_rate
 
     order_type = order_state.get("order_type", "pickup")
     delivery_address = order_state.get("delivery_address")
+
+    # Add delivery fee if delivery order
+    actual_delivery_fee = delivery_fee if order_type == "delivery" else 0.0
+
+    # Total price = subtotal + taxes + delivery fee
+    total_price = subtotal + city_tax + state_tax + actual_delivery_fee
+
+    # Store tax breakdown in order state for reference
+    order_state["checkout_state"] = order_state.get("checkout_state", {})
+    order_state["checkout_state"]["subtotal"] = subtotal
+    order_state["checkout_state"]["city_tax"] = city_tax
+    order_state["checkout_state"]["state_tax"] = state_tax
+    order_state["checkout_state"]["delivery_fee"] = actual_delivery_fee
+    order_state["checkout_state"]["total"] = total_price
 
     # Create order with pending_payment status
     order = Order(
@@ -1632,6 +2015,10 @@ def persist_pending_order(
         customer_name=customer_name,
         phone=phone,
         customer_email=customer_email,
+        subtotal=subtotal,
+        city_tax=city_tax,
+        state_tax=state_tax,
+        delivery_fee=actual_delivery_fee,
         total_price=total_price,
         store_id=store_id,
         order_type=order_type,
@@ -1651,19 +2038,53 @@ def persist_pending_order(
             or it.get("item_type")
             or "Unknown item"
         )
-        bread_or_crust = it.get("bread") or it.get("crust")
+        # Include side choice in display name (for omelettes)
+        side_choice = it.get("side_choice")
+        bagel_choice = it.get("bagel_choice")
+        if side_choice == "bagel" and bagel_choice:
+            menu_item_name = f"{menu_item_name} with {bagel_choice} bagel"
+        elif side_choice == "fruit_salad":
+            menu_item_name = f"{menu_item_name} with fruit salad"
+
+        item_type = it.get("item_type")
         quantity = it.get("quantity", 1)
         line_total = it.get("line_total", 0.0)
         unit_price = line_total / quantity if quantity > 0 else line_total
 
+        # For bagel items, map bagel-specific fields
+        if item_type == "bagel":
+            bread_field = it.get("bagel_type")
+            # Build spread description for cheese field
+            spread = it.get("spread")
+            spread_type = it.get("spread_type")
+            if spread:
+                if spread_type and spread_type != "plain":
+                    cheese_field = f"{spread_type} {spread}"
+                else:
+                    cheese_field = spread
+            else:
+                cheese_field = None
+            # Map sandwich_protein to protein field
+            protein_field = it.get("sandwich_protein")
+            # Map extras to toppings (includes additional proteins, cheeses, toppings)
+            toppings_field = it.get("extras")
+        else:
+            bread_field = it.get("bread") or it.get("crust")
+            cheese_field = it.get("cheese")
+            protein_field = it.get("protein")
+            toppings_field = it.get("toppings")
+
         order_item = OrderItem(
             order_id=order.id,
             menu_item_name=menu_item_name,
+            item_type=item_type,
             quantity=quantity,
             size=it.get("size"),
-            bread=bread_or_crust,
-            cheese=it.get("cheese"),
-            toppings=json.dumps(it.get("toppings")) if it.get("toppings") else None,
+            bread=bread_field,
+            protein=protein_field,
+            cheese=cheese_field,
+            toasted=it.get("toasted"),
+            toppings=json.dumps(toppings_field) if toppings_field else None,
             sauces=json.dumps(it.get("sauces") or it.get("sauce")) if (it.get("sauces") or it.get("sauce")) else None,
             unit_price=unit_price,
             line_total=line_total,
@@ -1738,14 +2159,43 @@ def persist_confirmed_order(
         slots.get("pickup_time_str"),
     )
 
-    # Total price: try state, then slots, then sum of line_totals
-    total_price = order_state.get("total_price")
-    if not isinstance(total_price, (int, float)) or total_price <= 0:
-        slots_total = slots.get("total_price")
-        if isinstance(slots_total, (int, float)) and slots_total > 0:
-            total_price = float(slots_total)
-        else:
-            total_price = sum((it.get("line_total") or 0.0) for it in items)
+    # Calculate subtotal from line items
+    subtotal = sum((it.get("line_total") or 0.0) for it in items)
+
+    # Get tax rates from store
+    city_tax_rate = 0.0
+    state_tax_rate = 0.0
+    delivery_fee = 2.99  # Default delivery fee
+
+    if store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            city_tax_rate = store.city_tax_rate or 0.0
+            state_tax_rate = store.state_tax_rate or 0.0
+
+    # Calculate taxes
+    city_tax = subtotal * city_tax_rate
+    state_tax = subtotal * state_tax_rate
+
+    # Add delivery fee if delivery order
+    order_type = order_state.get("order_type", "pickup")
+    actual_delivery_fee = delivery_fee if order_type == "delivery" else 0.0
+
+    # Total price = subtotal + taxes + delivery fee
+    total_price = subtotal + city_tax + state_tax + actual_delivery_fee
+
+    # Store tax breakdown in order state for reference
+    order_state["checkout_state"] = order_state.get("checkout_state", {})
+    order_state["checkout_state"]["subtotal"] = subtotal
+    order_state["checkout_state"]["city_tax"] = city_tax
+    order_state["checkout_state"]["state_tax"] = state_tax
+    order_state["checkout_state"]["delivery_fee"] = actual_delivery_fee
+    order_state["checkout_state"]["total"] = total_price
+
+    logger.info(
+        "Order total calculated: subtotal=$%.2f, city_tax=$%.2f (%.3f%%), state_tax=$%.2f (%.3f%%), delivery=$%.2f, total=$%.2f",
+        subtotal, city_tax, city_tax_rate * 100, state_tax, state_tax_rate * 100, actual_delivery_fee, total_price
+    )
 
     # --- Create or update Order row ---
     existing_id = order_state.get("db_order_id")
@@ -1758,8 +2208,7 @@ def persist_confirmed_order(
             # stale id: fall back to creating a new one below
             existing_id = None
 
-    # Get order type, delivery address, and payment info from state
-    order_type = order_state.get("order_type", "pickup")
+    # Get delivery address and payment info from state (order_type already set above)
     delivery_address = order_state.get("delivery_address")
     payment_status = order_state.get("payment_status", "unpaid")
     payment_method = order_state.get("payment_method")
@@ -1772,6 +2221,10 @@ def persist_confirmed_order(
             phone=phone,
             customer_email=customer_email,
             pickup_time=pickup_time,
+            subtotal=subtotal,
+            city_tax=city_tax,
+            state_tax=state_tax,
+            delivery_fee=actual_delivery_fee,
             total_price=total_price,
             store_id=store_id,
             order_type=order_type,
@@ -1789,6 +2242,10 @@ def persist_confirmed_order(
         order.phone = phone
         order.customer_email = customer_email
         order.pickup_time = pickup_time
+        order.subtotal = subtotal
+        order.city_tax = city_tax
+        order.state_tax = state_tax
+        order.delivery_fee = actual_delivery_fee
         order.total_price = total_price
         order.order_type = order_type
         order.delivery_address = delivery_address
@@ -1806,20 +2263,50 @@ def persist_confirmed_order(
             or it.get("item_type")
             or "Unknown item"
         )
+        # Include side choice in display name (for omelettes)
+        side_choice = it.get("side_choice")
+        bagel_choice = it.get("bagel_choice")
+        if side_choice == "bagel" and bagel_choice:
+            menu_item_name = f"{menu_item_name} with {bagel_choice} bagel"
+        elif side_choice == "fruit_salad":
+            menu_item_name = f"{menu_item_name} with fruit salad"
 
-        # For pizza, use crust in the bread field (they serve same purpose)
-        bread_or_crust = it.get("bread") or it.get("crust")
+        item_type = it.get("item_type")
+
+        # For bagel items, map bagel-specific fields
+        if item_type == "bagel":
+            bread_field = it.get("bagel_type")
+            # Build spread description for cheese field
+            spread = it.get("spread")
+            spread_type = it.get("spread_type")
+            if spread:
+                if spread_type and spread_type != "plain":
+                    cheese_field = f"{spread_type} {spread}"
+                else:
+                    cheese_field = spread
+            else:
+                cheese_field = None
+            # Map sandwich_protein to protein field
+            protein_field = it.get("sandwich_protein")
+            # Map extras to toppings (includes additional proteins, cheeses, toppings)
+            toppings_field = it.get("extras") or []
+        else:
+            # For pizza, use crust in the bread field (they serve same purpose)
+            bread_field = it.get("bread") or it.get("crust")
+            cheese_field = it.get("cheese")
+            protein_field = it.get("protein")
+            toppings_field = it.get("toppings") or []
 
         oi = OrderItem(
             order_id=order.id,
             menu_item_id=it.get("menu_item_id"),
             menu_item_name=menu_item_name,
-            item_type=it.get("item_type"),
+            item_type=item_type,
             size=it.get("size"),
-            bread=bread_or_crust,
-            protein=it.get("protein"),
-            cheese=it.get("cheese"),
-            toppings=it.get("toppings") or [],
+            bread=bread_field,
+            protein=protein_field,
+            cheese=cheese_field,
+            toppings=toppings_field,
             sauces=it.get("sauces") or [],
             toasted=it.get("toasted"),
             item_config=it.get("item_config"),  # Coffee/drink modifiers (style, milk, syrup, etc.)
@@ -1868,6 +2355,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         base_price=item.base_price,
         available_qty=item.available_qty,
         metadata=meta,
+        item_type_id=item.item_type_id,
     )
 
 # ---------- Admin menu endpoints ----------
@@ -1897,6 +2385,7 @@ def create_menu_item(
         base_price=payload.base_price,
         available_qty=payload.available_qty,
         extra_metadata=json.dumps(payload.metadata or {}),
+        item_type_id=payload.item_type_id,
     )
     db.add(item)
     db.commit()
@@ -1941,6 +2430,8 @@ def update_menu_item(
         item.available_qty = payload.available_qty
     if payload.metadata is not None:
         item.extra_metadata = json.dumps(payload.metadata)
+    if payload.item_type_id is not None:
+        item.item_type_id = payload.item_type_id
 
     db.commit()
     db.refresh(item)
@@ -2002,6 +2493,10 @@ def list_orders(
             phone=o.phone,
             customer_email=o.customer_email,
             pickup_time=o.pickup_time,
+            subtotal=o.subtotal,
+            city_tax=o.city_tax,
+            state_tax=o.state_tax,
+            delivery_fee=o.delivery_fee,
             total_price=o.total_price,
             store_id=o.store_id,
             order_type=o.order_type,
@@ -2048,6 +2543,10 @@ def get_order_detail(
         phone=order.phone,
         customer_email=order.customer_email,
         pickup_time=order.pickup_time,
+        subtotal=order.subtotal,
+        city_tax=order.city_tax,
+        state_tax=order.state_tax,
+        delivery_fee=order.delivery_fee,
         total_price=order.total_price,
         store_id=order.store_id,
         order_type=order.order_type,
@@ -2567,6 +3066,77 @@ def get_analytics_summary(
     )
 
 
+# ---------- Admin Testing Endpoints ----------
+
+
+@admin_testing_router.get("/reset-customer")
+async def reset_customer_by_phone(
+    phone: str = Query(..., description="Phone number to reset (last 10 digits will be matched)"),
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+):
+    """
+    Reset a customer by phone number for testing purposes.
+
+    Deletes all orders, chat sessions, and analytics for the given phone number.
+    This allows testing the "new customer" flow with the same phone number.
+
+    Usage: /admin/testing/reset-customer?phone=7328139409
+    """
+    # Normalize phone - extract just digits
+    normalized = "".join(c for c in phone if c.isdigit())
+    phone_suffix = normalized[-10:] if len(normalized) >= 10 else normalized
+
+    if len(phone_suffix) < 7:
+        raise HTTPException(status_code=400, detail="Phone number must be at least 7 digits")
+
+    deleted_counts = {
+        "orders": 0,
+        "chat_sessions": 0,
+        "session_analytics": 0,
+    }
+
+    # Delete orders matching this phone (check last 10 digits)
+    orders = db.query(Order).filter(Order.phone.isnot(None)).all()
+    for order in orders:
+        order_phone = "".join(c for c in order.phone if c.isdigit())
+        order_suffix = order_phone[-10:] if len(order_phone) >= 10 else order_phone
+        if order_suffix == phone_suffix:
+            # Delete order items first (foreign key constraint)
+            db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
+            db.delete(order)
+            deleted_counts["orders"] += 1
+
+    # Delete chat sessions matching this phone
+    sessions = db.query(ChatSession).filter(ChatSession.caller_id.isnot(None)).all()
+    for session in sessions:
+        session_phone = "".join(c for c in session.caller_id if c.isdigit())
+        session_suffix = session_phone[-10:] if len(session_phone) >= 10 else session_phone
+        if session_suffix == phone_suffix:
+            db.delete(session)
+            deleted_counts["chat_sessions"] += 1
+
+    # Delete session analytics matching this phone
+    analytics = db.query(SessionAnalytics).filter(SessionAnalytics.customer_phone.isnot(None)).all()
+    for record in analytics:
+        analytics_phone = "".join(c for c in record.customer_phone if c.isdigit())
+        analytics_suffix = analytics_phone[-10:] if len(analytics_phone) >= 10 else analytics_phone
+        if analytics_suffix == phone_suffix:
+            db.delete(record)
+            deleted_counts["session_analytics"] += 1
+
+    db.commit()
+
+    total_deleted = sum(deleted_counts.values())
+
+    return {
+        "status": "success",
+        "message": f"Reset customer data for phone ending in ...{phone_suffix[-4:]}",
+        "deleted": deleted_counts,
+        "total_deleted": total_deleted,
+    }
+
+
 # ---------- Admin Store Management Endpoints ----------
 
 
@@ -2667,6 +3237,8 @@ def create_store(
         hours=payload.hours,
         status=payload.status,
         payment_methods=payload.payment_methods,
+        city_tax_rate=payload.city_tax_rate,
+        state_tax_rate=payload.state_tax_rate,
     )
     db.add(store)
     db.commit()
@@ -2719,6 +3291,10 @@ def update_store(
         store.status = payload.status
     if payload.payment_methods is not None:
         store.payment_methods = payload.payment_methods
+    if payload.city_tax_rate is not None:
+        store.city_tax_rate = payload.city_tax_rate
+    if payload.state_tax_rate is not None:
+        store.state_tax_rate = payload.state_tax_rate
 
     db.commit()
     db.refresh(store)
@@ -2871,6 +3447,379 @@ def get_public_company_info(
     return CompanyOut(**company_data)
 
 
+# ---------- Modifiers Admin Endpoints ----------
+
+
+def serialize_item_type(item_type: ItemType, db: Session) -> ItemTypeOut:
+    """Serialize an ItemType with its attribute definitions and menu item count."""
+    menu_item_count = db.query(MenuItem).filter(MenuItem.item_type_id == item_type.id).count()
+
+    return ItemTypeOut(
+        id=item_type.id,
+        slug=item_type.slug,
+        display_name=item_type.display_name,
+        is_configurable=item_type.is_configurable,
+        attribute_definitions=[
+            AttributeDefinitionOut(
+                id=attr.id,
+                slug=attr.slug,
+                display_name=attr.display_name,
+                input_type=attr.input_type,
+                is_required=attr.is_required,
+                allow_none=attr.allow_none,
+                min_selections=attr.min_selections,
+                max_selections=attr.max_selections,
+                display_order=attr.display_order,
+                options=[
+                    AttributeOptionOut(
+                        id=opt.id,
+                        slug=opt.slug,
+                        display_name=opt.display_name,
+                        price_modifier=opt.price_modifier,
+                        is_default=opt.is_default,
+                        is_available=opt.is_available,
+                        display_order=opt.display_order,
+                    )
+                    for opt in sorted(attr.options, key=lambda o: o.display_order)
+                ]
+            )
+            for attr in sorted(item_type.attribute_definitions, key=lambda a: a.display_order)
+        ],
+        menu_item_count=menu_item_count,
+    )
+
+
+@admin_modifiers_router.get("/item-types", response_model=List[ItemTypeOut])
+def list_item_types(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[ItemTypeOut]:
+    """List all item types with their attribute definitions and options."""
+    item_types = db.query(ItemType).order_by(ItemType.display_name).all()
+    return [serialize_item_type(it, db) for it in item_types]
+
+
+@admin_modifiers_router.post("/item-types", response_model=ItemTypeOut, status_code=201)
+def create_item_type(
+    payload: ItemTypeCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> ItemTypeOut:
+    """Create a new item type."""
+    # Check for duplicate slug
+    existing = db.query(ItemType).filter(ItemType.slug == payload.slug).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Item type with slug '{payload.slug}' already exists")
+
+    item_type = ItemType(
+        slug=payload.slug,
+        display_name=payload.display_name,
+        is_configurable=payload.is_configurable,
+    )
+    db.add(item_type)
+    db.commit()
+    db.refresh(item_type)
+    logger.info("Created item type: %s", item_type.slug)
+    return serialize_item_type(item_type, db)
+
+
+@admin_modifiers_router.get("/item-types/{item_type_id}", response_model=ItemTypeOut)
+def get_item_type(
+    item_type_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> ItemTypeOut:
+    """Get a specific item type with its attribute definitions and options."""
+    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
+    if not item_type:
+        raise HTTPException(status_code=404, detail="Item type not found")
+    return serialize_item_type(item_type, db)
+
+
+@admin_modifiers_router.put("/item-types/{item_type_id}", response_model=ItemTypeOut)
+def update_item_type(
+    item_type_id: int,
+    payload: ItemTypeUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> ItemTypeOut:
+    """Update an item type."""
+    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
+    if not item_type:
+        raise HTTPException(status_code=404, detail="Item type not found")
+
+    if payload.slug is not None:
+        # Check for duplicate slug
+        existing = db.query(ItemType).filter(ItemType.slug == payload.slug, ItemType.id != item_type_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Item type with slug '{payload.slug}' already exists")
+        item_type.slug = payload.slug
+    if payload.display_name is not None:
+        item_type.display_name = payload.display_name
+    if payload.is_configurable is not None:
+        item_type.is_configurable = payload.is_configurable
+
+    db.commit()
+    db.refresh(item_type)
+    logger.info("Updated item type: %s", item_type.slug)
+    return serialize_item_type(item_type, db)
+
+
+@admin_modifiers_router.delete("/item-types/{item_type_id}", status_code=204)
+def delete_item_type(
+    item_type_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+):
+    """Delete an item type. Will fail if menu items are using it."""
+    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
+    if not item_type:
+        raise HTTPException(status_code=404, detail="Item type not found")
+
+    # Check if any menu items use this type
+    menu_item_count = db.query(MenuItem).filter(MenuItem.item_type_id == item_type_id).count()
+    if menu_item_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete item type: {menu_item_count} menu item(s) are using it"
+        )
+
+    db.delete(item_type)
+    db.commit()
+    logger.info("Deleted item type: %s", item_type.slug)
+
+
+# ---------- Attribute Definition Endpoints ----------
+
+
+@admin_modifiers_router.post("/item-types/{item_type_id}/attributes", response_model=AttributeDefinitionOut, status_code=201)
+def create_attribute_definition(
+    item_type_id: int,
+    payload: AttributeDefinitionCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeDefinitionOut:
+    """Create a new attribute definition for an item type."""
+    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
+    if not item_type:
+        raise HTTPException(status_code=404, detail="Item type not found")
+
+    # Check for duplicate slug within this item type
+    existing = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == item_type_id,
+        AttributeDefinition.slug == payload.slug
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Attribute with slug '{payload.slug}' already exists for this item type")
+
+    attr = AttributeDefinition(
+        item_type_id=item_type_id,
+        slug=payload.slug,
+        display_name=payload.display_name,
+        input_type=payload.input_type,
+        is_required=payload.is_required,
+        allow_none=payload.allow_none,
+        min_selections=payload.min_selections,
+        max_selections=payload.max_selections,
+        display_order=payload.display_order,
+    )
+    db.add(attr)
+    db.commit()
+    db.refresh(attr)
+    logger.info("Created attribute definition: %s for item type %s", attr.slug, item_type.slug)
+
+    return AttributeDefinitionOut(
+        id=attr.id,
+        slug=attr.slug,
+        display_name=attr.display_name,
+        input_type=attr.input_type,
+        is_required=attr.is_required,
+        allow_none=attr.allow_none,
+        min_selections=attr.min_selections,
+        max_selections=attr.max_selections,
+        display_order=attr.display_order,
+        options=[],
+    )
+
+
+@admin_modifiers_router.put("/attributes/{attribute_id}", response_model=AttributeDefinitionOut)
+def update_attribute_definition(
+    attribute_id: int,
+    payload: AttributeDefinitionUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeDefinitionOut:
+    """Update an attribute definition."""
+    attr = db.query(AttributeDefinition).filter(AttributeDefinition.id == attribute_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Attribute definition not found")
+
+    if payload.slug is not None:
+        # Check for duplicate slug within the same item type
+        existing = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == attr.item_type_id,
+            AttributeDefinition.slug == payload.slug,
+            AttributeDefinition.id != attribute_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Attribute with slug '{payload.slug}' already exists for this item type")
+        attr.slug = payload.slug
+    if payload.display_name is not None:
+        attr.display_name = payload.display_name
+    if payload.input_type is not None:
+        attr.input_type = payload.input_type
+    if payload.is_required is not None:
+        attr.is_required = payload.is_required
+    if payload.allow_none is not None:
+        attr.allow_none = payload.allow_none
+    if payload.min_selections is not None:
+        attr.min_selections = payload.min_selections
+    if payload.max_selections is not None:
+        attr.max_selections = payload.max_selections
+    if payload.display_order is not None:
+        attr.display_order = payload.display_order
+
+    db.commit()
+    db.refresh(attr)
+    logger.info("Updated attribute definition: %s", attr.slug)
+
+    return AttributeDefinitionOut(
+        id=attr.id,
+        slug=attr.slug,
+        display_name=attr.display_name,
+        input_type=attr.input_type,
+        is_required=attr.is_required,
+        allow_none=attr.allow_none,
+        min_selections=attr.min_selections,
+        max_selections=attr.max_selections,
+        display_order=attr.display_order,
+        options=[
+            AttributeOptionOut(
+                id=opt.id,
+                slug=opt.slug,
+                display_name=opt.display_name,
+                price_modifier=opt.price_modifier,
+                is_default=opt.is_default,
+                is_available=opt.is_available,
+                display_order=opt.display_order,
+            )
+            for opt in sorted(attr.options, key=lambda o: o.display_order)
+        ],
+    )
+
+
+@admin_modifiers_router.delete("/attributes/{attribute_id}", status_code=204)
+def delete_attribute_definition(
+    attribute_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+):
+    """Delete an attribute definition and all its options."""
+    attr = db.query(AttributeDefinition).filter(AttributeDefinition.id == attribute_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Attribute definition not found")
+
+    db.delete(attr)
+    db.commit()
+    logger.info("Deleted attribute definition: %s", attr.slug)
+
+
+# ---------- Attribute Option Endpoints ----------
+
+
+@admin_modifiers_router.post("/attributes/{attribute_id}/options", response_model=AttributeOptionOut, status_code=201)
+def create_attribute_option(
+    attribute_id: int,
+    payload: AttributeOptionCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Create a new option for an attribute definition."""
+    attr = db.query(AttributeDefinition).filter(AttributeDefinition.id == attribute_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Attribute definition not found")
+
+    # Check for duplicate slug within this attribute
+    existing = db.query(AttributeOption).filter(
+        AttributeOption.attribute_definition_id == attribute_id,
+        AttributeOption.slug == payload.slug
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Option with slug '{payload.slug}' already exists for this attribute")
+
+    option = AttributeOption(
+        attribute_definition_id=attribute_id,
+        slug=payload.slug,
+        display_name=payload.display_name,
+        price_modifier=payload.price_modifier,
+        is_default=payload.is_default,
+        is_available=payload.is_available,
+        display_order=payload.display_order,
+    )
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+    logger.info("Created attribute option: %s for attribute %s", option.slug, attr.slug)
+
+    return AttributeOptionOut.model_validate(option)
+
+
+@admin_modifiers_router.put("/options/{option_id}", response_model=AttributeOptionOut)
+def update_attribute_option(
+    option_id: int,
+    payload: AttributeOptionUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Update an attribute option."""
+    option = db.query(AttributeOption).filter(AttributeOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Attribute option not found")
+
+    if payload.slug is not None:
+        # Check for duplicate slug within the same attribute
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == option.attribute_definition_id,
+            AttributeOption.slug == payload.slug,
+            AttributeOption.id != option_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Option with slug '{payload.slug}' already exists for this attribute")
+        option.slug = payload.slug
+    if payload.display_name is not None:
+        option.display_name = payload.display_name
+    if payload.price_modifier is not None:
+        option.price_modifier = payload.price_modifier
+    if payload.is_default is not None:
+        option.is_default = payload.is_default
+    if payload.is_available is not None:
+        option.is_available = payload.is_available
+    if payload.display_order is not None:
+        option.display_order = payload.display_order
+
+    db.commit()
+    db.refresh(option)
+    logger.info("Updated attribute option: %s (price_modifier: %s)", option.slug, option.price_modifier)
+
+    return AttributeOptionOut.model_validate(option)
+
+
+@admin_modifiers_router.delete("/options/{option_id}", status_code=204)
+def delete_attribute_option(
+    option_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+):
+    """Delete an attribute option."""
+    option = db.query(AttributeOption).filter(AttributeOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Attribute option not found")
+
+    db.delete(option)
+    db.commit()
+    logger.info("Deleted attribute option: %s", option.slug)
+
+
 # ---------- TTS (Text-to-Speech) Endpoints ----------
 
 
@@ -2970,6 +3919,8 @@ api_v1_router.include_router(admin_ingredients_router)
 api_v1_router.include_router(admin_analytics_router)
 api_v1_router.include_router(admin_stores_router)
 api_v1_router.include_router(admin_company_router)
+api_v1_router.include_router(admin_modifiers_router)
+api_v1_router.include_router(admin_testing_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
@@ -2986,6 +3937,8 @@ app.include_router(admin_ingredients_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_stores_router)
 app.include_router(admin_company_router)
+app.include_router(admin_modifiers_router)
+app.include_router(admin_testing_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)

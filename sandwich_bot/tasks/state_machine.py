@@ -3053,7 +3053,9 @@ class OrderStateMachine:
         # Build consolidated lines
         for summary, count in item_counts.items():
             if count > 1:
-                lines.append(f"  - {count}× {summary}")
+                # Pluralize: "3 cokes" instead of "3× coke"
+                plural = f"{summary}s" if not summary.endswith("s") else summary
+                lines.append(f"  - {count} {plural}")
             else:
                 lines.append(f"  - {summary}")
 

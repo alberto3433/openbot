@@ -195,6 +195,7 @@
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients (86)</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -502,14 +503,19 @@
         const itemsHtml = order.items
           .map((item) => {
             const extras = [];
+            if (item.toasted === true) extras.push("toasted");
+            if (item.toasted === false) extras.push("not toasted");
             if (item.size) extras.push(item.size);
             if (item.bread) extras.push(item.bread);
-            if (item.protein) extras.push(item.protein);
-            if (item.cheese) extras.push(item.cheese);
+            // Filter out "none" values for protein and cheese
+            if (item.protein && item.protein.toLowerCase() !== "none") extras.push(item.protein);
+            if (item.cheese && item.cheese.toLowerCase() !== "none") extras.push(item.cheese);
             const extrasStr = extras.join(" • ");
 
-            const toppings = item.toppings && item.toppings.length
-              ? `Toppings: ${item.toppings.join(", ")}`
+            // Filter out "none" values from toppings array
+            const filteredToppings = (item.toppings || []).filter(t => t && t.toLowerCase() !== "none");
+            const toppings = filteredToppings.length
+              ? `Toppings: ${filteredToppings.join(", ")}`
               : "";
             const sauces = item.sauces && item.sauces.length
               ? `Sauces: ${item.sauces.join(", ")}`
@@ -526,17 +532,28 @@
               if (item.item_config.milk && item.item_config.milk.toLowerCase() !== "none") {
                 configParts.push(item.item_config.milk.replace(/_/g, " "));
               }
-              if (item.item_config.syrup) {
-                const syrups = Array.isArray(item.item_config.syrup) ? item.item_config.syrup : [item.item_config.syrup];
+              // Handle flavor_syrup (new field name) or syrup (legacy)
+              const syrupValue = item.item_config.flavor_syrup || item.item_config.syrup;
+              if (syrupValue) {
+                const syrups = Array.isArray(syrupValue) ? syrupValue : [syrupValue];
                 syrups.forEach(s => {
                   const formatted = s.replace(/_/g, " ");
                   // Don't add "syrup" if it's already in the name
                   configParts.push(formatted.toLowerCase().includes("syrup") ? formatted : formatted + " syrup");
                 });
               }
+              // Handle sweetener with quantity
               if (item.item_config.sweetener) {
                 const sweeteners = Array.isArray(item.item_config.sweetener) ? item.item_config.sweetener : [item.item_config.sweetener];
-                sweeteners.filter(s => s).forEach(s => configParts.push(s.replace(/_/g, " ")));
+                const sweetenerQty = item.item_config.sweetener_quantity || 1;
+                sweeteners.filter(s => s).forEach(s => {
+                  const formatted = s.replace(/_/g, " ");
+                  if (sweetenerQty > 1) {
+                    configParts.push(`${sweetenerQty} ${formatted}s`);
+                  } else {
+                    configParts.push(formatted);
+                  }
+                });
               }
               if (item.item_config.extras) {
                 const cfgExtras = Array.isArray(item.item_config.extras) ? item.item_config.extras : [item.item_config.extras];
@@ -564,6 +581,13 @@
 
         const formattedCreatedAt = formatInStoreTimezone(order.created_at, order.store_id);
 
+        // Build price breakdown section
+        const hasSubtotal = order.subtotal !== null && order.subtotal !== undefined;
+        const cityTax = order.city_tax || 0;
+        const stateTax = order.state_tax || 0;
+        const deliveryFee = order.delivery_fee || 0;
+        const total = order.total_price || 0;
+
         detailsContent.innerHTML = `
           <div class="details-grid">
             <div><strong>Order ID:</strong> ${order.id}</div>
@@ -572,15 +596,45 @@
             <div><strong>Phone:</strong> ${order.phone || ""}</div>
             <div><strong>Email:</strong> ${order.customer_email || ""}</div>
             <div><strong>Order Type:</strong> ${order.order_type || "pickup"}</div>
-            <div><strong>Delivery Address:</strong> ${order.delivery_address || ""}</div>
+            ${order.delivery_address ? `<div><strong>Delivery Address:</strong> ${order.delivery_address}</div>` : ''}
             <div><strong>Payment:</strong> ${order.payment_method || ""} (${order.payment_status || "unpaid"})</div>
             <div><strong>Ready Time:</strong> ${order.pickup_time || ""}</div>
-            <div><strong>Total:</strong> $${order.total_price.toFixed(2)}</div>
             <div><strong>Created:</strong> ${formattedCreatedAt}</div>
           </div>
           <div class="items-list">
             <h3 style="font-size:14px; margin:8px 0 4px;">Items</h3>
             ${itemsHtml || '<div class="muted">No items on this order</div>'}
+          </div>
+          <div class="price-breakdown" style="margin-top: 12px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+            <h3 style="font-size: 14px; margin: 0 0 8px 0;">Price Breakdown</h3>
+            ${hasSubtotal ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span>Subtotal:</span>
+              <span>$${order.subtotal.toFixed(2)}</span>
+            </div>
+            ` : ''}
+            ${cityTax > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #666;">
+              <span>City Tax:</span>
+              <span>$${cityTax.toFixed(2)}</span>
+            </div>
+            ` : ''}
+            ${stateTax > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #666;">
+              <span>State Tax:</span>
+              <span>$${stateTax.toFixed(2)}</span>
+            </div>
+            ` : ''}
+            ${deliveryFee > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #666;">
+              <span>Delivery Fee:</span>
+              <span>$${deliveryFee.toFixed(2)}</span>
+            </div>
+            ` : ''}
+            <div style="display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; font-weight: 600; font-size: 15px;">
+              <span>Total:</span>
+              <span>$${total.toFixed(2)}</span>
+            </div>
           </div>
         `;
       } catch (err) {

@@ -2054,24 +2054,31 @@ def persist_pending_order(
         # For bagel items, map bagel-specific fields
         if item_type == "bagel":
             bread_field = it.get("bagel_type")
-            # Build spread description for cheese field
+            # Build spread description for cheese field (skip "none" values)
             spread = it.get("spread")
             spread_type = it.get("spread_type")
-            if spread:
+            if spread and spread.lower() != "none":
                 if spread_type and spread_type != "plain":
                     cheese_field = f"{spread_type} {spread}"
                 else:
                     cheese_field = spread
             else:
                 cheese_field = None
-            # Map sandwich_protein to protein field
+            # Map sandwich_protein to protein field (skip "none" values)
             protein_field = it.get("sandwich_protein")
+            if protein_field and protein_field.lower() == "none":
+                protein_field = None
             # Map extras to toppings (includes additional proteins, cheeses, toppings)
             toppings_field = it.get("extras")
         else:
             bread_field = it.get("bread") or it.get("crust")
             cheese_field = it.get("cheese")
+            # Filter out "none" values for non-bagel items too
+            if cheese_field and cheese_field.lower() == "none":
+                cheese_field = None
             protein_field = it.get("protein")
+            if protein_field and protein_field.lower() == "none":
+                protein_field = None
             toppings_field = it.get("toppings")
 
         order_item = OrderItem(
@@ -2276,25 +2283,32 @@ def persist_confirmed_order(
         # For bagel items, map bagel-specific fields
         if item_type == "bagel":
             bread_field = it.get("bagel_type")
-            # Build spread description for cheese field
+            # Build spread description for cheese field (skip "none" values)
             spread = it.get("spread")
             spread_type = it.get("spread_type")
-            if spread:
+            if spread and spread.lower() != "none":
                 if spread_type and spread_type != "plain":
                     cheese_field = f"{spread_type} {spread}"
                 else:
                     cheese_field = spread
             else:
                 cheese_field = None
-            # Map sandwich_protein to protein field
+            # Map sandwich_protein to protein field (skip "none" values)
             protein_field = it.get("sandwich_protein")
+            if protein_field and protein_field.lower() == "none":
+                protein_field = None
             # Map extras to toppings (includes additional proteins, cheeses, toppings)
             toppings_field = it.get("extras") or []
         else:
             # For pizza, use crust in the bread field (they serve same purpose)
             bread_field = it.get("bread") or it.get("crust")
             cheese_field = it.get("cheese")
+            # Filter out "none" values for non-bagel items too
+            if cheese_field and cheese_field.lower() == "none":
+                cheese_field = None
             protein_field = it.get("protein")
+            if protein_field and protein_field.lower() == "none":
+                protein_field = None
             toppings_field = it.get("toppings") or []
 
         oi = OrderItem(

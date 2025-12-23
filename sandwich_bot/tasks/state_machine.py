@@ -830,6 +830,211 @@ BY_POUND_PRICES = {
     "baked salmon salad": 26.99,
 }
 
+# =============================================================================
+# Bagel Modifier Extraction (keyword-based, no LLM)
+# =============================================================================
+
+# Valid proteins that can be added to a bagel
+BAGEL_PROTEINS = {
+    "bacon", "ham", "turkey", "pastrami", "corned beef",
+    "nova", "lox", "nova scotia salmon", "baked salmon",
+    "egg", "eggs", "egg white", "egg whites", "scrambled egg", "scrambled eggs",
+    "sausage", "avocado",
+}
+
+# Valid cheeses
+BAGEL_CHEESES = {
+    "american", "american cheese",
+    "swiss", "swiss cheese",
+    "cheddar", "cheddar cheese",
+    "muenster", "muenster cheese",
+    "provolone", "provolone cheese",
+    "gouda", "gouda cheese",
+    "mozzarella", "mozzarella cheese",
+    "pepper jack", "pepper jack cheese",
+}
+
+# Valid toppings/extras
+BAGEL_TOPPINGS = {
+    "tomato", "tomatoes",
+    "onion", "onions", "red onion", "red onions",
+    "lettuce",
+    "capers",
+    "cucumber", "cucumbers",
+    "pickles", "pickle",
+    "sauerkraut",
+    "sprouts",
+    "everything seeds",
+    "mayo", "mayonnaise",
+    "mustard",
+    "ketchup",
+    "hot sauce",
+    "salt", "pepper", "salt and pepper",
+}
+
+# Valid spreads (cream cheese varieties, butter)
+BAGEL_SPREADS = {
+    "cream cheese", "plain cream cheese",
+    "scallion cream cheese", "scallion",
+    "veggie cream cheese", "vegetable cream cheese", "veggie",
+    "lox spread",
+    "jalapeño cream cheese", "jalapeno cream cheese",
+    "honey walnut cream cheese", "honey walnut",
+    "strawberry cream cheese", "strawberry",
+    "olive cream cheese", "olive",
+    "tofu cream cheese", "tofu",
+    "butter",
+}
+
+# Map short names to full names for normalization
+MODIFIER_NORMALIZATIONS = {
+    # Proteins
+    "eggs": "egg",
+    "egg whites": "egg white",
+    "scrambled eggs": "scrambled egg",
+    "nova": "nova scotia salmon",
+    "lox": "nova scotia salmon",
+    # Cheeses - normalize to just the cheese name
+    "american cheese": "american",
+    "swiss cheese": "swiss",
+    "cheddar cheese": "cheddar",
+    "muenster cheese": "muenster",
+    "provolone cheese": "provolone",
+    "gouda cheese": "gouda",
+    "mozzarella cheese": "mozzarella",
+    "pepper jack cheese": "pepper jack",
+    # Toppings
+    "tomatoes": "tomato",
+    "onions": "onion",
+    "red onions": "red onion",
+    "cucumbers": "cucumber",
+    "pickles": "pickle",
+    # Spreads
+    "plain cream cheese": "cream cheese",
+    "veggie cream cheese": "vegetable cream cheese",
+    "veggie": "vegetable cream cheese",
+    "scallion": "scallion cream cheese",
+    "strawberry": "strawberry cream cheese",
+    "olive": "olive cream cheese",
+    "honey walnut": "honey walnut cream cheese",
+    "tofu": "tofu cream cheese",
+    "jalapeno cream cheese": "jalapeño cream cheese",
+}
+
+
+class ExtractedModifiers:
+    """Container for modifiers extracted from user input."""
+
+    def __init__(self):
+        self.proteins: list[str] = []
+        self.cheeses: list[str] = []
+        self.toppings: list[str] = []
+        self.spreads: list[str] = []
+
+    def has_modifiers(self) -> bool:
+        """Check if any modifiers were extracted."""
+        return bool(self.proteins or self.cheeses or self.toppings or self.spreads)
+
+    def __repr__(self):
+        parts = []
+        if self.proteins:
+            parts.append(f"proteins={self.proteins}")
+        if self.cheeses:
+            parts.append(f"cheeses={self.cheeses}")
+        if self.toppings:
+            parts.append(f"toppings={self.toppings}")
+        if self.spreads:
+            parts.append(f"spreads={self.spreads}")
+        return f"ExtractedModifiers({', '.join(parts)})"
+
+
+def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
+    """
+    Extract bagel modifiers from user input using keyword matching.
+
+    This is a deterministic, non-LLM approach that scans the input for
+    known modifier keywords and extracts them by category.
+
+    Args:
+        user_input: The raw user input string
+
+    Returns:
+        ExtractedModifiers with lists of found proteins, cheeses, toppings, spreads
+
+    Examples:
+        "ham, egg and cheese on a wheat bagel"
+        -> proteins=[ham, egg], cheeses=[cheese], toppings=[], spreads=[]
+
+        "everything bagel with scallion cream cheese and tomato"
+        -> proteins=[], cheeses=[], toppings=[tomato], spreads=[scallion cream cheese]
+    """
+    result = ExtractedModifiers()
+    input_lower = user_input.lower()
+
+    # Helper to check if a word boundary exists (not part of a larger word)
+    def is_word_boundary(text: str, start: int, end: int) -> bool:
+        """Check if the match is at word boundaries."""
+        before_ok = start == 0 or not text[start - 1].isalnum()
+        after_ok = end >= len(text) or not text[end].isalnum()
+        return before_ok and after_ok
+
+    # Track what we've already matched to avoid duplicates
+    matched_spans: list[tuple[int, int]] = []
+
+    def find_and_add(modifier_set: set[str], target_list: list[str], category: str):
+        """Find modifiers from a set and add to target list."""
+        # Sort by length descending to match longer phrases first
+        # (e.g., "scallion cream cheese" before "cream cheese")
+        sorted_modifiers = sorted(modifier_set, key=len, reverse=True)
+
+        for modifier in sorted_modifiers:
+            # Find all occurrences
+            start = 0
+            while True:
+                pos = input_lower.find(modifier, start)
+                if pos == -1:
+                    break
+
+                end = pos + len(modifier)
+
+                # Check word boundaries
+                if is_word_boundary(input_lower, pos, end):
+                    # Check if this span overlaps with already matched spans
+                    overlaps = any(
+                        not (end <= s or pos >= e) for s, e in matched_spans
+                    )
+                    if not overlaps:
+                        matched_spans.append((pos, end))
+                        # Normalize the modifier name
+                        normalized = MODIFIER_NORMALIZATIONS.get(modifier, modifier)
+                        if normalized not in target_list:
+                            target_list.append(normalized)
+                            logger.debug(f"Extracted {category}: '{modifier}' -> '{normalized}'")
+
+                start = pos + 1
+
+    # Extract in order of specificity (longer matches first within each category)
+    # Process spreads first (they often contain "cream cheese" which could conflict)
+    find_and_add(BAGEL_SPREADS, result.spreads, "spread")
+    find_and_add(BAGEL_PROTEINS, result.proteins, "protein")
+    find_and_add(BAGEL_CHEESES, result.cheeses, "cheese")
+    find_and_add(BAGEL_TOPPINGS, result.toppings, "topping")
+
+    # Special case: if user just says "cheese" without a specific type, default to american
+    if "cheese" in input_lower and not result.cheeses:
+        # Check if "cheese" appears as a standalone word (not part of "cream cheese")
+        import re
+        cheese_match = re.search(r'\bcheese\b', input_lower)
+        if cheese_match:
+            pos = cheese_match.start()
+            # Make sure it's not part of "cream cheese"
+            if "cream cheese" not in input_lower[max(0, pos-6):pos+7]:
+                result.cheeses.append("american")
+                logger.debug("Extracted cheese: 'cheese' -> 'american' (default)")
+
+    return result
+
+
 # Greeting patterns
 GREETING_PATTERNS = re.compile(
     r"^(hi|hello|hey|good morning|good afternoon|good evening|howdy|yo)[\s!.,]*$",
@@ -1339,8 +1544,13 @@ class OrderStateMachine:
             )
 
         # User might have ordered something directly - pass the already parsed result
+        # Also extract modifiers from the raw input
+        extracted_modifiers = extract_modifiers_from_input(user_input)
+        if extracted_modifiers.has_modifiers():
+            logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
+
         state.phase = OrderPhase.TAKING_ITEMS
-        return self._handle_taking_items_with_parsed(parsed, state, order)
+        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers)
 
     def _handle_taking_items(
         self,
@@ -1350,13 +1560,20 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Handle taking new item orders."""
         parsed = parse_open_input(user_input, model=self.model)
-        return self._handle_taking_items_with_parsed(parsed, state, order)
+
+        # Extract modifiers from raw input (keyword-based, no LLM)
+        extracted_modifiers = extract_modifiers_from_input(user_input)
+        if extracted_modifiers.has_modifiers():
+            logger.info("Extracted modifiers from input: %s", extracted_modifiers)
+
+        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers)
 
     def _handle_taking_items_with_parsed(
         self,
         parsed: OpenInputResponse,
         state: FlowState,
         order: OrderTask,
+        extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """Handle taking new item orders with already-parsed input."""
         logger.info(
@@ -1399,6 +1616,7 @@ class OrderStateMachine:
                     spread_type=parsed.new_bagel_spread_type,
                     state=state,
                     order=order,
+                    extracted_modifiers=extracted_modifiers,
                 )
 
         if parsed.new_coffee:
@@ -1894,10 +2112,37 @@ class OrderStateMachine:
         toasted: bool | None = None,
         spread: str | None = None,
         spread_type: str | None = None,
+        extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """Add a bagel and start configuration, pre-filling any provided details."""
         # Look up bagel price from menu
         price = self._lookup_bagel_price(bagel_type)
+
+        # Build extras list from extracted modifiers
+        extras: list[str] = []
+        sandwich_protein: str | None = None
+
+        if extracted_modifiers and extracted_modifiers.has_modifiers():
+            # First protein goes to sandwich_protein field
+            if extracted_modifiers.proteins:
+                sandwich_protein = extracted_modifiers.proteins[0]
+                # Additional proteins go to extras
+                extras.extend(extracted_modifiers.proteins[1:])
+
+            # Cheeses go to extras
+            extras.extend(extracted_modifiers.cheeses)
+
+            # Toppings go to extras
+            extras.extend(extracted_modifiers.toppings)
+
+            # If modifiers include a spread, use it (unless already specified)
+            if not spread and extracted_modifiers.spreads:
+                spread = extracted_modifiers.spreads[0]
+
+            logger.info(
+                "Extracted modifiers: protein=%s, extras=%s, spread=%s",
+                sandwich_protein, extras, spread
+            )
 
         # Create bagel with all provided details
         bagel = BagelItemTask(
@@ -1905,14 +2150,16 @@ class OrderStateMachine:
             toasted=toasted,
             spread=spread,
             spread_type=spread_type,
+            sandwich_protein=sandwich_protein,
+            extras=extras,
             unit_price=price,
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
         logger.info(
-            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s",
-            bagel_type, toasted, spread, spread_type
+            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s",
+            bagel_type, toasted, spread, spread_type, sandwich_protein, extras
         )
 
         # Determine what question to ask based on what's missing

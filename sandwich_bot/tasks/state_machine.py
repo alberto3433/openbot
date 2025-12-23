@@ -1831,6 +1831,9 @@ class OrderStateMachine:
                 order=order,
             )
 
+        # Recalculate price to include spread modifier
+        self.recalculate_bagel_price(item)
+
         # This bagel is complete
         item.mark_complete()
         state.clear_pending()
@@ -2120,8 +2123,8 @@ class OrderStateMachine:
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """Add a bagel and start configuration, pre-filling any provided details."""
-        # Look up bagel price from menu
-        price = self._lookup_bagel_price(bagel_type)
+        # Look up base bagel price from menu
+        base_price = self._lookup_bagel_price(bagel_type)
 
         # Build extras list from extracted modifiers
         extras: list[str] = []
@@ -2148,6 +2151,15 @@ class OrderStateMachine:
                 "Extracted modifiers: protein=%s, extras=%s, spread=%s",
                 sandwich_protein, extras, spread
             )
+
+        # Calculate total price including modifiers
+        price = self._calculate_bagel_price_with_modifiers(
+            base_price, sandwich_protein, extras, spread
+        )
+        logger.info(
+            "Bagel price: base=$%.2f, total=$%.2f (with modifiers)",
+            base_price, price
+        )
 
         # Create bagel with all provided details
         bagel = BagelItemTask(
@@ -2229,8 +2241,8 @@ class OrderStateMachine:
             quantity, bagel_type, toasted, spread, spread_type
         )
 
-        # Look up bagel price from menu
-        price = self._lookup_bagel_price(bagel_type)
+        # Look up base bagel price from menu
+        base_price = self._lookup_bagel_price(bagel_type)
 
         # Create all the bagels
         for i in range(quantity):
@@ -2260,6 +2272,11 @@ class OrderStateMachine:
                     "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
                     sandwich_protein, extras, bagel_spread
                 )
+
+            # Calculate total price including modifiers (for first bagel with modifiers)
+            price = self._calculate_bagel_price_with_modifiers(
+                base_price, sandwich_protein, extras, bagel_spread
+            )
 
             bagel = BagelItemTask(
                 bagel_type=bagel_type,
@@ -2296,13 +2313,13 @@ class OrderStateMachine:
         logger.info("Adding %d bagels from details", len(bagel_details))
 
         for i, details in enumerate(bagel_details):
-            # Look up price
-            price = 2.50
+            # Look up base price
+            base_price = 2.50
             if details.bagel_type:
                 bagel_name = f"{details.bagel_type.title()} Bagel" if "bagel" not in details.bagel_type.lower() else details.bagel_type
                 menu_item = self._lookup_menu_item(bagel_name)
                 if menu_item:
-                    price = menu_item.get("base_price", 2.50)
+                    base_price = menu_item.get("base_price", 2.50)
 
             # Build extras list from extracted modifiers (apply to first bagel only)
             extras: list[str] = []
@@ -2330,6 +2347,11 @@ class OrderStateMachine:
                     "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
                     sandwich_protein, extras, spread
                 )
+
+            # Calculate total price including modifiers
+            price = self._calculate_bagel_price_with_modifiers(
+                base_price, sandwich_protein, extras, spread
+            )
 
             bagel = BagelItemTask(
                 bagel_type=details.bagel_type,
@@ -2951,3 +2973,152 @@ class OrderStateMachine:
             return max(matches, key=lambda x: len(x.get("name", "")))
 
         return None
+
+    # Default modifier prices - used as fallback when menu_data lookup fails
+    DEFAULT_MODIFIER_PRICES = {
+        # Proteins
+        "ham": 2.00,
+        "bacon": 2.00,
+        "egg": 1.50,
+        "lox": 5.00,
+        "turkey": 2.50,
+        "pastrami": 3.00,
+        "sausage": 2.00,
+        # Cheeses
+        "american": 0.75,
+        "swiss": 0.75,
+        "cheddar": 0.75,
+        "muenster": 0.75,
+        "provolone": 0.75,
+        # Spreads
+        "cream cheese": 1.50,
+        "butter": 0.50,
+        "scallion cream cheese": 1.75,
+        "vegetable cream cheese": 1.75,
+        # Extras
+        "avocado": 2.00,
+        "tomato": 0.50,
+        "onion": 0.50,
+        "capers": 0.75,
+    }
+
+    def _lookup_modifier_price(self, modifier_name: str, item_type: str = "bagel") -> float:
+        """
+        Look up price modifier for a bagel add-on (protein, cheese, topping).
+
+        Searches the item_types attribute options for matching modifier prices.
+        Falls back to DEFAULT_MODIFIER_PRICES if not found in menu_data.
+
+        Args:
+            modifier_name: Name of the modifier (e.g., "ham", "egg", "american")
+            item_type: Item type to look up (default "bagel", falls back to "sandwich")
+
+        Returns:
+            Price modifier (e.g., 2.00 for ham) or 0.0 if not found
+        """
+        modifier_lower = modifier_name.lower()
+
+        # Try menu_data first if available
+        if self.menu_data:
+            item_types = self.menu_data.get("item_types", {})
+
+            # Try the specified item type first, then fall back to sandwich
+            types_to_check = [item_type, "sandwich"] if item_type != "sandwich" else ["sandwich"]
+
+            for type_slug in types_to_check:
+                type_data = item_types.get(type_slug, {})
+                attributes = type_data.get("attributes", [])
+
+                # Search through all attributes (protein, cheese, toppings, etc.)
+                for attr in attributes:
+                    options = attr.get("options", [])
+                    for opt in options:
+                        # Match by slug or display_name
+                        if opt.get("slug", "").lower() == modifier_lower or \
+                           opt.get("display_name", "").lower() == modifier_lower:
+                            price = opt.get("price_modifier", 0.0)
+                            if price > 0:
+                                logger.debug(
+                                    "Found modifier price: %s = $%.2f (from %s.%s)",
+                                    modifier_name, price, type_slug, attr.get("slug")
+                                )
+                                return price
+
+        # Fall back to default prices
+        default_price = self.DEFAULT_MODIFIER_PRICES.get(modifier_lower, 0.0)
+        if default_price > 0:
+            logger.debug(
+                "Using default modifier price: %s = $%.2f",
+                modifier_name, default_price
+            )
+        return default_price
+
+    def _calculate_bagel_price_with_modifiers(
+        self,
+        base_price: float,
+        sandwich_protein: str | None,
+        extras: list[str] | None,
+        spread: str | None,
+    ) -> float:
+        """
+        Calculate total bagel price including modifiers.
+
+        Args:
+            base_price: Base bagel price
+            sandwich_protein: Primary protein (e.g., "ham")
+            extras: Additional modifiers (e.g., ["egg", "american"])
+            spread: Spread choice (e.g., "cream cheese")
+
+        Returns:
+            Total price including all modifiers
+        """
+        total = base_price
+
+        # Add protein price
+        if sandwich_protein:
+            total += self._lookup_modifier_price(sandwich_protein)
+
+        # Add extras prices
+        if extras:
+            for extra in extras:
+                total += self._lookup_modifier_price(extra)
+
+        # Add spread price (if not "none")
+        if spread and spread.lower() != "none":
+            total += self._lookup_modifier_price(spread)
+
+        return round(total, 2)
+
+    def recalculate_bagel_price(self, item: BagelItemTask) -> float:
+        """
+        Recalculate and update a bagel item's price based on its current modifiers.
+
+        This should be called whenever a bagel's modifiers change (spread, protein, extras)
+        to ensure price is always in sync with the item's state.
+
+        Args:
+            item: The bagel item to update
+
+        Returns:
+            The new calculated price
+        """
+        # Get base price from bagel type
+        base_price = self._lookup_bagel_price(item.bagel_type)
+
+        # Calculate total with all current modifiers
+        new_price = self._calculate_bagel_price_with_modifiers(
+            base_price,
+            item.sandwich_protein,
+            item.extras,
+            item.spread,
+        )
+
+        # Update the item's price
+        item.unit_price = new_price
+
+        logger.debug(
+            "Recalculated bagel price: base=%.2f, protein=%s, extras=%s, spread=%s -> total=%.2f",
+            base_price, item.sandwich_protein, item.extras, item.spread, new_price
+        )
+
+        return new_price

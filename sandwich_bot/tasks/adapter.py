@@ -183,14 +183,24 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 
         elif item_type == "drink":
             item_config = item.get("item_config") or {}
+            # Determine iced value from item_config.style, not drink name
+            # style="iced" → True, style="hot" → False, style=None → None (skip_config drinks)
+            style = item_config.get("style")
+            if style == "iced":
+                iced_value = True
+            elif style == "hot":
+                iced_value = False
+            else:
+                # For skip_config drinks (sodas, etc.) or unspecified, keep as None
+                iced_value = None
             coffee = CoffeeItemTask(
                 drink_type=item.get("menu_item_name") or "coffee",
-                size=item.get("size") or item_config.get("size") or "medium",
+                size=item.get("size") or item_config.get("size"),  # Don't default to medium for skip_config drinks
                 milk=item_config.get("milk"),
                 sweetener=item_config.get("sweetener"),
                 sweetener_quantity=item_config.get("sweetener_quantity", 1),
                 flavor_syrup=item_config.get("flavor_syrup"),
-                iced="iced" in (item.get("menu_item_name") or "").lower(),
+                iced=iced_value,
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -335,14 +345,16 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
                 "id": item.id,  # Preserve item ID
                 "status": item.status.value,
                 "menu_item_name": getattr(item, 'drink_type', 'coffee'),
-                "size": getattr(item, 'size', 'medium'),
+                "size": getattr(item, 'size', None),  # Don't default to medium for skip_config drinks
                 "item_config": {
-                    "size": getattr(item, 'size', 'medium'),
+                    "size": getattr(item, 'size', None),  # Don't default to medium
                     "milk": getattr(item, 'milk', None),
                     "sweetener": getattr(item, 'sweetener', None),
                     "sweetener_quantity": getattr(item, 'sweetener_quantity', 1),
                     "flavor_syrup": getattr(item, 'flavor_syrup', None),
-                    "style": "iced" if getattr(item, 'iced', False) else "hot",
+                    # Only set style if iced is explicitly True/False (not None)
+                    # skip_config drinks (sodas, bottled) don't need iced/hot labels
+                    "style": "iced" if getattr(item, 'iced', None) is True else ("hot" if getattr(item, 'iced', None) is False else None),
                 },
                 "quantity": 1,
                 "unit_price": item.unit_price,

@@ -49,6 +49,48 @@ class OrderPhase(str, Enum):
     CANCELLED = "cancelled"
 
 
+# =============================================================================
+# Drink Type Categories
+# =============================================================================
+
+# Sodas and cold beverages that don't need hot/iced or size configuration
+# These are added directly without asking configuration questions
+SODA_DRINK_TYPES = {
+    "coke", "coca cola", "coca-cola",
+    "diet coke", "diet coca cola",
+    "coke zero", "coca cola zero",
+    "sprite", "diet sprite",
+    "fanta", "orange fanta",
+    "dr pepper", "dr. pepper",
+    "pepsi", "diet pepsi",
+    "mountain dew", "mtn dew",
+    "ginger ale",
+    "root beer",
+    "lemonade",
+    "iced tea",  # Pre-made bottled iced tea
+    "bottled water", "water",
+    "sparkling water", "seltzer",
+    "juice", "orange juice", "apple juice", "cranberry juice",
+    "snapple",
+    "gatorade",
+}
+
+
+def is_soda_drink(drink_type: str | None) -> bool:
+    """Check if a drink type is a soda/cold beverage that doesn't need configuration."""
+    if not drink_type:
+        return False
+    drink_lower = drink_type.lower().strip()
+    # Check exact match first
+    if drink_lower in SODA_DRINK_TYPES:
+        return True
+    # Check if any soda type is contained in the drink name
+    for soda in SODA_DRINK_TYPES:
+        if soda in drink_lower or drink_lower in soda:
+            return True
+    return False
+
+
 @dataclass
 class FlowState:
     """
@@ -300,6 +342,10 @@ class OpenInputResponse(BaseModel):
     )
 
     # Menu inquiries
+    asking_signature_menu: bool = Field(
+        default=False,
+        description="User is asking about signature/speed menu items (e.g., 'what are your speed menu bagels?', 'what signature items do you have?')"
+    )
     asking_by_pound: bool = Field(
         default=False,
         description="User is asking what we sell by the pound"
@@ -1310,6 +1356,15 @@ Examples:
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
 - "that's all" -> done_ordering: true
 
+Signature/Speed menu inquiries:
+- If user asks about signature items, speed menu, or pre-made options -> asking_signature_menu: true
+  - "what are your speed menu bagels" -> asking_signature_menu: true
+  - "what speed menu options do you have" -> asking_signature_menu: true
+  - "what signature bagels do you have" -> asking_signature_menu: true
+  - "what are the signature items" -> asking_signature_menu: true
+  - "tell me about the speed menu" -> asking_signature_menu: true
+  - "what pre-made bagels do you have" -> asking_signature_menu: true
+
 By-the-pound inquiries:
 - If user asks "what do you sell by the pound" or "do you have anything by the pound" -> asking_by_pound: true
 - If user asks about a specific category by the pound, also set by_pound_category:
@@ -1636,6 +1691,9 @@ class OrderStateMachine:
                 state,
                 order,
             )
+
+        if parsed.asking_signature_menu:
+            return self._handle_signature_menu_inquiry(state, order)
 
         if parsed.asking_by_pound:
             return self._handle_by_pound_inquiry(parsed.by_pound_category, state, order)
@@ -2481,10 +2539,40 @@ class OrderStateMachine:
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Add a coffee and start configuration flow."""
-        # Look up price from menu
-        price = self._lookup_coffee_price(coffee_type)
+        """Add a coffee/drink and start configuration flow if needed."""
+        # Look up item from menu to get price and skip_config flag
+        menu_item = self._lookup_menu_item(coffee_type) if coffee_type else None
+        price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
 
+        # Check if this drink should skip configuration questions
+        # Priority: 1) skip_config flag from database, 2) hardcoded soda list fallback
+        should_skip_config = False
+        if menu_item and menu_item.get("skip_config"):
+            should_skip_config = True
+        elif is_soda_drink(coffee_type):
+            # Fallback for items not in database
+            should_skip_config = True
+
+        if should_skip_config:
+            # This drink doesn't need size or hot/iced questions - add directly as complete
+            drink = CoffeeItemTask(
+                drink_type=coffee_type,
+                size=None,  # No size options for skip_config drinks
+                iced=None,  # No hot/iced label needed for sodas/bottled drinks
+                milk=None,
+                sweetener=None,
+                sweetener_quantity=0,
+                flavor_syrup=None,
+                unit_price=price,
+            )
+            drink.mark_complete()  # No configuration needed
+            order.items.add_item(drink)
+
+            # Return to taking items
+            state.clear_pending()
+            return self._get_next_question(state, order)
+
+        # Regular coffee/tea - needs configuration
         coffee = CoffeeItemTask(
             drink_type=coffee_type or "coffee",
             size=size,
@@ -2618,6 +2706,56 @@ class OrderStateMachine:
             return 3.00
 
         return 2.50  # Default
+
+    # =========================================================================
+    # Signature/Speed Menu Handlers
+    # =========================================================================
+
+    def _handle_signature_menu_inquiry(
+        self,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle inquiry about signature/speed menu items."""
+        # Find signature items from menu_data
+        # The key is dynamically named based on the primary item type (e.g., signature_bagels, signature_sandwiches)
+        signature_items = []
+
+        if self.menu_data:
+            # Look for signature items in any signature_* key
+            for key, items in self.menu_data.items():
+                if key.startswith("signature_") and isinstance(items, list):
+                    signature_items.extend(items)
+
+        if not signature_items:
+            return StateMachineResult(
+                message="We don't have any pre-made signature items on the menu right now. Would you like to build your own?",
+                state=state,
+                order=order,
+            )
+
+        # Build a nice list of signature items with prices
+        item_descriptions = []
+        for item in signature_items:
+            name = item.get("name", "Unknown")
+            price = item.get("base_price", 0)
+            item_descriptions.append(f"{name} for ${price:.2f}")
+
+        # Format the response
+        if len(item_descriptions) == 1:
+            items_list = item_descriptions[0]
+        elif len(item_descriptions) == 2:
+            items_list = f"{item_descriptions[0]} and {item_descriptions[1]}"
+        else:
+            items_list = ", ".join(item_descriptions[:-1]) + f", and {item_descriptions[-1]}"
+
+        message = f"Our speed menu options are: {items_list}. Would you like any of these?"
+
+        return StateMachineResult(
+            message=message,
+            state=state,
+            order=order,
+        )
 
     # =========================================================================
     # By-the-Pound Handlers

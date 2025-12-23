@@ -340,6 +340,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Flavor syrup: vanilla, caramel, hazelnut, etc."
     )
+    new_coffee_quantity: int = Field(
+        default=1,
+        description="Number of drinks ordered (e.g., '3 diet cokes' -> 3, 'two coffees' -> 2)"
+    )
 
     # Menu inquiries
     asking_signature_menu: bool = Field(
@@ -1315,7 +1319,8 @@ Determine what they want:
   - If bagels have DIFFERENT configurations, populate bagel_details list with each bagel's config
 - If ordering coffee/drink:
   - Set new_coffee=true
-  - Set new_coffee_type if specified (e.g., "latte", "cappuccino", "drip coffee")
+  - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)
+  - Set new_coffee_type if specified (e.g., "latte", "cappuccino", "drip coffee", "diet coke", "coke")
   - Set new_coffee_size if specified ("small", "medium", "large")
   - Set new_coffee_iced=true if they want iced, false if they want hot, null if not specified
   - Set new_coffee_milk if specified (e.g., "oat", "almond", "skim", "whole"). "black" means no milk.
@@ -1354,6 +1359,11 @@ Examples:
 - "medium coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "medium", new_coffee_flavor_syrup: "vanilla"
 - "small coffee black with two sugars and vanilla syrup" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
+- "3 diet cokes" -> new_coffee: true, new_coffee_type: "diet coke", new_coffee_quantity: 3
+- "two coffees" -> new_coffee: true, new_coffee_quantity: 2
+- "three lattes" -> new_coffee: true, new_coffee_type: "latte", new_coffee_quantity: 3
+- "2 iced coffees" -> new_coffee: true, new_coffee_iced: true, new_coffee_quantity: 2
+- "a coke" -> new_coffee: true, new_coffee_type: "coke", new_coffee_quantity: 1
 - "that's all" -> done_ordering: true
 
 Signature/Speed menu inquiries:
@@ -1688,6 +1698,7 @@ class OrderStateMachine:
                 parsed.new_coffee_sweetener,
                 parsed.new_coffee_sweetener_quantity,
                 parsed.new_coffee_flavor_syrup,
+                parsed.new_coffee_quantity,
                 state,
                 order,
             )
@@ -2536,10 +2547,14 @@ class OrderStateMachine:
         sweetener: str | None,
         sweetener_quantity: int,
         flavor_syrup: str | None,
+        quantity: int,
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Add a coffee/drink and start configuration flow if needed."""
+        """Add coffee/drink(s) and start configuration flow if needed."""
+        # Ensure quantity is at least 1
+        quantity = max(1, quantity)
+
         # Look up item from menu to get price and skip_config flag
         menu_item = self._lookup_menu_item(coffee_type) if coffee_type else None
         price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
@@ -2555,36 +2570,40 @@ class OrderStateMachine:
 
         if should_skip_config:
             # This drink doesn't need size or hot/iced questions - add directly as complete
-            drink = CoffeeItemTask(
-                drink_type=coffee_type,
-                size=None,  # No size options for skip_config drinks
-                iced=None,  # No hot/iced label needed for sodas/bottled drinks
-                milk=None,
-                sweetener=None,
-                sweetener_quantity=0,
-                flavor_syrup=None,
-                unit_price=price,
-            )
-            drink.mark_complete()  # No configuration needed
-            order.items.add_item(drink)
+            # Create the requested quantity of drinks
+            for _ in range(quantity):
+                drink = CoffeeItemTask(
+                    drink_type=coffee_type,
+                    size=None,  # No size options for skip_config drinks
+                    iced=None,  # No hot/iced label needed for sodas/bottled drinks
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=0,
+                    flavor_syrup=None,
+                    unit_price=price,
+                )
+                drink.mark_complete()  # No configuration needed
+                order.items.add_item(drink)
 
             # Return to taking items
             state.clear_pending()
             return self._get_next_question(state, order)
 
         # Regular coffee/tea - needs configuration
-        coffee = CoffeeItemTask(
-            drink_type=coffee_type or "coffee",
-            size=size,
-            iced=iced,
-            milk=milk,
-            sweetener=sweetener,
-            sweetener_quantity=sweetener_quantity,
-            flavor_syrup=flavor_syrup,
-            unit_price=price,
-        )
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
+        # Create the requested quantity of drinks
+        for _ in range(quantity):
+            coffee = CoffeeItemTask(
+                drink_type=coffee_type or "coffee",
+                size=size,
+                iced=iced,
+                milk=milk,
+                sweetener=sweetener,
+                sweetener_quantity=sweetener_quantity,
+                flavor_syrup=flavor_syrup,
+                unit_price=price,
+            )
+            coffee.mark_in_progress()
+            order.items.add_item(coffee)
 
         # Start configuration flow
         return self._configure_next_incomplete_coffee(state, order)

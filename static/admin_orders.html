@@ -500,7 +500,58 @@
         statusPill.className = `status-pill ${statusClass}`;
         statusPill.textContent = order.status;
 
-        const itemsHtml = order.items
+        // Helper function to build item display key for consolidation
+        function buildItemKey(item) {
+          const parts = [item.menu_item_name];
+
+          // Add config details that differentiate items
+          if (item.toasted === true) parts.push("toasted");
+          if (item.toasted === false) parts.push("not toasted");
+          if (item.size) parts.push(item.size);
+          if (item.bread) parts.push(item.bread);
+          if (item.protein && item.protein.toLowerCase() !== "none") parts.push(item.protein);
+          if (item.cheese && item.cheese.toLowerCase() !== "none") parts.push(item.cheese);
+
+          // Add drink config
+          if (item.item_config) {
+            if (item.item_config.size) parts.push(item.item_config.size);
+            if (item.item_config.style) parts.push(item.item_config.style);
+            if (item.item_config.milk && item.item_config.milk.toLowerCase() !== "none") {
+              parts.push(item.item_config.milk);
+            }
+            if (item.item_config.flavor_syrup) parts.push(item.item_config.flavor_syrup);
+            if (item.item_config.sweetener) {
+              parts.push(item.item_config.sweetener);
+              parts.push(item.item_config.sweetener_quantity || 1);
+            }
+          }
+
+          // Add toppings and sauces
+          const toppings = (item.toppings || []).filter(t => t && t.toLowerCase() !== "none").sort();
+          const sauces = (item.sauces || []).sort();
+          parts.push(toppings.join(","));
+          parts.push(sauces.join(","));
+
+          return parts.join("|");
+        }
+
+        // Consolidate identical items
+        const consolidatedItems = {};
+        order.items.forEach(item => {
+          const key = buildItemKey(item);
+          if (!consolidatedItems[key]) {
+            consolidatedItems[key] = {
+              ...item,
+              quantity: item.quantity || 1,
+              line_total: item.line_total || 0
+            };
+          } else {
+            consolidatedItems[key].quantity += (item.quantity || 1);
+            consolidatedItems[key].line_total += (item.line_total || 0);
+          }
+        });
+
+        const itemsHtml = Object.values(consolidatedItems)
           .map((item) => {
             const extras = [];
             if (item.toasted === true) extras.push("toasted");

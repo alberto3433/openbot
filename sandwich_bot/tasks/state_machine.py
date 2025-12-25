@@ -11,7 +11,7 @@ is interpreted in the context of that item - no new items can be created.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from pydantic import BaseModel, Field
 import instructor
 from openai import OpenAI
@@ -24,6 +24,7 @@ from .models import (
     MenuItemTask,
     BagelItemTask,
     CoffeeItemTask,
+    SpeedMenuBagelItemTask,
     ItemTask,
     TaskStatus,
 )
@@ -44,6 +45,7 @@ class OrderPhase(str, Enum):
     CHECKOUT_NAME = "checkout_name"
     CHECKOUT_CONFIRM = "checkout_confirm"
     CHECKOUT_PAYMENT_METHOD = "checkout_payment_method"  # Ask text or email
+    CHECKOUT_PHONE = "checkout_phone"  # Collect phone if they want text confirmation
     CHECKOUT_EMAIL = "checkout_email"  # Collect email if they want email receipt
     COMPLETE = "complete"
     CANCELLED = "cancelled"
@@ -277,7 +279,19 @@ class OpenInputResponse(BaseModel):
     # New item orders
     new_menu_item: str | None = Field(
         default=None,
-        description="Name of a menu item ordered (e.g., 'The Chipotle Egg Omelette')"
+        description="Name of a menu item ordered (e.g., 'The Chipotle Egg Omelette', 'Tuna Salad Sandwich')"
+    )
+    new_menu_item_quantity: int = Field(
+        default=1,
+        description="Number of menu items ordered (e.g., '3 omelettes' -> 3, 'two sandwiches' -> 2)"
+    )
+    new_side_item: str | None = Field(
+        default=None,
+        description="Side item ordered (e.g., 'Side of Sausage', 'Side of Bacon', 'Side of Turkey Bacon'). Use when user says 'with a side of X' or 'side of X'"
+    )
+    new_side_item_quantity: int = Field(
+        default=1,
+        description="Number of side items ordered"
     )
     new_bagel: bool = Field(
         default=False,
@@ -345,10 +359,46 @@ class OpenInputResponse(BaseModel):
         description="Number of drinks ordered (e.g., '3 diet cokes' -> 3, 'two coffees' -> 2)"
     )
 
+    # Speed menu bagel orders (pre-configured sandwiches like "The Classic", "The Leo")
+    new_speed_menu_bagel: bool = Field(
+        default=False,
+        description="User wants to order a speed menu bagel (e.g., 'The Classic', 'The Leo', 'The Traditional')"
+    )
+    new_speed_menu_bagel_name: str | None = Field(
+        default=None,
+        description="Name of the speed menu bagel (e.g., 'The Classic', 'The Leo', 'The Max Zucker')"
+    )
+    new_speed_menu_bagel_quantity: int = Field(
+        default=1,
+        description="Number of speed menu bagels ordered (e.g., '3 Classics' -> 3)"
+    )
+    new_speed_menu_bagel_toasted: bool | None = Field(
+        default=None,
+        description="Whether the speed menu bagel should be toasted (True/False/None)"
+    )
+
+    # Clarifications needed
+    needs_soda_clarification: bool = Field(
+        default=False,
+        description="User ordered a generic 'soda' without specifying type - need to ask what kind"
+    )
+
     # Menu inquiries
+    menu_query: bool = Field(
+        default=False,
+        description="User is asking what items are available (e.g., 'what sodas do you have?', 'what drinks do you have?', 'what bagels do you have?')"
+    )
+    menu_query_type: str | None = Field(
+        default=None,
+        description="The type of item being queried: 'soda', 'juice', 'coffee', 'tea', 'drink', 'beverage', 'bagel', 'egg_sandwich', 'fish_sandwich', 'sandwich', 'spread_sandwich', 'salad_sandwich', 'omelette', 'side', 'snack', etc."
+    )
     asking_signature_menu: bool = Field(
         default=False,
         description="User is asking about signature/speed menu items (e.g., 'what are your speed menu bagels?', 'what signature items do you have?')"
+    )
+    signature_menu_type: str | None = Field(
+        default=None,
+        description="The specific type of signature items being asked about: 'signature_sandwich', 'speed_menu_bagel', or None for all signature items"
     )
     asking_by_pound: bool = Field(
         default=False,
@@ -451,6 +501,14 @@ class EmailResponse(BaseModel):
     email: str | None = Field(
         default=None,
         description="The email address provided by the user"
+    )
+
+
+class PhoneResponse(BaseModel):
+    """Parser output when collecting phone number."""
+    phone: str | None = Field(
+        default=None,
+        description="The phone number provided by the user (digits only, 10 digits for US)"
     )
 
 
@@ -764,6 +822,7 @@ BAGEL_TYPES = {
     "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
     "whole wheat", "wheat", "salt", "garlic", "bialy",
     "egg", "multigrain", "asiago", "jalapeno", "blueberry",
+    "gluten free", "gluten-free",
 }
 
 # Known spreads
@@ -776,6 +835,7 @@ SPREADS = {
 SPREAD_TYPES = {
     "scallion", "veggie", "vegetable", "strawberry",
     "honey walnut", "lox", "chive", "garlic herb", "jalapeno",
+    "tofu", "olive",
 }
 
 # By-the-pound items (Zucker's specific)
@@ -1017,9 +1077,32 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
 
         "everything bagel with scallion cream cheese and tomato"
         -> proteins=[], cheeses=[], toppings=[tomato], spreads=[scallion cream cheese]
+
+        "onion bagel" -> no toppings (onion is the bagel type, not a topping)
     """
     result = ExtractedModifiers()
     input_lower = user_input.lower()
+
+    # Pre-mark "side of X" patterns to exclude them from modifier extraction
+    # This prevents "side of turkey sausage" from extracting "turkey" and "sausage" as bagel modifiers
+    side_of_spans: list[tuple[int, int]] = []
+    side_of_pattern = re.compile(r'\bside\s+of\s+\w+(?:\s+\w+)?', re.IGNORECASE)
+    for match in side_of_pattern.finditer(input_lower):
+        side_of_spans.append((match.start(), match.end()))
+        logger.debug(f"Excluding 'side of' pattern from modifiers: '{match.group()}'")
+
+    # Pre-mark bagel type patterns to exclude them from topping extraction
+    # This prevents "onion bagel" from extracting "onion" as a topping
+    # The bagel type word should only be a topping if explicitly added (e.g., "onion bagel with onion")
+    bagel_type_spans: list[tuple[int, int]] = []
+    for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+        # Match "<type> bagel" pattern
+        pattern = re.compile(rf'\b{re.escape(bagel_type)}\s+bagels?\b', re.IGNORECASE)
+        for match in pattern.finditer(input_lower):
+            # Only exclude the bagel type portion, not the whole match
+            type_end = match.start() + len(bagel_type)
+            bagel_type_spans.append((match.start(), type_end))
+            logger.debug(f"Excluding bagel type from modifiers: '{bagel_type}'")
 
     # Helper to check if a word boundary exists (not part of a larger word)
     def is_word_boundary(text: str, start: int, end: int) -> bool:
@@ -1029,7 +1112,8 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
         return before_ok and after_ok
 
     # Track what we've already matched to avoid duplicates
-    matched_spans: list[tuple[int, int]] = []
+    # Start with side_of_spans and bagel_type_spans to exclude those regions from modifier extraction
+    matched_spans: list[tuple[int, int]] = side_of_spans.copy() + bagel_type_spans.copy()
 
     def find_and_add(modifier_set: set[str], target_list: list[str], category: str):
         """Find modifiers from a set and add to target list."""
@@ -1073,7 +1157,6 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     # Special case: if user just says "cheese" without a specific type, default to american
     if "cheese" in input_lower and not result.cheeses:
         # Check if "cheese" appears as a standalone word (not part of "cream cheese")
-        import re
         cheese_match = re.search(r'\bcheese\b', input_lower)
         if cheese_match:
             pos = cheese_match.start()
@@ -1081,6 +1164,71 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
             if "cream cheese" not in input_lower[max(0, pos-6):pos+7]:
                 result.cheeses.append("american")
                 logger.debug("Extracted cheese: 'cheese' -> 'american' (default)")
+
+    return result
+
+
+@dataclass
+class ExtractedCoffeeModifiers:
+    """Container for coffee modifiers extracted from user input."""
+    sweetener: str | None = None
+    sweetener_quantity: int = 1
+    flavor_syrup: str | None = None
+
+
+def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModifiers:
+    """
+    Extract coffee modifiers from user input using keyword matching.
+
+    This is a deterministic, non-LLM approach that scans the input for
+    known sweetener and flavor syrup keywords.
+
+    Args:
+        user_input: The raw user input string
+
+    Returns:
+        ExtractedCoffeeModifiers with sweetener and flavor_syrup if found
+    """
+    result = ExtractedCoffeeModifiers()
+    input_lower = user_input.lower()
+
+    # Known sweeteners
+    sweeteners = ["splenda", "sugar", "stevia", "equal", "sweet n low", "sweet'n low", "honey"]
+
+    # Known flavor syrups
+    syrups = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice", "cinnamon", "lavender", "almond"]
+
+    # Extract sweetener with quantity
+    # Pattern: "2 splenda", "two sugars", "splenda", etc.
+    for sweetener in sweeteners:
+        # Check for quantity + sweetener pattern
+        qty_pattern = re.compile(
+            rf'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+{sweetener}s?',
+            re.IGNORECASE
+        )
+        qty_match = qty_pattern.search(input_lower)
+        if qty_match:
+            qty_str = qty_match.group(1)
+            if qty_str.isdigit():
+                result.sweetener_quantity = int(qty_str)
+            else:
+                result.sweetener_quantity = WORD_TO_NUM.get(qty_str.lower(), 1)
+            result.sweetener = sweetener
+            logger.debug(f"Extracted coffee sweetener: {result.sweetener_quantity} {sweetener}")
+            break
+        # Check for just sweetener (no quantity)
+        elif re.search(rf'\b{sweetener}s?\b', input_lower):
+            result.sweetener = sweetener
+            result.sweetener_quantity = 1
+            logger.debug(f"Extracted coffee sweetener: {sweetener}")
+            break
+
+    # Extract flavor syrup
+    for syrup in syrups:
+        if re.search(rf'\b{syrup}\b', input_lower):
+            result.flavor_syrup = syrup
+            logger.debug(f"Extracted coffee flavor syrup: {syrup}")
+            break
 
     return result
 
@@ -1162,8 +1310,35 @@ def _extract_toasted(text: str) -> bool | None:
     return None
 
 
-def _extract_spread(text: str) -> tuple[str | None, str | None]:
-    """Extract spread and spread type from text. Returns (spread, spread_type)."""
+def _build_spread_types_from_menu(cheese_types: list[str]) -> set[str]:
+    """Build spread type keywords from database cheese_types.
+
+    Extracts the flavor/type prefix from ingredient names like:
+    - "Tofu Cream Cheese" -> "tofu"
+    - "Scallion Cream Cheese" -> "scallion"
+    - "Sun-Dried Tomato Cream Cheese" -> "sun-dried tomato"
+    - "Maple Raisin Walnut Cream Cheese" -> "maple raisin walnut"
+    """
+    spread_types = set()
+    for name in cheese_types:
+        name_lower = name.lower()
+        # Extract type by removing common suffixes
+        for suffix in ["cream cheese", "spread"]:
+            if suffix in name_lower:
+                prefix = name_lower.replace(suffix, "").strip()
+                if prefix and prefix not in ("plain", "regular"):
+                    spread_types.add(prefix)
+                break
+    return spread_types
+
+
+def _extract_spread(text: str, extra_spread_types: set[str] | None = None) -> tuple[str | None, str | None]:
+    """Extract spread and spread type from text. Returns (spread, spread_type).
+
+    Args:
+        text: User input text
+        extra_spread_types: Additional spread types from database (e.g., from menu_data cheese_types)
+    """
     text_lower = text.lower()
 
     spread = None
@@ -1175,8 +1350,13 @@ def _extract_spread(text: str) -> tuple[str | None, str | None]:
             spread = s
             break
 
+    # Combine hardcoded and database spread types
+    all_spread_types = SPREAD_TYPES.copy()
+    if extra_spread_types:
+        all_spread_types.update(extra_spread_types)
+
     # Check for spread types (e.g., "scallion cream cheese")
-    for st in sorted(SPREAD_TYPES, key=len, reverse=True):
+    for st in sorted(all_spread_types, key=len, reverse=True):
         if st in text_lower:
             spread_type = st
             break
@@ -1188,11 +1368,238 @@ def _extract_spread(text: str) -> tuple[str | None, str | None]:
     return spread, spread_type
 
 
-def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
+# Map of side item keywords to canonical menu names
+SIDE_ITEM_MAP = {
+    "sausage": "Side of Sausage",
+    "turkey sausage": "Side of Sausage",  # No turkey sausage on menu, map to regular
+    "bacon": "Side of Bacon",
+    "turkey bacon": "Side of Turkey Bacon",
+    "ham": "Side of Ham",
+    "chicken sausage": "Side of Chicken Sausage",
+    "latke": "Side of Breakfast Latke",
+    "breakfast latke": "Side of Breakfast Latke",
+    "hard boiled egg": "Hard Boiled Egg (2)",
+    "eggs": "Hard Boiled Egg (2)",
+}
+
+
+def _extract_side_item(text: str) -> tuple[str | None, int]:
+    """Extract side item from text. Returns (side_item_name, quantity)."""
+    text_lower = text.lower()
+
+    # Look for "side of X" pattern - capture up to 3 words after "side of"
+    side_match = re.search(r'\bside\s+of\s+(\w+(?:\s+\w+){0,2})', text_lower)
+    if not side_match:
+        return None, 1
+
+    side_text = side_match.group(1).strip()
+
+    # Try to match against known side items (longer/more specific matches first)
+    for keyword in sorted(SIDE_ITEM_MAP.keys(), key=len, reverse=True):
+        # Exact match or the side_text starts with the keyword
+        if side_text == keyword or side_text.startswith(keyword + " ") or side_text.startswith(keyword):
+            return SIDE_ITEM_MAP[keyword], 1
+
+    # If we found "side of" but can't match it, return the raw text as a side item
+    # The lookup function will try to find it in the menu
+    return f"Side of {side_text.title()}", 1
+
+
+# Known menu item names for deterministic matching
+# Items starting with "the" will be prefixed with "The " in canonical form
+# Other items (sandwiches, etc.) will be title-cased without prefix
+KNOWN_MENU_ITEMS = {
+    # Egg sandwiches (signature items with "The" prefix)
+    "the lexington", "lexington",
+    "the classic bec", "classic bec",
+    "the grand central", "grand central",
+    "the wall street", "wall street",
+    "the tribeca", "tribeca",
+    "the columbus", "columbus",
+    "the hudson", "hudson",
+    "the chelsea", "chelsea",
+    "the midtown", "midtown",
+    # Other signature sandwiches (with "The" prefix)
+    "the delancey", "delancey",
+    "the leo", "leo",
+    "the avocado toast", "avocado toast",
+    "the health nut", "health nut",
+    "the zucker's traditional", "zucker's traditional", "the traditional", "traditional",
+    "the reuben", "reuben",
+    "turkey club",
+    "hot pastrami sandwich", "pastrami sandwich",
+    "nova scotia salmon", "nova salmon",
+    # Omelettes
+    "chipotle egg omelette", "the chipotle egg omelette", "chipotle omelette",
+    "cheese omelette",
+    "western omelette",
+    "veggie omelette",
+    "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
+    # Spread Sandwiches (cream cheese, butter, etc.)
+    "plain cream cheese sandwich", "plain cream cheese",
+    "scallion cream cheese sandwich", "scallion cream cheese",
+    "vegetable cream cheese sandwich", "veggie cream cheese", "vegetable cream cheese",
+    "sun-dried tomato cream cheese sandwich", "sun dried tomato cream cheese",
+    "strawberry cream cheese sandwich", "strawberry cream cheese",
+    "blueberry cream cheese sandwich", "blueberry cream cheese",
+    "kalamata olive cream cheese sandwich", "olive cream cheese",
+    "maple raisin walnut cream cheese sandwich", "maple raisin walnut", "maple walnut cream cheese",
+    "jalapeno cream cheese sandwich", "jalapeno cream cheese", "jalapeño cream cheese",
+    "nova scotia cream cheese sandwich", "nova cream cheese", "lox spread sandwich",
+    "truffle cream cheese sandwich", "truffle cream cheese",
+    "butter sandwich", "bagel with butter",
+    "peanut butter sandwich", "peanut butter bagel",
+    "nutella sandwich", "nutella bagel",
+    "hummus sandwich", "hummus bagel",
+    "avocado spread sandwich", "avocado spread",
+    "tofu plain sandwich", "tofu plain", "plain tofu",
+    "tofu scallion sandwich", "tofu scallion", "scallion tofu",
+    "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
+    "tofu nova sandwich", "tofu nova", "nova tofu",
+    # Salad Sandwiches
+    "tuna salad sandwich", "tuna salad", "tuna sandwich",
+    "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
+    "baked salmon salad sandwich", "baked salmon salad", "salmon salad sandwich",
+    "egg salad sandwich", "egg salad",
+    "chicken salad sandwich", "chicken salad",
+    "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
+    "lemon chicken salad sandwich", "lemon chicken salad",
+}
+
+# Items that should NOT get "The " prefix (salad and spread sandwiches)
+NO_THE_PREFIX_ITEMS = {
+    "plain cream cheese sandwich", "plain cream cheese",
+    "scallion cream cheese sandwich", "scallion cream cheese",
+    "vegetable cream cheese sandwich", "veggie cream cheese", "vegetable cream cheese",
+    "sun-dried tomato cream cheese sandwich", "sun dried tomato cream cheese",
+    "strawberry cream cheese sandwich", "strawberry cream cheese",
+    "blueberry cream cheese sandwich", "blueberry cream cheese",
+    "kalamata olive cream cheese sandwich", "olive cream cheese",
+    "maple raisin walnut cream cheese sandwich", "maple raisin walnut", "maple walnut cream cheese",
+    "jalapeno cream cheese sandwich", "jalapeno cream cheese", "jalapeño cream cheese",
+    "nova scotia cream cheese sandwich", "nova cream cheese", "lox spread sandwich",
+    "truffle cream cheese sandwich", "truffle cream cheese",
+    "butter sandwich", "bagel with butter",
+    "peanut butter sandwich", "peanut butter bagel",
+    "nutella sandwich", "nutella bagel",
+    "hummus sandwich", "hummus bagel",
+    "avocado spread sandwich", "avocado spread",
+    "tofu plain sandwich", "tofu plain", "plain tofu",
+    "tofu scallion sandwich", "tofu scallion", "scallion tofu",
+    "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
+    "tofu nova sandwich", "tofu nova", "nova tofu",
+    "tuna salad sandwich", "tuna salad", "tuna sandwich",
+    "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
+    "baked salmon salad sandwich", "baked salmon salad", "salmon salad sandwich",
+    "egg salad sandwich", "egg salad",
+    "chicken salad sandwich", "chicken salad",
+    "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
+    "lemon chicken salad sandwich", "lemon chicken salad",
+    "turkey club",
+    "hot pastrami sandwich", "pastrami sandwich",
+    "cheese omelette",
+    "western omelette",
+    "veggie omelette",
+    "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
+}
+
+# Mapping from short forms to canonical menu item names
+MENU_ITEM_CANONICAL_NAMES = {
+    # Spread sandwiches - map short forms to full names
+    "plain cream cheese": "Plain Cream Cheese Sandwich",
+    "scallion cream cheese": "Scallion Cream Cheese Sandwich",
+    "veggie cream cheese": "Vegetable Cream Cheese Sandwich",
+    "vegetable cream cheese": "Vegetable Cream Cheese Sandwich",
+    "sun dried tomato cream cheese": "Sun-Dried Tomato Cream Cheese Sandwich",
+    "strawberry cream cheese": "Strawberry Cream Cheese Sandwich",
+    "blueberry cream cheese": "Blueberry Cream Cheese Sandwich",
+    "olive cream cheese": "Kalamata Olive Cream Cheese Sandwich",
+    "maple raisin walnut": "Maple Raisin Walnut Cream Cheese Sandwich",
+    "maple walnut cream cheese": "Maple Raisin Walnut Cream Cheese Sandwich",
+    "jalapeno cream cheese": "Jalapeno Cream Cheese Sandwich",
+    "jalapeño cream cheese": "Jalapeno Cream Cheese Sandwich",
+    "nova cream cheese": "Nova Scotia Cream Cheese Sandwich",
+    "lox spread sandwich": "Nova Scotia Cream Cheese Sandwich",
+    "truffle cream cheese": "Truffle Cream Cheese Sandwich",
+    "bagel with butter": "Butter Sandwich",
+    "peanut butter bagel": "Peanut Butter Sandwich",
+    "nutella bagel": "Nutella Sandwich",
+    "hummus bagel": "Hummus Sandwich",
+    "avocado spread": "Avocado Spread Sandwich",
+    "tofu plain": "Tofu Plain Sandwich",
+    "plain tofu": "Tofu Plain Sandwich",
+    "tofu scallion": "Tofu Scallion Sandwich",
+    "scallion tofu": "Tofu Scallion Sandwich",
+    "tofu veggie": "Tofu Vegetable Sandwich",
+    "tofu vegetable": "Tofu Vegetable Sandwich",
+    "veggie tofu": "Tofu Vegetable Sandwich",
+    "tofu nova": "Tofu Nova Sandwich",
+    "nova tofu": "Tofu Nova Sandwich",
+    # Salad sandwiches - map short forms to full names
+    "tuna salad": "Tuna Salad Sandwich",
+    "tuna sandwich": "Tuna Salad Sandwich",
+    "whitefish salad": "Whitefish Salad Sandwich",
+    "whitefish sandwich": "Whitefish Salad Sandwich",
+    "baked salmon salad": "Baked Salmon Salad Sandwich",
+    "salmon salad sandwich": "Baked Salmon Salad Sandwich",
+    "egg salad": "Egg Salad Sandwich",
+    "chicken salad": "Chicken Salad Sandwich",
+    "cranberry pecan chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
+    "cranberry chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
+    "lemon chicken salad": "Lemon Chicken Salad Sandwich",
+}
+
+
+def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
+    """
+    Try to extract a known menu item from text.
+    Returns (item_name, quantity) or (None, 0) if not found.
+    """
+    text_lower = text.lower().strip()
+
+    # Remove common prefixes
+    text_lower = re.sub(r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)', '', text_lower)
+    text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
+
+    # Extract quantity
+    quantity = 1
+    qty_match = re.match(r'^(\d+|one|two|three|four|five)\s+', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        text_lower = text_lower[qty_match.end():]
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # Check for known menu items - sort by length (longest first) for better matching
+    for item in sorted(KNOWN_MENU_ITEMS, key=len, reverse=True):
+        if item in text_lower or text_lower.startswith(item):
+            # Check if we have a canonical name mapping for this item
+            if item in MENU_ITEM_CANONICAL_NAMES:
+                canonical = MENU_ITEM_CANONICAL_NAMES[item]
+            elif item in NO_THE_PREFIX_ITEMS:
+                # Items that don't need "The " prefix - just title case
+                canonical = " ".join(word.capitalize() for word in item.split())
+            else:
+                # Signature items get "The " prefix
+                canonical = " ".join(word.capitalize() for word in item.split())
+                if not canonical.startswith("The "):
+                    canonical = "The " + canonical
+            return canonical, quantity
+
+    return None, 0
+
+
+def parse_open_input_deterministic(user_input: str, spread_types: set[str] | None = None) -> OpenInputResponse | None:
     """
     Try to parse user input deterministically without LLM.
 
     Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
+
+    Args:
+        user_input: The user's input string
+        spread_types: Optional set of spread type keywords from database (e.g., "tofu", "scallion")
 
     Handles:
     - Greetings: "hi", "hello", etc.
@@ -1216,6 +1623,32 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
         logger.debug("Deterministic parse: done ordering detected")
         return OpenInputResponse(done_ordering=True)
 
+    # EARLY CHECK: Check for spread/salad sandwiches BEFORE bagel parsing
+    # This prevents "scallion cream cheese" from being parsed as a bagel with spread
+    # Instead, it should be recognized as a "Scallion Cream Cheese Sandwich" menu item
+    # BUT: If they say "bagel with X cream cheese", that's a build-your-own order
+    text_lower = text.lower()
+    has_bagel_mention = re.search(r"\bbagels?\b", text_lower)
+    has_sandwich_mention = "sandwich" in text_lower
+
+    # Only do early menu item matching if:
+    # 1. They explicitly said "sandwich", OR
+    # 2. They mentioned a spread/salad type WITHOUT mentioning "bagel"
+    # This way "plain bagel with scallion cream cheese" → build-your-own bagel
+    # But "scallion cream cheese" or "scallion cream cheese sandwich" → menu item
+    if (has_sandwich_mention or not has_bagel_mention) and any(term in text_lower for term in [
+        "cream cheese sandwich", "cream cheese",
+        "salad sandwich", "tuna salad", "whitefish salad", "egg salad",
+        "chicken salad", "salmon salad",
+        "butter sandwich", "peanut butter", "nutella", "hummus",
+        "avocado spread", "tofu"
+    ]):
+        # Try menu item extraction first
+        menu_item, qty = _extract_menu_item_from_text(text)
+        if menu_item:
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d)", text[:50], menu_item, qty)
+            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty)
+
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)
     if quantity_match:
@@ -1225,11 +1658,12 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
         if quantity:
             bagel_type = _extract_bagel_type(text)
             toasted = _extract_toasted(text)
-            spread, spread_type = _extract_spread(text)
+            spread, spread_type = _extract_spread(text, spread_types)
+            side_item, side_qty = _extract_side_item(text)
 
             logger.debug(
-                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, spread=%s/%s",
-                quantity, bagel_type, toasted, spread, spread_type
+                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, spread=%s/%s, side=%s",
+                quantity, bagel_type, toasted, spread, spread_type, side_item
             )
 
             return OpenInputResponse(
@@ -1239,17 +1673,20 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
                 new_bagel_toasted=toasted,
                 new_bagel_spread=spread,
                 new_bagel_spread_type=spread_type,
+                new_side_item=side_item,
+                new_side_item_quantity=side_qty,
             )
 
     # Check for simple "a bagel" / "bagel please" (quantity = 1)
     if SIMPLE_BAGEL_PATTERN.search(text):
         bagel_type = _extract_bagel_type(text)
         toasted = _extract_toasted(text)
-        spread, spread_type = _extract_spread(text)
+        spread, spread_type = _extract_spread(text, spread_types)
+        side_item, side_qty = _extract_side_item(text)
 
         logger.debug(
-            "Deterministic parse: single bagel - type=%s, toasted=%s, spread=%s/%s",
-            bagel_type, toasted, spread, spread_type
+            "Deterministic parse: single bagel - type=%s, toasted=%s, spread=%s/%s, side=%s",
+            bagel_type, toasted, spread, spread_type, side_item
         )
 
         return OpenInputResponse(
@@ -1259,6 +1696,8 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
             new_bagel_toasted=toasted,
             new_bagel_spread=spread,
             new_bagel_spread_type=spread_type,
+            new_side_item=side_item,
+            new_side_item_quantity=side_qty,
         )
 
     # Check if text contains "bagel" anywhere - might be a bagel order we can't fully parse
@@ -1266,13 +1705,14 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
     if re.search(r"\bbagels?\b", text, re.IGNORECASE):
         bagel_type = _extract_bagel_type(text)
         toasted = _extract_toasted(text)
-        spread, spread_type = _extract_spread(text)
+        spread, spread_type = _extract_spread(text, spread_types)
+        side_item, side_qty = _extract_side_item(text)
 
-        # Only return if we extracted at least something useful
-        if bagel_type or toasted is not None or spread:
+        # Only return if we extracted at least something useful (including side item)
+        if bagel_type or toasted is not None or spread or side_item:
             logger.debug(
-                "Deterministic parse: bagel mention - type=%s, toasted=%s, spread=%s/%s",
-                bagel_type, toasted, spread, spread_type
+                "Deterministic parse: bagel mention - type=%s, toasted=%s, spread=%s/%s, side=%s",
+                bagel_type, toasted, spread, spread_type, side_item
             )
             return OpenInputResponse(
                 new_bagel=True,
@@ -1281,21 +1721,467 @@ def parse_open_input_deterministic(user_input: str) -> OpenInputResponse | None:
                 new_bagel_toasted=toasted,
                 new_bagel_spread=spread,
                 new_bagel_spread_type=spread_type,
+                new_side_item=side_item,
+                new_side_item_quantity=side_qty,
             )
+
+    # Check for coffee/beverage order (deterministic - no LLM needed)
+    coffee_result = _parse_coffee_deterministic(text)
+    if coffee_result:
+        logger.info("DETERMINISTIC COFFEE: matched '%s' -> type=%s", text[:50], coffee_result.new_coffee_type)
+        return coffee_result
+
+    # Check for soda/bottled drink order
+    soda_result = _parse_soda_deterministic(text)
+    if soda_result:
+        return soda_result
+
+    # Check for known menu items (sandwiches, omelettes, etc.)
+    menu_item, qty = _extract_menu_item_from_text(text)
+    if menu_item:
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d)", text[:50], menu_item, qty)
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty)
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])
     return None
 
 
-def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mini") -> OpenInputResponse:
+# Coffee beverage types that should be parsed as coffee orders
+COFFEE_BEVERAGE_TYPES = {
+    "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
+    "mocha", "cold brew", "tea", "chai", "matcha", "hot chocolate",
+}
+
+# Pattern to match coffee orders: "cappuccino", "a latte", "iced coffee", "large latte", etc.
+COFFEE_ORDER_PATTERN = re.compile(
+    r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
+    r"(?:can|could|may)\s+i\s+(?:get|have)|"
+    r"give\s+me|"
+    r"let\s*(?:me|'s)\s*(?:get|have)|"
+    r")?\s*"
+    r"(?:an?\s+)?"
+    r"(?:(\d+|two|three|four|five)\s+)?"  # Optional quantity
+    r"(?:(small|medium|large)\s+)?"  # Optional size
+    r"(?:(iced|hot)\s+)?"  # Optional iced/hot
+    r"(" + "|".join(COFFEE_BEVERAGE_TYPES) + r")"  # Coffee type
+    r"(?:\s|$|[.,!?])",
+    re.IGNORECASE
+)
+
+
+# Common typos/variations for coffee beverages
+COFFEE_TYPO_MAP = {
+    "appuccino": "cappuccino",
+    "capuccino": "cappuccino",
+    "cappucino": "cappuccino",
+    "cappuccinno": "cappuccino",
+    "capuchino": "cappuccino",
+    "expresso": "espresso",
+    "expreso": "espresso",
+    "esspresso": "espresso",
+    "late": "latte",
+    "lattee": "latte",
+    "latte'": "latte",
+    "americano": "americano",
+    "amercano": "americano",
+    "macchiato": "macchiato",
+    "machiato": "macchiato",
+    "machato": "macchiato",
+    "mocca": "mocha",
+    "moca": "mocha",
+}
+
+
+def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
+    """
+    Try to parse coffee/beverage orders deterministically.
+
+    Handles orders like:
+    - "cappuccino"
+    - "a latte"
+    - "iced coffee"
+    - "large hot latte"
+    - "cappuccino with 2 splenda and vanilla syrup"
+    """
+    text_lower = text.lower()
+
+    # Check if any coffee type is mentioned (exact match first)
+    coffee_type = None
+    for bev in COFFEE_BEVERAGE_TYPES:
+        if re.search(rf'\b{bev}\b', text_lower):
+            coffee_type = bev
+            break
+
+    # If no exact match, check for common typos
+    if not coffee_type:
+        for typo, correct in COFFEE_TYPO_MAP.items():
+            if re.search(rf'\b{typo}\b', text_lower):
+                coffee_type = correct
+                logger.debug("Deterministic parse: corrected typo '%s' -> '%s'", typo, correct)
+                break
+
+    if not coffee_type:
+        return None
+
+    logger.debug("Deterministic parse: detected coffee type '%s'", coffee_type)
+
+    # Extract quantity (default 1)
+    quantity = 1
+    qty_match = re.search(r'(\d+|two|three|four|five)\s+(?:' + '|'.join(COFFEE_BEVERAGE_TYPES) + r')', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # Extract size
+    size = None
+    size_match = re.search(r'\b(small|medium|large)\b', text_lower)
+    if size_match:
+        size = size_match.group(1)
+
+    # Extract iced/hot
+    iced = None
+    if re.search(r'\biced\b', text_lower):
+        iced = True
+    elif re.search(r'\bhot\b', text_lower):
+        iced = False
+
+    # Extract milk preference
+    milk = None
+    milk_patterns = [
+        (r'\bwith\s+(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
+        (r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
+        (r'\bblack\b', 'none'),
+    ]
+    for pattern, group in milk_patterns:
+        milk_match = re.search(pattern, text_lower)
+        if milk_match:
+            milk = milk_match.group(group) if isinstance(group, int) else group
+            break
+
+    # Extract sweetener and flavor syrup using existing function
+    coffee_mods = extract_coffee_modifiers_from_input(text)
+
+    logger.debug(
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+        coffee_type, quantity, size, iced, milk,
+        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup
+    )
+
+    return OpenInputResponse(
+        new_coffee=True,
+        new_coffee_type=coffee_type,
+        new_coffee_quantity=quantity,
+        new_coffee_size=size,
+        new_coffee_iced=iced,
+        new_coffee_milk=milk,
+        new_coffee_sweetener=coffee_mods.sweetener,
+        new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
+        new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
+    )
+
+
+def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
+    """
+    Try to parse soda/bottled drink orders deterministically.
+
+    Handles orders like:
+    - "coke"
+    - "a diet coke"
+    - "3 sprites"
+    - "water"
+    - "a soda" (generic - will ask for type)
+    """
+    text_lower = text.lower()
+
+    # Check if any soda type is mentioned
+    # Sort by length (longest first) to match "diet coke" before "coke"
+    drink_type = None
+    for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
+        # Use word boundary match to avoid partial matches
+        if re.search(rf'\b{re.escape(soda)}\b', text_lower):
+            drink_type = soda
+            break
+
+    # Check for generic soda terms that need clarification
+    if not drink_type:
+        generic_soda_terms = {"soda", "pop", "soft drink", "fountain drink"}
+        for term in generic_soda_terms:
+            if re.search(rf'\b{re.escape(term)}\b', text_lower):
+                logger.info("Deterministic parse: detected generic soda term '%s', needs clarification", term)
+                return OpenInputResponse(
+                    needs_soda_clarification=True,
+                )
+
+    if not drink_type:
+        return None
+
+    logger.debug("Deterministic parse: detected soda type '%s'", drink_type)
+
+    # Extract quantity (default 1)
+    quantity = 1
+    qty_match = re.search(r'(\d+|two|three|four|five)\s+', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    logger.debug("Deterministic parse: soda order - type=%s, qty=%d", drink_type, quantity)
+
+    return OpenInputResponse(
+        new_coffee=True,  # Use the coffee fields for drinks
+        new_coffee_type=drink_type,
+        new_coffee_quantity=quantity,
+        new_coffee_size=None,  # Sodas don't have sizes
+        new_coffee_iced=None,  # Sodas don't need hot/iced
+        new_coffee_milk=None,
+        new_coffee_sweetener=None,
+        new_coffee_sweetener_quantity=1,
+        new_coffee_flavor_syrup=None,
+    )
+
+
+SIDE_ITEM_TYPES = {
+    "chips", "potato chips", "kettle chips",
+    "salad", "side salad", "green salad",
+    "fruit", "fresh fruit", "fruit cup",
+    "coleslaw", "cole slaw",
+    "pickle", "pickles",
+    "fries", "french fries",
+    "soup", "soup of the day",
+}
+
+
+def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
+    """
+    Parse multi-item orders like "The Lexington and an orange juice".
+    Splits on "and" and commas, and parses each component.
+    """
+    text = user_input.strip()
+    text_lower = text.lower()
+
+    # Preserve compound phrases by replacing them with placeholders
+    compound_phrases = [
+        ("ham and cheese", "HAM_CHEESE_PLACEHOLDER"),
+        ("ham and egg", "HAM_EGG_PLACEHOLDER"),
+        ("bacon and egg", "BACON_EGG_PLACEHOLDER"),
+        ("lox and cream cheese", "LOX_CC_PLACEHOLDER"),
+        ("cream cheese and lox", "CC_LOX_PLACEHOLDER"),
+        ("salt and pepper", "SALT_PEPPER_PLACEHOLDER"),
+        ("eggs and bacon", "EGGS_BACON_PLACEHOLDER"),
+        ("black and white", "BLACK_WHITE_PLACEHOLDER"),
+        ("spinach and feta", "SPINACH_FETA_PLACEHOLDER"),
+    ]
+
+    preserved_text = text_lower
+    for phrase, placeholder in compound_phrases:
+        preserved_text = preserved_text.replace(phrase, placeholder)
+
+    # Check if there's still an "and" or comma - if not, this isn't a multi-item order
+    if " and " not in preserved_text and ", " not in preserved_text:
+        return None
+
+    # Replace ", and " with just ", " to avoid empty parts
+    preserved_text = preserved_text.replace(", and ", ", ")
+    # Replace " and " with ", " to normalize separators
+    preserved_text = preserved_text.replace(" and ", ", ")
+
+    # Split on comma
+    parts = [p.strip() for p in preserved_text.split(",") if p.strip()]
+    if len(parts) < 2:
+        return None
+
+    # Restore compound phrases in each part
+    restored_parts = []
+    for part in parts:
+        restored = part.strip()
+        for phrase, placeholder in compound_phrases:
+            restored = restored.replace(placeholder, phrase)
+        if restored:
+            restored_parts.append(restored)
+
+    logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
+
+    # Parse each part
+    menu_item = None
+    menu_item_qty = 1
+    coffee_type = None
+    coffee_qty = 1
+    coffee_size = None
+    coffee_iced = None
+    bagel = False
+    bagel_qty = 1
+    bagel_type = None
+    side_item = None
+    side_item_qty = 1
+
+    for part in restored_parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        # Try to parse as menu item
+        item_name, item_qty = _extract_menu_item_from_text(part)
+        if item_name:
+            menu_item = item_name
+            menu_item_qty = item_qty
+            logger.info("Multi-item: detected menu item '%s' (qty=%d)", menu_item, menu_item_qty)
+            continue
+
+        # Try to parse as coffee/drink
+        # Check for soda types first (sorted by length to match "diet coke" before "coke")
+        drink_found = False
+        for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
+            if re.search(rf'\b{re.escape(soda)}\b', part):
+                coffee_type = soda
+                coffee_qty = 1
+                # Check for quantity
+                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
+                if qty_match:
+                    qty_str = qty_match.group(1)
+                    coffee_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+                logger.info("Multi-item: detected drink '%s' (qty=%d)", coffee_type, coffee_qty)
+                drink_found = True
+                break
+
+        if drink_found:
+            continue
+
+        # Check for coffee beverage types
+        for bev in COFFEE_BEVERAGE_TYPES:
+            if re.search(rf'\b{bev}\b', part):
+                coffee_type = bev
+                coffee_qty = 1
+                # Extract size
+                size_match = re.search(r'\b(small|medium|large)\b', part)
+                if size_match:
+                    coffee_size = size_match.group(1)
+                # Extract iced/hot
+                if 'iced' in part:
+                    coffee_iced = True
+                elif 'hot' in part:
+                    coffee_iced = False
+                # Check for quantity
+                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
+                if qty_match:
+                    qty_str = qty_match.group(1)
+                    coffee_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+                logger.info("Multi-item: detected coffee '%s' (qty=%d)", coffee_type, coffee_qty)
+                drink_found = True
+                break
+
+        if drink_found:
+            continue
+
+        # Try to parse as bagel
+        if re.search(r'\bbagels?\b', part):
+            bagel = True
+            bagel_type = _extract_bagel_type(part)
+            qty_match = re.search(r'(\d+|one|two|three|four|five)\s+bagels?', part)
+            if qty_match:
+                qty_str = qty_match.group(1)
+                bagel_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+            logger.info("Multi-item: detected bagel (type=%s, qty=%d)", bagel_type, bagel_qty)
+            continue
+
+        # Try to parse as side item
+        side_found = False
+        for side in SIDE_ITEM_TYPES:
+            if re.search(rf'\b{re.escape(side)}\b', part):
+                side_item = side
+                side_item_qty = 1
+                # Check for quantity
+                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
+                if qty_match:
+                    qty_str = qty_match.group(1)
+                    side_item_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+                logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
+                side_found = True
+                break
+
+        if side_found:
+            continue
+
+    # If we found at least two different item types, return a combined response
+    items_found = sum([
+        menu_item is not None,
+        coffee_type is not None,
+        bagel,
+        side_item is not None,
+    ])
+
+    if items_found >= 2:
+        logger.info("Multi-item order parsed: menu_item=%s, coffee=%s, bagel=%s, side=%s", menu_item, coffee_type, bagel, side_item)
+        return OpenInputResponse(
+            new_menu_item=menu_item,
+            new_menu_item_quantity=menu_item_qty,
+            new_coffee=coffee_type is not None,
+            new_coffee_type=coffee_type,
+            new_coffee_quantity=coffee_qty,
+            new_coffee_size=coffee_size,
+            new_coffee_iced=coffee_iced,
+            new_bagel=bagel,
+            new_bagel_quantity=bagel_qty,
+            new_bagel_type=bagel_type,
+            new_side_item=side_item,
+            new_side_item_quantity=side_item_qty,
+        )
+
+    # If only one item found, we can still return it
+    if menu_item:
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=menu_item_qty)
+    if coffee_type:
+        return OpenInputResponse(
+            new_coffee=True,
+            new_coffee_type=coffee_type,
+            new_coffee_quantity=coffee_qty,
+            new_coffee_size=coffee_size,
+            new_coffee_iced=coffee_iced,
+        )
+    if bagel:
+        return OpenInputResponse(new_bagel=True, new_bagel_quantity=bagel_qty, new_bagel_type=bagel_type)
+    if side_item:
+        return OpenInputResponse(new_side_item=side_item, new_side_item_quantity=side_item_qty)
+
+    return None
+
+
+def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mini", spread_types: set[str] | None = None) -> OpenInputResponse:
     """Parse user input when open for new orders.
 
     Tries deterministic parsing first for speed and consistency.
     Falls back to LLM for complex orders (menu items, multi-config bagels, coffee).
+
+    Args:
+        user_input: The user's input string
+        context: Optional context string for LLM fallback
+        model: Model to use for LLM fallback
+        spread_types: Optional set of spread type keywords from database
     """
-    # Try deterministic parsing first
-    result = parse_open_input_deterministic(user_input)
+    # Check if input likely contains multiple items
+    input_lower = user_input.lower()
+    # Clean up common phrases that contain "and" but aren't multi-item orders
+    cleaned = input_lower
+    for phrase in ["ham and cheese", "ham and egg", "bacon and egg", "lox and cream cheese",
+                   "salt and pepper", "cream cheese and lox", "eggs and bacon", "black and white",
+                   "spinach and feta"]:
+        cleaned = cleaned.replace(phrase, "")
+
+    # If "and" or comma still appears, try multi-item deterministic parsing first
+    if " and " in cleaned or ", " in cleaned:
+        logger.info("Multi-item order detected, trying deterministic parse: %s", user_input[:50])
+        result = _parse_multi_item_order(user_input)
+        if result is not None:
+            logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
+            return result
+
+    # Try deterministic parsing for single-item orders
+    result = parse_open_input_deterministic(user_input, spread_types=spread_types)
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])
         return result
@@ -1310,22 +2196,25 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
 The user said: "{user_input}"
 
 Determine what they want:
-- If ordering a specific menu item by name (e.g., "the chipotle egg omelette", "The Leo"),
-  set new_menu_item to the item name
+- If ordering a SPEED MENU BAGEL (The Classic, The Leo, The Traditional, The Max Zucker,
+  The Classic BEC, The Avocado Toast, The Chelsea Club, The Flatiron Traditional,
+  The Old School Tuna Sandwich), use new_speed_menu_bagel fields (see examples below)
+- If ordering a different menu item by name (e.g., "the chipotle egg omelette", omelettes, sandwiches),
+  set new_menu_item to the item name and new_menu_item_quantity to the number ordered
 - If ordering bagels:
   - Set new_bagel=true
   - Set new_bagel_quantity to the number of bagels (default 1)
   - If ALL bagels are the same, use new_bagel_type, new_bagel_toasted, new_bagel_spread, new_bagel_spread_type
   - If bagels have DIFFERENT configurations, populate bagel_details list with each bagel's config
-- If ordering coffee/drink:
+- If ordering coffee/drink (IMPORTANT: latte, cappuccino, espresso, americano, macchiato, mocha, drip coffee, cold brew, tea, and similar beverages are ALWAYS coffee orders - use new_coffee fields, NOT new_menu_item):
   - Set new_coffee=true
   - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)
   - Set new_coffee_type if specified (e.g., "latte", "cappuccino", "drip coffee", "diet coke", "coke")
-  - Set new_coffee_size if specified ("small", "medium", "large")
+  - Set new_coffee_size if specified ("small", "medium", "large") - note: size may not be specified initially
   - Set new_coffee_iced=true if they want iced, false if they want hot, null if not specified
   - Set new_coffee_milk if specified (e.g., "oat", "almond", "skim", "whole"). "black" means no milk.
-  - Set new_coffee_sweetener if specified (e.g., "sugar", "splenda", "stevia")
-  - Set new_coffee_sweetener_quantity for number of sweeteners (e.g., "two sugars" = 2)
+  - Set new_coffee_sweetener if specified (e.g., "sugar", "splenda", "stevia", "equal")
+  - Set new_coffee_sweetener_quantity for number of sweeteners (e.g., "two sugars" = 2, "2 splenda" = 2)
   - Set new_coffee_flavor_syrup if specified (e.g., "vanilla", "caramel", "hazelnut")
 - If they're done ordering ("that's all", "nothing else", "no", "nope", "I'm good"), set done_ordering=true
 - If just greeting ("hi", "hello"), set is_greeting=true
@@ -1337,7 +2226,9 @@ IMPORTANT: When parsing quantities, recognize both spelled-out words AND numeric
 - "five" / "5" = 5
 
 Examples:
-- "can I get the chipotle egg omelette" -> new_menu_item: "The Chipotle Egg Omelette"
+- "can I get the chipotle egg omelette" -> new_menu_item: "The Chipotle Egg Omelette", new_menu_item_quantity: 1
+- "3 tuna salad sandwiches" -> new_menu_item: "Tuna Salad Sandwich", new_menu_item_quantity: 3
+- "two western omelettes" -> new_menu_item: "Western Omelette", new_menu_item_quantity: 2
 - "I'd like a plain bagel" -> new_bagel: true, new_bagel_quantity: 1, new_bagel_type: "plain"
 - "two bagels please" -> new_bagel: true, new_bagel_quantity: 2
 - "three bagels" -> new_bagel: true, new_bagel_quantity: 3
@@ -1359,6 +2250,23 @@ Examples:
 - "medium coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "medium", new_coffee_flavor_syrup: "vanilla"
 - "small coffee black with two sugars and vanilla syrup" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
+- "cappuccino with 2 splenda and vanilla syrup" -> new_coffee: true, new_coffee_type: "cappuccino", new_coffee_sweetener: "splenda", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
+- "latte with oat milk" -> new_coffee: true, new_coffee_type: "latte", new_coffee_milk: "oat"
+- "espresso with sugar" -> new_coffee: true, new_coffee_type: "espresso", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 1
+- "cappuccino" -> new_coffee: true, new_coffee_type: "cappuccino"
+- "mocha with whipped cream" -> new_coffee: true, new_coffee_type: "mocha"
+
+Side orders (IMPORTANT - these are SEPARATE items, not toppings on bagels!):
+- When user says "side of X", "with a side of X", or orders a side item -> set new_side_item
+- Available sides: Side of Sausage, Side of Bacon, Side of Turkey Bacon, Side of Ham, Side of Chicken Sausage, Side of Breakfast Latke, Hard Boiled Egg
+- CRITICAL: If user says "side of" anything, it is a SIDE ITEM, NOT a bagel topping. Do NOT add it to bagel modifiers!
+- "side of sausage" -> new_side_item: "Side of Sausage"
+- "side of turkey sausage" -> new_side_item: "Side of Sausage" (map to closest available item)
+- "with a side of bacon" -> new_side_item: "Side of Bacon"
+- "side of turkey bacon" -> new_side_item: "Side of Turkey Bacon"
+- "bagel with a side of sausage" -> new_bagel: true, new_side_item: "Side of Sausage" (TWO separate items!)
+- "everything bagel and a side of bacon" -> new_bagel: true, new_bagel_type: "everything", new_side_item: "Side of Bacon"
+- DO NOT add sausage/bacon/ham as bagel toppings when user says "side of" - these are separate menu items!
 - "3 diet cokes" -> new_coffee: true, new_coffee_type: "diet coke", new_coffee_quantity: 3
 - "two coffees" -> new_coffee: true, new_coffee_quantity: 2
 - "three lattes" -> new_coffee: true, new_coffee_type: "latte", new_coffee_quantity: 3
@@ -1366,20 +2274,66 @@ Examples:
 - "a coke" -> new_coffee: true, new_coffee_type: "coke", new_coffee_quantity: 1
 - "that's all" -> done_ordering: true
 
+Speed menu bagel orders (pre-configured sandwiches):
+- These are specific named menu items that come pre-configured: "The Classic", "The Classic BEC",
+  "The Traditional", "The Leo", "The Max Zucker", "The Avocado Toast", "The Chelsea Club",
+  "The Flatiron Traditional", "The Old School Tuna Sandwich"
+- When user orders these by name, set new_speed_menu_bagel=true and new_speed_menu_bagel_name to the item name
+- "3 Classics" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic", new_speed_menu_bagel_quantity: 3
+- "The Leo please" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Leo"
+- "two Traditionals toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Traditional", new_speed_menu_bagel_quantity: 2, new_speed_menu_bagel_toasted: true
+- "a Max Zucker" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Max Zucker"
+- "Classic BEC" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC"
+- "the avocado toast" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Avocado Toast"
+- "Chelsea Club toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Chelsea Club", new_speed_menu_bagel_toasted: true
+
+MULTI-ITEM ORDERS (IMPORTANT - extract ALL items!):
+- When user orders MULTIPLE different items in one message, you MUST extract ALL of them
+- If ordering a sandwich/menu item AND a drink together, set BOTH new_menu_item AND new_coffee fields
+- "The Lexington and an orange juice" -> new_menu_item: "The Lexington", new_coffee: true, new_coffee_type: "orange juice"
+- "Classic BEC with a coffee" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC", new_coffee: true, new_coffee_type: "coffee"
+- "Delancey and a latte" -> new_menu_item: "The Delancey", new_coffee: true, new_coffee_type: "latte"
+- "two bagels and a coffee" -> new_bagel: true, new_bagel_quantity: 2, new_coffee: true, new_coffee_type: "coffee"
+- "plain bagel and orange juice" -> new_bagel: true, new_bagel_type: "plain", new_coffee: true, new_coffee_type: "orange juice"
+
+Menu queries (asking what items are available):
+- If user asks "what X do you have?" where X is a type of menu item -> menu_query: true, menu_query_type: "<type>"
+  - "what sodas do you have" -> menu_query: true, menu_query_type: "soda"
+  - "what juices do you have" -> menu_query: true, menu_query_type: "juice"
+  - "what drinks do you have" -> menu_query: true, menu_query_type: "drink"
+  - "what beverages do you have" -> menu_query: true, menu_query_type: "beverage"
+  - "what coffees do you have" -> menu_query: true, menu_query_type: "coffee"
+  - "what teas do you have" -> menu_query: true, menu_query_type: "tea"
+  - "what bagels do you have" -> menu_query: true, menu_query_type: "bagel"
+  - "what egg sandwiches do you have" -> menu_query: true, menu_query_type: "egg_sandwich"
+  - "what fish sandwiches do you have" -> menu_query: true, menu_query_type: "fish_sandwich"
+  - "what sandwiches do you have" -> menu_query: true, menu_query_type: "sandwich"
+  - "what spread sandwiches do you have" -> menu_query: true, menu_query_type: "spread_sandwich"
+  - "what are your spread sandwiches" -> menu_query: true, menu_query_type: "spread_sandwich"
+  - "what salad sandwiches do you have" -> menu_query: true, menu_query_type: "salad_sandwich"
+  - "what are your salad sandwiches" -> menu_query: true, menu_query_type: "salad_sandwich"
+  - "what omelettes do you have" -> menu_query: true, menu_query_type: "omelette"
+  - "what sides do you have" -> menu_query: true, menu_query_type: "side"
+  - "what snacks do you have" -> menu_query: true, menu_query_type: "snack"
+- Do NOT use asking_signature_menu for general menu queries - only for signature/speed menu items
+
 Signature/Speed menu inquiries:
 - If user asks about signature items, speed menu, or pre-made options -> asking_signature_menu: true
-  - "what are your speed menu bagels" -> asking_signature_menu: true
-  - "what speed menu options do you have" -> asking_signature_menu: true
-  - "what signature bagels do you have" -> asking_signature_menu: true
-  - "what are the signature items" -> asking_signature_menu: true
-  - "tell me about the speed menu" -> asking_signature_menu: true
-  - "what pre-made bagels do you have" -> asking_signature_menu: true
+- Also set signature_menu_type to the specific type if mentioned:
+  - "what are your signature sandwiches" -> asking_signature_menu: true, signature_menu_type: "signature_sandwich"
+  - "what signature sandwiches do you have" -> asking_signature_menu: true, signature_menu_type: "signature_sandwich"
+  - "what are your speed menu bagels" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
+  - "what speed menu options do you have" -> asking_signature_menu: true (no specific type)
+  - "what signature bagels do you have" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
+  - "what are the signature items" -> asking_signature_menu: true (no specific type)
+  - "tell me about the speed menu" -> asking_signature_menu: true (no specific type)
+  - "what pre-made bagels do you have" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
 
 By-the-pound inquiries:
 - If user asks "what do you sell by the pound" or "do you have anything by the pound" -> asking_by_pound: true
 - If user asks about a specific category by the pound, also set by_pound_category:
   - "what cheeses do you have" or "I'm interested in cheese" -> asking_by_pound: true, by_pound_category: "cheese"
-  - "what spreads do you sell by the pound" -> asking_by_pound: true, by_pound_category: "spread"
+  - "what spreads do you have" / "what cream cheese do you have" / "what cream cheese types do you have" / "what cream cheese flavors do you have" / "what kind of cream cheese" -> asking_by_pound: true, by_pound_category: "spread"
   - "what cold cuts do you have" -> asking_by_pound: true, by_pound_category: "cold_cut"
   - "what fish do you sell" or "what smoked fish" -> asking_by_pound: true, by_pound_category: "fish"
   - "what salads do you have by the pound" -> asking_by_pound: true, by_pound_category: "salad"
@@ -1503,6 +2457,28 @@ Examples:
     )
 
 
+def parse_phone(user_input: str, model: str = "gpt-4o-mini") -> PhoneResponse:
+    """Parse user input when collecting phone number."""
+    client = get_instructor_client()
+
+    prompt = f"""We asked the user for their phone number to text order confirmation.
+The user said: "{user_input}"
+
+Extract the phone number from their response. Return just the digits (10 digits for US numbers).
+Examples:
+- "555-123-4567" -> phone: "5551234567"
+- "it's 732 555 1234" -> phone: "7325551234"
+- "(908) 555-9999" -> phone: "9085559999"
+- "my number is 201.555.0000" -> phone: "2015550000"
+"""
+
+    return client.chat.completions.create(
+        model=model,
+        response_model=PhoneResponse,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+
 # =============================================================================
 # State Machine
 # =============================================================================
@@ -1526,8 +2502,24 @@ class OrderStateMachine:
     """
 
     def __init__(self, menu_data: dict | None = None, model: str = "gpt-4o-mini"):
-        self.menu_data = menu_data or {}
+        self._menu_data = menu_data or {}
         self.model = model
+        # Build spread types from database cheese_types
+        self._spread_types = _build_spread_types_from_menu(
+            self._menu_data.get("cheese_types", [])
+        )
+
+    @property
+    def menu_data(self) -> dict:
+        return self._menu_data
+
+    @menu_data.setter
+    def menu_data(self, value: dict) -> None:
+        self._menu_data = value or {}
+        # Rebuild spread types when menu_data changes
+        self._spread_types = _build_spread_types_from_menu(
+            self._menu_data.get("cheese_types", [])
+        )
 
     def process(
         self,
@@ -1554,6 +2546,9 @@ class OrderStateMachine:
         # Add user message to history
         order.add_message("user", user_input)
 
+        logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
+                   user_input[:50], state.phase.value, state.pending_field, state.pending_item_ids)
+
         # Route to appropriate handler based on state
         if state.is_configuring_item():
             result = self._handle_configuring_item(user_input, state, order)
@@ -1569,6 +2564,8 @@ class OrderStateMachine:
             result = self._handle_confirmation(user_input, state, order)
         elif state.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD:
             result = self._handle_payment_method(user_input, state, order)
+        elif state.phase == OrderPhase.CHECKOUT_PHONE:
+            result = self._handle_phone(user_input, state, order)
         elif state.phase == OrderPhase.CHECKOUT_EMAIL:
             result = self._handle_email(user_input, state, order)
         else:
@@ -1590,7 +2587,7 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle greeting phase."""
-        parsed = parse_open_input(user_input, model=self.model)
+        parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
 
         logger.info(
             "Greeting phase parsed: is_greeting=%s, unclear=%s, new_bagel=%s, quantity=%d",
@@ -1615,7 +2612,7 @@ class OrderStateMachine:
             logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
 
         state.phase = OrderPhase.TAKING_ITEMS
-        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers)
+        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers, user_input)
 
     def _handle_taking_items(
         self,
@@ -1624,14 +2621,14 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle taking new item orders."""
-        parsed = parse_open_input(user_input, model=self.model)
+        parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
 
         # Extract modifiers from raw input (keyword-based, no LLM)
         extracted_modifiers = extract_modifiers_from_input(user_input)
         if extracted_modifiers.has_modifiers():
             logger.info("Extracted modifiers from input: %s", extracted_modifiers)
 
-        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers)
+        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers, user_input)
 
     def _handle_taking_items_with_parsed(
         self,
@@ -1639,6 +2636,7 @@ class OrderStateMachine:
         state: FlowState,
         order: OrderTask,
         extracted_modifiers: ExtractedModifiers | None = None,
+        raw_user_input: str | None = None,
     ) -> StateMachineResult:
         """Handle taking new item orders with already-parsed input."""
         logger.info(
@@ -1653,21 +2651,98 @@ class OrderStateMachine:
         if parsed.done_ordering:
             return self._transition_to_checkout(state, order)
 
+        # Track items added for multi-item orders
+        items_added = []
+        last_result = None
+
         if parsed.new_menu_item:
-            return self._add_menu_item(parsed.new_menu_item, state, order)
+            # Check if this "menu item" is actually a coffee/beverage that was misparsed
+            menu_item_lower = parsed.new_menu_item.lower()
+            coffee_beverage_types = {
+                "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
+                "mocha", "cold brew", "tea", "chai", "matcha", "hot chocolate",
+                "iced coffee", "iced latte", "iced cappuccino", "iced americano",
+            }
+            if menu_item_lower in coffee_beverage_types or any(bev in menu_item_lower for bev in coffee_beverage_types):
+                # Redirect to coffee handling
+                # Extract coffee modifiers deterministically from raw input since LLM may have missed them
+                coffee_mods = ExtractedCoffeeModifiers()
+                if raw_user_input:
+                    coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
+                    logger.info("Extracted coffee modifiers from raw input: sweetener=%s (qty=%d), syrup=%s",
+                               coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup)
+
+                # Use LLM-parsed values if available, otherwise use deterministically extracted values
+                sweetener = parsed.new_coffee_sweetener or coffee_mods.sweetener
+                sweetener_qty = parsed.new_coffee_sweetener_quantity if parsed.new_coffee_sweetener else coffee_mods.sweetener_quantity
+                flavor_syrup = parsed.new_coffee_flavor_syrup or coffee_mods.flavor_syrup
+
+                logger.info("Redirecting misparsed menu item '%s' to coffee handler (sweetener=%s, qty=%d, syrup=%s)",
+                           parsed.new_menu_item, sweetener, sweetener_qty, flavor_syrup)
+                last_result = self._add_coffee(
+                    parsed.new_menu_item,  # Use as coffee type
+                    parsed.new_coffee_size,
+                    parsed.new_coffee_iced,
+                    parsed.new_coffee_milk,
+                    sweetener,
+                    sweetener_qty,
+                    flavor_syrup,
+                    parsed.new_menu_item_quantity,
+                    state,
+                    order,
+                )
+                items_added.append(parsed.new_menu_item)
+            else:
+                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, state, order)
+                items_added.append(parsed.new_menu_item)
+                # If there's also a side item, add it too
+                if parsed.new_side_item:
+                    side_name = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
+                    items_added.append(side_name)
+
+            # Check if there's ALSO a coffee order in the same message
+            if parsed.new_coffee and parsed.new_coffee_type:
+                coffee_result = self._add_coffee(
+                    parsed.new_coffee_type,
+                    parsed.new_coffee_size,
+                    parsed.new_coffee_iced,
+                    parsed.new_coffee_milk,
+                    parsed.new_coffee_sweetener,
+                    parsed.new_coffee_sweetener_quantity,
+                    parsed.new_coffee_flavor_syrup,
+                    parsed.new_coffee_quantity,
+                    state,
+                    order,
+                )
+                items_added.append(parsed.new_coffee_type)
+                # Combine the messages
+                if last_result and coffee_result:
+                    combined_items = ", ".join(items_added)
+                    last_result = StateMachineResult(
+                        message=f"Got it, {combined_items}. Anything else?",
+                        state=state,
+                        order=order,
+                    )
+
+            if last_result:
+                return last_result
+
+        if parsed.new_side_item and not parsed.new_bagel:
+            # Standalone side item order (no bagel)
+            return self._add_side_item_with_response(parsed.new_side_item, parsed.new_side_item_quantity, state, order)
 
         if parsed.new_bagel:
             # Check if we have multiple bagels with different configs
             if parsed.bagel_details and len(parsed.bagel_details) > 0:
                 # Multiple bagels with different configurations
                 # Pass extracted_modifiers to apply to the first bagel
-                return self._add_bagels_from_details(
+                result = self._add_bagels_from_details(
                     parsed.bagel_details, state, order, extracted_modifiers
                 )
             elif parsed.new_bagel_quantity > 1:
                 # Multiple bagels with same (or no) configuration
                 # Pass extracted_modifiers to apply to the first bagel
-                return self._add_bagels(
+                result = self._add_bagels(
                     quantity=parsed.new_bagel_quantity,
                     bagel_type=parsed.new_bagel_type,
                     toasted=parsed.new_bagel_toasted,
@@ -1679,7 +2754,7 @@ class OrderStateMachine:
                 )
             else:
                 # Single bagel
-                return self._add_bagel(
+                result = self._add_bagel(
                     bagel_type=parsed.new_bagel_type,
                     toasted=parsed.new_bagel_toasted,
                     spread=parsed.new_bagel_spread,
@@ -1688,9 +2763,51 @@ class OrderStateMachine:
                     order=order,
                     extracted_modifiers=extracted_modifiers,
                 )
+            # If there's also a side item, add it too
+            side_name = None
+            if parsed.new_side_item:
+                side_name = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
+
+            # Check if there's ALSO a coffee in the same message
+            if parsed.new_coffee:
+                coffee_result = self._add_coffee(
+                    parsed.new_coffee_type,
+                    parsed.new_coffee_size,
+                    parsed.new_coffee_iced,
+                    parsed.new_coffee_milk,
+                    parsed.new_coffee_sweetener,
+                    parsed.new_coffee_sweetener_quantity,
+                    parsed.new_coffee_flavor_syrup,
+                    parsed.new_coffee_quantity,
+                    state,
+                    order,
+                )
+                # Combine the messages (bagel + optional side + coffee)
+                bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
+                coffee_desc = parsed.new_coffee_type or "drink"
+                items_list = [bagel_desc]
+                if side_name:
+                    items_list.append(side_name)
+                items_list.append(coffee_desc)
+                combined_items = ", ".join(items_list)
+                return StateMachineResult(
+                    message=f"Got it, {combined_items}. Anything else?",
+                    state=state,
+                    order=order,
+                )
+
+            # If there's a side item but no coffee, update the result message to include it
+            if side_name:
+                bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
+                return StateMachineResult(
+                    message=f"Got it, {bagel_desc} and {side_name}. Anything else?",
+                    state=state,
+                    order=order,
+                )
+            return result
 
         if parsed.new_coffee:
-            return self._add_coffee(
+            coffee_result = self._add_coffee(
                 parsed.new_coffee_type,
                 parsed.new_coffee_size,
                 parsed.new_coffee_iced,
@@ -1702,9 +2819,63 @@ class OrderStateMachine:
                 state,
                 order,
             )
+            items_added.append(parsed.new_coffee_type or "drink")
+
+            # Check if there's ALSO a menu item in the same message
+            if parsed.new_menu_item:
+                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, state, order)
+                items_added.append(parsed.new_menu_item)
+                # Combine the messages
+                combined_items = ", ".join(items_added)
+                return StateMachineResult(
+                    message=f"Got it, {combined_items}. Anything else?",
+                    state=state,
+                    order=order,
+                )
+            return coffee_result
+
+        if parsed.new_speed_menu_bagel:
+            speed_result = self._add_speed_menu_bagel(
+                parsed.new_speed_menu_bagel_name,
+                parsed.new_speed_menu_bagel_quantity,
+                parsed.new_speed_menu_bagel_toasted,
+                state,
+                order,
+            )
+            items_added.append(parsed.new_speed_menu_bagel_name)
+
+            # Check if there's ALSO a coffee in the same message
+            if parsed.new_coffee:
+                coffee_result = self._add_coffee(
+                    parsed.new_coffee_type,
+                    parsed.new_coffee_size,
+                    parsed.new_coffee_iced,
+                    parsed.new_coffee_milk,
+                    parsed.new_coffee_sweetener,
+                    parsed.new_coffee_sweetener_quantity,
+                    parsed.new_coffee_flavor_syrup,
+                    parsed.new_coffee_quantity,
+                    state,
+                    order,
+                )
+                items_added.append(parsed.new_coffee_type or "drink")
+                # Combine the messages
+                combined_items = ", ".join(items_added)
+                return StateMachineResult(
+                    message=f"Got it, {combined_items}. Anything else?",
+                    state=state,
+                    order=order,
+                )
+            return speed_result
+
+        if parsed.needs_soda_clarification:
+            return self._handle_soda_clarification(state, order)
+
+        if parsed.menu_query:
+            return self._handle_menu_query(parsed.menu_query_type, state, order)
 
         if parsed.asking_signature_menu:
-            return self._handle_signature_menu_inquiry(state, order)
+            return self._handle_signature_menu_inquiry(parsed.signature_menu_type, state, order)
 
         if parsed.asking_by_pound:
             return self._handle_by_pound_inquiry(parsed.by_pound_category, state, order)
@@ -1763,6 +2934,8 @@ class OrderStateMachine:
             return self._handle_coffee_size(user_input, item, state, order)
         elif state.pending_field == "coffee_style":
             return self._handle_coffee_style(user_input, item, state, order)
+        elif state.pending_field == "speed_menu_bagel_toasted":
+            return self._handle_speed_menu_bagel_toasted(user_input, item, state, order)
         else:
             state.clear_pending()
             return self._get_next_question(state, order)
@@ -1842,9 +3015,20 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Apply to the item (could be omelette's bagel_choice or bagel's bagel_type)
+        # Apply to the item (could be omelette's bagel_choice, sandwich's bagel_choice, or bagel's bagel_type)
         if isinstance(item, MenuItemTask):
             item.bagel_choice = parsed.bagel_type
+
+            # For spread/salad sandwiches, continue to toasted question
+            if item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
+                state.pending_field = "toasted"
+                return StateMachineResult(
+                    message="Would you like that toasted?",
+                    state=state,
+                    order=order,
+                )
+
+            # For omelettes and other menu items, mark complete
             item.mark_complete()
             state.clear_pending()
             return self._get_next_question(state, order)
@@ -1913,11 +3097,11 @@ class OrderStateMachine:
     def _handle_toasted_choice(
         self,
         user_input: str,
-        item: BagelItemTask,
+        item: Union[BagelItemTask, MenuItemTask],
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle toasted preference for bagel."""
+        """Handle toasted preference for bagel or sandwich."""
         parsed = parse_toasted_choice(user_input, model=self.model)
 
         if parsed.toasted is None:
@@ -1928,6 +3112,20 @@ class OrderStateMachine:
             )
 
         item.toasted = parsed.toasted
+
+        # For MenuItemTask (spread/salad sandwiches), mark complete after toasted
+        if isinstance(item, MenuItemTask):
+            item.mark_complete()
+            state.clear_pending()
+            return self._get_next_question(state, order)
+
+        # For BagelItemTask, check if spread is already set
+        if item.spread is not None:
+            # Spread already specified, bagel is complete
+            self.recalculate_bagel_price(item)
+            item.mark_complete()
+            state.clear_pending()
+            return self._configure_next_incomplete_bagel(state, order)
 
         # Move to spread question
         state.pending_field = "spread"
@@ -1998,10 +3196,52 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle order confirmation."""
+        logger.info("CONFIRMATION: handling input '%s', current items: %s",
+                   user_input[:50], [i.get_summary() for i in order.items.items])
         parsed = parse_confirmation(user_input, model=self.model)
+        logger.info("CONFIRMATION: parse result - wants_changes=%s, confirmed=%s",
+                   parsed.wants_changes, parsed.confirmed)
 
         if parsed.wants_changes:
+            # User wants to make changes - also check if they're adding an item
+            # e.g., "can I also get a coke?" should add the coke
             state.phase = OrderPhase.TAKING_ITEMS
+
+            # Try to parse the input for new items
+            item_parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
+            logger.info("CONFIRMATION: parse_open_input result - new_menu_item=%s, new_bagel=%s, new_coffee=%s, new_coffee_type=%s, new_speed_menu_bagel=%s",
+                       item_parsed.new_menu_item, item_parsed.new_bagel, item_parsed.new_coffee, item_parsed.new_coffee_type, item_parsed.new_speed_menu_bagel)
+
+            # If they mentioned a new item, process it
+            if item_parsed.new_menu_item or item_parsed.new_bagel or item_parsed.new_coffee or item_parsed.new_speed_menu_bagel:
+                logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
+                extracted_modifiers = extract_modifiers_from_input(user_input)
+                result = self._handle_taking_items_with_parsed(item_parsed, state, order, extracted_modifiers, user_input)
+
+                # If item was fully added (no configuration needed) and we already have
+                # delivery type and name, skip back to confirmation instead of TAKING_ITEMS
+                # Log items in result.order vs original order
+                logger.info("CONFIRMATION: result.order items = %s", [i.get_summary() for i in result.order.items.items])
+                logger.info("CONFIRMATION: original order items = %s", [i.get_summary() for i in order.items.items])
+                logger.info("CONFIRMATION: result.state.phase = %s", result.state.phase)
+
+                if (result.state.phase == OrderPhase.TAKING_ITEMS and
+                    result.order.customer_info.name and
+                    result.order.delivery_method.order_type):
+                    logger.info("CONFIRMATION: Item added, skipping back to confirmation (already have name=%s, delivery=%s)",
+                               result.order.customer_info.name, result.order.delivery_method.order_type)
+                    state.phase = OrderPhase.CHECKOUT_CONFIRM
+                    summary = self._build_order_summary(result.order)
+                    logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
+                    return StateMachineResult(
+                        message=f"{summary}\n\nDoes that look right?",
+                        state=state,
+                        order=result.order,
+                    )
+
+                return result
+
+            # No new item detected, just ask what they want to change
             return StateMachineResult(
                 message="No problem. What would you like to change?",
                 state=state,
@@ -2042,18 +3282,29 @@ class OrderStateMachine:
             )
 
         if parsed.choice == "text":
-            # Text selected - generate order number and complete
-            order.payment.payment_link_destination = parsed.phone_number or order.customer_info.phone
-            order.checkout.generate_order_number()
-            order.checkout.confirmed = True  # Now fully confirmed
-            state.phase = OrderPhase.COMPLETE
-            return StateMachineResult(
-                message=f"Your order number is {order.checkout.short_order_number}. "
-                       f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
-                state=state,
-                order=order,
-                is_complete=True,
-            )
+            # Text selected - check if we have a phone number
+            phone = parsed.phone_number or order.customer_info.phone
+            if phone:
+                order.customer_info.phone = phone
+                order.payment.payment_link_destination = phone
+                order.checkout.generate_order_number()
+                order.checkout.confirmed = True  # Now fully confirmed
+                state.phase = OrderPhase.COMPLETE
+                return StateMachineResult(
+                    message=f"Your order number is {order.checkout.short_order_number}. "
+                           f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
+                    state=state,
+                    order=order,
+                    is_complete=True,
+                )
+            else:
+                # Need to ask for phone number
+                state.phase = OrderPhase.CHECKOUT_PHONE
+                return StateMachineResult(
+                    message="What phone number should I text the confirmation to?",
+                    state=state,
+                    order=order,
+                )
 
         if parsed.choice == "email":
             # Email selected - check if we got email with the response
@@ -2084,6 +3335,37 @@ class OrderStateMachine:
             message="Would you like that sent by text or email?",
             state=state,
             order=order,
+        )
+
+    def _handle_phone(
+        self,
+        user_input: str,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle phone number collection for text confirmation."""
+        parsed = parse_phone(user_input, model=self.model)
+
+        if not parsed.phone:
+            return StateMachineResult(
+                message="What's the best phone number to text the order confirmation to?",
+                state=state,
+                order=order,
+            )
+
+        # Store phone and complete the order
+        order.customer_info.phone = parsed.phone
+        order.payment.payment_link_destination = parsed.phone
+        order.checkout.generate_order_number()
+        order.checkout.confirmed = True  # Now fully confirmed
+        state.phase = OrderPhase.COMPLETE
+
+        return StateMachineResult(
+            message=f"Your order number is {order.checkout.short_order_number}. "
+                   f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
+            state=state,
+            order=order,
+            is_complete=True,
         )
 
     def _handle_email(
@@ -2125,10 +3407,14 @@ class OrderStateMachine:
     def _add_menu_item(
         self,
         item_name: str,
+        quantity: int,
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add a menu item and determine next question."""
+        # Ensure quantity is at least 1
+        quantity = max(1, quantity)
+
         # Look up item in menu to get price and other details
         menu_item = self._lookup_menu_item(item_name)
 
@@ -2141,45 +3427,153 @@ class OrderStateMachine:
             [i.get("name") for i in omelette_items],
         )
 
+        # If item not found in menu, ask for clarification
+        if not menu_item:
+            logger.warning("Menu item not found: '%s' - asking for clarification", item_name)
+            return StateMachineResult(
+                message=f"I'm sorry, I couldn't find '{item_name}' on our menu. Could you try again or ask what we have available?",
+                state=state,
+                order=order,
+            )
+
         # Use the canonical name from menu if found
-        canonical_name = menu_item.get("name", item_name) if menu_item else item_name
-        price = menu_item.get("base_price", 0.0) if menu_item else 0.0
-        menu_item_id = menu_item.get("id") if menu_item else None
+        canonical_name = menu_item.get("name", item_name)
+        price = menu_item.get("base_price", 0.0)
+        menu_item_id = menu_item.get("id")
+        category = menu_item.get("item_type", "")  # item_type slug like "spread_sandwich"
 
         # Check if it's an omelette (requires side choice)
         is_omelette = "omelette" in canonical_name.lower() or "omelet" in canonical_name.lower()
 
+        # Check if it's a spread or salad sandwich (requires toasted question)
+        is_spread_or_salad_sandwich = category in ("spread_sandwich", "salad_sandwich")
+
         logger.info(
-            "Omelette check: canonical_name='%s', is_omelette=%s",
+            "Menu item check: canonical_name='%s', category='%s', is_omelette=%s, is_spread_salad=%s, quantity=%d",
             canonical_name,
+            category,
             is_omelette,
+            is_spread_or_salad_sandwich,
+            quantity,
         )
 
-        item = MenuItemTask(
-            menu_item_name=canonical_name,
-            menu_item_id=menu_item_id,
-            unit_price=price,
-            requires_side_choice=is_omelette,
-            menu_item_type="omelette" if is_omelette else None,
-        )
-        item.mark_in_progress()
-        order.items.add_item(item)
+        # Determine the menu item type for tracking
+        if is_omelette:
+            item_type = "omelette"
+        elif is_spread_or_salad_sandwich:
+            item_type = category  # "spread_sandwich" or "salad_sandwich"
+        else:
+            item_type = None
 
-        logger.info("Added menu item: %s (price: $%.2f, id: %s)", canonical_name, price, menu_item_id)
+        # Create the requested quantity of items
+        first_item = None
+        for i in range(quantity):
+            item = MenuItemTask(
+                menu_item_name=canonical_name,
+                menu_item_id=menu_item_id,
+                unit_price=price,
+                requires_side_choice=is_omelette,
+                menu_item_type=item_type,
+            )
+            item.mark_in_progress()
+            order.items.add_item(item)
+            if first_item is None:
+                first_item = item
+
+        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s)", quantity, canonical_name, price, menu_item_id)
 
         if is_omelette:
-            # Set state to wait for side choice
+            # Set state to wait for side choice (applies to first item, others will be configured after)
             state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = item.id
+            state.pending_item_id = first_item.id
             state.pending_field = "side_choice"
             return StateMachineResult(
-                message=f"Would you like a bagel or fruit salad with your {item_name}?",
+                message=f"Would you like a bagel or fruit salad with your {canonical_name}?",
+                state=state,
+                order=order,
+            )
+        elif is_spread_or_salad_sandwich:
+            # For spread/salad sandwiches, ask for bagel choice first, then toasted
+            state.phase = OrderPhase.CONFIGURING_ITEM
+            state.pending_item_id = first_item.id
+            state.pending_field = "bagel_choice"
+            return StateMachineResult(
+                message="What kind of bagel would you like that on?",
                 state=state,
                 order=order,
             )
         else:
-            item.mark_complete()
+            # Mark all items complete (non-omelettes don't need configuration)
+            for item in order.items.items:
+                if item.menu_item_name == canonical_name and item.status == TaskStatus.IN_PROGRESS:
+                    item.mark_complete()
             return self._get_next_question(state, order)
+
+    def _add_side_item(
+        self,
+        side_item_name: str,
+        quantity: int,
+        order: OrderTask,
+    ) -> str:
+        """Add a side item to the order without returning a response.
+
+        Used when a side item is ordered alongside another item (e.g., "bagel with a side of sausage").
+
+        Returns:
+            The canonical name of the side item (for use in confirmation messages).
+        """
+        quantity = max(1, quantity)
+
+        # Look up the side item in the menu
+        menu_item = self._lookup_menu_item(side_item_name)
+
+        # Use canonical name and price from menu if found
+        canonical_name = menu_item.get("name", side_item_name) if menu_item else side_item_name
+        price = menu_item.get("base_price", 0.0) if menu_item else 0.0
+        menu_item_id = menu_item.get("id") if menu_item else None
+
+        # Create the side item(s)
+        for _ in range(quantity):
+            item = MenuItemTask(
+                menu_item_name=canonical_name,
+                menu_item_id=menu_item_id,
+                unit_price=price,
+                menu_item_type="side",
+            )
+            item.mark_complete()  # Side items don't need configuration
+            order.items.add_item(item)
+
+        logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
+        return canonical_name
+
+    def _add_side_item_with_response(
+        self,
+        side_item_name: str,
+        quantity: int,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Add a side item to the order and return an appropriate response.
+
+        Used when a side item is ordered on its own (e.g., "I'll have a side of bacon").
+        """
+        self._add_side_item(side_item_name, quantity, order)
+
+        # Get the canonical name for the response
+        menu_item = self._lookup_menu_item(side_item_name)
+        canonical_name = menu_item.get("name", side_item_name) if menu_item else side_item_name
+
+        # Pluralize if quantity > 1
+        if quantity > 1:
+            item_display = f"{quantity} {canonical_name}s"
+        else:
+            item_display = canonical_name
+
+        return StateMachineResult(
+            message=f"I've added {item_display} to your order. Anything else?",
+            state=state,
+            order=order,
+        )
 
     def _add_bagel(
         self,
@@ -2223,7 +3617,7 @@ class OrderStateMachine:
 
         # Calculate total price including modifiers
         price = self._calculate_bagel_price_with_modifiers(
-            base_price, sandwich_protein, extras, spread
+            base_price, sandwich_protein, extras, spread, spread_type
         )
         logger.info(
             "Bagel price: base=$%.2f, total=$%.2f (with modifiers)",
@@ -2344,7 +3738,7 @@ class OrderStateMachine:
 
             # Calculate total price including modifiers (for first bagel with modifiers)
             price = self._calculate_bagel_price_with_modifiers(
-                base_price, sandwich_protein, extras, bagel_spread
+                base_price, sandwich_protein, extras, bagel_spread, spread_type
             )
 
             bagel = BagelItemTask(
@@ -2419,7 +3813,7 @@ class OrderStateMachine:
 
             # Calculate total price including modifiers
             price = self._calculate_bagel_price_with_modifiers(
-                base_price, sandwich_protein, extras, spread
+                base_price, sandwich_protein, extras, spread, details.spread_type
             )
 
             bagel = BagelItemTask(
@@ -2530,7 +3924,38 @@ class OrderStateMachine:
             # This bagel is complete, mark it and continue to next
             bagel.mark_complete()
 
-        # No incomplete bagels, ask if they want anything else
+        # No incomplete bagels - generate confirmation message for the bagels
+        # Get all completed bagels to summarize
+        completed_bagels = [item for item in order.items.items
+                          if isinstance(item, BagelItemTask) and item.status == TaskStatus.COMPLETE]
+
+        if completed_bagels:
+            # Get the most recently completed bagel(s) summary
+            last_bagel = completed_bagels[-1]
+            bagel_summary = last_bagel.get_summary()
+
+            # Count identical bagels at the end
+            count = 0
+            for bagel in reversed(completed_bagels):
+                if bagel.get_summary() == bagel_summary:
+                    count += 1
+                else:
+                    break
+
+            if count > 1:
+                summary = f"{count} {bagel_summary}s" if not bagel_summary.endswith("s") else f"{count} {bagel_summary}"
+            else:
+                summary = bagel_summary
+
+            state.clear_pending()
+            state.phase = OrderPhase.TAKING_ITEMS
+            return StateMachineResult(
+                message=f"Got it, {summary}. Anything else?",
+                state=state,
+                order=order,
+            )
+
+        # Fallback to generic next question
         return self._get_next_question(state, order)
 
     def _get_ordinal(self, n: int) -> str:
@@ -2552,6 +3977,10 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
+        logger.info(
+            "ADD COFFEE: type=%s, size=%s, iced=%s, sweetener=%s (qty=%d), syrup=%s",
+            coffee_type, size, iced, sweetener, sweetener_quantity, flavor_syrup
+        )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
@@ -2560,13 +3989,28 @@ class OrderStateMachine:
         price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
 
         # Check if this drink should skip configuration questions
-        # Priority: 1) skip_config flag from database, 2) hardcoded soda list fallback
+        # Coffee beverages (cappuccino, latte, etc.) ALWAYS need configuration regardless of database flag
+        # This overrides the menu_item skip_config because item_type "beverage" has skip_config=1
+        # but that's intended for sodas/bottled drinks, not coffee drinks
+        coffee_type_lower = (coffee_type or "").lower()
+        is_configurable_coffee = coffee_type_lower in COFFEE_BEVERAGE_TYPES or any(
+            bev in coffee_type_lower for bev in COFFEE_BEVERAGE_TYPES
+        )
+
         should_skip_config = False
-        if menu_item and menu_item.get("skip_config"):
+        if is_configurable_coffee:
+            # Coffee/tea drinks always need size and hot/iced configuration
+            logger.info("ADD COFFEE: skip_config=False (configurable coffee beverage: %s)", coffee_type)
+            should_skip_config = False
+        elif menu_item and menu_item.get("skip_config"):
+            logger.info("ADD COFFEE: skip_config=True (from menu_item)")
             should_skip_config = True
         elif is_soda_drink(coffee_type):
             # Fallback for items not in database
+            logger.info("ADD COFFEE: skip_config=True (soda drink)")
             should_skip_config = True
+        else:
+            logger.info("ADD COFFEE: skip_config=False, will need configuration")
 
         if should_skip_config:
             # This drink doesn't need size or hot/iced questions - add directly as complete
@@ -2614,25 +4058,48 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Configure the next incomplete coffee item."""
-        # Find incomplete coffee items
+        # Find all coffee items (both complete and incomplete) to determine total count
         all_coffees = [
             item for item in order.items.items
-            if isinstance(item, CoffeeItemTask) and item.status == TaskStatus.IN_PROGRESS
+            if isinstance(item, CoffeeItemTask)
         ]
+        total_coffees = len(all_coffees)
 
-        if not all_coffees:
-            state.clear_pending()
-            return self._get_next_question(state, order)
+        logger.info(
+            "CONFIGURE COFFEE: Found %d total coffee items (total items: %d)",
+            total_coffees, len(order.items.items)
+        )
 
         # Configure coffees one at a time (fully configure each before moving to next)
-        for coffee in all_coffees:
+        for idx, coffee in enumerate(all_coffees):
+            if coffee.status != TaskStatus.IN_PROGRESS:
+                continue
+
+            coffee_num = idx + 1
+
+            logger.info(
+                "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, iced=%s, status=%s",
+                coffee.id, coffee.size, coffee.iced, coffee.status
+            )
+
+            # Build ordinal descriptor if multiple coffees
+            if total_coffees > 1:
+                ordinal = self._get_ordinal(coffee_num)
+                coffee_desc = f"the {ordinal} coffee"
+            else:
+                coffee_desc = None
+
             # Ask about size first
             if not coffee.size:
                 state.phase = OrderPhase.CONFIGURING_ITEM
                 state.pending_item_id = coffee.id
                 state.pending_field = "coffee_size"
+                if coffee_desc:
+                    message = f"For {coffee_desc}, small, medium, or large?"
+                else:
+                    message = "What size would you like? Small, medium, or large?"
                 return StateMachineResult(
-                    message="What size would you like? Small, medium, or large?",
+                    message=message,
                     state=state,
                     order=order,
                 )
@@ -2648,10 +4115,12 @@ class OrderStateMachine:
                     order=order,
                 )
 
-            # This coffee is complete
+            # This coffee is complete - recalculate price with modifiers
+            self.recalculate_coffee_price(coffee)
             coffee.mark_complete()
 
-        # All coffees configured
+        # All coffees configured - no incomplete ones found
+        logger.info("CONFIGURE COFFEE: No incomplete coffees, going to next question")
         state.clear_pending()
         return self._get_next_question(state, order)
 
@@ -2690,22 +4159,47 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle hot/iced preference for coffee."""
-        parsed = parse_coffee_style(user_input, model=self.model)
+        input_lower = user_input.lower()
 
-        if parsed.iced is None:
+        # Try deterministic parsing first for hot/iced
+        iced = None
+        if re.search(r'\b(iced|cold)\b', input_lower):
+            iced = True
+        elif re.search(r'\b(hot|warm|regular)\b', input_lower):
+            iced = False
+
+        # Fall back to LLM if unclear
+        if iced is None:
+            parsed = parse_coffee_style(user_input, model=self.model)
+            iced = parsed.iced
+
+        if iced is None:
             return StateMachineResult(
                 message="Would you like that hot or iced?",
                 state=state,
                 order=order,
             )
 
-        item.iced = parsed.iced
+        item.iced = iced
 
-        # Coffee is now complete
+        # Also extract any sweetener/syrup mentioned with the hot/iced response
+        # e.g., "hot with 2 splenda" or "iced with vanilla"
+        coffee_mods = extract_coffee_modifiers_from_input(user_input)
+        if coffee_mods.sweetener and not item.sweetener:
+            item.sweetener = coffee_mods.sweetener
+            item.sweetener_quantity = coffee_mods.sweetener_quantity
+            logger.info(f"Extracted sweetener from style response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
+        if coffee_mods.flavor_syrup and not item.flavor_syrup:
+            item.flavor_syrup = coffee_mods.flavor_syrup
+            logger.info(f"Extracted syrup from style response: {coffee_mods.flavor_syrup}")
+
+        # Coffee is now complete - recalculate price with modifiers
+        self.recalculate_coffee_price(item)
         item.mark_complete()
         state.clear_pending()
 
-        return self._get_next_question(state, order)
+        # Check for more incomplete coffees before moving on
+        return self._configure_next_incomplete_coffee(state, order)
 
     def _lookup_coffee_price(self, coffee_type: str | None) -> float:
         """Look up price for a coffee type."""
@@ -2727,35 +4221,335 @@ class OrderStateMachine:
         return 2.50  # Default
 
     # =========================================================================
+    # Speed Menu Bagel Handlers
+    # =========================================================================
+
+    def _add_speed_menu_bagel(
+        self,
+        item_name: str | None,
+        quantity: int,
+        toasted: bool | None,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Add speed menu bagel(s) to the order."""
+        if not item_name:
+            return StateMachineResult(
+                message="Which speed menu item would you like?",
+                state=state,
+                order=order,
+            )
+
+        # Ensure quantity is at least 1
+        quantity = max(1, quantity)
+
+        # Look up item from menu to get price
+        menu_item = self._lookup_menu_item(item_name)
+        price = menu_item.get("base_price", 10.00) if menu_item else 10.00
+        menu_item_id = menu_item.get("id") if menu_item else None
+
+        # Create the requested quantity of items
+        for _ in range(quantity):
+            item = SpeedMenuBagelItemTask(
+                menu_item_name=item_name,
+                menu_item_id=menu_item_id,
+                toasted=toasted,
+                unit_price=price,
+            )
+            if toasted is not None:
+                # Toasted preference already specified - mark complete
+                item.mark_complete()
+            else:
+                # Need to ask about toasting
+                item.mark_in_progress()
+            order.items.add_item(item)
+
+        # If toasted was specified, we're done
+        if toasted is not None:
+            state.clear_pending()
+            return self._get_next_question(state, order)
+
+        # Need to configure toasted preference
+        return self._configure_next_incomplete_speed_menu_bagel(state, order)
+
+    def _configure_next_incomplete_speed_menu_bagel(
+        self,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Configure the next incomplete speed menu bagel item."""
+        # Find incomplete speed menu bagel items
+        incomplete_items = [
+            item for item in order.items.items
+            if isinstance(item, SpeedMenuBagelItemTask) and item.status == TaskStatus.IN_PROGRESS
+        ]
+
+        if not incomplete_items:
+            state.clear_pending()
+            return self._get_next_question(state, order)
+
+        # Configure items one at a time
+        for item in incomplete_items:
+            if item.toasted is None:
+                state.phase = OrderPhase.CONFIGURING_ITEM
+                state.pending_item_id = item.id
+                state.pending_field = "speed_menu_bagel_toasted"
+                return StateMachineResult(
+                    message="Would you like that toasted?",
+                    state=state,
+                    order=order,
+                )
+
+            # This item is complete
+            item.mark_complete()
+
+        # All items configured
+        state.clear_pending()
+        return self._get_next_question(state, order)
+
+    def _handle_speed_menu_bagel_toasted(
+        self,
+        user_input: str,
+        item: SpeedMenuBagelItemTask,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle toasted preference for speed menu bagel."""
+        parsed = parse_toasted_choice(user_input, model=self.model)
+
+        if parsed.toasted is None:
+            return StateMachineResult(
+                message="Would you like that toasted?",
+                state=state,
+                order=order,
+            )
+
+        item.toasted = parsed.toasted
+        item.mark_complete()
+        state.clear_pending()
+
+        return self._get_next_question(state, order)
+
+    # =========================================================================
+    # Menu Query Handlers
+    # =========================================================================
+
+    def _handle_menu_query(
+        self,
+        menu_query_type: str | None,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle inquiry about menu items by type.
+
+        Args:
+            menu_query_type: Type of item being queried (e.g., 'beverage', 'bagel', 'sandwich')
+        """
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+
+        if not menu_query_type:
+            # Generic "what do you have?" - list available types
+            available_types = [t.replace("_", " ") for t, items in items_by_type.items() if items]
+            if available_types:
+                return StateMachineResult(
+                    message=f"We have: {', '.join(available_types)}. What would you like?",
+                    state=state,
+                    order=order,
+                )
+            return StateMachineResult(
+                message="What can I get for you?",
+                state=state,
+                order=order,
+            )
+
+        # Handle spread/cream cheese queries as by-the-pound category
+        if menu_query_type in ("spread", "cream_cheese", "cream cheese"):
+            return self._list_by_pound_category("spread", state, order)
+
+        # Map common query types to actual item_type slugs
+        # - "soda", "water", "juice" -> "beverage" (cold-only drinks)
+        # - "coffee", "tea", "latte" -> "sized_beverage" (hot/iced drinks)
+        # - "beverage", "drink" -> combine both types
+        type_aliases = {
+            "coffee": "sized_beverage",
+            "tea": "sized_beverage",
+            "latte": "sized_beverage",
+            "espresso": "sized_beverage",
+            "soda": "beverage",
+            "water": "beverage",
+            "juice": "beverage",
+        }
+
+        # Handle "beverage" or "drink" queries by combining both types
+        if menu_query_type in ("beverage", "drink"):
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            items = sized_items + cold_items
+            if items:
+                item_list = []
+                for item in items[:15]:
+                    name = item.get("name", "Unknown")
+                    price = item.get("base_price", 0)
+                    if price > 0:
+                        item_list.append(f"{name} (${price:.2f})")
+                    else:
+                        item_list.append(name)
+                if len(items) > 15:
+                    item_list.append(f"...and {len(items) - 15} more")
+                if len(item_list) == 1:
+                    items_str = item_list[0]
+                elif len(item_list) == 2:
+                    items_str = f"{item_list[0]} and {item_list[1]}"
+                else:
+                    items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+                return StateMachineResult(
+                    message=f"Our beverages include: {items_str}. Would you like any of these?",
+                    state=state,
+                    order=order,
+                )
+            return StateMachineResult(
+                message="I don't have any beverages on the menu right now. Is there anything else I can help you with?",
+                state=state,
+                order=order,
+            )
+
+        lookup_type = type_aliases.get(menu_query_type, menu_query_type)
+
+        # Look up items for the specific type
+        items = items_by_type.get(lookup_type, [])
+
+        if not items:
+            # Try to suggest what we do have
+            available_types = [t.replace("_", " ") for t, i in items_by_type.items() if i]
+            type_display = menu_query_type.replace("_", " ")
+            if available_types:
+                return StateMachineResult(
+                    message=f"I don't have any {type_display}s on the menu. We do have: {', '.join(available_types)}. What would you like?",
+                    state=state,
+                    order=order,
+                )
+            return StateMachineResult(
+                message=f"I'm sorry, I don't have any {type_display}s on the menu. What else can I help you with?",
+                state=state,
+                order=order,
+            )
+
+        # Format the items list with prices
+        type_name = menu_query_type.replace("_", " ")
+        # Proper pluralization
+        if type_name.endswith("ch") or type_name.endswith("s"):
+            type_display = type_name + "es"
+        else:
+            type_display = type_name + "s"
+
+        item_list = []
+        for item in items[:15]:  # Limit to 15 items
+            name = item.get("name", "Unknown")
+            price = item.get("base_price", 0)
+            if price > 0:
+                item_list.append(f"{name} (${price:.2f})")
+            else:
+                item_list.append(name)
+
+        if len(items) > 15:
+            item_list.append(f"...and {len(items) - 15} more")
+
+        # Format the response
+        if len(item_list) == 1:
+            items_str = item_list[0]
+        elif len(item_list) == 2:
+            items_str = f"{item_list[0]} and {item_list[1]}"
+        else:
+            items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+
+        return StateMachineResult(
+            message=f"Our {type_display} include: {items_str}. Would you like any of these?",
+            state=state,
+            order=order,
+        )
+
+    def _handle_soda_clarification(
+        self,
+        state: FlowState,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle when user orders a generic 'soda' without specifying type.
+
+        Asks what kind of soda they want, listing available options.
+        """
+        # Get beverages from menu data
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+        beverages = items_by_type.get("beverage", [])
+
+        if beverages:
+            # Get just the names of a few common sodas
+            soda_names = [item.get("name", "") for item in beverages[:6]]
+            # Filter out empty names and format nicely
+            soda_names = [name for name in soda_names if name]
+            if len(soda_names) > 3:
+                soda_list = ", ".join(soda_names[:3]) + ", and others"
+            elif len(soda_names) > 1:
+                soda_list = ", ".join(soda_names[:-1]) + f", and {soda_names[-1]}"
+            else:
+                soda_list = soda_names[0] if soda_names else "Coke, Diet Coke, Sprite"
+
+            return StateMachineResult(
+                message=f"What kind? We have {soda_list}.",
+                state=state,
+                order=order,
+            )
+
+        # Fallback if no beverages in menu data
+        return StateMachineResult(
+            message="What kind? We have Coke, Diet Coke, Sprite, and others.",
+            state=state,
+            order=order,
+        )
+
+    # =========================================================================
     # Signature/Speed Menu Handlers
     # =========================================================================
 
     def _handle_signature_menu_inquiry(
         self,
+        menu_type: str | None,
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle inquiry about signature/speed menu items."""
-        # Find signature items from menu_data
-        # The key is dynamically named based on the primary item type (e.g., signature_bagels, signature_sandwiches)
-        signature_items = []
+        """Handle inquiry about signature/speed menu items.
 
-        if self.menu_data:
-            # Look for signature items in any signature_* key
-            for key, items in self.menu_data.items():
-                if key.startswith("signature_") and isinstance(items, list):
-                    signature_items.extend(items)
+        Args:
+            menu_type: Specific type like 'signature_sandwich' or 'speed_menu_bagel',
+                      or None for all signature items
+        """
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        if not signature_items:
+        # If a specific type is requested, look it up directly
+        if menu_type:
+            items = items_by_type.get(menu_type, [])
+            # Get the display name from the type slug (proper pluralization)
+            type_name = menu_type.replace("_", " ")
+            if type_name.endswith("ch") or type_name.endswith("s"):
+                type_display_name = type_name + "es"
+            else:
+                type_display_name = type_name + "s"
+        else:
+            # No specific type - combine signature_sandwich and speed_menu_bagel items
+            items = []
+            items.extend(items_by_type.get("signature_sandwich", []))
+            items.extend(items_by_type.get("speed_menu_bagel", []))
+            type_display_name = "signature menu options"
+
+        if not items:
             return StateMachineResult(
                 message="We don't have any pre-made signature items on the menu right now. Would you like to build your own?",
                 state=state,
                 order=order,
             )
 
-        # Build a nice list of signature items with prices
+        # Build a nice list of items with prices
         item_descriptions = []
-        for item in signature_items:
+        for item in items:
             name = item.get("name", "Unknown")
             price = item.get("base_price", 0)
             item_descriptions.append(f"{name} for ${price:.2f}")
@@ -2768,7 +4562,7 @@ class OrderStateMachine:
         else:
             items_list = ", ".join(item_descriptions[:-1]) + f", and {item_descriptions[-1]}"
 
-        message = f"Our speed menu options are: {items_list}. Would you like any of these?"
+        message = f"Our {type_display_name} are: {items_list}. Would you like any of these?"
 
         return StateMachineResult(
             message=message,
@@ -2836,7 +4630,16 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """List items in a specific by-the-pound category."""
-        items = BY_POUND_ITEMS.get(category, [])
+        # For spreads, fetch from menu_data (cheese_types contains cream cheese options)
+        if category == "spread" and self.menu_data:
+            cheese_types = self.menu_data.get("cheese_types", [])
+            # Filter to only cream cheese, spreads, and butter
+            items = [
+                name for name in cheese_types
+                if any(kw in name.lower() for kw in ["cream cheese", "spread", "butter"])
+            ]
+        else:
+            items = BY_POUND_ITEMS.get(category, [])
         category_name = BY_POUND_CATEGORY_NAMES.get(category, category)
 
         if not items:
@@ -2856,8 +4659,15 @@ class OrderStateMachine:
 
         state.clear_pending()
         state.phase = OrderPhase.TAKING_ITEMS
+
+        # For spreads, don't say "by the pound" since they're also used on bagels
+        if category == "spread":
+            message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
+        else:
+            message = f"Our {category_name} by the pound include: {items_list}. Would you like any of these, or something else?"
+
         return StateMachineResult(
-            message=f"Our {category_name} by the pound include: {items_list}. Would you like any of these, or something else?",
+            message=message,
             state=state,
             order=order,
         )
@@ -2890,7 +4700,6 @@ class OrderStateMachine:
             return 0.25
 
         # Try to extract a number
-        import re
         match = re.search(r"(\d+(?:\.\d+)?)", quantity_lower)
         if match:
             return float(match.group(1))
@@ -3023,9 +4832,28 @@ class OrderStateMachine:
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Transition to checkout phase."""
-        state.phase = OrderPhase.CHECKOUT_DELIVERY
+        """Transition to checkout phase.
+
+        If we already have delivery type and customer name (e.g., user added an item
+        during confirmation), skip directly to order confirmation.
+        """
         state.clear_pending()
+
+        # Check if we already have all the info we need
+        if order.delivery_method.order_type and order.customer_info.name:
+            # Skip to confirmation - we already have the customer info
+            logger.info("CHECKOUT: Skipping to confirmation (already have name=%s, delivery=%s)",
+                       order.customer_info.name, order.delivery_method.order_type)
+            state.phase = OrderPhase.CHECKOUT_CONFIRM
+            summary = self._build_order_summary(order)
+            return StateMachineResult(
+                message=f"{summary}\n\nDoes that look right?",
+                state=state,
+                order=order,
+            )
+
+        # Normal checkout flow - ask for delivery type first
+        state.phase = OrderPhase.CHECKOUT_DELIVERY
         return StateMachineResult(
             message="Is this for pickup or delivery?",
             state=state,
@@ -3040,24 +4868,32 @@ class OrderStateMachine:
         return None
 
     def _build_order_summary(self, order: OrderTask) -> str:
-        """Build order summary string with consolidated identical items."""
+        """Build order summary string with consolidated identical items and total."""
         lines = ["Here's your order:"]
 
         # Group items by their summary string to consolidate identical items
-        from collections import Counter
-        item_counts: Counter[str] = Counter()
+        from collections import defaultdict
+        item_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_price": 0.0})
         for item in order.items.get_active_items():
             summary = item.get_summary()
-            item_counts[summary] += 1
+            price = item.unit_price * getattr(item, 'quantity', 1)
+            item_data[summary]["count"] += 1
+            item_data[summary]["total_price"] += price
 
-        # Build consolidated lines
-        for summary, count in item_counts.items():
+        # Build consolidated lines (no individual prices, just total at end)
+        for summary, data in item_data.items():
+            count = data["count"]
             if count > 1:
                 # Pluralize: "3 cokes" instead of "3× coke"
                 plural = f"{summary}s" if not summary.endswith("s") else summary
-                lines.append(f"  - {count} {plural}")
+                lines.append(f"• {count} {plural}")
             else:
-                lines.append(f"  - {summary}")
+                lines.append(f"• {summary}")
+
+        # Add "plus tax" note
+        subtotal = order.items.get_subtotal()
+        if subtotal > 0:
+            lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
 
         return "\n".join(lines)
 
@@ -3084,12 +4920,27 @@ class OrderStateMachine:
         specialty_bagels = ["gluten free", "gluten-free"]
 
         if any(specialty in bagel_type_lower for specialty in specialty_bagels):
-            # Look for specific specialty bagel
+            # Look for specific specialty bagel as menu item first
             bagel_name = f"{bagel_type.title()} Bagel" if "bagel" not in bagel_type_lower else bagel_type
             menu_item = self._lookup_menu_item(bagel_name)
             if menu_item:
                 logger.info("Found specialty bagel: %s ($%.2f)", menu_item.get("name"), menu_item.get("base_price"))
                 return menu_item.get("base_price", 2.50)
+
+            # Try bread_prices from menu_data (ingredients table)
+            if self.menu_data:
+                bread_prices = self.menu_data.get("bread_prices", {})
+                # Try exact match
+                bagel_key = bagel_name.lower()
+                if bagel_key in bread_prices:
+                    price = bread_prices[bagel_key]
+                    logger.info("Found specialty bagel in bread_prices: %s ($%.2f)", bagel_name, price)
+                    return price
+                # Try partial match for specialty type (e.g., "gluten free bagel")
+                for bread_name, price in bread_prices.items():
+                    if any(specialty in bread_name for specialty in specialty_bagels):
+                        logger.info("Found specialty bagel in bread_prices (partial): %s ($%.2f)", bread_name, price)
+                        return price
 
         # For regular bagels, look for the generic "Bagel" item
         menu_item = self._lookup_menu_item("Bagel")
@@ -3239,12 +5090,66 @@ class OrderStateMachine:
             )
         return default_price
 
+    def _lookup_spread_price(self, spread: str, spread_type: str | None = None) -> float:
+        """
+        Look up price for a spread, considering the spread type/flavor.
+
+        First tries the full spread name (e.g., "Tofu Cream Cheese") from cheese_prices,
+        then falls back to DEFAULT_MODIFIER_PRICES for generic spread.
+
+        Args:
+            spread: Base spread name (e.g., "cream cheese")
+            spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
+
+        Returns:
+            Price for the spread
+        """
+        # Build full spread name by combining type + spread (e.g., "tofu cream cheese")
+        if spread_type:
+            full_spread_name = f"{spread_type} {spread}".lower()
+        else:
+            full_spread_name = spread.lower()
+
+        # Try cheese_prices from menu_data first
+        if self.menu_data:
+            cheese_prices = self.menu_data.get("cheese_prices", {})
+
+            # Try full name first (e.g., "tofu cream cheese")
+            if full_spread_name in cheese_prices:
+                price = cheese_prices[full_spread_name]
+                logger.debug(
+                    "Found spread price from cheese_prices: %s = $%.2f",
+                    full_spread_name, price
+                )
+                return price
+
+            # Try without type as fallback (e.g., "plain cream cheese" or just "cream cheese")
+            spread_lower = spread.lower()
+            plain_spread = f"plain {spread_lower}"
+            if plain_spread in cheese_prices:
+                price = cheese_prices[plain_spread]
+                logger.debug(
+                    "Found spread price from cheese_prices (plain): %s = $%.2f",
+                    plain_spread, price
+                )
+                return price
+
+        # Fall back to DEFAULT_MODIFIER_PRICES
+        default_price = self.DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
+        if default_price > 0:
+            logger.debug(
+                "Using default spread price: %s = $%.2f",
+                spread, default_price
+            )
+        return default_price
+
     def _calculate_bagel_price_with_modifiers(
         self,
         base_price: float,
         sandwich_protein: str | None,
         extras: list[str] | None,
         spread: str | None,
+        spread_type: str | None = None,
     ) -> float:
         """
         Calculate total bagel price including modifiers.
@@ -3254,6 +5159,7 @@ class OrderStateMachine:
             sandwich_protein: Primary protein (e.g., "ham")
             extras: Additional modifiers (e.g., ["egg", "american"])
             spread: Spread choice (e.g., "cream cheese")
+            spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
 
         Returns:
             Total price including all modifiers
@@ -3271,7 +5177,7 @@ class OrderStateMachine:
 
         # Add spread price (if not "none")
         if spread and spread.lower() != "none":
-            total += self._lookup_modifier_price(spread)
+            total += self._lookup_spread_price(spread, spread_type)
 
         return round(total, 2)
 
@@ -3297,14 +5203,170 @@ class OrderStateMachine:
             item.sandwich_protein,
             item.extras,
             item.spread,
+            item.spread_type,
         )
 
         # Update the item's price
         item.unit_price = new_price
 
         logger.debug(
-            "Recalculated bagel price: base=%.2f, protein=%s, extras=%s, spread=%s -> total=%.2f",
-            base_price, item.sandwich_protein, item.extras, item.spread, new_price
+            "Recalculated bagel price: base=%.2f, protein=%s, extras=%s, spread=%s (%s) -> total=%.2f",
+            base_price, item.sandwich_protein, item.extras, item.spread, item.spread_type, new_price
         )
 
         return new_price
+
+    def _lookup_coffee_modifier_price(self, modifier_name: str, modifier_type: str = "syrup") -> float:
+        """
+        Look up price modifier for a coffee add-on (syrup, milk, size).
+
+        Searches the attribute_options for matching modifier prices.
+        """
+        if not modifier_name:
+            return 0.0
+
+        modifier_lower = modifier_name.lower().strip()
+
+        # Try to find in item_types attribute options
+        if self.menu_data:
+            item_types = self.menu_data.get("item_types", {})
+            # item_types is a dict with type slugs as keys
+            for type_slug, type_data in item_types.items():
+                if not isinstance(type_data, dict):
+                    continue
+                attrs = type_data.get("attributes", [])
+                for attr in attrs:
+                    if not isinstance(attr, dict):
+                        continue
+                    attr_slug = attr.get("slug", "")
+                    # Match by modifier type (syrup, milk, size)
+                    if modifier_type in attr_slug or attr_slug == modifier_type:
+                        options = attr.get("options", [])
+                        for opt in options:
+                            if not isinstance(opt, dict):
+                                continue
+                            opt_slug = opt.get("slug", "").lower()
+                            opt_name = opt.get("display_name", "").lower()
+                            if modifier_lower in opt_slug or modifier_lower in opt_name or opt_slug in modifier_lower:
+                                price = opt.get("price_modifier", 0.0)
+                                if price > 0:
+                                    logger.debug(
+                                        "Found coffee modifier price: %s = $%.2f (from %s)",
+                                        modifier_name, price, attr_slug
+                                    )
+                                    return price
+
+        # Default coffee modifier prices
+        default_prices = {
+            # Size upcharges (relative to small)
+            "medium": 0.50,
+            "large": 1.00,
+            # Milk alternatives
+            "oat": 0.50,
+            "oat milk": 0.50,
+            "almond": 0.50,
+            "almond milk": 0.50,
+            "soy": 0.50,
+            "soy milk": 0.50,
+            # Flavor syrups
+            "vanilla": 0.65,
+            "vanilla syrup": 0.65,
+            "hazelnut": 0.65,
+            "hazelnut syrup": 0.65,
+            "caramel": 0.65,
+            "caramel syrup": 0.65,
+            "peppermint": 1.00,
+            "peppermint syrup": 1.00,
+        }
+
+        return default_prices.get(modifier_lower, 0.0)
+
+    def _calculate_coffee_price_with_modifiers(
+        self,
+        base_price: float,
+        size: str | None,
+        milk: str | None,
+        flavor_syrup: str | None,
+    ) -> float:
+        """
+        Calculate total coffee price including modifiers.
+
+        Args:
+            base_price: Base coffee price (usually for small size)
+            size: Size selection (small, medium, large)
+            milk: Milk choice (regular, oat, almond, soy)
+            flavor_syrup: Flavor syrup (vanilla, hazelnut, etc.)
+
+        Returns:
+            Total price including all modifiers
+        """
+        total = base_price
+
+        # Add size upcharge (small is base price, medium/large have upcharges)
+        if size and size.lower() not in ("small", "s"):
+            size_upcharge = self._lookup_coffee_modifier_price(size, "size")
+            total += size_upcharge
+            if size_upcharge > 0:
+                logger.debug("Coffee size upcharge: %s = +$%.2f", size, size_upcharge)
+
+        # Add milk alternative upcharge (regular milk is free)
+        if milk and milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
+            milk_upcharge = self._lookup_coffee_modifier_price(milk, "milk")
+            total += milk_upcharge
+            if milk_upcharge > 0:
+                logger.debug("Coffee milk upcharge: %s = +$%.2f", milk, milk_upcharge)
+
+        # Add flavor syrup upcharge
+        if flavor_syrup:
+            syrup_upcharge = self._lookup_coffee_modifier_price(flavor_syrup, "syrup")
+            total += syrup_upcharge
+            if syrup_upcharge > 0:
+                logger.debug("Coffee syrup upcharge: %s = +$%.2f", flavor_syrup, syrup_upcharge)
+
+        return total
+
+    def recalculate_coffee_price(self, item: CoffeeItemTask) -> float:
+        """
+        Recalculate and update a coffee item's price based on its current modifiers.
+
+        Args:
+            item: The CoffeeItemTask to recalculate
+
+        Returns:
+            The new calculated price
+        """
+        # Get base price from drink type
+        base_price = self._lookup_coffee_price(item.drink_type)
+        total = base_price
+
+        # Calculate and store individual upcharges
+        # Size upcharge (small is base price)
+        size_upcharge = 0.0
+        if item.size and item.size.lower() not in ("small", "s"):
+            size_upcharge = self._lookup_coffee_modifier_price(item.size, "size")
+            total += size_upcharge
+        item.size_upcharge = size_upcharge
+
+        # Milk alternative upcharge (regular milk is free)
+        milk_upcharge = 0.0
+        if item.milk and item.milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
+            milk_upcharge = self._lookup_coffee_modifier_price(item.milk, "milk")
+            total += milk_upcharge
+        item.milk_upcharge = milk_upcharge
+
+        # Flavor syrup upcharge
+        syrup_upcharge = 0.0
+        if item.flavor_syrup:
+            syrup_upcharge = self._lookup_coffee_modifier_price(item.flavor_syrup, "syrup")
+            total += syrup_upcharge
+        item.syrup_upcharge = syrup_upcharge
+
+        # Update the item's price
+        item.unit_price = total
+
+        logger.info(
+            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f -> total=$%.2f",
+            base_price, size_upcharge, milk_upcharge, syrup_upcharge, total
+        )
+
+        return total

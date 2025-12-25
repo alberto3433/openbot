@@ -195,6 +195,14 @@ app = FastAPI(
     ],
 )
 
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Redirect root to static index page."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/static/index.html")
+
+
 # ---------- Request ID Middleware ----------
 # Adds a unique request ID to each request for debugging and log correlation
 

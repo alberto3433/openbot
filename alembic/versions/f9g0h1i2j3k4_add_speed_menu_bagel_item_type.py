@@ -35,11 +35,11 @@ def upgrade() -> None:
     # Get connection for data operations
     conn = op.get_bind()
 
-    # Insert the new item type
+    # Insert the new item type (use TRUE/FALSE for PostgreSQL boolean columns)
     conn.execute(
         sa.text("""
             INSERT INTO item_types (slug, display_name, is_configurable, skip_config)
-            VALUES ('speed_menu_bagel', 'Speed Menu Bagel', 0, 1)
+            VALUES ('speed_menu_bagel', 'Speed Menu Bagel', FALSE, TRUE)
         """)
     )
 

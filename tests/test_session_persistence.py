@@ -209,7 +209,7 @@ class TestSessionPersistenceIntegration:
         # Should have: initial greeting + user message + assistant reply = 3
         assert len(db_record.history) == 3
 
-    def test_session_recoverable_after_cache_clear(self, client, monkeypatch):
+    def test_session_recoverable_after_cache_clear(self, client, monkeypatch, disable_state_machine):
         """Test session can be used after clearing cache (simulating restart)."""
         from sandwich_bot import main as main_mod
 

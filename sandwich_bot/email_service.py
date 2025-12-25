@@ -43,6 +43,10 @@ def send_payment_link_email(
     customer_phone: Optional[str] = None,
     order_type: Optional[str] = None,
     items: Optional[list] = None,
+    subtotal: Optional[float] = None,
+    city_tax: Optional[float] = None,
+    state_tax: Optional[float] = None,
+    delivery_fee: Optional[float] = None,
 ) -> dict:
     """
     Send an email with a payment link to the customer.
@@ -50,12 +54,16 @@ def send_payment_link_email(
     Args:
         to_email: Customer's email address
         order_id: The order ID for reference
-        amount: The amount to charge
+        amount: The amount to charge (total)
         store_name: Name of the store for the message
         customer_name: Optional customer name for personalization
         customer_phone: Optional customer phone number
         order_type: Optional order type (pickup/delivery)
         items: Optional list of order items
+        subtotal: Optional subtotal before tax
+        city_tax: Optional city tax amount (only shown if > 0)
+        state_tax: Optional state tax amount (only shown if > 0)
+        delivery_fee: Optional delivery fee (only shown if > 0)
 
     Returns:
         dict with status and details
@@ -106,23 +114,51 @@ def send_payment_link_email(
             details = []
             if item.get("size"):
                 details.append(item["size"])
+
+            # Bagel/Sandwich modifiers
+            if item.get("bread"):
+                details.append(item["bread"])
+            if item.get("protein"):
+                details.append(item["protein"])
+            if item.get("cheese"):
+                details.append(item["cheese"])
+            if item.get("toppings"):
+                toppings_list = item["toppings"] if isinstance(item["toppings"], list) else [item["toppings"]]
+                for t in toppings_list:
+                    if t:
+                        details.append(str(t).replace("_", " "))
+            if item.get("sauces"):
+                sauces_list = item["sauces"] if isinstance(item["sauces"], list) else [item["sauces"]]
+                for s in sauces_list:
+                    if s:
+                        details.append(str(s).replace("_", " "))
+
+            # Coffee/Drink modifiers from item_config
             if item.get("item_config"):
                 config = item["item_config"]
                 if config.get("style"):
                     details.append(config["style"])
                 if config.get("milk") and str(config["milk"]).lower() != "none":
                     details.append(str(config["milk"]).replace("_", " "))
-                if config.get("syrup"):
-                    syrups = config["syrup"] if isinstance(config["syrup"], list) else [config["syrup"]]
+                # Handle flavor_syrup (new field name) or syrup (legacy)
+                syrup_value = config.get("flavor_syrup") or config.get("syrup")
+                if syrup_value:
+                    syrups = syrup_value if isinstance(syrup_value, list) else [syrup_value]
                     for s in syrups:
                         if s:
                             formatted = str(s).replace("_", " ")
                             details.append(formatted if "syrup" in formatted.lower() else f"{formatted} syrup")
+                # Handle sweetener with quantity
                 if config.get("sweetener"):
                     sweeteners = config["sweetener"] if isinstance(config["sweetener"], list) else [config["sweetener"]]
+                    sweetener_qty = config.get("sweetener_quantity", 1)
                     for s in sweeteners:
                         if s:
-                            details.append(str(s).replace("_", " "))
+                            formatted = str(s).replace("_", " ")
+                            if sweetener_qty > 1:
+                                details.append(f"{sweetener_qty} {formatted}s")
+                            else:
+                                details.append(formatted)
                 if config.get("extras"):
                     extras = config["extras"] if isinstance(config["extras"], list) else [config["extras"]]
                     for e in extras:
@@ -142,10 +178,37 @@ def send_payment_link_email(
             items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
             items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
 
+        # Build totals section
+        # Subtotal row (if provided)
+        if subtotal is not None:
+            items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>Subtotal:</td><td style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>${subtotal:.2f}</td></tr>"
+            items_text += f"\nSubtotal: ${subtotal:.2f}\n"
+
+            # Tax rows (only show non-zero taxes)
+            if city_tax and city_tax > 0 and state_tax and state_tax > 0:
+                # Both taxes - show breakdown
+                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>City Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
+                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>State Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
+                items_text += f"City Tax: ${city_tax:.2f}\n"
+                items_text += f"State Tax: ${state_tax:.2f}\n"
+            elif city_tax and city_tax > 0:
+                # Only city tax
+                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
+                items_text += f"Tax: ${city_tax:.2f}\n"
+            elif state_tax and state_tax > 0:
+                # Only state tax
+                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
+                items_text += f"Tax: ${state_tax:.2f}\n"
+
+            # Delivery fee (only show if > 0)
+            if delivery_fee and delivery_fee > 0:
+                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Delivery Fee:</td><td style='padding: 8px; text-align: right;'>${delivery_fee:.2f}</td></tr>"
+                items_text += f"Delivery Fee: ${delivery_fee:.2f}\n"
+
         # Total row
         items_html += f"<tr style='background: #f9f9f9;'><td colspan='2' style='padding: 8px; text-align: right;'><strong>Total:</strong></td><td style='padding: 8px; text-align: right;'><strong>${amount:.2f}</strong></td></tr>"
         items_html += "</table>"
-        items_text += f"\nTotal: ${amount:.2f}\n"
+        items_text += f"Total: ${amount:.2f}\n"
 
     subject = f"Payment Link for Your {store_name} Order #{order_id}"
 

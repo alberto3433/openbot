@@ -1,3 +1,7 @@
+# Load environment variables FIRST, before any module imports that need them
+from dotenv import load_dotenv
+load_dotenv()
+
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
@@ -41,11 +45,11 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # ---------- Store Configuration ----------
-# Default store IDs (matching frontend admin_stores.html)
+# Default store IDs (Zucker's NYC locations)
 DEFAULT_STORE_IDS = [
-    "store_eb_001",  # East Brunswick
-    "store_nb_002",  # New Brunswick
-    "store_pr_003",  # Princeton
+    "zuckers_tribeca",
+    "zuckers_grandcentral",
+    "zuckers_bryantpark",
 ]
 
 # Store ID to name mapping
@@ -393,6 +397,7 @@ ADMIN_PAGES = {
     "stores": "admin_stores.html",
     "company": "admin_company.html",
     "modifiers": "admin_modifiers.html",
+    "item_types": "admin_item_types.html",
 }
 
 
@@ -432,6 +437,7 @@ admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
 admin_company_router = APIRouter(prefix="/admin/company", tags=["Admin - Company"])
 admin_testing_router = APIRouter(prefix="/admin/testing", tags=["Admin - Testing"])
 admin_modifiers_router = APIRouter(prefix="/admin/modifiers", tags=["Admin - Modifiers"])
+admin_item_types_router = APIRouter(prefix="/admin/item-types", tags=["Admin - Item Types"])
 
 # Public router for store list (used by customer chat)
 public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
@@ -776,6 +782,7 @@ class ItemTypeOut(BaseModel):
     slug: str
     display_name: str
     is_configurable: bool
+    skip_config: bool = False
     attribute_definitions: List[AttributeDefinitionOut] = []
     menu_item_count: int = 0  # Number of menu items using this type
 
@@ -785,6 +792,7 @@ class ItemTypeCreate(BaseModel):
     slug: str
     display_name: str
     is_configurable: bool = True
+    skip_config: bool = False
 
 
 class ItemTypeUpdate(BaseModel):
@@ -792,6 +800,7 @@ class ItemTypeUpdate(BaseModel):
     slug: Optional[str] = None
     display_name: Optional[str] = None
     is_configurable: Optional[bool] = None
+    skip_config: Optional[bool] = None
 
 
 # ---------- Pydantic models for analytics admin UI ----------
@@ -2071,7 +2080,8 @@ def persist_pending_order(
             # Map extras to toppings (includes additional proteins, cheeses, toppings)
             toppings_field = it.get("extras")
         else:
-            bread_field = it.get("bread") or it.get("crust")
+            # For spread/salad sandwiches, use bagel_choice
+            bread_field = it.get("bread") or it.get("crust") or it.get("bagel_choice")
             cheese_field = it.get("cheese")
             # Filter out "none" values for non-bagel items too
             if cheese_field and cheese_field.lower() == "none":
@@ -2263,6 +2273,11 @@ def persist_confirmed_order(
     # Clear any previous items for this order
     db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
 
+    # Debug log items being persisted
+    for it in items:
+        logger.info("Persisting item: %s, bagel_choice=%s, toasted=%s",
+                    it.get("menu_item_name"), it.get("bagel_choice"), it.get("toasted"))
+
     for it in items:
         menu_item_name = (
             it.get("menu_item_name")
@@ -2301,7 +2316,8 @@ def persist_confirmed_order(
             toppings_field = it.get("extras") or []
         else:
             # For pizza, use crust in the bread field (they serve same purpose)
-            bread_field = it.get("bread") or it.get("crust")
+            # For spread/salad sandwiches, use bagel_choice
+            bread_field = it.get("bread") or it.get("crust") or it.get("bagel_choice")
             cheese_field = it.get("cheese")
             # Filter out "none" values for non-bagel items too
             if cheese_field and cheese_field.lower() == "none":
@@ -3529,6 +3545,7 @@ def create_item_type(
         slug=payload.slug,
         display_name=payload.display_name,
         is_configurable=payload.is_configurable,
+        skip_config=payload.skip_config,
     )
     db.add(item_type)
     db.commit()
@@ -3572,6 +3589,8 @@ def update_item_type(
         item_type.display_name = payload.display_name
     if payload.is_configurable is not None:
         item_type.is_configurable = payload.is_configurable
+    if payload.skip_config is not None:
+        item_type.skip_config = payload.skip_config
 
     db.commit()
     db.refresh(item_type)
@@ -3952,6 +3971,7 @@ app.include_router(admin_analytics_router)
 app.include_router(admin_stores_router)
 app.include_router(admin_company_router)
 app.include_router(admin_modifiers_router)
+app.include_router(admin_item_types_router)
 app.include_router(admin_testing_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)

@@ -357,6 +357,8 @@
     <div>
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_ingredients.html">Ingredients (86)</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
@@ -399,8 +401,10 @@
 
         <div class="field-row">
           <div class="field">
-            <label for="itemCategory">Category</label>
-            <input id="itemCategory" type="text" placeholder="e.g. signature, classic, drink" />
+            <label for="itemCategory">Item Type</label>
+            <select id="itemCategory">
+              <option value="">-- Select Item Type --</option>
+            </select>
           </div>
           <div class="field">
             <label for="itemPrice">Base price ($)</label>
@@ -411,7 +415,7 @@
         <div class="field-row">
           <div class="field-checkbox">
             <input id="itemSignature" type="checkbox" />
-            <label for="itemSignature">Signature sandwich</label>
+            <label for="itemSignature">Signature item (speed menu)</label>
           </div>
         </div>
 
@@ -507,6 +511,7 @@
     let currentIndex = -1;
     let ingredientsByCategory = {};
     let isVisualMode = true;
+    let itemTypes = []; // Store item types for dropdown
 
     const menuListEl = document.getElementById("menuList");
     const categoryFilterEl = document.getElementById("categoryFilter");
@@ -643,6 +648,40 @@
       }
     }
 
+    // Load item types for the category dropdown
+    async function loadItemTypes() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/modifiers/item-types`, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        itemTypes = await resp.json();
+
+        // Populate the item type dropdown
+        itemCategoryEl.innerHTML = '<option value="">-- Select Item Type --</option>';
+        itemTypes.forEach(it => {
+          const opt = document.createElement("option");
+          opt.value = it.id;
+          opt.textContent = it.display_name;
+          opt.dataset.slug = it.slug;
+          itemCategoryEl.appendChild(opt);
+        });
+
+        // Also update the category filter in sidebar
+        buildCategoryFilterFromItemTypes();
+      } catch (err) {
+        console.error("Error loading item types:", err);
+      }
+    }
+
+    function buildCategoryFilterFromItemTypes() {
+      categoryFilterEl.innerHTML = '<option value="">All categories</option>';
+      itemTypes.forEach(it => {
+        const opt = document.createElement("option");
+        opt.value = it.display_name;
+        opt.textContent = it.display_name;
+        categoryFilterEl.appendChild(opt);
+      });
+    }
+
     function populateDropdown(selectEl, items) {
       // Keep the "None" option
       selectEl.innerHTML = '<option value="">None</option>';
@@ -762,7 +801,7 @@
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         allItems = data;
-        buildCategoryFilter(allItems);
+        // Category filter is now built from item types in loadItemTypes()
         applyFilters();
         if (filteredItems.length > 0) {
           selectItemByIndex(0);
@@ -776,26 +815,19 @@
       }
     }
 
-    function buildCategoryFilter(items) {
-      const categories = Array.from(new Set(items.map(i => i.category || "").filter(Boolean))).sort();
-      categoryFilterEl.innerHTML = '<option value="">All categories</option>';
-      categories.forEach(cat => {
-        const opt = document.createElement("option");
-        opt.value = cat;
-        opt.textContent = cat;
-        categoryFilterEl.appendChild(opt);
-      });
-    }
-
     function applyFilters() {
       const query = searchInputEl.value.toLowerCase();
       const cat = categoryFilterEl.value;
       filteredItems = allItems.filter(item => {
+        // Find item type for this item
+        const itemType = itemTypes.find(it => it.id === item.item_type_id);
+        const typeName = itemType ? itemType.display_name : (item.category || "");
+
         const matchesText =
           !query ||
           (item.name && item.name.toLowerCase().includes(query)) ||
-          (item.category && item.category.toLowerCase().includes(query));
-        const matchesCat = !cat || item.category === cat;
+          typeName.toLowerCase().includes(query);
+        const matchesCat = !cat || typeName === cat;
         return matchesText && matchesCat;
       });
       renderList();
@@ -824,7 +856,10 @@
 
         const meta = document.createElement("div");
         meta.className = "item-meta";
-        meta.textContent = `${item.category || "uncategorized"} • $${item.base_price.toFixed(2)}`;
+        // Find item type name from itemTypes array
+        const itemType = itemTypes.find(it => it.id === item.item_type_id);
+        const typeName = itemType ? itemType.display_name : (item.category || "uncategorized");
+        meta.textContent = `${typeName} • $${item.base_price.toFixed(2)}`;
         main.appendChild(meta);
 
         row.appendChild(main);
@@ -893,7 +928,8 @@
       detailTitleEl.textContent = item.name || "Menu item";
       itemIdEl.value = item.id || "";
       itemNameEl.value = item.name || "";
-      itemCategoryEl.value = item.category || "";
+      // Set item type dropdown by item_type_id
+      itemCategoryEl.value = item.item_type_id || "";
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
       itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
@@ -978,9 +1014,15 @@
       }
 
       const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
+      const selectedItemTypeId = itemCategoryEl.value ? parseInt(itemCategoryEl.value, 10) : null;
+      // Get the display_name from the selected option for category field
+      const selectedOption = itemCategoryEl.options[itemCategoryEl.selectedIndex];
+      const categoryName = selectedOption && selectedOption.value ? selectedOption.textContent : "";
+
       const payload = {
         name: itemNameEl.value.trim(),
-        category: itemCategoryEl.value.trim(),
+        category: categoryName, // Keep category as display name for backwards compatibility
+        item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
         metadata: null
@@ -1047,8 +1089,9 @@
       }
     }
 
-    // Initialize: load ingredients first, then menu items
+    // Initialize: load item types and ingredients first, then menu items
     async function init() {
+      await loadItemTypes();
       await loadIngredients();
       await loadMenuItems();
     }

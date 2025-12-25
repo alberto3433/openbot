@@ -126,3 +126,17 @@ def client():
 def admin_auth():
     """Returns HTTP Basic Auth tuple for admin endpoints."""
     return (TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
+
+
+@pytest.fixture
+def disable_state_machine(monkeypatch):
+    """Disable the state machine, task orchestrator, and chain orchestrator for tests that mock call_sandwich_bot.
+
+    These orchestrators bypass call_sandwich_bot entirely, so tests that
+    rely on mocking call_sandwich_bot need to disable all of them to use the LLM path.
+    """
+    # Disable chain orchestrator in main.py (the main check that controls code path)
+    monkeypatch.setattr(
+        "sandwich_bot.main.is_chain_orchestrator_enabled",
+        lambda: False
+    )

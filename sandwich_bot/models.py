@@ -33,6 +33,7 @@ class ItemType(Base):
     slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sandwich", "pizza", "drink"
     display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
     is_configurable = Column(Boolean, nullable=False, default=True)  # True = has attributes to customize
+    skip_config = Column(Boolean, nullable=False, default=False)  # True = skip config questions (e.g., sodas don't need hot/iced)
 
     # Relationships
     attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
@@ -147,7 +148,14 @@ class Order(Base):
     phone = Column(String, nullable=True)
     customer_email = Column(String, nullable=True)  # Email for payment links
     pickup_time = Column(String, nullable=True)
-    total_price = Column(Float, nullable=False, default=0.0)
+
+    # Price breakdown
+    subtotal = Column(Float, nullable=True)  # Sum of line items before tax
+    city_tax = Column(Float, nullable=True)  # City tax amount
+    state_tax = Column(Float, nullable=True)  # State tax amount
+    delivery_fee = Column(Float, nullable=True)  # Delivery fee (if delivery order)
+    total_price = Column(Float, nullable=False, default=0.0)  # Final total including tax and fees
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     store_id = Column(String, nullable=True, index=True)  # Store identifier (e.g., "store_eb_001")
 
@@ -467,6 +475,10 @@ class Store(Base):
     timezone = Column(String, nullable=False, default="America/New_York")  # IANA timezone, e.g., "America/Los_Angeles"
     status = Column(String, nullable=False, default="open")  # "open" or "closed"
     payment_methods = Column(JSON, nullable=False, default=list)  # ["cash", "credit", "bitcoin"]
+
+    # Tax rates (stored as decimals, e.g., 0.04 for 4%)
+    city_tax_rate = Column(Float, nullable=False, default=0.0)  # City/local tax rate
+    state_tax_rate = Column(Float, nullable=False, default=0.0)  # State tax rate
 
     # Soft delete support
     deleted_at = Column(DateTime(timezone=True), nullable=True)

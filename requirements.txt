@@ -1,5 +1,6 @@
 alembic==1.17.2
 fastapi==0.123.0
+instructor>=1.13.0
 openai==2.9.0
 psycopg2-binary==2.9.10
 pydantic==2.10.6

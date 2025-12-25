@@ -108,7 +108,13 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         "drinks": [],
         "desserts": [],
         "other": [],
+        "items_by_type": {},  # Items grouped by item_type slug for type-specific queries
     }
+
+    # Pre-populate items_by_type with all item types from database
+    all_item_types = db.query(ItemType).all()
+    for it in all_item_types:
+        index["items_by_type"][it.slug] = []
 
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
@@ -124,14 +130,17 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
 
         # Get item type info if available
         item_type_slug = None
+        item_type_skip_config = False
         if item.item_type:
             item_type_slug = item.item_type.slug
+            item_type_skip_config = bool(item.item_type.skip_config)
 
         item_json = {
             "id": item.id,
             "name": item.name,
             "category": item.category,
             "is_signature": bool(item.is_signature),
+            "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
             "base_price": float(item.base_price),
             "available_qty": int(item.available_qty),
             "recipe": recipe_json,
@@ -139,9 +148,19 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
         }
 
+        # Add to items_by_type grouping for type-specific queries
+        if item_type_slug and item_type_slug in index["items_by_type"]:
+            index["items_by_type"][item_type_slug].append(item_json)
+
         cat = (item.category or "").lower()
         # Handle both "sandwich"/"pizza" and "signature" categories for main items
-        is_main_item_type = cat == primary_type_slug or cat == "sandwich" or cat == "signature"
+        # Use substring matching to handle categories like "Signature Sandwich"
+        is_main_item_type = (
+            cat == primary_type_slug
+            or "sandwich" in cat
+            or "signature" in cat
+            or cat == "bagel"
+        )
         if is_main_item_type and item.is_signature:
             index[signature_key].append(item_json)
         elif is_main_item_type and not item.is_signature:
@@ -176,6 +195,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         .all()
     )
     index["cheese_types"] = [ing.name for ing in cheese_ingredients]
+    index["cheese_prices"] = {ing.name.lower(): ing.base_price for ing in cheese_ingredients}
 
     # Sauce types - all ingredients with category 'sauce'
     sauce_ingredients = (
@@ -289,6 +309,7 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
             result[it.slug] = {
                 "display_name": it.display_name,
                 "is_configurable": False,
+                "skip_config": bool(it.skip_config),  # Skip configuration questions (e.g., sodas don't need hot/iced)
                 "attributes": [],
             }
             continue
@@ -339,6 +360,7 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
         result[it.slug] = {
             "display_name": it.display_name,
             "is_configurable": True,
+            "skip_config": bool(it.skip_config),  # Skip configuration questions (e.g., sodas don't need hot/iced)
             "attributes": attributes,
         }
 

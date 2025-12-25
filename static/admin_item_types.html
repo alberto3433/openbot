@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Item Type Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .item-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .item-row:last-child {
+      border-bottom: none;
+    }
+    .item-row:hover {
+      background: #fafafa;
+    }
+    .item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+    .item-name {
+      font-weight: 600;
+      font-size: 16px;
+      color: #1976d2;
+    }
+    .item-slug {
+      font-size: 13px;
+      color: #666;
+      font-family: monospace;
+    }
+    .item-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .item-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .item-badge.configurable {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .item-badge.simple {
+      background: #f5f5f5;
+      color: #666;
+    }
+    .item-badge.skip {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .item-badge.count {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .item-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      min-width: 60px;
+      transition: all 0.2s;
+    }
+    .action-btn:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+    .action-btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .action-btn.primary:hover {
+      background: #1565c0;
+    }
+    .action-btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .action-btn.danger:hover {
+      background: #ffebee;
+    }
+    .status-bar {
+      padding: 10px 16px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+      border-radius: 4px;
+    }
+    .status-bar.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-bar.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .add-btn {
+      padding: 10px 20px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .add-btn:hover {
+      background: #43a047;
+    }
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: #666;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .checkbox-row label {
+      margin: 0;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #c62828;
+      color: #fff;
+      border-color: #c62828;
+    }
+    .btn.danger:hover {
+      background: #b71c1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div>Item Type Management</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_item_types.html"><strong>Item Types</strong></a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="statusBar" class="status-bar" style="display: none;"></div>
+
+    <button class="add-btn" id="addItemTypeBtn">+ Add New Item Type</button>
+
+    <div class="section">
+      <div class="section-header">
+        <span>All Item Types</span>
+        <span class="count" id="itemTypeCount">0</span>
+      </div>
+      <ul class="item-list" id="itemTypeList">
+        <li class="empty-state">Loading item types...</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Add/Edit Item Type Modal -->
+  <div class="modal-overlay" id="itemTypeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add New Item Type</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="itemTypeForm">
+          <input type="hidden" id="itemTypeId" />
+
+          <div class="form-group">
+            <label for="displayName">Display Name *</label>
+            <input type="text" id="displayName" required placeholder="e.g., Sandwich, Beverage, Bagel" />
+            <div class="hint">Human-readable name shown in the admin UI</div>
+          </div>
+
+          <div class="form-group">
+            <label for="slug">Slug *</label>
+            <input type="text" id="slug" required placeholder="e.g., sandwich, beverage, bagel" pattern="[a-z0-9_]+" />
+            <div class="hint">Unique identifier (lowercase, underscores only). Used in code and API.</div>
+          </div>
+
+          <div class="form-group">
+            <div class="checkbox-row">
+              <input type="checkbox" id="isConfigurable" checked />
+              <label for="isConfigurable">Configurable</label>
+            </div>
+            <div class="hint">Configurable items have attributes that customers can customize (e.g., toppings, size)</div>
+          </div>
+
+          <div class="form-group">
+            <div class="checkbox-row">
+              <input type="checkbox" id="skipConfig" />
+              <label for="skipConfig">Skip Configuration</label>
+            </div>
+            <div class="hint">Skip asking configuration questions (e.g., simple beverages that don't need hot/iced choice)</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="cancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Item Type</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteItemTypeName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">This action cannot be undone. Item types with menu items cannot be deleted.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API base URL - uses existing modifiers endpoint
+    const API_BASE = "/admin/modifiers/item-types";
+
+    // Auth credentials storage
+    let authCredentials = null;
+
+    // Authenticated fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+      }
+
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
+    // DOM elements
+    const statusBar = document.getElementById("statusBar");
+    const itemTypeList = document.getElementById("itemTypeList");
+    const itemTypeCount = document.getElementById("itemTypeCount");
+    const itemTypeModal = document.getElementById("itemTypeModal");
+    const deleteModal = document.getElementById("deleteModal");
+    const modalTitle = document.getElementById("modalTitle");
+    const itemTypeForm = document.getElementById("itemTypeForm");
+    const deleteBtn = document.getElementById("deleteBtn");
+
+    // Current state
+    let itemTypes = [];
+    let editingItemTypeId = null;
+    let deletingItemTypeId = null;
+
+    // Load item types from API
+    async function loadItemTypes() {
+      try {
+        const response = await authFetch(API_BASE);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        itemTypes = await response.json();
+        renderItemTypes();
+      } catch (error) {
+        console.error("Failed to load item types:", error);
+        showStatus("Failed to load item types from server", "error");
+        itemTypeList.innerHTML = '<li class="empty-state">Failed to load item types. Please refresh the page.</li>';
+      }
+    }
+
+    // Show status message
+    function showStatus(message, type = "info") {
+      statusBar.textContent = message;
+      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
+      statusBar.style.display = "block";
+      if (type !== "error") {
+        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+      }
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Render the item type list
+    function renderItemTypes() {
+      itemTypeCount.textContent = itemTypes.length;
+
+      if (itemTypes.length === 0) {
+        itemTypeList.innerHTML = '<li class="empty-state">No item types found. Click "Add New Item Type" to create one.</li>';
+        return;
+      }
+
+      itemTypeList.innerHTML = itemTypes.map(itemType => `
+        <li class="item-row" data-id="${itemType.id}">
+          <div class="item-info">
+            <span class="item-name">${escapeHtml(itemType.display_name)}</span>
+            <span class="item-slug">${escapeHtml(itemType.slug)}</span>
+            <div class="item-meta">
+              <span class="item-badge ${itemType.is_configurable ? 'configurable' : 'simple'}">
+                ${itemType.is_configurable ? 'Configurable' : 'Simple'}
+              </span>
+              ${itemType.skip_config ? '<span class="item-badge skip">Skip Config</span>' : ''}
+              <span class="item-badge count">${itemType.menu_item_count || 0} menu items</span>
+            </div>
+          </div>
+          <div class="item-actions">
+            <button class="action-btn primary edit-btn" data-id="${itemType.id}">Edit</button>
+          </div>
+        </li>
+      `).join("");
+
+      // Add click handlers for edit buttons
+      document.querySelectorAll(".edit-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openEditModal(parseInt(btn.dataset.id));
+        });
+      });
+    }
+
+    // Open the modal for adding a new item type
+    function openAddModal() {
+      editingItemTypeId = null;
+      modalTitle.textContent = "Add New Item Type";
+      deleteBtn.style.display = "none";
+      itemTypeForm.reset();
+      document.getElementById("itemTypeId").value = "";
+      document.getElementById("isConfigurable").checked = true;
+      document.getElementById("skipConfig").checked = false;
+      itemTypeModal.classList.add("active");
+    }
+
+    // Open the modal for editing an existing item type
+    function openEditModal(itemTypeId) {
+      const itemType = itemTypes.find(it => it.id === itemTypeId);
+      if (!itemType) {
+        showStatus("Item type not found", "error");
+        return;
+      }
+
+      editingItemTypeId = itemTypeId;
+      modalTitle.textContent = "Edit Item Type";
+      deleteBtn.style.display = "inline-block";
+
+      // Populate form fields
+      document.getElementById("itemTypeId").value = itemType.id;
+      document.getElementById("displayName").value = itemType.display_name;
+      document.getElementById("slug").value = itemType.slug;
+      document.getElementById("isConfigurable").checked = itemType.is_configurable;
+      document.getElementById("skipConfig").checked = itemType.skip_config || false;
+
+      itemTypeModal.classList.add("active");
+    }
+
+    // Close the item type modal
+    function closeModal() {
+      itemTypeModal.classList.remove("active");
+      editingItemTypeId = null;
+    }
+
+    // Close the delete modal
+    function closeDeleteModal() {
+      deleteModal.classList.remove("active");
+      deletingItemTypeId = null;
+    }
+
+    // Save the item type (add or update)
+    async function saveItemType() {
+      const displayName = document.getElementById("displayName").value.trim();
+      const slug = document.getElementById("slug").value.trim().toLowerCase();
+      const isConfigurable = document.getElementById("isConfigurable").checked;
+      const skipConfig = document.getElementById("skipConfig").checked;
+
+      if (!displayName || !slug) {
+        showStatus("Please fill in all required fields", "error");
+        return;
+      }
+
+      // Validate slug format
+      if (!/^[a-z0-9_]+$/.test(slug)) {
+        showStatus("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const payload = {
+        display_name: displayName,
+        slug: slug,
+        is_configurable: isConfigurable,
+        skip_config: skipConfig
+      };
+
+      try {
+        let response;
+        if (editingItemTypeId) {
+          // Update existing item type
+          response = await authFetch(`${API_BASE}/${editingItemTypeId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          // Create new item type
+          response = await authFetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        showStatus(editingItemTypeId ? `"${displayName}" has been updated` : `"${displayName}" has been added`, "success");
+        closeModal();
+        await loadItemTypes();
+      } catch (error) {
+        console.error("Failed to save item type:", error);
+        showStatus(`Failed to save item type: ${error.message}`, "error");
+      }
+    }
+
+    // Open delete confirmation
+    function openDeleteConfirmation() {
+      if (!editingItemTypeId) return;
+
+      const itemType = itemTypes.find(it => it.id === editingItemTypeId);
+      if (!itemType) return;
+
+      deletingItemTypeId = editingItemTypeId;
+      document.getElementById("deleteItemTypeName").textContent = itemType.display_name;
+      closeModal();
+      deleteModal.classList.add("active");
+    }
+
+    // Delete the item type
+    async function deleteItemType() {
+      if (!deletingItemTypeId) return;
+
+      const itemType = itemTypes.find(it => it.id === deletingItemTypeId);
+      const itemTypeName = itemType ? itemType.display_name : "Item Type";
+
+      try {
+        const response = await authFetch(`${API_BASE}/${deletingItemTypeId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        closeDeleteModal();
+        showStatus(`"${itemTypeName}" has been deleted`, "success");
+        await loadItemTypes();
+      } catch (error) {
+        console.error("Failed to delete item type:", error);
+        showStatus(`Failed to delete item type: ${error.message}`, "error");
+      }
+    }
+
+    // Event listeners
+    document.getElementById("addItemTypeBtn").addEventListener("click", openAddModal);
+    document.getElementById("modalClose").addEventListener("click", closeModal);
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("saveBtn").addEventListener("click", saveItemType);
+    document.getElementById("deleteBtn").addEventListener("click", openDeleteConfirmation);
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", deleteItemType);
+
+    // Close modals when clicking outside
+    itemTypeModal.addEventListener("click", (e) => {
+      if (e.target === itemTypeModal) closeModal();
+    });
+    deleteModal.addEventListener("click", (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    // Close modals on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeModal();
+        closeDeleteModal();
+      }
+    });
+
+    // Handle form submission with Enter key
+    itemTypeForm.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveItemType();
+      }
+    });
+
+    // Auto-generate slug from display name
+    document.getElementById("displayName").addEventListener("input", (e) => {
+      const slugField = document.getElementById("slug");
+      // Only auto-generate if slug is empty or was auto-generated
+      if (!editingItemTypeId && !slugField.dataset.manuallyEdited) {
+        slugField.value = e.target.value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '');
+      }
+    });
+
+    // Mark slug as manually edited
+    document.getElementById("slug").addEventListener("input", () => {
+      document.getElementById("slug").dataset.manuallyEdited = "true";
+    });
+
+    // Initial load
+    loadItemTypes();
+  </script>
+</body>
+</html>

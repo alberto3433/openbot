@@ -6,12 +6,24 @@
       "Bash(wc:*)",
       "Bash(pip show:*)",
       "Bash(pip install:*)",
-      "Bash(alembic init:*)",
-      "Bash(alembic upgrade:*)",
-      "Bash(alembic current:*)",
+      "Bash(alembic:*)",
       "Bash(copy:*)",
-      "Bash(del app.db)",
-      "Bash(cmd /c \"copy app.db app.db.backup && del app.db\")"
+      "Bash(del:*)",
+      "Bash(git:*)",
+      "Bash(curl:*)",
+      "Bash(dir:*)",
+      "Bash(cmd:*)",
+      "Bash(timeout:*)",
+      "Bash(sqlite3:*)",
+      "Bash(DATABASE_URL=:*)",
+      "Bash(grep:*)",
+      "Bash(PYTHONPATH=:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.vapi.ai)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.zuckersbagels.com)"
     ]
   }
 }

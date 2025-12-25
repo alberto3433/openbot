@@ -30,11 +30,175 @@ from .menu_index_builder import build_menu_index, get_menu_version
 from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .email_service import send_payment_link_email
+from .chains.integration import process_voice_message
+from .chains.adapter import is_chain_orchestrator_enabled
+
+
+def _build_store_info(store_id: str, company_name: str, db: Session) -> Dict[str, Any]:
+    """Build store info dict for orchestrator."""
+    store_info = {
+        "name": company_name,
+        "store_id": store_id,
+        "city_tax_rate": 0.0,
+        "state_tax_rate": 0.0,
+    }
+    if db and store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            store_info["name"] = store.name or company_name
+            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
+            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+    return store_info
 
 logger = logging.getLogger(__name__)
 
 # Router for Vapi voice endpoints
 vapi_router = APIRouter(prefix="/voice/vapi", tags=["Voice - Vapi"])
+
+
+# ----- Flow Guidance Generator -----
+
+def _item_uses_bagel(item: Dict[str, Any]) -> bool:
+    """
+    Check if an order item uses a bagel.
+
+    An item uses a bagel if:
+    - Its item_type is "bagel"
+    - Its bread field contains "bagel" (case insensitive)
+    - Its menu_item_name contains "bagel" (case insensitive)
+    """
+    # Check item type
+    item_type = (item.get("item_type") or "").lower()
+    if item_type == "bagel":
+        return True
+
+    # Check bread field
+    bread = (item.get("bread") or "").lower()
+    if "bagel" in bread:
+        return True
+
+    # Check menu item name (e.g., "Lox Bagel", "Everything Bagel")
+    name = (item.get("menu_item_name") or "").lower()
+    if "bagel" in name:
+        return True
+
+    return False
+
+
+def _get_items_needing_toasting(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Get bagel items that haven't been asked about toasting yet.
+
+    Returns items where:
+    - Item uses a bagel (by type, bread, or name)
+    - toasted field is None (not yet set to True or False)
+    """
+    needs_toasting = []
+    for i, item in enumerate(items):
+        if _item_uses_bagel(item) and item.get("toasted") is None:
+            needs_toasting.append({"index": i, "item": item})
+    return needs_toasting
+
+
+def generate_flow_guidance(order_state: Dict[str, Any], history: List[Dict[str, str]]) -> str:
+    """
+    Generate explicit guidance about current order status and next steps.
+
+    This helps prevent the LLM from asking for information it already has
+    by making the current state crystal clear.
+    """
+    customer = order_state.get("customer", {})
+    items = order_state.get("items", [])
+    order_type = order_state.get("order_type")
+    payment_status = order_state.get("payment_status")
+    payment_method = order_state.get("payment_method")
+
+    lines = ["\n=== CURRENT ORDER STATUS (READ THIS CAREFULLY) ==="]
+
+    # Items status
+    if items:
+        lines.append(f"  ITEMS IN CART: {len(items)} item(s)")
+        for idx, item in enumerate(items[:3]):  # Show first 3
+            item_name = item.get('menu_item_name', 'Unknown')
+            toasted_status = ""
+            if _item_uses_bagel(item):
+                if item.get("toasted") is True:
+                    toasted_status = " [TOASTED]"
+                elif item.get("toasted") is False:
+                    toasted_status = " [NOT TOASTED]"
+                else:
+                    toasted_status = " [TOASTING: NOT YET ASKED]"
+            lines.append(f"    - {item_name}{toasted_status}")
+        if len(items) > 3:
+            lines.append(f"    - ... and {len(items) - 3} more")
+    else:
+        lines.append("  ITEMS IN CART: None yet")
+
+    # Check for bagel items needing toasting confirmation
+    items_needing_toasting = _get_items_needing_toasting(items)
+
+    # Customer info - be very explicit
+    lines.append("")
+    lines.append("  CUSTOMER INFO:")
+
+    if customer.get("name"):
+        lines.append(f"    ✓ Name: {customer['name']} — ALREADY HAVE, DO NOT ASK")
+    else:
+        lines.append("    ✗ Name: NOT YET COLLECTED")
+
+    if customer.get("phone"):
+        phone = customer["phone"]
+        masked = f"...{phone[-4:]}" if len(phone) >= 4 else phone
+        lines.append(f"    ✓ Phone: {masked} — ALREADY HAVE, DO NOT ASK")
+    else:
+        lines.append("    ✗ Phone: NOT YET COLLECTED")
+
+    if customer.get("email"):
+        lines.append(f"    ✓ Email: {customer['email']} — ALREADY HAVE, DO NOT ASK")
+    else:
+        lines.append("    ✗ Email: Not collected (only needed for email payment link)")
+
+    # Order type
+    lines.append("")
+    if order_type:
+        lines.append(f"  ✓ Order Type: {order_type.upper()} — ALREADY SET, DO NOT ASK")
+    else:
+        lines.append("  ✗ Order Type: NOT YET SET (pickup or delivery)")
+
+    # Payment
+    if payment_status or payment_method:
+        lines.append(f"  ✓ Payment: {payment_method or payment_status} — ALREADY HANDLED")
+    else:
+        lines.append("  ✗ Payment: NOT YET HANDLED")
+
+    # Determine next step
+    lines.append("")
+    lines.append("  >>> NEXT STEP:")
+
+    if not items:
+        lines.append("      Take their order - ask what they'd like")
+    elif items_needing_toasting:
+        # Bagel items need toasting confirmation BEFORE proceeding
+        lines.append("      *** STOP - TOASTING REQUIRED BEFORE CONTINUING ***")
+        lines.append(f"      You have {len(items_needing_toasting)} bagel item(s) that MUST be asked about toasting:")
+        for x in items_needing_toasting:
+            lines.append(f"        - Item #{x['index']}: {x['item'].get('menu_item_name', 'Unknown')}")
+        lines.append("      YOUR RESPONSE MUST ASK: 'Would you like that toasted?'")
+        lines.append("      DO NOT ask about sides, drinks, pickup, or anything else until toasting is answered!")
+        idx = items_needing_toasting[0]['index']  # First item needing toasting
+        lines.append(f"      When they answer, use update_sandwich with toasted=true or toasted=false and item_index={idx}")
+    elif not order_type:
+        lines.append("      Ask: 'Is this for pickup or delivery?'")
+    elif not customer.get("name"):
+        lines.append("      Ask for their name (you have their phone from caller ID)")
+    elif not payment_status and not payment_method:
+        lines.append("      Offer payment options: text link, email link, card over phone, or pay at pickup")
+    else:
+        lines.append("      CONFIRM THE ORDER with confirm_order intent - DO NOT ask more questions!")
+
+    lines.append("=== END STATUS ===\n")
+
+    return "\n".join(lines)
 
 # Environment configuration
 VAPI_SECRET_KEY = os.getenv("VAPI_SECRET_KEY", "")  # Optional: for webhook authentication
@@ -209,7 +373,7 @@ def _get_or_create_phone_session(
 
     # Generate greeting
     if returning_customer and returning_customer.get("name"):
-        welcome = f"Hi {returning_customer['name']}, welcome back to {store_name}! Would you like your usual order or something different today?"
+        welcome = f"Hello {returning_customer['name']}! Would you like to repeat your last order?"
     else:
         welcome = f"Hi, thanks for calling {store_name}! I'm {bot_name}. What can I get started for you today?"
 
@@ -262,34 +426,40 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     """Look up returning customer by phone number from past orders."""
     from .models import Order
 
-    # Normalize phone for lookup
+    # Normalize phone for lookup - extract just digits
     normalized = "".join(c for c in phone if c.isdigit())
-    if len(normalized) == 10:
-        normalized = "1" + normalized
+    # Get last 10 digits for matching (handles +1 prefix variations)
+    phone_suffix = normalized[-10:] if len(normalized) >= 10 else normalized
 
-    # Find most recent confirmed order with this phone
-    recent_order = (
+    if not phone_suffix:
+        return None
+
+    # Find most recent confirmed order matching this phone number
+    # Use LIKE to match the last 10 digits regardless of format
+    recent_orders = (
         db.query(Order)
         .filter(
             Order.phone.isnot(None),
             Order.status == "confirmed",
         )
         .order_by(Order.created_at.desc())
-        .first()
+        .limit(20)  # Check recent orders for a match
+        .all()
     )
 
-    # Check if phone matches (handle various formats)
-    if recent_order and recent_order.phone:
-        order_phone = "".join(c for c in recent_order.phone if c.isdigit())
-        if len(order_phone) == 10:
-            order_phone = "1" + order_phone
+    # Find an order that matches this phone number
+    for order in recent_orders:
+        if order.phone:
+            order_phone = "".join(c for c in order.phone if c.isdigit())
+            order_suffix = order_phone[-10:] if len(order_phone) >= 10 else order_phone
 
-        if order_phone == normalized or order_phone.endswith(normalized[-10:]):
-            return {
-                "name": recent_order.customer_name,
-                "phone": recent_order.phone,
-                "last_order_id": recent_order.id,
-            }
+            if order_suffix == phone_suffix:
+                return {
+                    "name": order.customer_name,
+                    "phone": order.phone,
+                    "email": order.customer_email,
+                    "last_order_id": order.id,
+                }
 
     return None
 
@@ -588,6 +758,34 @@ async def vapi_chat_completions(
     returning_customer = session_data.get("returning_customer")
     session_store_id = session_data.get("store_id") or store_id
 
+    # Look up returning customer if not already in session (e.g., resumed from DB)
+    if not returning_customer and phone_number:
+        returning_customer = _lookup_customer_by_phone(db, phone_number)
+        if returning_customer:
+            session_data["returning_customer"] = returning_customer
+            logger.info("Looked up returning customer: %s", returning_customer.get("name"))
+
+    # Ensure customer info is in order state if we know it (so bot doesn't ask again)
+    if not order_state.get("customer"):
+        order_state["customer"] = {}
+
+    # Pre-fill name from returning customer lookup
+    if returning_customer and returning_customer.get("name"):
+        if not order_state["customer"].get("name"):
+            order_state["customer"]["name"] = returning_customer["name"]
+            logger.info("Pre-filled customer name in order state: %s", returning_customer["name"])
+
+    # Pre-fill phone from caller ID
+    if phone_number and not order_state["customer"].get("phone"):
+        order_state["customer"]["phone"] = phone_number
+        logger.info("Pre-filled customer phone in order state: %s", phone_number[-4:])
+
+    # Pre-fill email from returning customer lookup
+    if returning_customer and returning_customer.get("email"):
+        if not order_state["customer"].get("email"):
+            order_state["customer"]["email"] = returning_customer["email"]
+            logger.info("Pre-filled customer email in order state: %s", returning_customer["email"])
+
     # Get company info
     company = db.query(Company).first()
     bot_name = company.bot_persona_name if company else "Sammy"
@@ -600,39 +798,109 @@ async def vapi_chat_completions(
     current_menu_version = get_menu_version(menu_index)
     include_menu = session_data.get("menu_version") != current_menu_version
 
-    # Call the bot
-    try:
-        llm_result = call_sandwich_bot(
-            history,
-            order_state,
-            menu_index,
-            user_message,
-            include_menu_in_system=include_menu,
-            returning_customer=returning_customer,
-            caller_id=phone_number,
-            bot_name=bot_name,
-            company_name=company_name,
-            db=db,
-            use_dynamic_prompt=True,
-        )
+    # Check if we should use the new orchestrator system
+    use_orchestrator = is_chain_orchestrator_enabled()
 
-        if include_menu:
-            session_data["menu_version"] = current_menu_version
+    if use_orchestrator:
+        # Use the new task-based orchestrator (via integration layer)
+        logger.info("Using task orchestrator for voice message")
+        try:
+            # Create LLM fallback function for complex cases
+            def llm_fallback(msg, state, hist):
+                # Generate flow guidance for LLM
+                flow_guidance = generate_flow_guidance(state, hist)
+                enhanced_msg = flow_guidance + "\nUSER SAID: " + msg
+                return call_sandwich_bot(
+                    hist,
+                    state,
+                    menu_index,
+                    enhanced_msg,
+                    include_menu_in_system=include_menu,
+                    returning_customer=returning_customer,
+                    caller_id=phone_number,
+                    bot_name=bot_name,
+                    company_name=company_name,
+                    db=db,
+                    use_dynamic_prompt=True,
+                )
 
-    except Exception as e:
-        logger.error("LLM call failed for voice session: %s", e)
-        error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
-        if stream:
-            return StreamingResponse(
-                _generate_sse_stream(error_reply),
-                media_type="text/event-stream",
+            reply, order_state, actions = process_voice_message(
+                user_message=user_message,
+                order_state=order_state,
+                history=history,
+                session_id=session_id,
+                menu_index=menu_index,
+                store_info=_build_store_info(session_store_id, company_name, db),
+                returning_customer=returning_customer,
+                llm_fallback_fn=llm_fallback,
             )
-        else:
-            return _build_completion_response(error_reply)
 
-    # Process actions
-    reply = llm_result.get("reply", "")
-    actions = llm_result.get("actions", [])
+            if include_menu:
+                session_data["menu_version"] = current_menu_version
+
+        except Exception as e:
+            logger.error("Orchestrator failed for voice session: %s", e)
+            error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
+            if stream:
+                return StreamingResponse(
+                    _generate_sse_stream(error_reply),
+                    media_type="text/event-stream",
+                )
+            else:
+                return _build_completion_response(error_reply)
+    else:
+        # Use the legacy LLM-based approach
+        # Generate flow guidance to help LLM know what to do next
+        flow_guidance = generate_flow_guidance(order_state, history)
+        logger.info("Flow guidance generated:\n%s", flow_guidance)
+
+        # Prepend flow guidance to user message so LLM sees current state clearly
+        enhanced_user_message = flow_guidance + "\nUSER SAID: " + user_message
+
+        # Call the bot
+        try:
+            llm_result = call_sandwich_bot(
+                history,
+                order_state,
+                menu_index,
+                enhanced_user_message,
+                include_menu_in_system=include_menu,
+                returning_customer=returning_customer,
+                caller_id=phone_number,
+                bot_name=bot_name,
+                company_name=company_name,
+                db=db,
+                use_dynamic_prompt=True,
+            )
+
+            if include_menu:
+                session_data["menu_version"] = current_menu_version
+
+        except Exception as e:
+            logger.error("LLM call failed for voice session: %s", e)
+            error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
+            if stream:
+                return StreamingResponse(
+                    _generate_sse_stream(error_reply),
+                    media_type="text/event-stream",
+                )
+            else:
+                return _build_completion_response(error_reply)
+
+        # Process actions from LLM result
+        reply = llm_result.get("reply", "")
+        actions = llm_result.get("actions", [])
+
+    # Check if this is the first user message - add personalized greeting
+    # Count user messages in history (we already added the current one)
+    user_message_count = sum(1 for msg in history if msg.get("role") == "user")
+    if user_message_count == 1 and returning_customer and returning_customer.get("name"):
+        # This is the first exchange with a returning customer
+        # Prepend a personalized greeting to the LLM's response
+        customer_name = returning_customer.get("name")
+        greeting_prefix = f"Hi {customer_name}! Great to hear from you again. "
+        reply = greeting_prefix + reply
+        logger.info("Added personalized greeting for returning customer: %s", customer_name)
 
     # Backward compatibility
     if not actions and llm_result.get("intent"):
@@ -672,17 +940,30 @@ async def vapi_chat_completions(
         )
 
         if link_method == "email" and customer_email:
-            # Calculate order total for the email
             items = order_state.get("items", [])
-            order_total = sum(item.get("line_total", 0) for item in items)
             order_type = order_state.get("order_type", "pickup")
 
             # Persist order early so we have an order ID for the email
+            # This also calculates the total with tax
             from .main import persist_pending_order
             pending_order = persist_pending_order(
                 db, order_state, all_slots, store_id=session_store_id
             )
             order_id = pending_order.id if pending_order else 0
+
+            # Read checkout_state AFTER persist_pending_order (which populates it with tax)
+            checkout_state = order_state.get("checkout_state", {})
+            order_total = (
+                pending_order.total_price if pending_order
+                else checkout_state.get("total")
+                or sum(item.get("line_total", 0) for item in items)
+            )
+
+            # Extract tax breakdown from checkout state
+            subtotal = checkout_state.get("subtotal")
+            city_tax = checkout_state.get("city_tax", 0)
+            state_tax = checkout_state.get("state_tax", 0)
+            delivery_fee = checkout_state.get("delivery_fee", 0)
 
             # Send the payment link email
             try:
@@ -695,6 +976,10 @@ async def vapi_chat_completions(
                     customer_phone=customer_phone_for_email,
                     order_type=order_type,
                     items=items,
+                    subtotal=subtotal,
+                    city_tax=city_tax,
+                    state_tax=state_tax,
+                    delivery_fee=delivery_fee,
                 )
                 logger.info("Voice order payment link email sent: %s", email_result.get("status"))
             except Exception as e:
@@ -828,11 +1113,38 @@ async def vapi_webhook(
         logger.debug("Call status update: %s", status)
 
     elif message_type == "assistant-request":
-        # Vapi is asking for assistant configuration
-        # This happens when using dynamic assistant selection
-        # For now, we don't use this - our assistant is configured in Vapi dashboard
-        logger.debug("Assistant request received (not implemented)")
-        return {"error": "Assistant request not implemented - configure assistant in Vapi dashboard"}
+        # Vapi is asking for assistant configuration at call start
+        # We use this to provide a personalized first message based on caller
+        call_info = message.get("call", {})
+        customer = call_info.get("customer", {})
+        phone_number = customer.get("number", "")
+
+        logger.info("Assistant request for phone: %s", phone_number[-4:] if phone_number else "unknown")
+
+        # Look up returning customer
+        returning_customer = None
+        if phone_number:
+            returning_customer = _lookup_customer_by_phone(db, phone_number)
+
+        # Get company/store info for greeting
+        company = db.query(Company).first()
+        store_name = company.name if company else "Zucker's Bagels"
+        bot_name = company.bot_persona_name if company else "Zara"
+
+        # Generate personalized greeting
+        if returning_customer and returning_customer.get("name"):
+            first_message = f"Hello {returning_customer['name']}! Would you like to repeat your last order?"
+            logger.info("Returning customer greeting for: %s", returning_customer['name'])
+        else:
+            first_message = f"Hi, thanks for calling {store_name}! I'm {bot_name}. What can I get started for you today?"
+            logger.info("New customer greeting")
+
+        # Return assistant override with personalized first message
+        return {
+            "assistant": {
+                "firstMessage": first_message,
+            }
+        }
 
     elif message_type == "hang":
         # Call was put on hold or assistant was slow to respond

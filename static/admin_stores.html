@@ -395,6 +395,8 @@
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
     </div>
@@ -482,6 +484,21 @@
               <option value="open">Open</option>
               <option value="closed">Temporarily Closed</option>
             </select>
+          </div>
+
+          <div class="form-group">
+            <label>Tax Rates</label>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="storeCityTax">City Tax (%)</label>
+                <input type="number" id="storeCityTax" step="0.001" min="0" max="20" placeholder="0.000" />
+              </div>
+              <div class="form-group">
+                <label for="storeStateTax">State Tax (%)</label>
+                <input type="number" id="storeStateTax" step="0.001" min="0" max="20" placeholder="0.000" />
+              </div>
+            </div>
+            <div class="hint">Enter tax rates as percentages (e.g., 4.5 for 4.5%). Leave at 0 if not applicable.</div>
           </div>
 
           <div class="form-group">
@@ -630,6 +647,8 @@
           timezone: s.timezone || "America/New_York",
           status: s.status,
           paymentMethods: s.payment_methods || ["cash", "credit"],
+          cityTaxRate: s.city_tax_rate || 0,
+          stateTaxRate: s.state_tax_rate || 0,
           deletedAt: s.deleted_at
         }));
         renderStores();
@@ -809,6 +828,9 @@
       document.getElementById("storeHours").value = store.hours || "";
       document.getElementById("storeTimezone").value = store.timezone || "America/New_York";
       document.getElementById("storeStatus").value = store.status;
+      // Convert decimal tax rates to percentages for display
+      document.getElementById("storeCityTax").value = store.cityTaxRate ? (store.cityTaxRate * 100).toFixed(3) : "";
+      document.getElementById("storeStateTax").value = store.stateTaxRate ? (store.stateTaxRate * 100).toFixed(3) : "";
       setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
       hidePaymentError();
 
@@ -839,6 +861,9 @@
       const hours = document.getElementById("storeHours").value.trim();
       const timezone = document.getElementById("storeTimezone").value;
       const status = document.getElementById("storeStatus").value;
+      // Convert percentages to decimals for API (e.g., 4.5% -> 0.045)
+      const cityTaxRate = parseFloat(document.getElementById("storeCityTax").value) / 100 || 0;
+      const stateTaxRate = parseFloat(document.getElementById("storeStateTax").value) / 100 || 0;
       const paymentMethods = getSelectedPaymentMethods();
 
       if (!name || !address || !city || !state || !zip || !phone) {
@@ -865,6 +890,8 @@
         hours: hours || null,
         timezone,
         status,
+        city_tax_rate: cityTaxRate,
+        state_tax_rate: stateTaxRate,
         payment_methods: paymentMethods
       };
 

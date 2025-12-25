@@ -734,10 +734,18 @@ def _update_sandwich(state, slots, menu_index):
     """
     item_index = slots.get("item_index")
 
-    # If no index provided, try to find the last sandwich in the order
+    # If no index provided, try to find the last sandwich/bagel item in the order
     if item_index is None:
         for i in range(len(state["items"]) - 1, -1, -1):
-            if state["items"][i].get("item_type") == "sandwich":
+            item_type = state["items"][i].get("item_type", "").lower()
+            # Match sandwich, bagel, or items with bagel in the name/bread
+            if item_type in ("sandwich", "bagel"):
+                item_index = i
+                break
+            # Also check if it's a bagel sandwich by name or bread
+            item_name = (state["items"][i].get("menu_item_name") or "").lower()
+            bread = (state["items"][i].get("bread") or "").lower()
+            if "bagel" in item_name or "bagel" in bread:
                 item_index = i
                 break
 

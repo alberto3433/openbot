@@ -43,7 +43,7 @@ def test_health_endpoint_not_versioned(client):
     assert resp.json() == {"status": "ok"}
 
 
-def test_chat_message_add_sandwich_updates_order_state(client, monkeypatch):
+def test_chat_message_add_sandwich_updates_order_state(client, monkeypatch, disable_state_machine):
     # Start session
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
@@ -108,7 +108,7 @@ def test_chat_message_add_sandwich_updates_order_state(client, monkeypatch):
     # which uses a nested structure - prices are calculated during confirm
 
 
-def test_multi_item_order_adds_all_items(client, monkeypatch):
+def test_multi_item_order_adds_all_items(client, monkeypatch, disable_state_machine):
     """Test that multiple items in one message are all added to the order."""
     # Start session
     start_resp = client.post("/chat/start")
@@ -226,7 +226,7 @@ def test_multi_item_order_adds_all_items(client, monkeypatch):
     assert item_types["Fountain Soda"] == "drink"
 
 
-def test_multi_item_order_can_remove_single_item(client, monkeypatch):
+def test_multi_item_order_can_remove_single_item(client, monkeypatch, disable_state_machine):
     """Test that after adding multiple items, a single item can be removed by name."""
     # Start session
     start_resp = client.post("/chat/start")
@@ -374,7 +374,7 @@ def test_multi_item_order_can_remove_single_item(client, monkeypatch):
     assert "Fountain Soda" in item_names
 
 
-def test_legacy_single_intent_format_still_works(client, monkeypatch):
+def test_legacy_single_intent_format_still_works(client, monkeypatch, disable_state_machine):
     """Test backward compatibility with old LLM response format (single intent/slots)."""
     # Start session
     start_resp = client.post("/chat/start")
@@ -434,7 +434,7 @@ def test_legacy_single_intent_format_still_works(client, monkeypatch):
     assert items[0]["menu_item_name"] == "Turkey Club"
 
 
-def test_chat_message_handles_llm_error_gracefully(client, monkeypatch):
+def test_chat_message_handles_llm_error_gracefully(client, monkeypatch, disable_state_machine):
     """Test that LLM failures return a friendly error message instead of crashing."""
     # Start session
     start_resp = client.post("/chat/start")
@@ -547,7 +547,7 @@ def test_rate_limit_can_be_disabled(client, monkeypatch):
 # ---- Integration tests for mid-order modifications ----
 
 
-def test_modification_add_topping_to_existing_sandwich(client, monkeypatch):
+def test_modification_add_topping_to_existing_sandwich(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then add a topping mid-order."""
     from sandwich_bot import main as main_mod
 
@@ -640,7 +640,7 @@ def test_modification_add_topping_to_existing_sandwich(client, monkeypatch):
     assert items[0]["sauces"] == ["Mayo"]
 
 
-def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch):
+def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then remove a topping mid-order."""
     from sandwich_bot import main as main_mod
 
@@ -728,7 +728,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch)
     assert "Tomato" not in items[0]["toppings"]
 
 
-def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch):
+def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then add and remove toppings in one request."""
     from sandwich_bot import main as main_mod
 
@@ -810,7 +810,7 @@ def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch
     assert items[0]["toppings"] == ["Lettuce", "Red Onion"]
 
 
-def test_modification_change_sandwich_type(client, monkeypatch):
+def test_modification_change_sandwich_type(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then change to different sandwich type."""
     from sandwich_bot import main as main_mod
 
@@ -894,7 +894,7 @@ def test_modification_change_sandwich_type(client, monkeypatch):
     assert items[0]["menu_item_name"] == "Italian Stallion"
 
 
-def test_modification_first_sandwich_by_index(client, monkeypatch):
+def test_modification_first_sandwich_by_index(client, monkeypatch, disable_state_machine):
     """Test full flow: add two sandwiches, modify the first one by index."""
     from sandwich_bot import main as main_mod
 
@@ -1019,7 +1019,7 @@ def test_chat_start_with_caller_id(client):
         assert data["returning_customer"]["order_count"] == 0
 
 
-def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeypatch):
+def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeypatch, disable_state_machine):
     """Test that returning customers are recognized by phone number."""
     from sandwich_bot import main as main_mod
     from sandwich_bot.models import Order, OrderItem

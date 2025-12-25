@@ -17,6 +17,7 @@ from .models import (
     BagelItemTask,
     CoffeeItemTask,
     MenuItemTask,
+    SpeedMenuBagelItemTask,
 )
 from .orchestrator import TaskOrchestrator, TaskOrchestratorResult
 from .field_config import MenuFieldConfig
@@ -113,7 +114,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         item_type = item.get("item_type", "sandwich")
 
         if item_type == "menu_item":
-            # MenuItemTask (omelettes, etc.)
+            # MenuItemTask (omelettes, sandwiches, etc.)
             menu_item = MenuItemTask(
                 menu_item_name=item.get("menu_item_name") or "Unknown",
                 menu_item_id=item.get("menu_item_id"),
@@ -121,6 +122,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 modifications=item.get("modifications") or [],
                 side_choice=item.get("side_choice"),
                 bagel_choice=item.get("bagel_choice"),
+                toasted=item.get("toasted"),  # For spread/salad sandwiches
                 requires_side_choice=item.get("requires_side_choice", False),
                 quantity=item.get("quantity", 1),
             )
@@ -201,6 +203,10 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 sweetener_quantity=item_config.get("sweetener_quantity", 1),
                 flavor_syrup=item_config.get("flavor_syrup"),
                 iced=iced_value,
+                # Restore upcharge tracking fields
+                size_upcharge=item_config.get("size_upcharge", 0.0),
+                milk_upcharge=item_config.get("milk_upcharge", 0.0),
+                syrup_upcharge=item_config.get("syrup_upcharge", 0.0),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -215,6 +221,25 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
             if coffee.drink_type and coffee.iced is not None:
                 coffee.mark_complete()
             order.items.add_item(coffee)
+
+        elif item_type == "speed_menu_bagel":
+            # Speed menu bagel (pre-configured sandwiches like "The Classic")
+            speed_menu_item = SpeedMenuBagelItemTask(
+                menu_item_name=item.get("menu_item_name") or "Unknown",
+                menu_item_id=item.get("menu_item_id"),
+                toasted=item.get("toasted"),
+                quantity=item.get("quantity", 1),
+            )
+            # Preserve item ID if provided
+            if item.get("id"):
+                speed_menu_item.id = item["id"]
+            # Restore status
+            if item.get("status"):
+                speed_menu_item.status = TaskStatus(item["status"])
+            # Set price if available
+            if item.get("unit_price"):
+                speed_menu_item.unit_price = item["unit_price"]
+            order.items.add_item(speed_menu_item)
 
     # Restore task orchestrator state if present
     task_state = order_dict.get("task_orchestrator_state", {})
@@ -266,9 +291,10 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
 
         # Use item_type attribute instead of isinstance for robustness
         if item.item_type == "menu_item":
-            # MenuItemTask (omelettes, etc.)
+            # MenuItemTask (omelettes, sandwiches, etc.)
             side_choice = getattr(item, 'side_choice', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
+            toasted = getattr(item, 'toasted', None)
 
             item_dict = {
                 "item_type": "menu_item",
@@ -280,6 +306,7 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
                 "modifications": getattr(item, 'modifications', []),
                 "side_choice": side_choice,
                 "bagel_choice": bagel_choice,
+                "toasted": toasted,  # For spread/salad sandwiches
                 "requires_side_choice": getattr(item, 'requires_side_choice', False),
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
@@ -355,10 +382,42 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
                     # Only set style if iced is explicitly True/False (not None)
                     # skip_config drinks (sodas, bottled) don't need iced/hot labels
                     "style": "iced" if getattr(item, 'iced', None) is True else ("hot" if getattr(item, 'iced', None) is False else None),
+                    # Upcharge tracking for display
+                    "size_upcharge": getattr(item, 'size_upcharge', 0.0),
+                    "milk_upcharge": getattr(item, 'milk_upcharge', 0.0),
+                    "syrup_upcharge": getattr(item, 'syrup_upcharge', 0.0),
                 },
                 "quantity": 1,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price if item.unit_price else 0,
+            }
+            items.append(item_dict)
+
+        elif item.item_type == "speed_menu_bagel":
+            # Speed menu bagel (pre-configured sandwiches)
+            toasted = getattr(item, 'toasted', None)
+            menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
+
+            # Build display name with toasted status (for UI only)
+            display_name = menu_item_name
+            if toasted is True:
+                display_name = f"{menu_item_name} toasted"
+            elif toasted is False:
+                display_name = f"{menu_item_name} not toasted"
+
+            item_dict = {
+                "item_type": "speed_menu_bagel",
+                "id": item.id,
+                "status": item.status.value,
+                # Keep original menu_item_name for round-trip preservation
+                "menu_item_name": menu_item_name,
+                # Add display_name separately for UI purposes
+                "display_name": display_name,
+                "menu_item_id": getattr(item, 'menu_item_id', None),
+                "toasted": toasted,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "line_total": item.unit_price * item.quantity if item.unit_price else 0,
             }
             items.append(item_dict)
 

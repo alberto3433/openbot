@@ -1,38 +1,15 @@
 {
   "tenants": {
-    "sammys": {
-      "name": "Sammy's Subs",
-      "slug": "sammys",
-      "database_url": "sqlite:///./data/sammys.db",
-      "port": 8000,
-      "domains": ["localhost:8000", "sammys.localhost"],
+    "zuckers": {
+      "name": "Zucker's Bagels",
+      "slug": "zuckers",
+      "port": 8006,
+      "domains": ["localhost:8006", "zuckers.localhost"],
       "company_settings": {
-        "bot_persona_name": "Sammy",
-        "tagline": "The best subs in town!"
-      }
-    },
-    "sammys_test": {
-      "name": "Sammy's Subs (Test Instance)",
-      "slug": "sammys_test",
-      "database_url": "sqlite:///./data/sammys_test.db",
-      "port": 8001,
-      "domains": ["localhost:8001", "sammys-test.localhost"],
-      "company_settings": {
-        "bot_persona_name": "Sammy",
-        "tagline": "Test instance - The best subs in town!"
-      }
-    },
-    "tonys": {
-      "name": "Tony's Pizza",
-      "slug": "tonys",
-      "database_url": "sqlite:///./data/tonys.db",
-      "port": 8002,
-      "domains": ["localhost:8002", "tonys.localhost"],
-      "company_settings": {
-        "bot_persona_name": "Tony",
-        "tagline": "Authentic New York style pizza!"
+        "bot_persona_name": "Zara",
+        "tagline": "NYC's Favorite Bagels!"
       }
     }
   },
-  "default_tenant": "sammys"
+  "default_tenant": "zuckers"
 }

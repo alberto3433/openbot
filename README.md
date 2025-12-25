@@ -30,10 +30,17 @@ pip install fastapi uvicorn sqlalchemy openai pytest
 
 ## 🗄 Database Setup
 
-To initialize the menu:
+Set the `DATABASE_URL` environment variable to your Postgres connection string:
 
 ```
-sqlite3 app.db < menu_items.sql
+export DATABASE_URL=postgresql://user:pass@host/dbname
+```
+
+Then run migrations and populate the menu:
+
+```
+alembic upgrade head
+python populate_zuckers_menu.py
 ```
 
 ## 🧪 Running Tests

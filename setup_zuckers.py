@@ -358,7 +358,7 @@ def main():
         print("="*50)
         print("\nTo start Zucker's server, run:")
         print("  start_zuckers.cmd")
-        print("\nThe server will be available at http://localhost:8004")
+        print("\nThe server will be available at http://localhost:8006")
 
     except Exception as e:
         print(f"\nError: {e}")

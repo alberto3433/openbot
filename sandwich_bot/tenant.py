@@ -43,7 +43,7 @@ class TenantConfig:
             slug=slug,
             name=data.get("name", slug),
             database_url=data["database_url"],
-            port=data.get("port", 8000),
+            port=data.get("port", 8006),
             domains=data.get("domains", []),
             company_settings=data.get("company_settings", {}),
         )

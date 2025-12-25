@@ -45,7 +45,7 @@ def run_all_tenants(config_path: str = "tenants.json", reload: bool = False):
     print("=" * 60)
 
     for slug, tenant in tenants.items():
-        port = tenant.get("port", 8000)
+        port = tenant.get("port", 8006)
         name = tenant.get("name", slug)
 
         print(f"\nStarting: {name} ({slug}) on port {port}")

@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: orderbot-app
     ports:
-      - "8004:8004"
+      - "8006:8006"
     environment:
       # Default to Zucker's database - change to sammys_db or tonys_db as needed
       DATABASE_URL: postgresql://orderbot:orderbot123@postgres:5432/${COMPANY_DB:-zuckers_db}
@@ -36,7 +36,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
       interval: 30s
       timeout: 10s
       start_period: 10s

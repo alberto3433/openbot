@@ -79,7 +79,7 @@ App Runner doesn't include a database. Choose one of these options:
 
 4. **Service settings:**
    - Service name: `orderbot-app`
-   - Port: `8004`
+   - Port: `8006`
    - CPU: 1 vCPU (adjust as needed)
    - Memory: 2 GB (adjust as needed)
 

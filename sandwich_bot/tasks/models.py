@@ -172,7 +172,7 @@ class BagelItemTask(ItemTask):
             parts.append(f"{self.quantity}x")
 
         if self.bagel_type:
-            parts.append(self.bagel_type)
+            parts.append(f"{self.bagel_type} bagel")
         else:
             parts.append("bagel")
 
@@ -222,13 +222,20 @@ class CoffeeItemTask(ItemTask):
     flavor_syrup: str | None = None  # vanilla, caramel, hazelnut, etc.
     extra_shots: int = 0
 
+    # Upcharge tracking (set by recalculate_coffee_price)
+    size_upcharge: float = 0.0
+    milk_upcharge: float = 0.0
+    syrup_upcharge: float = 0.0
+
     def get_display_name(self) -> str:
         """Get display name for this drink."""
         parts = []
         if self.size:
             parts.append(self.size)
-        if self.iced:
+        if self.iced is True:
             parts.append("iced")
+        elif self.iced is False:
+            parts.append("hot")
         if self.drink_type:
             parts.append(self.drink_type)
         else:
@@ -236,28 +243,35 @@ class CoffeeItemTask(ItemTask):
         return " ".join(parts)
 
     def get_summary(self) -> str:
-        """Get a summary description of this drink."""
+        """Get a summary description of this drink with upcharges."""
         parts = []
 
         if self.size:
             parts.append(self.size)
 
-        if self.iced:
+        if self.iced is True:
             parts.append("iced")
+        elif self.iced is False:
+            parts.append("hot")
 
         if self.drink_type:
             parts.append(self.drink_type)
         else:
             parts.append("coffee")
 
-        # Add flavor syrup
+        # Add flavor syrup with upcharge
         if self.flavor_syrup:
-            parts.append(f"with {self.flavor_syrup} syrup")
+            if self.syrup_upcharge > 0:
+                parts.append(f"with {self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
+            else:
+                parts.append(f"with {self.flavor_syrup} syrup")
 
         if self.milk:
             # "none" or "black" means no milk - show as "black" for clarity
             if self.milk.lower() in ("none", "black"):
                 parts.append("black")
+            elif self.milk_upcharge > 0:
+                parts.append(f"with {self.milk} milk (+${self.milk_upcharge:.2f})")
             else:
                 parts.append(f"with {self.milk} milk")
 
@@ -274,6 +288,43 @@ class CoffeeItemTask(ItemTask):
         return " ".join(parts)
 
 
+class SpeedMenuBagelItemTask(ItemTask):
+    """Task for a pre-configured speed menu bagel (e.g., 'The Classic', 'The Leo').
+
+    These items only need a toasted preference - no other configuration.
+    """
+
+    item_type: Literal["speed_menu_bagel"] = "speed_menu_bagel"
+
+    # Speed menu bagel fields
+    menu_item_name: str  # The name of the item (e.g., "The Classic")
+    menu_item_id: int | None = None  # Database ID if matched
+    toasted: bool | None = None  # True=toasted, False=not toasted, None=not specified
+
+    def get_display_name(self) -> str:
+        """Get display name for this item."""
+        return self.menu_item_name
+
+    def get_summary(self) -> str:
+        """Get a summary description of this item."""
+        parts = []
+
+        parts.append(self.menu_item_name)
+
+        if self.toasted is True:
+            parts.append("toasted")
+        elif self.toasted is False:
+            parts.append("not toasted")
+
+        return " ".join(parts)
+
+    def get_next_question(self) -> str | None:
+        """Get the next question to ask for this item."""
+        if self.toasted is None:
+            return "Would you like that toasted?"
+        return None
+
+
 class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette')."""
 
@@ -285,9 +336,10 @@ class MenuItemTask(ItemTask):
     menu_item_type: str | None = None  # Type slug (e.g., "omelette", "sandwich")
     modifications: list[str] = Field(default_factory=list)  # User modifications
 
-    # Customization fields for configurable items (e.g., omelettes)
+    # Customization fields for configurable items (e.g., omelettes, sandwiches)
     side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
-    bagel_choice: str | None = None  # Which bagel if side is bagel
+    bagel_choice: str | None = None  # Which bagel if side is bagel, or bagel for sandwiches
+    toasted: bool | None = None  # Whether sandwich should be toasted
     requires_side_choice: bool = False  # Whether this item needs side selection
 
     def get_display_name(self) -> str:
@@ -303,8 +355,13 @@ class MenuItemTask(ItemTask):
 
         parts.append(self.menu_item_name)
 
-        # Add side choice info
-        if self.side_choice == "bagel" and self.bagel_choice:
+        # Add bagel choice for spread/salad sandwiches
+        if self.menu_item_type in ("spread_sandwich", "salad_sandwich") and self.bagel_choice:
+            parts.append(f"on {self.bagel_choice} bagel")
+            if self.toasted:
+                parts.append("toasted")
+        # Add side choice info for omelettes
+        elif self.side_choice == "bagel" and self.bagel_choice:
             parts.append(f"with {self.bagel_choice} bagel")
         elif self.side_choice == "fruit_salad":
             parts.append("with fruit salad")

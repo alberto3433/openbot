@@ -13,7 +13,7 @@ Usage:
     python run_tenant.py sammys
 
     # Run with custom port
-    python run_tenant.py sammys --port 8001
+    python run_tenant.py zuckers --port 8006
 
     # Run with reload for development
     python run_tenant.py sammys --reload
@@ -48,7 +48,7 @@ def list_tenants(config: dict) -> None:
         default_marker = " (default)" if slug == default else ""
         print(f"  {slug}{default_marker}")
         print(f"    Name: {tenant.get('name', slug)}")
-        print(f"    Port: {tenant.get('port', 8000)}")
+        print(f"    Port: {tenant.get('port', 8006)}")
         print(f"    Database: {tenant.get('database_url', 'N/A')}")
         print()
 
@@ -69,7 +69,7 @@ def run_tenant(
         sys.exit(1)
 
     tenant = tenants[tenant_slug]
-    tenant_port = port or tenant.get("port", 8000)
+    tenant_port = port or tenant.get("port", 8006)
     database_url = tenant.get("database_url", f"sqlite:///./data/{tenant_slug}.db")
 
     # Set environment variables for this tenant

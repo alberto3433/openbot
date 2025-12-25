@@ -24,9 +24,14 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from .models import Base
 
-# Database URL can be overridden via environment variable (for multi-tenant support)
-# Default to app.db for backward compatibility
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./app.db")
+# Database URL must be set via environment variable
+# For testing, use in-memory SQLite if DATABASE_URL is not set
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    if os.environ.get("TESTING") == "1":
+        DATABASE_URL = "sqlite:///:memory:"
+    else:
+        raise ValueError("DATABASE_URL environment variable is required")
 
 # Ensure directory exists for SQLite databases
 if DATABASE_URL.startswith("sqlite:///./"):

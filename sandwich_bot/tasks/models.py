@@ -597,6 +597,7 @@ class OrderTask(BaseTask):
     conversation_history: list[dict] = Field(default_factory=list)
 
     # Flow state (moved from FlowState in Phase 4)
+    phase: str = "greeting"  # Current order phase (stored as string to avoid circular imports)
     pending_item_ids: list[str] = Field(default_factory=list)  # Items needing input
     pending_field: str | None = None  # Field we're asking about
     last_bot_message: str | None = None  # For context

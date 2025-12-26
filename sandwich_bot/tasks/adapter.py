@@ -258,6 +258,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.pending_item_ids = pending_item_ids
         order.pending_field = sm_state.get("pending_field")
         order.last_bot_message = sm_state.get("last_bot_message")
+        order.phase = sm_state.get("phase", "greeting")
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -503,12 +504,11 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
 
     # Save flow state (pending fields) - OrderTask is now the source of truth
     order_dict["state_machine_state"] = {
+        "phase": order.phase,
         "pending_item_ids": order.pending_item_ids,
         "pending_item_id": order.pending_item_id,  # Legacy compat
         "pending_field": order.pending_field,
         "last_bot_message": order.last_bot_message,
-        # Phase is derived from orchestrator, not stored
-        "phase": "taking_items",  # Default placeholder for backward compat
     }
 
     return order_dict

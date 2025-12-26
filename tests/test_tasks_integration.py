@@ -260,29 +260,29 @@ class TestStateMachineMultiBagel:
         """Test that '2 of them plain' sets type for 2 bagels and continues configuring first bagel."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
-            FlowState,
             OrderPhase,
             BagelChoiceResponse,
         )
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
 
         # Create order with 3 bagels that don't have types yet
-        state = FlowState(phase=OrderPhase.CONFIGURING_ITEM, pending_field="bagel_choice")
         order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "bagel_choice"
 
         for i in range(3):
             bagel = BagelItemTask(bagel_type=None)
             bagel.mark_in_progress()
             order.items.add_item(bagel)
 
-        state.pending_item_id = order.items.items[0].id
+        order.pending_item_id = order.items.items[0].id
         sm = OrderStateMachine()
 
         # Mock parse_bagel_choice to return quantity=2
         with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=2)
 
-            result = sm._handle_bagel_choice("2 of them plain", order.items.items[0], state, order)
+            result = sm._handle_bagel_choice("2 of them plain", order.items.items[0], order)
 
             # Verify 2 bagels have type set
             bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
@@ -294,19 +294,19 @@ class TestStateMachineMultiBagel:
 
             # With new flow: should ask about TOASTED for first bagel (fully configure each bagel)
             assert "first" in result.message.lower()
-            assert result.state.pending_field == "toasted"
+            assert result.order.pending_field == "toasted"
 
     def test_each_bagel_fully_configured_before_next(self):
         """Test that each bagel is fully configured (type->toasted->spread) before moving to next."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
-            FlowState,
             OrderPhase,
         )
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
 
         # Create order with 2 bagels - first has type, second doesn't
         order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
         bagel1 = BagelItemTask(bagel_type="plain")
         bagel1.mark_in_progress()
         bagel2 = BagelItemTask(bagel_type=None)  # No type yet
@@ -314,15 +314,14 @@ class TestStateMachineMultiBagel:
         order.items.add_item(bagel1)
         order.items.add_item(bagel2)
 
-        state = FlowState(phase=OrderPhase.TAKING_ITEMS)
         sm = OrderStateMachine()
 
         # Ask for next incomplete bagel
-        result = sm._configure_next_incomplete_bagel(state, order)
+        result = sm._configure_next_incomplete_bagel(order)
 
         # With new flow: should ask about first bagel's TOASTED (fully configure first bagel)
         assert "first" in result.message.lower()
-        assert result.state.pending_field == "toasted"
+        assert result.order.pending_field == "toasted"
 
 
 # =============================================================================
@@ -399,7 +398,7 @@ class TestPriceRecalculationInvariants:
 
     def test_state_machine_spread_choice_updates_price(self):
         """Test that state machine's spread choice handler recalculates price."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine, FlowState, OrderPhase
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         order = OrderTask()
@@ -407,11 +406,12 @@ class TestPriceRecalculationInvariants:
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
-        state = FlowState(phase=OrderPhase.CONFIGURING_ITEM, pending_field="spread")
-        state.pending_item_id = bagel.id
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "spread"
+        order.pending_item_id = bagel.id
 
         sm = OrderStateMachine()
-        result = sm._handle_spread_choice("cream cheese please", bagel, state, order)
+        result = sm._handle_spread_choice("cream cheese please", bagel, order)
 
         # Spread should be set and price recalculated
         assert bagel.spread == "cream cheese"
@@ -499,14 +499,13 @@ class TestPriceRecalculationInvariants:
         """Test that state machine calculates price correctly when adding bagel with modifiers."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
-            FlowState,
             OrderPhase,
             ExtractedModifiers,
         )
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         order = OrderTask()
-        state = FlowState(phase=OrderPhase.TAKING_ITEMS)
+        order.phase = OrderPhase.TAKING_ITEMS.value
         sm = OrderStateMachine()
 
         # Simulate adding a bagel with ham, egg, american modifiers
@@ -516,11 +515,10 @@ class TestPriceRecalculationInvariants:
 
         result = sm._add_bagel(
             bagel_type="wheat",
+            order=order,
             toasted=True,
             spread="none",
             spread_type=None,
-            state=state,
-            order=order,
             extracted_modifiers=modifiers,
         )
 

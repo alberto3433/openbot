@@ -315,7 +315,7 @@ def test_all_flows_no_mismatch():
 - [x] `OrderTask` persisted to session (via adapter)
 - [x] FlowState syncs to/from OrderTask at process() boundaries
 - [x] All existing tests pass (489 tests)
-- [ ] `FlowState` class removed (optional future cleanup - currently serves as runtime convenience)
+- [x] `FlowState` class removed (cleanup complete)
 
 ---
 

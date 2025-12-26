@@ -97,52 +97,6 @@ def is_soda_drink(drink_type: str | None) -> bool:
     return False
 
 
-@dataclass
-class FlowState:
-    """
-    Tracks the current state of the order flow.
-
-    The key innovation: pending_item_ids and pending_field tell us exactly
-    what we're waiting for, so the parser can be constrained accordingly.
-    """
-    phase: OrderPhase = OrderPhase.GREETING
-    pending_item_ids: list = field(default_factory=list)  # Which items need input (supports multiple)
-    pending_field: str | None = None  # Which field we're asking about
-    last_bot_message: str | None = None  # For context
-
-    # Legacy single-item property for backwards compatibility
-    @property
-    def pending_item_id(self) -> str | None:
-        """Get the first pending item ID (backwards compat)."""
-        return self.pending_item_ids[0] if self.pending_item_ids else None
-
-    @pending_item_id.setter
-    def pending_item_id(self, value: str | None):
-        """Set a single pending item ID (backwards compat)."""
-        if value is None:
-            self.pending_item_ids = []
-        else:
-            self.pending_item_ids = [value]
-
-    def is_configuring_item(self) -> bool:
-        """Check if we're waiting for input on a specific item or menu inquiry."""
-        # Also handle by-pound category selection (no item, just pending_field)
-        if self.pending_field == "by_pound_category":
-            return True
-        return len(self.pending_item_ids) > 0 and self.pending_field is not None
-
-    def is_configuring_multiple(self) -> bool:
-        """Check if we're configuring multiple items at once."""
-        return len(self.pending_item_ids) > 1
-
-    def clear_pending(self):
-        """Clear pending item/field when done configuring."""
-        self.pending_item_ids = []
-        self.pending_field = None
-        if self.phase == OrderPhase.CONFIGURING_ITEM:
-            self.phase = OrderPhase.TAKING_ITEMS
-
-
 # =============================================================================
 # State-Specific Parser Schemas (Pydantic models for instructor)
 # =============================================================================
@@ -2491,7 +2445,6 @@ Examples:
 class StateMachineResult:
     """Result from state machine processing."""
     message: str
-    state: FlowState
     order: OrderTask
     is_complete: bool = False
 
@@ -2528,7 +2481,6 @@ class OrderStateMachine:
     def process(
         self,
         user_input: str,
-        state: FlowState | None = None,
         order: OrderTask | None = None,
     ) -> StateMachineResult:
         """
@@ -2536,125 +2488,74 @@ class OrderStateMachine:
 
         Args:
             user_input: What the user said
-            state: Current flow state (None for new conversation)
             order: Current order (None for new conversation)
 
         Returns:
-            StateMachineResult with response message, updated state, and order
+            StateMachineResult with response message and updated order
         """
-        if state is None:
-            state = FlowState()
         if order is None:
             order = OrderTask()
-
-        # === PHASE 4: Sync pending state from OrderTask to FlowState ===
-        # OrderTask is now the source of truth for pending fields.
-        # Sync to FlowState at start for backward compatibility with existing code.
-        state.pending_item_ids = order.pending_item_ids.copy()
-        state.pending_field = order.pending_field
-        state.last_bot_message = order.last_bot_message
 
         # Add user message to history
         order.add_message("user", user_input)
 
-        # === PHASE 3: Derive phase from OrderTask state ===
-        # Phase is now computed from the orchestrator, not manually tracked.
-        # This ensures phase always reflects the actual order state.
+        # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
-        if not state.is_configuring_item():
-            self._transition_to_next_slot(state, order)
+        if not order.is_configuring_item():
+            self._transition_to_next_slot(order)
 
         logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
-                   user_input[:50], state.phase.value, state.pending_field, state.pending_item_ids)
+                   user_input[:50], order.phase, order.pending_field, order.pending_item_ids)
 
-        # Route to appropriate handler based on state
-        if state.is_configuring_item():
-            result = self._handle_configuring_item(user_input, state, order)
-        elif state.phase == OrderPhase.GREETING:
-            result = self._handle_greeting(user_input, state, order)
-        elif state.phase == OrderPhase.TAKING_ITEMS:
-            result = self._handle_taking_items(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_DELIVERY:
-            result = self._handle_delivery(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_NAME:
-            result = self._handle_name(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_CONFIRM:
-            result = self._handle_confirmation(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD:
-            result = self._handle_payment_method(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_PHONE:
-            result = self._handle_phone(user_input, state, order)
-        elif state.phase == OrderPhase.CHECKOUT_EMAIL:
-            result = self._handle_email(user_input, state, order)
+        # Route to appropriate handler based on phase
+        if order.is_configuring_item():
+            result = self._handle_configuring_item(user_input, order)
+        elif order.phase == OrderPhase.GREETING.value:
+            result = self._handle_greeting(user_input, order)
+        elif order.phase == OrderPhase.TAKING_ITEMS.value:
+            result = self._handle_taking_items(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_DELIVERY.value:
+            result = self._handle_delivery(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_NAME.value:
+            result = self._handle_name(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
+            result = self._handle_confirmation(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
+            result = self._handle_payment_method(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_PHONE.value:
+            result = self._handle_phone(user_input, order)
+        elif order.phase == OrderPhase.CHECKOUT_EMAIL.value:
+            result = self._handle_email(user_input, order)
         else:
             result = StateMachineResult(
                 message="I'm not sure what to do. Can you try again?",
-                state=state,
                 order=order,
             )
 
         # Add bot message to history
         order.add_message("assistant", result.message)
 
-        # === PHASE 4: Sync pending state from FlowState back to OrderTask ===
-        # Copy any changes made to FlowState back to OrderTask (source of truth)
-        result.order.pending_item_ids = result.state.pending_item_ids.copy()
-        result.order.pending_field = result.state.pending_field
-        result.order.last_bot_message = result.state.last_bot_message
-
-        # === PHASE 1: Slot Orchestrator Comparison ===
-        # Compare FlowState phase with what SlotOrchestrator derives
-        # This logging helps validate the slot-filling architecture before migration
-        self._log_slot_comparison(result.state, result.order)
+        # Log slot comparison for debugging
+        self._log_slot_comparison(order)
 
         return result
 
-    def _log_slot_comparison(self, state: FlowState, order: OrderTask) -> None:
+    def _log_slot_comparison(self, order: OrderTask) -> None:
         """
-        Compare FlowState phase with SlotOrchestrator-derived phase.
-
-        This is Phase 1 of the slot orchestrator migration - running both
-        systems in parallel and logging any discrepancies.
+        Log slot orchestrator state for debugging.
         """
         try:
             orchestrator = SlotOrchestrator(order)
             orch_phase = orchestrator.get_current_phase()
-            flow_phase = state.phase.value
-
-            # Map FlowState phases to orchestrator phases for comparison
-            # Some phases don't have direct mappings
-            phase_mapping = {
-                "greeting": "taking_items",  # Greeting → taking_items after first message
-                "taking_items": "taking_items",
-                "configuring_item": "configuring_item",
-                "checkout_delivery": "checkout_delivery",
-                "checkout_name": "checkout_name",
-                "checkout_confirm": "checkout_confirm",
-                "checkout_payment_method": "checkout_payment_method",
-                "checkout_phone": "checkout_notification",  # Phone is part of notification
-                "checkout_email": "checkout_notification",  # Email is part of notification
-                "complete": "complete",
-                "cancelled": "complete",  # Cancelled is a terminal state
-            }
-
-            expected_orch_phase = phase_mapping.get(flow_phase, flow_phase)
 
             # Get next slot for additional context
             next_slot = orchestrator.get_next_slot()
             next_slot_info = f"{next_slot.category.value}" if next_slot else "none"
 
-            # Check for mismatch
-            # Note: Some mismatches are expected due to architecture differences
-            if orch_phase != expected_orch_phase:
-                slot_logger.warning(
-                    "SLOT MISMATCH: FlowState=%s (expected_orch=%s), Orchestrator=%s, next_slot=%s",
-                    flow_phase, expected_orch_phase, orch_phase, next_slot_info
-                )
-            else:
-                slot_logger.debug(
-                    "SLOT MATCH: FlowState=%s, Orchestrator=%s, next_slot=%s",
-                    flow_phase, orch_phase, next_slot_info
-                )
+            slot_logger.debug(
+                "SLOT STATE: phase=%s, orch_phase=%s, next_slot=%s",
+                order.phase, orch_phase, next_slot_info
+            )
 
             # Log slot progress for visibility
             progress = orchestrator.get_progress()
@@ -2698,25 +2599,21 @@ class OrderStateMachine:
         }
         return phase_map.get(next_slot.category, OrderPhase.TAKING_ITEMS)
 
-    def _transition_to_next_slot(self, state: FlowState, order: OrderTask) -> None:
+    def _transition_to_next_slot(self, order: OrderTask) -> None:
         """
-        Update state.phase based on SlotOrchestrator.
+        Update order.phase based on SlotOrchestrator.
 
-        This replaces hardcoded phase transitions like:
-            state.phase = OrderPhase.CHECKOUT_NAME
-
-        With orchestrator-driven transitions that look at what's actually
-        filled in the order.
+        This replaces hardcoded phase transitions with orchestrator-driven
+        transitions that look at what's actually filled in the order.
         """
         next_phase = self._derive_next_phase_from_slots(order)
-        if state.phase != next_phase:
-            logger.info("SLOT TRANSITION: %s -> %s", state.phase.value, next_phase.value)
-        state.phase = next_phase
+        if order.phase != next_phase.value:
+            logger.info("SLOT TRANSITION: %s -> %s", order.phase, next_phase.value)
+        order.phase = next_phase.value
 
     def _handle_greeting(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle greeting phase."""
@@ -2734,7 +2631,6 @@ class OrderStateMachine:
             # Phase will be derived as TAKING_ITEMS by orchestrator on next turn
             return StateMachineResult(
                 message="Hi! Welcome to Zucker's. What can I get for you today?",
-                state=state,
                 order=order,
             )
 
@@ -2745,12 +2641,11 @@ class OrderStateMachine:
             logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
 
         # Phase is derived from orchestrator, no need to set explicitly
-        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers, user_input)
+        return self._handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
 
     def _handle_taking_items(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle taking new item orders."""
@@ -2761,12 +2656,11 @@ class OrderStateMachine:
         if extracted_modifiers.has_modifiers():
             logger.info("Extracted modifiers from input: %s", extracted_modifiers)
 
-        return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers, user_input)
+        return self._handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
 
     def _handle_taking_items_with_parsed(
         self,
         parsed: OpenInputResponse,
-        state: FlowState,
         order: OrderTask,
         extracted_modifiers: ExtractedModifiers | None = None,
         raw_user_input: str | None = None,
@@ -2782,7 +2676,7 @@ class OrderStateMachine:
         )
 
         if parsed.done_ordering:
-            return self._transition_to_checkout(state, order)
+            return self._transition_to_checkout(order)
 
         # Track items added for multi-item orders
         items_added = []
@@ -2821,12 +2715,11 @@ class OrderStateMachine:
                     sweetener_qty,
                     flavor_syrup,
                     parsed.new_menu_item_quantity,
-                    state,
                     order,
                 )
                 items_added.append(parsed.new_menu_item)
             else:
-                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, state, order)
+                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order)
                 items_added.append(parsed.new_menu_item)
                 # If there's also a side item, add it too
                 if parsed.new_side_item:
@@ -2844,7 +2737,6 @@ class OrderStateMachine:
                     parsed.new_coffee_sweetener_quantity,
                     parsed.new_coffee_flavor_syrup,
                     parsed.new_coffee_quantity,
-                    state,
                     order,
                 )
                 items_added.append(parsed.new_coffee_type)
@@ -2853,7 +2745,6 @@ class OrderStateMachine:
                     combined_items = ", ".join(items_added)
                     last_result = StateMachineResult(
                         message=f"Got it, {combined_items}. Anything else?",
-                        state=state,
                         order=order,
                     )
 
@@ -2862,7 +2753,7 @@ class OrderStateMachine:
 
         if parsed.new_side_item and not parsed.new_bagel:
             # Standalone side item order (no bagel)
-            return self._add_side_item_with_response(parsed.new_side_item, parsed.new_side_item_quantity, state, order)
+            return self._add_side_item_with_response(parsed.new_side_item, parsed.new_side_item_quantity, order)
 
         if parsed.new_bagel:
             # Check if we have multiple bagels with different configs
@@ -2870,7 +2761,7 @@ class OrderStateMachine:
                 # Multiple bagels with different configurations
                 # Pass extracted_modifiers to apply to the first bagel
                 result = self._add_bagels_from_details(
-                    parsed.bagel_details, state, order, extracted_modifiers
+                    parsed.bagel_details, order, extracted_modifiers
                 )
             elif parsed.new_bagel_quantity > 1:
                 # Multiple bagels with same (or no) configuration
@@ -2881,7 +2772,6 @@ class OrderStateMachine:
                     toasted=parsed.new_bagel_toasted,
                     spread=parsed.new_bagel_spread,
                     spread_type=parsed.new_bagel_spread_type,
-                    state=state,
                     order=order,
                     extracted_modifiers=extracted_modifiers,
                 )
@@ -2892,7 +2782,6 @@ class OrderStateMachine:
                     toasted=parsed.new_bagel_toasted,
                     spread=parsed.new_bagel_spread,
                     spread_type=parsed.new_bagel_spread_type,
-                    state=state,
                     order=order,
                     extracted_modifiers=extracted_modifiers,
                 )
@@ -2912,7 +2801,6 @@ class OrderStateMachine:
                     parsed.new_coffee_sweetener_quantity,
                     parsed.new_coffee_flavor_syrup,
                     parsed.new_coffee_quantity,
-                    state,
                     order,
                 )
                 # Combine the messages (bagel + optional side + coffee)
@@ -2925,7 +2813,6 @@ class OrderStateMachine:
                 combined_items = ", ".join(items_list)
                 return StateMachineResult(
                     message=f"Got it, {combined_items}. Anything else?",
-                    state=state,
                     order=order,
                 )
 
@@ -2934,7 +2821,6 @@ class OrderStateMachine:
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
                 return StateMachineResult(
                     message=f"Got it, {bagel_desc} and {side_name}. Anything else?",
-                    state=state,
                     order=order,
                 )
             return result
@@ -2949,20 +2835,18 @@ class OrderStateMachine:
                 parsed.new_coffee_sweetener_quantity,
                 parsed.new_coffee_flavor_syrup,
                 parsed.new_coffee_quantity,
-                state,
                 order,
             )
             items_added.append(parsed.new_coffee_type or "drink")
 
             # Check if there's ALSO a menu item in the same message
             if parsed.new_menu_item:
-                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, state, order)
+                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order)
                 items_added.append(parsed.new_menu_item)
                 # Combine the messages
                 combined_items = ", ".join(items_added)
                 return StateMachineResult(
                     message=f"Got it, {combined_items}. Anything else?",
-                    state=state,
                     order=order,
                 )
             return coffee_result
@@ -2972,7 +2856,6 @@ class OrderStateMachine:
                 parsed.new_speed_menu_bagel_name,
                 parsed.new_speed_menu_bagel_quantity,
                 parsed.new_speed_menu_bagel_toasted,
-                state,
                 order,
             )
             items_added.append(parsed.new_speed_menu_bagel_name)
@@ -2988,7 +2871,6 @@ class OrderStateMachine:
                     parsed.new_coffee_sweetener_quantity,
                     parsed.new_coffee_flavor_syrup,
                     parsed.new_coffee_quantity,
-                    state,
                     order,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
@@ -2996,43 +2878,39 @@ class OrderStateMachine:
                 combined_items = ", ".join(items_added)
                 return StateMachineResult(
                     message=f"Got it, {combined_items}. Anything else?",
-                    state=state,
                     order=order,
                 )
             return speed_result
 
         if parsed.needs_soda_clarification:
-            return self._handle_soda_clarification(state, order)
+            return self._handle_soda_clarification(order)
 
         if parsed.menu_query:
-            return self._handle_menu_query(parsed.menu_query_type, state, order)
+            return self._handle_menu_query(parsed.menu_query_type, order)
 
         if parsed.asking_signature_menu:
-            return self._handle_signature_menu_inquiry(parsed.signature_menu_type, state, order)
+            return self._handle_signature_menu_inquiry(parsed.signature_menu_type, order)
 
         if parsed.asking_by_pound:
-            return self._handle_by_pound_inquiry(parsed.by_pound_category, state, order)
+            return self._handle_by_pound_inquiry(parsed.by_pound_category, order)
 
         if parsed.by_pound_items:
-            return self._add_by_pound_items(parsed.by_pound_items, state, order)
+            return self._add_by_pound_items(parsed.by_pound_items, order)
 
         if parsed.unclear or parsed.is_greeting:
             return StateMachineResult(
                 message="What can I get for you?",
-                state=state,
                 order=order,
             )
 
         return StateMachineResult(
             message="I didn't catch that. What would you like to order?",
-            state=state,
             order=order,
         )
 
     def _handle_configuring_item(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """
@@ -3042,42 +2920,40 @@ class OrderStateMachine:
         interpret input as answers for the pending field. No new items.
         """
         # Handle by-pound category selection (no item required)
-        if state.pending_field == "by_pound_category":
-            return self._handle_by_pound_category_selection(user_input, state, order)
+        if order.pending_field == "by_pound_category":
+            return self._handle_by_pound_category_selection(user_input, order)
 
-        item = self._get_item_by_id(order, state.pending_item_id)
+        item = self._get_item_by_id(order, order.pending_item_id)
         if item is None:
-            state.clear_pending()
+            order.clear_pending()
             return StateMachineResult(
                 message="Something went wrong. What would you like to order?",
-                state=state,
                 order=order,
             )
 
         # Route to field-specific handler
-        if state.pending_field == "side_choice":
-            return self._handle_side_choice(user_input, item, state, order)
-        elif state.pending_field == "bagel_choice":
-            return self._handle_bagel_choice(user_input, item, state, order)
-        elif state.pending_field == "spread":
-            return self._handle_spread_choice(user_input, item, state, order)
-        elif state.pending_field == "toasted":
-            return self._handle_toasted_choice(user_input, item, state, order)
-        elif state.pending_field == "coffee_size":
-            return self._handle_coffee_size(user_input, item, state, order)
-        elif state.pending_field == "coffee_style":
-            return self._handle_coffee_style(user_input, item, state, order)
-        elif state.pending_field == "speed_menu_bagel_toasted":
-            return self._handle_speed_menu_bagel_toasted(user_input, item, state, order)
+        if order.pending_field == "side_choice":
+            return self._handle_side_choice(user_input, item, order)
+        elif order.pending_field == "bagel_choice":
+            return self._handle_bagel_choice(user_input, item, order)
+        elif order.pending_field == "spread":
+            return self._handle_spread_choice(user_input, item, order)
+        elif order.pending_field == "toasted":
+            return self._handle_toasted_choice(user_input, item, order)
+        elif order.pending_field == "coffee_size":
+            return self._handle_coffee_size(user_input, item, order)
+        elif order.pending_field == "coffee_style":
+            return self._handle_coffee_style(user_input, item, order)
+        elif order.pending_field == "speed_menu_bagel_toasted":
+            return self._handle_speed_menu_bagel_toasted(user_input, item, order)
         else:
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
     def _handle_side_choice(
         self,
         user_input: str,
         item: MenuItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle side choice for omelette - uses constrained parser."""
@@ -3086,17 +2962,15 @@ class OrderStateMachine:
 
         if parsed.wants_cancel:
             item.mark_skipped()
-            state.clear_pending()
+            order.clear_pending()
             return StateMachineResult(
                 message="No problem, I've removed that. Anything else?",
-                state=state,
                 order=order,
             )
 
         if parsed.choice == "unclear":
             return StateMachineResult(
                 message=f"Would you like a bagel or fruit salad with your {item.menu_item_name}?",
-                state=state,
                 order=order,
             )
 
@@ -3107,28 +2981,26 @@ class OrderStateMachine:
             if parsed.bagel_type:
                 # User specified bagel type upfront (e.g., "plain bagel")
                 item.bagel_choice = parsed.bagel_type
-                state.clear_pending()
+                order.clear_pending()
                 item.mark_complete()
-                return self._get_next_question(state, order)
+                return self._get_next_question(order)
             else:
                 # Need to ask for bagel type
-                state.pending_field = "bagel_choice"
+                order.pending_field = "bagel_choice"
                 return StateMachineResult(
                     message="What kind of bagel would you like?",
-                    state=state,
                     order=order,
                 )
         else:
             # Fruit salad - omelette is complete
-            state.clear_pending()
+            order.clear_pending()
             item.mark_complete()
-            return self._get_next_question(state, order)
+            return self._get_next_question(order)
 
     def _handle_bagel_choice(
         self,
         user_input: str,
         item: ItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle bagel type selection - uses constrained parser."""
@@ -3144,7 +3016,6 @@ class OrderStateMachine:
         if parsed.unclear or not parsed.bagel_type:
             return StateMachineResult(
                 message="What kind of bagel? We have plain, everything, sesame, and more.",
-                state=state,
                 order=order,
             )
 
@@ -3154,17 +3025,16 @@ class OrderStateMachine:
 
             # For spread/salad sandwiches, continue to toasted question
             if item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
-                state.pending_field = "toasted"
+                order.pending_field = "toasted"
                 return StateMachineResult(
                     message="Would you like that toasted?",
-                    state=state,
                     order=order,
                 )
 
             # For omelettes and other menu items, mark complete
             item.mark_complete()
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
         elif isinstance(item, BagelItemTask):
             # Look up price for this bagel type
@@ -3188,18 +3058,17 @@ class OrderStateMachine:
                 applied_count += 1
 
             # Clear pending state - we'll reconfigure from scratch
-            state.clear_pending()
+            order.clear_pending()
 
             # Now configure the next incomplete bagel (could be one we just typed, needing toasted)
-            return self._configure_next_incomplete_bagel(state, order)
+            return self._configure_next_incomplete_bagel(order)
 
-        return self._get_next_question(state, order)
+        return self._get_next_question(order)
 
     def _handle_spread_choice(
         self,
         user_input: str,
         item: BagelItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle spread selection for bagel."""
@@ -3213,7 +3082,6 @@ class OrderStateMachine:
         else:
             return StateMachineResult(
                 message="Would you like cream cheese, butter, or nothing on that?",
-                state=state,
                 order=order,
             )
 
@@ -3222,16 +3090,15 @@ class OrderStateMachine:
 
         # This bagel is complete
         item.mark_complete()
-        state.clear_pending()
+        order.clear_pending()
 
         # Check for more incomplete bagels
-        return self._configure_next_incomplete_bagel(state, order)
+        return self._configure_next_incomplete_bagel(order)
 
     def _handle_toasted_choice(
         self,
         user_input: str,
         item: Union[BagelItemTask, MenuItemTask],
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for bagel or sandwich."""
@@ -3240,7 +3107,6 @@ class OrderStateMachine:
         if parsed.toasted is None:
             return StateMachineResult(
                 message="Would you like that toasted? Yes or no?",
-                state=state,
                 order=order,
             )
 
@@ -3249,29 +3115,27 @@ class OrderStateMachine:
         # For MenuItemTask (spread/salad sandwiches), mark complete after toasted
         if isinstance(item, MenuItemTask):
             item.mark_complete()
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
         # For BagelItemTask, check if spread is already set
         if item.spread is not None:
             # Spread already specified, bagel is complete
             self.recalculate_bagel_price(item)
             item.mark_complete()
-            state.clear_pending()
-            return self._configure_next_incomplete_bagel(state, order)
+            order.clear_pending()
+            return self._configure_next_incomplete_bagel(order)
 
         # Move to spread question
-        state.pending_field = "spread"
+        order.pending_field = "spread"
         return StateMachineResult(
             message="Would you like cream cheese or butter on that?",
-            state=state,
             order=order,
         )
 
     def _handle_delivery(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle pickup/delivery selection and address collection."""
@@ -3283,20 +3147,17 @@ class OrderStateMachine:
                 # Try to extract address from input
                 if parsed.address:
                     order.delivery_method.address.street = parsed.address
-                    self._transition_to_next_slot(state, order)
+                    self._transition_to_next_slot(order)
                     return StateMachineResult(
                         message="Can I get a name for the order?",
-                        state=state,
                         order=order,
                     )
                 return StateMachineResult(
                     message="What's the delivery address?",
-                    state=state,
                     order=order,
                 )
             return StateMachineResult(
                 message="Is this for pickup or delivery?",
-                state=state,
                 order=order,
             )
 
@@ -3313,22 +3174,19 @@ class OrderStateMachine:
             # Need to collect address
             return StateMachineResult(
                 message="What's the delivery address?",
-                state=state,
                 order=order,
             )
 
         # Transition to next slot (should be CUSTOMER_NAME)
-        self._transition_to_next_slot(state, order)
+        self._transition_to_next_slot(order)
         return StateMachineResult(
             message="Can I get a name for the order?",
-            state=state,
             order=order,
         )
 
     def _handle_name(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle customer name."""
@@ -3337,25 +3195,22 @@ class OrderStateMachine:
         if not parsed.name:
             return StateMachineResult(
                 message="What name should I put on the order?",
-                state=state,
                 order=order,
             )
 
         order.customer_info.name = parsed.name
-        self._transition_to_next_slot(state, order)
+        self._transition_to_next_slot(order)
 
         # Build order summary
         summary = self._build_order_summary(order)
         return StateMachineResult(
             message=f"{summary}\n\nDoes that look right?",
-            state=state,
             order=order,
         )
 
     def _handle_confirmation(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle order confirmation."""
@@ -3380,13 +3235,13 @@ class OrderStateMachine:
                 logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
                 extracted_modifiers = extract_modifiers_from_input(user_input)
                 # Use orchestrator to determine phase before processing
-                self._transition_to_next_slot(state, order)
-                result = self._handle_taking_items_with_parsed(item_parsed, state, order, extracted_modifiers, user_input)
+                self._transition_to_next_slot(order)
+                result = self._handle_taking_items_with_parsed(item_parsed, order, extracted_modifiers, user_input)
 
                 # Log items in result.order vs original order
                 logger.info("CONFIRMATION: result.order items = %s", [i.get_summary() for i in result.order.items.items])
                 logger.info("CONFIRMATION: original order items = %s", [i.get_summary() for i in order.items.items])
-                logger.info("CONFIRMATION: result.state.phase = %s", result.state.phase)
+                logger.info("CONFIRMATION: result.order.phase = %s", result.order.phase)
 
                 # Use orchestrator to determine if we should go back to confirmation
                 # If all items complete and we have name and delivery, orchestrator will say ORDER_CONFIRM
@@ -3397,22 +3252,20 @@ class OrderStateMachine:
                     result.order.customer_info.name and
                     result.order.delivery_method.order_type):
                     logger.info("CONFIRMATION: Item added, returning to confirmation (orchestrator says ORDER_CONFIRM)")
-                    self._transition_to_next_slot(result.state, result.order)
+                    self._transition_to_next_slot(result.order)
                     summary = self._build_order_summary(result.order)
                     logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
                     return StateMachineResult(
                         message=f"{summary}\n\nDoes that look right?",
-                        state=result.state,
                         order=result.order,
                     )
 
                 return result
 
             # No new item detected, use orchestrator to determine phase
-            self._transition_to_next_slot(state, order)
+            self._transition_to_next_slot(order)
             return StateMachineResult(
                 message="No problem. What would you like to change?",
-                state=state,
                 order=order,
             )
 
@@ -3421,23 +3274,20 @@ class OrderStateMachine:
             # (confirmed=True is set only when order is complete with email/text choice)
             order.checkout.order_reviewed = True
             # Use orchestrator to determine next phase (should be PAYMENT_METHOD)
-            self._transition_to_next_slot(state, order)
+            self._transition_to_next_slot(order)
             return StateMachineResult(
                 message="Would you like your order details sent by text or email?",
-                state=state,
                 order=order,
             )
 
         return StateMachineResult(
             message="Does the order look correct?",
-            state=state,
             order=order,
         )
 
     def _handle_payment_method(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle text or email choice for order details."""
@@ -3446,7 +3296,6 @@ class OrderStateMachine:
         if parsed.choice == "unclear":
             return StateMachineResult(
                 message="Would you like your order confirmation sent by text message or email?",
-                state=state,
                 order=order,
             )
 
@@ -3459,20 +3308,18 @@ class OrderStateMachine:
                 order.payment.payment_link_destination = phone
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
-                self._transition_to_next_slot(state, order)  # Should be COMPLETE
+                self._transition_to_next_slot(order)  # Should be COMPLETE
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
-                    state=state,
                     order=order,
                     is_complete=True,
                 )
             else:
                 # Need to ask for phone number - orchestrator will say NOTIFICATION
-                self._transition_to_next_slot(state, order)
+                self._transition_to_next_slot(order)
                 return StateMachineResult(
                     message="What phone number should I text the confirmation to?",
-                    state=state,
                     order=order,
                 )
 
@@ -3484,34 +3331,30 @@ class OrderStateMachine:
                 order.payment.payment_link_destination = parsed.email_address
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
-                self._transition_to_next_slot(state, order)  # Should be COMPLETE
+                self._transition_to_next_slot(order)  # Should be COMPLETE
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll send the confirmation to {parsed.email_address}. "
                            f"Thank you, {order.customer_info.name}!",
-                    state=state,
                     order=order,
                     is_complete=True,
                 )
             else:
                 # Need to ask for email - orchestrator will say NOTIFICATION
-                self._transition_to_next_slot(state, order)
+                self._transition_to_next_slot(order)
                 return StateMachineResult(
                     message="What email address should I send it to?",
-                    state=state,
                     order=order,
                 )
 
         return StateMachineResult(
             message="Would you like that sent by text or email?",
-            state=state,
             order=order,
         )
 
     def _handle_phone(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle phone number collection for text confirmation."""
@@ -3520,7 +3363,6 @@ class OrderStateMachine:
         if not parsed.phone:
             return StateMachineResult(
                 message="What's the best phone number to text the order confirmation to?",
-                state=state,
                 order=order,
             )
 
@@ -3529,12 +3371,11 @@ class OrderStateMachine:
         order.payment.payment_link_destination = parsed.phone
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
-        self._transition_to_next_slot(state, order)  # Should be COMPLETE
+        self._transition_to_next_slot(order)  # Should be COMPLETE
 
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
                    f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
-            state=state,
             order=order,
             is_complete=True,
         )
@@ -3542,7 +3383,6 @@ class OrderStateMachine:
     def _handle_email(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle email address collection."""
@@ -3551,7 +3391,6 @@ class OrderStateMachine:
         if not parsed.email:
             return StateMachineResult(
                 message="What's the best email address to send the order confirmation to?",
-                state=state,
                 order=order,
             )
 
@@ -3560,13 +3399,12 @@ class OrderStateMachine:
         order.payment.payment_link_destination = parsed.email
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
-        self._transition_to_next_slot(state, order)  # Should be COMPLETE
+        self._transition_to_next_slot(order)  # Should be COMPLETE
 
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
                    f"We'll send the confirmation to {parsed.email}. "
                    f"Thank you, {order.customer_info.name}!",
-            state=state,
             order=order,
             is_complete=True,
         )
@@ -3579,7 +3417,6 @@ class OrderStateMachine:
         self,
         item_name: str,
         quantity: int,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add a menu item and determine next question."""
@@ -3603,7 +3440,6 @@ class OrderStateMachine:
             logger.warning("Menu item not found: '%s' - asking for clarification", item_name)
             return StateMachineResult(
                 message=f"I'm sorry, I couldn't find '{item_name}' on our menu. Could you try again or ask what we have available?",
-                state=state,
                 order=order,
             )
 
@@ -3655,22 +3491,20 @@ class OrderStateMachine:
 
         if is_omelette:
             # Set state to wait for side choice (applies to first item, others will be configured after)
-            state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = first_item.id
-            state.pending_field = "side_choice"
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = first_item.id
+            order.pending_field = "side_choice"
             return StateMachineResult(
                 message=f"Would you like a bagel or fruit salad with your {canonical_name}?",
-                state=state,
                 order=order,
             )
         elif is_spread_or_salad_sandwich:
             # For spread/salad sandwiches, ask for bagel choice first, then toasted
-            state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = first_item.id
-            state.pending_field = "bagel_choice"
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = first_item.id
+            order.pending_field = "bagel_choice"
             return StateMachineResult(
                 message="What kind of bagel would you like that on?",
-                state=state,
                 order=order,
             )
         else:
@@ -3678,7 +3512,7 @@ class OrderStateMachine:
             for item in order.items.items:
                 if item.menu_item_name == canonical_name and item.status == TaskStatus.IN_PROGRESS:
                     item.mark_complete()
-            return self._get_next_question(state, order)
+            return self._get_next_question(order)
 
     def _add_side_item(
         self,
@@ -3721,7 +3555,6 @@ class OrderStateMachine:
         self,
         side_item_name: str,
         quantity: int,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add a side item to the order and return an appropriate response.
@@ -3742,14 +3575,12 @@ class OrderStateMachine:
 
         return StateMachineResult(
             message=f"I've added {item_display} to your order. Anything else?",
-            state=state,
             order=order,
         )
 
     def _add_bagel(
         self,
         bagel_type: str | None,
-        state: FlowState,
         order: OrderTask,
         toasted: bool | None = None,
         spread: str | None = None,
@@ -3818,40 +3649,37 @@ class OrderStateMachine:
 
         if not bagel_type:
             # Need bagel type
-            state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = bagel.id
-            state.pending_field = "bagel_choice"
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = bagel.id
+            order.pending_field = "bagel_choice"
             return StateMachineResult(
                 message="What kind of bagel would you like?",
-                state=state,
                 order=order,
             )
 
         if toasted is None:
             # Need toasted preference
-            state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = bagel.id
-            state.pending_field = "toasted"
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = bagel.id
+            order.pending_field = "toasted"
             return StateMachineResult(
                 message="Would you like that toasted?",
-                state=state,
                 order=order,
             )
 
         if spread is None:
             # Need spread choice
-            state.phase = OrderPhase.CONFIGURING_ITEM
-            state.pending_item_id = bagel.id
-            state.pending_field = "spread"
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = bagel.id
+            order.pending_field = "spread"
             return StateMachineResult(
                 message="Would you like cream cheese or butter on that?",
-                state=state,
                 order=order,
             )
 
         # All details provided - bagel is complete!
         bagel.mark_complete()
-        return self._get_next_question(state, order)
+        return self._get_next_question(order)
 
     def _add_bagels(
         self,
@@ -3860,7 +3688,6 @@ class OrderStateMachine:
         toasted: bool | None,
         spread: str | None,
         spread_type: str | None,
-        state: FlowState,
         order: OrderTask,
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
@@ -3929,12 +3756,11 @@ class OrderStateMachine:
             order.items.add_item(bagel)
 
         # Find first incomplete bagel and start configuring it
-        return self._configure_next_incomplete_bagel(state, order)
+        return self._configure_next_incomplete_bagel(order)
 
     def _add_bagels_from_details(
         self,
         bagel_details: list[BagelOrderDetails],
-        state: FlowState,
         order: OrderTask,
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
@@ -4012,7 +3838,7 @@ class OrderStateMachine:
             )
 
         # Find first incomplete bagel and start configuring it
-        return self._configure_next_incomplete_bagel(state, order)
+        return self._configure_next_incomplete_bagel(order)
 
     def _get_bagel_descriptions(self, order: OrderTask, bagel_ids: list[str]) -> list[str]:
         """Get descriptions for a list of bagel IDs (e.g., ['plain bagel', 'everything bagel'])."""
@@ -4028,7 +3854,6 @@ class OrderStateMachine:
 
     def _configure_next_incomplete_bagel(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """
@@ -4061,34 +3886,31 @@ class OrderStateMachine:
 
             # Ask about type first
             if not bagel.bagel_type:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = bagel.id
-                state.pending_field = "bagel_choice"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = bagel.id
+                order.pending_field = "bagel_choice"
                 return StateMachineResult(
                     message=f"What kind of bagel for {bagel_desc}?",
-                    state=state,
                     order=order,
                 )
 
             # Then ask about toasted
             if bagel.toasted is None:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = bagel.id
-                state.pending_field = "toasted"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = bagel.id
+                order.pending_field = "toasted"
                 return StateMachineResult(
                     message=f"Would you like {your_bagel_desc} toasted?",
-                    state=state,
                     order=order,
                 )
 
             # Then ask about spread
             if bagel.spread is None:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = bagel.id
-                state.pending_field = "spread"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = bagel.id
+                order.pending_field = "spread"
                 return StateMachineResult(
                     message=f"Would you like cream cheese or butter on {your_bagel_desc}?",
-                    state=state,
                     order=order,
                 )
 
@@ -4118,16 +3940,15 @@ class OrderStateMachine:
             else:
                 summary = bagel_summary
 
-            state.clear_pending()
+            order.clear_pending()
             # Phase will be derived by orchestrator (no pending items = TAKING_ITEMS or checkout)
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
-                state=state,
                 order=order,
             )
 
         # Fallback to generic next question
-        return self._get_next_question(state, order)
+        return self._get_next_question(order)
 
     def _get_ordinal(self, n: int) -> str:
         """Convert number to ordinal (1 -> 'first', 2 -> 'second', etc.)."""
@@ -4144,7 +3965,6 @@ class OrderStateMachine:
         sweetener_quantity: int,
         flavor_syrup: str | None,
         quantity: int,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
@@ -4201,8 +4021,8 @@ class OrderStateMachine:
                 order.items.add_item(drink)
 
             # Return to taking items
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
         # Regular coffee/tea - needs configuration
         # Create the requested quantity of drinks
@@ -4221,11 +4041,10 @@ class OrderStateMachine:
             order.items.add_item(coffee)
 
         # Start configuration flow
-        return self._configure_next_incomplete_coffee(state, order)
+        return self._configure_next_incomplete_coffee(order)
 
     def _configure_next_incomplete_coffee(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Configure the next incomplete coffee item."""
@@ -4262,27 +4081,25 @@ class OrderStateMachine:
 
             # Ask about size first
             if not coffee.size:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = coffee.id
-                state.pending_field = "coffee_size"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = coffee.id
+                order.pending_field = "coffee_size"
                 if coffee_desc:
                     message = f"For {coffee_desc}, small, medium, or large?"
                 else:
                     message = "What size would you like? Small, medium, or large?"
                 return StateMachineResult(
                     message=message,
-                    state=state,
                     order=order,
                 )
 
             # Then ask about hot/iced
             if coffee.iced is None:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = coffee.id
-                state.pending_field = "coffee_style"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = coffee.id
+                order.pending_field = "coffee_style"
                 return StateMachineResult(
                     message="Would you like that hot or iced?",
-                    state=state,
                     order=order,
                 )
 
@@ -4292,14 +4109,13 @@ class OrderStateMachine:
 
         # All coffees configured - no incomplete ones found
         logger.info("CONFIGURE COFFEE: No incomplete coffees, going to next question")
-        state.clear_pending()
-        return self._get_next_question(state, order)
+        order.clear_pending()
+        return self._get_next_question(order)
 
     def _handle_coffee_size(
         self,
         user_input: str,
         item: CoffeeItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle coffee size selection."""
@@ -4308,17 +4124,15 @@ class OrderStateMachine:
         if not parsed.size:
             return StateMachineResult(
                 message="What size would you like? Small, medium, or large?",
-                state=state,
                 order=order,
             )
 
         item.size = parsed.size
 
         # Move to hot/iced question
-        state.pending_field = "coffee_style"
+        order.pending_field = "coffee_style"
         return StateMachineResult(
             message="Would you like that hot or iced?",
-            state=state,
             order=order,
         )
 
@@ -4326,7 +4140,6 @@ class OrderStateMachine:
         self,
         user_input: str,
         item: CoffeeItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle hot/iced preference for coffee."""
@@ -4347,7 +4160,6 @@ class OrderStateMachine:
         if iced is None:
             return StateMachineResult(
                 message="Would you like that hot or iced?",
-                state=state,
                 order=order,
             )
 
@@ -4367,10 +4179,10 @@ class OrderStateMachine:
         # Coffee is now complete - recalculate price with modifiers
         self.recalculate_coffee_price(item)
         item.mark_complete()
-        state.clear_pending()
+        order.clear_pending()
 
         # Check for more incomplete coffees before moving on
-        return self._configure_next_incomplete_coffee(state, order)
+        return self._configure_next_incomplete_coffee(order)
 
     def _lookup_coffee_price(self, coffee_type: str | None) -> float:
         """Look up price for a coffee type."""
@@ -4400,14 +4212,12 @@ class OrderStateMachine:
         item_name: str | None,
         quantity: int,
         toasted: bool | None,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add speed menu bagel(s) to the order."""
         if not item_name:
             return StateMachineResult(
                 message="Which speed menu item would you like?",
-                state=state,
                 order=order,
             )
 
@@ -4437,15 +4247,14 @@ class OrderStateMachine:
 
         # If toasted was specified, we're done
         if toasted is not None:
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
         # Need to configure toasted preference
-        return self._configure_next_incomplete_speed_menu_bagel(state, order)
+        return self._configure_next_incomplete_speed_menu_bagel(order)
 
     def _configure_next_incomplete_speed_menu_bagel(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Configure the next incomplete speed menu bagel item."""
@@ -4456,18 +4265,17 @@ class OrderStateMachine:
         ]
 
         if not incomplete_items:
-            state.clear_pending()
-            return self._get_next_question(state, order)
+            order.clear_pending()
+            return self._get_next_question(order)
 
         # Configure items one at a time
         for item in incomplete_items:
             if item.toasted is None:
-                state.phase = OrderPhase.CONFIGURING_ITEM
-                state.pending_item_id = item.id
-                state.pending_field = "speed_menu_bagel_toasted"
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = item.id
+                order.pending_field = "speed_menu_bagel_toasted"
                 return StateMachineResult(
                     message="Would you like that toasted?",
-                    state=state,
                     order=order,
                 )
 
@@ -4475,14 +4283,13 @@ class OrderStateMachine:
             item.mark_complete()
 
         # All items configured
-        state.clear_pending()
-        return self._get_next_question(state, order)
+        order.clear_pending()
+        return self._get_next_question(order)
 
     def _handle_speed_menu_bagel_toasted(
         self,
         user_input: str,
         item: SpeedMenuBagelItemTask,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for speed menu bagel."""
@@ -4491,15 +4298,14 @@ class OrderStateMachine:
         if parsed.toasted is None:
             return StateMachineResult(
                 message="Would you like that toasted?",
-                state=state,
                 order=order,
             )
 
         item.toasted = parsed.toasted
         item.mark_complete()
-        state.clear_pending()
+        order.clear_pending()
 
-        return self._get_next_question(state, order)
+        return self._get_next_question(order)
 
     # =========================================================================
     # Menu Query Handlers
@@ -4508,7 +4314,6 @@ class OrderStateMachine:
     def _handle_menu_query(
         self,
         menu_query_type: str | None,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle inquiry about menu items by type.
@@ -4524,18 +4329,16 @@ class OrderStateMachine:
             if available_types:
                 return StateMachineResult(
                     message=f"We have: {', '.join(available_types)}. What would you like?",
-                    state=state,
                     order=order,
                 )
             return StateMachineResult(
                 message="What can I get for you?",
-                state=state,
                 order=order,
             )
 
         # Handle spread/cream cheese queries as by-the-pound category
         if menu_query_type in ("spread", "cream_cheese", "cream cheese"):
-            return self._list_by_pound_category("spread", state, order)
+            return self._list_by_pound_category("spread", order)
 
         # Map common query types to actual item_type slugs
         # - "soda", "water", "juice" -> "beverage" (cold-only drinks)
@@ -4575,12 +4378,10 @@ class OrderStateMachine:
                     items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
                 return StateMachineResult(
                     message=f"Our beverages include: {items_str}. Would you like any of these?",
-                    state=state,
                     order=order,
                 )
             return StateMachineResult(
                 message="I don't have any beverages on the menu right now. Is there anything else I can help you with?",
-                state=state,
                 order=order,
             )
 
@@ -4596,12 +4397,10 @@ class OrderStateMachine:
             if available_types:
                 return StateMachineResult(
                     message=f"I don't have any {type_display}s on the menu. We do have: {', '.join(available_types)}. What would you like?",
-                    state=state,
                     order=order,
                 )
             return StateMachineResult(
                 message=f"I'm sorry, I don't have any {type_display}s on the menu. What else can I help you with?",
-                state=state,
                 order=order,
             )
 
@@ -4635,13 +4434,11 @@ class OrderStateMachine:
 
         return StateMachineResult(
             message=f"Our {type_display} include: {items_str}. Would you like any of these?",
-            state=state,
             order=order,
         )
 
     def _handle_soda_clarification(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle when user orders a generic 'soda' without specifying type.
@@ -4666,14 +4463,12 @@ class OrderStateMachine:
 
             return StateMachineResult(
                 message=f"What kind? We have {soda_list}.",
-                state=state,
                 order=order,
             )
 
         # Fallback if no beverages in menu data
         return StateMachineResult(
             message="What kind? We have Coke, Diet Coke, Sprite, and others.",
-            state=state,
             order=order,
         )
 
@@ -4684,7 +4479,6 @@ class OrderStateMachine:
     def _handle_signature_menu_inquiry(
         self,
         menu_type: str | None,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle inquiry about signature/speed menu items.
@@ -4714,7 +4508,6 @@ class OrderStateMachine:
         if not items:
             return StateMachineResult(
                 message="We don't have any pre-made signature items on the menu right now. Would you like to build your own?",
-                state=state,
                 order=order,
             )
 
@@ -4737,7 +4530,6 @@ class OrderStateMachine:
 
         return StateMachineResult(
             message=message,
-            state=state,
             order=order,
         )
 
@@ -4748,27 +4540,24 @@ class OrderStateMachine:
     def _handle_by_pound_inquiry(
         self,
         category: str | None,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle initial by-the-pound inquiry."""
         if category:
             # User asked about a specific category directly
-            return self._list_by_pound_category(category, state, order)
+            return self._list_by_pound_category(category, order)
 
         # General inquiry - list all categories and ask which they're interested in
-        state.phase = OrderPhase.CONFIGURING_ITEM
-        state.pending_field = "by_pound_category"
+        order.phase = OrderPhase.CONFIGURING_ITEM
+        order.pending_field = "by_pound_category"
         return StateMachineResult(
             message="We sell cheeses, spreads, cold cuts, fish, and salads by the pound. Which are you interested in?",
-            state=state,
             order=order,
         )
 
     def _handle_by_pound_category_selection(
         self,
         user_input: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle user selecting a by-the-pound category."""
@@ -4777,27 +4566,24 @@ class OrderStateMachine:
         if parsed.unclear:
             return StateMachineResult(
                 message="Which would you like to hear about? Cheeses, spreads, cold cuts, fish, or salads?",
-                state=state,
                 order=order,
             )
 
         if not parsed.category:
             # User declined or said never mind
-            state.clear_pending()
+            order.clear_pending()
             # Phase derived by orchestrator
             return StateMachineResult(
                 message="No problem! What else can I get for you?",
-                state=state,
                 order=order,
             )
 
         # List the items in the selected category
-        return self._list_by_pound_category(parsed.category, state, order)
+        return self._list_by_pound_category(parsed.category, order)
 
     def _list_by_pound_category(
         self,
         category: str,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """List items in a specific by-the-pound category."""
@@ -4814,11 +4600,10 @@ class OrderStateMachine:
         category_name = BY_POUND_CATEGORY_NAMES.get(category, category)
 
         if not items:
-            state.clear_pending()
+            order.clear_pending()
             # Phase derived by orchestrator
             return StateMachineResult(
                 message=f"I don't have information on {category_name} right now. What else can I get for you?",
-                state=state,
                 order=order,
             )
 
@@ -4828,7 +4613,7 @@ class OrderStateMachine:
         else:
             items_list = ", ".join(items[:-1]) + f", and {items[-1]}"
 
-        state.clear_pending()
+        order.clear_pending()
         # Phase derived by orchestrator
 
         # For spreads, don't say "by the pound" since they're also used on bagels
@@ -4839,7 +4624,6 @@ class OrderStateMachine:
 
         return StateMachineResult(
             message=message,
-            state=state,
             order=order,
         )
 
@@ -4905,7 +4689,6 @@ class OrderStateMachine:
     def _add_by_pound_items(
         self,
         by_pound_items: list[ByPoundOrderItem],
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Add by-the-pound items to the order."""
@@ -4947,17 +4730,15 @@ class OrderStateMachine:
             items_list = ", ".join(added_items[:-1]) + f", and {added_items[-1]}"
             confirmation = f"Got it, {items_list}."
 
-        state.clear_pending()
+        order.clear_pending()
         # Phase derived by orchestrator
         return StateMachineResult(
             message=f"{confirmation} Anything else?",
-            state=state,
             order=order,
         )
 
     def _get_next_question(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Determine the next question to ask."""
@@ -4988,19 +4769,16 @@ class OrderStateMachine:
 
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
-                state=state,
                 order=order,
             )
 
         return StateMachineResult(
             message="What can I get for you?",
-            state=state,
             order=order,
         )
 
     def _transition_to_checkout(
         self,
-        state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
         """Transition to checkout phase.
@@ -5008,10 +4786,10 @@ class OrderStateMachine:
         If we already have delivery type and customer name (e.g., user added an item
         during confirmation), skip directly to order confirmation.
         """
-        state.clear_pending()
+        order.clear_pending()
 
         # Use orchestrator to determine next step in checkout
-        self._transition_to_next_slot(state, order)
+        self._transition_to_next_slot(order)
 
         # Check if we already have all the info we need (orchestrator would have set CONFIRM phase)
         if order.delivery_method.order_type and order.customer_info.name:
@@ -5021,14 +4799,12 @@ class OrderStateMachine:
             summary = self._build_order_summary(order)
             return StateMachineResult(
                 message=f"{summary}\n\nDoes that look right?",
-                state=state,
                 order=order,
             )
 
         # Normal checkout flow - orchestrator determines if we need delivery or name
         return StateMachineResult(
             message="Is this for pickup or delivery?",
-            state=state,
             order=order,
         )
 

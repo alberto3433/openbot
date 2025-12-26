@@ -2,9 +2,8 @@
 Adapter layer to bridge the OrderStateMachine with existing endpoints.
 
 This module provides:
-1. State conversion between dict-based state and FlowState
-2. Feature flag for enabling the state machine
-3. Wrapper functions that match the existing API signatures
+1. Feature flag for enabling the state machine
+2. Wrapper functions that match the existing API signatures
 """
 
 import os
@@ -13,7 +12,6 @@ from typing import Any, Dict, List, Tuple
 
 from .state_machine import (
     OrderStateMachine,
-    FlowState,
     OrderPhase,
     StateMachineResult,
 )
@@ -43,73 +41,6 @@ def is_state_machine_enabled() -> bool:
     """
     flag_value = os.environ.get("STATE_MACHINE_ENABLED", "true").lower()
     return flag_value == "true"
-
-
-# -----------------------------------------------------------------------------
-# State Conversion: Dict -> FlowState
-# -----------------------------------------------------------------------------
-
-def dict_to_flow_state(state_dict: Dict[str, Any]) -> FlowState:
-    """
-    Convert dict-based state back to FlowState.
-
-    Args:
-        state_dict: State dict from order_state["state_machine_state"]
-
-    Returns:
-        FlowState instance
-    """
-    if not state_dict:
-        return FlowState()
-
-    sm_state = state_dict.get("state_machine_state", {})
-    if not sm_state:
-        return FlowState()
-
-    phase_str = sm_state.get("phase", "greeting")
-    try:
-        phase = OrderPhase(phase_str)
-    except ValueError:
-        phase = OrderPhase.GREETING
-
-    # Handle pending_item_ids (list) or legacy pending_item_id (single)
-    pending_item_ids = sm_state.get("pending_item_ids", [])
-    if not pending_item_ids:
-        # Fallback to legacy single ID
-        legacy_id = sm_state.get("pending_item_id")
-        if legacy_id:
-            pending_item_ids = [legacy_id]
-
-    flow_state = FlowState(
-        phase=phase,
-        pending_field=sm_state.get("pending_field"),
-        last_bot_message=sm_state.get("last_bot_message"),
-    )
-    flow_state.pending_item_ids = pending_item_ids
-    return flow_state
-
-
-# -----------------------------------------------------------------------------
-# State Conversion: FlowState -> Dict
-# -----------------------------------------------------------------------------
-
-def flow_state_to_dict(state: FlowState) -> Dict[str, Any]:
-    """
-    Convert FlowState to dict for storage.
-
-    Args:
-        state: FlowState instance
-
-    Returns:
-        Dict representation
-    """
-    return {
-        "phase": state.phase.value,
-        "pending_item_ids": state.pending_item_ids,  # Store as list
-        "pending_item_id": state.pending_item_id,    # Legacy compat (first item or None)
-        "pending_field": state.pending_field,
-        "last_bot_message": state.last_bot_message,
-    }
 
 
 # -----------------------------------------------------------------------------
@@ -172,8 +103,7 @@ def process_message_with_state_machine(
         len(menu_data) if menu_data else 0,
     )
 
-    # Convert dict state to FlowState and OrderTask
-    flow_state = dict_to_flow_state(order_state_dict)
+    # Convert dict state to OrderTask
     order = dict_to_order_task(order_state_dict, session_id)
 
     # Copy conversation history if not already present
@@ -187,23 +117,19 @@ def process_message_with_state_machine(
     sm = get_state_machine(menu_data)
     result: StateMachineResult = sm.process(
         user_input=user_message,
-        state=flow_state,
         order=order,
     )
 
-    # Convert state back to dict
+    # Convert state back to dict (phase and pending fields are stored in OrderTask)
     updated_dict = order_task_to_dict(result.order)
-
-    # Store flow state in the dict for next call
-    updated_dict["state_machine_state"] = flow_state_to_dict(result.state)
 
     # Build actions list for compatibility
     actions = _infer_actions_from_result(order_state_dict, updated_dict, result)
 
     logger.info(
         "State machine processed message - phase: %s, pending_field: %s, complete: %s",
-        result.state.phase.value,
-        result.state.pending_field,
+        result.order.phase,
+        result.order.pending_field,
         result.is_complete,
     )
 

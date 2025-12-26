@@ -2,14 +2,14 @@
 Integration tests for slot orchestrator comparison logging.
 
 These tests verify that the slot orchestrator is correctly tracking
-alongside the FlowState, and capture any mismatches.
+order state and capturing phase transitions.
 """
 
 import pytest
 import logging
 from unittest.mock import patch, MagicMock
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine, FlowState, OrderPhase
+from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
 
 
@@ -50,7 +50,6 @@ class TestSlotComparisonLogging:
 
     def test_slot_logging_on_greeting(self, state_machine, capture_slot_logs):
         """Verify slot comparison runs on greeting."""
-        state = FlowState()
         order = OrderTask()
 
         # Process a greeting
@@ -65,7 +64,7 @@ class TestSlotComparisonLogging:
                 new_menu_item=None,
                 wants_checkout=False,
             )
-            result = state_machine.process("hi", state, order)
+            result = state_machine.process("hi", order)
 
         # Should have logged slot comparison
         assert len(capture_slot_logs) > 0
@@ -76,7 +75,6 @@ class TestSlotComparisonLogging:
         """Verify slot comparison logs throughout an order flow."""
         from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
-        state = FlowState()
         order = OrderTask()
 
         # Simulate adding a complete item
@@ -84,9 +82,9 @@ class TestSlotComparisonLogging:
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        # Directly test the log comparison method
-        state.phase = OrderPhase.CHECKOUT_DELIVERY
-        state_machine._log_slot_comparison(state, order)
+        # Directly test the log comparison method (order now has phase)
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        state_machine._log_slot_comparison(order)
 
         # Check logs
         log_messages = [r.getMessage() for r in capture_slot_logs]
@@ -95,7 +93,7 @@ class TestSlotComparisonLogging:
 
 
 class TestSlotPhaseAlignment:
-    """Test that FlowState phases align with SlotOrchestrator phases."""
+    """Test that OrderTask phases align with SlotOrchestrator phases."""
 
     def test_greeting_phase_aligns(self):
         """Greeting phase should map to taking_items."""

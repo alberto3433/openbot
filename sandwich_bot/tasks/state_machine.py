@@ -28,8 +28,12 @@ from .models import (
     ItemTask,
     TaskStatus,
 )
+from .slot_orchestrator import SlotOrchestrator, SlotCategory
 
 logger = logging.getLogger(__name__)
+
+# Logger for slot orchestrator comparison (can be enabled/disabled independently)
+slot_logger = logging.getLogger(__name__ + ".slot_comparison")
 
 
 # =============================================================================
@@ -2578,7 +2582,71 @@ class OrderStateMachine:
         # Add bot message to history
         order.add_message("assistant", result.message)
 
+        # === PHASE 1: Slot Orchestrator Comparison ===
+        # Compare FlowState phase with what SlotOrchestrator derives
+        # This logging helps validate the slot-filling architecture before migration
+        self._log_slot_comparison(result.state, result.order)
+
         return result
+
+    def _log_slot_comparison(self, state: FlowState, order: OrderTask) -> None:
+        """
+        Compare FlowState phase with SlotOrchestrator-derived phase.
+
+        This is Phase 1 of the slot orchestrator migration - running both
+        systems in parallel and logging any discrepancies.
+        """
+        try:
+            orchestrator = SlotOrchestrator(order)
+            orch_phase = orchestrator.get_current_phase()
+            flow_phase = state.phase.value
+
+            # Map FlowState phases to orchestrator phases for comparison
+            # Some phases don't have direct mappings
+            phase_mapping = {
+                "greeting": "taking_items",  # Greeting → taking_items after first message
+                "taking_items": "taking_items",
+                "configuring_item": "configuring_item",
+                "checkout_delivery": "checkout_delivery",
+                "checkout_name": "checkout_name",
+                "checkout_confirm": "checkout_confirm",
+                "checkout_payment_method": "checkout_payment_method",
+                "checkout_phone": "checkout_notification",  # Phone is part of notification
+                "checkout_email": "checkout_notification",  # Email is part of notification
+                "complete": "complete",
+                "cancelled": "complete",  # Cancelled is a terminal state
+            }
+
+            expected_orch_phase = phase_mapping.get(flow_phase, flow_phase)
+
+            # Get next slot for additional context
+            next_slot = orchestrator.get_next_slot()
+            next_slot_info = f"{next_slot.category.value}" if next_slot else "none"
+
+            # Check for mismatch
+            # Note: Some mismatches are expected due to architecture differences
+            if orch_phase != expected_orch_phase:
+                slot_logger.warning(
+                    "SLOT MISMATCH: FlowState=%s (expected_orch=%s), Orchestrator=%s, next_slot=%s",
+                    flow_phase, expected_orch_phase, orch_phase, next_slot_info
+                )
+            else:
+                slot_logger.debug(
+                    "SLOT MATCH: FlowState=%s, Orchestrator=%s, next_slot=%s",
+                    flow_phase, orch_phase, next_slot_info
+                )
+
+            # Log slot progress for visibility
+            progress = orchestrator.get_progress()
+            filled_slots = [k for k, v in progress.items() if v]
+            empty_slots = [k for k, v in progress.items() if not v]
+            slot_logger.debug(
+                "SLOT PROGRESS: filled=%s, empty=%s",
+                filled_slots, empty_slots
+            )
+
+        except Exception as e:
+            slot_logger.error("SLOT COMPARISON ERROR: %s", e)
 
     def _handle_greeting(
         self,

@@ -197,10 +197,13 @@ app = FastAPI(
 
 
 @app.get("/", include_in_schema=False)
-def root():
-    """Redirect root to static index page."""
+def root(request: Request):
+    """Redirect root to static index page, preserving query parameters."""
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/static/index.html")
+    url = "/static/index.html"
+    if request.query_params:
+        url += f"?{request.query_params}"
+    return RedirectResponse(url=url)
 
 
 # ---------- Request ID Middleware ----------

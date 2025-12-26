@@ -391,6 +391,12 @@ class OpenInputResponse(BaseModel):
         description="Message couldn't be understood"
     )
 
+    # Order type preference (pickup/delivery mentioned upfront)
+    order_type: Literal["pickup", "delivery"] | None = Field(
+        default=None,
+        description="If user mentions 'pickup order' or 'delivery order' upfront, capture that here"
+    )
+
 
 class ByPoundCategoryResponse(BaseModel):
     """Parser output when user is selecting a by-the-pound category."""
@@ -2176,6 +2182,12 @@ Determine what they want:
   - Set new_coffee_flavor_syrup if specified (e.g., "vanilla", "caramel", "hazelnut")
 - If they're done ordering ("that's all", "nothing else", "no", "nope", "I'm good"), set done_ordering=true
 - If just greeting ("hi", "hello"), set is_greeting=true
+- If user mentions order type upfront ("pickup order", "delivery order", "I'd like to place a pickup", "this is for delivery"), set order_type to "pickup" or "delivery"
+  - "I'd like to place a pickup order" -> order_type: "pickup"
+  - "I want to place a delivery order" -> order_type: "delivery"
+  - "pickup order please" -> order_type: "pickup"
+  - "this is for pickup" -> order_type: "pickup"
+  - Can be combined with items: "pickup order, I'll have a plain bagel" -> order_type: "pickup", new_bagel: true, new_bagel_type: "plain"
 
 IMPORTANT: When parsing quantities, recognize both spelled-out words AND numeric digits:
 - "two" / "2" = 2
@@ -2501,7 +2513,13 @@ class OrderStateMachine:
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
-        if not order.is_configuring_item():
+        # Also: Don't overwrite contact collection phases (CHECKOUT_EMAIL/CHECKOUT_PHONE)
+        # which are explicitly set by handlers and shouldn't be derived from orchestrator
+        contact_collection_phases = {
+            OrderPhase.CHECKOUT_EMAIL.value,
+            OrderPhase.CHECKOUT_PHONE.value,
+        }
+        if not order.is_configuring_item() and order.phase not in contact_collection_phases:
             self._transition_to_next_slot(order)
 
         logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
@@ -2677,6 +2695,22 @@ class OrderStateMachine:
 
         if parsed.done_ordering:
             return self._transition_to_checkout(order)
+
+        # Check if user specified order type upfront (e.g., "I'd like to place a pickup order")
+        if parsed.order_type:
+            order.delivery_method.order_type = parsed.order_type
+            logger.info("Order type set from upfront mention: %s", parsed.order_type)
+            order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
+            # Check if they also ordered items in the same message
+            has_items = (parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
+                        parsed.new_speed_menu_bagel or parsed.new_side_item or parsed.by_pound_items)
+            if not has_items:
+                # Just the order type, no items yet - acknowledge and ask what they want
+                return StateMachineResult(
+                    message=f"Great, I'll set this up for {order_type_display}. What can I get for you?",
+                    order=order,
+                )
+            # If they also ordered items, continue processing below
 
         # Track items added for multi-item orders
         items_added = []
@@ -3340,8 +3374,9 @@ class OrderStateMachine:
                     is_complete=True,
                 )
             else:
-                # Need to ask for email - orchestrator will say NOTIFICATION
-                self._transition_to_next_slot(order)
+                # Need to ask for email - explicitly set CHECKOUT_EMAIL phase
+                # (orchestrator maps NOTIFICATION to CHECKOUT_PHONE by default)
+                order.phase = OrderPhase.CHECKOUT_EMAIL.value
                 return StateMachineResult(
                     message="What email address should I send it to?",
                     order=order,
@@ -4783,17 +4818,22 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Transition to checkout phase.
 
-        If we already have delivery type and customer name (e.g., user added an item
-        during confirmation), skip directly to order confirmation.
+        Uses the slot orchestrator to determine what to ask next.
         """
         order.clear_pending()
 
         # Use orchestrator to determine next step in checkout
         self._transition_to_next_slot(order)
 
-        # Check if we already have all the info we need (orchestrator would have set CONFIRM phase)
-        if order.delivery_method.order_type and order.customer_info.name:
-            # Skip to confirmation - we already have the customer info
+        # Return appropriate message based on phase set by orchestrator
+        if order.phase == OrderPhase.CHECKOUT_NAME.value:
+            logger.info("CHECKOUT: Asking for name (delivery=%s)", order.delivery_method.order_type)
+            return StateMachineResult(
+                message="Can I get a name for the order?",
+                order=order,
+            )
+        elif order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
+            # We have both delivery type and customer name
             logger.info("CHECKOUT: Skipping to confirmation (already have name=%s, delivery=%s)",
                        order.customer_info.name, order.delivery_method.order_type)
             summary = self._build_order_summary(order)
@@ -4801,12 +4841,12 @@ class OrderStateMachine:
                 message=f"{summary}\n\nDoes that look right?",
                 order=order,
             )
-
-        # Normal checkout flow - orchestrator determines if we need delivery or name
-        return StateMachineResult(
-            message="Is this for pickup or delivery?",
-            order=order,
-        )
+        else:
+            # Default: ask for delivery method
+            return StateMachineResult(
+                message="Is this for pickup or delivery?",
+                order=order,
+            )
 
     def _get_item_by_id(self, order: OrderTask, item_id: str) -> ItemTask | None:
         """Find an item by its ID."""

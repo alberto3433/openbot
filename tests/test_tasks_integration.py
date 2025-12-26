@@ -550,3 +550,224 @@ class TestPriceRecalculationInvariants:
         assert sm._lookup_modifier_price("american") == 0.75
         assert sm._lookup_modifier_price("bacon") == 2.00
         assert sm._lookup_modifier_price("cream cheese") == 1.50
+
+
+# =============================================================================
+# Order Type Upfront Tests
+# =============================================================================
+
+class TestOrderTypeUpfront:
+    """Tests for recognizing pickup/delivery order type mentioned upfront."""
+
+    def test_pickup_order_sets_delivery_method(self):
+        """Test that 'I'd like to place a pickup order' sets order type."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Simulate parsed input with order_type set
+        parsed = OpenInputResponse(order_type="pickup")
+        result = sm._handle_taking_items_with_parsed(parsed, order)
+
+        # Should set delivery method
+        assert order.delivery_method.order_type == "pickup"
+        # Should acknowledge and ask what they want
+        assert "pickup" in result.message.lower()
+        assert "what can i get" in result.message.lower() or "get for you" in result.message.lower()
+
+    def test_delivery_order_sets_delivery_method(self):
+        """Test that 'I'd like to place a delivery order' sets order type."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Simulate parsed input with order_type set
+        parsed = OpenInputResponse(order_type="delivery")
+        result = sm._handle_taking_items_with_parsed(parsed, order)
+
+        # Should set delivery method
+        assert order.delivery_method.order_type == "delivery"
+        # Should acknowledge and ask what they want
+        assert "delivery" in result.message.lower()
+
+    def test_pickup_order_with_items_processes_both(self):
+        """Test that 'pickup order, I'll have a plain bagel' processes both."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Simulate parsed input with order_type AND a bagel order
+        parsed = OpenInputResponse(
+            order_type="pickup",
+            new_bagel=True,
+            new_bagel_type="plain",
+        )
+        result = sm._handle_taking_items_with_parsed(parsed, order)
+
+        # Should set delivery method
+        assert order.delivery_method.order_type == "pickup"
+        # Should have added the bagel
+        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        assert len(bagels) == 1
+        assert bagels[0].bagel_type == "plain"
+
+    def test_checkout_asks_for_name_when_order_type_set_upfront(self):
+        """Test that checkout asks for name when order type was set upfront.
+
+        Bug fix: When user says "I'd like a pickup order" upfront and then says
+        "that's it", we should ask for their name, not ask pickup/delivery again.
+        """
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+            OrderPhase,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # User set order type upfront
+        order.delivery_method.order_type = "pickup"
+
+        # Add a complete item
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+
+        # User says "that's it" - triggers _transition_to_checkout
+        result = sm._transition_to_checkout(order)
+
+        # Should ask for name, NOT pickup/delivery
+        assert "name" in result.message.lower()
+        assert "pickup or delivery" not in result.message.lower()
+        assert order.phase == OrderPhase.CHECKOUT_NAME.value
+
+    def test_email_choice_sets_checkout_email_phase(self):
+        """Test that choosing 'email' sets CHECKOUT_EMAIL phase for next input.
+
+        Bug fix: When user chooses email for notification, the phase should be
+        CHECKOUT_EMAIL so their email address is captured correctly.
+        """
+        from unittest.mock import patch, MagicMock
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OrderPhase,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Set up order state: has items, delivery method, name, confirmed
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "Joey"
+        order.checkout.order_reviewed = True
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+
+        # Mock parse_payment_method to return email choice (no email address)
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = MagicMock(
+                choice="email",
+                email_address=None,  # No email provided yet
+                phone_number=None,
+            )
+            result = sm._handle_payment_method("email", order)
+
+        # Should ask for email
+        assert "email" in result.message.lower()
+        # Phase should be CHECKOUT_EMAIL (not CHECKOUT_PHONE)
+        assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
+
+    def test_email_address_captured_in_checkout_email_phase(self):
+        """Test that email address is captured when in CHECKOUT_EMAIL phase."""
+        from unittest.mock import patch, MagicMock
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OrderPhase,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Set up order state
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "Joey"
+        order.checkout.order_reviewed = True
+        order.payment.method = "card_link"
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+
+        # Mock parse_email to return the email address
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            mock_parse.return_value = MagicMock(email="joey@example.com")
+            result = sm._handle_email("joey@example.com", order)
+
+        # Email should be stored
+        assert order.customer_info.email == "joey@example.com"
+        # Order should be complete
+        assert result.is_complete
+        assert "joey@example.com" in result.message
+        assert "Joey" in result.message  # Thank you message includes name
+
+    def test_email_phase_persists_through_process(self):
+        """Test that CHECKOUT_EMAIL phase is preserved through process().
+
+        Bug fix: When user chooses email, the phase is set to CHECKOUT_EMAIL.
+        On the next turn, process() was calling _transition_to_next_slot() which
+        overwrote the phase to CHECKOUT_PHONE. This test verifies the fix.
+        """
+        from unittest.mock import patch, MagicMock
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OrderPhase,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+
+        # Set up order state as it would be after choosing "email"
+        order = OrderTask()
+        bagel = BagelItemTask(bagel_type="egg", toasted=True)
+        bagel.spread = "none"  # "with nothing on it"
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "Hank"
+        order.checkout.order_reviewed = True
+        order.payment.method = "card_link"
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value  # Set by previous handler
+
+        # Mock parse_email to return the email address
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            mock_parse.return_value = MagicMock(email="alberto33@gmail.com")
+            # Call process() - this should NOT overwrite the phase
+            result = sm.process("alberto33@gmail.com", order)
+
+        # Verify email was captured
+        assert order.customer_info.email == "alberto33@gmail.com"
+        # Order should be complete
+        assert result.is_complete
+        assert "alberto33@gmail.com" in result.message
+        assert "Hank" in result.message

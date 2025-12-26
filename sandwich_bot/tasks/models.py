@@ -596,6 +596,41 @@ class OrderTask(BaseTask):
     # Conversation tracking
     conversation_history: list[dict] = Field(default_factory=list)
 
+    # Flow state (moved from FlowState in Phase 4)
+    pending_item_ids: list[str] = Field(default_factory=list)  # Items needing input
+    pending_field: str | None = None  # Field we're asking about
+    last_bot_message: str | None = None  # For context
+
+    # Legacy single-item property for backwards compatibility
+    @property
+    def pending_item_id(self) -> str | None:
+        """Get the first pending item ID (backwards compat)."""
+        return self.pending_item_ids[0] if self.pending_item_ids else None
+
+    @pending_item_id.setter
+    def pending_item_id(self, value: str | None):
+        """Set a single pending item ID (backwards compat)."""
+        if value is None:
+            self.pending_item_ids = []
+        else:
+            self.pending_item_ids = [value]
+
+    def is_configuring_item(self) -> bool:
+        """Check if we're waiting for input on a specific item or menu inquiry."""
+        # Also handle by-pound category selection (no item, just pending_field)
+        if self.pending_field == "by_pound_category":
+            return True
+        return len(self.pending_item_ids) > 0 and self.pending_field is not None
+
+    def is_configuring_multiple(self) -> bool:
+        """Check if we're configuring multiple items at once."""
+        return len(self.pending_item_ids) > 1
+
+    def clear_pending(self):
+        """Clear pending item/field when done configuring."""
+        self.pending_item_ids = []
+        self.pending_field = None
+
     def add_message(self, role: str, content: str) -> None:
         """Add a message to conversation history."""
         self.conversation_history.append({

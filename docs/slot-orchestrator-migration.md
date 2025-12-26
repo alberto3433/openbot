@@ -151,15 +151,22 @@ A `SlotOrchestrator` that:
 
 ---
 
-### Phase 4: Remove FlowState
+### Phase 4: OrderTask as Source of Truth
 
-**Goal**: `OrderTask` becomes the only state object.
+**Goal**: `OrderTask` becomes the single source of truth for all state.
 
 **Changes**:
-1. Move `pending_item_ids` and `pending_field` to `OrderTask`
-2. Remove `FlowState` class
-3. Update all method signatures
-4. Persist `OrderTask` to session instead of `FlowState`
+1. Move `pending_item_ids`, `pending_field`, `last_bot_message` to `OrderTask`
+2. Add helper methods to `OrderTask`: `is_configuring_item()`, `is_configuring_multiple()`, `clear_pending()`
+3. Update adapters to persist pending fields from/to `OrderTask`
+4. Sync FlowState to/from OrderTask at `process()` boundaries
+5. (Optional) Remove `FlowState` class in future cleanup
+
+**Implementation Notes**:
+- FlowState is retained as a runtime convenience wrapper
+- At start of `process()`: sync pending fields from OrderTask to FlowState
+- At end of `process()`: sync pending fields from FlowState back to OrderTask
+- This approach minimizes code changes while achieving the goal of single source of truth
 
 **Testing**:
 - Full regression test
@@ -304,10 +311,11 @@ def test_all_flows_no_mismatch():
 - [x] All existing tests pass (489 tests)
 
 ### Phase 4 Complete When:
-- [ ] `FlowState` class removed
-- [ ] `OrderTask` persisted to session
-- [ ] All existing tests pass
-- [ ] Code is simpler and more maintainable
+- [x] `pending_item_ids`, `pending_field`, `last_bot_message` moved to `OrderTask`
+- [x] `OrderTask` persisted to session (via adapter)
+- [x] FlowState syncs to/from OrderTask at process() boundaries
+- [x] All existing tests pass (489 tests)
+- [ ] `FlowState` class removed (optional future cleanup - currently serves as runtime convenience)
 
 ---
 

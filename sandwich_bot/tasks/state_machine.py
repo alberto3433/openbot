@@ -2547,6 +2547,13 @@ class OrderStateMachine:
         if order is None:
             order = OrderTask()
 
+        # === PHASE 4: Sync pending state from OrderTask to FlowState ===
+        # OrderTask is now the source of truth for pending fields.
+        # Sync to FlowState at start for backward compatibility with existing code.
+        state.pending_item_ids = order.pending_item_ids.copy()
+        state.pending_field = order.pending_field
+        state.last_bot_message = order.last_bot_message
+
         # Add user message to history
         order.add_message("user", user_input)
 
@@ -2588,6 +2595,12 @@ class OrderStateMachine:
 
         # Add bot message to history
         order.add_message("assistant", result.message)
+
+        # === PHASE 4: Sync pending state from FlowState back to OrderTask ===
+        # Copy any changes made to FlowState back to OrderTask (source of truth)
+        result.order.pending_item_ids = result.state.pending_item_ids.copy()
+        result.order.pending_field = result.state.pending_field
+        result.order.last_bot_message = result.state.last_bot_message
 
         # === PHASE 1: Slot Orchestrator Comparison ===
         # Compare FlowState phase with what SlotOrchestrator derives

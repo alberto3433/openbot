@@ -246,6 +246,19 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
     if task_state.get("conversation_history"):
         order.conversation_history = task_state["conversation_history"]
 
+    # Restore flow state (pending fields) from state_machine_state
+    sm_state = order_dict.get("state_machine_state", {})
+    if sm_state:
+        # Handle pending_item_ids (list) or legacy pending_item_id (single)
+        pending_item_ids = sm_state.get("pending_item_ids", [])
+        if not pending_item_ids:
+            legacy_id = sm_state.get("pending_item_id")
+            if legacy_id:
+                pending_item_ids = [legacy_id]
+        order.pending_item_ids = pending_item_ids
+        order.pending_field = sm_state.get("pending_field")
+        order.last_bot_message = sm_state.get("last_bot_message")
+
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
     if checkout_data.get("confirmed") or order_dict.get("status") == "confirmed":
@@ -486,6 +499,16 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
     # Preserve task orchestrator state
     order_dict["task_orchestrator_state"] = {
         "conversation_history": order.conversation_history,
+    }
+
+    # Save flow state (pending fields) - OrderTask is now the source of truth
+    order_dict["state_machine_state"] = {
+        "pending_item_ids": order.pending_item_ids,
+        "pending_item_id": order.pending_item_id,  # Legacy compat
+        "pending_field": order.pending_field,
+        "last_bot_message": order.last_bot_message,
+        # Phase is derived from orchestrator, not stored
+        "phase": "taking_items",  # Default placeholder for backward compat
     }
 
     return order_dict

@@ -160,7 +160,7 @@ class TestSlotPhaseAlignment:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "in_store"
 
         orch = SlotOrchestrator(order)
@@ -192,7 +192,7 @@ class TestEndToEndFlowWithSlots:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "Alice"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "in_store"
 
         # Verify orchestrator sees this as complete

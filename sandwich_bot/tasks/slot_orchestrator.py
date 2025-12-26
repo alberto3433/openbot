@@ -82,7 +82,7 @@ ORDER_SLOTS: list[SlotDefinition] = [
     ),
     SlotDefinition(
         category=SlotCategory.ORDER_CONFIRM,
-        field_path="checkout.confirmed",
+        field_path="checkout.order_reviewed",  # User confirmed summary, not final order
         question=None,  # Generated dynamically with order summary
         required=True,
     ),

@@ -2648,6 +2648,51 @@ class OrderStateMachine:
         except Exception as e:
             slot_logger.error("SLOT COMPARISON ERROR: %s", e)
 
+    def _derive_next_phase_from_slots(self, order: OrderTask) -> OrderPhase:
+        """
+        Use SlotOrchestrator to determine the next phase.
+
+        This is Phase 2 of the migration - using the orchestrator to drive
+        phase transitions instead of hardcoded assignments.
+        """
+        orchestrator = SlotOrchestrator(order)
+
+        # Check if any items are being configured
+        current_item = order.items.get_current_item()
+        if current_item is not None:
+            return OrderPhase.CONFIGURING_ITEM
+
+        next_slot = orchestrator.get_next_slot()
+        if next_slot is None:
+            return OrderPhase.COMPLETE
+
+        # Map slot categories to OrderPhase values
+        phase_map = {
+            SlotCategory.ITEMS: OrderPhase.TAKING_ITEMS,
+            SlotCategory.DELIVERY_METHOD: OrderPhase.CHECKOUT_DELIVERY,
+            SlotCategory.DELIVERY_ADDRESS: OrderPhase.CHECKOUT_DELIVERY,  # Address is part of delivery
+            SlotCategory.CUSTOMER_NAME: OrderPhase.CHECKOUT_NAME,
+            SlotCategory.ORDER_CONFIRM: OrderPhase.CHECKOUT_CONFIRM,
+            SlotCategory.PAYMENT_METHOD: OrderPhase.CHECKOUT_PAYMENT_METHOD,
+            SlotCategory.NOTIFICATION: OrderPhase.CHECKOUT_PHONE,  # Will be refined later
+        }
+        return phase_map.get(next_slot.category, OrderPhase.TAKING_ITEMS)
+
+    def _transition_to_next_slot(self, state: FlowState, order: OrderTask) -> None:
+        """
+        Update state.phase based on SlotOrchestrator.
+
+        This replaces hardcoded phase transitions like:
+            state.phase = OrderPhase.CHECKOUT_NAME
+
+        With orchestrator-driven transitions that look at what's actually
+        filled in the order.
+        """
+        next_phase = self._derive_next_phase_from_slots(order)
+        if state.phase != next_phase:
+            logger.info("SLOT TRANSITION: %s -> %s", state.phase.value, next_phase.value)
+        state.phase = next_phase
+
     def _handle_greeting(
         self,
         user_input: str,
@@ -3209,10 +3254,26 @@ class OrderStateMachine:
         state: FlowState,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle pickup/delivery selection."""
+        """Handle pickup/delivery selection and address collection."""
         parsed = parse_delivery_choice(user_input, model=self.model)
 
         if parsed.choice == "unclear":
+            # Check if we're waiting for an address (delivery selected but no address yet)
+            if order.delivery_method.order_type == "delivery" and not order.delivery_method.address.street:
+                # Try to extract address from input
+                if parsed.address:
+                    order.delivery_method.address.street = parsed.address
+                    self._transition_to_next_slot(state, order)
+                    return StateMachineResult(
+                        message="Can I get a name for the order?",
+                        state=state,
+                        order=order,
+                    )
+                return StateMachineResult(
+                    message="What's the delivery address?",
+                    state=state,
+                    order=order,
+                )
             return StateMachineResult(
                 message="Is this for pickup or delivery?",
                 state=state,
@@ -3223,7 +3284,21 @@ class OrderStateMachine:
         if parsed.address:
             order.delivery_method.address.street = parsed.address
 
-        state.phase = OrderPhase.CHECKOUT_NAME
+        # Use orchestrator to determine next phase
+        # If delivery without address, orchestrator will keep us in delivery phase
+        orchestrator = SlotOrchestrator(order)
+        next_slot = orchestrator.get_next_slot()
+
+        if next_slot and next_slot.category == SlotCategory.DELIVERY_ADDRESS:
+            # Need to collect address
+            return StateMachineResult(
+                message="What's the delivery address?",
+                state=state,
+                order=order,
+            )
+
+        # Transition to next slot (should be CUSTOMER_NAME)
+        self._transition_to_next_slot(state, order)
         return StateMachineResult(
             message="Can I get a name for the order?",
             state=state,
@@ -3247,7 +3322,7 @@ class OrderStateMachine:
             )
 
         order.customer_info.name = parsed.name
-        state.phase = OrderPhase.CHECKOUT_CONFIRM
+        self._transition_to_next_slot(state, order)
 
         # Build order summary
         summary = self._build_order_summary(order)
@@ -3271,11 +3346,11 @@ class OrderStateMachine:
                    parsed.wants_changes, parsed.confirmed)
 
         if parsed.wants_changes:
-            # User wants to make changes - also check if they're adding an item
-            # e.g., "can I also get a coke?" should add the coke
-            state.phase = OrderPhase.TAKING_ITEMS
+            # User wants to make changes - reset order_reviewed so orchestrator knows
+            order.checkout.order_reviewed = False
 
             # Try to parse the input for new items
+            # e.g., "can I also get a coke?" should add the coke
             item_parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
             logger.info("CONFIRMATION: parse_open_input result - new_menu_item=%s, new_bagel=%s, new_coffee=%s, new_coffee_type=%s, new_speed_menu_bagel=%s",
                        item_parsed.new_menu_item, item_parsed.new_bagel, item_parsed.new_coffee, item_parsed.new_coffee_type, item_parsed.new_speed_menu_bagel)
@@ -3284,32 +3359,37 @@ class OrderStateMachine:
             if item_parsed.new_menu_item or item_parsed.new_bagel or item_parsed.new_coffee or item_parsed.new_speed_menu_bagel:
                 logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
                 extracted_modifiers = extract_modifiers_from_input(user_input)
+                # Use orchestrator to determine phase before processing
+                self._transition_to_next_slot(state, order)
                 result = self._handle_taking_items_with_parsed(item_parsed, state, order, extracted_modifiers, user_input)
 
-                # If item was fully added (no configuration needed) and we already have
-                # delivery type and name, skip back to confirmation instead of TAKING_ITEMS
                 # Log items in result.order vs original order
                 logger.info("CONFIRMATION: result.order items = %s", [i.get_summary() for i in result.order.items.items])
                 logger.info("CONFIRMATION: original order items = %s", [i.get_summary() for i in order.items.items])
                 logger.info("CONFIRMATION: result.state.phase = %s", result.state.phase)
 
-                if (result.state.phase == OrderPhase.TAKING_ITEMS and
+                # Use orchestrator to determine if we should go back to confirmation
+                # If all items complete and we have name and delivery, orchestrator will say ORDER_CONFIRM
+                orchestrator = SlotOrchestrator(result.order)
+                next_slot = orchestrator.get_next_slot()
+
+                if (next_slot and next_slot.category == SlotCategory.ORDER_CONFIRM and
                     result.order.customer_info.name and
                     result.order.delivery_method.order_type):
-                    logger.info("CONFIRMATION: Item added, skipping back to confirmation (already have name=%s, delivery=%s)",
-                               result.order.customer_info.name, result.order.delivery_method.order_type)
-                    state.phase = OrderPhase.CHECKOUT_CONFIRM
+                    logger.info("CONFIRMATION: Item added, returning to confirmation (orchestrator says ORDER_CONFIRM)")
+                    self._transition_to_next_slot(result.state, result.order)
                     summary = self._build_order_summary(result.order)
                     logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
                     return StateMachineResult(
                         message=f"{summary}\n\nDoes that look right?",
-                        state=state,
+                        state=result.state,
                         order=result.order,
                     )
 
                 return result
 
-            # No new item detected, just ask what they want to change
+            # No new item detected, use orchestrator to determine phase
+            self._transition_to_next_slot(state, order)
             return StateMachineResult(
                 message="No problem. What would you like to change?",
                 state=state,
@@ -3320,7 +3400,8 @@ class OrderStateMachine:
             # Mark order as reviewed but not yet fully confirmed
             # (confirmed=True is set only when order is complete with email/text choice)
             order.checkout.order_reviewed = True
-            state.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD
+            # Use orchestrator to determine next phase (should be PAYMENT_METHOD)
+            self._transition_to_next_slot(state, order)
             return StateMachineResult(
                 message="Would you like your order details sent by text or email?",
                 state=state,
@@ -3350,14 +3431,15 @@ class OrderStateMachine:
             )
 
         if parsed.choice == "text":
-            # Text selected - check if we have a phone number
+            # Text selected - set payment method and check for phone
+            order.payment.method = "card_link"
             phone = parsed.phone_number or order.customer_info.phone
             if phone:
                 order.customer_info.phone = phone
                 order.payment.payment_link_destination = phone
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
-                state.phase = OrderPhase.COMPLETE
+                self._transition_to_next_slot(state, order)  # Should be COMPLETE
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
@@ -3366,8 +3448,8 @@ class OrderStateMachine:
                     is_complete=True,
                 )
             else:
-                # Need to ask for phone number
-                state.phase = OrderPhase.CHECKOUT_PHONE
+                # Need to ask for phone number - orchestrator will say NOTIFICATION
+                self._transition_to_next_slot(state, order)
                 return StateMachineResult(
                     message="What phone number should I text the confirmation to?",
                     state=state,
@@ -3375,13 +3457,14 @@ class OrderStateMachine:
                 )
 
         if parsed.choice == "email":
-            # Email selected - check if we got email with the response
+            # Email selected - set payment method and check for email
+            order.payment.method = "card_link"
             if parsed.email_address:
                 order.customer_info.email = parsed.email_address
                 order.payment.payment_link_destination = parsed.email_address
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
-                state.phase = OrderPhase.COMPLETE
+                self._transition_to_next_slot(state, order)  # Should be COMPLETE
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll send the confirmation to {parsed.email_address}. "
@@ -3391,8 +3474,8 @@ class OrderStateMachine:
                     is_complete=True,
                 )
             else:
-                # Need to ask for email
-                state.phase = OrderPhase.CHECKOUT_EMAIL
+                # Need to ask for email - orchestrator will say NOTIFICATION
+                self._transition_to_next_slot(state, order)
                 return StateMachineResult(
                     message="What email address should I send it to?",
                     state=state,
@@ -3426,7 +3509,7 @@ class OrderStateMachine:
         order.payment.payment_link_destination = parsed.phone
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
-        state.phase = OrderPhase.COMPLETE
+        self._transition_to_next_slot(state, order)  # Should be COMPLETE
 
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
@@ -3457,7 +3540,7 @@ class OrderStateMachine:
         order.payment.payment_link_destination = parsed.email
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
-        state.phase = OrderPhase.COMPLETE
+        self._transition_to_next_slot(state, order)  # Should be COMPLETE
 
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "

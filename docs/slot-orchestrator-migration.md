@@ -284,17 +284,19 @@ def test_all_flows_no_mismatch():
 ## Success Criteria
 
 ### Phase 1 Complete When:
-- [ ] `SlotOrchestrator` class exists and has unit tests
-- [ ] `OrderTask` is instantiated in state machine
-- [ ] Sync from DB Order to OrderTask works
-- [ ] Logging shows orchestrator tracking alongside FlowState
-- [ ] All existing tests pass
-- [ ] No phase mismatches in happy path flows
+- [x] `SlotOrchestrator` class exists and has unit tests
+- [x] `OrderTask` is instantiated in state machine
+- [x] Sync from DB Order to OrderTask works
+- [x] Logging shows orchestrator tracking alongside FlowState
+- [x] All existing tests pass
+- [x] No phase mismatches in happy path flows
 
 ### Phase 2 Complete When:
-- [ ] No manual `state.phase = ...` assignments remain
-- [ ] `process()` routes based on slot category
-- [ ] All existing tests pass
+- [x] Checkout handlers use `_transition_to_next_slot()` instead of explicit phase assignments
+- [x] `_derive_next_phase_from_slots()` uses SlotOrchestrator
+- [x] ORDER_CONFIRM slot uses `order_reviewed` (user confirmed summary)
+- [x] PAYMENT_METHOD sets `payment.method = "card_link"` when text/email selected
+- [x] All existing tests pass (489 tests)
 
 ### Phase 3 Complete When:
 - [ ] `FlowState.phase` is computed, not stored

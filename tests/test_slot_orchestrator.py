@@ -122,14 +122,14 @@ class TestSlotOrchestratorBasics:
         assert slot.category == SlotCategory.ORDER_CONFIRM
 
     def test_after_confirm_needs_payment(self):
-        """After confirmation, should ask for payment method."""
+        """After order reviewed (user said 'yes'), should ask for payment method."""
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
 
         orch = SlotOrchestrator(order)
         slot = orch.get_next_slot()
@@ -145,7 +145,7 @@ class TestSlotOrchestratorBasics:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "in_store"
 
         orch = SlotOrchestrator(order)
@@ -162,7 +162,7 @@ class TestSlotOrchestratorBasics:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "card_link"
 
         orch = SlotOrchestrator(order)
@@ -180,7 +180,7 @@ class TestSlotOrchestratorBasics:
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
         order.customer_info.phone = "555-1234"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "card_link"
 
         orch = SlotOrchestrator(order)
@@ -195,7 +195,7 @@ class TestSlotOrchestratorBasics:
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
         order.customer_info.email = "john@example.com"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "card_link"
 
         orch = SlotOrchestrator(order)
@@ -246,7 +246,7 @@ class TestSlotOrchestratorPhaseDerivation:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True  # User confirmed summary
         order.payment.method = "in_store"
 
         orch = SlotOrchestrator(order)

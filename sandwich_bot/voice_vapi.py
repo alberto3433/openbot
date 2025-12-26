@@ -23,6 +23,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
@@ -424,6 +425,7 @@ def _get_or_create_phone_session(
 
 def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
     """Look up returning customer by phone number from past orders."""
+    from sqlalchemy.orm import joinedload
     from .models import Order
 
     # Normalize phone for lookup - extract just digits
@@ -435,9 +437,10 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
         return None
 
     # Find most recent confirmed order matching this phone number
-    # Use LIKE to match the last 10 digits regardless of format
+    # Use joinedload to eagerly load items for repeat order functionality
     recent_orders = (
         db.query(Order)
+        .options(joinedload(Order.items))
         .filter(
             Order.phone.isnot(None),
             Order.status == "confirmed",
@@ -454,11 +457,29 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
             order_suffix = order_phone[-10:] if len(order_phone) >= 10 else order_phone
 
             if order_suffix == phone_suffix:
+                # Build last_order_items from the order's items
+                last_order_items = []
+                for item in order.items:
+                    item_data = {
+                        "menu_item_name": item.menu_item_name,
+                        "item_type": item.item_type or "sandwich",
+                        "bread": item.bread,
+                        "toasted": item.toasted,
+                        "quantity": item.quantity,
+                        "price": item.unit_price,
+                    }
+                    # Add item_config fields if present (spread, coffee settings, etc.)
+                    if item.item_config:
+                        item_data.update(item.item_config)
+                    last_order_items.append(item_data)
+
                 return {
                     "name": order.customer_name,
                     "phone": order.phone,
                     "email": order.customer_email,
                     "last_order_id": order.id,
+                    "last_order_items": last_order_items,
+                    "last_order_type": order.order_type,  # "pickup" or "delivery"
                 }
 
     return None
@@ -499,6 +520,9 @@ def _save_session_data(db: Session, session_id: str, session_data: Dict[str, Any
         db_session.history = session_data.get("history", [])
         db_session.order_state = session_data.get("order", {})
         db_session.menu_version_sent = session_data.get("menu_version")
+        # Force SQLAlchemy to detect changes to mutable JSON columns
+        flag_modified(db_session, "history")
+        flag_modified(db_session, "order_state")
         db.commit()
 
 

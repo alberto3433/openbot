@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -379,6 +380,10 @@ def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> 
         db_session.menu_version_sent = session_data.get("menu_version")
         db_session.store_id = session_data.get("store_id")
         db_session.caller_id = session_data.get("caller_id")
+        # Force SQLAlchemy to detect changes to mutable JSON columns
+        # Without this, in-place mutations (like list.append()) are not detected
+        flag_modified(db_session, "history")
+        flag_modified(db_session, "order_state")
     else:
         db_session = ChatSession(
             session_id=session_id,
@@ -973,8 +978,11 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     )
 
     # Find most recent order with this phone number
+    # Use joinedload to eagerly load items for repeat order functionality
+    from sqlalchemy.orm import joinedload
     recent_order = (
         db.query(Order)
+        .options(joinedload(Order.items))
         .filter(Order.phone.isnot(None))
         .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
         .order_by(Order.created_at.desc())
@@ -996,7 +1004,7 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     last_order_items = []
     if recent_order.items:
         for item in recent_order.items:
-            last_order_items.append({
+            item_data = {
                 "menu_item_name": item.menu_item_name,
                 "item_type": item.item_type,
                 "bread": item.bread,
@@ -1007,14 +1015,20 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
                 "toasted": item.toasted,
                 "quantity": item.quantity,
                 "price": item.unit_price,  # Unit price for repeat order calculations
-            })
+            }
+            # Add item_config fields if present (coffee/drink modifiers: size, style, milk, etc.)
+            if item.item_config:
+                item_data.update(item.item_config)
+            last_order_items.append(item_data)
 
     return {
         "name": recent_order.customer_name,
         "phone": recent_order.phone,
+        "email": recent_order.customer_email,
         "order_count": order_count,
         "last_order_items": last_order_items,
         "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
+        "last_order_type": recent_order.order_type,  # "pickup" or "delivery"
     }
 
 
@@ -1128,6 +1142,13 @@ def chat_message(
     returning_customer: Dict[str, Any] = session.get("returning_customer")
     session_store_id: Optional[str] = session.get("store_id")
     session_caller_id: Optional[str] = session.get("caller_id")
+
+    # Re-lookup returning customer if not in session (e.g., session was restored from DB)
+    if not returning_customer and session_caller_id:
+        returning_customer = _lookup_customer_by_phone(db, session_caller_id)
+        if returning_customer:
+            session["returning_customer"] = returning_customer
+            logger.info("Re-looked up returning customer: %s", returning_customer.get("name"))
 
     # Get company info for LLM persona
     company = get_or_create_company(db)
@@ -1389,22 +1410,24 @@ def chat_message(
     has_customer_info = customer_name and (customer_phone or customer_email)
     order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
+    # Get store_id from session for the order
+    session_store_id = session.get("store_id") or get_random_store_id()
+
     if order_is_confirmed and has_customer_info:
         updated_order_state.setdefault("customer", {})
         updated_order_state["customer"]["name"] = customer_name
         updated_order_state["customer"]["phone"] = customer_phone
 
-        # Get store_id from session for the order
-        session_store_id = session.get("store_id") or get_random_store_id()
-
         # persist_confirmed_order handles both creating new orders and updating pending ones
         persist_confirmed_order(db, updated_order_state, all_slots, store_id=session_store_id)
         logger.info("Order persisted for customer: %s (store: %s)", customer_name, session_store_id)
 
-        # Log completed session for analytics (only once per order)
-        if order_not_yet_confirmed:
-            updated_order_state["_confirmed_logged"] = True
-            items = updated_order_state.get("items", [])
+    # Log completed session for analytics (only once per confirmed order)
+    # This is OUTSIDE the has_customer_info check so all confirmed orders get logged
+    if order_is_confirmed and order_not_yet_confirmed:
+        updated_order_state["_confirmed_logged"] = True
+        items = updated_order_state.get("items", [])
+        try:
             session_record = SessionAnalytics(
                 session_id=req.session_id,
                 status="completed",
@@ -1423,7 +1446,9 @@ def chat_message(
             )
             db.add(session_record)
             db.commit()
-            logger.info("Completed session logged: %s", req.session_id[:8])
+            logger.info("Completed session logged (non-streaming): %s", req.session_id[:8])
+        except Exception as analytics_error:
+            logger.error("Failed to log session analytics: %s", analytics_error)
 
     # Persist session to database
     save_session(db, req.session_id, session)
@@ -1471,6 +1496,13 @@ def chat_message_stream(
     returning_customer: Dict[str, Any] = session.get("returning_customer")
     session_store_id: Optional[str] = session.get("store_id")
     session_caller_id: Optional[str] = session.get("caller_id")
+
+    # Re-lookup returning customer if not in session (e.g., session was restored from DB)
+    if not returning_customer and session_caller_id:
+        returning_customer = _lookup_customer_by_phone(db, session_caller_id)
+        if returning_customer:
+            session["returning_customer"] = returning_customer
+            logger.info("Re-looked up returning customer: %s", returning_customer.get("name"))
 
     # Get company info for LLM persona
     company = get_or_create_company(db)
@@ -1603,8 +1635,49 @@ def chat_message_stream(
                                         delivery_fee=delivery_fee,
                                     )
                                     logger.info("Payment link email sent: %s", result)
+
                         except Exception as e:
                             logger.error("Failed to persist order or send payment link: %s", e)
+
+                    # Log completed session for analytics (only once per confirmed order)
+                    # This is OUTSIDE the customer_name check so all confirmed orders get logged
+                    if order_is_confirmed:
+                        order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
+                        if order_not_yet_confirmed:
+                            updated_order_state["_confirmed_logged"] = True
+                            items = updated_order_state.get("items", [])
+                            try:
+                                session_record = SessionAnalytics(
+                                    session_id=req.session_id,
+                                    status="completed",
+                                    message_count=len(history) + 2,  # +2 for current exchange
+                                    had_items_in_cart=len(items) > 0,
+                                    item_count=len(items),
+                                    cart_total=updated_order_state.get("total_price", 0.0),
+                                    order_status="confirmed",
+                                    conversation_history=history + [
+                                        {"role": "user", "content": req.message},
+                                        {"role": "assistant", "content": reply}
+                                    ],
+                                    last_bot_message=reply[:500] if reply else None,
+                                    last_user_message=req.message[:500] if req.message else None,
+                                    reason=None,
+                                    customer_name=customer_name,
+                                    customer_phone=customer_phone,
+                                    store_id=session_store_id,
+                                )
+                                stream_db.add(session_record)
+                                stream_db.commit()
+                                logger.info("Completed session logged (chain orchestrator): %s", req.session_id[:8])
+                            except Exception as analytics_error:
+                                logger.error("Failed to log session analytics: %s", analytics_error)
+
+                    # Save session to database
+                    try:
+                        save_session(stream_db, req.session_id, session)
+                        logger.debug("Session saved (chain orchestrator)")
+                    except Exception as save_error:
+                        logger.error("Failed to save session: %s", str(save_error))
 
                     # Yield final result
                     yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions})}\n\n"
@@ -1770,22 +1843,24 @@ def chat_message_stream(
             has_customer_info = customer_name and (customer_phone or customer_email)
             order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
 
+            # Get store_id from session for the order
+            order_store_id = session.get("store_id") or get_random_store_id()
+
             if order_is_confirmed and has_customer_info:
                 updated_order_state.setdefault("customer", {})
                 updated_order_state["customer"]["name"] = customer_name
                 updated_order_state["customer"]["phone"] = customer_phone
 
-                # Get store_id from session for the order
-                order_store_id = session.get("store_id") or get_random_store_id()
-
                 # persist_confirmed_order handles both creating new orders and updating pending ones
                 persist_confirmed_order(stream_db, updated_order_state, all_slots, store_id=order_store_id)
                 logger.info("Order persisted for customer: %s (store: %s)", customer_name, order_store_id)
 
-                # Log completed session for analytics (only once per order)
-                if order_not_yet_confirmed:
-                    updated_order_state["_confirmed_logged"] = True
-                    items = updated_order_state.get("items", [])
+            # Log completed session for analytics (only once per confirmed order)
+            # This is OUTSIDE the has_customer_info check so all confirmed orders get logged
+            if order_is_confirmed and order_not_yet_confirmed:
+                updated_order_state["_confirmed_logged"] = True
+                items = updated_order_state.get("items", [])
+                try:
                     session_record = SessionAnalytics(
                         session_id=req.session_id,
                         status="completed",
@@ -1807,7 +1882,9 @@ def chat_message_stream(
                     )
                     stream_db.add(session_record)
                     stream_db.commit()
-                    logger.info("Completed session logged: %s", req.session_id[:8])
+                    logger.info("Completed session logged (LLM fallback): %s", req.session_id[:8])
+                except Exception as analytics_error:
+                    logger.error("Failed to log session analytics: %s", analytics_error)
 
             # Update session
             history.append({"role": "user", "content": req.message})

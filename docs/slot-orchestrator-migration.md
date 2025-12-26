@@ -299,8 +299,9 @@ def test_all_flows_no_mismatch():
 - [x] All existing tests pass (489 tests)
 
 ### Phase 3 Complete When:
-- [ ] `FlowState.phase` is computed, not stored
-- [ ] All existing tests pass
+- [x] `FlowState.phase` is computed at start of `process()` via `_transition_to_next_slot()`
+- [x] CONFIGURING_ITEM phase handled via `is_configuring_item()` check (takes precedence)
+- [x] All existing tests pass (489 tests)
 
 ### Phase 4 Complete When:
 - [ ] `FlowState` class removed

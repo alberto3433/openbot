@@ -2550,6 +2550,13 @@ class OrderStateMachine:
         # Add user message to history
         order.add_message("user", user_input)
 
+        # === PHASE 3: Derive phase from OrderTask state ===
+        # Phase is now computed from the orchestrator, not manually tracked.
+        # This ensures phase always reflects the actual order state.
+        # Note: is_configuring_item() takes precedence (based on pending_item_ids)
+        if not state.is_configuring_item():
+            self._transition_to_next_slot(state, order)
+
         logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
                    user_input[:50], state.phase.value, state.pending_field, state.pending_item_ids)
 
@@ -2711,7 +2718,7 @@ class OrderStateMachine:
         )
 
         if parsed.is_greeting or parsed.unclear:
-            state.phase = OrderPhase.TAKING_ITEMS
+            # Phase will be derived as TAKING_ITEMS by orchestrator on next turn
             return StateMachineResult(
                 message="Hi! Welcome to Zucker's. What can I get for you today?",
                 state=state,
@@ -2724,7 +2731,7 @@ class OrderStateMachine:
         if extracted_modifiers.has_modifiers():
             logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
 
-        state.phase = OrderPhase.TAKING_ITEMS
+        # Phase is derived from orchestrator, no need to set explicitly
         return self._handle_taking_items_with_parsed(parsed, state, order, extracted_modifiers, user_input)
 
     def _handle_taking_items(
@@ -4099,7 +4106,7 @@ class OrderStateMachine:
                 summary = bagel_summary
 
             state.clear_pending()
-            state.phase = OrderPhase.TAKING_ITEMS
+            # Phase will be derived by orchestrator (no pending items = TAKING_ITEMS or checkout)
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
                 state=state,
@@ -4764,7 +4771,7 @@ class OrderStateMachine:
         if not parsed.category:
             # User declined or said never mind
             state.clear_pending()
-            state.phase = OrderPhase.TAKING_ITEMS
+            # Phase derived by orchestrator
             return StateMachineResult(
                 message="No problem! What else can I get for you?",
                 state=state,
@@ -4795,7 +4802,7 @@ class OrderStateMachine:
 
         if not items:
             state.clear_pending()
-            state.phase = OrderPhase.TAKING_ITEMS
+            # Phase derived by orchestrator
             return StateMachineResult(
                 message=f"I don't have information on {category_name} right now. What else can I get for you?",
                 state=state,
@@ -4809,7 +4816,7 @@ class OrderStateMachine:
             items_list = ", ".join(items[:-1]) + f", and {items[-1]}"
 
         state.clear_pending()
-        state.phase = OrderPhase.TAKING_ITEMS
+        # Phase derived by orchestrator
 
         # For spreads, don't say "by the pound" since they're also used on bagels
         if category == "spread":
@@ -4928,7 +4935,7 @@ class OrderStateMachine:
             confirmation = f"Got it, {items_list}."
 
         state.clear_pending()
-        state.phase = OrderPhase.TAKING_ITEMS
+        # Phase derived by orchestrator
         return StateMachineResult(
             message=f"{confirmation} Anything else?",
             state=state,
@@ -4990,12 +4997,14 @@ class OrderStateMachine:
         """
         state.clear_pending()
 
-        # Check if we already have all the info we need
+        # Use orchestrator to determine next step in checkout
+        self._transition_to_next_slot(state, order)
+
+        # Check if we already have all the info we need (orchestrator would have set CONFIRM phase)
         if order.delivery_method.order_type and order.customer_info.name:
             # Skip to confirmation - we already have the customer info
             logger.info("CHECKOUT: Skipping to confirmation (already have name=%s, delivery=%s)",
                        order.customer_info.name, order.delivery_method.order_type)
-            state.phase = OrderPhase.CHECKOUT_CONFIRM
             summary = self._build_order_summary(order)
             return StateMachineResult(
                 message=f"{summary}\n\nDoes that look right?",
@@ -5003,8 +5012,7 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Normal checkout flow - ask for delivery type first
-        state.phase = OrderPhase.CHECKOUT_DELIVERY
+        # Normal checkout flow - orchestrator determines if we need delivery or name
         return StateMachineResult(
             message="Is this for pickup or delivery?",
             state=state,

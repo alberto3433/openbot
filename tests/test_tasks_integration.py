@@ -553,6 +553,307 @@ class TestPriceRecalculationInvariants:
 
 
 # =============================================================================
+# Additional Items After Completed Bagel
+# =============================================================================
+
+class TestAdditionalItemsAfterBagel:
+    """Tests for adding more items after a bagel is complete (Anything else? flow)."""
+
+    def test_latte_added_after_complete_bagel(self):
+        """
+        Regression test: When user orders a latte after completing a bagel,
+        the latte should be added to the order instead of going to checkout.
+
+        Bug: The slot orchestrator was transitioning to CHECKOUT_DELIVERY at the
+        start of process() because all existing items were complete, before
+        parsing the user's new item order.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        # Create order with a completed bagel
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        bagel = BagelItemTask(
+            bagel_type="wheat",
+            toasted=True,
+            spread=None,
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        sm = OrderStateMachine()
+        result = sm.process("medium hot latte 2 splendas", order)
+
+        # Should add latte, not go to checkout
+        assert result.order.items.get_item_count() == 2, "Should have 2 items (bagel + latte)"
+        assert "latte" in result.message.lower(), f"Response should mention latte: {result.message}"
+        assert "anything else" in result.message.lower(), f"Should ask 'Anything else?': {result.message}"
+        assert result.order.phase == OrderPhase.TAKING_ITEMS.value, "Should stay in TAKING_ITEMS phase"
+
+    def test_done_ordering_triggers_checkout(self):
+        """Test that saying 'no' after items are complete goes to checkout."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        # Create order with a completed bagel
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=True,
+            spread="cream cheese",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        sm = OrderStateMachine()
+        result = sm.process("no", order)
+
+        # Should transition to checkout
+        assert result.order.phase == OrderPhase.CHECKOUT_DELIVERY.value, "Should go to CHECKOUT_DELIVERY"
+        assert "pickup" in result.message.lower() or "delivery" in result.message.lower()
+
+    def test_latte_after_spread_question_full_flow(self):
+        """
+        Regression test for exact conversation flow reported:
+        1. User orders bagel
+        2. Bot asks about toasted -> yes
+        3. Bot asks about spread -> no
+        4. Bot confirms bagel and asks "Anything else?"
+        5. User says "small hot latte with 2 splendas"
+        6. Latte should be ADDED, not skipped to checkout
+
+        The bug was that after completing the spread question, the phase was
+        left as CONFIGURING_ITEM (not TAKING_ITEMS), so the phase preservation
+        check in process() didn't apply.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        # Start with a bagel that needs toasted and spread configuration
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        bagel = BagelItemTask(bagel_type="wheat")
+        bagel.toasted = None  # Not yet answered
+        bagel.spread = None
+        order.items.add_item(bagel)
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        sm = OrderStateMachine()
+
+        # Step 1: Answer toasted question
+        result = sm.process("yes", order)
+        assert bagel.toasted is True, "Bagel should be marked as toasted"
+        # Should now ask about spread
+        assert order.pending_field == "spread", f"Should be asking about spread, not {order.pending_field}"
+
+        # Step 2: Answer spread question with "no"
+        result = sm.process("no", order)
+        # Bagel should be complete
+        assert bagel.spread is not None, "Spread should be set"
+        # Should say "Anything else?"
+        assert "anything else" in result.message.lower(), f"Should ask 'Anything else?': {result.message}"
+        # Phase should be TAKING_ITEMS (this is the key fix)
+        assert order.phase == OrderPhase.TAKING_ITEMS.value, f"Phase should be TAKING_ITEMS, got {order.phase}"
+
+        # Step 3: Order a latte
+        result = sm.process("small hot latte with 2 splendas", order)
+
+        # Latte should be added to order
+        assert result.order.items.get_item_count() == 2, f"Should have 2 items, got {result.order.items.get_item_count()}"
+        # Should confirm latte and ask "Anything else?"
+        assert "latte" in result.message.lower(), f"Response should mention latte: {result.message}"
+        assert "anything else" in result.message.lower(), f"Should ask 'Anything else?': {result.message}"
+        # Should still be in TAKING_ITEMS
+        assert result.order.phase == OrderPhase.TAKING_ITEMS.value, f"Should stay in TAKING_ITEMS, got {result.order.phase}"
+
+
+# =============================================================================
+# Menu Item Toasted Tests
+# =============================================================================
+
+class TestMenuItemToasted:
+    """Tests for capturing toasted preference for menu items."""
+
+    @pytest.fixture
+    def menu_data(self):
+        """Provide menu data for tests."""
+        return {
+            "items": [
+                {"id": 1, "name": "Ham Egg & Cheese on Wheat", "base_price": 8.50, "item_type": "egg_bagel"},
+            ],
+            "items_by_type": {
+                "egg_bagel": [
+                    {"id": 1, "name": "Ham Egg & Cheese on Wheat", "base_price": 8.50, "item_type": "egg_bagel"},
+                ],
+            },
+        }
+
+    def test_toasted_captured_for_menu_item(self, menu_data):
+        """
+        Regression test: When user says 'ham egg and cheese bagel on wheat toasted',
+        the toasted preference should be captured in the menu item.
+        """
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+
+        order = OrderTask()
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        # Simulate parsed input with toasted set
+        parsed = OpenInputResponse(
+            new_menu_item="Ham Egg & Cheese on Wheat",
+            new_menu_item_quantity=1,
+            new_menu_item_toasted=True,
+        )
+        result = sm._handle_taking_items_with_parsed(parsed, order)
+
+        # Should add the menu item
+        assert result.order.items.get_item_count() == 1, "Should have 1 item"
+
+        # Get the menu item and check toasted
+        items = result.order.items.get_active_items()
+        assert len(items) == 1
+        item = items[0]
+        assert isinstance(item, MenuItemTask), f"Should be MenuItemTask, got {type(item)}"
+        assert item.toasted is True, f"Item should be toasted=True, got {item.toasted}"
+
+    def test_toasted_not_captured_when_not_specified(self, menu_data):
+        """Test that toasted is None when not specified."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OpenInputResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+
+        order = OrderTask()
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        # Simulate parsed input without toasted
+        parsed = OpenInputResponse(
+            new_menu_item="Ham Egg & Cheese on Wheat",
+            new_menu_item_quantity=1,
+            new_menu_item_toasted=None,
+        )
+        result = sm._handle_taking_items_with_parsed(parsed, order)
+
+        items = result.order.items.get_active_items()
+        item = items[0]
+        assert item.toasted is None, f"Item should be toasted=None, got {item.toasted}"
+
+    def test_deterministic_parser_extracts_toasted(self):
+        """Test that the deterministic parser extracts toasted from menu item orders."""
+        from sandwich_bot.tasks.state_machine import parse_open_input
+
+        # Test with "toasted" in the input
+        result = parse_open_input("ham egg and cheese on wheat toasted")
+
+        # Should have new_menu_item_toasted set to True
+        assert result.new_menu_item_toasted is True, f"Should extract toasted=True, got {result.new_menu_item_toasted}"
+
+    def test_multi_item_parser_extracts_bagel_toasted(self):
+        """Test that the multi-item parser extracts toasted for bagels.
+
+        Regression test for: "ham, egg and cheese on a wheat bagel toasted"
+        being parsed but not capturing the toasted preference.
+        """
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+
+        # Test with comma-separated input that triggers multi-item parsing
+        # "cheese on a wheat bagel toasted" should be parsed as a bagel with toasted=True
+        result = _parse_multi_item_order("ham, egg, cheese on a wheat bagel toasted")
+
+        # Should have detected a bagel with toasted=True
+        assert result is not None, "Should detect items in multi-item input"
+        assert result.new_bagel is True, "Should detect bagel"
+        assert result.new_bagel_type == "wheat", f"Should detect wheat bagel, got {result.new_bagel_type}"
+        assert result.new_bagel_toasted is True, f"Should extract toasted=True, got {result.new_bagel_toasted}"
+
+    def test_multi_item_parser_bagel_toasted_not_set_when_not_specified(self):
+        """Test that the multi-item parser doesn't set toasted when not specified."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+
+        # Test without "toasted" in the input
+        result = _parse_multi_item_order("ham, egg, cheese on a plain bagel")
+
+        if result:  # May or may not parse as multi-item
+            # If bagel detected, toasted should be None
+            if result.new_bagel:
+                assert result.new_bagel_toasted is None, f"Should not set toasted, got {result.new_bagel_toasted}"
+
+
+# =============================================================================
+# Spread Question Skip Tests
+# =============================================================================
+
+class TestSpreadQuestionSkip:
+    """Tests for skipping spread question when bagel has toppings."""
+
+    def test_skip_spread_for_bagel_with_toppings(self):
+        """Test that spread question is skipped when bagel has sandwich toppings.
+
+        Regression test for: 'ham egg and cheese bagel on wheat toasted'
+        should NOT ask 'Would you like cream cheese or butter?'
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Create a bagel with toppings (like ham, egg, cheese)
+        bagel = BagelItemTask(
+            bagel_type="wheat",
+            toasted=True,
+            sandwich_protein="egg",
+            extras=["ham", "american"],
+        )
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        # Simulate answering "toasted" question (function takes: user_input, item, order)
+        result = sm._handle_toasted_choice("yes", bagel, order)
+
+        # Should NOT ask about spread - should skip to "Anything else?"
+        assert "cream cheese" not in result.message.lower(), f"Should skip spread question, got: {result.message}"
+        assert "butter" not in result.message.lower(), f"Should skip spread question, got: {result.message}"
+        # Should ask about more items or be complete
+        assert "anything else" in result.message.lower() or "else" in result.message.lower(), f"Should ask about more items, got: {result.message}"
+
+    def test_ask_spread_for_plain_bagel(self):
+        """Test that spread question IS asked for plain bagel without toppings."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Create a plain bagel without toppings
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=True,
+            # No sandwich_protein or extras
+        )
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        # Simulate answering "toasted" question (function takes: user_input, item, order)
+        result = sm._handle_toasted_choice("yes", bagel, order)
+
+        # SHOULD ask about spread for plain bagel
+        assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Should ask about spread, got: {result.message}"
+
+
+# =============================================================================
 # Order Type Upfront Tests
 # =============================================================================
 
@@ -771,3 +1072,176 @@ class TestOrderTypeUpfront:
         assert result.is_complete
         assert "alberto33@gmail.com" in result.message
         assert "Hank" in result.message
+
+
+class TestRepeatOrder:
+    """Tests for repeat order functionality."""
+
+    @pytest.fixture
+    def state_machine(self):
+        """Create state machine with menu data."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        menu_data = {
+            "bagel_types": ["plain", "everything", "sesame"],
+            "cheese_types": [],
+            "menu_items": [],
+        }
+        return OrderStateMachine(menu_data=menu_data)
+
+    def test_repeat_order_pattern_detected(self):
+        """Test that repeat order patterns are correctly detected."""
+        from sandwich_bot.tasks.state_machine import REPEAT_ORDER_PATTERNS
+
+        assert REPEAT_ORDER_PATTERNS.match("repeat my order")
+        assert REPEAT_ORDER_PATTERNS.match("same as last time")
+        assert REPEAT_ORDER_PATTERNS.match("my usual")
+        assert REPEAT_ORDER_PATTERNS.match("the same")
+        assert REPEAT_ORDER_PATTERNS.match("same thing again")
+        assert not REPEAT_ORDER_PATTERNS.match("plain bagel")
+        assert not REPEAT_ORDER_PATTERNS.match("coffee please")
+
+    def test_repeat_order_no_returning_customer(self, state_machine):
+        """Test repeat order when no returning customer data is available."""
+        order = OrderTask()
+        result = state_machine.process("repeat my order", order, returning_customer=None)
+
+        assert "I don't have a previous order" in result.message
+
+    def test_repeat_order_empty_last_order(self, state_machine):
+        """Test repeat order when returning customer has no last order items."""
+        order = OrderTask()
+        returning_customer = {
+            "name": "John",
+            "phone": "555-1234",
+            "last_order_items": [],
+        }
+        result = state_machine.process("repeat my order", order, returning_customer=returning_customer)
+
+        assert "I don't have a previous order" in result.message
+
+    def test_repeat_order_copies_bagel_items(self, state_machine):
+        """Test repeat order copies bagel items from previous order."""
+        order = OrderTask()
+        returning_customer = {
+            "name": "John",
+            "phone": "555-1234",
+            "last_order_items": [
+                {
+                    "item_type": "bagel",
+                    "bread": "plain",
+                    "toasted": True,
+                    "spread": "cream cheese",
+                    "quantity": 1,
+                },
+            ],
+        }
+        result = state_machine.process("my usual", order, returning_customer=returning_customer)
+
+        # Check items were added
+        assert len(order.items.items) == 1
+        assert "previous order" in result.message
+        assert "plain" in result.message
+
+    def test_repeat_order_copies_customer_name(self, state_machine):
+        """Test repeat order copies customer name from returning customer."""
+        order = OrderTask()
+        returning_customer = {
+            "name": "Jane",
+            "phone": "555-5678",
+            "last_order_items": [
+                {
+                    "item_type": "bagel",
+                    "bread": "everything",
+                    "toasted": False,
+                    "quantity": 1,
+                },
+            ],
+        }
+        result = state_machine.process("same as last time", order, returning_customer=returning_customer)
+
+        assert order.customer_info.name == "Jane"
+
+    def test_repeat_order_via_adapter(self):
+        """Test repeat order through the adapter layer."""
+        from sandwich_bot.tasks.state_machine_adapter import process_message_with_state_machine
+
+        order_state = {}
+        returning_customer = {
+            "name": "Bob",
+            "phone": "555-9999",
+            "last_order_items": [
+                {
+                    "item_type": "bagel",
+                    "bread": "sesame",
+                    "toasted": True,
+                    "spread": "butter",
+                    "quantity": 2,
+                },
+            ],
+        }
+        menu_data = {
+            "bagel_types": ["plain", "everything", "sesame"],
+            "cheese_types": [],
+            "menu_items": [],
+        }
+
+        reply, updated_state, actions = process_message_with_state_machine(
+            user_message="repeat my order",
+            order_state_dict=order_state,
+            history=[],
+            session_id="test-session",
+            menu_data=menu_data,
+            returning_customer=returning_customer,
+        )
+
+        assert "previous order" in reply
+        assert len(updated_state.get("items", [])) == 2  # 2 bagels
+
+    def test_repeat_order_copies_drink_items(self, state_machine):
+        """Test repeat order copies drink items from previous order."""
+        order = OrderTask()
+        returning_customer = {
+            "name": "Sarah",
+            "phone": "555-7777",
+            "last_order_items": [
+                {
+                    "item_type": "drink",  # Stored as "drink" not "coffee"
+                    "menu_item_name": "coffee",
+                    "coffee_type": "latte",
+                    "size": "medium",
+                    "iced": True,
+                    "quantity": 1,
+                },
+            ],
+        }
+        result = state_machine.process("repeat my order", order, returning_customer=returning_customer)
+
+        # Check items were added
+        assert len(order.items.items) == 1
+        assert "previous order" in result.message
+        # The drink should be added as a CoffeeItemTask
+        item = order.items.items[0]
+        assert item.item_type == "coffee"  # CoffeeItemTask uses "coffee" type
+        assert item.drink_type == "latte"
+
+    def test_repeat_order_copies_menu_items(self, state_machine):
+        """Test repeat order copies menu items (like sandwiches) from previous order."""
+        order = OrderTask()
+        returning_customer = {
+            "name": "Mike",
+            "phone": "555-8888",
+            "last_order_items": [
+                {
+                    "item_type": "sandwich",
+                    "menu_item_name": "Turkey Club",
+                    "price": 12.99,
+                    "quantity": 1,
+                },
+            ],
+        }
+        result = state_machine.process("my usual", order, returning_customer=returning_customer)
+
+        # Check items were added
+        assert len(order.items.items) == 1
+        assert "previous order" in result.message
+        assert "Turkey Club" in result.message

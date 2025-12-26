@@ -243,6 +243,10 @@ class OpenInputResponse(BaseModel):
         default=1,
         description="Number of menu items ordered (e.g., '3 omelettes' -> 3, 'two sandwiches' -> 2)"
     )
+    new_menu_item_toasted: bool | None = Field(
+        default=None,
+        description="Whether the menu item should be toasted (True if 'toasted' mentioned, None if not specified)"
+    )
     new_side_item: str | None = Field(
         default=None,
         description="Side item ordered (e.g., 'Side of Sausage', 'Side of Bacon', 'Side of Turkey Bacon'). Use when user says 'with a side of X' or 'side of X'"
@@ -381,6 +385,10 @@ class OpenInputResponse(BaseModel):
     wants_cancel: bool = Field(
         default=False,
         description="User wants to cancel"
+    )
+    wants_repeat_order: bool = Field(
+        default=False,
+        description="User wants to repeat their previous order (e.g., 'same as last time', 'repeat my order', 'my usual')"
     )
     is_greeting: bool = Field(
         default=False,
@@ -1210,6 +1218,16 @@ DONE_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+# Repeat order patterns: "repeat my order", "same as last time", "my usual", etc.
+REPEAT_ORDER_PATTERNS = re.compile(
+    r"^(repeat\s+(my\s+)?(last\s+)?order|same\s+(as\s+)?(last\s+time|before)|"
+    r"(my\s+)?usual|what\s+i\s+(usually\s+)?(get|have|order)|"
+    r"same\s+(thing|order)(\s+as\s+(last\s+time|before))?|"
+    r"(i'?ll\s+have\s+)?(the\s+)?same(\s+(thing|order))?(\s+again)?|"
+    r"repeat\s+(that|it)|order\s+again)[\s!.,]*$",
+    re.IGNORECASE
+)
+
 # Bagel quantity pattern: matches "3 bagels", "three bagels", "two plain bagels", etc.
 # Allows optional bagel type/adjectives between quantity and "bagels"
 BAGEL_QUANTITY_PATTERN = re.compile(
@@ -1587,6 +1605,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         logger.debug("Deterministic parse: done ordering detected")
         return OpenInputResponse(done_ordering=True)
 
+    # Check for repeat order
+    if REPEAT_ORDER_PATTERNS.match(text):
+        logger.debug("Deterministic parse: repeat order detected")
+        return OpenInputResponse(wants_repeat_order=True)
+
     # EARLY CHECK: Check for spread/salad sandwiches BEFORE bagel parsing
     # This prevents "scallion cream cheese" from being parsed as a bagel with spread
     # Instead, it should be recognized as a "Scallion Cream Cheese Sandwich" menu item
@@ -1610,8 +1633,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         # Try menu item extraction first
         menu_item, qty = _extract_menu_item_from_text(text)
         if menu_item:
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d)", text[:50], menu_item, qty)
-            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty)
+            toasted = _extract_toasted(text)
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s)", text[:50], menu_item, qty, toasted)
+            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted)
 
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)
@@ -1703,8 +1727,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     # Check for known menu items (sandwiches, omelettes, etc.)
     menu_item, qty = _extract_menu_item_from_text(text)
     if menu_item:
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d)", text[:50], menu_item, qty)
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty)
+        toasted = _extract_toasted(text)
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s)", text[:50], menu_item, qty, toasted)
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted)
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])
@@ -1981,6 +2006,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     bagel = False
     bagel_qty = 1
     bagel_type = None
+    bagel_toasted = None
     side_item = None
     side_item_qty = 1
 
@@ -2046,11 +2072,12 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         if re.search(r'\bbagels?\b', part):
             bagel = True
             bagel_type = _extract_bagel_type(part)
+            bagel_toasted = _extract_toasted(part)
             qty_match = re.search(r'(\d+|one|two|three|four|five)\s+bagels?', part)
             if qty_match:
                 qty_str = qty_match.group(1)
                 bagel_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-            logger.info("Multi-item: detected bagel (type=%s, qty=%d)", bagel_type, bagel_qty)
+            logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s)", bagel_type, bagel_qty, bagel_toasted)
             continue
 
         # Try to parse as side item
@@ -2092,6 +2119,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_bagel=bagel,
             new_bagel_quantity=bagel_qty,
             new_bagel_type=bagel_type,
+            new_bagel_toasted=bagel_toasted,
             new_side_item=side_item,
             new_side_item_quantity=side_item_qty,
         )
@@ -2108,7 +2136,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_iced=coffee_iced,
         )
     if bagel:
-        return OpenInputResponse(new_bagel=True, new_bagel_quantity=bagel_qty, new_bagel_type=bagel_type)
+        return OpenInputResponse(new_bagel=True, new_bagel_quantity=bagel_qty, new_bagel_type=bagel_type, new_bagel_toasted=bagel_toasted)
     if side_item:
         return OpenInputResponse(new_side_item=side_item, new_side_item_quantity=side_item_qty)
 
@@ -2181,6 +2209,7 @@ Determine what they want:
   - Set new_coffee_sweetener_quantity for number of sweeteners (e.g., "two sugars" = 2, "2 splenda" = 2)
   - Set new_coffee_flavor_syrup if specified (e.g., "vanilla", "caramel", "hazelnut")
 - If they're done ordering ("that's all", "nothing else", "no", "nope", "I'm good"), set done_ordering=true
+- If they want to repeat their previous order ("repeat my order", "same as last time", "my usual", "same thing again"), set wants_repeat_order=true
 - If just greeting ("hi", "hello"), set is_greeting=true
 - If user mentions order type upfront ("pickup order", "delivery order", "I'd like to place a pickup", "this is for delivery"), set order_type to "pickup" or "delivery"
   - "I'd like to place a pickup order" -> order_type: "pickup"
@@ -2199,6 +2228,7 @@ Examples:
 - "can I get the chipotle egg omelette" -> new_menu_item: "The Chipotle Egg Omelette", new_menu_item_quantity: 1
 - "3 tuna salad sandwiches" -> new_menu_item: "Tuna Salad Sandwich", new_menu_item_quantity: 3
 - "two western omelettes" -> new_menu_item: "Western Omelette", new_menu_item_quantity: 2
+- "ham egg and cheese on wheat toasted" -> new_menu_item: "Ham Egg & Cheese on Wheat", new_menu_item_quantity: 1, new_menu_item_toasted: true
 - "I'd like a plain bagel" -> new_bagel: true, new_bagel_quantity: 1, new_bagel_type: "plain"
 - "two bagels please" -> new_bagel: true, new_bagel_quantity: 2
 - "three bagels" -> new_bagel: true, new_bagel_quantity: 3
@@ -2243,6 +2273,9 @@ Side orders (IMPORTANT - these are SEPARATE items, not toppings on bagels!):
 - "2 iced coffees" -> new_coffee: true, new_coffee_iced: true, new_coffee_quantity: 2
 - "a coke" -> new_coffee: true, new_coffee_type: "coke", new_coffee_quantity: 1
 - "that's all" -> done_ordering: true
+- "repeat my order" -> wants_repeat_order: true
+- "same as last time" -> wants_repeat_order: true
+- "my usual" -> wants_repeat_order: true
 
 Speed menu bagel orders (pre-configured sandwiches):
 - These are specific named menu items that come pre-configured: "The Classic", "The Classic BEC",
@@ -2494,6 +2527,7 @@ class OrderStateMachine:
         self,
         user_input: str,
         order: OrderTask | None = None,
+        returning_customer: dict | None = None,
     ) -> StateMachineResult:
         """
         Process user input through the state machine.
@@ -2501,6 +2535,7 @@ class OrderStateMachine:
         Args:
             user_input: What the user said
             order: Current order (None for new conversation)
+            returning_customer: Returning customer data (name, phone, last_order_items)
 
         Returns:
             StateMachineResult with response message and updated order
@@ -2508,18 +2543,40 @@ class OrderStateMachine:
         if order is None:
             order = OrderTask()
 
+        # Store returning customer data for repeat order handling
+        self._returning_customer = returning_customer
+
+        # Reset repeat order flag - only set when user explicitly requests repeat order
+        # This prevents the flag from persisting across different sessions on the singleton
+        if not hasattr(self, '_is_repeat_order') or order.items.get_item_count() == 0:
+            self._is_repeat_order = False
+            self._last_order_type = None
+
         # Add user message to history
         order.add_message("user", user_input)
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
-        # Also: Don't overwrite contact collection phases (CHECKOUT_EMAIL/CHECKOUT_PHONE)
-        # which are explicitly set by handlers and shouldn't be derived from orchestrator
-        contact_collection_phases = {
+        # Also: Don't overwrite checkout phases that are explicitly set by handlers
+        # The orchestrator shouldn't override these - we're already in a specific checkout flow
+        phases_to_preserve = {
+            OrderPhase.CHECKOUT_DELIVERY.value,
+            OrderPhase.CHECKOUT_NAME.value,
+            OrderPhase.CHECKOUT_CONFIRM.value,
+            OrderPhase.CHECKOUT_PAYMENT_METHOD.value,
             OrderPhase.CHECKOUT_EMAIL.value,
             OrderPhase.CHECKOUT_PHONE.value,
         }
-        if not order.is_configuring_item() and order.phase not in contact_collection_phases:
+        # CRITICAL: Don't transition from TAKING_ITEMS at the start of processing!
+        # We need to parse the user's input first to see if they're adding more items.
+        # The ITEMS slot being "complete" (all items configured) doesn't mean the user
+        # is done ordering - they might say "and also a latte" after completing a bagel.
+        # The transition to checkout should only happen in _handle_taking_items when
+        # the user explicitly says they're done (done_ordering=True).
+        if order.phase == OrderPhase.TAKING_ITEMS.value and order.items.get_item_count() > 0:
+            # Stay in TAKING_ITEMS until user says they're done
+            pass
+        elif not order.is_configuring_item() and order.phase not in phases_to_preserve:
             self._transition_to_next_slot(order)
 
         logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
@@ -2696,6 +2753,10 @@ class OrderStateMachine:
         if parsed.done_ordering:
             return self._transition_to_checkout(order)
 
+        # Handle repeat order request
+        if parsed.wants_repeat_order:
+            return self._handle_repeat_order(order)
+
         # Check if user specified order type upfront (e.g., "I'd like to place a pickup order")
         if parsed.order_type:
             order.delivery_method.order_type = parsed.order_type
@@ -2753,7 +2814,7 @@ class OrderStateMachine:
                 )
                 items_added.append(parsed.new_menu_item)
             else:
-                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order)
+                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted)
                 items_added.append(parsed.new_menu_item)
                 # If there's also a side item, add it too
                 if parsed.new_side_item:
@@ -2875,7 +2936,7 @@ class OrderStateMachine:
 
             # Check if there's ALSO a menu item in the same message
             if parsed.new_menu_item:
-                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order)
+                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted)
                 items_added.append(parsed.new_menu_item)
                 # Combine the messages
                 combined_items = ", ".join(items_added)
@@ -2997,6 +3058,7 @@ class OrderStateMachine:
         if parsed.wants_cancel:
             item.mark_skipped()
             order.clear_pending()
+            order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
                 message="No problem, I've removed that. Anything else?",
                 order=order,
@@ -3152,9 +3214,17 @@ class OrderStateMachine:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # For BagelItemTask, check if spread is already set
+        # For BagelItemTask, check if spread is already set or has sandwich toppings
         if item.spread is not None:
             # Spread already specified, bagel is complete
+            self.recalculate_bagel_price(item)
+            item.mark_complete()
+            order.clear_pending()
+            return self._configure_next_incomplete_bagel(order)
+
+        # Skip spread question if bagel already has sandwich toppings (ham, egg, cheese, etc.)
+        if item.extras or item.sandwich_protein:
+            logger.info("Skipping spread question - bagel has toppings: extras=%s, protein=%s", item.extras, item.sandwich_protein)
             self.recalculate_bagel_price(item)
             item.mark_complete()
             order.clear_pending()
@@ -3182,6 +3252,13 @@ class OrderStateMachine:
                 if parsed.address:
                     order.delivery_method.address.street = parsed.address
                     self._transition_to_next_slot(order)
+                    # Check if we already have name from returning customer
+                    if order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
+                        summary = self._build_order_summary(order)
+                        return StateMachineResult(
+                            message=f"{summary}\n\nDoes that look right?",
+                            order=order,
+                        )
                     return StateMachineResult(
                         message="Can I get a name for the order?",
                         order=order,
@@ -3191,7 +3268,7 @@ class OrderStateMachine:
                     order=order,
                 )
             return StateMachineResult(
-                message="Is this for pickup or delivery?",
+                message=self._get_delivery_question(),
                 order=order,
             )
 
@@ -3211,8 +3288,18 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Transition to next slot (should be CUSTOMER_NAME)
+        # Transition to next slot - check if we already have name from returning customer
         self._transition_to_next_slot(order)
+
+        # If we already have the customer name, skip to confirmation
+        if order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
+            summary = self._build_order_summary(order)
+            return StateMachineResult(
+                message=f"{summary}\n\nDoes that look right?",
+                order=order,
+            )
+
+        # Otherwise ask for name
         return StateMachineResult(
             message="Can I get a name for the order?",
             order=order,
@@ -3307,6 +3394,45 @@ class OrderStateMachine:
             # Mark order as reviewed but not yet fully confirmed
             # (confirmed=True is set only when order is complete with email/text choice)
             order.checkout.order_reviewed = True
+
+            # For returning customers, auto-send to their last used contact method
+            returning_customer = getattr(self, "_returning_customer", None)
+            if returning_customer:
+                # Prefer email if available, otherwise use phone
+                email = returning_customer.get("email") or order.customer_info.email
+                phone = returning_customer.get("phone") or order.customer_info.phone
+
+                if email:
+                    # Auto-send to email
+                    order.payment.method = "card_link"
+                    order.customer_info.email = email
+                    order.payment.payment_link_destination = email
+                    order.checkout.generate_order_number()
+                    order.checkout.confirmed = True
+                    self._transition_to_next_slot(order)
+                    return StateMachineResult(
+                        message=f"An email with a payment link has been sent to {email}. "
+                               f"Your order number is {order.checkout.short_order_number}. "
+                               f"Thank you, {order.customer_info.name}!",
+                        order=order,
+                        is_complete=True,
+                    )
+                elif phone:
+                    # Auto-send to phone
+                    order.payment.method = "card_link"
+                    order.customer_info.phone = phone
+                    order.payment.payment_link_destination = phone
+                    order.checkout.generate_order_number()
+                    order.checkout.confirmed = True
+                    self._transition_to_next_slot(order)
+                    return StateMachineResult(
+                        message=f"A text with a payment link has been sent to {phone}. "
+                               f"Your order number is {order.checkout.short_order_number}. "
+                               f"Thank you, {order.customer_info.name}!",
+                        order=order,
+                        is_complete=True,
+                    )
+
             # Use orchestrator to determine next phase (should be PAYMENT_METHOD)
             self._transition_to_next_slot(order)
             return StateMachineResult(
@@ -3448,11 +3574,168 @@ class OrderStateMachine:
     # Helper Methods
     # =========================================================================
 
+    def _handle_repeat_order(self, order: OrderTask) -> StateMachineResult:
+        """
+        Handle a request to repeat the customer's previous order.
+
+        Copies items from returning_customer.last_order_items to the current order.
+        """
+        returning_customer = getattr(self, "_returning_customer", None)
+
+        if not returning_customer:
+            logger.info("Repeat order requested but no returning customer data")
+            return StateMachineResult(
+                message="I don't have a previous order on file for you. What can I get for you today?",
+                order=order,
+            )
+
+        last_order_items = returning_customer.get("last_order_items", [])
+        if not last_order_items:
+            logger.info("Repeat order requested but no last_order_items in returning_customer")
+            return StateMachineResult(
+                message="I don't have a previous order on file for you. What can I get for you today?",
+                order=order,
+            )
+
+        # Helper to convert quantity to words for natural speech
+        def quantity_to_words(n: int) -> str:
+            words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                     6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+            return words.get(n, str(n))
+
+        # Copy items from previous order
+        items_added = []
+        for prev_item in last_order_items:
+            item_type = prev_item.get("item_type", "sandwich")
+            menu_item_name = prev_item.get("menu_item_name")
+            quantity = prev_item.get("quantity", 1)
+            qty_word = quantity_to_words(quantity)
+
+            # Add each item based on type
+            if item_type == "bagel":
+                bagel_type = prev_item.get("bread")
+                toasted = prev_item.get("toasted")
+                spread = prev_item.get("spread")
+                spread_type = prev_item.get("spread_type")
+                price = prev_item.get("price", 0)
+
+                bagel = BagelItemTask(
+                    bagel_type=bagel_type,
+                    toasted=toasted,
+                    spread=spread,
+                    spread_type=spread_type,
+                    unit_price=price,
+                )
+                bagel.status = TaskStatus.COMPLETE
+                for _ in range(quantity):
+                    order.items.add_item(bagel)
+
+                # Build descriptive name with modifiers
+                desc_parts = [bagel_type or "bagel"]
+                if toasted is True:
+                    desc_parts.append("toasted")
+                if spread:
+                    desc_parts.append(f"with {spread}")
+                items_added.append(f"{qty_word} {' '.join(desc_parts)}")
+
+            elif item_type in ("coffee", "drink"):
+                # Handle both coffee and drink item types
+                drink_type = prev_item.get("coffee_type") or prev_item.get("drink_type") or menu_item_name
+
+                # Convert style ("iced"/"hot") to iced boolean
+                # item_config stores style as string, but CoffeeItemTask uses iced as bool
+                style = prev_item.get("style")
+                if style == "iced":
+                    iced = True
+                elif style == "hot":
+                    iced = False
+                else:
+                    iced = prev_item.get("iced")  # Fallback to direct iced field
+
+                size = prev_item.get("size")
+                milk = prev_item.get("milk")
+                sweetener = prev_item.get("sweetener")
+                flavor_syrup = prev_item.get("flavor_syrup")
+                price = prev_item.get("price", 0)
+
+                coffee = CoffeeItemTask(
+                    drink_type=drink_type,
+                    size=size,
+                    iced=iced,
+                    milk=milk,
+                    sweetener=sweetener,
+                    sweetener_quantity=prev_item.get("sweetener_quantity", 1),
+                    flavor_syrup=flavor_syrup,
+                    unit_price=price,
+                )
+                coffee.status = TaskStatus.COMPLETE
+                for _ in range(quantity):
+                    order.items.add_item(coffee)
+
+                # Build descriptive name with modifiers
+                desc_parts = []
+                if size:
+                    desc_parts.append(size)
+                if iced is True:
+                    desc_parts.append("iced")
+                elif iced is False:
+                    desc_parts.append("hot")
+                desc_parts.append(drink_type or "coffee")
+                if milk:
+                    desc_parts.append(f"with {milk} milk")
+                if flavor_syrup:
+                    desc_parts.append(f"with {flavor_syrup}")
+
+                items_added.append(f"{qty_word} {' '.join(desc_parts)}")
+
+            elif menu_item_name:
+                # Generic menu item (sandwich, omelette, etc.)
+                price = prev_item.get("price", 0)
+                item = MenuItemTask(
+                    menu_item_name=menu_item_name,
+                    unit_price=price,
+                )
+                item.status = TaskStatus.COMPLETE
+                for _ in range(quantity):
+                    order.items.add_item(item)
+                items_added.append(f"{qty_word} {menu_item_name}")
+
+        # Copy customer info if available (name, phone, email)
+        if returning_customer.get("name") and not order.customer_info.name:
+            order.customer_info.name = returning_customer["name"]
+        if returning_customer.get("phone") and not order.customer_info.phone:
+            order.customer_info.phone = returning_customer["phone"]
+        if returning_customer.get("email") and not order.customer_info.email:
+            order.customer_info.email = returning_customer["email"]
+
+        # Store last order type for "pickup again?" / "delivery again?" prompt
+        # Only used when this is actually a repeat order
+        if returning_customer.get("last_order_type"):
+            self._last_order_type = returning_customer["last_order_type"]
+            self._is_repeat_order = True
+
+        logger.info("Repeat order: added %d item types from previous order", len(items_added))
+
+        # Build confirmation message
+        if items_added:
+            items_str = ", ".join(items_added)
+            order.phase = OrderPhase.TAKING_ITEMS.value
+            return StateMachineResult(
+                message=f"Got it, I've added your previous order: {items_str}. Anything else?",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message="I couldn't find any items in your previous order. What can I get for you today?",
+                order=order,
+            )
+
     def _add_menu_item(
         self,
         item_name: str,
         quantity: int,
         order: OrderTask,
+        toasted: bool | None = None,
     ) -> StateMachineResult:
         """Add a menu item and determine next question."""
         # Ensure quantity is at least 1
@@ -3516,13 +3799,14 @@ class OrderStateMachine:
                 unit_price=price,
                 requires_side_choice=is_omelette,
                 menu_item_type=item_type,
+                toasted=toasted,  # Set toasted if specified upfront
             )
             item.mark_in_progress()
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
-        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s)", quantity, canonical_name, price, menu_item_id)
+        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s)", quantity, canonical_name, price, menu_item_id, toasted)
 
         if is_omelette:
             # Set state to wait for side choice (applies to first item, others will be configured after)
@@ -3608,6 +3892,7 @@ class OrderStateMachine:
         else:
             item_display = canonical_name
 
+        order.phase = OrderPhase.TAKING_ITEMS.value
         return StateMachineResult(
             message=f"I've added {item_display} to your order. Anything else?",
             order=order,
@@ -3703,14 +3988,18 @@ class OrderStateMachine:
             )
 
         if spread is None:
-            # Need spread choice
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = bagel.id
-            order.pending_field = "spread"
-            return StateMachineResult(
-                message="Would you like cream cheese or butter on that?",
-                order=order,
-            )
+            # Skip spread question if bagel already has sandwich toppings (ham, egg, cheese, etc.)
+            if extras or sandwich_protein:
+                logger.info("Skipping spread question - bagel has toppings: extras=%s, protein=%s", extras, sandwich_protein)
+            else:
+                # Need spread choice
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = bagel.id
+                order.pending_field = "spread"
+                return StateMachineResult(
+                    message="Would you like cream cheese or butter on that?",
+                    order=order,
+                )
 
         # All details provided - bagel is complete!
         bagel.mark_complete()
@@ -3939,8 +4228,8 @@ class OrderStateMachine:
                     order=order,
                 )
 
-            # Then ask about spread
-            if bagel.spread is None:
+            # Then ask about spread (skip if bagel already has toppings)
+            if bagel.spread is None and not bagel.extras and not bagel.sandwich_protein:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "spread"
@@ -3976,7 +4265,8 @@ class OrderStateMachine:
                 summary = bagel_summary
 
             order.clear_pending()
-            # Phase will be derived by orchestrator (no pending items = TAKING_ITEMS or checkout)
+            # Explicitly set to TAKING_ITEMS - we're asking for more items
+            order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
                 order=order,
@@ -4766,7 +5056,8 @@ class OrderStateMachine:
             confirmation = f"Got it, {items_list}."
 
         order.clear_pending()
-        # Phase derived by orchestrator
+        # Explicitly set to TAKING_ITEMS - we're asking for more items
+        order.phase = OrderPhase.TAKING_ITEMS.value
         return StateMachineResult(
             message=f"{confirmation} Anything else?",
             order=order,
@@ -4802,6 +5093,8 @@ class OrderStateMachine:
             else:
                 summary = last_summary
 
+            # Explicitly set to TAKING_ITEMS - we're asking for more items
+            order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
                 order=order,
@@ -4844,9 +5137,22 @@ class OrderStateMachine:
         else:
             # Default: ask for delivery method
             return StateMachineResult(
-                message="Is this for pickup or delivery?",
+                message=self._get_delivery_question(),
                 order=order,
             )
+
+    def _get_delivery_question(self) -> str:
+        """Get the delivery/pickup question, personalized for repeat orders."""
+        # Only say "again" if this is actually a repeat order
+        is_repeat = getattr(self, "_is_repeat_order", False)
+        last_order_type = getattr(self, "_last_order_type", None)
+
+        if is_repeat and last_order_type == "pickup":
+            return "Is this for pickup again, or delivery?"
+        elif is_repeat and last_order_type == "delivery":
+            return "Is this for delivery again, or pickup?"
+        else:
+            return "Is this for pickup or delivery?"
 
     def _get_item_by_id(self, order: OrderTask, item_id: str) -> ItemTask | None:
         """Find an item by its ID."""

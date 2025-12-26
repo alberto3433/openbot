@@ -28,6 +28,7 @@ Usage in voice_vapi.py:
 """
 
 import logging
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
 from .adapter import (
@@ -102,9 +103,10 @@ def process_voice_message(
                 session_id=session_id,
                 menu_data=menu_index,
                 store_info=store_info,
+                returning_customer=returning_customer,
             )
         except Exception as e:
-            logger.error("State machine failed, trying fallback: %s", e)
+            logger.error("State machine failed, trying fallback: %s\n%s", e, traceback.format_exc())
             # Fall through to task orchestrator or LLM
 
     # Priority 1: Task-based orchestrator

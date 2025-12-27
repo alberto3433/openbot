@@ -406,6 +406,10 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="User wants to replace/change the last item they ordered (e.g., 'make it a coke instead', 'change it to X', 'actually X instead', 'no, X instead')"
     )
+    cancel_item: str | None = Field(
+        default=None,
+        description="User wants to cancel/remove an item (e.g., 'cancel the coke', 'remove the bagel', 'nevermind the coffee'). Contains the item description to remove."
+    )
 
     # Order type preference (pickup/delivery mentioned upfront)
     order_type: Literal["pickup", "delivery"] | None = Field(
@@ -458,6 +462,10 @@ class ConfirmationResponse(BaseModel):
     wants_changes: bool = Field(
         default=False,
         description="User wants to make changes"
+    )
+    asks_about_tax: bool = Field(
+        default=False,
+        description="User is asking about the total with tax (e.g., 'what's my total with tax?', 'how much with tax?')"
     )
 
 
@@ -1255,13 +1263,69 @@ REPLACE_ITEM_PATTERN = re.compile(
     r"swap\s+(?:it\s+)?(?:for\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
     r"|"
     # "actually X", "no X", "nope X", "wait X" - requires one of these words
-    r"(?:actually|no|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    # Note: "no more X" is cancellation, not replacement, so we use negative lookahead
+    r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "no X" but NOT "no more X" (which is cancellation)
+    r"no[,]?\s+(?!more\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
     r"|"
     # "i meant X" - requires "i meant"
     r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
     r"|"
     # "X instead" - requires "instead" at end
     r"(?:a\s+)?(.+?)\s+instead[\s!.,]*$"
+    r")",
+    re.IGNORECASE
+)
+
+# Cancel/remove item patterns: "cancel the coke", "remove the bagel", "nevermind the coffee", etc.
+# These patterns capture the cancellation intent and the item to remove
+CANCEL_ITEM_PATTERN = re.compile(
+    r"^(?:"
+    # "cancel the X", "cancel X" - requires "cancel"
+    r"cancel\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    # "remove the X", "remove X" - requires "remove"
+    r"remove\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    # "take off the X", "take X off" - requires "take off"
+    r"take\s+(?:off\s+)?(?:the\s+)?(.+?)(?:\s+off)?[\s!.,]*$"
+    r"|"
+    # "nevermind the X", "never mind the X" - requires "nevermind"
+    r"never\s*mind\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    # "forget the X", "forget about the X" - requires "forget"
+    r"forget\s+(?:about\s+)?(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    # "scratch the X" - requires "scratch"
+    r"scratch\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    # "I don't want the X", "don't want the X" - requires "don't want"
+    r"(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
+    r"|"
+    # "no more X" - requires "no more" (not just "no X" which is replacement)
+    r"no\s+more\s+(.+?)[\s!.,]*$"
+    r")",
+    re.IGNORECASE
+)
+
+# Tax question pattern: "what's my total with tax?", "how much with tax?", etc.
+TAX_QUESTION_PATTERN = re.compile(
+    r"(?:"
+    # "what's my/the total with tax"
+    r"what(?:'?s| is)\s+(?:my|the)\s+total\s+(?:with|including)\s+tax"
+    r"|"
+    # "how much with tax", "how much will it be with tax"
+    r"how\s+much\s+(?:will\s+it\s+be\s+)?(?:with|including)\s+tax"
+    r"|"
+    # "what's the total", "what's my total" (without explicit "with tax")
+    r"what(?:'?s| is)\s+(?:my|the)\s+total"
+    r"|"
+    # "total with tax", "with tax" at end
+    r"(?:the\s+)?total\s+(?:with|including)\s+tax"
+    r"|"
+    # "including tax" or "with tax" as a question
+    r"(?:with|including)\s+tax\??"
     r")",
     re.IGNORECASE
 )
@@ -1652,9 +1716,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     replace_match = REPLACE_ITEM_PATTERN.match(text)
     if replace_match:
         # Extract the replacement item from any matching capture group
-        # The pattern has 7 capture groups, one per alternative
+        # The pattern has 8 capture groups, one per alternative
         replacement_item = None
-        for i in range(1, 8):
+        for i in range(1, 9):
             if replace_match.group(i):
                 replacement_item = replace_match.group(i)
                 break
@@ -1674,6 +1738,21 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             # If we couldn't parse deterministically, return a basic replacement signal
             # The LLM parser will handle the item details
             return OpenInputResponse(replace_last_item=True)
+
+    # Check for cancellation phrases: "cancel the coke", "remove the bagel", etc.
+    cancel_match = CANCEL_ITEM_PATTERN.match(text)
+    if cancel_match:
+        # Extract the item to cancel from any matching capture group
+        # The pattern has 8 capture groups, one per alternative
+        cancel_item = None
+        for i in range(1, 9):
+            if cancel_match.group(i):
+                cancel_item = cancel_match.group(i)
+                break
+        if cancel_item:
+            cancel_item = cancel_item.strip()
+            logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
+            return OpenInputResponse(cancel_item=cancel_item)
 
     # EARLY CHECK: Check for spread/salad sandwiches BEFORE bagel parsing
     # This prevents "scallion cream cheese" from being parsed as a bagel with spread
@@ -3017,6 +3096,59 @@ class OrderStateMachine:
             else:
                 logger.info("Replacement requested but no items in cart to replace")
 
+        # Handle item cancellation: "cancel the coke", "remove the bagel", etc.
+        if parsed.cancel_item:
+            cancel_item_desc = parsed.cancel_item.lower()
+            active_items = order.items.get_active_items()
+            if active_items:
+                # Find the item to cancel by matching the description
+                item_to_remove = None
+                item_index = None
+                for item in reversed(active_items):  # Search from most recent
+                    item_summary = item.get_summary().lower()
+                    item_name = getattr(item, 'menu_item_name', '') or ''
+                    item_name_lower = item_name.lower()
+                    # Match if the cancel description appears in the item summary or name
+                    if (cancel_item_desc in item_summary or
+                        cancel_item_desc in item_name_lower or
+                        item_name_lower in cancel_item_desc or
+                        # Also check for partial matches like "coke" matching "diet coke"
+                        any(word in item_summary for word in cancel_item_desc.split())):
+                        item_to_remove = item
+                        item_index = order.items.items.index(item)
+                        break
+
+                if item_to_remove:
+                    removed_name = item_to_remove.get_summary()
+                    order.items.remove_item(item_index)
+                    logger.info("Cancellation: removed item '%s' from cart", removed_name)
+                    # Check if cart is now empty
+                    remaining_items = order.items.get_active_items()
+                    if remaining_items:
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {removed_name}. Anything else?",
+                            order=order,
+                        )
+                    else:
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                            order=order,
+                        )
+                else:
+                    # Item not found - let them know
+                    logger.info("Cancellation: couldn't find item matching '%s'", cancel_item_desc)
+                    return StateMachineResult(
+                        message=f"I couldn't find {parsed.cancel_item} in your order. What would you like to do?",
+                        order=order,
+                    )
+            else:
+                # No items to cancel
+                logger.info("Cancellation requested but no items in cart")
+                return StateMachineResult(
+                    message="There's nothing in your order yet. What can I get for you?",
+                    order=order,
+                )
+
         # Handle repeat order request
         if parsed.wants_repeat_order:
             return self._handle_repeat_order(order)
@@ -3716,9 +3848,20 @@ class OrderStateMachine:
         """Handle order confirmation."""
         logger.info("CONFIRMATION: handling input '%s', current items: %s",
                    user_input[:50], [i.get_summary() for i in order.items.items])
+
+        # Check for tax question first (deterministic pattern match)
+        if TAX_QUESTION_PATTERN.search(user_input):
+            logger.info("CONFIRMATION: Tax question detected")
+            return self._handle_tax_question(order)
+
         parsed = parse_confirmation(user_input, model=self.model)
-        logger.info("CONFIRMATION: parse result - wants_changes=%s, confirmed=%s",
-                   parsed.wants_changes, parsed.confirmed)
+        logger.info("CONFIRMATION: parse result - wants_changes=%s, confirmed=%s, asks_about_tax=%s",
+                   parsed.wants_changes, parsed.confirmed, parsed.asks_about_tax)
+
+        # Handle tax question from LLM parse as fallback
+        if parsed.asks_about_tax:
+            logger.info("CONFIRMATION: Tax question detected (LLM)")
+            return self._handle_tax_question(order)
 
         if parsed.wants_changes:
             # User wants to make changes - reset order_reviewed so orchestrator knows
@@ -5638,6 +5781,35 @@ class OrderStateMachine:
             lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
 
         return "\n".join(lines)
+
+    def _handle_tax_question(self, order: OrderTask) -> StateMachineResult:
+        """Handle user asking about total with tax."""
+        subtotal = order.items.get_subtotal()
+
+        # Get tax rates from store_info
+        city_tax_rate = getattr(self, '_store_info', {}).get('city_tax_rate', 0.0) or 0.0
+        state_tax_rate = getattr(self, '_store_info', {}).get('state_tax_rate', 0.0) or 0.0
+
+        # Calculate taxes
+        city_tax = subtotal * city_tax_rate
+        state_tax = subtotal * state_tax_rate
+        total_tax = city_tax + state_tax
+        total_with_tax = subtotal + total_tax
+
+        # Format response
+        if total_tax > 0:
+            message = f"Your subtotal is ${subtotal:.2f}. With tax, that comes to ${total_with_tax:.2f}. Does that look right?"
+        else:
+            # No tax configured - just show the subtotal
+            message = f"Your total is ${subtotal:.2f}. Does that look right?"
+
+        logger.info("TAX_QUESTION: subtotal=%.2f, city_tax=%.2f, state_tax=%.2f, total=%.2f",
+                   subtotal, city_tax, state_tax, total_with_tax)
+
+        return StateMachineResult(
+            message=message,
+            order=order,
+        )
 
     def _lookup_bagel_price(self, bagel_type: str | None) -> float:
         """

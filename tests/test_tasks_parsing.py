@@ -435,6 +435,7 @@ from sandwich_bot.tasks.state_machine import (
     WORD_TO_NUM,
     extract_zip_code,
     validate_delivery_zip_code,
+    TAX_QUESTION_PATTERN,
 )
 
 
@@ -831,3 +832,136 @@ class TestReplacementPatternDetection:
         assert result.replace_last_item is True
         assert result.new_bagel is True
         assert result.new_bagel_type == "everything"
+
+
+# =============================================================================
+# Cancellation Pattern Tests
+# =============================================================================
+
+class TestCancellationPatternDetection:
+    """Tests for item cancellation pattern detection."""
+
+    @pytest.mark.parametrize("text,expected_item", [
+        # "cancel X" patterns
+        ("cancel the coke", "coke"),
+        ("cancel coke", "coke"),
+        ("cancel the diet coke", "diet coke"),
+        # "remove X" patterns
+        ("remove the bagel", "bagel"),
+        ("remove bagel", "bagel"),
+        ("remove the everything bagel", "everything bagel"),
+        # "take off X" patterns
+        ("take off the latte", "latte"),
+        ("take the latte off", "latte"),
+        # "nevermind X" patterns
+        ("nevermind the coffee", "coffee"),
+        ("never mind the bagel", "bagel"),
+        # "forget X" patterns
+        ("forget the coke", "coke"),
+        ("forget about the coffee", "coffee"),
+        # "scratch X" patterns
+        ("scratch the bagel", "bagel"),
+        # "don't want X" patterns
+        ("I don't want the coke", "coke"),
+        ("don't want the bagel", "bagel"),
+        ("I don't want the diet coke anymore", "diet coke"),
+        # "no more X" patterns
+        ("no more coke", "coke"),
+        ("no more bagels", "bagels"),
+    ])
+    def test_cancellation_patterns_detected(self, text, expected_item):
+        """Test that cancellation patterns are properly detected."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item is not None, f"Expected cancel_item for: {text}"
+        assert result.cancel_item.lower() == expected_item.lower(), \
+            f"Expected cancel_item='{expected_item}' but got '{result.cancel_item}' for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        # Non-cancellation patterns (should NOT match as cancellation)
+        "I want a coke",
+        "give me a coke",
+        "can I get a coke",
+        "diet coke please",
+        "coke",  # Just an item name
+        "no, a coke",  # This is replacement, not cancellation
+        "nope, coke instead",  # This is replacement
+    ])
+    def test_non_cancellation_patterns_not_detected(self, text):
+        """Test that non-cancellation patterns are NOT detected as cancellation."""
+        result = parse_open_input_deterministic(text)
+        # Should either be None or have cancel_item=None
+        if result is not None:
+            assert result.cancel_item is None, f"Did not expect cancellation for: {text}"
+
+    def test_no_coke_is_replacement_not_cancellation(self):
+        """Test that 'no coke' is treated as replacement (ambiguous phrase)."""
+        # "no coke" could mean "no, I want a coke" or "no more coke"
+        # We treat it as replacement to be safe
+        result = parse_open_input_deterministic("no coke")
+        assert result is not None
+        # Should match as replacement, not cancellation
+        assert result.replace_last_item is True
+        assert result.cancel_item is None
+
+    def test_no_more_coke_is_cancellation(self):
+        """Test that 'no more coke' is unambiguously cancellation."""
+        result = parse_open_input_deterministic("no more coke")
+        assert result is not None
+        assert result.cancel_item == "coke"
+        assert result.replace_last_item is False
+
+
+class TestTaxQuestionPatternDetection:
+    """Tests for tax question pattern detection."""
+
+    @pytest.mark.parametrize("text", [
+        # "what's my total with tax"
+        "what's my total with tax",
+        "what's my total with tax?",
+        "what is my total with tax",
+        "what's the total with tax",
+        "what is the total with tax?",
+        # "what's my total including tax"
+        "what's my total including tax",
+        "what is the total including tax",
+        # "how much with tax"
+        "how much with tax",
+        "how much with tax?",
+        "how much will it be with tax",
+        "how much will it be with tax?",
+        "how much including tax",
+        # "what's the total" (without explicit "with tax")
+        "what's the total",
+        "what is my total",
+        "what's my total?",
+        # "total with tax"
+        "total with tax",
+        "the total with tax",
+        "total including tax",
+        # "with tax?" / "including tax?"
+        "with tax?",
+        "including tax?",
+        "with tax",
+    ])
+    def test_tax_question_patterns_detected(self, text):
+        """Test that tax question patterns are properly detected."""
+        match = TAX_QUESTION_PATTERN.search(text)
+        assert match is not None, f"Expected pattern match for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        # Non-tax patterns (should NOT match)
+        "yes",
+        "looks good",
+        "no, I want to change something",
+        "add a coke",
+        "can I get a bagel",
+        "I'd like a coffee",
+        "that's correct",
+        "perfect",
+        "wait, add a drink",
+    ])
+    def test_non_tax_patterns_not_detected(self, text):
+        """Test that non-tax patterns are NOT detected as tax questions."""
+        match = TAX_QUESTION_PATTERN.search(text)
+        assert match is None, f"Did not expect tax question match for: {text}"

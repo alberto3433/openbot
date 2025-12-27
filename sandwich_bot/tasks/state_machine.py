@@ -18,6 +18,7 @@ from openai import OpenAI
 import os
 import logging
 import re
+from email_validator import validate_email, EmailNotValidError
 
 from .models import (
     OrderTask,
@@ -2484,6 +2485,50 @@ Examples:
     )
 
 
+def validate_email_address(email: str) -> tuple[str | None, str | None]:
+    """
+    Validate an email address using email-validator library.
+
+    Performs:
+    - Syntax validation (RFC 5322 compliant)
+    - DNS/MX record check (verifies domain can receive email)
+    - Normalization (lowercase domain, unicode handling)
+
+    Args:
+        email: The email address to validate
+
+    Returns:
+        Tuple of (normalized_email, error_message).
+        If valid: (normalized_email, None)
+        If invalid: (None, user-friendly error message)
+    """
+    if not email:
+        return (None, "I didn't catch an email address. Could you please repeat it?")
+
+    try:
+        # Validate and normalize the email
+        # check_deliverability=True checks DNS/MX records
+        result = validate_email(email, check_deliverability=True)
+        # Return the normalized email (lowercased domain, etc.)
+        return (result.normalized, None)
+    except EmailNotValidError as e:
+        # Generate user-friendly error messages
+        error_str = str(e).lower()
+
+        if "dns" in error_str or "mx" in error_str or "does not exist" in error_str:
+            # Domain doesn't exist or can't receive email
+            domain = email.split("@")[-1] if "@" in email else email
+            return (None, f"I couldn't verify the domain '{domain}'. Could you double-check the spelling?")
+        elif "at sign" in error_str or "@" not in email:
+            return (None, "That doesn't seem to have an @ symbol. Could you say your email again?")
+        elif "after the @" in error_str or "domain" in error_str:
+            return (None, "I didn't catch the domain part after the @. What's your email address?")
+        else:
+            # Generic fallback
+            logger.warning("Email validation failed: %s - %s", email, str(e))
+            return (None, "That doesn't look like a valid email address. Could you say it again?")
+
+
 def parse_phone(user_input: str, model: str = "gpt-4o-mini") -> PhoneResponse:
     """Parse user input when collecting phone number."""
     client = get_instructor_client()
@@ -3531,14 +3576,24 @@ class OrderStateMachine:
             # Email selected - set payment method and check for email
             order.payment.method = "card_link"
             if parsed.email_address:
-                order.customer_info.email = parsed.email_address
-                order.payment.payment_link_destination = parsed.email_address
+                # Validate the email address
+                validated_email, error_message = validate_email_address(parsed.email_address)
+                if error_message:
+                    logger.info("Email validation failed for '%s': %s", parsed.email_address, error_message)
+                    # Ask for email again with the error message
+                    order.phase = OrderPhase.CHECKOUT_EMAIL.value
+                    return StateMachineResult(
+                        message=error_message,
+                        order=order,
+                    )
+                order.customer_info.email = validated_email
+                order.payment.payment_link_destination = validated_email
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
                 self._transition_to_next_slot(order)  # Should be COMPLETE
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
-                           f"We'll send the confirmation to {parsed.email_address}. "
+                           f"We'll send the confirmation to {validated_email}. "
                            f"Thank you, {order.customer_info.name}!",
                     order=order,
                     is_complete=True,
@@ -3599,16 +3654,25 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Store email and complete the order
-        order.customer_info.email = parsed.email
-        order.payment.payment_link_destination = parsed.email
+        # Validate the email address
+        validated_email, error_message = validate_email_address(parsed.email)
+        if error_message:
+            logger.info("Email validation failed for '%s': %s", parsed.email, error_message)
+            return StateMachineResult(
+                message=error_message,
+                order=order,
+            )
+
+        # Store validated/normalized email and complete the order
+        order.customer_info.email = validated_email
+        order.payment.payment_link_destination = validated_email
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
         self._transition_to_next_slot(order)  # Should be COMPLETE
 
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
-                   f"We'll send the confirmation to {parsed.email}. "
+                   f"We'll send the confirmation to {validated_email}. "
                    f"Thank you, {order.customer_info.name}!",
             order=order,
             is_complete=True,

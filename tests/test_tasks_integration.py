@@ -1021,15 +1021,16 @@ class TestOrderTypeUpfront:
         order.phase = OrderPhase.CHECKOUT_EMAIL.value
 
         # Mock parse_email to return the email address
+        # Note: Using gmail.com because email validation checks DNS/MX records
         with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
-            mock_parse.return_value = MagicMock(email="joey@example.com")
-            result = sm._handle_email("joey@example.com", order)
+            mock_parse.return_value = MagicMock(email="joey@gmail.com")
+            result = sm._handle_email("joey@gmail.com", order)
 
-        # Email should be stored
-        assert order.customer_info.email == "joey@example.com"
+        # Email should be stored (normalized)
+        assert order.customer_info.email == "joey@gmail.com"
         # Order should be complete
         assert result.is_complete
-        assert "joey@example.com" in result.message
+        assert "joey@gmail.com" in result.message
         assert "Joey" in result.message  # Thank you message includes name
 
     def test_email_phase_persists_through_process(self):
@@ -1422,3 +1423,76 @@ class TestUnknownItemHandling:
         assert result4.new_bagel is True
         assert result4.new_bagel_type == "plain"
         assert result4.new_side_item is None
+
+
+# =============================================================================
+# Email Validation Tests
+# =============================================================================
+
+class TestEmailValidation:
+    """Tests for email address validation."""
+
+    def test_valid_email_returns_normalized(self):
+        """Test that valid emails are normalized and returned."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        # Standard email - domain should be lowercased
+        email, error = validate_email_address("Test@Gmail.COM")
+        assert error is None
+        assert email == "Test@gmail.com"  # Domain lowercased
+
+        # Email with plus sign (valid)
+        email, error = validate_email_address("user+tag@gmail.com")
+        assert error is None
+        assert email == "user+tag@gmail.com"
+
+    def test_invalid_email_no_at_symbol(self):
+        """Test that emails without @ are rejected."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        email, error = validate_email_address("notanemail")
+        assert email is None
+        assert error is not None
+        assert "@" in error.lower() or "email" in error.lower()
+
+    def test_invalid_email_bad_domain(self):
+        """Test that emails with non-existent domains are rejected."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        # Made up domain that doesn't exist
+        email, error = validate_email_address("test@thisisnotarealdomain12345.com")
+        assert email is None
+        assert error is not None
+        assert "domain" in error.lower() or "verify" in error.lower()
+
+    def test_empty_email_returns_error(self):
+        """Test that empty/None emails return helpful error."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        email, error = validate_email_address("")
+        assert email is None
+        assert error is not None
+        assert "catch" in error.lower() or "repeat" in error.lower()
+
+        email, error = validate_email_address(None)
+        assert email is None
+        assert error is not None
+
+    def test_common_typos_rejected(self):
+        """Test that common typos like gmail.con are rejected."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        # Common typo: .con instead of .com
+        email, error = validate_email_address("user@gmail.con")
+        assert email is None
+        assert error is not None
+
+    def test_valid_common_domains(self):
+        """Test that common email domains work."""
+        from sandwich_bot.tasks.state_machine import validate_email_address
+
+        valid_domains = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com"]
+        for domain in valid_domains:
+            email, error = validate_email_address(f"test@{domain}")
+            assert error is None, f"Failed for {domain}: {error}"
+            assert email is not None

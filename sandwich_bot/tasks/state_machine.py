@@ -19,6 +19,8 @@ import os
 import logging
 import re
 from email_validator import validate_email, EmailNotValidError
+import phonenumbers
+from phonenumbers import NumberParseException
 
 from .models import (
     OrderTask,
@@ -2529,6 +2531,61 @@ def validate_email_address(email: str) -> tuple[str | None, str | None]:
             return (None, "That doesn't look like a valid email address. Could you say it again?")
 
 
+def validate_phone_number(phone: str) -> tuple[str | None, str | None]:
+    """
+    Validate a phone number using Google's phonenumbers library.
+
+    Args:
+        phone: Raw phone number string (can have various formats)
+
+    Returns:
+        Tuple of (validated_phone, error_message).
+        - If valid: (formatted_phone, None)
+        - If invalid: (None, user_friendly_error_message)
+
+    The formatted_phone is returned in E.164 format (e.g., "+12015551234")
+    for consistent storage and SMS delivery.
+    """
+    if not phone:
+        return (None, "I didn't catch a phone number. Could you please repeat it?")
+
+    # Clean up the input - extract just digits
+    digits_only = re.sub(r'\D', '', phone)
+
+    # Handle common US formats without country code
+    if len(digits_only) == 10:
+        digits_only = "1" + digits_only  # Add US country code
+    elif len(digits_only) == 11 and digits_only.startswith("1"):
+        pass  # Already has US country code
+    elif len(digits_only) < 10:
+        return (None, "That number seems too short. US phone numbers have 10 digits. Could you say it again?")
+    elif len(digits_only) > 11:
+        return (None, "That number seems too long. Could you say just the 10-digit phone number?")
+
+    try:
+        # Parse the number (assuming US if no country code)
+        parsed_number = phonenumbers.parse("+" + digits_only, None)
+
+        # Check if it's a valid number
+        if not phonenumbers.is_valid_number(parsed_number):
+            return (None, "That doesn't seem to be a valid phone number. Could you double-check and say it again?")
+
+        # Check if it's a US number
+        region = phonenumbers.region_code_for_number(parsed_number)
+        if region != "US":
+            return (None, "I can only accept US phone numbers for text messages. Do you have a US number?")
+
+        # Format in E.164 for consistent storage
+        formatted = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+
+        logger.info("Phone validation succeeded: %s -> %s", phone, formatted)
+        return (formatted, None)
+
+    except NumberParseException as e:
+        logger.warning("Phone validation failed: %s - %s", phone, str(e))
+        return (None, "I didn't understand that phone number. Could you say it again slowly?")
+
+
 def parse_phone(user_input: str, model: str = "gpt-4o-mini") -> PhoneResponse:
     """Parse user input when collecting phone number."""
     client = get_instructor_client()
@@ -3553,8 +3610,18 @@ class OrderStateMachine:
             order.payment.method = "card_link"
             phone = parsed.phone_number or order.customer_info.phone
             if phone:
-                order.customer_info.phone = phone
-                order.payment.payment_link_destination = phone
+                # Validate the phone number
+                validated_phone, error_message = validate_phone_number(phone)
+                if error_message:
+                    logger.info("Phone validation failed for '%s': %s", phone, error_message)
+                    # Ask for phone again with the error message
+                    self._transition_to_next_slot(order)
+                    return StateMachineResult(
+                        message=error_message,
+                        order=order,
+                    )
+                order.customer_info.phone = validated_phone
+                order.payment.payment_link_destination = validated_phone
                 order.checkout.generate_order_number()
                 order.checkout.confirmed = True  # Now fully confirmed
                 self._transition_to_next_slot(order)  # Should be COMPLETE
@@ -3626,9 +3693,18 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Store phone and complete the order
-        order.customer_info.phone = parsed.phone
-        order.payment.payment_link_destination = parsed.phone
+        # Validate the phone number
+        validated_phone, error_message = validate_phone_number(parsed.phone)
+        if error_message:
+            logger.info("Phone validation failed for '%s': %s", parsed.phone, error_message)
+            return StateMachineResult(
+                message=error_message,
+                order=order,
+            )
+
+        # Store validated phone and complete the order
+        order.customer_info.phone = validated_phone
+        order.payment.payment_link_destination = validated_phone
         order.checkout.generate_order_number()
         order.checkout.confirmed = True  # Now fully confirmed
         self._transition_to_next_slot(order)  # Should be COMPLETE

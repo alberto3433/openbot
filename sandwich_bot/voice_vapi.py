@@ -773,9 +773,6 @@ async def vapi_chat_completions(
 
     logger.info("Voice message from %s: %s", phone_number[-4:], user_message[:50])
 
-    # Add user message to history
-    session_data["history"].append({"role": "user", "content": user_message})
-
     # Get session context
     history = session_data["history"]
     order_state = session_data["order"]
@@ -826,44 +823,29 @@ async def vapi_chat_completions(
     use_orchestrator = is_chain_orchestrator_enabled()
 
     if use_orchestrator:
-        # Use the new task-based orchestrator (via integration layer)
-        logger.info("Using task orchestrator for voice message")
+        # Use MessageProcessor for unified processing
+        logger.info("Using MessageProcessor for voice message")
         try:
-            # Create LLM fallback function for complex cases
-            def llm_fallback(msg, state, hist):
-                # Generate flow guidance for LLM
-                flow_guidance = generate_flow_guidance(state, hist)
-                enhanced_msg = flow_guidance + "\nUSER SAID: " + msg
-                return call_sandwich_bot(
-                    hist,
-                    state,
-                    menu_index,
-                    enhanced_msg,
-                    include_menu_in_system=include_menu,
-                    returning_customer=returning_customer,
-                    caller_id=phone_number,
-                    bot_name=bot_name,
-                    company_name=company_name,
-                    db=db,
-                    use_dynamic_prompt=True,
-                )
+            from .message_processor import MessageProcessor, ProcessingContext
 
-            reply, order_state, actions = process_voice_message(
+            processor = MessageProcessor(db)
+            result = processor.process(ProcessingContext(
                 user_message=user_message,
-                order_state=order_state,
-                history=history,
                 session_id=session_id,
-                menu_index=menu_index,
-                store_info=_build_store_info(session_store_id, company_name, db),
-                returning_customer=returning_customer,
-                llm_fallback_fn=llm_fallback,
-            )
+                caller_id=phone_number,
+                store_id=session_store_id,
+                session=session_data,  # Pass pre-loaded session
+            ))
+
+            reply = result.reply
+            order_state = result.order_state
+            actions = result.actions
 
             if include_menu:
                 session_data["menu_version"] = current_menu_version
 
         except Exception as e:
-            logger.error("Orchestrator failed for voice session: %s", e)
+            logger.error("MessageProcessor failed for voice session: %s", e, exc_info=True)
             error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
             if stream:
                 return StreamingResponse(
@@ -915,10 +897,28 @@ async def vapi_chat_completions(
         reply = llm_result.get("reply", "")
         actions = llm_result.get("actions", [])
 
+        # Backward compatibility
+        if not actions and llm_result.get("intent"):
+            actions = [{"intent": llm_result.get("intent"), "slots": llm_result.get("slots", {})}]
+
+        # Apply actions to order state (only for LLM path - MessageProcessor already did this)
+        all_slots = {}
+        for action in actions:
+            intent = action.get("intent", "unknown")
+            slots = action.get("slots", {})
+            all_slots.update(slots)
+            order_state = apply_intent_to_order_state(
+                order_state, intent, slots, menu_index, returning_customer
+            )
+
     # Check if this is the first user message - add personalized greeting
-    # Count user messages in history (we already added the current one)
+    # This is VAPI-specific and applies to both paths
+    # Note: For MessageProcessor path, history was updated inside the processor
+    if use_orchestrator:
+        # Get updated history from result
+        history = result.session.get("history", [])
     user_message_count = sum(1 for msg in history if msg.get("role") == "user")
-    if user_message_count == 1 and returning_customer and returning_customer.get("name"):
+    if user_message_count <= 1 and returning_customer and returning_customer.get("name"):
         # This is the first exchange with a returning customer
         # Prepend a personalized greeting to the LLM's response
         customer_name = returning_customer.get("name")
@@ -926,104 +926,106 @@ async def vapi_chat_completions(
         reply = greeting_prefix + reply
         logger.info("Added personalized greeting for returning customer: %s", customer_name)
 
-    # Backward compatibility
-    if not actions and llm_result.get("intent"):
-        actions = [{"intent": llm_result.get("intent"), "slots": llm_result.get("slots", {})}]
+    # For LLM fallback path only - handle history update, payment link, order persistence, session save
+    # MessageProcessor already handles these for the orchestrator path
+    if not use_orchestrator:
+        # Add messages to history
+        session_data["history"].append({"role": "user", "content": user_message})
+        session_data["history"].append({"role": "assistant", "content": reply})
 
-    # Apply actions to order state
-    all_slots = {}
-    for action in actions:
-        intent = action.get("intent", "unknown")
-        slots = action.get("slots", {})
-        all_slots.update(slots)
-        order_state = apply_intent_to_order_state(
-            order_state, intent, slots, menu_index, returning_customer
+        # Check if we need to send a payment link email
+        payment_link_action = next(
+            (a for a in actions if a.get("intent") == "request_payment_link"),
+            None
         )
+        if payment_link_action:
+            link_method = (
+                order_state.get("link_delivery_method")
+                or all_slots.get("link_delivery_method")
+            )
+            customer_email = (
+                order_state.get("customer", {}).get("email")
+                or all_slots.get("customer_email")
+            )
+            customer_name = (
+                order_state.get("customer", {}).get("name")
+                or all_slots.get("customer_name")
+            )
+            customer_phone_for_email = (
+                order_state.get("customer", {}).get("phone")
+                or phone_number
+            )
 
-    # Check if we need to send a payment link email
-    payment_link_action = next(
-        (a for a in actions if a.get("intent") == "request_payment_link"),
-        None
-    )
-    if payment_link_action:
-        link_method = (
-            order_state.get("link_delivery_method")
-            or all_slots.get("link_delivery_method")
-        )
-        customer_email = (
-            order_state.get("customer", {}).get("email")
-            or all_slots.get("customer_email")
-        )
-        customer_name = (
-            order_state.get("customer", {}).get("name")
-            or all_slots.get("customer_name")
-        )
-        customer_phone_for_email = (
-            order_state.get("customer", {}).get("phone")
-            or phone_number
-        )
+            if link_method == "email" and customer_email:
+                items = order_state.get("items", [])
+                order_type = order_state.get("order_type", "pickup")
 
-        if link_method == "email" and customer_email:
-            items = order_state.get("items", [])
-            order_type = order_state.get("order_type", "pickup")
+                # Persist order early so we have an order ID for the email
+                # This also calculates the total with tax
+                from .main import persist_pending_order
+                pending_order = persist_pending_order(
+                    db, order_state, all_slots, store_id=session_store_id
+                )
+                order_id = pending_order.id if pending_order else 0
 
-            # Persist order early so we have an order ID for the email
-            # This also calculates the total with tax
-            from .main import persist_pending_order
-            pending_order = persist_pending_order(
+                # Read checkout_state AFTER persist_pending_order (which populates it with tax)
+                checkout_state = order_state.get("checkout_state", {})
+                order_total = (
+                    pending_order.total_price if pending_order
+                    else checkout_state.get("total")
+                    or sum(item.get("line_total", 0) for item in items)
+                )
+
+                # Extract tax breakdown from checkout state
+                subtotal = checkout_state.get("subtotal")
+                city_tax = checkout_state.get("city_tax", 0)
+                state_tax = checkout_state.get("state_tax", 0)
+                delivery_fee = checkout_state.get("delivery_fee", 0)
+
+                # Send the payment link email
+                try:
+                    email_result = send_payment_link_email(
+                        to_email=customer_email,
+                        order_id=order_id,
+                        amount=order_total,
+                        store_name=company_name,
+                        customer_name=customer_name,
+                        customer_phone=customer_phone_for_email,
+                        order_type=order_type,
+                        items=items,
+                        subtotal=subtotal,
+                        city_tax=city_tax,
+                        state_tax=state_tax,
+                        delivery_fee=delivery_fee,
+                    )
+                    logger.info("Voice order payment link email sent: %s", email_result.get("status"))
+                except Exception as e:
+                    logger.error("Failed to send payment link email for voice order: %s", e)
+
+        # Check if order should be persisted to database
+        if order_state.get("status") == "confirmed":
+            # Late import to avoid circular dependency
+            from .main import persist_confirmed_order
+            persisted_order = persist_confirmed_order(
                 db, order_state, all_slots, store_id=session_store_id
             )
-            order_id = pending_order.id if pending_order else 0
+            if persisted_order:
+                logger.info("Voice order persisted for customer: %s (store: %s)",
+                           persisted_order.customer_name, session_store_id or "default")
 
-            # Read checkout_state AFTER persist_pending_order (which populates it with tax)
-            checkout_state = order_state.get("checkout_state", {})
-            order_total = (
-                pending_order.total_price if pending_order
-                else checkout_state.get("total")
-                or sum(item.get("line_total", 0) for item in items)
-            )
-
-            # Extract tax breakdown from checkout state
-            subtotal = checkout_state.get("subtotal")
-            city_tax = checkout_state.get("city_tax", 0)
-            state_tax = checkout_state.get("state_tax", 0)
-            delivery_fee = checkout_state.get("delivery_fee", 0)
-
-            # Send the payment link email
-            try:
-                email_result = send_payment_link_email(
-                    to_email=customer_email,
-                    order_id=order_id,
-                    amount=order_total,
-                    store_name=company_name,
-                    customer_name=customer_name,
-                    customer_phone=customer_phone_for_email,
-                    order_type=order_type,
-                    items=items,
-                    subtotal=subtotal,
-                    city_tax=city_tax,
-                    state_tax=state_tax,
-                    delivery_fee=delivery_fee,
-                )
-                logger.info("Voice order payment link email sent: %s", email_result.get("status"))
-            except Exception as e:
-                logger.error("Failed to send payment link email for voice order: %s", e)
-
-    # Check if order should be persisted to database
-    if order_state.get("status") == "confirmed":
-        # Late import to avoid circular dependency
-        from .main import persist_confirmed_order
-        persisted_order = persist_confirmed_order(
-            db, order_state, all_slots, store_id=session_store_id
-        )
-        if persisted_order:
-            logger.info("Voice order persisted for customer: %s (store: %s)",
-                       persisted_order.customer_name, session_store_id or "default")
-
-    # Update session
-    session_data["order"] = order_state
-    session_data["history"].append({"role": "assistant", "content": reply})
-    _save_session_data(db, session_id, session_data)
+        # Update session data and save
+        session_data["order"] = order_state
+        _save_session_data(db, session_id, session_data)
+    else:
+        # For MessageProcessor path, update the phone session cache with the new session data
+        # MessageProcessor already saved to database, but we need to update our local cache
+        session_data["history"] = result.session.get("history", [])
+        session_data["order"] = order_state
+        # Update phone session cache
+        normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
+        if normalized_phone in _phone_sessions:
+            _phone_sessions[normalized_phone]["session_data"] = session_data
+            _phone_sessions[normalized_phone]["last_access"] = time.time()
 
     logger.info("Voice reply to %s: %s", phone_number[-4:], reply[:50])
 

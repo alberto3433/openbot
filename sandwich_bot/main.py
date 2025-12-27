@@ -1132,6 +1132,52 @@ def chat_message(
     db: Session = Depends(get_db),
 ) -> ChatMessageResponse:
     """Send a message to the chat bot and receive a response with order updates."""
+    from .message_processor import MessageProcessor, ProcessingContext
+
+    # Check if chain orchestrator is enabled (default: true)
+    use_chain_orchestrator = is_chain_orchestrator_enabled()
+
+    if use_chain_orchestrator:
+        # Use unified MessageProcessor for deterministic flow
+        logger.info("Using MessageProcessor for chat message")
+        try:
+            processor = MessageProcessor(db)
+            result = processor.process(ProcessingContext(
+                user_message=req.message,
+                session_id=req.session_id,
+            ))
+
+            # Convert actions to ActionOut format
+            processed_actions = [
+                ActionOut(intent=a.get("intent", "unknown"), slots=a.get("slots", {}))
+                for a in result.actions
+            ]
+
+            return ChatMessageResponse(
+                reply=result.reply,
+                order_state=result.order_state,
+                actions=processed_actions,
+                intent=result.primary_intent,
+                slots=result.primary_slots,
+            )
+
+        except ValueError as e:
+            # Session not found
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error("MessageProcessor failed: %s", str(e), exc_info=True)
+            return ChatMessageResponse(
+                reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+                order_state={},
+                actions=[],
+                intent="error",
+                slots={},
+            )
+
+    # -------------------------------------------------------------------------
+    # LLM Fallback Path (when chain orchestrator is disabled)
+    # -------------------------------------------------------------------------
+
     # Get session from cache or database
     session = get_or_create_session(db, req.session_id)
     if session is None:
@@ -1157,7 +1203,6 @@ def chat_message(
     menu_index = build_menu_index(db, store_id=session_store_id)
 
     # Determine if menu needs to be sent in system prompt
-    # Send menu if: first message (no menu_version yet) OR menu has changed
     current_menu_version = get_menu_version(menu_index)
     session_menu_version = session.get("menu_version")
     include_menu_in_system = (
@@ -1165,59 +1210,7 @@ def chat_message(
         session_menu_version != current_menu_version
     )
 
-    if include_menu_in_system:
-        logger.debug("Including menu in system prompt (version: %s)", current_menu_version)
-    else:
-        logger.debug("Skipping menu in system prompt (already sent version: %s)", session_menu_version)
-
-    # Check if chain orchestrator is enabled
-    use_chain_orchestrator = is_chain_orchestrator_enabled()
-
-    if use_chain_orchestrator:
-        # Use the new chain-based orchestrator for deterministic flow
-        logger.info("Using chain orchestrator for chat message")
-        try:
-            # Create LLM fallback function for complex cases
-            def llm_fallback(msg, state, hist):
-                return call_sandwich_bot(
-                    hist,
-                    state,
-                    menu_index,
-                    msg,
-                    include_menu_in_system=include_menu_in_system,
-                    returning_customer=returning_customer,
-                    caller_id=session_caller_id,
-                    bot_name=company.bot_persona_name,
-                    company_name=company.name,
-                    db=db,
-                    use_dynamic_prompt=True,
-                )
-
-            reply, updated_order_state, actions = process_chat_message(
-                user_message=req.message,
-                order_state=order_state,
-                history=history,
-                session_id=req.session_id,
-                menu_index=menu_index,
-                store_info=build_store_info(session_store_id, company.name, db),
-                returning_customer=returning_customer,
-                llm_fallback_fn=llm_fallback,
-            )
-
-            # Update menu version in session
-            if include_menu_in_system:
-                session["menu_version"] = current_menu_version
-
-        except Exception as e:
-            logger.error("Chain orchestrator failed: %s", str(e))
-            return ChatMessageResponse(
-                reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
-                order_state=order_state,
-                actions=[],
-                intent="error",
-                slots={},
-            )
-    else:
+    if True:  # LLM fallback path
         # Use the LLM-based approach
         try:
             llm_result = call_sandwich_bot(
@@ -1484,54 +1477,24 @@ def chat_message_stream(
     - data: {"done": true, "reply": "full reply", "order_state": {...}, "actions": [...]} - final result
     - data: {"error": "message"} - error occurred
     """
-    # Get session from cache or database
+    from .message_processor import MessageProcessor, ProcessingContext
+
+    # Get session from cache or database (before generator starts)
     session = get_or_create_session(db, req.session_id)
     if session is None:
         def error_stream():
             yield f"data: {json.dumps({'error': 'Invalid session_id'})}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-    history: List[Dict[str, str]] = session["history"]
-    order_state: Dict[str, Any] = session["order"]
-    returning_customer: Dict[str, Any] = session.get("returning_customer")
-    session_store_id: Optional[str] = session.get("store_id")
-    session_caller_id: Optional[str] = session.get("caller_id")
-
-    # Re-lookup returning customer if not in session (e.g., session was restored from DB)
-    if not returning_customer and session_caller_id:
-        returning_customer = _lookup_customer_by_phone(db, session_caller_id)
-        if returning_customer:
-            session["returning_customer"] = returning_customer
-            logger.info("Re-looked up returning customer: %s", returning_customer.get("name"))
-
-    # Get company info for LLM persona
-    company = get_or_create_company(db)
-
-    # Build menu index for LLM (with store-specific ingredient availability)
-    menu_index = build_menu_index(db, store_id=session_store_id)
-
-    # Determine if menu needs to be sent in system prompt
-    current_menu_version = get_menu_version(menu_index)
-    session_menu_version = session.get("menu_version")
-    include_menu_in_system = (
-        session_menu_version is None or
-        session_menu_version != current_menu_version
-    )
-
-    # Store values we need inside the generator (before db session closes)
-    company_bot_name = company.bot_persona_name
-    company_name = company.name
-
-    # Build store_info with tax rates (before db session closes)
-    store_info = build_store_info(session_store_id, company_name, db)
-
     # Check if chain orchestrator is enabled
     use_chain_orchestrator = is_chain_orchestrator_enabled()
 
-    def generate_stream():
-        nonlocal session, history, order_state
+    # Store session data we need inside the generator
+    session_store_id: Optional[str] = session.get("store_id")
+    session_caller_id: Optional[str] = session.get("caller_id")
 
-        full_content = ""
+    def generate_stream():
+        nonlocal session
 
         # Create a new database session for use inside the generator
         # (The original db session from Depends(get_db) is closed after the handler returns)
@@ -1539,153 +1502,66 @@ def chat_message_stream(
         stream_db = SessionLocal()
 
         try:
-            # Use chain orchestrator if enabled (doesn't stream, but we can simulate)
+            # Use MessageProcessor if chain orchestrator is enabled (default)
             if use_chain_orchestrator:
-                logger.info("Using chain orchestrator for streaming chat message")
+                logger.info("Using MessageProcessor for streaming chat message")
                 try:
-                    reply, updated_order_state, actions = process_chat_message(
+                    processor = MessageProcessor(stream_db)
+                    result = processor.process(ProcessingContext(
                         user_message=req.message,
-                        order_state=order_state,
-                        history=history,
                         session_id=req.session_id,
-                        menu_index=menu_index,
-                        store_info=store_info,
-                        returning_customer=returning_customer,
-                        llm_fallback_fn=None,  # No fallback for streaming
-                    )
-
-                    # Update menu version in session if we sent it
-                    if include_menu_in_system:
-                        session["menu_version"] = current_menu_version
+                        caller_id=session_caller_id,
+                        store_id=session_store_id,
+                        session=session,  # Pass pre-loaded session
+                    ))
 
                     # Simulate streaming by yielding word by word
-                    words = reply.split()
+                    words = result.reply.split()
                     for i, word in enumerate(words):
                         token = word + (" " if i < len(words) - 1 else "")
                         yield f"data: {json.dumps({'token': token})}\n\n"
 
-                    # Update conversation history
-                    history.append({"role": "user", "content": req.message})
-                    history.append({"role": "assistant", "content": reply})
-                    session["history"] = history
-                    session["order"] = updated_order_state
-
-                    # Process actions for consistency (payment link handling, etc.)
-                    processed_actions = []
-                    for action in actions:
-                        intent = action.get("intent", "unknown")
-                        slots = action.get("slots", {})
-                        processed_actions.append({"intent": intent, "slots": slots})
-
-                    # Check for payment link/order confirmation actions
-                    all_slots = {}
-                    for action in processed_actions:
-                        all_slots.update(action.get("slots", {}))
-
-                    # Handle order confirmation and persistence
-                    order_is_confirmed = updated_order_state.get("status") == "confirmed"
-                    customer_email = updated_order_state.get("customer", {}).get("email")
-                    customer_phone = updated_order_state.get("customer", {}).get("phone") or session_caller_id
-                    customer_name = updated_order_state.get("customer", {}).get("name")
-
-                    # Use caller_id as phone if not explicitly provided
-                    if session_caller_id and not updated_order_state.get("customer", {}).get("phone"):
-                        updated_order_state.setdefault("customer", {})
-                        updated_order_state["customer"]["phone"] = session_caller_id
-
-                    if order_is_confirmed and customer_name:
-                        # Persist the confirmed order
-                        try:
-                            persist_confirmed_order(stream_db, updated_order_state, all_slots, store_id=session_store_id)
-                            logger.info("Order persisted for customer: %s (store: %s, phone: %s)", customer_name, session_store_id, customer_phone)
-
-                            # Send payment link if email provided
-                            if customer_email:
-                                db_order_id = updated_order_state.get("db_order_id")
-                                if db_order_id:
-                                    # Get order details for email
-                                    items = updated_order_state.get("items", [])
-                                    # Use checkout total (includes tax/fees) or fall back to subtotal
-                                    checkout_state = updated_order_state.get("checkout_state", {})
-                                    order_total = (
-                                        checkout_state.get("total")
-                                        or updated_order_state.get("total_price")
-                                        or sum(item.get("line_total", 0) for item in items)
-                                    )
-                                    order_type = updated_order_state.get("order_type", "pickup")
-
-                                    # Extract tax breakdown from checkout state
-                                    subtotal = checkout_state.get("subtotal")
-                                    city_tax = checkout_state.get("city_tax", 0)
-                                    state_tax = checkout_state.get("state_tax", 0)
-                                    delivery_fee = checkout_state.get("delivery_fee", 0)
-
-                                    result = send_payment_link_email(
-                                        to_email=customer_email,
-                                        order_id=db_order_id,
-                                        amount=order_total,
-                                        store_name=company_name,
-                                        customer_name=customer_name,
-                                        customer_phone=customer_phone,
-                                        order_type=order_type,
-                                        items=items,
-                                        subtotal=subtotal,
-                                        city_tax=city_tax,
-                                        state_tax=state_tax,
-                                        delivery_fee=delivery_fee,
-                                    )
-                                    logger.info("Payment link email sent: %s", result)
-
-                        except Exception as e:
-                            logger.error("Failed to persist order or send payment link: %s", e)
-
-                    # Log completed session for analytics (only once per confirmed order)
-                    # This is OUTSIDE the customer_name check so all confirmed orders get logged
-                    if order_is_confirmed:
-                        order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
-                        if order_not_yet_confirmed:
-                            updated_order_state["_confirmed_logged"] = True
-                            items = updated_order_state.get("items", [])
-                            try:
-                                session_record = SessionAnalytics(
-                                    session_id=req.session_id,
-                                    status="completed",
-                                    message_count=len(history) + 2,  # +2 for current exchange
-                                    had_items_in_cart=len(items) > 0,
-                                    item_count=len(items),
-                                    cart_total=updated_order_state.get("total_price", 0.0),
-                                    order_status="confirmed",
-                                    conversation_history=history + [
-                                        {"role": "user", "content": req.message},
-                                        {"role": "assistant", "content": reply}
-                                    ],
-                                    last_bot_message=reply[:500] if reply else None,
-                                    last_user_message=req.message[:500] if req.message else None,
-                                    reason=None,
-                                    customer_name=customer_name,
-                                    customer_phone=customer_phone,
-                                    store_id=session_store_id,
-                                )
-                                stream_db.add(session_record)
-                                stream_db.commit()
-                                logger.info("Completed session logged (chain orchestrator): %s", req.session_id[:8])
-                            except Exception as analytics_error:
-                                logger.error("Failed to log session analytics: %s", analytics_error)
-
-                    # Save session to database
-                    try:
-                        save_session(stream_db, req.session_id, session)
-                        logger.debug("Session saved (chain orchestrator)")
-                    except Exception as save_error:
-                        logger.error("Failed to save session: %s", str(save_error))
+                    # Convert actions to dict format for JSON serialization
+                    processed_actions = [
+                        {"intent": a.get("intent", "unknown"), "slots": a.get("slots", {})}
+                        for a in result.actions
+                    ]
 
                     # Yield final result
-                    yield f"data: {json.dumps({'done': True, 'reply': reply, 'order_state': updated_order_state, 'actions': processed_actions})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'reply': result.reply, 'order_state': result.order_state, 'actions': processed_actions})}\n\n"
                     return
 
                 except Exception as e:
-                    logger.error("Chain orchestrator failed in stream, falling back to LLM: %s", e)
+                    logger.error("MessageProcessor failed in stream, falling back to LLM: %s", e, exc_info=True)
                     # Fall through to LLM streaming
+
+            # -------------------------------------------------------------------------
+            # LLM Fallback Path (when chain orchestrator is disabled or fails)
+            # -------------------------------------------------------------------------
+
+            history: List[Dict[str, str]] = session["history"]
+            order_state: Dict[str, Any] = session["order"]
+            returning_customer: Dict[str, Any] = session.get("returning_customer")
+
+            # Re-lookup returning customer if not in session
+            if not returning_customer and session_caller_id:
+                returning_customer = _lookup_customer_by_phone(stream_db, session_caller_id)
+                if returning_customer:
+                    session["returning_customer"] = returning_customer
+
+            # Get company info
+            company = get_or_create_company(stream_db)
+            company_name = company.name if company else "OrderBot"
+            company_bot_name = company.bot_persona_name if company else "OrderBot"
+
+            # Build menu index
+            menu_index = build_menu_index(stream_db, store_id=session_store_id)
+            current_menu_version = get_menu_version(menu_index)
+            session_menu_version = session.get("menu_version")
+            include_menu_in_system = (
+                session_menu_version is None or
+                session_menu_version != current_menu_version
+            )
 
             # Stream tokens from LLM
             stream_gen = call_sandwich_bot_stream(

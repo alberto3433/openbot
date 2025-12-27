@@ -334,7 +334,18 @@
     function formatInStoreTimezone(utcDateStr, storeId) {
       if (!utcDateStr) return "";
       try {
-        const date = new Date(utcDateStr);
+        // Normalize date string - handle cases like "2025-12-27T22:18:32.290525+00:00Z"
+        // which has both a timezone offset AND a Z suffix (invalid ISO 8601)
+        let normalized = utcDateStr;
+        if (normalized.includes('+') && normalized.endsWith('Z')) {
+          normalized = normalized.slice(0, -1);  // Remove trailing Z
+        }
+        if (normalized.includes('-') && normalized.endsWith('Z') && normalized.lastIndexOf('-') > 10) {
+          // Has negative offset like "-05:00Z" - remove trailing Z
+          normalized = normalized.slice(0, -1);
+        }
+
+        const date = new Date(normalized);
         if (isNaN(date.getTime())) return utcDateStr;
 
         const timezone = getStoreTimezone(storeId);

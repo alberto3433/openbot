@@ -480,6 +480,9 @@ class Store(Base):
     city_tax_rate = Column(Float, nullable=False, default=0.0)  # City/local tax rate
     state_tax_rate = Column(Float, nullable=False, default=0.0)  # State tax rate
 
+    # Delivery configuration
+    delivery_zip_codes = Column(JSON, nullable=False, default=list)  # List of zip codes for delivery
+
     # Soft delete support
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 

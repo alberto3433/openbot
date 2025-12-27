@@ -433,6 +433,8 @@ from sandwich_bot.tasks.state_machine import (
     _extract_toasted,
     _extract_spread,
     WORD_TO_NUM,
+    extract_zip_code,
+    validate_delivery_zip_code,
 )
 
 
@@ -638,3 +640,118 @@ class TestDeterministicParserFallback:
             assert result.new_coffee_type == "coffee"
         else:
             assert result.new_menu_item is not None
+
+
+# =============================================================================
+# Delivery ZIP Code Validation Tests
+# =============================================================================
+
+class TestExtractZipCode:
+    """Tests for extract_zip_code function."""
+
+    def test_extract_from_full_address(self):
+        """Test extracting ZIP from a full address."""
+        address = "123 Main Street, New York, NY 10001"
+        assert extract_zip_code(address) == "10001"
+
+    def test_extract_with_zip_plus_4(self):
+        """Test extracting 5-digit ZIP from ZIP+4 format."""
+        address = "456 Broadway, New York, NY 10013-1234"
+        assert extract_zip_code(address) == "10013"
+
+    def test_extract_from_simple_address(self):
+        """Test extracting ZIP from simple address."""
+        address = "789 Park Ave 10021"
+        assert extract_zip_code(address) == "10021"
+
+    def test_no_zip_in_address(self):
+        """Test return None when no ZIP in address."""
+        address = "123 Main Street, New York, NY"
+        assert extract_zip_code(address) is None
+
+    def test_empty_address(self):
+        """Test return None for empty address."""
+        assert extract_zip_code("") is None
+        assert extract_zip_code(None) is None
+
+    def test_multiple_zips_returns_first(self):
+        """Test returns first ZIP when multiple present."""
+        address = "10001 to 10002 via 10003"
+        assert extract_zip_code(address) == "10001"
+
+    @pytest.mark.parametrize("address,expected", [
+        ("10007", "10007"),  # Just ZIP
+        ("apt 10B, 123 St, NY 10038", "10038"),  # ZIP not confused with apt number
+        ("10 West 10th St, 10011", "10011"),  # Not confused with street number
+    ])
+    def test_various_formats(self, address, expected):
+        """Test various address formats."""
+        assert extract_zip_code(address) == expected
+
+
+class TestValidateDeliveryZipCode:
+    """Tests for validate_delivery_zip_code function."""
+
+    def test_valid_zip_in_allowed_list(self):
+        """Test valid ZIP code in allowed list."""
+        allowed = ["10001", "10002", "10003"]
+        zip_code, error = validate_delivery_zip_code(
+            "123 Main St, NY 10001", allowed
+        )
+        assert zip_code == "10001"
+        assert error is None
+
+    def test_invalid_zip_not_in_list(self):
+        """Test ZIP code not in allowed list."""
+        allowed = ["10001", "10002", "10003"]
+        zip_code, error = validate_delivery_zip_code(
+            "456 Broadway, NY 10010", allowed
+        )
+        assert zip_code is None
+        assert "10010" in error
+        assert "pickup" in error.lower()
+
+    def test_no_zip_in_address(self):
+        """Test address without ZIP code."""
+        allowed = ["10001", "10002"]
+        zip_code, error = validate_delivery_zip_code(
+            "123 Main Street, New York", allowed
+        )
+        assert zip_code is None
+        assert "ZIP code" in error
+
+    def test_empty_allowed_list(self):
+        """Test when no delivery ZIP codes configured."""
+        zip_code, error = validate_delivery_zip_code(
+            "123 Main St, NY 10001", []
+        )
+        assert zip_code is None
+        assert "don't currently offer delivery" in error
+
+    def test_none_allowed_list(self):
+        """Test when allowed list is None."""
+        zip_code, error = validate_delivery_zip_code(
+            "123 Main St, NY 10001", None
+        )
+        assert zip_code is None
+        assert "don't currently offer delivery" in error
+
+    @pytest.mark.parametrize("address,allowed,should_pass", [
+        # Tribeca area
+        ("143 Chambers St, NY 10007", ["10007", "10013", "10280"], True),
+        ("100 Duane St, NY 10007", ["10007", "10013", "10280"], True),
+        ("200 Park Place, NY 10038", ["10007", "10013", "10280"], False),
+        # Upper West Side
+        ("200 W 72nd St, NY 10023", ["10023", "10024", "10025"], True),
+        ("300 W 86th St, NY 10024", ["10023", "10024", "10025"], True),
+        ("500 E 86th St, NY 10028", ["10023", "10024", "10025"], False),
+    ])
+    def test_realistic_nyc_addresses(self, address, allowed, should_pass):
+        """Test with realistic NYC addresses and ZIP codes."""
+        zip_code, error = validate_delivery_zip_code(address, allowed)
+        if should_pass:
+            assert zip_code is not None
+            assert error is None
+        else:
+            assert zip_code is None
+            assert error is not None

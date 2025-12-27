@@ -42,6 +42,7 @@ def _build_store_info(store_id: str, company_name: str, db: Session) -> Dict[str
         "store_id": store_id,
         "city_tax_rate": 0.0,
         "state_tax_rate": 0.0,
+        "delivery_zip_codes": [],
     }
     if db and store_id:
         store = db.query(Store).filter(Store.store_id == store_id).first()
@@ -49,6 +50,7 @@ def _build_store_info(store_id: str, company_name: str, db: Session) -> Dict[str
             store_info["name"] = store.name or company_name
             store_info["city_tax_rate"] = store.city_tax_rate or 0.0
             store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
     return store_info
 
 logger = logging.getLogger(__name__)

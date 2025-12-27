@@ -2586,6 +2586,63 @@ def validate_phone_number(phone: str) -> tuple[str | None, str | None]:
         return (None, "I didn't understand that phone number. Could you say it again slowly?")
 
 
+def extract_zip_code(address: str) -> str | None:
+    """
+    Extract a 5-digit ZIP code from an address string.
+
+    Args:
+        address: Address string that may contain a ZIP code
+
+    Returns:
+        5-digit ZIP code string if found, None otherwise
+    """
+    if not address:
+        return None
+
+    # Look for 5-digit ZIP code pattern (with optional -4 extension)
+    zip_pattern = r'\b(\d{5})(?:-\d{4})?\b'
+    match = re.search(zip_pattern, address)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def validate_delivery_zip_code(
+    address: str,
+    allowed_zip_codes: list[str],
+) -> tuple[str | None, str | None]:
+    """
+    Validate that a delivery address is within the allowed delivery area.
+
+    Args:
+        address: The delivery address string
+        allowed_zip_codes: List of ZIP codes where delivery is available
+
+    Returns:
+        Tuple of (zip_code, error_message).
+        - If valid: (zip_code, None)
+        - If invalid: (None, user_friendly_error_message)
+    """
+    # If no zip codes configured, delivery is not available
+    if not allowed_zip_codes:
+        return (None, "Sorry, we don't currently offer delivery from this location. Would you like to do pickup instead?")
+
+    # Extract zip code from address
+    zip_code = extract_zip_code(address)
+
+    if not zip_code:
+        return (None, "I need a ZIP code to check if we deliver to your area. What's your ZIP code?")
+
+    # Check if zip code is in allowed list
+    if zip_code in allowed_zip_codes:
+        logger.info("Delivery ZIP code validated: %s is in allowed list", zip_code)
+        return (zip_code, None)
+    else:
+        logger.info("Delivery ZIP code rejected: %s not in %s", zip_code, allowed_zip_codes)
+        return (None, f"Sorry, we don't deliver to {zip_code}. Would you like to do pickup instead?")
+
+
 def parse_phone(user_input: str, model: str = "gpt-4o-mini") -> PhoneResponse:
     """Parse user input when collecting phone number."""
     client = get_instructor_client()
@@ -2654,6 +2711,7 @@ class OrderStateMachine:
         user_input: str,
         order: OrderTask | None = None,
         returning_customer: dict | None = None,
+        store_info: dict | None = None,
     ) -> StateMachineResult:
         """
         Process user input through the state machine.
@@ -2662,6 +2720,7 @@ class OrderStateMachine:
             user_input: What the user said
             order: Current order (None for new conversation)
             returning_customer: Returning customer data (name, phone, last_order_items)
+            store_info: Store configuration (delivery_zip_codes, tax rates, etc.)
 
         Returns:
             StateMachineResult with response message and updated order
@@ -2671,6 +2730,8 @@ class OrderStateMachine:
 
         # Store returning customer data for repeat order handling
         self._returning_customer = returning_customer
+        # Store store info for delivery validation
+        self._store_info = store_info or {}
 
         # Reset repeat order flag - only set when user explicitly requests repeat order
         # This prevents the flag from persisting across different sessions on the singleton
@@ -3396,6 +3457,14 @@ class OrderStateMachine:
             if order.delivery_method.order_type == "delivery" and not order.delivery_method.address.street:
                 # Try to extract address from input
                 if parsed.address:
+                    # Validate the delivery zip code
+                    allowed_zips = getattr(self, '_store_info', {}).get('delivery_zip_codes', [])
+                    zip_code, error = validate_delivery_zip_code(parsed.address, allowed_zips)
+                    if error:
+                        return StateMachineResult(
+                            message=error,
+                            order=order,
+                        )
                     order.delivery_method.address.street = parsed.address
                     self._transition_to_next_slot(order)
                     # Check if we already have name from returning customer
@@ -3419,7 +3488,19 @@ class OrderStateMachine:
             )
 
         order.delivery_method.order_type = parsed.choice
-        if parsed.address:
+        if parsed.address and parsed.choice == "delivery":
+            # Validate the delivery zip code
+            allowed_zips = getattr(self, '_store_info', {}).get('delivery_zip_codes', [])
+            zip_code, error = validate_delivery_zip_code(parsed.address, allowed_zips)
+            if error:
+                # Clear the order type so they can choose pickup
+                order.delivery_method.order_type = None
+                return StateMachineResult(
+                    message=error,
+                    order=order,
+                )
+            order.delivery_method.address.street = parsed.address
+        elif parsed.address:
             order.delivery_method.address.street = parsed.address
 
         # Use orchestrator to determine next phase

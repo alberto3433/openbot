@@ -121,6 +121,7 @@ def process_message_with_state_machine(
         user_input=user_message,
         order=order,
         returning_customer=returning_customer,
+        store_info=store_info,
     )
 
     # Convert state back to dict (phase and pending fields are stored in OrderTask)

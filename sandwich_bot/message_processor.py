@@ -316,7 +316,7 @@ class MessageProcessor:
     # -------------------------------------------------------------------------
 
     def _build_store_info(self, store_id: Optional[str]) -> Dict[str, Any]:
-        """Build store info with tax rates."""
+        """Build store info with tax rates and delivery zip codes."""
         company = self._get_company()
         company_name = company.name if company else "OrderBot"
 
@@ -325,6 +325,7 @@ class MessageProcessor:
             "store_id": store_id,
             "city_tax_rate": 0.0,
             "state_tax_rate": 0.0,
+            "delivery_zip_codes": [],
         }
 
         if store_id:
@@ -333,6 +334,7 @@ class MessageProcessor:
                 store_info["name"] = store.name or company_name
                 store_info["city_tax_rate"] = store.city_tax_rate or 0.0
                 store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+                store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
 
         return store_info
 

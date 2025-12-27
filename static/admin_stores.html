@@ -502,6 +502,12 @@
           </div>
 
           <div class="form-group">
+            <label for="storeDeliveryZips">Delivery ZIP Codes</label>
+            <input type="text" id="storeDeliveryZips" placeholder="e.g., 10007, 10013, 10006, 10038" />
+            <div class="hint">Comma-separated list of ZIP codes where delivery is available. Leave empty to disable delivery.</div>
+          </div>
+
+          <div class="form-group">
             <label>Accepted Payment Methods *</label>
             <div class="checkbox-group" id="paymentMethodsGroup">
               <div class="checkbox-item" data-value="cash">
@@ -649,6 +655,7 @@
           paymentMethods: s.payment_methods || ["cash", "credit"],
           cityTaxRate: s.city_tax_rate || 0,
           stateTaxRate: s.state_tax_rate || 0,
+          deliveryZipCodes: s.delivery_zip_codes || [],
           deletedAt: s.deleted_at
         }));
         renderStores();
@@ -831,6 +838,7 @@
       // Convert decimal tax rates to percentages for display
       document.getElementById("storeCityTax").value = store.cityTaxRate ? (store.cityTaxRate * 100).toFixed(3) : "";
       document.getElementById("storeStateTax").value = store.stateTaxRate ? (store.stateTaxRate * 100).toFixed(3) : "";
+      document.getElementById("storeDeliveryZips").value = (store.deliveryZipCodes || []).join(", ");
       setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
       hidePaymentError();
 
@@ -864,6 +872,10 @@
       // Convert percentages to decimals for API (e.g., 4.5% -> 0.045)
       const cityTaxRate = parseFloat(document.getElementById("storeCityTax").value) / 100 || 0;
       const stateTaxRate = parseFloat(document.getElementById("storeStateTax").value) / 100 || 0;
+      const deliveryZipsRaw = document.getElementById("storeDeliveryZips").value.trim();
+      const deliveryZipCodes = deliveryZipsRaw
+        ? deliveryZipsRaw.split(",").map(z => z.trim()).filter(z => z.length > 0)
+        : [];
       const paymentMethods = getSelectedPaymentMethods();
 
       if (!name || !address || !city || !state || !zip || !phone) {
@@ -892,6 +904,7 @@
         status,
         city_tax_rate: cityTaxRate,
         state_tax_rate: stateTaxRate,
+        delivery_zip_codes: deliveryZipCodes,
         payment_methods: paymentMethods
       };
 

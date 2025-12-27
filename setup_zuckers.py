@@ -40,6 +40,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10007", "10013", "10280", "10282"],  # Tribeca, SoHo, Battery Park City
         },
         {
             "store_id": "zuckers_uws",
@@ -53,6 +54,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10023", "10024", "10025", "10069"],  # Upper West Side, Lincoln Square
         },
         {
             "store_id": "zuckers_grandcentral",
@@ -66,6 +68,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10017", "10016", "10022", "10171"],  # Midtown East, Murray Hill, Grand Central
         },
         {
             "store_id": "zuckers_flatiron",
@@ -79,6 +82,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10010", "10003", "10016", "10001"],  # Flatiron, Gramercy, Murray Hill, Chelsea
         },
         {
             "store_id": "zuckers_chelsea",
@@ -92,6 +96,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10011", "10001", "10014", "10003"],  # Chelsea, West Village, Greenwich Village
         },
         {
             "store_id": "zuckers_fidi",
@@ -105,6 +110,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10038", "10005", "10006", "10004", "10007"],  # Financial District, Battery Park, Tribeca
         },
         {
             "store_id": "zuckers_bryantpark",
@@ -118,6 +124,7 @@ def create_zuckers_stores(db):
             "timezone": "America/New_York",
             "status": "open",
             "payment_methods": ["cash", "credit"],
+            "delivery_zip_codes": ["10018", "10036", "10001", "10019"],  # Bryant Park, Times Square, Hell's Kitchen, Midtown West
         },
     ]
 

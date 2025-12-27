@@ -80,7 +80,7 @@ def get_store_name(store_id: Optional[str], db: Optional[Session] = None) -> str
 
 def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Session] = None) -> Dict[str, Any]:
     """
-    Build store_info dict with tax rates for chain orchestrator.
+    Build store_info dict with tax rates and delivery zip codes for chain orchestrator.
 
     Args:
         store_id: Store ID to look up
@@ -88,13 +88,14 @@ def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Se
         db: Database session
 
     Returns:
-        Dict with store name, id, and tax rates
+        Dict with store name, id, tax rates, and delivery zip codes
     """
     store_info = {
         "name": company_name,
         "store_id": store_id,
         "city_tax_rate": 0.0,
         "state_tax_rate": 0.0,
+        "delivery_zip_codes": [],
     }
 
     if db and store_id:
@@ -103,6 +104,7 @@ def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Se
             store_info["name"] = store.name or company_name
             store_info["city_tax_rate"] = store.city_tax_rate or 0.0
             store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
 
     return store_info
 
@@ -642,6 +644,7 @@ class StoreOut(BaseModel):
     payment_methods: List[str] = []
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
+    delivery_zip_codes: List[str] = []
     deleted_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -661,6 +664,7 @@ class StoreCreate(BaseModel):
     payment_methods: List[str] = ["cash", "credit"]
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
+    delivery_zip_codes: List[str] = []
 
 
 class StoreUpdate(BaseModel):
@@ -677,6 +681,7 @@ class StoreUpdate(BaseModel):
     payment_methods: Optional[List[str]] = None
     city_tax_rate: Optional[float] = None
     state_tax_rate: Optional[float] = None
+    delivery_zip_codes: Optional[List[str]] = None
 
 
 # ---------- Pydantic models for company settings ----------

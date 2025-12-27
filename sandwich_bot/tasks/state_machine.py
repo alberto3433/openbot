@@ -1637,6 +1637,30 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s)", text[:50], menu_item, qty, toasted)
             return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted)
 
+    # EARLY CHECK: Side items that might be mistaken for other order types
+    # These must be checked BEFORE bagel/other pattern matching
+    # Map of keywords to canonical side item names
+    standalone_side_items = {
+        "bagel chips": "Bagel Chips",
+        "latkes": "Latkes",
+        "latke": "Latkes",
+        "fruit cup": "Fruit Cup",
+        "home fries": "Home Fries",
+    }
+    for keyword, canonical_name in standalone_side_items.items():
+        if keyword in text_lower:
+            # Extract quantity if present
+            qty = 1
+            qty_match = re.match(r'^(\d+|one|two|three|four|five)\s+', text_lower)
+            if qty_match:
+                qty_str = qty_match.group(1)
+                if qty_str.isdigit():
+                    qty = int(qty_str)
+                else:
+                    qty = WORD_TO_NUM.get(qty_str, 1)
+            logger.info("STANDALONE SIDE ITEM: matched '%s' -> %s (qty=%d)", text[:50], canonical_name, qty)
+            return OpenInputResponse(new_side_item=canonical_name, new_side_item_quantity=qty)
+
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)
     if quantity_match:
@@ -2818,8 +2842,15 @@ class OrderStateMachine:
                 items_added.append(parsed.new_menu_item)
                 # If there's also a side item, add it too
                 if parsed.new_side_item:
-                    side_name = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
-                    items_added.append(side_name)
+                    side_name, side_error = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
+                    if side_name:
+                        items_added.append(side_name)
+                    elif side_error:
+                        # Side item not found - return error with main item still added
+                        return StateMachineResult(
+                            message=f"I've added {parsed.new_menu_item} to your order. {side_error}",
+                            order=order,
+                        )
 
             # Check if there's ALSO a coffee order in the same message
             if parsed.new_coffee and parsed.new_coffee_type:
@@ -2882,8 +2913,9 @@ class OrderStateMachine:
                 )
             # If there's also a side item, add it too
             side_name = None
+            side_error = None
             if parsed.new_side_item:
-                side_name = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
+                side_name, side_error = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
 
             # Check if there's ALSO a coffee in the same message
             if parsed.new_coffee:
@@ -2906,6 +2938,12 @@ class OrderStateMachine:
                     items_list.append(side_name)
                 items_list.append(coffee_desc)
                 combined_items = ", ".join(items_list)
+                # If side item was requested but not found, report the error
+                if side_error:
+                    return StateMachineResult(
+                        message=f"Got it, {combined_items}. {side_error}",
+                        order=order,
+                    )
                 return StateMachineResult(
                     message=f"Got it, {combined_items}. Anything else?",
                     order=order,
@@ -2916,6 +2954,12 @@ class OrderStateMachine:
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
                 return StateMachineResult(
                     message=f"Got it, {bagel_desc} and {side_name}. Anything else?",
+                    order=order,
+                )
+            # If side item was requested but not found, report the error while keeping the bagel
+            if side_error:
+                return StateMachineResult(
+                    message=side_error,
                     order=order,
                 )
             return result
@@ -3753,11 +3797,11 @@ class OrderStateMachine:
             [i.get("name") for i in omelette_items],
         )
 
-        # If item not found in menu, ask for clarification
+        # If item not found in menu, provide helpful suggestions
         if not menu_item:
-            logger.warning("Menu item not found: '%s' - asking for clarification", item_name)
+            logger.warning("Menu item not found: '%s' - suggesting alternatives", item_name)
             return StateMachineResult(
-                message=f"I'm sorry, I couldn't find '{item_name}' on our menu. Could you try again or ask what we have available?",
+                message=self._get_not_found_message(item_name),
                 order=order,
             )
 
@@ -3838,23 +3882,30 @@ class OrderStateMachine:
         side_item_name: str,
         quantity: int,
         order: OrderTask,
-    ) -> str:
+    ) -> tuple[str | None, str | None]:
         """Add a side item to the order without returning a response.
 
         Used when a side item is ordered alongside another item (e.g., "bagel with a side of sausage").
 
         Returns:
-            The canonical name of the side item (for use in confirmation messages).
+            Tuple of (canonical_name, error_message).
+            If successful: (canonical_name, None)
+            If item not found: (None, error_message)
         """
         quantity = max(1, quantity)
 
         # Look up the side item in the menu
         menu_item = self._lookup_menu_item(side_item_name)
 
-        # Use canonical name and price from menu if found
-        canonical_name = menu_item.get("name", side_item_name) if menu_item else side_item_name
-        price = menu_item.get("base_price", 0.0) if menu_item else 0.0
-        menu_item_id = menu_item.get("id") if menu_item else None
+        # If item not found, return error message
+        if not menu_item:
+            logger.warning("Side item not found: '%s' - rejecting", side_item_name)
+            return (None, self._get_not_found_message(side_item_name))
+
+        # Use canonical name and price from menu
+        canonical_name = menu_item.get("name", side_item_name)
+        price = menu_item.get("base_price", 0.0)
+        menu_item_id = menu_item.get("id")
 
         # Create the side item(s)
         for _ in range(quantity):
@@ -3868,7 +3919,7 @@ class OrderStateMachine:
             order.items.add_item(item)
 
         logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
-        return canonical_name
+        return (canonical_name, None)
 
     def _add_side_item_with_response(
         self,
@@ -3880,11 +3931,14 @@ class OrderStateMachine:
 
         Used when a side item is ordered on its own (e.g., "I'll have a side of bacon").
         """
-        self._add_side_item(side_item_name, quantity, order)
+        canonical_name, error_message = self._add_side_item(side_item_name, quantity, order)
 
-        # Get the canonical name for the response
-        menu_item = self._lookup_menu_item(side_item_name)
-        canonical_name = menu_item.get("name", side_item_name) if menu_item else side_item_name
+        # If item wasn't found, return the error message
+        if error_message:
+            return StateMachineResult(
+                message=error_message,
+                order=order,
+            )
 
         # Pluralize if quantity > 1
         if quantity > 1:
@@ -5304,6 +5358,158 @@ class OrderStateMachine:
             return max(matches, key=lambda x: len(x.get("name", "")))
 
         return None
+
+    def _infer_item_category(self, item_name: str) -> str | None:
+        """
+        Infer the likely category of an unknown item based on keywords.
+
+        Args:
+            item_name: The name of the item the user requested
+
+        Returns:
+            Category key like "drinks", "sides", "signature_bagels", or None if unclear
+        """
+        name_lower = item_name.lower()
+
+        # Drink keywords
+        drink_keywords = [
+            "juice", "coffee", "tea", "latte", "cappuccino", "espresso",
+            "soda", "coke", "pepsi", "sprite", "water", "smoothie",
+            "milk", "chocolate milk", "hot chocolate", "mocha",
+            "drink", "beverage", "lemonade", "iced", "frappe",
+        ]
+        if any(kw in name_lower for kw in drink_keywords):
+            return "drinks"
+
+        # Side keywords
+        side_keywords = [
+            "hash", "hashbrown", "fries", "tots", "bacon", "sausage",
+            "egg", "eggs", "fruit", "salad", "side", "toast",
+            "home fries", "potatoes", "pancake", "waffle",
+        ]
+        if any(kw in name_lower for kw in side_keywords):
+            return "sides"
+
+        # Bagel keywords
+        bagel_keywords = [
+            "bagel", "everything", "plain", "sesame", "poppy",
+            "cinnamon", "raisin", "onion", "pumpernickel", "whole wheat",
+        ]
+        if any(kw in name_lower for kw in bagel_keywords):
+            return "signature_bagels"
+
+        # Sandwich/omelette keywords
+        sandwich_keywords = [
+            "sandwich", "omelette", "omelet", "wrap", "panini",
+            "club", "blt", "reuben",
+        ]
+        if any(kw in name_lower for kw in sandwich_keywords):
+            return "signature_omelettes"
+
+        # Dessert keywords
+        dessert_keywords = [
+            "cookie", "brownie", "muffin", "cake", "pastry",
+            "donut", "doughnut", "dessert", "sweet",
+        ]
+        if any(kw in name_lower for kw in dessert_keywords):
+            return "desserts"
+
+        return None
+
+    def _get_category_suggestions(self, category: str, limit: int = 5) -> str:
+        """
+        Get a formatted string of menu suggestions from a category.
+
+        Args:
+            category: The menu category key (e.g., "drinks", "sides")
+            limit: Maximum number of suggestions to include
+
+        Returns:
+            Formatted string like "home fries, fruit cup, or a side of bacon"
+        """
+        if not self.menu_data:
+            return ""
+
+        items = self.menu_data.get(category, [])
+
+        # If no items in direct category, try items_by_type
+        if not items and category in ["sides", "drinks", "desserts"]:
+            # Map category to potential item_type slugs
+            type_map = {
+                "sides": ["side"],
+                "drinks": ["drink", "coffee", "soda"],
+                "desserts": ["dessert"],
+            }
+            items_by_type = self.menu_data.get("items_by_type", {})
+            for type_slug in type_map.get(category, []):
+                items.extend(items_by_type.get(type_slug, []))
+
+        if not items:
+            return ""
+
+        # Get unique item names, limited to the specified count
+        item_names = []
+        seen = set()
+        for item in items:
+            name = item.get("name", "")
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                item_names.append(name)
+                if len(item_names) >= limit:
+                    break
+
+        if not item_names:
+            return ""
+
+        # Format as natural language list
+        if len(item_names) == 1:
+            return item_names[0]
+        elif len(item_names) == 2:
+            return f"{item_names[0]} or {item_names[1]}"
+        else:
+            return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
+
+    def _get_not_found_message(self, item_name: str) -> str:
+        """
+        Generate a helpful message when an item isn't found on the menu.
+
+        Infers the category and suggests alternatives.
+
+        Args:
+            item_name: The name of the item the user requested
+
+        Returns:
+            A helpful error message with suggestions
+        """
+        category = self._infer_item_category(item_name)
+
+        if category:
+            suggestions = self._get_category_suggestions(category, limit=4)
+            category_name = {
+                "drinks": "drinks",
+                "sides": "sides",
+                "signature_bagels": "bagels",
+                "signature_omelettes": "sandwiches and omelettes",
+                "desserts": "desserts",
+            }.get(category, "items")
+
+            if suggestions:
+                return (
+                    f"I'm sorry, we don't have {item_name}. "
+                    f"For {category_name}, we have {suggestions}. "
+                    f"Would any of those work?"
+                )
+            else:
+                return (
+                    f"I'm sorry, we don't have {item_name}. "
+                    f"Would you like to hear what {category_name} we have?"
+                )
+        else:
+            # Generic fallback
+            return (
+                f"I'm sorry, I couldn't find '{item_name}' on our menu. "
+                f"Could you try again or ask what we have available?"
+            )
 
     # Default modifier prices - used as fallback when menu_data lookup fails
     DEFAULT_MODIFIER_PRICES = {

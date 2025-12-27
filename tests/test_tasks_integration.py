@@ -1245,3 +1245,180 @@ class TestRepeatOrder:
         assert len(order.items.items) == 1
         assert "previous order" in result.message
         assert "Turkey Club" in result.message
+
+
+# =============================================================================
+# Unknown Item Handling Tests
+# =============================================================================
+
+class TestUnknownItemHandling:
+    """Tests for handling items that aren't on the menu."""
+
+    def test_unknown_side_item_rejected_with_suggestions(self):
+        """Test that ordering an unknown side item returns helpful suggestions."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        # Create menu_data with some sides
+        menu_data = {
+            "sides": [
+                {"id": 1, "name": "Home Fries", "base_price": 3.99},
+                {"id": 2, "name": "Fruit Cup", "base_price": 4.99},
+                {"id": 3, "name": "Side of Bacon", "base_price": 2.99},
+            ],
+            "items_by_type": {},
+        }
+
+        order = OrderTask()
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        # Try to add a hashbrown (not on menu)
+        canonical_name, error_message = sm._add_side_item("hashbrown", 1, order)
+
+        # Should return None for canonical_name and an error message
+        assert canonical_name is None
+        assert error_message is not None
+        assert "don't have hashbrown" in error_message.lower()
+        assert "sides" in error_message.lower()
+        # Should suggest alternatives
+        assert "Home Fries" in error_message or "Fruit Cup" in error_message
+
+        # Order should not have any items
+        assert len(order.items.items) == 0
+
+    def test_unknown_menu_item_rejected_with_suggestions(self):
+        """Test that ordering an unknown menu item returns helpful suggestions."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, StateMachineResult
+        from sandwich_bot.tasks.models import OrderTask
+
+        # Create menu_data with some items
+        menu_data = {
+            "signature_bagels": [
+                {"id": 1, "name": "The Classic", "base_price": 8.99, "item_type": "bagel"},
+            ],
+            "drinks": [
+                {"id": 2, "name": "Coffee", "base_price": 2.99},
+                {"id": 3, "name": "Orange Juice", "base_price": 3.99},
+            ],
+            "items_by_type": {},
+        }
+
+        order = OrderTask()
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        # Try to add a milkshake (not on menu, but has drink keywords)
+        result = sm._add_menu_item("chocolate milkshake", 1, order)
+
+        # Should return a result with error message
+        assert isinstance(result, StateMachineResult)
+        assert "don't have chocolate milkshake" in result.message.lower()
+        # Should suggest drinks since "milkshake" has drink keywords
+        assert "drinks" in result.message.lower()
+
+        # Order should not have any items
+        assert len(order.items.items) == 0
+
+    def test_valid_side_item_added_successfully(self):
+        """Test that a valid side item is added successfully."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        menu_data = {
+            "sides": [
+                {"id": 1, "name": "Home Fries", "base_price": 3.99},
+            ],
+            "items_by_type": {},
+        }
+
+        order = OrderTask()
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        # Add a valid side
+        canonical_name, error_message = sm._add_side_item("home fries", 1, order)
+
+        # Should succeed
+        assert canonical_name == "Home Fries"
+        assert error_message is None
+        assert len(order.items.items) == 1
+        assert order.items.items[0].menu_item_name == "Home Fries"
+        assert order.items.items[0].unit_price == 3.99
+
+    def test_infer_category_drinks(self):
+        """Test category inference for drink items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+
+        sm = OrderStateMachine()
+
+        assert sm._infer_item_category("orange juice") == "drinks"
+        assert sm._infer_item_category("coffee") == "drinks"
+        assert sm._infer_item_category("milkshake") == "drinks"  # Contains "milk"
+        assert sm._infer_item_category("chocolate milk") == "drinks"
+        assert sm._infer_item_category("lemonade") == "drinks"
+        assert sm._infer_item_category("pizza") is None  # Not a drink
+
+    def test_infer_category_sides(self):
+        """Test category inference for side items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+
+        sm = OrderStateMachine()
+
+        assert sm._infer_item_category("hashbrown") == "sides"
+        assert sm._infer_item_category("hash browns") == "sides"
+        assert sm._infer_item_category("home fries") == "sides"
+        assert sm._infer_item_category("side of bacon") == "sides"
+        assert sm._infer_item_category("fruit salad") == "sides"
+
+    def test_get_category_suggestions_formats_correctly(self):
+        """Test that suggestions are formatted as natural language."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+
+        menu_data = {
+            "sides": [
+                {"id": 1, "name": "Home Fries", "base_price": 3.99},
+                {"id": 2, "name": "Fruit Cup", "base_price": 4.99},
+                {"id": 3, "name": "Side of Bacon", "base_price": 2.99},
+            ],
+            "items_by_type": {},
+        }
+
+        sm = OrderStateMachine(menu_data=menu_data)
+
+        suggestions = sm._get_category_suggestions("sides", limit=3)
+
+        # Should be formatted as "A, B, or C"
+        assert "Home Fries" in suggestions
+        assert "Fruit Cup" in suggestions
+        assert "Side of Bacon" in suggestions
+        assert ", or " in suggestions
+
+    def test_bagel_chips_parsed_as_side_item_not_bagel(self):
+        """Test that 'bagel chips' is parsed as a side item, NOT a bagel order.
+
+        This is a regression test for the bug where 'bagel chips' (a side item)
+        was incorrectly parsed as a bagel order because it contains 'bagel'.
+        """
+        from sandwich_bot.tasks.state_machine import parse_open_input_deterministic
+
+        # "bagel chips" should be a side item
+        result = parse_open_input_deterministic("bagel chips")
+        assert result is not None
+        assert result.new_side_item == "Bagel Chips"
+        assert result.new_side_item_quantity == 1
+        assert result.new_bagel is False
+
+        # Other side items should also work
+        result2 = parse_open_input_deterministic("latkes")
+        assert result2 is not None
+        assert result2.new_side_item == "Latkes"
+        assert result2.new_bagel is False
+
+        result3 = parse_open_input_deterministic("fruit cup")
+        assert result3 is not None
+        assert result3.new_side_item == "Fruit Cup"
+
+        # But "plain bagel" should still be a bagel order
+        result4 = parse_open_input_deterministic("a plain bagel")
+        assert result4 is not None
+        assert result4.new_bagel is True
+        assert result4.new_bagel_type == "plain"
+        assert result4.new_side_item is None

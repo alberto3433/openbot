@@ -402,6 +402,10 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="Message couldn't be understood"
     )
+    replace_last_item: bool = Field(
+        default=False,
+        description="User wants to replace/change the last item they ordered (e.g., 'make it a coke instead', 'change it to X', 'actually X instead', 'no, X instead')"
+    )
 
     # Order type preference (pickup/delivery mentioned upfront)
     order_type: Literal["pickup", "delivery"] | None = Field(
@@ -1232,6 +1236,36 @@ REPEAT_ORDER_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+# Replace item patterns: "make it a X instead", "change it to X", "actually X instead", etc.
+# These patterns capture the replacement intent and the new item
+# IMPORTANT: Each alternative MUST require at least one non-optional keyword to avoid
+# matching simple item names like "coke" which would cause infinite recursion
+REPLACE_ITEM_PATTERN = re.compile(
+    r"^(?:"
+    # "make it X", "make it a X" - requires "make it"
+    r"make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "change it to X", "change to X" - requires "change"
+    r"change\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "switch to X", "switch it to X" - requires "switch"
+    r"switch\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "swap for X", "swap it for X" - requires "swap"
+    r"swap\s+(?:it\s+)?(?:for\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "actually X", "no X", "nope X", "wait X" - requires one of these words
+    r"(?:actually|no|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "i meant X" - requires "i meant"
+    r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"|"
+    # "X instead" - requires "instead" at end
+    r"(?:a\s+)?(.+?)\s+instead[\s!.,]*$"
+    r")",
+    re.IGNORECASE
+)
+
 # Bagel quantity pattern: matches "3 bagels", "three bagels", "two plain bagels", etc.
 # Allows optional bagel type/adjectives between quantity and "bagels"
 BAGEL_QUANTITY_PATTERN = re.compile(
@@ -1613,6 +1647,33 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if REPEAT_ORDER_PATTERNS.match(text):
         logger.debug("Deterministic parse: repeat order detected")
         return OpenInputResponse(wants_repeat_order=True)
+
+    # Check for replacement phrases: "make it a coke instead", "actually a latte", etc.
+    replace_match = REPLACE_ITEM_PATTERN.match(text)
+    if replace_match:
+        # Extract the replacement item from any matching capture group
+        # The pattern has 7 capture groups, one per alternative
+        replacement_item = None
+        for i in range(1, 8):
+            if replace_match.group(i):
+                replacement_item = replace_match.group(i)
+                break
+        if replacement_item:
+            replacement_item = replacement_item.strip()
+            # Strip leading "a " or "an " if present
+            replacement_item = re.sub(r"^(?:a|an)\s+", "", replacement_item, flags=re.IGNORECASE)
+            logger.info("Deterministic parse: replacement detected, item='%s'", replacement_item)
+
+            # Recursively parse the replacement item to get its details
+            parsed_replacement = parse_open_input_deterministic(replacement_item, spread_types)
+            if parsed_replacement:
+                # Mark as replacement and return
+                parsed_replacement.replace_last_item = True
+                return parsed_replacement
+
+            # If we couldn't parse deterministically, return a basic replacement signal
+            # The LLM parser will handle the item details
+            return OpenInputResponse(replace_last_item=True)
 
     # EARLY CHECK: Check for spread/salad sandwiches BEFORE bagel parsing
     # This prevents "scallion cream cheese" from being parsed as a bagel with spread
@@ -2941,6 +3002,21 @@ class OrderStateMachine:
         if parsed.done_ordering:
             return self._transition_to_checkout(order)
 
+        # Handle item replacement: "make it a coke instead", "change it to X", etc.
+        replaced_item_name = None
+        if parsed.replace_last_item:
+            active_items = order.items.get_active_items()
+            if active_items:
+                # Get the last item before removing it
+                last_item = active_items[-1]
+                replaced_item_name = last_item.get_summary()
+                # Find the index of this item in the full list and remove it
+                last_item_index = order.items.items.index(last_item)
+                order.items.remove_item(last_item_index)
+                logger.info("Replacement: removed last item '%s' from cart", replaced_item_name)
+            else:
+                logger.info("Replacement requested but no items in cart to replace")
+
         # Handle repeat order request
         if parsed.wants_repeat_order:
             return self._handle_repeat_order(order)
@@ -2964,6 +3040,12 @@ class OrderStateMachine:
         # Track items added for multi-item orders
         items_added = []
         last_result = None
+
+        # Helper to build confirmation message (normal vs replacement)
+        def make_confirmation(item_name: str) -> str:
+            if replaced_item_name:
+                return f"Sure, I've changed that to {item_name}. Anything else?"
+            return f"Got it, {item_name}. Anything else?"
 
         if parsed.new_menu_item:
             # Check if this "menu item" is actually a coffee/beverage that was misparsed
@@ -3039,6 +3121,12 @@ class OrderStateMachine:
                     )
 
             if last_result:
+                # If this was a replacement, modify the message
+                if replaced_item_name and "Got it" in last_result.message:
+                    last_result = StateMachineResult(
+                        message=last_result.message.replace("Got it", "Sure, I've changed that to").rstrip(". Anything else?") + ". Anything else?",
+                        order=last_result.order,
+                    )
                 return last_result
 
         if parsed.new_side_item and not parsed.new_bagel:
@@ -3151,6 +3239,12 @@ class OrderStateMachine:
                 return StateMachineResult(
                     message=f"Got it, {combined_items}. Anything else?",
                     order=order,
+                )
+            # If this was a replacement, modify the message
+            if replaced_item_name and coffee_result and "Got it" in coffee_result.message:
+                coffee_result = StateMachineResult(
+                    message=coffee_result.message.replace("Got it", "Sure, I've changed that to"),
+                    order=coffee_result.order,
                 )
             return coffee_result
 

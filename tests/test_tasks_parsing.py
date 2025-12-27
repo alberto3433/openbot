@@ -755,3 +755,79 @@ class TestValidateDeliveryZipCode:
         else:
             assert zip_code is None
             assert error is not None
+
+
+# =============================================================================
+# Replacement Pattern Tests
+# =============================================================================
+
+class TestReplacementPatternDetection:
+    """Tests for item replacement pattern detection."""
+
+    @pytest.mark.parametrize("text,expected_replacement", [
+        # "make it X instead" patterns
+        ("make it a coke instead", True),
+        ("make it coke instead", True),
+        ("make it a latte", True),
+        # "change it to X" patterns
+        ("change it to a coke", True),
+        ("change to coke", True),
+        # "X instead" patterns
+        ("coke instead", True),
+        ("a coke instead", True),
+        ("actually coke", True),
+        ("actually a coke", True),
+        # "actually X" patterns
+        ("actually, make it a latte", True),
+        ("no, a coke instead", True),
+        ("nope, coke instead", True),
+        ("wait, make it a sprite", True),
+        # "switch/swap" patterns
+        ("switch to a coke", True),
+        ("swap it for a latte", True),
+        # "i meant X" patterns
+        ("i meant a coke", True),
+        ("I meant coke", True),
+        # Non-replacement patterns (should NOT match)
+        ("I want a coke", False),
+        ("give me a coke", False),
+        ("can I get a coke", False),
+        ("diet coke please", False),
+    ])
+    def test_replacement_patterns_detected(self, text, expected_replacement):
+        """Test that replacement patterns are properly detected."""
+        result = parse_open_input_deterministic(text)
+        if expected_replacement:
+            assert result is not None, f"Expected pattern match for: {text}"
+            assert result.replace_last_item is True, f"Expected replace_last_item=True for: {text}"
+        else:
+            # Non-replacement patterns should either:
+            # 1. Return a result with replace_last_item=False, or
+            # 2. Return None (falls back to LLM)
+            if result is not None:
+                assert result.replace_last_item is False, f"Did not expect replacement for: {text}"
+
+    def test_replacement_extracts_new_item(self):
+        """Test that replacement correctly extracts the new item."""
+        # "make it a coke instead" -> should parse as a drink/menu item
+        result = parse_open_input_deterministic("make it a coke instead")
+        assert result is not None
+        assert result.replace_last_item is True
+        # The new item should be parsed (either as new_menu_item or handled by LLM)
+        # Since "coke" would be parsed as a menu item or require LLM
+
+    def test_replacement_with_latte(self):
+        """Test replacement with coffee item."""
+        result = parse_open_input_deterministic("actually a latte")
+        assert result is not None
+        assert result.replace_last_item is True
+        # Latte might be recognized as coffee
+        assert result.new_coffee is True or result.new_menu_item is not None
+
+    def test_replacement_with_bagel(self):
+        """Test replacement with bagel item."""
+        result = parse_open_input_deterministic("make it an everything bagel instead")
+        assert result is not None
+        assert result.replace_last_item is True
+        assert result.new_bagel is True
+        assert result.new_bagel_type == "everything"

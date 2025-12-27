@@ -309,6 +309,7 @@ class MessageProcessor:
             "last_order_items": last_order_items,
             "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
             "last_order_type": recent_order.order_type,
+            "last_order_address": recent_order.delivery_address,  # For repeat delivery orders
         }
 
     # -------------------------------------------------------------------------

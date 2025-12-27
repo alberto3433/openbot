@@ -482,6 +482,7 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
                     "last_order_id": order.id,
                     "last_order_items": last_order_items,
                     "last_order_type": order.order_type,  # "pickup" or "delivery"
+                    "last_order_address": order.delivery_address,  # For repeat delivery orders
                 }
 
     return None

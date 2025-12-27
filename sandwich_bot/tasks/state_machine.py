@@ -32,6 +32,7 @@ from .models import (
     TaskStatus,
 )
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
+from ..address_service import complete_address, AddressCompletionResult
 
 logger = logging.getLogger(__name__)
 
@@ -3450,6 +3451,37 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle pickup/delivery selection and address collection."""
+        # Handle address confirmation for repeat orders
+        if order.pending_field == "address_confirmation":
+            lower_input = user_input.lower().strip()
+            # Check for affirmative response
+            if lower_input in ("yes", "yeah", "yep", "correct", "that's right", "thats right", "right", "yes please", "yea"):
+                order.pending_field = None
+                return self._proceed_after_address(order)
+            # Check for negative response - ask for new address
+            elif lower_input in ("no", "nope", "different address", "new address", "wrong", "not quite"):
+                order.pending_field = None
+                order.delivery_method.address.street = None
+                return StateMachineResult(
+                    message="What's the delivery address?",
+                    order=order,
+                )
+            # Otherwise treat as a new address
+            else:
+                order.pending_field = None
+                order.delivery_method.address.street = None
+                # Fall through to parse as new address
+                parsed = parse_delivery_choice(user_input, model=self.model)
+                if parsed.address:
+                    result = self._complete_delivery_address(parsed.address, order)
+                    if result:
+                        return result
+                    return self._proceed_after_address(order)
+                return StateMachineResult(
+                    message="What's the delivery address?",
+                    order=order,
+                )
+
         parsed = parse_delivery_choice(user_input, model=self.model)
 
         if parsed.choice == "unclear":
@@ -3457,27 +3489,12 @@ class OrderStateMachine:
             if order.delivery_method.order_type == "delivery" and not order.delivery_method.address.street:
                 # Try to extract address from input
                 if parsed.address:
-                    # Validate the delivery zip code
-                    allowed_zips = getattr(self, '_store_info', {}).get('delivery_zip_codes', [])
-                    zip_code, error = validate_delivery_zip_code(parsed.address, allowed_zips)
-                    if error:
-                        return StateMachineResult(
-                            message=error,
-                            order=order,
-                        )
-                    order.delivery_method.address.street = parsed.address
-                    self._transition_to_next_slot(order)
-                    # Check if we already have name from returning customer
-                    if order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
-                        summary = self._build_order_summary(order)
-                        return StateMachineResult(
-                            message=f"{summary}\n\nDoes that look right?",
-                            order=order,
-                        )
-                    return StateMachineResult(
-                        message="Can I get a name for the order?",
-                        order=order,
-                    )
+                    # Complete and validate the delivery address
+                    result = self._complete_delivery_address(parsed.address, order)
+                    if result:
+                        return result
+                    # Address was set successfully, continue
+                    return self._proceed_after_address(order)
                 return StateMachineResult(
                     message="What's the delivery address?",
                     order=order,
@@ -3489,17 +3506,13 @@ class OrderStateMachine:
 
         order.delivery_method.order_type = parsed.choice
         if parsed.address and parsed.choice == "delivery":
-            # Validate the delivery zip code
-            allowed_zips = getattr(self, '_store_info', {}).get('delivery_zip_codes', [])
-            zip_code, error = validate_delivery_zip_code(parsed.address, allowed_zips)
-            if error:
-                # Clear the order type so they can choose pickup
-                order.delivery_method.order_type = None
-                return StateMachineResult(
-                    message=error,
-                    order=order,
-                )
-            order.delivery_method.address.street = parsed.address
+            # Complete and validate the delivery address
+            result = self._complete_delivery_address(parsed.address, order)
+            if result:
+                # Clear order type if we got an error (not clarification)
+                if not result.order.delivery_method.address.street:
+                    order.delivery_method.order_type = None
+                return result
         elif parsed.address:
             order.delivery_method.address.street = parsed.address
 
@@ -3509,26 +3522,71 @@ class OrderStateMachine:
         next_slot = orchestrator.get_next_slot()
 
         if next_slot and next_slot.category == SlotCategory.DELIVERY_ADDRESS:
-            # Need to collect address
+            # Check for previous delivery address from repeat order
+            returning_customer = getattr(self, "_returning_customer", None)
+            is_repeat = getattr(self, "_is_repeat_order", False)
+            if is_repeat and returning_customer:
+                last_address = returning_customer.get("last_order_address")
+                if last_address:
+                    # Pre-fill the address and ask for confirmation
+                    order.delivery_method.address.street = last_address
+                    order.pending_field = "address_confirmation"
+                    return StateMachineResult(
+                        message=f"I have {last_address}. Is that correct?",
+                        order=order,
+                    )
+            # Need to collect address fresh
             return StateMachineResult(
                 message="What's the delivery address?",
                 order=order,
             )
 
         # Transition to next slot - check if we already have name from returning customer
-        self._transition_to_next_slot(order)
+        return self._proceed_after_address(order)
 
-        # If we already have the customer name, skip to confirmation
-        if order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
-            summary = self._build_order_summary(order)
+    def _complete_delivery_address(
+        self,
+        partial_address: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """
+        Complete and validate a delivery address using Nominatim.
+
+        Returns:
+            StateMachineResult if there's an error or need clarification,
+            None if address was successfully set on the order.
+        """
+        allowed_zips = getattr(self, '_store_info', {}).get('delivery_zip_codes', [])
+
+        # Use address completion service
+        result = complete_address(partial_address, allowed_zips)
+
+        if not result.success:
+            # Error occurred - return error message
             return StateMachineResult(
-                message=f"{summary}\n\nDoes that look right?",
+                message=result.error_message or "I couldn't validate that address. Could you try again with the ZIP code?",
                 order=order,
             )
 
-        # Otherwise ask for name
+        if result.needs_clarification and len(result.addresses) > 1:
+            # Multiple matches with different ZIP codes - ask for ZIP to disambiguate
+            zip_codes = [addr.zip_code for addr in result.addresses[:3]]
+            message = f"I found that address in a few areas. What's the ZIP code? It should be one of: {', '.join(zip_codes)}"
+            return StateMachineResult(
+                message=message,
+                order=order,
+            )
+
+        if result.single_match:
+            # Single match - use the completed address
+            completed = result.single_match
+            order.delivery_method.address.street = completed.format_full()
+            logger.info("Address completed: %s -> %s", partial_address, completed.format_short())
+            return None  # Success - address set
+
+        # Fallback: no matches
         return StateMachineResult(
-            message="Can I get a name for the order?",
+            message="I couldn't find that address in our delivery area. Could you provide the full address with ZIP code?",
             order=order,
         )
 
@@ -5428,6 +5486,27 @@ class OrderStateMachine:
             return "Is this for delivery again, or pickup?"
         else:
             return "Is this for pickup or delivery?"
+
+    def _proceed_after_address(self, order: OrderTask) -> StateMachineResult:
+        """Handle transition after delivery address is captured.
+
+        Checks if we already have customer info and skips to confirmation if so.
+        """
+        self._transition_to_next_slot(order)
+
+        # If we already have the customer name, skip to confirmation
+        if order.customer_info.name:
+            order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+            summary = self._build_order_summary(order)
+            return StateMachineResult(
+                message=f"{summary}\n\nDoes that look right?",
+                order=order,
+            )
+
+        return StateMachineResult(
+            message="Can I get a name for the order?",
+            order=order,
+        )
 
     def _get_item_by_id(self, order: OrderTask, item_id: str) -> ItemTask | None:
         """Find an item by its ID."""

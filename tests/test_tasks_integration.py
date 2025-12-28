@@ -1617,3 +1617,112 @@ class TestPhoneValidation:
         if error is None:  # If validation passes
             assert phone.startswith("+1")
             assert len(phone) == 12  # +1 plus 10 digits
+
+
+class TestSpreadSandwichWithCoke:
+    """Tests for ordering a spread sandwich with a coke in a single message."""
+
+    def test_spread_sandwich_with_coke_asks_toasted(self):
+        """Test that ordering a spread sandwich with coke asks for toasted."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+
+        menu_data = {
+            "items_by_name": {},
+            "items_by_type": {
+                "spread_sandwich": [
+                    {
+                        "id": 398,
+                        "name": "Strawberry Cream Cheese Sandwich",
+                        "base_price": 5.75,
+                        "item_type": "spread_sandwich",
+                    },
+                ],
+            },
+            "item_type_configs": {},
+        }
+
+        sm = OrderStateMachine(menu_data=menu_data)
+        order = OrderTask()
+
+        # Order spread sandwich with coke
+        result = sm.process("plain bagel with strawberry cream cheese and a coke", order)
+
+        # Should ask for toasted, not "Anything else?"
+        assert "toasted" in result.message.lower(), f"Expected toasted question, got: {result.message}"
+        assert order.pending_field == "spread_sandwich_toasted"
+
+        # Both items should be in the cart
+        items = order.items.items
+        assert len(items) == 2, f"Expected 2 items, got {len(items)}"
+
+    def test_spread_sandwich_with_coke_completes_after_toasted(self):
+        """Test that answering toasted question confirms both items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+
+        menu_data = {
+            "items_by_name": {},
+            "items_by_type": {
+                "spread_sandwich": [
+                    {
+                        "id": 398,
+                        "name": "Strawberry Cream Cheese Sandwich",
+                        "base_price": 5.75,
+                        "item_type": "spread_sandwich",
+                    },
+                ],
+            },
+            "item_type_configs": {},
+        }
+
+        sm = OrderStateMachine(menu_data=menu_data)
+        order = OrderTask()
+
+        # Order spread sandwich with coke
+        result = sm.process("plain bagel with strawberry cream cheese and a coke", order)
+        assert "toasted" in result.message.lower()
+
+        # Answer toasted question
+        result = sm.process("yes", order)
+
+        # Should confirm items and ask "Anything else?"
+        assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
+        assert "strawberry cream cheese" in result.message.lower() or "got it" in result.message.lower()
+
+    def test_spread_sandwich_with_coke_checkout_flow(self):
+        """Test full checkout flow after ordering spread sandwich with coke."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask, OrderPhase
+
+        menu_data = {
+            "items_by_name": {},
+            "items_by_type": {
+                "spread_sandwich": [
+                    {
+                        "id": 398,
+                        "name": "Strawberry Cream Cheese Sandwich",
+                        "base_price": 5.75,
+                        "item_type": "spread_sandwich",
+                    },
+                ],
+            },
+            "item_type_configs": {},
+        }
+
+        sm = OrderStateMachine(menu_data=menu_data)
+        order = OrderTask()
+
+        # Order spread sandwich with coke
+        result = sm.process("plain bagel with strawberry cream cheese and a coke", order)
+        assert "toasted" in result.message.lower()
+
+        # Answer toasted question
+        result = sm.process("yes", order)
+        assert "anything else" in result.message.lower()
+
+        # Say no to checkout
+        result = sm.process("no", order)
+        assert "pickup" in result.message.lower() or "delivery" in result.message.lower(), f"Expected pickup/delivery question, got: {result.message}"
+        assert order.phase == OrderPhase.CHECKOUT_DELIVERY.value
+
+        # Answer pickup
+        result = sm.process("pickup", order)
+        assert "name" in result.message.lower(), f"Expected name question, got: {result.message}"

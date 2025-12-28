@@ -3293,6 +3293,11 @@ class OrderStateMachine:
                 menu_item_needs_config = order.is_configuring_item()
                 menu_item_result = last_result  # Save menu item's configuration result
 
+                # Save pending state - _add_coffee may clear it for sodas
+                saved_pending_item_id = order.pending_item_id
+                saved_pending_field = order.pending_field
+                saved_phase = order.phase
+
                 coffee_result = self._add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
@@ -3309,6 +3314,10 @@ class OrderStateMachine:
                 # If menu item needs configuration (e.g., spread sandwich toasted question),
                 # ask menu item questions first (coffee was still added to cart)
                 if menu_item_needs_config:
+                    # Restore pending state that _add_coffee may have cleared
+                    order.pending_item_id = saved_pending_item_id
+                    order.pending_field = saved_pending_field
+                    order.phase = saved_phase
                     logger.info("Multi-item order: menu item needs config, returning menu item config question")
                     return menu_item_result
 
@@ -3381,6 +3390,11 @@ class OrderStateMachine:
                 bagel_needs_config = order.is_configuring_item()
                 bagel_result = result  # Save bagel's configuration result
 
+                # Save pending state - _add_coffee may clear it for sodas
+                saved_pending_item_id = order.pending_item_id
+                saved_pending_field = order.pending_field
+                saved_phase = order.phase
+
                 coffee_result = self._add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
@@ -3396,6 +3410,10 @@ class OrderStateMachine:
                 # If bagel needs configuration, ask bagel questions first
                 # (coffee was still added to cart, we'll configure it after bagel)
                 if bagel_needs_config:
+                    # Restore pending state that _add_coffee may have cleared
+                    order.pending_item_id = saved_pending_item_id
+                    order.pending_field = saved_pending_field
+                    order.phase = saved_phase
                     logger.info("Multi-item order: bagel needs config, returning bagel config question")
                     return bagel_result
 

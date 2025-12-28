@@ -251,6 +251,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Whether the menu item should be toasted (True if 'toasted' mentioned, None if not specified)"
     )
+    new_menu_item_bagel_choice: str | None = Field(
+        default=None,
+        description="Bagel type for spread/salad sandwiches if specified (e.g., 'plain bagel with cream cheese' -> 'plain')"
+    )
     new_side_item: str | None = Field(
         default=None,
         description="Side item ordered (e.g., 'Side of Sausage', 'Side of Bacon', 'Side of Turkey Bacon'). Use when user says 'with a side of X' or 'side of X'"
@@ -2209,6 +2213,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     side_item = None
     side_item_qty = 1
 
+    menu_item_bagel_choice = None
+    menu_item_toasted = None
+
     for part in restored_parts:
         part = part.strip()
         if not part:
@@ -2219,7 +2226,11 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         if item_name:
             menu_item = item_name
             menu_item_qty = item_qty
-            logger.info("Multi-item: detected menu item '%s' (qty=%d)", menu_item, menu_item_qty)
+            # Also extract bagel type and toasted for spread sandwiches
+            # E.g., "plain bagel with strawberry cream cheese" -> bagel_choice='plain'
+            menu_item_bagel_choice = _extract_bagel_type(part)
+            menu_item_toasted = _extract_toasted(part)
+            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s)", menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted)
             continue
 
         # Try to parse as coffee/drink
@@ -2310,6 +2321,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         return OpenInputResponse(
             new_menu_item=menu_item,
             new_menu_item_quantity=menu_item_qty,
+            new_menu_item_bagel_choice=menu_item_bagel_choice,
+            new_menu_item_toasted=menu_item_toasted,
             new_coffee=coffee_type is not None,
             new_coffee_type=coffee_type,
             new_coffee_quantity=coffee_qty,
@@ -2325,7 +2338,12 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     # If only one item found, we can still return it
     if menu_item:
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=menu_item_qty)
+        return OpenInputResponse(
+            new_menu_item=menu_item,
+            new_menu_item_quantity=menu_item_qty,
+            new_menu_item_bagel_choice=menu_item_bagel_choice,
+            new_menu_item_toasted=menu_item_toasted,
+        )
     if coffee_type:
         return OpenInputResponse(
             new_coffee=True,
@@ -3254,7 +3272,7 @@ class OrderStateMachine:
                 )
                 items_added.append(parsed.new_menu_item)
             else:
-                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted)
+                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice)
                 items_added.append(parsed.new_menu_item)
                 # If there's also a side item, add it too
                 if parsed.new_side_item:
@@ -3426,7 +3444,7 @@ class OrderStateMachine:
 
             # Check if there's ALSO a menu item in the same message
             if parsed.new_menu_item:
-                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted)
+                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice)
                 items_added.append(parsed.new_menu_item)
                 # Combine the messages
                 combined_items = ", ".join(items_added)
@@ -3537,6 +3555,8 @@ class OrderStateMachine:
             return self._handle_coffee_style(user_input, item, order)
         elif order.pending_field == "speed_menu_bagel_toasted":
             return self._handle_speed_menu_bagel_toasted(user_input, item, order)
+        elif order.pending_field == "spread_sandwich_toasted":
+            return self._handle_toasted_choice(user_input, item, order)
         else:
             order.clear_pending()
             return self._get_next_question(order)
@@ -4358,6 +4378,7 @@ class OrderStateMachine:
         quantity: int,
         order: OrderTask,
         toasted: bool | None = None,
+        bagel_choice: str | None = None,
     ) -> StateMachineResult:
         """Add a menu item and determine next question."""
         # Ensure quantity is at least 1
@@ -4422,13 +4443,14 @@ class OrderStateMachine:
                 requires_side_choice=is_omelette,
                 menu_item_type=item_type,
                 toasted=toasted,  # Set toasted if specified upfront
+                bagel_choice=bagel_choice,  # Set bagel choice if specified upfront
             )
             item.mark_in_progress()
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
-        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s)", quantity, canonical_name, price, menu_item_id, toasted)
+        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s, bagel=%s)", quantity, canonical_name, price, menu_item_id, toasted, bagel_choice)
 
         if is_omelette:
             # Set state to wait for side choice (applies to first item, others will be configured after)
@@ -4441,13 +4463,28 @@ class OrderStateMachine:
             )
         elif is_spread_or_salad_sandwich:
             # For spread/salad sandwiches, ask for bagel choice first, then toasted
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = first_item.id
-            order.pending_field = "bagel_choice"
-            return StateMachineResult(
-                message="What kind of bagel would you like that on?",
-                order=order,
-            )
+            if bagel_choice and toasted is not None:
+                # Both bagel and toasted specified - mark complete
+                first_item.mark_complete()
+                return self._get_next_question(order)
+            elif bagel_choice:
+                # Bagel specified but need toasted preference
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = first_item.id
+                order.pending_field = "spread_sandwich_toasted"
+                return StateMachineResult(
+                    message="Would you like that toasted?",
+                    order=order,
+                )
+            else:
+                # Need bagel choice
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = first_item.id
+                order.pending_field = "bagel_choice"
+                return StateMachineResult(
+                    message="What kind of bagel would you like that on?",
+                    order=order,
+                )
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:

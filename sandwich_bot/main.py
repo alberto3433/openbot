@@ -908,6 +908,7 @@ class OrderItemOut(BaseModel):
     sauces: Optional[List[str]] = None
     toasted: Optional[bool] = None
     item_config: Optional[Dict[str, Any]] = None  # Coffee/drink modifiers (style, milk, syrup, etc.)
+    notes: Optional[str] = None  # Special instructions (e.g., "a splash of milk", "extra hot")
     quantity: int
     unit_price: float
     line_total: float
@@ -2076,6 +2077,7 @@ def persist_pending_order(
             unit_price=unit_price,
             line_total=line_total,
             item_config=json.dumps(it.get("item_config")) if it.get("item_config") else None,
+            notes=it.get("notes"),
         )
         db.add(order_item)
 
@@ -2313,6 +2315,7 @@ def persist_confirmed_order(
             quantity=it.get("quantity", 1),
             unit_price=it.get("unit_price", 0.0),
             line_total=it.get("line_total", 0.0),
+            notes=it.get("notes"),
         )
         db.add(oi)
 

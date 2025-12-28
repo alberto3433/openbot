@@ -234,6 +234,8 @@ class CoffeeOrderDetails(BaseModel):
     size: str | None = Field(default=None, description="Size: small, medium, or large")
     iced: bool | None = Field(default=None, description="True if iced, False if hot, None if not specified")
     quantity: int = Field(default=1, description="Number of this drink")
+    milk: str | None = Field(default=None, description="Milk type: whole, skim, oat, almond, none/black")
+    notes: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
 
 
 class ByPoundOrderItem(BaseModel):
@@ -331,6 +333,10 @@ class OpenInputResponse(BaseModel):
     new_coffee_flavor_syrup: str | None = Field(
         default=None,
         description="Flavor syrup: vanilla, caramel, hazelnut, etc."
+    )
+    new_coffee_notes: str | None = Field(
+        default=None,
+        description="Special instructions for the coffee like 'a splash of milk', 'extra hot', 'light ice'"
     )
     new_coffee_quantity: int = Field(
         default=1,
@@ -1045,10 +1051,21 @@ class ExtractedModifiers:
         self.cheeses: list[str] = []
         self.toppings: list[str] = []
         self.spreads: list[str] = []
+        self.notes: list[str] = []  # Free-form notes for qualifiers like "light", "extra"
 
     def has_modifiers(self) -> bool:
         """Check if any modifiers were extracted."""
         return bool(self.proteins or self.cheeses or self.toppings or self.spreads)
+
+    def has_notes(self) -> bool:
+        """Check if any notes were extracted."""
+        return bool(self.notes)
+
+    def get_notes_string(self) -> str | None:
+        """Get notes as a single comma-separated string."""
+        if self.notes:
+            return ", ".join(self.notes)
+        return None
 
     def __repr__(self):
         parts = []
@@ -1060,6 +1077,8 @@ class ExtractedModifiers:
             parts.append(f"toppings={self.toppings}")
         if self.spreads:
             parts.append(f"spreads={self.spreads}")
+        if self.notes:
+            parts.append(f"notes={self.notes}")
         return f"ExtractedModifiers({', '.join(parts)})"
 
 
@@ -1170,6 +1189,22 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
                 result.cheeses.append("american")
                 logger.debug("Extracted cheese: 'cheese' -> 'american' (default)")
 
+    # Extract notes (qualifiers like "light", "extra", etc.)
+    # Filter to only include bagel-related notes (spreads, proteins, toppings, cheeses)
+    notes_list = extract_notes_from_input(user_input)
+    bagel_keywords = {
+        # Spreads
+        'cream cheese', 'butter', 'cream', 'lox', 'spread',
+        # Proteins
+        'bacon', 'ham', 'turkey', 'egg', 'sausage', 'meat',
+        # Cheeses
+        'cheese', 'american', 'cheddar', 'swiss', 'muenster',
+        # Toppings
+        'tomato', 'onion', 'lettuce', 'cucumber', 'capers', 'avocado',
+    }
+    bagel_notes = [n for n in notes_list if any(kw in n.lower() for kw in bagel_keywords)]
+    result.notes = bagel_notes
+
     return result
 
 
@@ -1179,6 +1214,21 @@ class ExtractedCoffeeModifiers:
     sweetener: str | None = None
     sweetener_quantity: int = 1
     flavor_syrup: str | None = None
+    notes: list[str] = None  # Free-form notes for qualifiers like "light", "extra"
+
+    def __post_init__(self):
+        if self.notes is None:
+            self.notes = []
+
+    def has_notes(self) -> bool:
+        """Check if any notes were extracted."""
+        return bool(self.notes)
+
+    def get_notes_string(self) -> str | None:
+        """Get notes as a single comma-separated string."""
+        if self.notes:
+            return ", ".join(self.notes)
+        return None
 
 
 def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModifiers:
@@ -1235,7 +1285,74 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
             logger.debug(f"Extracted coffee flavor syrup: {syrup}")
             break
 
+    # Extract notes (qualifiers like "light", "extra", etc.)
+    result.notes = extract_notes_from_input(user_input)
+
     return result
+
+
+# Qualifier patterns for notes extraction
+# These are phrases that modify a standard modifier in a non-standard way
+# The capture group uses (?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)? to avoid capturing conjunctions
+QUALIFIER_PATTERNS = [
+    # "light on the X" / "light X" / "go light on X"
+    (r'\b(?:go\s+)?light\s+(?:on\s+(?:the\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'light'),
+    # "easy on the X" / "go easy on the X"
+    (r'\b(?:go\s+)?easy\s+on\s+(?:the\s+)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'light'),
+    # "extra X" / "extra heavy on the X"
+    (r'\bextra\s+(?:heavy\s+(?:on\s+(?:the\s+)?)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "lots of X" / "a lot of X"
+    (r'\b(?:a\s+)?lot(?:s)?\s+of\s+(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "heavy on the X"
+    (r'\bheavy\s+(?:on\s+(?:the\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "a splash of X" / "splash of X"
+    (r'\b(?:a\s+)?splash\s+of\s+(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a splash of'),
+    # "a little X" / "just a little X"
+    (r'\b(?:just\s+)?a\s+little\s+(?:bit\s+of\s+)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a little'),
+    # "no X" / "hold the X" / "without X"
+    (r'\b(?:no\s+|hold\s+the\s+|without\s+)(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'no'),
+]
+
+
+def extract_notes_from_input(user_input: str) -> list[str]:
+    """
+    Extract special instruction notes from user input.
+
+    Looks for qualifier phrases like "light on the cream cheese", "extra bacon",
+    "a splash of milk" and converts them to notes.
+
+    Args:
+        user_input: The raw user input string
+
+    Returns:
+        List of note strings like ["light cream cheese", "extra bacon"]
+
+    Examples:
+        "bagel with light cream cheese" -> ["light cream cheese"]
+        "coffee with a splash of milk" -> ["a splash of milk"]
+        "egg sandwich with extra bacon, light on the mayo" -> ["extra bacon", "light mayo"]
+    """
+    notes = []
+    input_lower = user_input.lower()
+
+    for pattern, qualifier in QUALIFIER_PATTERNS:
+        for match in re.finditer(pattern, input_lower, re.IGNORECASE):
+            item = match.group(1).strip()
+            # Clean up common words that aren't actual items
+            skip_words = {'the', 'a', 'an', 'and', 'or', 'on', 'with', 'please', 'thanks'}
+            if item.lower() in skip_words:
+                continue
+            # Build the note
+            if qualifier == 'no':
+                note = f"no {item}"
+            else:
+                note = f"{qualifier} {item}"
+            # Avoid duplicates
+            if note not in notes:
+                notes.append(note)
+                logger.debug(f"Extracted note: '{note}' from input")
+
+    return notes
 
 
 # Greeting patterns
@@ -2060,6 +2177,10 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         (r'\bwith\s+(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
         (r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
         (r'\bblack\b', 'none'),
+        # "with milk" or just "milk" defaults to whole milk
+        (r'\bwith\s+milk\b', 'whole'),
+        (r'\bwith\s+(?:a\s+)?(?:splash|little|bit)\s+(?:of\s+)?milk\b', 'whole'),
+        (r'\bmilk\b(?!\s*(?:oat|almond|soy|skim|whole|coconut|chocolate))', 'whole'),
     ]
     for pattern, group in milk_patterns:
         milk_match = re.search(pattern, text_lower)
@@ -2070,10 +2191,17 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     # Extract sweetener and flavor syrup using existing function
     coffee_mods = extract_coffee_modifiers_from_input(text)
 
+    # Extract special instruction notes (e.g., "a splash of milk", "extra hot")
+    # Filter to only include coffee-related notes
+    notes_list = extract_notes_from_input(text)
+    coffee_keywords = {'milk', 'cream', 'ice', 'hot', 'shot', 'espresso', 'foam', 'whip', 'sugar', 'syrup'}
+    coffee_notes = [n for n in notes_list if any(kw in n.lower() for kw in coffee_keywords)]
+    notes = ", ".join(coffee_notes) if coffee_notes else None
+
     logger.debug(
-        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s, notes=%s",
         coffee_type, quantity, size, iced, milk,
-        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup
+        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, notes
     )
 
     return OpenInputResponse(
@@ -2086,6 +2214,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_sweetener=coffee_mods.sweetener,
         new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
         new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
+        new_coffee_notes=notes,
     )
 
 
@@ -2272,6 +2401,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 drink_qty = 1
                 drink_size = None
                 drink_iced = None
+                drink_milk = None
+                drink_notes = None
                 # Extract size
                 size_match = re.search(r'\b(small|medium|large)\b', part)
                 if size_match:
@@ -2281,6 +2412,26 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                     drink_iced = True
                 elif 'hot' in part:
                     drink_iced = False
+                # Extract milk preference
+                milk_patterns = [
+                    (r'\bwith\s+(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
+                    (r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
+                    (r'\bblack\b', 'none'),
+                    (r'\bwith\s+milk\b', 'whole'),
+                    (r'\bwith\s+(?:a\s+)?(?:splash|little|bit)\s+(?:of\s+)?milk\b', 'whole'),
+                    (r'\bmilk\b(?!\s*(?:oat|almond|soy|skim|whole|coconut|chocolate))', 'whole'),
+                ]
+                for pattern, group in milk_patterns:
+                    milk_match = re.search(pattern, part)
+                    if milk_match:
+                        drink_milk = milk_match.group(group) if isinstance(group, int) else group
+                        break
+                # Extract notes (coffee-specific)
+                notes_list = extract_notes_from_input(part)
+                coffee_keywords = {'milk', 'cream', 'ice', 'hot', 'shot', 'espresso', 'foam', 'whip', 'sugar', 'syrup'}
+                coffee_notes = [n for n in notes_list if any(kw in n.lower() for kw in coffee_keywords)]
+                if coffee_notes:
+                    drink_notes = ", ".join(coffee_notes)
                 # Check for quantity
                 qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
                 if qty_match:
@@ -2291,8 +2442,10 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                     size=drink_size,
                     iced=drink_iced,
                     quantity=drink_qty,
+                    milk=drink_milk,
+                    notes=drink_notes,
                 ))
-                logger.info("Multi-item: detected coffee '%s' (qty=%d)", bev, drink_qty)
+                logger.info("Multi-item: detected coffee '%s' (qty=%d, milk=%s, notes=%s)", bev, drink_qty, drink_milk, drink_notes)
                 drink_found = True
                 break
 
@@ -2450,10 +2603,11 @@ Determine what they want:
   - Set new_coffee_type if specified (e.g., "latte", "cappuccino", "drip coffee", "diet coke", "coke")
   - Set new_coffee_size if specified ("small", "medium", "large") - note: size may not be specified initially
   - Set new_coffee_iced=true if they want iced, false if they want hot, null if not specified
-  - Set new_coffee_milk if specified (e.g., "oat", "almond", "skim", "whole"). "black" means no milk.
+  - Set new_coffee_milk if specified (e.g., "oat", "almond", "skim", "whole"). "black" means no milk. If they just say "with milk" without specifying type, use "whole".
   - Set new_coffee_sweetener if specified (e.g., "sugar", "splenda", "stevia", "equal")
   - Set new_coffee_sweetener_quantity for number of sweeteners (e.g., "two sugars" = 2, "2 splenda" = 2)
   - Set new_coffee_flavor_syrup if specified (e.g., "vanilla", "caramel", "hazelnut")
+  - Set new_coffee_notes for special instructions like "a splash of milk", "extra hot", "light ice"
 - If they're done ordering ("that's all", "nothing else", "no", "nope", "I'm good"), set done_ordering=true
 - If they want to repeat their previous order ("repeat my order", "same as last time", "my usual", "same thing again"), set wants_repeat_order=true
 - If just greeting ("hi", "hello"), set is_greeting=true
@@ -2493,6 +2647,10 @@ Examples:
 - "iced cappuccino" -> new_coffee: true, new_coffee_type: "cappuccino", new_coffee_iced: true
 - "small coffee black with two sugars" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2
 - "large latte with oat milk" -> new_coffee: true, new_coffee_type: "latte", new_coffee_size: "large", new_coffee_milk: "oat"
+- "coffee with milk" -> new_coffee: true, new_coffee_milk: "whole"
+- "small coffee with a splash of milk" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "whole", new_coffee_notes: "a splash of milk"
+- "latte extra hot" -> new_coffee: true, new_coffee_type: "latte", new_coffee_notes: "extra hot"
+- "iced coffee light ice" -> new_coffee: true, new_coffee_iced: true, new_coffee_notes: "light ice"
 - "medium coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "medium", new_coffee_flavor_syrup: "vanilla"
 - "small coffee black with two sugars and vanilla syrup" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
@@ -3298,6 +3456,7 @@ class OrderStateMachine:
                     flavor_syrup,
                     parsed.new_menu_item_quantity,
                     order,
+                    notes=parsed.new_coffee_notes,
                 )
                 items_added.append(parsed.new_menu_item)
             else:
@@ -3340,19 +3499,23 @@ class OrderStateMachine:
                     )]
 
                 for coffee_detail in coffees_to_add:
+                    # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                    coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
+                    coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
                     coffee_result = self._add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
                         coffee_detail.iced,
-                        parsed.new_coffee_milk,  # Use shared milk preference
+                        coffee_milk,
                         parsed.new_coffee_sweetener,  # Use shared sweetener
                         parsed.new_coffee_sweetener_quantity,
                         parsed.new_coffee_flavor_syrup,
                         coffee_detail.quantity,
                         order,
+                        notes=coffee_notes,
                     )
                     items_added.append(coffee_detail.drink_type)
-                    logger.info("Multi-item order: added coffee '%s' (qty=%d)", coffee_detail.drink_type, coffee_detail.quantity)
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
 
                 # If menu item needs configuration (e.g., spread sandwich toasted question),
                 # ask menu item questions first (coffees were still added to cart)
@@ -3458,18 +3621,22 @@ class OrderStateMachine:
                     )]
 
                 for coffee_detail in coffees_to_add:
+                    # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                    coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
+                    coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
                     coffee_result = self._add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
                         coffee_detail.iced,
-                        parsed.new_coffee_milk,  # Use shared milk preference
+                        coffee_milk,
                         parsed.new_coffee_sweetener,  # Use shared sweetener
                         parsed.new_coffee_sweetener_quantity,
                         parsed.new_coffee_flavor_syrup,
                         coffee_detail.quantity,
                         order,
+                        notes=coffee_notes,
                     )
-                    logger.info("Multi-item order: added coffee '%s' (qty=%d)", coffee_detail.drink_type, coffee_detail.quantity)
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
 
                 # If bagel needs configuration, ask bagel questions first
                 # (coffees were still added to cart, we'll configure them after bagel)
@@ -3539,6 +3706,7 @@ class OrderStateMachine:
                 parsed.new_coffee_flavor_syrup,
                 parsed.new_coffee_quantity,
                 order,
+                notes=parsed.new_coffee_notes,
             )
             items_added.append(parsed.new_coffee_type or "drink")
 
@@ -3581,6 +3749,7 @@ class OrderStateMachine:
                     parsed.new_coffee_flavor_syrup,
                     parsed.new_coffee_quantity,
                     order,
+                    notes=parsed.new_coffee_notes,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
                 # Combine the messages
@@ -4715,6 +4884,12 @@ class OrderStateMachine:
             base_price, price
         )
 
+        # Extract notes from modifiers
+        notes: str | None = None
+        if extracted_modifiers and extracted_modifiers.has_notes():
+            notes = extracted_modifiers.get_notes_string()
+            logger.info("Applying notes to bagel: %s", notes)
+
         # Create bagel with all provided details
         bagel = BagelItemTask(
             bagel_type=bagel_type,
@@ -4724,13 +4899,14 @@ class OrderStateMachine:
             sandwich_protein=sandwich_protein,
             extras=extras,
             unit_price=price,
+            notes=notes,
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
         logger.info(
-            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s",
-            bagel_type, toasted, spread, spread_type, sandwich_protein, extras
+            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, notes=%s",
+            bagel_type, toasted, spread, spread_type, sandwich_protein, extras, notes
         )
 
         # Determine what question to ask based on what's missing
@@ -4805,6 +4981,9 @@ class OrderStateMachine:
             sandwich_protein: str | None = None
             bagel_spread = spread
 
+            # Extract notes for first bagel
+            notes: str | None = None
+
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
                 # First protein goes to sandwich_protein field
                 if extracted_modifiers.proteins:
@@ -4827,6 +5006,11 @@ class OrderStateMachine:
                     sandwich_protein, extras, bagel_spread
                 )
 
+            # Apply notes to first bagel
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_notes():
+                notes = extracted_modifiers.get_notes_string()
+                logger.info("Applying notes to first bagel: %s", notes)
+
             # Calculate total price including modifiers (for first bagel with modifiers)
             price = self._calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, bagel_spread, spread_type
@@ -4840,6 +5024,7 @@ class OrderStateMachine:
                 sandwich_protein=sandwich_protein,
                 extras=extras,
                 unit_price=price,
+                notes=notes,
             )
             # Mark complete if all fields provided, otherwise in_progress
             if bagel_type and toasted is not None and bagel_spread is not None:
@@ -4879,6 +5064,9 @@ class OrderStateMachine:
             sandwich_protein: str | None = None
             spread = details.spread
 
+            # Extract notes for first bagel
+            notes: str | None = None
+
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
                 # First protein goes to sandwich_protein field
                 if extracted_modifiers.proteins:
@@ -4901,6 +5089,11 @@ class OrderStateMachine:
                     sandwich_protein, extras, spread
                 )
 
+            # Apply notes to first bagel
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_notes():
+                notes = extracted_modifiers.get_notes_string()
+                logger.info("Applying notes to first bagel: %s", notes)
+
             # Calculate total price including modifiers
             price = self._calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, spread, details.spread_type
@@ -4914,6 +5107,7 @@ class OrderStateMachine:
                 sandwich_protein=sandwich_protein,
                 extras=extras,
                 unit_price=price,
+                notes=notes,
             )
 
             # Mark complete if all fields provided
@@ -5075,11 +5269,12 @@ class OrderStateMachine:
         flavor_syrup: str | None,
         quantity: int,
         order: OrderTask,
+        notes: str | None = None,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, sweetener=%s (qty=%d), syrup=%s",
-            coffee_type, size, iced, sweetener, sweetener_quantity, flavor_syrup
+            "ADD COFFEE: type=%s, size=%s, iced=%s, sweetener=%s (qty=%d), syrup=%s, notes=%s",
+            coffee_type, size, iced, sweetener, sweetener_quantity, flavor_syrup, notes
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -5125,6 +5320,7 @@ class OrderStateMachine:
                     sweetener_quantity=0,
                     flavor_syrup=None,
                     unit_price=price,
+                    notes=notes,
                 )
                 drink.mark_complete()  # No configuration needed
                 order.items.add_item(drink)
@@ -5145,6 +5341,7 @@ class OrderStateMachine:
                 sweetener_quantity=sweetener_quantity,
                 flavor_syrup=flavor_syrup,
                 unit_price=price,
+                notes=notes,
             )
             coffee.mark_in_progress()
             order.items.add_item(coffee)

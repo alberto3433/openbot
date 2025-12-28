@@ -325,6 +325,13 @@ COMMON MAPPINGS:
 - "butter" -> spread: "butter"
 - "lox" or "salmon" -> extras: ["lox"]
 
+COFFEE MILK - CRITICAL:
+- "with milk" without specifying type -> milk: "whole" (default to whole milk)
+- "oat milk", "almond milk", "soy milk", "skim" -> use that milk type
+- "black" -> milk: "none"
+- "coffee with milk" -> milk: "whole"
+- "latte with oat milk" -> milk: "oat"
+
 COFFEE SWEETENERS AND SYRUPS - CRITICAL:
 - Sweeteners are packets (sugar, splenda, stevia, equal, honey): sweetener field
 - Syrups are flavored liquids (vanilla, caramel, hazelnut, mocha): flavor_syrup field

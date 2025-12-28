@@ -351,6 +351,24 @@ class TestParseUserMessageIntegration:
         assert coffee.iced is True
         assert coffee.milk == "oat"
 
+    def test_parse_coffee_with_milk_defaults_to_whole(self):
+        """Test that 'coffee with milk' defaults to whole milk."""
+        result = parse_user_message("coffee with milk")
+
+        assert len(result.new_coffees) >= 1
+        coffee = result.new_coffees[0]
+        assert coffee.milk == "whole"
+
+    def test_parse_coffee_with_splash_of_milk(self):
+        """Test that 'coffee with a splash of milk' captures milk preference."""
+        result = parse_user_message("small coffee with a splash of milk")
+
+        assert len(result.new_coffees) >= 1
+        coffee = result.new_coffees[0]
+        assert coffee.size == "small"
+        # Deterministic parser returns "whole", LLM may return "splash" or "whole"
+        assert coffee.milk is not None
+
     def test_parse_greeting(self):
         """Test parsing a simple greeting."""
         result = parse_user_message("Hi there!")
@@ -1036,3 +1054,118 @@ class TestOrderStatusPatternDetection:
         """Test that non-order-status patterns are NOT detected."""
         match = ORDER_STATUS_PATTERN.search(text)
         assert match is None, f"Did not expect order status match for: {text}"
+
+
+# =============================================================================
+# Notes Extraction Tests
+# =============================================================================
+
+class TestNotesExtraction:
+    """Tests for extract_notes_from_input function."""
+
+    def test_light_on_the_cream_cheese(self):
+        """Test 'light on the cream cheese' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("plain bagel with light on the cream cheese")
+        assert "light cream cheese" in notes
+
+    def test_light_cream_cheese_short_form(self):
+        """Test 'light cream cheese' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("bagel with light cream cheese")
+        assert "light cream cheese" in notes
+
+    def test_extra_bacon(self):
+        """Test 'extra bacon' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("egg and cheese bagel with extra bacon")
+        assert "extra bacon" in notes
+
+    def test_lots_of_cream_cheese(self):
+        """Test 'lots of cream cheese' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("bagel with lots of cream cheese")
+        assert "extra cream cheese" in notes
+
+    def test_splash_of_milk(self):
+        """Test 'a splash of milk' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("coffee with a splash of milk")
+        assert "a splash of milk" in notes
+
+    def test_go_easy_on_the_mayo(self):
+        """Test 'go easy on the mayo' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("sandwich with go easy on the mayo")
+        assert "light mayo" in notes
+
+    def test_little_bit_of_sugar(self):
+        """Test 'a little sugar' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("coffee with a little sugar")
+        assert "a little sugar" in notes
+
+    def test_no_onions(self):
+        """Test 'no onions' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("bagel with no onions")
+        assert "no onions" in notes
+
+    def test_hold_the_tomato(self):
+        """Test 'hold the tomato' extracts correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("sandwich hold the tomato")
+        assert "no tomato" in notes
+
+    def test_multiple_notes(self):
+        """Test multiple qualifier phrases extract correctly."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("bagel with light cream cheese and extra bacon")
+        assert "light cream cheese" in notes
+        assert "extra bacon" in notes
+
+    def test_no_notes_for_regular_order(self):
+        """Test that regular orders without qualifiers have no notes."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("plain bagel with cream cheese")
+        assert len(notes) == 0
+
+    def test_heavy_on_the_cheese(self):
+        """Test 'heavy on the cheese' extracts as extra."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        notes = extract_notes_from_input("bagel heavy on the cheese")
+        assert "extra cheese" in notes
+
+    def test_multi_item_notes_separated_coffee_only(self):
+        """Test that coffee notes filter only includes coffee-related notes."""
+        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
+        notes = extract_notes_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
+        # Should extract both notes separately
+        assert "a splash of milk" in notes
+        assert "extra cream cheese" in notes
+
+    def test_multi_item_modifiers_bagel_only(self):
+        """Test that extract_modifiers_from_input filters to bagel-related notes only."""
+        from sandwich_bot.tasks.state_machine import extract_modifiers_from_input
+        # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
+        modifiers = extract_modifiers_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
+        # Bagel modifiers should only include bagel-related notes (cream cheese), not coffee-related (splash of milk)
+        notes_str = modifiers.get_notes_string() or ""
+        assert "cream cheese" in notes_str
+        assert "splash" not in notes_str or "milk" not in notes_str  # Coffee note should be filtered out
+
+    def test_multi_item_coffee_with_milk_and_notes(self):
+        """Test that multi-item parser extracts milk and notes for coffee."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
+        result = _parse_multi_item_order("a coffee with a splash of milk and a bagel with a lot of cream cheese")
+        assert result is not None
+        assert result.new_coffee is True
+        assert result.new_bagel is True
+        # Check coffee_details has milk and notes
+        assert len(result.coffee_details) >= 1
+        coffee = result.coffee_details[0]
+        assert coffee.milk == "whole"  # "with a splash of milk" should default to whole
+        assert coffee.notes is not None
+        assert "splash" in coffee.notes.lower() or "milk" in coffee.notes.lower()

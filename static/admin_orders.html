@@ -628,6 +628,9 @@
             // For drinks with item_config, use configStr; otherwise use extrasStr
             const displayExtras = item.item_config ? configStr : extrasStr;
 
+            // Add notes if present
+            const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
+
             return `
               <div class="item-card">
                 <div><strong>${item.quantity}× ${item.menu_item_name}</strong></div>
@@ -636,6 +639,7 @@
                   ${toppings}<br/>
                   ${sauces}
                 </div>
+                ${notesDisplay}
                 <div><strong>$${item.line_total.toFixed(2)}</strong></div>
               </div>
             `;

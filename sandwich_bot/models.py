@@ -209,6 +209,10 @@ class OrderItem(Base):
     # You can keep this if you want extra arbitrary config, or remove if unused
     extra = Column(JSON, default=dict)
 
+    # Free-form notes for special instructions that don't fit standard modifiers
+    # e.g., "light on the cream cheese", "extra crispy", "a splash of milk"
+    notes = Column(String, nullable=True)
+
     order = relationship("Order", back_populates="items")
     menu_item = relationship("MenuItem", back_populates="order_items")
 

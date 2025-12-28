@@ -3288,6 +3288,11 @@ class OrderStateMachine:
 
             # Check if there's ALSO a coffee order in the same message
             if parsed.new_coffee and parsed.new_coffee_type:
+                # Save whether menu item needs configuration BEFORE adding coffee
+                # (coffee might change pending_item_id)
+                menu_item_needs_config = order.is_configuring_item()
+                menu_item_result = last_result  # Save menu item's configuration result
+
                 coffee_result = self._add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
@@ -3301,12 +3306,18 @@ class OrderStateMachine:
                 )
                 items_added.append(parsed.new_coffee_type)
 
+                # If menu item needs configuration (e.g., spread sandwich toasted question),
+                # ask menu item questions first (coffee was still added to cart)
+                if menu_item_needs_config:
+                    logger.info("Multi-item order: menu item needs config, returning menu item config question")
+                    return menu_item_result
+
                 # If coffee needs configuration (not a soda), ask coffee questions
                 if order.is_configuring_item():
                     logger.info("Multi-item order: coffee needs config, returning coffee config question")
                     return coffee_result
 
-                # Coffee doesn't need config - combine the messages
+                # Neither needs config - combine the messages
                 if last_result and coffee_result:
                     combined_items = ", ".join(items_added)
                     last_result = StateMachineResult(

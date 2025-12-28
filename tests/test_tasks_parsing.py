@@ -436,6 +436,7 @@ from sandwich_bot.tasks.state_machine import (
     extract_zip_code,
     validate_delivery_zip_code,
     TAX_QUESTION_PATTERN,
+    ORDER_STATUS_PATTERN,
 )
 
 
@@ -965,3 +966,73 @@ class TestTaxQuestionPatternDetection:
         """Test that non-tax patterns are NOT detected as tax questions."""
         match = TAX_QUESTION_PATTERN.search(text)
         assert match is None, f"Did not expect tax question match for: {text}"
+
+
+class TestOrderStatusPatternDetection:
+    """Tests for order status pattern detection."""
+
+    @pytest.mark.parametrize("text", [
+        # "what's my order"
+        "what's my order",
+        "what's my order?",
+        "what is my order",
+        "what's the order",
+        "what is the order?",
+        # "what's in my cart"
+        "what's in my cart",
+        "what's in my cart?",
+        "what is in my cart",
+        "what's in the cart",
+        "what's in my order",
+        "what do I have in my cart",
+        "what do i have in my order",
+        # "what have I ordered"
+        "what have I ordered",
+        "what have i ordered?",
+        "what did I order",
+        "what did i order?",
+        # "read my order"
+        "read my order",
+        "read my order back",
+        "read back my order",
+        "repeat my order back",  # "repeat my order" without "back" is reserved for repeat order feature
+        "say my order",
+        "read the order",
+        # "can you read my order"
+        "can you read my order",
+        "can you repeat my order",
+        "could you read my order",
+        "can you tell me my order",
+        "could you tell me the order",
+        # "order so far"
+        "my order so far",
+        "order so far",
+        "my order so far?",
+        # "what do I have so far"
+        "what do I have so far",
+        "what do i have so far?",
+        "what have I got so far",
+        "what have i got so far?",
+    ])
+    def test_order_status_patterns_detected(self, text):
+        """Test that order status patterns are properly detected."""
+        match = ORDER_STATUS_PATTERN.search(text)
+        assert match is not None, f"Expected pattern match for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        # Non-order-status patterns (should NOT match)
+        "yes",
+        "no",
+        "I'd like a bagel",
+        "can I get a coke",
+        "that's all",
+        "I'm done",
+        "checkout",
+        "cancel my order",  # This is different - cancelling, not asking status
+        "what's the total with tax",  # Tax question, not order status
+        "repeat my order",  # Reserved for repeat order feature (re-ordering previous order)
+    ])
+    def test_non_order_status_patterns_not_detected(self, text):
+        """Test that non-order-status patterns are NOT detected."""
+        match = ORDER_STATUS_PATTERN.search(text)
+        assert match is None, f"Did not expect order status match for: {text}"

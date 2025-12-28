@@ -1330,6 +1330,37 @@ TAX_QUESTION_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Order status pattern: "what's my order", "what's in my cart", "read my order back", etc.
+# Note: "repeat my order" (without "back") is reserved for the repeat order feature
+ORDER_STATUS_PATTERN = re.compile(
+    r"(?:"
+    # "what's my order", "what is my order"
+    r"what(?:'?s| is)\s+(?:my|the)\s+order"
+    r"|"
+    # "what's in my cart", "what do I have in my cart"
+    r"what(?:'?s| is| do i have)\s+in\s+(?:my|the)\s+(?:cart|order)"
+    r"|"
+    # "what have I ordered", "what did I order"
+    r"what\s+(?:have\s+i|did\s+i)\s+order"
+    r"|"
+    # "read my order", "read back my order", "say my order" (but NOT "repeat my order" - that's for repeat order feature)
+    r"(?:read|say)\s+(?:back\s+)?(?:my|the)\s+order"
+    r"|"
+    # "repeat my order back" (requires "back" to distinguish from repeat order feature)
+    r"repeat\s+(?:my|the)\s+order\s+back"
+    r"|"
+    # "can you read my order", "can you tell me my order"
+    r"(?:can|could)\s+you\s+(?:read|repeat|tell\s+me)\s+(?:my|the)\s+order"
+    r"|"
+    # "my order so far", "order so far"
+    r"(?:my\s+)?order\s+so\s+far"
+    r"|"
+    # "what do I have so far", "what have I got so far"
+    r"what\s+(?:do\s+i\s+have|have\s+i\s+got)\s+so\s+far"
+    r")",
+    re.IGNORECASE
+)
+
 # Bagel quantity pattern: matches "3 bagels", "three bagels", "two plain bagels", etc.
 # Allows optional bagel type/adjectives between quantity and "bagels"
 BAGEL_QUANTITY_PATTERN = re.compile(
@@ -2882,6 +2913,13 @@ class OrderStateMachine:
 
         # Add user message to history
         order.add_message("user", user_input)
+
+        # Check for order status request (works from any state)
+        if ORDER_STATUS_PATTERN.search(user_input):
+            logger.info("ORDER STATUS: User asked for order status")
+            result = self._handle_order_status(order)
+            order.add_message("assistant", result.message)
+            return result
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
@@ -5805,6 +5843,47 @@ class OrderStateMachine:
 
         logger.info("TAX_QUESTION: subtotal=%.2f, city_tax=%.2f, state_tax=%.2f, total=%.2f",
                    subtotal, city_tax, state_tax, total_with_tax)
+
+        return StateMachineResult(
+            message=message,
+            order=order,
+        )
+
+    def _handle_order_status(self, order: OrderTask) -> StateMachineResult:
+        """Handle user asking about their current order status."""
+        items = order.items.get_active_items()
+
+        if not items:
+            message = "You haven't ordered anything yet. What can I get for you?"
+            return StateMachineResult(
+                message=message,
+                order=order,
+            )
+
+        # Build item list with consolidated identical items
+        from collections import defaultdict
+        item_counts: dict[str, int] = defaultdict(int)
+        for item in items:
+            summary = item.get_summary()
+            item_counts[summary] += 1
+
+        lines = ["So far you have:"]
+        for summary, count in item_counts.items():
+            if count > 1:
+                plural = f"{summary}s" if not summary.endswith("s") else summary
+                lines.append(f"• {count} {plural}")
+            else:
+                lines.append(f"• {summary}")
+
+        # Add total
+        subtotal = order.items.get_subtotal()
+        if subtotal > 0:
+            lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
+
+        lines.append("\nAnything else?")
+
+        message = "\n".join(lines)
+        logger.info("ORDER_STATUS: %d items, subtotal=%.2f", len(items), subtotal)
 
         return StateMachineResult(
             message=message,

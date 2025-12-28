@@ -3282,7 +3282,13 @@ class OrderStateMachine:
                     order,
                 )
                 items_added.append(parsed.new_coffee_type)
-                # Combine the messages
+
+                # If coffee needs configuration (not a soda), ask coffee questions
+                if order.is_configuring_item():
+                    logger.info("Multi-item order: coffee needs config, returning coffee config question")
+                    return coffee_result
+
+                # Coffee doesn't need config - combine the messages
                 if last_result and coffee_result:
                     combined_items = ", ".join(items_added)
                     last_result = StateMachineResult(
@@ -3341,6 +3347,11 @@ class OrderStateMachine:
 
             # Check if there's ALSO a coffee in the same message
             if parsed.new_coffee:
+                # Save whether bagel needs configuration BEFORE adding coffee
+                # (coffee might change pending_item_id)
+                bagel_needs_config = order.is_configuring_item()
+                bagel_result = result  # Save bagel's configuration result
+
                 coffee_result = self._add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
@@ -3352,7 +3363,20 @@ class OrderStateMachine:
                     parsed.new_coffee_quantity,
                     order,
                 )
-                # Combine the messages (bagel + optional side + coffee)
+
+                # If bagel needs configuration, ask bagel questions first
+                # (coffee was still added to cart, we'll configure it after bagel)
+                if bagel_needs_config:
+                    logger.info("Multi-item order: bagel needs config, returning bagel config question")
+                    return bagel_result
+
+                # If coffee needs configuration (not a soda), ask coffee questions
+                # Check if coffee set up pending configuration
+                if order.is_configuring_item():
+                    logger.info("Multi-item order: coffee needs config, returning coffee config question")
+                    return coffee_result
+
+                # Neither needs config - return combined confirmation
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
                 coffee_desc = parsed.new_coffee_type or "drink"
                 items_list = [bagel_desc]

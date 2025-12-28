@@ -3314,6 +3314,13 @@ class OrderStateMachine:
                 # If menu item needs configuration (e.g., spread sandwich toasted question),
                 # ask menu item questions first (coffee was still added to cart)
                 if menu_item_needs_config:
+                    # Check if coffee also needs configuration (not a soda)
+                    # If so, queue it for configuration after menu item is done
+                    for item in order.items.items:
+                        if isinstance(item, CoffeeItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "coffee")
+                            logger.info("Multi-item order: queued coffee %s for config after menu item", item.id[:8])
+
                     # Restore pending state that _add_coffee may have cleared
                     order.pending_item_id = saved_pending_item_id
                     order.pending_field = saved_pending_field
@@ -3410,6 +3417,13 @@ class OrderStateMachine:
                 # If bagel needs configuration, ask bagel questions first
                 # (coffee was still added to cart, we'll configure it after bagel)
                 if bagel_needs_config:
+                    # Check if coffee also needs configuration (not a soda)
+                    # If so, queue it for configuration after bagel is done
+                    for item in order.items.items:
+                        if isinstance(item, CoffeeItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "coffee")
+                            logger.info("Multi-item order: queued coffee %s for config after bagel", item.id[:8])
+
                     # Restore pending state that _add_coffee may have cleared
                     order.pending_item_id = saved_pending_item_id
                     order.pending_field = saved_pending_field
@@ -4963,6 +4977,21 @@ class OrderStateMachine:
                 summary = bagel_summary
 
             order.clear_pending()
+
+            # Check if there are items queued for configuration (e.g., coffee after bagel)
+            if order.has_queued_config_items():
+                next_config = order.pop_next_config_item()
+                if next_config:
+                    item_id = next_config.get("item_id")
+                    item_type = next_config.get("item_type")
+                    logger.info("Bagel complete, processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
+
+                    # Find the item by ID and start its configuration
+                    for item in order.items.items:
+                        if item.id == item_id:
+                            if item_type == "coffee" and isinstance(item, CoffeeItemTask):
+                                return self._configure_next_incomplete_coffee(order)
+
             # Explicitly set to TAKING_ITEMS - we're asking for more items
             order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
@@ -5771,6 +5800,21 @@ class OrderStateMachine:
             if item.status == TaskStatus.IN_PROGRESS:
                 # This shouldn't happen if we're tracking state correctly
                 logger.warning(f"Found in-progress item without pending state: {item}")
+
+        # Check if there are items queued for configuration
+        if order.has_queued_config_items():
+            next_config = order.pop_next_config_item()
+            if next_config:
+                item_id = next_config.get("item_id")
+                item_type = next_config.get("item_type")
+                logger.info("Processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
+
+                # Find the item by ID
+                for item in order.items.items:
+                    if item.id == item_id:
+                        if item_type == "coffee" and isinstance(item, CoffeeItemTask):
+                            # Start coffee configuration
+                            return self._configure_next_incomplete_coffee(order)
 
         # Ask if they want anything else
         items = order.items.get_active_items()

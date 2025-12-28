@@ -1726,3 +1726,111 @@ class TestSpreadSandwichWithCoke:
         # Answer pickup
         result = sm.process("pickup", order)
         assert "name" in result.message.lower(), f"Expected name question, got: {result.message}"
+
+
+class TestBagelWithCoffeeConfig:
+    """Tests for ordering a bagel with a coffee that needs configuration."""
+
+    def test_bagel_and_latte_queues_coffee(self):
+        """Test that ordering bagel + latte queues coffee for config after bagel."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order bagel and latte
+        result = sm.process("a bagel and a latte", order)
+
+        # Should ask for bagel type first
+        assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
+        assert order.pending_field == "bagel_choice"
+
+        # Coffee should be queued for configuration
+        assert order.has_queued_config_items(), "Expected coffee to be queued for config"
+        assert len(order.pending_config_queue) == 1
+        assert order.pending_config_queue[0]["item_type"] == "coffee"
+
+    def test_bagel_and_latte_full_flow(self):
+        """Test complete bagel + latte configuration flow."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order bagel and latte
+        result = sm.process("a bagel and a latte", order)
+        assert "bagel" in result.message.lower()
+
+        # Answer plain bagel
+        result = sm.process("plain bagel", order)
+        assert "toasted" in result.message.lower(), f"Expected toasted question, got: {result.message}"
+
+        # Answer toasted
+        result = sm.process("yes", order)
+        assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Expected spread question, got: {result.message}"
+
+        # Answer butter
+        result = sm.process("butter", order)
+
+        # Now should ask coffee questions - size
+        assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
+        assert order.pending_field == "coffee_size"
+
+    def test_bagel_and_latte_complete_with_coffee_config(self):
+        """Test that coffee configuration completes properly after bagel."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order bagel and latte
+        result = sm.process("a bagel and a latte", order)
+
+        # Complete bagel config: plain bagel
+        result = sm.process("plain bagel", order)
+        # Toasted
+        result = sm.process("yes toasted", order)
+        # Butter
+        result = sm.process("butter", order)
+
+        # Should now be asking about coffee size
+        assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
+
+        # Answer medium
+        result = sm.process("medium", order)
+        assert "hot" in result.message.lower() or "iced" in result.message.lower(), f"Expected hot/iced question, got: {result.message}"
+
+        # Answer hot
+        result = sm.process("hot", order)
+
+        # Now should ask "Anything else?"
+        assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
+
+        # Verify both items are complete
+        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(bagels) == 1
+        assert len(coffees) == 1
+        assert bagels[0].bagel_type == "plain"
+        assert coffees[0].size == "medium"
+        assert coffees[0].iced is False
+
+    def test_bagel_and_coke_no_queue(self):
+        """Test that bagel + coke doesn't queue coffee (sodas skip config)."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order bagel and coke
+        result = sm.process("a bagel and a coke", order)
+
+        # Should ask for bagel type
+        assert "bagel" in result.message.lower()
+
+        # Coke should NOT be queued (it's a soda, no config needed)
+        assert not order.has_queued_config_items(), f"Coke should not be queued, queue: {order.pending_config_queue}"

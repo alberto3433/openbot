@@ -602,6 +602,10 @@ class OrderTask(BaseTask):
     pending_field: str | None = None  # Field we're asking about
     last_bot_message: str | None = None  # For context
 
+    # Queue of items that need configuration after the current one is done
+    # Each entry is a dict with: item_id, item_type (e.g., "coffee", "bagel")
+    pending_config_queue: list[dict] = Field(default_factory=list)
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -631,6 +635,27 @@ class OrderTask(BaseTask):
         """Clear pending item/field when done configuring."""
         self.pending_item_ids = []
         self.pending_field = None
+
+    def queue_item_for_config(self, item_id: str, item_type: str) -> None:
+        """Add an item to the configuration queue."""
+        # Don't add duplicates
+        for entry in self.pending_config_queue:
+            if entry.get("item_id") == item_id:
+                return
+        self.pending_config_queue.append({
+            "item_id": item_id,
+            "item_type": item_type,
+        })
+
+    def pop_next_config_item(self) -> dict | None:
+        """Pop the next item from the configuration queue."""
+        if self.pending_config_queue:
+            return self.pending_config_queue.pop(0)
+        return None
+
+    def has_queued_config_items(self) -> bool:
+        """Check if there are items waiting for configuration."""
+        return len(self.pending_config_queue) > 0
 
     def add_message(self, role: str, content: str) -> None:
         """Add a message to conversation history."""

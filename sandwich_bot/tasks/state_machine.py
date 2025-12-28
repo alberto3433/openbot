@@ -228,6 +228,14 @@ class BagelOrderDetails(BaseModel):
     spread_type: str | None = Field(default=None, description="Spread variety (scallion, veggie, strawberry, etc.)")
 
 
+class CoffeeOrderDetails(BaseModel):
+    """Details for a single coffee/drink in an order."""
+    drink_type: str = Field(description="Coffee/drink type (coffee, latte, cappuccino, etc.)")
+    size: str | None = Field(default=None, description="Size: small, medium, or large")
+    iced: bool | None = Field(default=None, description="True if iced, False if hot, None if not specified")
+    quantity: int = Field(default=1, description="Number of this drink")
+
+
 class ByPoundOrderItem(BaseModel):
     """A single by-the-pound item being ordered."""
     item_name: str = Field(description="Name of the item (e.g., 'Muenster', 'Nova', 'Tuna Salad')")
@@ -327,6 +335,11 @@ class OpenInputResponse(BaseModel):
     new_coffee_quantity: int = Field(
         default=1,
         description="Number of drinks ordered (e.g., '3 diet cokes' -> 3, 'two coffees' -> 2)"
+    )
+    # For multiple coffees with different types specified upfront
+    coffee_details: list[CoffeeOrderDetails] = Field(
+        default_factory=list,
+        description="When ordering multiple different coffees, list each one separately"
     )
 
     # Speed menu bagel orders (pre-configured sandwiches like "The Classic", "The Leo")
@@ -2202,10 +2215,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     # Parse each part
     menu_item = None
     menu_item_qty = 1
-    coffee_type = None
-    coffee_qty = 1
-    coffee_size = None
-    coffee_iced = None
+    # Support multiple different coffees
+    coffee_list: list[CoffeeOrderDetails] = []
     bagel = False
     bagel_qty = 1
     bagel_type = None
@@ -2238,40 +2249,50 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         drink_found = False
         for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
             if re.search(rf'\b{re.escape(soda)}\b', part):
-                coffee_type = soda
-                coffee_qty = 1
+                drink_qty = 1
                 # Check for quantity
                 qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
                 if qty_match:
                     qty_str = qty_match.group(1)
-                    coffee_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-                logger.info("Multi-item: detected drink '%s' (qty=%d)", coffee_type, coffee_qty)
+                    drink_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+                coffee_list.append(CoffeeOrderDetails(
+                    drink_type=soda,
+                    quantity=drink_qty,
+                ))
+                logger.info("Multi-item: detected drink '%s' (qty=%d)", soda, drink_qty)
                 drink_found = True
                 break
 
         if drink_found:
             continue
 
-        # Check for coffee beverage types
+        # Check for coffee beverage types (match plurals like "coffees", "lattes")
         for bev in COFFEE_BEVERAGE_TYPES:
-            if re.search(rf'\b{bev}\b', part):
-                coffee_type = bev
-                coffee_qty = 1
+            if re.search(rf'\b{bev}s?\b', part):
+                drink_qty = 1
+                drink_size = None
+                drink_iced = None
                 # Extract size
                 size_match = re.search(r'\b(small|medium|large)\b', part)
                 if size_match:
-                    coffee_size = size_match.group(1)
+                    drink_size = size_match.group(1)
                 # Extract iced/hot
                 if 'iced' in part:
-                    coffee_iced = True
+                    drink_iced = True
                 elif 'hot' in part:
-                    coffee_iced = False
+                    drink_iced = False
                 # Check for quantity
                 qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
                 if qty_match:
                     qty_str = qty_match.group(1)
-                    coffee_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-                logger.info("Multi-item: detected coffee '%s' (qty=%d)", coffee_type, coffee_qty)
+                    drink_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+                coffee_list.append(CoffeeOrderDetails(
+                    drink_type=bev,
+                    size=drink_size,
+                    iced=drink_iced,
+                    quantity=drink_qty,
+                ))
+                logger.info("Multi-item: detected coffee '%s' (qty=%d)", bev, drink_qty)
                 drink_found = True
                 break
 
@@ -2309,25 +2330,31 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             continue
 
     # If we found at least two different item types, return a combined response
+    # Count coffees as a single "item type" but track that we have multiple drinks
     items_found = sum([
         menu_item is not None,
-        coffee_type is not None,
+        len(coffee_list) > 0,
         bagel,
         side_item is not None,
     ])
+    # Also count if we have multiple different coffees - that still needs special handling
+    total_items = items_found + max(0, len(coffee_list) - 1)  # Add extra coffees
 
-    if items_found >= 2:
-        logger.info("Multi-item order parsed: menu_item=%s, coffee=%s, bagel=%s, side=%s", menu_item, coffee_type, bagel, side_item)
+    if items_found >= 2 or total_items >= 2:
+        # For backwards compatibility, set the first coffee as the primary
+        first_coffee = coffee_list[0] if coffee_list else None
+        logger.info("Multi-item order parsed: menu_item=%s, coffees=%d, bagel=%s, side=%s", menu_item, len(coffee_list), bagel, side_item)
         return OpenInputResponse(
             new_menu_item=menu_item,
             new_menu_item_quantity=menu_item_qty,
             new_menu_item_bagel_choice=menu_item_bagel_choice,
             new_menu_item_toasted=menu_item_toasted,
-            new_coffee=coffee_type is not None,
-            new_coffee_type=coffee_type,
-            new_coffee_quantity=coffee_qty,
-            new_coffee_size=coffee_size,
-            new_coffee_iced=coffee_iced,
+            new_coffee=first_coffee is not None,
+            new_coffee_type=first_coffee.drink_type if first_coffee else None,
+            new_coffee_quantity=first_coffee.quantity if first_coffee else 1,
+            new_coffee_size=first_coffee.size if first_coffee else None,
+            new_coffee_iced=first_coffee.iced if first_coffee else None,
+            coffee_details=coffee_list,  # Include all coffees
             new_bagel=bagel,
             new_bagel_quantity=bagel_qty,
             new_bagel_type=bagel_type,
@@ -2344,13 +2371,15 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_menu_item_bagel_choice=menu_item_bagel_choice,
             new_menu_item_toasted=menu_item_toasted,
         )
-    if coffee_type:
+    if coffee_list:
+        first_coffee = coffee_list[0]
         return OpenInputResponse(
             new_coffee=True,
-            new_coffee_type=coffee_type,
-            new_coffee_quantity=coffee_qty,
-            new_coffee_size=coffee_size,
-            new_coffee_iced=coffee_iced,
+            new_coffee_type=first_coffee.drink_type,
+            new_coffee_quantity=first_coffee.quantity,
+            new_coffee_size=first_coffee.size,
+            new_coffee_iced=first_coffee.iced,
+            coffee_details=coffee_list,
         )
     if bagel:
         return OpenInputResponse(new_bagel=True, new_bagel_quantity=bagel_qty, new_bagel_type=bagel_type, new_bagel_toasted=bagel_toasted)
@@ -3287,7 +3316,7 @@ class OrderStateMachine:
                         )
 
             # Check if there's ALSO a coffee order in the same message
-            if parsed.new_coffee and parsed.new_coffee_type:
+            if parsed.new_coffee or parsed.coffee_details:
                 # Save whether menu item needs configuration BEFORE adding coffee
                 # (coffee might change pending_item_id)
                 menu_item_needs_config = order.is_configuring_item()
@@ -3298,24 +3327,38 @@ class OrderStateMachine:
                 saved_pending_field = order.pending_field
                 saved_phase = order.phase
 
-                coffee_result = self._add_coffee(
-                    parsed.new_coffee_type,
-                    parsed.new_coffee_size,
-                    parsed.new_coffee_iced,
-                    parsed.new_coffee_milk,
-                    parsed.new_coffee_sweetener,
-                    parsed.new_coffee_sweetener_quantity,
-                    parsed.new_coffee_flavor_syrup,
-                    parsed.new_coffee_quantity,
-                    order,
-                )
-                items_added.append(parsed.new_coffee_type)
+                # Add all coffees from coffee_details (or just the single one)
+                coffee_result = None
+                coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+                if not coffees_to_add and parsed.new_coffee:
+                    # Fallback to single coffee if no coffee_details
+                    coffees_to_add = [CoffeeOrderDetails(
+                        drink_type=parsed.new_coffee_type or "coffee",
+                        size=parsed.new_coffee_size,
+                        iced=parsed.new_coffee_iced,
+                        quantity=parsed.new_coffee_quantity,
+                    )]
+
+                for coffee_detail in coffees_to_add:
+                    coffee_result = self._add_coffee(
+                        coffee_detail.drink_type,
+                        coffee_detail.size,
+                        coffee_detail.iced,
+                        parsed.new_coffee_milk,  # Use shared milk preference
+                        parsed.new_coffee_sweetener,  # Use shared sweetener
+                        parsed.new_coffee_sweetener_quantity,
+                        parsed.new_coffee_flavor_syrup,
+                        coffee_detail.quantity,
+                        order,
+                    )
+                    items_added.append(coffee_detail.drink_type)
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d)", coffee_detail.drink_type, coffee_detail.quantity)
 
                 # If menu item needs configuration (e.g., spread sandwich toasted question),
-                # ask menu item questions first (coffee was still added to cart)
+                # ask menu item questions first (coffees were still added to cart)
                 if menu_item_needs_config:
-                    # Check if coffee also needs configuration (not a soda)
-                    # If so, queue it for configuration after menu item is done
+                    # Check if coffees also need configuration (not sodas)
+                    # If so, queue them for configuration after menu item is done
                     for item in order.items.items:
                         if isinstance(item, CoffeeItemTask) and item.status == TaskStatus.IN_PROGRESS:
                             order.queue_item_for_config(item.id, "coffee")
@@ -3391,7 +3434,7 @@ class OrderStateMachine:
                 side_name, side_error = self._add_side_item(parsed.new_side_item, parsed.new_side_item_quantity, order)
 
             # Check if there's ALSO a coffee in the same message
-            if parsed.new_coffee:
+            if parsed.new_coffee or parsed.coffee_details:
                 # Save whether bagel needs configuration BEFORE adding coffee
                 # (coffee might change pending_item_id)
                 bagel_needs_config = order.is_configuring_item()
@@ -3402,23 +3445,37 @@ class OrderStateMachine:
                 saved_pending_field = order.pending_field
                 saved_phase = order.phase
 
-                coffee_result = self._add_coffee(
-                    parsed.new_coffee_type,
-                    parsed.new_coffee_size,
-                    parsed.new_coffee_iced,
-                    parsed.new_coffee_milk,
-                    parsed.new_coffee_sweetener,
-                    parsed.new_coffee_sweetener_quantity,
-                    parsed.new_coffee_flavor_syrup,
-                    parsed.new_coffee_quantity,
-                    order,
-                )
+                # Add all coffees from coffee_details (or just the single one)
+                coffee_result = None
+                coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+                if not coffees_to_add and parsed.new_coffee:
+                    # Fallback to single coffee if no coffee_details
+                    coffees_to_add = [CoffeeOrderDetails(
+                        drink_type=parsed.new_coffee_type or "coffee",
+                        size=parsed.new_coffee_size,
+                        iced=parsed.new_coffee_iced,
+                        quantity=parsed.new_coffee_quantity,
+                    )]
+
+                for coffee_detail in coffees_to_add:
+                    coffee_result = self._add_coffee(
+                        coffee_detail.drink_type,
+                        coffee_detail.size,
+                        coffee_detail.iced,
+                        parsed.new_coffee_milk,  # Use shared milk preference
+                        parsed.new_coffee_sweetener,  # Use shared sweetener
+                        parsed.new_coffee_sweetener_quantity,
+                        parsed.new_coffee_flavor_syrup,
+                        coffee_detail.quantity,
+                        order,
+                    )
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d)", coffee_detail.drink_type, coffee_detail.quantity)
 
                 # If bagel needs configuration, ask bagel questions first
-                # (coffee was still added to cart, we'll configure it after bagel)
+                # (coffees were still added to cart, we'll configure them after bagel)
                 if bagel_needs_config:
-                    # Check if coffee also needs configuration (not a soda)
-                    # If so, queue it for configuration after bagel is done
+                    # Check if coffees also need configuration (not sodas)
+                    # If so, queue them for configuration after bagel is done
                     for item in order.items.items:
                         if isinstance(item, CoffeeItemTask) and item.status == TaskStatus.IN_PROGRESS:
                             order.queue_item_for_config(item.id, "coffee")
@@ -3439,11 +3496,11 @@ class OrderStateMachine:
 
                 # Neither needs config - return combined confirmation
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
-                coffee_desc = parsed.new_coffee_type or "drink"
+                coffee_descs = [c.drink_type for c in coffees_to_add] if coffees_to_add else [parsed.new_coffee_type or "drink"]
                 items_list = [bagel_desc]
                 if side_name:
                     items_list.append(side_name)
-                items_list.append(coffee_desc)
+                items_list.extend(coffee_descs)
                 combined_items = ", ".join(items_list)
                 # If side item was requested but not found, report the error
                 if side_error:
@@ -5113,33 +5170,24 @@ class OrderStateMachine:
         )
 
         # Configure coffees one at a time (fully configure each before moving to next)
-        for idx, coffee in enumerate(all_coffees):
+        for coffee in all_coffees:
             if coffee.status != TaskStatus.IN_PROGRESS:
                 continue
-
-            coffee_num = idx + 1
 
             logger.info(
                 "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, iced=%s, status=%s",
                 coffee.id, coffee.size, coffee.iced, coffee.status
             )
 
-            # Build ordinal descriptor if multiple coffees
-            if total_coffees > 1:
-                ordinal = self._get_ordinal(coffee_num)
-                coffee_desc = f"the {ordinal} coffee"
-            else:
-                coffee_desc = None
+            # Get drink name for the question
+            drink_name = coffee.drink_type or "coffee"
 
             # Ask about size first
             if not coffee.size:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_size"
-                if coffee_desc:
-                    message = f"For {coffee_desc}, small, medium, or large?"
-                else:
-                    message = "What size would you like? Small, medium, or large?"
+                message = f"What size would you like for the {drink_name}? Small, medium, or large?"
                 return StateMachineResult(
                     message=message,
                     order=order,
@@ -5174,8 +5222,9 @@ class OrderStateMachine:
         parsed = parse_coffee_size(user_input, model=self.model)
 
         if not parsed.size:
+            drink_name = item.drink_type or "drink"
             return StateMachineResult(
-                message="What size would you like? Small, medium, or large?",
+                message=f"What size would you like for your {drink_name}? Small, medium, or large?",
                 order=order,
             )
 

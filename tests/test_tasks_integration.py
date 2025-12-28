@@ -1834,3 +1834,134 @@ class TestBagelWithCoffeeConfig:
 
         # Coke should NOT be queued (it's a soda, no config needed)
         assert not order.has_queued_config_items(), f"Coke should not be queued, queue: {order.pending_config_queue}"
+
+    def test_coffee_latte_and_bagel_full_flow(self):
+        """Test 3-item order: coffee, latte, and bagel - all configurable items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order coffee, latte, and bagel
+        result = sm.process("a coffee, a latte, and a bagel", order)
+
+        # Should ask for bagel type first
+        assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
+        assert order.pending_field == "bagel_choice"
+
+        # Both coffees should be queued for configuration
+        assert order.has_queued_config_items(), "Expected coffees to be queued for config"
+        assert len(order.pending_config_queue) == 2, f"Expected 2 coffees queued, got: {len(order.pending_config_queue)}"
+
+        # Configure bagel: plain
+        result = sm.process("plain", order)
+        assert "toasted" in result.message.lower(), f"Expected toasted question, got: {result.message}"
+
+        # Toasted: yes
+        result = sm.process("yes", order)
+        assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Expected spread question, got: {result.message}"
+
+        # Spread: butter
+        result = sm.process("butter", order)
+
+        # Now should ask first coffee size - should mention the drink name (coffee)
+        assert "coffee" in result.message.lower(), f"Expected 'coffee' in size question, got: {result.message}"
+        assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected size question, got: {result.message}"
+
+        # Answer medium
+        result = sm.process("medium", order)
+        assert "hot" in result.message.lower() or "iced" in result.message.lower(), f"Expected hot/iced question, got: {result.message}"
+
+        # Answer hot
+        result = sm.process("hot", order)
+
+        # Now should ask second coffee size - should mention the drink name (latte)
+        assert "latte" in result.message.lower(), f"Expected 'latte' in size question, got: {result.message}"
+        assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected size question, got: {result.message}"
+
+        # Answer small
+        result = sm.process("small", order)
+        assert "hot" in result.message.lower() or "iced" in result.message.lower(), f"Expected hot/iced question for latte, got: {result.message}"
+
+        # Answer iced
+        result = sm.process("iced", order)
+
+        # Now should ask "Anything else?"
+        assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
+
+        # Verify all 3 items are complete
+        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
+        assert len(coffees) == 2, f"Expected 2 coffees, got: {len(coffees)}"
+        assert bagels[0].bagel_type == "plain"
+
+        # Verify both coffees are configured
+        coffee_sizes = {c.drink_type: c.size for c in coffees}
+        assert "coffee" in coffee_sizes or "drip" in str(coffee_sizes).lower(), f"Expected a coffee, got: {coffee_sizes}"
+        assert "latte" in coffee_sizes, f"Expected a latte, got: {coffee_sizes}"
+
+    def test_two_coffees_and_two_bagels(self):
+        """Test plural forms: 2 coffees and 2 bagels - all get configured."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+
+        sm = OrderStateMachine(menu_data={"items_by_name": {}, "items_by_type": {}, "item_type_configs": {}})
+        order = OrderTask()
+
+        # Order 2 coffees and 2 bagels
+        result = sm.process("2 coffees and 2 bagels", order)
+
+        # Should ask for first bagel type
+        assert "first bagel" in result.message.lower(), f"Expected first bagel question, got: {result.message}"
+
+        # Both coffees should be queued for configuration
+        assert order.has_queued_config_items(), "Expected coffees to be queued for config"
+        assert len(order.pending_config_queue) == 2, f"Expected 2 coffees queued, got: {len(order.pending_config_queue)}"
+
+        # Verify items were created
+        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(bagels) == 2, f"Expected 2 bagels, got: {len(bagels)}"
+        assert len(coffees) == 2, f"Expected 2 coffees, got: {len(coffees)}"
+
+        # Configure first bagel
+        result = sm.process("everything", order)
+        assert "toasted" in result.message.lower()
+        result = sm.process("yes", order)
+        result = sm.process("cream cheese", order)
+
+        # Should ask for second bagel
+        assert "second bagel" in result.message.lower(), f"Expected second bagel question, got: {result.message}"
+
+        # Configure second bagel
+        result = sm.process("onion", order)
+        result = sm.process("no", order)
+        result = sm.process("butter", order)
+
+        # Now should ask for first coffee size
+        assert "coffee" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
+        assert "size" in result.message.lower(), f"Expected size question, got: {result.message}"
+
+        # Configure first coffee
+        result = sm.process("small", order)
+        result = sm.process("hot", order)
+
+        # Should ask for second coffee size
+        assert "coffee" in result.message.lower(), f"Expected second coffee size question, got: {result.message}"
+
+        # Configure second coffee
+        result = sm.process("medium", order)
+        result = sm.process("iced", order)
+
+        # Now should ask "Anything else?"
+        assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
+
+        # Verify all 4 items are complete
+        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(bagels) == 2
+        assert len(coffees) == 2
+        assert all(b.bagel_type is not None for b in bagels), "All bagels should have type set"
+        assert all(c.size is not None for c in coffees), "All coffees should have size set"

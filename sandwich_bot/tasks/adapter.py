@@ -259,6 +259,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.pending_field = sm_state.get("pending_field")
         order.last_bot_message = sm_state.get("last_bot_message")
         order.phase = sm_state.get("phase", "greeting")
+        order.pending_config_queue = sm_state.get("pending_config_queue", [])
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -509,6 +510,7 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
         "pending_item_id": order.pending_item_id,  # Legacy compat
         "pending_field": order.pending_field,
         "last_bot_message": order.last_bot_message,
+        "pending_config_queue": order.pending_config_queue,  # Queue of items needing config
     }
 
     return order_dict

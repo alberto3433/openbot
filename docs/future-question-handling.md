@@ -21,9 +21,9 @@ Common customer questions that the chatbot should handle but may not fully suppo
 - [ ] "How long will delivery take?"
 
 ## Recommendations
-- [ ] "What's popular?"
-- [ ] "What do you recommend?"
-- [ ] "What's your best bagel?"
+- [x] "What's popular?"
+- [x] "What do you recommend?"
+- [x] "What's your best bagel?"
 
 ## Customization
 - [ ] "Can I get extra lox?" (upcharge items)
@@ -42,7 +42,7 @@ Common customer questions that the chatbot should handle but may not fully suppo
 ## Comparison/Clarification
 - [ ] "What's the difference between nova and lox?"
 - [ ] "What sizes do you have for coffee?"
-- [ ] "What comes on the egg sandwich?"
+- [x] "What comes on the egg sandwich?" (e.g., "what's on the health nut?")
 
 ## Order Timing
 - [ ] "How long will my order take?"

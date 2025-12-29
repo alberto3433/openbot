@@ -1285,3 +1285,60 @@ class TestRecommendationInquiryParsing:
         assert result.new_bagel is False
         assert result.new_coffee is False
         assert result.new_menu_item is None  # sandwiches use new_menu_item
+
+
+class TestItemDescriptionInquiryParsing:
+    """Tests for item description inquiry parsing."""
+
+    @pytest.mark.parametrize("text,expected_item", [
+        # "what's on the X?" patterns
+        ("what's on the health nut?", "health nut"),
+        ("what's in the health nut?", "health nut"),
+        ("what's on the BLT?", "blt"),
+        ("what's in the classic BEC?", "classic bec"),
+        # "what comes on the X?" patterns
+        ("what comes on the health nut?", "health nut"),
+        ("what comes with the delancey?", "delancey"),
+        # Other patterns
+        ("what does the leo have on it?", "leo"),
+        ("tell me about the traditional", "traditional"),
+        ("describe the avocado toast", "avocado toast"),
+        ("ingredients in the chipotle omelette", "chipotle omelette"),
+    ])
+    def test_item_description_patterns_detected(self, text, expected_item):
+        """Test that item description questions are correctly detected."""
+        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        result = _parse_item_description_inquiry(text)
+        assert result is not None, f"Failed to detect item description inquiry in: {text}"
+        assert result.asks_item_description is True
+        assert result.item_description_query == expected_item
+
+    @pytest.mark.parametrize("text", [
+        # Order intents (should NOT be detected as item description)
+        "I want the health nut",
+        "give me the BLT",
+        "I'll have the classic",
+        # Cart status questions (should NOT be detected)
+        "what's in my cart?",
+        "what's in my order?",
+        "what's in the cart?",
+        # Other non-description questions
+        "how much is the health nut?",
+        "do you have the health nut?",
+    ])
+    def test_non_description_inquiry_not_detected(self, text):
+        """Test that order intents are NOT detected as item description inquiries."""
+        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        result = _parse_item_description_inquiry(text)
+        assert result is None, f"Incorrectly detected item description inquiry in: {text}"
+
+    def test_item_description_should_not_add_to_cart(self):
+        """Test that item description response has no items to add."""
+        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        result = _parse_item_description_inquiry("what's on the health nut?")
+        assert result is not None
+        assert result.asks_item_description is True
+        # Should NOT have any items flagged for adding
+        assert result.new_bagel is False
+        assert result.new_coffee is False
+        assert result.new_menu_item is None

@@ -440,6 +440,16 @@ class OpenInputResponse(BaseModel):
         description="Category of recommendation asked: 'bagel', 'sandwich', 'coffee', 'breakfast', 'lunch', or None for general"
     )
 
+    # Item description inquiries (should NOT add to cart)
+    asks_item_description: bool = Field(
+        default=False,
+        description="User is asking what's on/in a specific item (e.g., 'what's on the health nut?', 'what comes on the BLT?', 'what's in the classic?')"
+    )
+    item_description_query: str | None = Field(
+        default=None,
+        description="The item name the user is asking about (e.g., 'health nut', 'BLT', 'classic')"
+    )
+
     # By-the-pound orders
     by_pound_items: list[ByPoundOrderItem] = Field(
         default_factory=list,
@@ -1942,6 +1952,12 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if store_info_result:
         return store_info_result
 
+    # Check for item description inquiries BEFORE item detection
+    # "what's on the health nut?" should NOT add the item to cart
+    item_desc_result = _parse_item_description_inquiry(text)
+    if item_desc_result:
+        return item_desc_result
+
     # Check for replacement phrases: "make it a coke instead", "actually a latte", etc.
     replace_match = REPLACE_ITEM_PATTERN.match(text)
     if replace_match:
@@ -2656,6 +2672,59 @@ def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
                 asks_delivery_zone=True,
                 delivery_zone_query=location_query,
             )
+
+    return None
+
+
+# Pattern to extract item name from "what's on/in the X?" questions
+ITEM_DESCRIPTION_PATTERNS = [
+    # "what's on the health nut?" "what's in the BLT?"
+    re.compile(r"what(?:'s|s| is) (?:on|in) (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "what comes on the health nut?"
+    re.compile(r"what comes (?:on|in|with) (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "what does the health nut have on it?"
+    re.compile(r"what does (?:the |a )?(.+?) (?:have|come with)", re.IGNORECASE),
+    # "tell me about the health nut"
+    re.compile(r"tell me (?:about|what's in) (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "describe the health nut"
+    re.compile(r"describe (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "ingredients in the health nut"
+    re.compile(r"ingredients (?:in|of|for) (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+]
+
+
+def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
+    """
+    Parse item description questions like:
+    - "what's on the health nut?" -> asks_item_description=True, item_description_query="health nut"
+    - "what comes on the BLT?" -> asks_item_description=True, item_description_query="BLT"
+    - "what's in the classic?" -> asks_item_description=True, item_description_query="classic"
+
+    IMPORTANT: These are questions, not orders. We should NOT add anything to the cart.
+
+    Returns:
+        OpenInputResponse with asks_item_description=True, or None if not an item description question
+    """
+    text_lower = text.lower().strip()
+
+    # Exclude order status questions like "what's in my cart?"
+    if any(word in text_lower for word in ["my cart", "my order", "the cart", "the order"]):
+        return None
+
+    for pattern in ITEM_DESCRIPTION_PATTERNS:
+        match = pattern.search(text_lower)
+        if match:
+            item_name = match.group(1).strip()
+            # Clean up trailing punctuation and common words
+            item_name = re.sub(r'[.!?,]+$', '', item_name).strip()
+            # Remove "sandwich" suffix if present for cleaner matching
+            item_name = re.sub(r'\s+sandwich$', '', item_name).strip()
+            if item_name:
+                logger.info("ITEM DESCRIPTION INQUIRY: '%s' -> item='%s'", text[:50], item_name)
+                return OpenInputResponse(
+                    asks_item_description=True,
+                    item_description_query=item_name,
+                )
 
     return None
 
@@ -4173,6 +4242,9 @@ class OrderStateMachine:
 
         if parsed.asks_recommendation:
             return self._handle_recommendation_inquiry(parsed.recommendation_category, order)
+
+        if parsed.asks_item_description:
+            return self._handle_item_description_inquiry(parsed.item_description_query, order)
 
         if parsed.menu_query:
             return self._handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
@@ -6757,6 +6829,111 @@ class OrderStateMachine:
                 "Our everything bagel with scallion cream cheese is a customer favorite! "
                 "We also have great egg sandwiches and lattes. "
                 "What are you in the mood for?"
+            )
+
+        return StateMachineResult(message=message, order=order)
+
+    # =========================================================================
+    # Item Description Handlers
+    # =========================================================================
+
+    # Item descriptions from Zucker's menu (what's on each item)
+    ITEM_DESCRIPTIONS = {
+        # Egg Sandwiches
+        "the health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
+        "health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
+        "the classic bec": "Two eggs with applewood smoked bacon and cheddar cheese",
+        "classic bec": "Two eggs with applewood smoked bacon and cheddar cheese",
+        "the leo": "Smoked Nova Scotia salmon, eggs, and sautéed onions",
+        "leo": "Smoked Nova Scotia salmon, eggs, and sautéed onions",
+        "the delancey": "Two eggs with corned beef or pastrami, a breakfast potato latke, sautéed onions, and Swiss cheese",
+        "delancey": "Two eggs with corned beef or pastrami, a breakfast potato latke, sautéed onions, and Swiss cheese",
+        # Signature Sandwiches
+        "the zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
+        "zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
+        "the traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
+        "traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
+        "the flatiron": "Everything seeded salmon with scallion cream cheese and fresh avocado",
+        "flatiron": "Everything seeded salmon with scallion cream cheese and fresh avocado",
+        "the grand central": "Grilled chicken, smoked bacon, beefsteak tomatoes, romaine, and Dijon mayo",
+        "grand central": "Grilled chicken, smoked bacon, beefsteak tomatoes, romaine, and Dijon mayo",
+        # Speed Menu Bagels
+        "the classic": "Two eggs with applewood smoked bacon and cheddar cheese on a bagel",
+        "classic": "Two eggs with applewood smoked bacon and cheddar cheese on a bagel",
+        "the max zucker": "Nova Scotia Salmon with scallion cream cheese on an everything bagel",
+        "max zucker": "Nova Scotia Salmon with scallion cream cheese on an everything bagel",
+        # Omelettes
+        "the chipotle egg omelette": "Three eggs with pepper jack cheese, jalapeños, and chipotle cream cheese",
+        "chipotle egg omelette": "Three eggs with pepper jack cheese, jalapeños, and chipotle cream cheese",
+        "the health nut omelette": "Three egg whites with mushrooms, spinach, green & red peppers, and tomatoes",
+        "health nut omelette": "Three egg whites with mushrooms, spinach, green & red peppers, and tomatoes",
+        "the delancey omelette": "Three eggs with corned beef or pastrami, onions, and Swiss cheese",
+        "delancey omelette": "Three eggs with corned beef or pastrami, onions, and Swiss cheese",
+        # Avocado Toast
+        "the avocado toast": "Crushed avocado with diced tomatoes, lemon everything seeds, salt and pepper",
+        "avocado toast": "Crushed avocado with diced tomatoes, lemon everything seeds, salt and pepper",
+        # BLT
+        "blt": "Bacon, lettuce, and tomato with mayo",
+        "the blt": "Bacon, lettuce, and tomato with mayo",
+    }
+
+    def _handle_item_description_inquiry(
+        self,
+        item_query: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle item description questions like 'what's on the health nut?'
+
+        IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
+        The user needs to explicitly order something after getting the description.
+
+        Args:
+            item_query: The item name the user is asking about
+            order: Current order state (unchanged)
+        """
+        if not item_query:
+            return StateMachineResult(
+                message="Which item would you like to know about?",
+                order=order,
+            )
+
+        item_query_lower = item_query.lower().strip()
+
+        # Try to find an exact match or close match in descriptions
+        description = self.ITEM_DESCRIPTIONS.get(item_query_lower)
+
+        if not description:
+            # Try partial matching - look for item_query in keys
+            for key, desc in self.ITEM_DESCRIPTIONS.items():
+                if item_query_lower in key or key in item_query_lower:
+                    description = desc
+                    break
+
+        if not description:
+            # Also search menu_data for item names
+            if self.menu_data:
+                items_by_type = self.menu_data.get("items_by_type", {})
+                for item_type, items in items_by_type.items():
+                    for item in items:
+                        item_name = item.get("name", "").lower()
+                        if item_query_lower in item_name or item_name in item_query_lower:
+                            # Found the item in menu but no description - check ITEM_DESCRIPTIONS again
+                            item_key = item.get("name", "").lower()
+                            description = self.ITEM_DESCRIPTIONS.get(item_key)
+                            if description:
+                                break
+                    if description:
+                        break
+
+        if description:
+            # Format with proper capitalization
+            formatted_name = item_query.title()
+            message = f"{formatted_name} has {description}. Would you like to order one?"
+        else:
+            # Item not found - offer to help find it
+            message = (
+                f"I don't have detailed information about \"{item_query}\" right now. "
+                "Would you like me to tell you what sandwiches or egg dishes we have?"
             )
 
         return StateMachineResult(message=message, order=order)

@@ -6882,6 +6882,8 @@ class OrderStateMachine:
         "natural": "Smoked Turkey, Brie, Beefsteak Tomatoes, Lettuce, and Dijon Dill Sauce",
         "the blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
         "blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
+        "the reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
+        "reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
         # Speed Menu Bagels
         "the classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",
         "classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",

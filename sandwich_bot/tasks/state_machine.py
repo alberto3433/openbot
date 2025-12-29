@@ -1120,26 +1120,50 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle spread selection for bagel."""
-        parsed = parse_spread_choice(user_input, model=self.model)
+        # First check if the user is requesting modifiers instead of a spread
+        # e.g., "make it bacon egg and cheese" when asked about spread
+        modifiers = extract_modifiers_from_input(user_input)
+        has_modifiers = (
+            modifiers.proteins or modifiers.cheeses or modifiers.toppings
+        )
 
-        if parsed.no_spread:
-            item.spread = "none"  # Mark as explicitly no spread
-        elif parsed.spread:
-            item.spread = parsed.spread
-            item.spread_type = parsed.spread_type
-            # Capture special instructions like "a little", "extra", etc.
-            if parsed.notes:
-                # Build full spread description for notes
-                spread_desc = parsed.spread
-                if parsed.spread_type and parsed.spread_type != "plain":
-                    spread_desc = f"{parsed.spread_type} {parsed.spread}"
-                # Combine modifier with spread (e.g., "a little cream cheese")
-                item.notes = f"{parsed.notes} {spread_desc}"
+        if has_modifiers:
+            # User wants modifiers instead of spread - apply them
+            logger.info(f"Spread question answered with modifiers: {modifiers}")
+            item.proteins.extend(modifiers.proteins)
+            item.cheeses.extend(modifiers.cheeses)
+            item.toppings.extend(modifiers.toppings)
+            if modifiers.spreads:
+                # They might have included a spread too
+                item.spread = modifiers.spreads[0]
+            else:
+                # No spread when adding savory modifiers
+                item.spread = "none"
+            if modifiers.notes:
+                existing_notes = item.notes or ""
+                item.notes = (existing_notes + " " + " ".join(modifiers.notes)).strip()
         else:
-            return StateMachineResult(
-                message="Would you like cream cheese, butter, or nothing on that?",
-                order=order,
-            )
+            # Standard spread choice parsing
+            parsed = parse_spread_choice(user_input, model=self.model)
+
+            if parsed.no_spread:
+                item.spread = "none"  # Mark as explicitly no spread
+            elif parsed.spread:
+                item.spread = parsed.spread
+                item.spread_type = parsed.spread_type
+                # Capture special instructions like "a little", "extra", etc.
+                if parsed.notes:
+                    # Build full spread description for notes
+                    spread_desc = parsed.spread
+                    if parsed.spread_type and parsed.spread_type != "plain":
+                        spread_desc = f"{parsed.spread_type} {parsed.spread}"
+                    # Combine modifier with spread (e.g., "a little cream cheese")
+                    item.notes = f"{parsed.notes} {spread_desc}"
+            else:
+                return StateMachineResult(
+                    message="Would you like cream cheese, butter, or nothing on that?",
+                    order=order,
+                )
 
         # Recalculate price to include spread modifier
         self.recalculate_bagel_price(item)

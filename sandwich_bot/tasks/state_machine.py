@@ -434,10 +434,55 @@ class OrderStateMachine:
         if parsed.replace_last_item:
             active_items = order.items.get_active_items()
             if active_items:
-                # Get the last item before removing it
                 last_item = active_items[-1]
+
+                # Check if parsed result has any valid new items
+                has_new_items = (
+                    parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
+                    parsed.new_speed_menu_bagel or parsed.new_side_item or parsed.by_pound_items
+                )
+
+                # If no new items parsed and last item is a bagel, try applying as modifiers
+                if not has_new_items and isinstance(last_item, BagelItemTask) and raw_user_input:
+                    modifiers = extract_modifiers_from_input(raw_user_input)
+                    has_modifiers = modifiers.proteins or modifiers.cheeses or modifiers.toppings
+
+                    if has_modifiers:
+                        # Apply modifiers to existing bagel instead of replacing
+                        logger.info("Replacement: applying modifiers to existing bagel: %s", modifiers)
+
+                        # Update protein - replace existing
+                        if modifiers.proteins:
+                            last_item.sandwich_protein = modifiers.proteins[0]
+                            # Additional proteins go to extras (replace existing extras)
+                            last_item.extras = list(modifiers.proteins[1:])
+                        else:
+                            # Clear protein if not in new modifiers
+                            last_item.sandwich_protein = None
+                            last_item.extras = []
+
+                        # Add cheeses and toppings to extras
+                        last_item.extras.extend(modifiers.cheeses)
+                        last_item.extras.extend(modifiers.toppings)
+
+                        # Update spread if specified
+                        if modifiers.spreads:
+                            last_item.spread = modifiers.spreads[0]
+                        else:
+                            last_item.spread = "none"
+
+                        # Recalculate price with new modifiers
+                        self.recalculate_bagel_price(last_item)
+
+                        # Return confirmation with updated item
+                        updated_summary = last_item.get_summary()
+                        return StateMachineResult(
+                            message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
+                # Normal replacement: remove old item, new item will be added below
                 replaced_item_name = last_item.get_summary()
-                # Find the index of this item in the full list and remove it
                 last_item_index = order.items.items.index(last_item)
                 order.items.remove_item(last_item_index)
                 logger.info("Replacement: removed last item '%s' from cart", replaced_item_name)

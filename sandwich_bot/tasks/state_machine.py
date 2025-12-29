@@ -369,6 +369,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Whether the speed menu bagel should be toasted (True/False/None)"
     )
+    new_speed_menu_bagel_bagel_choice: str | None = Field(
+        default=None,
+        description="Custom bagel choice for speed menu item (e.g., 'wheat' for 'Classic BEC on a wheat bagel')"
+    )
 
     # Clarifications needed
     needs_soda_clarification: bool = Field(
@@ -906,6 +910,55 @@ SPREAD_TYPES = {
     "scallion", "veggie", "vegetable", "strawberry",
     "honey walnut", "lox", "chive", "garlic herb", "jalapeno",
     "tofu", "olive",
+}
+
+# Speed menu bagels - pre-configured signature items
+# Maps variations to canonical names
+SPEED_MENU_BAGELS = {
+    # The Classic (nova, cream cheese, capers, onion, tomato)
+    "the classic": "The Classic",
+    "classic": "The Classic",
+    # The Classic BEC (eggs, bacon, cheddar)
+    "the classic bec": "The Classic BEC",
+    "classic bec": "The Classic BEC",
+    # The Traditional (nova, cream cheese, capers, onion)
+    "the traditional": "The Traditional",
+    "traditional": "The Traditional",
+    "the zucker's traditional": "The Traditional",
+    "zucker's traditional": "The Traditional",
+    # The Leo (nova, cream cheese, tomato, onion, capers, scrambled eggs)
+    "the leo": "The Leo",
+    "leo": "The Leo",
+    # The Max Zucker (eggs, pastrami, swiss, mustard)
+    "the max zucker": "The Max Zucker",
+    "max zucker": "The Max Zucker",
+    # The Avocado Toast
+    "the avocado toast": "The Avocado Toast",
+    "avocado toast": "The Avocado Toast",
+    # The Chelsea Club
+    "the chelsea club": "The Chelsea Club",
+    "chelsea club": "The Chelsea Club",
+    # The Flatiron Traditional (sturgeon version)
+    "the flatiron traditional": "The Flatiron Traditional",
+    "flatiron traditional": "The Flatiron Traditional",
+    # The Old School Tuna Sandwich
+    "the old school tuna sandwich": "The Old School Tuna Sandwich",
+    "the old school tuna": "The Old School Tuna Sandwich",
+    "old school tuna sandwich": "The Old School Tuna Sandwich",
+    "old school tuna": "The Old School Tuna Sandwich",
+    # The Lexington (egg whites, swiss, spinach)
+    "the lexington": "The Lexington",
+    "lexington": "The Lexington",
+    # Latke BEC
+    "latke bec": "Latke BEC",
+    "the latke bec": "Latke BEC",
+    # The Mulberry
+    "the mulberry": "The Mulberry",
+    "mulberry": "The Mulberry",
+    # Truffled Egg Sandwich
+    "the truffled egg": "Truffled Egg Sandwich",
+    "truffled egg": "Truffled Egg Sandwich",
+    "truffled egg sandwich": "Truffled Egg Sandwich",
 }
 
 # By-the-pound items (Zucker's specific)
@@ -1618,6 +1671,106 @@ def _extract_toasted(text: str) -> bool | None:
     return None
 
 
+def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None:
+    """Parse speed menu bagel orders like 'The Classic BEC on a wheat bagel'.
+
+    Returns OpenInputResponse if a speed menu item is found, None otherwise.
+
+    Handles:
+    - "The Classic BEC" -> The Classic BEC
+    - "Classic BEC on wheat" -> The Classic BEC on wheat bagel
+    - "The Leo toasted" -> The Leo, toasted
+    - "2 Classics" -> 2x The Classic
+    - "three Leos on everything bagels" -> 3x The Leo on everything bagel
+    """
+    text_lower = text.lower()
+
+    # Try to find a speed menu item in the text
+    matched_item = None
+    matched_key = None
+
+    # Sort by length (longest first) to match "the classic bec" before "classic"
+    for key in sorted(SPEED_MENU_BAGELS.keys(), key=len, reverse=True):
+        if key in text_lower:
+            matched_item = SPEED_MENU_BAGELS[key]
+            matched_key = key
+            break
+
+    if not matched_item:
+        return None
+
+    logger.info("SPEED MENU MATCH: found '%s' -> %s in text '%s'", matched_key, matched_item, text[:50])
+
+    # Extract quantity (look for number before the item name)
+    quantity = 1
+    # Pattern: "3 classics", "two leos", "a classic"
+    qty_pattern = re.compile(
+        r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+" + re.escape(matched_key),
+        re.IGNORECASE
+    )
+    qty_match = qty_pattern.search(text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1).lower()
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        elif qty_str in ("a", "an"):
+            quantity = 1
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # Extract toasted preference
+    toasted = _extract_toasted(text)
+
+    # Extract bagel choice (e.g., "on a wheat bagel", "on everything", "on wheat")
+    bagel_choice = None
+
+    # Pattern 1: "on a/an [type] bagel" - explicit bagel mention
+    # Requires space after optional article to avoid capturing part of article
+    bagel_choice_pattern = re.compile(
+        r"(?:on|with)\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\s+bagels?",
+        re.IGNORECASE
+    )
+    bagel_match = bagel_choice_pattern.search(text)
+    if bagel_match:
+        potential_type = bagel_match.group(1).lower().strip()
+        # Check if it's a known bagel type
+        if potential_type in BAGEL_TYPES:
+            bagel_choice = potential_type
+        # Also check for partial matches (e.g., "wheat" from "whole wheat")
+        else:
+            for bagel_type in BAGEL_TYPES:
+                if potential_type == bagel_type or bagel_type.startswith(potential_type):
+                    bagel_choice = bagel_type
+                    break
+
+    # Pattern 2: "on [type]" without explicit "bagel" - only if type is a known bagel type
+    if not bagel_choice:
+        # Match "on wheat", "on everything", "on whole wheat", etc.
+        # Look for known bagel types after "on" or "with"
+        for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+            # Check for "on [a/an] bagel_type" pattern
+            pattern = re.compile(
+                r"(?:on|with)\s+(?:(?:a|an)\s+)?" + re.escape(bagel_type) + r"(?:\s|$|[,.])",
+                re.IGNORECASE
+            )
+            if pattern.search(text_lower):
+                bagel_choice = bagel_type
+                break
+
+    logger.info(
+        "SPEED MENU PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s",
+        matched_item, quantity, toasted, bagel_choice
+    )
+
+    return OpenInputResponse(
+        new_speed_menu_bagel=True,
+        new_speed_menu_bagel_name=matched_item,
+        new_speed_menu_bagel_quantity=quantity,
+        new_speed_menu_bagel_toasted=toasted,
+        new_speed_menu_bagel_bagel_choice=bagel_choice,
+    )
+
+
 def _build_spread_types_from_menu(cheese_types: list[str]) -> set[str]:
     """Build spread type keywords from database cheese_types.
 
@@ -1957,6 +2110,13 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     item_desc_result = _parse_item_description_inquiry(text)
     if item_desc_result:
         return item_desc_result
+
+    # Check for speed menu bagels BEFORE generic bagel parsing
+    # "The Classic BEC on a wheat bagel" should be parsed as a speed menu item with bagel choice
+    # NOT as a simple wheat bagel
+    speed_menu_result = _parse_speed_menu_bagel_deterministic(text)
+    if speed_menu_result:
+        return speed_menu_result
 
     # Check for replacement phrases: "make it a coke instead", "actually a latte", etc.
     replace_match = REPLACE_ITEM_PATTERN.match(text)
@@ -4197,6 +4357,7 @@ class OrderStateMachine:
                 parsed.new_speed_menu_bagel_quantity,
                 parsed.new_speed_menu_bagel_toasted,
                 order,
+                bagel_choice=parsed.new_speed_menu_bagel_bagel_choice,
             )
             items_added.append(parsed.new_speed_menu_bagel_name)
 
@@ -6032,6 +6193,7 @@ class OrderStateMachine:
         quantity: int,
         toasted: bool | None,
         order: OrderTask,
+        bagel_choice: str | None = None,
     ) -> StateMachineResult:
         """Add speed menu bagel(s) to the order."""
         if not item_name:
@@ -6054,6 +6216,7 @@ class OrderStateMachine:
                 menu_item_name=item_name,
                 menu_item_id=menu_item_id,
                 toasted=toasted,
+                bagel_choice=bagel_choice,
                 unit_price=price,
             )
             if toasted is not None:

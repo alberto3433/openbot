@@ -648,7 +648,7 @@ class TestDeterministicParserFallback:
 
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),
-        ("The Leo", "menu_item"),
+        ("The Leo", "speed_menu_bagel"),
         ("the chipotle egg omelette", "menu_item"),
     ])
     def test_deterministic_handles_coffee_and_menu_items(self, text, expected_type):
@@ -658,6 +658,9 @@ class TestDeterministicParserFallback:
         if expected_type == "coffee":
             assert result.new_coffee is True
             assert result.new_coffee_type == "coffee"
+        elif expected_type == "speed_menu_bagel":
+            assert result.new_speed_menu_bagel is True
+            assert result.new_speed_menu_bagel_name is not None
         else:
             assert result.new_menu_item is not None
 
@@ -1342,3 +1345,115 @@ class TestItemDescriptionInquiryParsing:
         assert result.new_bagel is False
         assert result.new_coffee is False
         assert result.new_menu_item is None
+
+
+# =============================================================================
+# Speed Menu Bagel Parsing Tests
+# =============================================================================
+
+class TestSpeedMenuBagelParsing:
+    """Tests for speed menu bagel deterministic parsing with bagel choice."""
+
+    @pytest.mark.parametrize("text,expected_name", [
+        ("The Classic BEC", "The Classic BEC"),
+        ("classic bec", "The Classic BEC"),
+        ("The Leo", "The Leo"),
+        ("leo", "The Leo"),
+        ("The Traditional", "The Traditional"),
+        ("traditional", "The Traditional"),
+        ("The Max Zucker", "The Max Zucker"),
+        ("max zucker", "The Max Zucker"),
+        ("The Classic", "The Classic"),
+        ("classic", "The Classic"),
+        ("The Lexington", "The Lexington"),
+        ("lexington", "The Lexington"),
+        ("The Avocado Toast", "The Avocado Toast"),
+        ("avocado toast", "The Avocado Toast"),
+    ])
+    def test_speed_menu_item_detected(self, text, expected_name):
+        """Test that speed menu items are correctly detected."""
+        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
+        result = _parse_speed_menu_bagel_deterministic(text)
+        assert result is not None, f"Failed to detect speed menu item in: {text}"
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_name == expected_name
+
+    @pytest.mark.parametrize("text,expected_bagel", [
+        ("The Classic BEC on a wheat bagel", "wheat"),
+        ("classic bec on wheat", "wheat"),
+        ("The Leo on an everything bagel", "everything"),
+        ("leo on everything", "everything"),
+        ("The Traditional on a sesame bagel", "sesame"),
+        ("classic bec but on a plain bagel", "plain"),
+        ("give me the classic bec on a pumpernickel bagel", "pumpernickel"),
+        ("I want the lexington on whole wheat", "whole wheat"),
+    ])
+    def test_speed_menu_with_bagel_choice(self, text, expected_bagel):
+        """Test that speed menu items with bagel choice are correctly parsed."""
+        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
+        result = _parse_speed_menu_bagel_deterministic(text)
+        assert result is not None, f"Failed to parse: {text}"
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_bagel_choice == expected_bagel
+
+    @pytest.mark.parametrize("text,expected_toasted", [
+        ("The Classic BEC toasted", True),
+        ("classic bec not toasted", False),
+        ("The Leo toasted please", True),
+        ("the lexington not toasted", False),
+    ])
+    def test_speed_menu_with_toasted(self, text, expected_toasted):
+        """Test that speed menu items with toasted preference are correctly parsed."""
+        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
+        result = _parse_speed_menu_bagel_deterministic(text)
+        assert result is not None, f"Failed to parse: {text}"
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_toasted == expected_toasted
+
+    @pytest.mark.parametrize("text,expected_qty", [
+        ("2 classics", 2),
+        ("two leos", 2),
+        ("3 classic becs", 3),
+        ("three traditionals", 3),
+    ])
+    def test_speed_menu_with_quantity(self, text, expected_qty):
+        """Test that speed menu items with quantity are correctly parsed."""
+        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
+        result = _parse_speed_menu_bagel_deterministic(text)
+        assert result is not None, f"Failed to parse: {text}"
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_quantity == expected_qty
+
+    def test_speed_menu_with_all_options(self):
+        """Test parsing speed menu with bagel choice, toasted, and quantity."""
+        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
+        result = _parse_speed_menu_bagel_deterministic("2 classic becs on wheat bagels toasted")
+        assert result is not None
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_name == "The Classic BEC"
+        assert result.new_speed_menu_bagel_quantity == 2
+        assert result.new_speed_menu_bagel_bagel_choice == "wheat"
+        assert result.new_speed_menu_bagel_toasted is True
+
+    def test_speed_menu_parsed_before_bagel_check(self):
+        """Test that speed menu items are parsed BEFORE generic bagel check.
+
+        This is the key fix - 'The Classic BEC on a wheat bagel' should NOT
+        be parsed as a simple wheat bagel order.
+        """
+        result = parse_open_input_deterministic("The Classic BEC but on a wheat bagel")
+        assert result is not None
+        # Should be speed menu bagel, NOT a plain bagel
+        assert result.new_speed_menu_bagel is True
+        assert result.new_speed_menu_bagel_name == "The Classic BEC"
+        assert result.new_speed_menu_bagel_bagel_choice == "wheat"
+        # Should NOT be a plain bagel
+        assert result.new_bagel is False
+
+    def test_non_speed_menu_bagel_still_works(self):
+        """Test that regular bagel orders still work."""
+        result = parse_open_input_deterministic("a wheat bagel with cream cheese")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_type == "wheat"
+        assert result.new_speed_menu_bagel is False

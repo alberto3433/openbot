@@ -24,6 +24,37 @@ from .field_config import MenuFieldConfig
 
 logger = logging.getLogger(__name__)
 
+# Default modifier prices for cart display breakdown
+# These should match the values in state_machine.py DEFAULT_MODIFIER_PRICES
+DEFAULT_MODIFIER_PRICES = {
+    # Proteins
+    "ham": 2.00,
+    "bacon": 2.00,
+    "egg": 1.50,
+    "turkey": 2.50,
+    "pastrami": 3.00,
+    "sausage": 2.00,
+    "lox": 5.00,
+    "nova": 5.00,
+    # Cheeses
+    "american": 0.75,
+    "swiss": 0.75,
+    "cheddar": 0.75,
+    "muenster": 0.75,
+    "provolone": 0.75,
+    # Spreads
+    "cream cheese": 1.50,
+    "butter": 0.50,
+    # Toppings
+    "tomato": 0.50,
+    "onion": 0.50,
+    "lettuce": 0.50,
+    "avocado": 2.00,
+}
+
+# Base bagel price
+DEFAULT_BAGEL_BASE_PRICE = 2.50
+
 
 # -----------------------------------------------------------------------------
 # Feature Flag
@@ -357,44 +388,60 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             sandwich_protein = getattr(item, 'sandwich_protein', None)
             extras = getattr(item, 'extras', []) or []
 
-            # Build display name like "plain bagel toasted with ham, egg, american"
-            display_parts = []
-            if bagel_type:
-                display_parts.append(f"{bagel_type} bagel")
-            else:
-                display_parts.append("bagel")
+            # Build display name (just the base bagel, modifiers shown separately)
+            display_name = f"{bagel_type} bagel" if bagel_type else "bagel"
             if toasted:
-                display_parts.append("toasted")
+                display_name += " toasted"
 
-            # Build the "with X" part - combine spread, protein, and extras
-            with_parts = []
-            if spread and spread.lower() != "none":
-                spread_desc = spread
-                if spread_type and spread_type != "plain":
-                    spread_desc = f"{spread_type} {spread}"
-                with_parts.append(spread_desc)
+            # Build modifiers list with prices for itemized cart display
+            modifiers = []
+
+            # Add protein modifier
             if sandwich_protein:
-                with_parts.append(sandwich_protein)
-            if extras:
-                with_parts.extend(extras)
+                protein_price = DEFAULT_MODIFIER_PRICES.get(sandwich_protein.lower(), 0.0)
+                modifiers.append({
+                    "name": sandwich_protein,
+                    "price": protein_price,
+                })
 
-            if with_parts:
-                display_parts.append(f"with {', '.join(with_parts)}")
-            elif spread and spread.lower() == "none":
-                # Only say "with nothing on it" if there's truly nothing
-                display_parts.append("with nothing on it")
+            # Add extras (additional proteins, cheeses, toppings)
+            for extra in extras:
+                extra_price = DEFAULT_MODIFIER_PRICES.get(extra.lower(), 0.0)
+                modifiers.append({
+                    "name": extra,
+                    "price": extra_price,
+                })
+
+            # Add spread if not "none"
+            if spread and spread.lower() != "none":
+                spread_name = spread
+                if spread_type and spread_type != "plain":
+                    spread_name = f"{spread_type} {spread}"
+                spread_price = DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
+                modifiers.append({
+                    "name": spread_name,
+                    "price": spread_price,
+                })
+
+            # Calculate base price (total - modifiers)
+            total_price = item.unit_price or 0
+            modifiers_total = sum(m["price"] for m in modifiers)
+            base_price = max(total_price - modifiers_total, DEFAULT_BAGEL_BASE_PRICE)
 
             item_dict = {
                 "item_type": "bagel",
                 "id": item.id,  # Preserve item ID
                 "status": item.status.value,
-                "menu_item_name": " ".join(display_parts),
+                "display_name": display_name,
+                "menu_item_name": display_name,  # For backwards compatibility
                 "bagel_type": bagel_type,
                 "spread": spread,
                 "spread_type": spread_type,
                 "toasted": toasted,
                 "sandwich_protein": getattr(item, 'sandwich_protein', None),
                 "extras": getattr(item, 'extras', []),
+                "base_price": base_price,
+                "modifiers": modifiers,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,

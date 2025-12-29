@@ -389,6 +389,35 @@
       color: #888;
     }
 
+    .order-item-modifiers {
+      margin-top: 4px;
+      padding-left: 12px;
+    }
+
+    .order-item-modifier {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #666;
+      padding: 2px 0;
+    }
+
+    .order-item-modifier-name {
+      display: flex;
+      align-items: center;
+    }
+
+    .order-item-modifier-name::before {
+      content: "+";
+      margin-right: 6px;
+      color: #888;
+    }
+
+    .order-item-modifier-price {
+      color: #888;
+      white-space: nowrap;
+    }
+
     /* Order Totals */
     .order-totals {
       font-size: 14px;
@@ -1797,57 +1826,85 @@
       const div = document.createElement("div");
       div.className = "order-item";
 
-      // Item name and price
       const qty = item.quantity || 1;
-      const price = item.line_total || item.price || 0;
-      // Prefer display_name (includes bagel choice, toasted status) over menu_item_name
       const name = item.display_name || item.menu_item_name || item.name || "Item";
 
-      let html = `
-        <div class="order-item-header">
-          <span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span>
-          <span class="order-item-price">${formatCurrency(price)}</span>
-        </div>
-      `;
+      // Check if item has modifiers breakdown (bagels with add-ons)
+      const hasModifiers = item.modifiers && item.modifiers.length > 0;
 
-      // Item details (customizations)
-      const details = [];
-      if (item.bread) details.push(item.bread);
-      if (item.protein) details.push(item.protein);
-      if (item.cheese) details.push(item.cheese);
+      let html = "";
 
-      // Coffee/drink details from item_config
-      const config = item.item_config || {};
-      if (config.style) details.push(config.style);  // "hot" or "iced"
-      if (item.size || config.size) details.push(item.size || config.size);
-      if (config.milk && config.milk.toLowerCase() !== "none" && config.milk.toLowerCase() !== "black") {
-        details.push(config.milk + " milk");
-      } else if (config.milk && (config.milk.toLowerCase() === "none" || config.milk.toLowerCase() === "black")) {
-        details.push("black");
-      } else if (item.milk) {
-        details.push(item.milk + " milk");
-      }
-      if (config.flavor_syrup) details.push(config.flavor_syrup + " syrup");
-      if (config.sweetener) {
-        const qty = config.sweetener_quantity || 1;
-        if (qty > 1) {
-          details.push(`${qty} ${config.sweetener}s`);
-        } else {
-          details.push(config.sweetener);
+      if (hasModifiers && item.item_type === "bagel") {
+        // Bagel with modifiers - show base price, then each modifier
+        const basePrice = item.base_price || 0;
+
+        html += `
+          <div class="order-item-header">
+            <span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span>
+            <span class="order-item-price">${formatCurrency(basePrice)}</span>
+          </div>
+        `;
+
+        // Render each modifier with its price
+        html += `<div class="order-item-modifiers">`;
+        for (const mod of item.modifiers) {
+          html += `
+            <div class="order-item-modifier">
+              <span class="order-item-modifier-name">${mod.name}</span>
+              <span class="order-item-modifier-price">${formatCurrency(mod.price)}</span>
+            </div>
+          `;
         }
-      }
+        html += `</div>`;
+      } else {
+        // Standard item - show total price
+        const price = item.line_total || item.price || 0;
+        html += `
+          <div class="order-item-header">
+            <span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span>
+            <span class="order-item-price">${formatCurrency(price)}</span>
+          </div>
+        `;
 
-      if (item.toppings && item.toppings.length > 0) {
-        details.push(item.toppings.join(", "));
-      }
-      if (item.sauces && item.sauces.length > 0) {
-        details.push(item.sauces.join(", "));
-      }
-      if (item.toasted) details.push("Toasted");
-      if (item.spread) details.push(item.spread);
+        // Item details (customizations) for non-bagel items
+        const details = [];
+        if (item.bread) details.push(item.bread);
+        if (item.protein) details.push(item.protein);
+        if (item.cheese) details.push(item.cheese);
 
-      if (details.length > 0) {
-        html += `<div class="order-item-details">${details.join(" · ")}</div>`;
+        // Coffee/drink details from item_config
+        const config = item.item_config || {};
+        if (config.style) details.push(config.style);  // "hot" or "iced"
+        if (item.size || config.size) details.push(item.size || config.size);
+        if (config.milk && config.milk.toLowerCase() !== "none" && config.milk.toLowerCase() !== "black") {
+          details.push(config.milk + " milk");
+        } else if (config.milk && (config.milk.toLowerCase() === "none" || config.milk.toLowerCase() === "black")) {
+          details.push("black");
+        } else if (item.milk) {
+          details.push(item.milk + " milk");
+        }
+        if (config.flavor_syrup) details.push(config.flavor_syrup + " syrup");
+        if (config.sweetener) {
+          const qty = config.sweetener_quantity || 1;
+          if (qty > 1) {
+            details.push(`${qty} ${config.sweetener}s`);
+          } else {
+            details.push(config.sweetener);
+          }
+        }
+
+        if (item.toppings && item.toppings.length > 0) {
+          details.push(item.toppings.join(", "));
+        }
+        if (item.sauces && item.sauces.length > 0) {
+          details.push(item.sauces.join(", "));
+        }
+        if (item.toasted) details.push("Toasted");
+        if (item.spread) details.push(item.spread);
+
+        if (details.length > 0) {
+          html += `<div class="order-item-details">${details.join(" · ")}</div>`;
+        }
       }
 
       // Special instructions / notes

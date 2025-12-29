@@ -430,6 +430,16 @@ class OpenInputResponse(BaseModel):
         description="The location (zip code or neighborhood) the user is asking about delivery for"
     )
 
+    # Recommendation questions (should NOT add to cart)
+    asks_recommendation: bool = Field(
+        default=False,
+        description="User is asking for recommendations (e.g., 'what do you recommend?', 'what's popular?', 'what's your best bagel?')"
+    )
+    recommendation_category: str | None = Field(
+        default=None,
+        description="Category of recommendation asked: 'bagel', 'sandwich', 'coffee', 'breakfast', 'lunch', or None for general"
+    )
+
     # By-the-pound orders
     by_pound_items: list[ByPoundOrderItem] = Field(
         default_factory=list,
@@ -1921,6 +1931,12 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if price_result:
         return price_result
 
+    # Check for recommendation questions BEFORE item detection
+    # "what kind of bagel do you recommend?" should NOT add a bagel to cart
+    recommendation_result = _parse_recommendation_inquiry(text)
+    if recommendation_result:
+        return recommendation_result
+
     # Check for store info inquiries: "what are your hours?", "where are you located?"
     store_info_result = _parse_store_info_inquiry(text)
     if store_info_result:
@@ -2539,6 +2555,69 @@ NYC_NEIGHBORHOOD_ZIPS = {
     "fordham": ["10458", "10468"],
     "riverdale": ["10463", "10471"],
 }
+
+# Recommendation inquiry patterns - these are QUESTIONS, not orders
+# When matched, we should answer with recommendations but NOT add to cart
+RECOMMENDATION_PATTERNS = [
+    # General recommendations - catch-all patterns (order matters, specific first)
+    (re.compile(r"what\s+(?:do\s+you|would\s+you|should\s+i|can\s+you)\s+recommend\??$", re.IGNORECASE), "general"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)\??$", re.IGNORECASE), "general"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:most\s+)?popular\??$", re.IGNORECASE), "general"),
+    (re.compile(r"what\s+(?:are\s+)?(?:your\s+)?(?:best|most\s+popular)\s+(?:sellers?|items?)", re.IGNORECASE), "general"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?most\s+popular\s+item", re.IGNORECASE), "general"),
+    (re.compile(r"(?:any|have\s+any|got\s+any|do\s+you\s+have\s+any)\s+recommendations?\??", re.IGNORECASE), "general"),
+    (re.compile(r"(?:suggest|recommend)\s+(?:something|anything)", re.IGNORECASE), "general"),
+    (re.compile(r"what\s+sells\s+best", re.IGNORECASE), "general"),
+    # Bagel-specific recommendations
+    (re.compile(r"what\s+(?:kind\s+of\s+)?bagels?\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "bagel"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+bagel", re.IGNORECASE), "bagel"),
+    (re.compile(r"which\s+bagels?\s+(?:is|are)\s+(?:best|popular|good)", re.IGNORECASE), "bagel"),
+    (re.compile(r"recommend\s+(?:a\s+)?bagel", re.IGNORECASE), "bagel"),
+    (re.compile(r"(?:best|popular|favorite)\s+bagels?", re.IGNORECASE), "bagel"),
+    (re.compile(r"what(?:'?s|\s+is)\s+popular\s+for\s+bagels?\??", re.IGNORECASE), "bagel"),
+    # Sandwich-specific recommendations
+    (re.compile(r"what\s+sandwi(?:ch|ches)\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "sandwich"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+sandwich", re.IGNORECASE), "sandwich"),
+    (re.compile(r"which\s+sandwi(?:ch|ches)\s+(?:is|are)\s+(?:best|popular|good)", re.IGNORECASE), "sandwich"),
+    (re.compile(r"recommend\s+(?:a\s+)?sandwich", re.IGNORECASE), "sandwich"),
+    (re.compile(r"(?:best|popular|favorite)\s+sandwi(?:ch|ches)", re.IGNORECASE), "sandwich"),
+    # Coffee-specific recommendations
+    (re.compile(r"what\s+(?:kind\s+of\s+)?(?:coffee|drink)s?\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "coffee"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+(?:coffee|drink)", re.IGNORECASE), "coffee"),
+    (re.compile(r"recommend\s+(?:a\s+)?(?:coffee|drink)", re.IGNORECASE), "coffee"),
+    (re.compile(r"what\s+coffee\s+is\s+(?:popular|good|best)", re.IGNORECASE), "coffee"),
+    # Breakfast/lunch recommendations
+    (re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+breakfast", re.IGNORECASE), "breakfast"),
+    (re.compile(r"what(?:'?s|\s+is)\s+good\s+for\s+breakfast", re.IGNORECASE), "breakfast"),
+    (re.compile(r"recommend\s+(?:something\s+)?for\s+breakfast", re.IGNORECASE), "breakfast"),
+    (re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+lunch", re.IGNORECASE), "lunch"),
+    (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+lunch", re.IGNORECASE), "lunch"),
+    (re.compile(r"recommend\s+(?:something\s+)?for\s+lunch", re.IGNORECASE), "lunch"),
+]
+
+
+def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
+    """
+    Parse recommendation questions like:
+    - "what do you recommend?" -> asks_recommendation=True
+    - "what's your best bagel?" -> asks_recommendation=True, recommendation_category="bagel"
+
+    IMPORTANT: These are questions, not orders. We should NOT add anything to the cart.
+
+    Returns:
+        OpenInputResponse with asks_recommendation=True, or None if not a recommendation question
+    """
+    text_lower = text.lower().strip()
+
+    for pattern, category in RECOMMENDATION_PATTERNS:
+        if pattern.search(text_lower):
+            logger.info("RECOMMENDATION INQUIRY: '%s' (category: %s)", text[:50], category)
+            return OpenInputResponse(
+                asks_recommendation=True,
+                recommendation_category=category,
+            )
+
+    return None
 
 
 def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
@@ -4092,6 +4171,9 @@ class OrderStateMachine:
         if parsed.asks_delivery_zone:
             return self._handle_delivery_zone_inquiry(parsed.delivery_zone_query, order)
 
+        if parsed.asks_recommendation:
+            return self._handle_recommendation_inquiry(parsed.recommendation_category, order)
+
         if parsed.menu_query:
             return self._handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 
@@ -4213,15 +4295,13 @@ class OrderStateMachine:
         item: ItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle bagel type selection - uses constrained parser."""
-        # Count how many bagels still need a type
-        bagels_needing_type = [
-            b for b in order.items.items
-            if isinstance(b, BagelItemTask) and b.status == TaskStatus.IN_PROGRESS and not b.bagel_type
-        ]
-        num_pending = len(bagels_needing_type)
+        """Handle bagel type selection for the CURRENT pending item only.
 
-        parsed = parse_bagel_choice(user_input, num_pending_bagels=num_pending, model=self.model)
+        This handles one item at a time. After configuring this item,
+        _configure_next_incomplete_bagel will move to the next item.
+        """
+        # Use simple parser - just extract the bagel type from user input
+        parsed = parse_bagel_choice(user_input, num_pending_bagels=1, model=self.model)
 
         if parsed.unclear or not parsed.bagel_type:
             return StateMachineResult(
@@ -4229,17 +4309,16 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Apply to the item (could be omelette's bagel_choice, sandwich's bagel_choice, or bagel's bagel_type)
+        logger.info("Parsed bagel type '%s' for item %s", parsed.bagel_type, type(item).__name__)
+
+        # Apply to the current pending item
         if isinstance(item, MenuItemTask):
             item.bagel_choice = parsed.bagel_type
 
-            # For spread/salad sandwiches, continue to toasted question
+            # For spread/salad sandwiches, use unified config flow for toasted question
             if item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
-                order.pending_field = "toasted"
-                return StateMachineResult(
-                    message="Would you like that toasted?",
-                    order=order,
-                )
+                order.clear_pending()
+                return self._configure_next_incomplete_bagel(order)
 
             # For omelettes and other menu items, mark complete
             item.mark_complete()
@@ -4247,30 +4326,11 @@ class OrderStateMachine:
             return self._get_next_question(order)
 
         elif isinstance(item, BagelItemTask):
-            # Look up price for this bagel type
-            price = self._lookup_bagel_price(parsed.bagel_type)
+            item.bagel_type = parsed.bagel_type
+            self.recalculate_bagel_price(item)
 
-            # How many bagels to apply this type to?
-            quantity_to_apply = min(parsed.quantity, num_pending)
-
-            logger.info(
-                "Applying bagel type '%s' to %d bagel(s) (parsed quantity: %d, pending: %d)",
-                parsed.bagel_type, quantity_to_apply, parsed.quantity, num_pending
-            )
-
-            # Apply to the specified number of bagels
-            applied_count = 0
-            for bagel in bagels_needing_type:
-                if applied_count >= quantity_to_apply:
-                    break
-                bagel.bagel_type = parsed.bagel_type
-                bagel.unit_price = price
-                applied_count += 1
-
-            # Clear pending state - we'll reconfigure from scratch
+            # Clear pending and configure next incomplete item
             order.clear_pending()
-
-            # Now configure the next incomplete bagel (could be one we just typed, needing toasted)
             return self._configure_next_incomplete_bagel(order)
 
         return self._get_next_question(order)
@@ -5073,24 +5133,9 @@ class OrderStateMachine:
                 # Both bagel and toasted specified - mark complete
                 first_item.mark_complete()
                 return self._get_next_question(order)
-            elif bagel_choice:
-                # Bagel specified but need toasted preference
-                order.phase = OrderPhase.CONFIGURING_ITEM
-                order.pending_item_id = first_item.id
-                order.pending_field = "spread_sandwich_toasted"
-                return StateMachineResult(
-                    message="Would you like that toasted?",
-                    order=order,
-                )
             else:
-                # Need bagel choice
-                order.phase = OrderPhase.CONFIGURING_ITEM
-                order.pending_item_id = first_item.id
-                order.pending_field = "bagel_choice"
-                return StateMachineResult(
-                    message="What kind of bagel would you like that on?",
-                    order=order,
-                )
+                # Use unified configuration flow (handles ordinals for multiple items)
+                return self._configure_next_incomplete_bagel(order)
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:
@@ -5481,62 +5526,129 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """
-        Find the next incomplete bagel and configure it fully before moving on.
+        Find the next incomplete bagel item and configure it fully before moving on.
 
-        This enables one-at-a-time configuration for multiple bagels.
-        Each bagel is fully configured (type → toasted → spread) before
-        moving to the next bagel.
+        This handles BOTH:
+        - BagelItemTask (bagels with spreads/toppings)
+        - MenuItemTask for spread_sandwich/salad_sandwich (Butter Sandwich, etc.)
+
+        Each item is fully configured (type → toasted → spread) before
+        moving to the next item.
         """
-        # Count bagels and find incomplete ones
-        all_bagels = [item for item in order.items.items if isinstance(item, BagelItemTask)]
-        total_bagels = len(all_bagels)
+        # Collect all items that need bagel configuration (both types)
+        all_bagel_items = []
+        for item in order.items.items:
+            if isinstance(item, BagelItemTask):
+                all_bagel_items.append(item)
+            elif isinstance(item, MenuItemTask) and item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
+                all_bagel_items.append(item)
 
-        # Find the first incomplete bagel and ask about its next missing field
-        for idx, item in enumerate(all_bagels):
+        total_items = len(all_bagel_items)
+
+        # Find the first incomplete item and ask about its next missing field
+        for idx, item in enumerate(all_bagel_items):
             if item.status != TaskStatus.IN_PROGRESS:
                 continue
 
-            bagel = item
-            bagel_num = idx + 1
+            item_num = idx + 1
 
-            # Build ordinal descriptor if multiple bagels
-            if total_bagels > 1:
-                ordinal = self._get_ordinal(bagel_num)
+            # Build ordinal descriptor if multiple items
+            if total_items > 1:
+                ordinal = self._get_ordinal(item_num)
                 bagel_desc = f"the {ordinal} bagel"
                 your_bagel_desc = f"your {ordinal} bagel"
             else:
                 bagel_desc = "your bagel"
                 your_bagel_desc = "your bagel"
 
+            # Handle MenuItemTask (spread_sandwich, salad_sandwich)
+            if isinstance(item, MenuItemTask):
+                # Ask about bagel type first
+                if not item.bagel_choice:
+                    order.phase = OrderPhase.CONFIGURING_ITEM
+                    order.pending_item_id = item.id
+                    order.pending_field = "bagel_choice"
+                    if total_items > 1:
+                        return StateMachineResult(
+                            message=f"For {bagel_desc}, what kind of bagel would you like that on?",
+                            order=order,
+                        )
+                    else:
+                        return StateMachineResult(
+                            message="What kind of bagel would you like that on?",
+                            order=order,
+                        )
+
+                # Then ask about toasted
+                if item.toasted is None:
+                    order.phase = OrderPhase.CONFIGURING_ITEM
+                    order.pending_item_id = item.id
+                    order.pending_field = "toasted"
+                    if total_items > 1:
+                        return StateMachineResult(
+                            message=f"For {bagel_desc}, would you like that toasted?",
+                            order=order,
+                        )
+                    else:
+                        return StateMachineResult(
+                            message="Would you like that toasted?",
+                            order=order,
+                        )
+
+                # MenuItemTask is complete
+                item.mark_complete()
+                continue
+
+            # Handle BagelItemTask
+            bagel = item
+
             # Ask about type first
             if not bagel.bagel_type:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "bagel_choice"
-                return StateMachineResult(
-                    message=f"What kind of bagel for {bagel_desc}?",
-                    order=order,
-                )
+                if total_items > 1:
+                    return StateMachineResult(
+                        message=f"For {bagel_desc}, what kind of bagel would you like that on?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="What kind of bagel would you like that on?",
+                        order=order,
+                    )
 
             # Then ask about toasted
             if bagel.toasted is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "toasted"
-                return StateMachineResult(
-                    message=f"Would you like {your_bagel_desc} toasted?",
-                    order=order,
-                )
+                if total_items > 1:
+                    return StateMachineResult(
+                        message=f"For {bagel_desc}, would you like that toasted?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="Would you like that toasted?",
+                        order=order,
+                    )
 
             # Then ask about spread (skip if bagel already has toppings)
             if bagel.spread is None and not bagel.extras and not bagel.sandwich_protein:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "spread"
-                return StateMachineResult(
-                    message=f"Would you like cream cheese or butter on {your_bagel_desc}?",
-                    order=order,
-                )
+                if total_items > 1:
+                    return StateMachineResult(
+                        message=f"For {bagel_desc}, would you like cream cheese or butter?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="Would you like cream cheese or butter on that?",
+                        order=order,
+                    )
 
             # This bagel is complete, mark it and continue to next
             bagel.mark_complete()
@@ -6485,6 +6597,169 @@ class OrderStateMachine:
             message=f"Unfortunately, we don't currently deliver to {neighborhood}. You're welcome to place a pickup order instead. Would you like to do that?",
             order=order,
         )
+
+    # =========================================================================
+    # Recommendation Handlers
+    # =========================================================================
+
+    def _handle_recommendation_inquiry(
+        self,
+        category: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle recommendation questions like 'what do you recommend?' or 'what's your best bagel?'
+
+        IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
+        The user needs to explicitly order something after getting the recommendation.
+
+        Args:
+            category: Type of recommendation asked - 'bagel', 'sandwich', 'coffee', 'breakfast', 'lunch', or None
+            order: Current order state (unchanged)
+        """
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+
+        if category == "bagel":
+            return self._recommend_bagels(order)
+        elif category == "sandwich":
+            return self._recommend_sandwiches(items_by_type, order)
+        elif category == "coffee":
+            return self._recommend_coffee(items_by_type, order)
+        elif category == "breakfast":
+            return self._recommend_breakfast(items_by_type, order)
+        elif category == "lunch":
+            return self._recommend_lunch(items_by_type, order)
+        else:
+            # General recommendation - suggest popular items
+            return self._recommend_general(items_by_type, order)
+
+    def _recommend_bagels(self, order: OrderTask) -> StateMachineResult:
+        """Recommend popular bagel options."""
+        message = (
+            "Our most popular bagels are everything and plain! "
+            "The everything bagel with scallion cream cheese is a customer favorite. "
+            "We also have sesame, cinnamon raisin, and pumpernickel if you're feeling adventurous. "
+            "Would you like to try one?"
+        )
+        return StateMachineResult(message=message, order=order)
+
+    def _recommend_sandwiches(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
+        """Recommend popular sandwich options from the menu."""
+        # Look for signature sandwiches or egg sandwiches
+        signature = items_by_type.get("signature_sandwich", [])
+        egg_sandwiches = items_by_type.get("egg_sandwich", [])
+
+        recommendations = []
+
+        # Get up to 2 signature sandwiches
+        for item in signature[:2]:
+            name = item.get("name", "")
+            if name:
+                recommendations.append(name)
+
+        # Get 1 egg sandwich if we have room
+        if len(recommendations) < 3 and egg_sandwiches:
+            name = egg_sandwiches[0].get("name", "")
+            if name:
+                recommendations.append(name)
+
+        if recommendations:
+            if len(recommendations) == 1:
+                message = f"I'd recommend {recommendations[0]} - it's one of our favorites! Would you like to try it?"
+            else:
+                items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
+                message = f"Some of our most popular are {items_str}. Would you like to try one?"
+        else:
+            message = "Our egg sandwiches are really popular! Would you like to hear about them?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _recommend_coffee(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
+        """Recommend popular coffee options."""
+        message = (
+            "Our lattes are really popular - you can get them hot or iced! "
+            "We also have great drip coffee if you want something simple. "
+            "Would you like a coffee?"
+        )
+        return StateMachineResult(message=message, order=order)
+
+    def _recommend_breakfast(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
+        """Recommend breakfast options."""
+        # Look for speed menu bagels and egg items
+        speed_menu = items_by_type.get("speed_menu_bagel", [])
+        omelettes = items_by_type.get("omelette", [])
+
+        recommendations = []
+
+        # Get a speed menu bagel
+        for item in speed_menu[:1]:
+            name = item.get("name", "")
+            if name:
+                recommendations.append(name)
+
+        # Add a classic suggestion
+        recommendations.append("an everything bagel with cream cheese")
+
+        if omelettes:
+            name = omelettes[0].get("name", "")
+            if name:
+                recommendations.append(name)
+
+        if len(recommendations) >= 2:
+            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
+            message = f"For breakfast, I'd suggest {items_str}. What sounds good?"
+        else:
+            message = "For breakfast, our bagels with cream cheese are always a hit, or try one of our egg sandwiches! What sounds good?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _recommend_lunch(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
+        """Recommend lunch options."""
+        signature = items_by_type.get("signature_sandwich", [])
+        salad = items_by_type.get("salad_sandwich", [])
+
+        recommendations = []
+
+        for item in signature[:2]:
+            name = item.get("name", "")
+            if name:
+                recommendations.append(name)
+
+        for item in salad[:1]:
+            name = item.get("name", "")
+            if name:
+                recommendations.append(name)
+
+        if recommendations:
+            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}" if len(recommendations) > 1 else recommendations[0]
+            message = f"For lunch, I'd recommend {items_str}. What sounds good?"
+        else:
+            message = "For lunch, our sandwiches are great! We have egg sandwiches, signature sandwiches, and salad sandwiches. What sounds good?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _recommend_general(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
+        """General recommendation when no specific category is asked."""
+        speed_menu = items_by_type.get("speed_menu_bagel", [])
+
+        # Get a speed menu item name if available
+        speed_item = None
+        if speed_menu:
+            speed_item = speed_menu[0].get("name", "")
+
+        if speed_item:
+            message = (
+                f"Our {speed_item} is really popular! "
+                "We're also known for our everything bagels with cream cheese, and our lattes are great too. "
+                "What are you in the mood for?"
+            )
+        else:
+            message = (
+                "Our everything bagel with scallion cream cheese is a customer favorite! "
+                "We also have great egg sandwiches and lattes. "
+                "What are you in the mood for?"
+            )
+
+        return StateMachineResult(message=message, order=order)
 
     # =========================================================================
     # Signature/Speed Menu Handlers

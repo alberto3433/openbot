@@ -290,12 +290,13 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 # State Conversion: OrderTask -> Dict
 # -----------------------------------------------------------------------------
 
-def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
+def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, Any]:
     """
     Convert an OrderTask back to dict format for compatibility.
 
     Args:
         order: The OrderTask instance
+        store_info: Optional store info for tax calculation
 
     Returns:
         Dict in the legacy format expected by existing code
@@ -493,18 +494,46 @@ def order_task_to_dict(order: OrderTask) -> Dict[str, Any]:
     if order.payment.payment_link_sent and order.payment.payment_link_destination:
         order_dict["payment_link"] = order.payment.payment_link_destination
 
+    # Calculate taxes if store_info is available
+    # This ensures the order panel shows taxes in real-time, not just at checkout
+    subtotal = sum(
+        (item.unit_price or 0) * getattr(item, 'quantity', 1)
+        for item in order.items.get_active_items()
+    )
+
+    city_tax = order.checkout.city_tax
+    state_tax = order.checkout.state_tax
+    tax = order.checkout.tax
+    delivery_fee = order.checkout.delivery_fee
+    total = order.checkout.total
+
+    if store_info and subtotal > 0:
+        # Calculate taxes using store's tax rates
+        city_tax_rate = store_info.get("city_tax_rate", 0.0)
+        state_tax_rate = store_info.get("state_tax_rate", 0.0)
+        city_tax = round(subtotal * city_tax_rate, 2)
+        state_tax = round(subtotal * state_tax_rate, 2)
+        tax = city_tax + state_tax
+
+        # Calculate delivery fee if applicable
+        is_delivery = order.delivery_method.order_type == "delivery"
+        delivery_fee = store_info.get("delivery_fee", 2.99) if is_delivery else 0.0
+
+        # Calculate total
+        total = round(subtotal + tax + delivery_fee, 2)
+
     # Checkout state for compatibility (include tax breakdown)
     order_dict["checkout_state"] = {
         "confirmed": order.checkout.confirmed,
         "order_reviewed": order.checkout.order_reviewed,
         "name_collected": order.customer_info.name is not None,
         "contact_collected": order.customer_info.phone is not None or order.customer_info.email is not None,
-        "subtotal": order.checkout.subtotal,
-        "city_tax": order.checkout.city_tax,
-        "state_tax": order.checkout.state_tax,
-        "tax": order.checkout.tax,
-        "delivery_fee": order.checkout.delivery_fee,
-        "total": order.checkout.total,
+        "subtotal": subtotal,
+        "city_tax": city_tax,
+        "state_tax": state_tax,
+        "tax": tax,
+        "delivery_fee": delivery_fee,
+        "total": total,
     }
 
     # Preserve task orchestrator state
@@ -601,8 +630,8 @@ def process_message_with_tasks(
         pending_question=pending_question,
     )
 
-    # Convert state back to dict
-    updated_dict = order_task_to_dict(result.order)
+    # Convert state back to dict (pass store_info for tax calculation)
+    updated_dict = order_task_to_dict(result.order, store_info=store_info)
 
     # Build actions list for compatibility
     actions = _infer_actions_from_result(order_state_dict, updated_dict, result)
@@ -659,8 +688,8 @@ async def process_message_with_tasks_async(
         pending_question=pending_question,
     )
 
-    # Convert state back to dict
-    updated_dict = order_task_to_dict(result.order)
+    # Convert state back to dict (pass store_info for tax calculation)
+    updated_dict = order_task_to_dict(result.order, store_info=store_info)
 
     # Build actions list for compatibility
     actions = _infer_actions_from_result(order_state_dict, updated_dict, result)

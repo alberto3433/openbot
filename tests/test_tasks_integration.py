@@ -254,10 +254,10 @@ class TestAdapterRoundTrip:
 # =============================================================================
 
 class TestStateMachineMultiBagel:
-    """Tests for state machine multi-bagel handling."""
+    """Tests for state machine multi-bagel handling - one item at a time."""
 
-    def test_two_of_them_plain_sets_two_bagels(self):
-        """Test that '2 of them plain' sets type for 2 bagels and continues configuring first bagel."""
+    def test_bagel_type_sets_current_item_only(self):
+        """Test that bagel type answer sets only the CURRENT pending item, not all items."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
             OrderPhase,
@@ -278,22 +278,20 @@ class TestStateMachineMultiBagel:
         order.pending_item_id = order.items.items[0].id
         sm = OrderStateMachine()
 
-        # Mock parse_bagel_choice to return quantity=2
+        # Mock parse_bagel_choice to return plain (even if user said "2 of them plain",
+        # we only process the current item)
         with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
-            mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=2)
+            mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
 
-            result = sm._handle_bagel_choice("2 of them plain", order.items.items[0], order)
+            result = sm._handle_bagel_choice("plain", order.items.items[0], order)
 
-            # Verify 2 bagels have type set
+            # Verify ONLY the first bagel has type set (one-at-a-time approach)
             bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
-            typed_count = sum(1 for b in bagels if b.bagel_type == "plain")
-            assert typed_count == 2, f"Expected 2 plain bagels, got {typed_count}"
-
-            # Third bagel should not have a type
+            assert bagels[0].bagel_type == "plain", "First bagel should be plain"
+            assert bagels[1].bagel_type is None, "Second bagel should not have type yet"
             assert bagels[2].bagel_type is None, "Third bagel should not have type yet"
 
-            # With new flow: should ask about TOASTED for first bagel (fully configure each bagel)
-            assert "first" in result.message.lower()
+            # Should ask about TOASTED for first bagel (fully configure each bagel)
             assert result.order.pending_field == "toasted"
 
     def test_each_bagel_fully_configured_before_next(self):
@@ -322,6 +320,96 @@ class TestStateMachineMultiBagel:
         # With new flow: should ask about first bagel's TOASTED (fully configure first bagel)
         assert "first" in result.message.lower()
         assert result.order.pending_field == "toasted"
+
+
+class TestMixedItemBagelChoice:
+    """Tests for bagel type assignment - one item at a time (sequential flow)."""
+
+    def test_butter_sandwich_configured_first(self):
+        """Test that bagel choice for Butter Sandwich is set, then asks toasted."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OrderPhase,
+            BagelChoiceResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask, TaskStatus
+
+        # Create order with:
+        # - MenuItemTask "Butter Sandwich" (spread_sandwich) needing bagel_choice
+        # - BagelItemTask with cream cheese spread needing bagel_type
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "bagel_choice"
+
+        butter_sandwich = MenuItemTask(
+            menu_item_name="Butter Sandwich",
+            menu_item_type="spread_sandwich",
+            bagel_choice=None,
+            unit_price=3.50,
+        )
+        butter_sandwich.mark_in_progress()
+        order.items.add_item(butter_sandwich)
+
+        cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
+        cc_bagel.mark_in_progress()
+        order.items.add_item(cc_bagel)
+
+        order.pending_item_id = butter_sandwich.id
+        sm = OrderStateMachine()
+
+        # Mock the parser to return "plain"
+        with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
+            mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
+
+            result = sm._handle_bagel_choice("plain", butter_sandwich, order)
+
+            # Verify ONLY the Butter Sandwich has bagel_choice set (one-at-a-time)
+            assert butter_sandwich.bagel_choice == "plain", \
+                f"Butter Sandwich should have bagel_choice=plain, got {butter_sandwich.bagel_choice}"
+            # The cream cheese bagel should NOT be configured yet
+            assert cc_bagel.bagel_type is None, \
+                f"CC bagel should not have bagel_type yet, got {cc_bagel.bagel_type}"
+
+            # Should ask about toasted for the Butter Sandwich next
+            assert result.order.pending_field == "toasted"
+
+    def test_sequential_configuration_flow(self):
+        """Test that items are configured one at a time in sequence."""
+        from sandwich_bot.tasks.state_machine import (
+            OrderStateMachine,
+            OrderPhase,
+            BagelChoiceResponse,
+        )
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask, TaskStatus
+
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "bagel_choice"
+
+        butter_sandwich = MenuItemTask(
+            menu_item_name="Butter Sandwich",
+            menu_item_type="spread_sandwich",
+            bagel_choice=None,
+            unit_price=3.50,
+        )
+        butter_sandwich.mark_in_progress()
+        order.items.add_item(butter_sandwich)
+
+        cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
+        cc_bagel.mark_in_progress()
+        order.items.add_item(cc_bagel)
+
+        order.pending_item_id = butter_sandwich.id
+        sm = OrderStateMachine()
+
+        # Step 1: Set bagel type for Butter Sandwich
+        with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
+            mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
+            result = sm._handle_bagel_choice("plain", butter_sandwich, order)
+
+        assert butter_sandwich.bagel_choice == "plain"
+        assert cc_bagel.bagel_type is None  # Not configured yet
+        assert result.order.pending_field == "toasted"  # Asks toasted for Butter Sandwich
 
 
 # =============================================================================
@@ -1649,7 +1737,7 @@ class TestSpreadSandwichWithCoke:
 
         # Should ask for toasted, not "Anything else?"
         assert "toasted" in result.message.lower(), f"Expected toasted question, got: {result.message}"
-        assert order.pending_field == "spread_sandwich_toasted"
+        assert order.pending_field == "toasted"  # Unified flow uses "toasted" for all items
 
         # Both items should be in the cart
         items = order.items.items
@@ -1965,3 +2053,48 @@ class TestBagelWithCoffeeConfig:
         assert len(coffees) == 2
         assert all(b.bagel_type is not None for b in bagels), "All bagels should have type set"
         assert all(c.size is not None for c in coffees), "All coffees should have size set"
+
+    def test_bagel_and_menu_item(self):
+        """Test ordering a bagel and a menu item (like The Classic BEC) together."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
+        from sandwich_bot.tasks.models import BagelItemTask, MenuItemTask
+
+        menu_data = {
+            "items_by_name": {
+                "the classic bec": {
+                    "id": 1,
+                    "name": "The Classic BEC",
+                    "base_price": 9.95,
+                    "item_type": "speed_menu",
+                },
+            },
+            "items_by_type": {
+                "speed_menu": [
+                    {
+                        "id": 1,
+                        "name": "The Classic BEC",
+                        "base_price": 9.95,
+                        "item_type": "speed_menu",
+                    },
+                ],
+            },
+            "item_type_configs": {},
+        }
+
+        sm = OrderStateMachine(menu_data=menu_data)
+        order = OrderTask()
+
+        # Order bagel and menu item
+        result = sm.process("one bagel and one classic BEC", order)
+
+        # Should have both items in the order
+        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        menu_items = [i for i in order.items.items if isinstance(i, MenuItemTask)]
+        assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
+        assert len(menu_items) == 1, f"Expected 1 menu item, got: {len(menu_items)}"
+
+        # Menu item should be The Classic BEC
+        assert menu_items[0].menu_item_name == "The Classic BEC"
+
+        # Should be asking for bagel type (bagel needs config)
+        assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"

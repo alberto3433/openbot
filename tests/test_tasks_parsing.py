@@ -1169,3 +1169,119 @@ class TestNotesExtraction:
         assert coffee.milk == "whole"  # "with a splash of milk" should default to whole
         assert coffee.notes is not None
         assert "splash" in coffee.notes.lower() or "milk" in coffee.notes.lower()
+
+    def test_multi_item_bagel_and_speed_menu_item(self):
+        """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        # Multi-item order: "one bagel and one classic BEC"
+        result = _parse_multi_item_order("one bagel and one classic BEC")
+        assert result is not None
+        # Should detect both items
+        assert result.new_bagel is True
+        assert result.new_menu_item is not None
+        # The Classic BEC should be recognized as a menu item
+        assert "classic" in result.new_menu_item.lower() or "bec" in result.new_menu_item.lower()
+
+    def test_multi_item_speed_menu_and_coffee(self):
+        """Test multi-item order with speed menu item and coffee."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        result = _parse_multi_item_order("the lexington and a latte")
+        assert result is not None
+        assert result.new_menu_item is not None
+        assert result.new_coffee is True
+        # Lexington is a speed menu item
+        assert "lexington" in result.new_menu_item.lower()
+
+    def test_multi_item_two_menu_items(self):
+        """Test multi-item order with two different menu items (takes the last one)."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        result = _parse_multi_item_order("the leo and the classic bec")
+        assert result is not None
+        # At least one menu item should be captured
+        assert result.new_menu_item is not None
+
+
+class TestRecommendationInquiryParsing:
+    """Tests for recommendation question detection.
+
+    Recommendation questions should NOT add items to cart - they should
+    just provide recommendations for items in the requested category.
+    """
+
+    @pytest.mark.parametrize("text,expected_category", [
+        # Direct "recommend" patterns
+        ("what do you recommend?", "general"),
+        ("what would you recommend?", "general"),
+        ("any recommendations?", "general"),
+        ("do you have any recommendations?", "general"),
+        # Bagel recommendations
+        ("what kind of bagel do you recommend?", "bagel"),
+        ("what bagel do you recommend?", "bagel"),
+        ("which bagel is best?", "bagel"),
+        ("what's your best bagel?", "bagel"),
+        ("what's popular for bagels?", "bagel"),
+        # Sandwich recommendations
+        ("what sandwich do you recommend?", "sandwich"),
+        ("which sandwich is best?", "sandwich"),
+        ("what's your most popular sandwich?", "sandwich"),
+        # Coffee recommendations
+        ("what coffee do you recommend?", "coffee"),
+        ("what's your best coffee?", "coffee"),
+        ("what coffee is popular?", "coffee"),
+        # Breakfast recommendations
+        ("what do you recommend for breakfast?", "breakfast"),
+        ("what's good for breakfast?", "breakfast"),
+        # Lunch recommendations
+        ("what do you recommend for lunch?", "lunch"),
+        ("what's popular for lunch?", "lunch"),
+        # Popular/best patterns
+        ("what's popular?", "general"),
+        ("what's your most popular item?", "general"),
+        ("what sells best?", "general"),
+    ])
+    def test_recommendation_patterns_detected(self, text, expected_category):
+        """Test that recommendation questions are detected with correct category."""
+        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        result = _parse_recommendation_inquiry(text)
+        assert result is not None, f"Failed to detect recommendation in: {text}"
+        assert result.asks_recommendation is True
+        assert result.recommendation_category == expected_category
+
+    @pytest.mark.parametrize("text", [
+        # Order intents (should NOT be detected as recommendations)
+        "I want a bagel",
+        "I'd like a sandwich",
+        "can I get a coffee",
+        "give me a plain bagel",
+        "I'll have the BLT",
+        # Other non-recommendation questions
+        "what are your hours?",
+        "where are you located?",
+        "do you deliver to 10022?",
+        "what's in the BLT?",
+        "how much is a bagel?",
+        # Confirmations
+        "yes",
+        "no",
+        "that's all",
+        # Edge cases
+        "bagel",
+        "coffee",
+        "the lexington",
+    ])
+    def test_non_recommendation_not_detected(self, text):
+        """Test that order intents are NOT detected as recommendations."""
+        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        result = _parse_recommendation_inquiry(text)
+        assert result is None, f"Incorrectly detected recommendation in: {text}"
+
+    def test_recommendation_should_not_add_to_cart(self):
+        """Test that recommendation response has no items to add."""
+        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        result = _parse_recommendation_inquiry("what kind of bagel do you recommend?")
+        assert result is not None
+        assert result.asks_recommendation is True
+        # Should NOT have any items flagged for adding
+        assert result.new_bagel is False
+        assert result.new_coffee is False
+        assert result.new_menu_item is None  # sandwiches use new_menu_item

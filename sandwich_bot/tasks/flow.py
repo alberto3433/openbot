@@ -1401,16 +1401,9 @@ def _generate_menu_response(menu_query_type: str, menu_data: dict | None) -> str
             return f"I don't have any {menu_query_type.replace('_', ' ')}s on the menu. We do have: {', '.join(available_types)}. What would you like?"
         return f"I'm sorry, I don't have any {menu_query_type.replace('_', ' ')}s on the menu. What else can I help you with?"
 
-    # Format the items list
+    # Format the items list (without prices - prices only shown when specifically asked)
     type_name = menu_query_type.replace("_", " ")
-    item_list = []
-    for item in items[:10]:  # Limit to 10 items to avoid overwhelming
-        name = item.get("name", "Unknown")
-        price = item.get("base_price", 0)
-        if price > 0:
-            item_list.append(f"{name} (${price:.2f})")
-        else:
-            item_list.append(name)
+    item_list = [item.get("name", "Unknown") for item in items[:10]]
 
     if len(items) > 10:
         item_list.append(f"...and {len(items) - 10} more")

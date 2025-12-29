@@ -444,7 +444,7 @@ class TestParseUserMessageIntegration:
 # Deterministic Parser Tests (no LLM required)
 # =============================================================================
 
-from sandwich_bot.tasks.state_machine import (
+from sandwich_bot.tasks.parsers import (
     parse_open_input_deterministic,
     _extract_quantity,
     _extract_bagel_type,

@@ -260,9 +260,8 @@ class TestStateMachineMultiBagel:
         """Test that bagel type answer sets only the CURRENT pending item, not all items."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
-            OrderPhase,
-            BagelChoiceResponse,
         )
+        from sandwich_bot.tasks.schemas import OrderPhase, BagelChoiceResponse
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
 
         # Create order with 3 bagels that don't have types yet

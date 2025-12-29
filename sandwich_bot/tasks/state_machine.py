@@ -1130,9 +1130,23 @@ class OrderStateMachine:
         if has_modifiers:
             # User wants modifiers instead of spread - apply them
             logger.info(f"Spread question answered with modifiers: {modifiers}")
-            item.proteins.extend(modifiers.proteins)
-            item.cheeses.extend(modifiers.cheeses)
-            item.toppings.extend(modifiers.toppings)
+
+            # First protein goes to sandwich_protein if not already set
+            if modifiers.proteins:
+                if not item.sandwich_protein:
+                    item.sandwich_protein = modifiers.proteins[0]
+                    # Additional proteins go to extras
+                    item.extras.extend(modifiers.proteins[1:])
+                else:
+                    # Already has a protein, add all to extras
+                    item.extras.extend(modifiers.proteins)
+
+            # Cheeses go to extras
+            item.extras.extend(modifiers.cheeses)
+
+            # Toppings go to extras
+            item.extras.extend(modifiers.toppings)
+
             if modifiers.spreads:
                 # They might have included a spread too
                 item.spread = modifiers.spreads[0]

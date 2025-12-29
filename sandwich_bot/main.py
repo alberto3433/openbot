@@ -3238,10 +3238,12 @@ def create_store(
         zip_code=payload.zip_code,
         phone=payload.phone,
         hours=payload.hours,
+        timezone=payload.timezone,
         status=payload.status,
         payment_methods=payload.payment_methods,
         city_tax_rate=payload.city_tax_rate,
         state_tax_rate=payload.state_tax_rate,
+        delivery_zip_codes=payload.delivery_zip_codes,
     )
     db.add(store)
     db.commit()
@@ -3298,6 +3300,10 @@ def update_store(
         store.city_tax_rate = payload.city_tax_rate
     if payload.state_tax_rate is not None:
         store.state_tax_rate = payload.state_tax_rate
+    if payload.timezone is not None:
+        store.timezone = payload.timezone
+    if payload.delivery_zip_codes is not None:
+        store.delivery_zip_codes = payload.delivery_zip_codes
 
     db.commit()
     db.refresh(store)

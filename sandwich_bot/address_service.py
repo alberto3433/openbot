@@ -322,6 +322,73 @@ def _extract_zip_code(address: str) -> Optional[str]:
     return None
 
 
+def geocode_to_zip(
+    address: str,
+    city: str = "New York",
+    state: str = "NY",
+) -> Optional[str]:
+    """
+    Geocode an address and return just the ZIP code.
+
+    Useful for delivery zone inquiries where we need to determine
+    the ZIP code from a partial address like "1065 5th Ave".
+
+    Args:
+        address: The address to geocode (e.g., "1065 5th Ave")
+        city: City context (default: New York)
+        state: State context (default: NY)
+
+    Returns:
+        ZIP code string if found, None otherwise
+    """
+    if not address or not address.strip():
+        return None
+
+    # First check if there's already a ZIP in the address
+    existing_zip = _extract_zip_code(address)
+    if existing_zip:
+        return existing_zip
+
+    # Strip apartment number for better geocoding
+    stripped_address, _ = strip_apartment_number(address)
+
+    # Build query with city context
+    query = f"{stripped_address}, {city}, {state}"
+
+    params = {
+        "q": query,
+        "format": "json",
+        "addressdetails": 1,
+        "countrycodes": "us",
+        "limit": 1,  # Just need the best match
+    }
+
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        logger.debug("Geocoding for ZIP: %s", query)
+        response = requests.get(
+            NOMINATIM_URL,
+            params=params,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+
+        results = response.json()
+        if results:
+            addr = results[0].get("address", {})
+            postcode = addr.get("postcode", "")
+            if postcode:
+                logger.debug("Geocoded '%s' to ZIP: %s", address, postcode)
+                return postcode
+
+    except Exception as e:
+        logger.warning("Geocoding failed for '%s': %s", address, e)
+
+    return None
+
+
 def format_address_options(addresses: list[CompletedAddress]) -> str:
     """
     Format multiple address options for user clarification.

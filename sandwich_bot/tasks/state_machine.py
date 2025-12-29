@@ -194,6 +194,10 @@ class SpreadChoiceResponse(BaseModel):
         default=False,
         description="User explicitly doesn't want spread"
     )
+    notes: str | None = Field(
+        default=None,
+        description="Special instructions about quantity/application: 'a little', 'extra', 'light', 'on the side', etc."
+    )
 
 
 class ToastedChoiceResponse(BaseModel):
@@ -396,6 +400,34 @@ class OpenInputResponse(BaseModel):
     by_pound_category: str | None = Field(
         default=None,
         description="Specific by-the-pound category user is interested in: 'cheese', 'spread', 'cold_cut', 'fish', 'salad'"
+    )
+
+    # Price inquiries
+    asks_about_price: bool = Field(
+        default=False,
+        description="User is asking about prices (e.g., 'how much are bagels?', 'what's the price of a latte?')"
+    )
+    price_query_item: str | None = Field(
+        default=None,
+        description="Specific item user is asking about price for (e.g., 'sesame bagel', 'large latte')"
+    )
+
+    # Store info inquiries
+    asks_store_hours: bool = Field(
+        default=False,
+        description="User is asking about store hours (e.g., 'what are your hours?', 'when do you close?')"
+    )
+    asks_store_location: bool = Field(
+        default=False,
+        description="User is asking about store location/address (e.g., 'where are you located?', 'what's your address?')"
+    )
+    asks_delivery_zone: bool = Field(
+        default=False,
+        description="User is asking if we deliver to a location (e.g., 'do you deliver to 10001?', 'do you deliver to Tribeca?')"
+    )
+    delivery_zone_query: str | None = Field(
+        default=None,
+        description="The location (zip code or neighborhood) the user is asking about delivery for"
     )
 
     # By-the-pound orders
@@ -694,11 +726,18 @@ The user said: "{user_input}"
 Extract their spread choice. Options: cream cheese, butter, none/nothing.
 Cream cheese varieties: plain, scallion, veggie, lox spread, etc.
 
+Also extract any special instructions about quantity or application into notes.
+These are modifiers like: "a little", "extra", "light", "heavy", "on the side", "not too much", "lots of", etc.
+
 Examples:
 - "cream cheese" -> spread: "cream cheese"
 - "scallion cream cheese" -> spread: "cream cheese", spread_type: "scallion"
 - "butter" -> spread: "butter"
 - "nothing" or "plain" or "no spread" -> no_spread: true
+- "a little cream cheese" -> spread: "cream cheese", notes: "a little"
+- "extra butter" -> spread: "butter", notes: "extra"
+- "light on the scallion cream cheese" -> spread: "cream cheese", spread_type: "scallion", notes: "light"
+- "cream cheese on the side" -> spread: "cream cheese", notes: "on the side"
 """
 
     return client.chat.completions.create(
@@ -1877,6 +1916,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         logger.debug("Deterministic parse: repeat order detected")
         return OpenInputResponse(wants_repeat_order=True)
 
+    # Check for price inquiries: "how much are bagels?", "what's the price of a latte?"
+    price_result = _parse_price_inquiry_deterministic(text)
+    if price_result:
+        return price_result
+
+    # Check for store info inquiries: "what are your hours?", "where are you located?"
+    store_info_result = _parse_store_info_inquiry(text)
+    if store_info_result:
+        return store_info_result
+
     # Check for replacement phrases: "make it a coke instead", "actually a latte", etc.
     replace_match = REPLACE_ITEM_PATTERN.match(text)
     if replace_match:
@@ -2129,9 +2178,10 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     text_lower = text.lower()
 
     # Check if any coffee type is mentioned (exact match first)
+    # Match plurals too (coffees, lattes, etc.)
     coffee_type = None
     for bev in COFFEE_BEVERAGE_TYPES:
-        if re.search(rf'\b{bev}\b', text_lower):
+        if re.search(rf'\b{bev}s?\b', text_lower):
             coffee_type = bev
             break
 
@@ -2280,6 +2330,257 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     )
 
 
+# Price inquiry patterns
+PRICE_INQUIRY_PATTERNS = [
+    # "how much are/is X"
+    re.compile(r"how\s+much\s+(?:are|is|does?|do)\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\s+cost)?(?:\?|$)", re.IGNORECASE),
+    # "what's the price of X" / "what is the price of X"
+    re.compile(r"what(?:'?s|\s+is)\s+the\s+price\s+(?:of|for)\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "what do X cost"
+    re.compile(r"what\s+do(?:es)?\s+(?:the\s+)?(?:a\s+)?(.+?)\s+cost(?:\?|$)", re.IGNORECASE),
+    # "cost of X"
+    re.compile(r"(?:the\s+)?cost\s+of\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "price of X"
+    re.compile(r"(?:the\s+)?price\s+(?:of|for)\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "how much for X"
+    re.compile(r"how\s+much\s+for\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+]
+
+# Menu type keywords for category price inquiries (e.g., "how much are bagels?")
+# Only plural forms - singular forms should be treated as specific item queries
+MENU_CATEGORY_KEYWORDS = {
+    "bagels": "bagel",
+    "coffees": "coffee",
+    "lattes": "coffee",
+    "cappuccinos": "coffee",
+    "espressos": "coffee",
+    "teas": "tea",
+    "drinks": "beverage",
+    "beverages": "beverage",
+    "sodas": "beverage",
+    "sandwiches": "sandwich",
+    "egg sandwiches": "egg_sandwich",
+    "fish sandwiches": "fish_sandwich",
+    "cream cheese sandwiches": "spread_sandwich",
+    "spread sandwiches": "spread_sandwich",
+    "salad sandwiches": "salad_sandwich",
+    "deli sandwiches": "deli_sandwich",
+    "signature sandwiches": "signature_sandwich",
+    "omelettes": "omelette",
+    "sides": "side",
+}
+
+
+def _parse_price_inquiry_deterministic(text: str) -> OpenInputResponse | None:
+    """
+    Parse price inquiry questions like:
+    - "how much are bagels?" -> asks_about_price=True, menu_query=True, menu_query_type="bagel"
+    - "how much is a sesame bagel?" -> asks_about_price=True, price_query_item="sesame bagel"
+    - "what's the price of a latte?" -> asks_about_price=True, price_query_item="latte"
+
+    Returns:
+        OpenInputResponse with price inquiry fields set, or None if not a price inquiry
+    """
+    text_lower = text.lower().strip()
+
+    # Try each price pattern
+    for pattern in PRICE_INQUIRY_PATTERNS:
+        match = pattern.search(text_lower)
+        if match:
+            item_text = match.group(1).strip()
+
+            # Clean up trailing punctuation and common words
+            item_text = re.sub(r'[.!?,]+$', '', item_text)
+            item_text = item_text.strip()
+
+            logger.debug("Price inquiry detected: item_text='%s'", item_text)
+
+            # Check if this is a category inquiry (e.g., "bagels", "coffee")
+            if item_text in MENU_CATEGORY_KEYWORDS:
+                menu_type = MENU_CATEGORY_KEYWORDS[item_text]
+                logger.info("PRICE INQUIRY (category): '%s' -> menu_query_type=%s", text[:50], menu_type)
+                return OpenInputResponse(
+                    asks_about_price=True,
+                    menu_query=True,
+                    menu_query_type=menu_type,
+                )
+
+            # Check if it's "your bagels", "your coffees" etc
+            your_match = re.match(r"your\s+(.+)", item_text)
+            if your_match:
+                item_after_your = your_match.group(1).strip()
+                if item_after_your in MENU_CATEGORY_KEYWORDS:
+                    menu_type = MENU_CATEGORY_KEYWORDS[item_after_your]
+                    logger.info("PRICE INQUIRY (category): '%s' -> menu_query_type=%s", text[:50], menu_type)
+                    return OpenInputResponse(
+                        asks_about_price=True,
+                        menu_query=True,
+                        menu_query_type=menu_type,
+                    )
+
+            # Otherwise it's a specific item inquiry
+            logger.info("PRICE INQUIRY (specific): '%s' -> price_query_item=%s", text[:50], item_text)
+            return OpenInputResponse(
+                asks_about_price=True,
+                price_query_item=item_text,
+            )
+
+    return None
+
+
+# Store info inquiry patterns
+STORE_HOURS_PATTERNS = [
+    re.compile(r"what\s+(?:are|is)\s+(?:your|the)\s+hours", re.IGNORECASE),
+    re.compile(r"when\s+(?:do\s+you|are\s+you)\s+(?:open|close)", re.IGNORECASE),
+    re.compile(r"(?:are\s+you|you)\s+open\s+(?:today|now|on)", re.IGNORECASE),
+    re.compile(r"what\s+time\s+(?:do\s+you|are\s+you)\s+(?:open|close)", re.IGNORECASE),
+    re.compile(r"(?:your|the)\s+(?:hours|opening\s+hours|business\s+hours)", re.IGNORECASE),
+    re.compile(r"how\s+late\s+(?:are\s+you|do\s+you\s+stay)\s+open", re.IGNORECASE),
+]
+
+STORE_LOCATION_PATTERNS = [
+    re.compile(r"where\s+(?:are\s+you|is\s+the\s+store)\s+located", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:your|the)\s+address", re.IGNORECASE),
+    re.compile(r"(?:your|the)\s+(?:address|location)", re.IGNORECASE),
+    re.compile(r"where\s+(?:are\s+you|is\s+(?:this|the\s+store))", re.IGNORECASE),
+    re.compile(r"how\s+do\s+i\s+(?:get|find)\s+(?:you|there|the\s+store)", re.IGNORECASE),
+]
+
+# Delivery zone inquiry patterns - capture the location they're asking about
+DELIVERY_ZONE_PATTERNS = [
+    # "do you deliver to X" / "can you deliver to X"
+    re.compile(r"(?:do|can|will)\s+you\s+deliver\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "is X in your delivery area/zone"
+    re.compile(r"is\s+(.+?)\s+in\s+(?:your|the)\s+delivery\s+(?:area|zone|range)", re.IGNORECASE),
+    # "can I get delivery to X"
+    re.compile(r"can\s+i\s+get\s+delivery\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "do you deliver in X"
+    re.compile(r"(?:do|can)\s+you\s+deliver\s+in\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "delivery to X" / "deliver to X"
+    re.compile(r"deliver(?:y)?\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE),
+]
+
+# NYC neighborhood to zip code mapping (common neighborhoods)
+NYC_NEIGHBORHOOD_ZIPS = {
+    # Manhattan
+    "tribeca": ["10007", "10013", "10282"],
+    "soho": ["10012", "10013"],
+    "noho": ["10003", "10012"],
+    "greenwich village": ["10003", "10011", "10012", "10014"],
+    "west village": ["10011", "10014"],
+    "east village": ["10003", "10009"],
+    "lower east side": ["10002"],
+    "les": ["10002"],
+    "chinatown": ["10002", "10013"],
+    "little italy": ["10012", "10013"],
+    "nolita": ["10012"],
+    "chelsea": ["10001", "10011"],
+    "flatiron": ["10010", "10016"],
+    "gramercy": ["10003", "10010", "10016"],
+    "murray hill": ["10016", "10017"],
+    "midtown": ["10017", "10018", "10019", "10020", "10036"],
+    "midtown east": ["10017", "10022"],
+    "midtown west": ["10019", "10036"],
+    "hell's kitchen": ["10019", "10036"],
+    "times square": ["10036"],
+    "upper east side": ["10021", "10028", "10065", "10075", "10128"],
+    "ues": ["10021", "10028", "10065", "10075", "10128"],
+    "upper west side": ["10023", "10024", "10025"],
+    "uws": ["10023", "10024", "10025"],
+    "harlem": ["10026", "10027", "10030", "10037", "10039"],
+    "east harlem": ["10029", "10035"],
+    "washington heights": ["10032", "10033", "10040"],
+    "inwood": ["10034", "10040"],
+    "financial district": ["10004", "10005", "10006", "10038"],
+    "fidi": ["10004", "10005", "10006", "10038"],
+    "battery park": ["10004", "10280", "10282"],
+    "battery park city": ["10280", "10282"],
+    # Brooklyn
+    "williamsburg": ["11211", "11249"],
+    "greenpoint": ["11222"],
+    "bushwick": ["11206", "11221", "11237"],
+    "bed-stuy": ["11205", "11206", "11216", "11221", "11233"],
+    "bedford-stuyvesant": ["11205", "11206", "11216", "11221", "11233"],
+    "crown heights": ["11213", "11216", "11225", "11238"],
+    "prospect heights": ["11217", "11238"],
+    "park slope": ["11215", "11217"],
+    "cobble hill": ["11201"],
+    "brooklyn heights": ["11201"],
+    "dumbo": ["11201"],
+    "downtown brooklyn": ["11201", "11217"],
+    "fort greene": ["11205", "11217"],
+    "clinton hill": ["11205", "11238"],
+    "boerum hill": ["11201", "11217"],
+    "carroll gardens": ["11231"],
+    "red hook": ["11231"],
+    "sunset park": ["11220", "11232"],
+    "bay ridge": ["11209", "11220"],
+    "flatbush": ["11226", "11230", "11234"],
+    "bensonhurst": ["11204", "11214", "11219"],
+    "borough park": ["11204", "11219"],
+    "coney island": ["11224"],
+    "brighton beach": ["11235"],
+    # Queens
+    "astoria": ["11102", "11103", "11105", "11106"],
+    "long island city": ["11101", "11109"],
+    "lic": ["11101", "11109"],
+    "sunnyside": ["11104"],
+    "woodside": ["11377"],
+    "jackson heights": ["11372"],
+    "flushing": ["11354", "11355", "11358"],
+    "forest hills": ["11375"],
+    "rego park": ["11374"],
+    "jamaica": ["11432", "11433", "11434", "11435"],
+    "bayside": ["11360", "11361"],
+    # Bronx
+    "south bronx": ["10451", "10454", "10455", "10459"],
+    "mott haven": ["10451", "10454"],
+    "hunts point": ["10459", "10474"],
+    "fordham": ["10458", "10468"],
+    "riverdale": ["10463", "10471"],
+}
+
+
+def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
+    """
+    Parse store info inquiries like:
+    - "what are your hours?" -> asks_store_hours=True
+    - "where are you located?" -> asks_store_location=True
+    - "do you deliver to 10001?" -> asks_delivery_zone=True, delivery_zone_query="10001"
+
+    Returns:
+        OpenInputResponse with store info inquiry fields set, or None if not a store inquiry
+    """
+    text_lower = text.lower().strip()
+
+    # Check for hours inquiry
+    for pattern in STORE_HOURS_PATTERNS:
+        if pattern.search(text_lower):
+            logger.info("STORE INFO INQUIRY (hours): '%s'", text[:50])
+            return OpenInputResponse(asks_store_hours=True)
+
+    # Check for location inquiry
+    for pattern in STORE_LOCATION_PATTERNS:
+        if pattern.search(text_lower):
+            logger.info("STORE INFO INQUIRY (location): '%s'", text[:50])
+            return OpenInputResponse(asks_store_location=True)
+
+    # Check for delivery zone inquiry
+    for pattern in DELIVERY_ZONE_PATTERNS:
+        match = pattern.search(text_lower)
+        if match:
+            location_query = match.group(1).strip()
+            # Clean up trailing punctuation
+            location_query = re.sub(r'[.!?,]+$', '', location_query).strip()
+            logger.info("STORE INFO INQUIRY (delivery zone): '%s' -> '%s'", text[:50], location_query)
+            return OpenInputResponse(
+                asks_delivery_zone=True,
+                delivery_zone_query=location_query,
+            )
+
+    return None
+
+
 SIDE_ITEM_TYPES = {
     "chips", "potato chips", "kettle chips",
     "salad", "side salad", "green salad",
@@ -2294,7 +2595,8 @@ SIDE_ITEM_TYPES = {
 def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     """
     Parse multi-item orders like "The Lexington and an orange juice".
-    Splits on "and" and commas, and parses each component.
+    Splits on "and" and commas, and uses the existing deterministic parser for each part.
+    This approach automatically supports all item types that parse_open_input_deterministic handles.
     """
     text = user_input.strip()
     text_lower = text.lower()
@@ -2341,157 +2643,94 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
 
-    # Parse each part
+    # Parse each part using the existing deterministic parser
+    # Collect results for all item types
     menu_item = None
     menu_item_qty = 1
-    # Support multiple different coffees
+    menu_item_bagel_choice = None
+    menu_item_toasted = None
     coffee_list: list[CoffeeOrderDetails] = []
     bagel = False
     bagel_qty = 1
     bagel_type = None
     bagel_toasted = None
+    bagel_spread = None
+    bagel_spread_type = None
     side_item = None
     side_item_qty = 1
-
-    menu_item_bagel_choice = None
-    menu_item_toasted = None
 
     for part in restored_parts:
         part = part.strip()
         if not part:
             continue
 
-        # Try to parse as menu item
+        # First, try to extract menu items directly (this catches spread sandwiches like
+        # "plain bagel with strawberry cream cheese" which parse_open_input_deterministic
+        # would otherwise parse as a bagel with spread)
         item_name, item_qty = _extract_menu_item_from_text(part)
         if item_name:
             menu_item = item_name
             menu_item_qty = item_qty
-            # Also extract bagel type and toasted for spread sandwiches
-            # E.g., "plain bagel with strawberry cream cheese" -> bagel_choice='plain'
             menu_item_bagel_choice = _extract_bagel_type(part)
             menu_item_toasted = _extract_toasted(part)
-            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s)", menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted)
+            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s)",
+                        menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted)
             continue
 
-        # Try to parse as coffee/drink
-        # Check for soda types first (sorted by length to match "diet coke" before "coke")
-        drink_found = False
-        for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
-            if re.search(rf'\b{re.escape(soda)}\b', part):
-                drink_qty = 1
-                # Check for quantity
-                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
-                if qty_match:
-                    qty_str = qty_match.group(1)
-                    drink_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-                coffee_list.append(CoffeeOrderDetails(
-                    drink_type=soda,
-                    quantity=drink_qty,
-                ))
-                logger.info("Multi-item: detected drink '%s' (qty=%d)", soda, drink_qty)
-                drink_found = True
-                break
-
-        if drink_found:
+        # Use the existing deterministic parser for each part
+        parsed = parse_open_input_deterministic(part)
+        if not parsed:
+            logger.debug("Multi-item: could not parse part '%s' deterministically", part)
             continue
 
-        # Check for coffee beverage types (match plurals like "coffees", "lattes")
-        for bev in COFFEE_BEVERAGE_TYPES:
-            if re.search(rf'\b{bev}s?\b', part):
-                drink_qty = 1
-                drink_size = None
-                drink_iced = None
-                drink_milk = None
-                drink_notes = None
-                # Extract size
-                size_match = re.search(r'\b(small|medium|large)\b', part)
-                if size_match:
-                    drink_size = size_match.group(1)
-                # Extract iced/hot
-                if 'iced' in part:
-                    drink_iced = True
-                elif 'hot' in part:
-                    drink_iced = False
-                # Extract milk preference
-                milk_patterns = [
-                    (r'\bwith\s+(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
-                    (r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', 1),
-                    (r'\bblack\b', 'none'),
-                    (r'\bwith\s+milk\b', 'whole'),
-                    (r'\bwith\s+(?:a\s+)?(?:splash|little|bit)\s+(?:of\s+)?milk\b', 'whole'),
-                    (r'\bmilk\b(?!\s*(?:oat|almond|soy|skim|whole|coconut|chocolate))', 'whole'),
-                ]
-                for pattern, group in milk_patterns:
-                    milk_match = re.search(pattern, part)
-                    if milk_match:
-                        drink_milk = milk_match.group(group) if isinstance(group, int) else group
-                        break
-                # Extract notes (coffee-specific)
-                notes_list = extract_notes_from_input(part)
-                coffee_keywords = {'milk', 'cream', 'ice', 'hot', 'shot', 'espresso', 'foam', 'whip', 'sugar', 'syrup'}
-                coffee_notes = [n for n in notes_list if any(kw in n.lower() for kw in coffee_keywords)]
-                if coffee_notes:
-                    drink_notes = ", ".join(coffee_notes)
-                # Check for quantity
-                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
-                if qty_match:
-                    qty_str = qty_match.group(1)
-                    drink_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-                coffee_list.append(CoffeeOrderDetails(
-                    drink_type=bev,
-                    size=drink_size,
-                    iced=drink_iced,
-                    quantity=drink_qty,
-                    milk=drink_milk,
-                    notes=drink_notes,
-                ))
-                logger.info("Multi-item: detected coffee '%s' (qty=%d, milk=%s, notes=%s)", bev, drink_qty, drink_milk, drink_notes)
-                drink_found = True
-                break
+        # Merge the parsed result into our combined response
+        # Handle menu item (should be rare since we checked above, but just in case)
+        if parsed.new_menu_item:
+            menu_item = parsed.new_menu_item
+            menu_item_qty = parsed.new_menu_item_quantity or 1
+            menu_item_bagel_choice = parsed.new_menu_item_bagel_choice
+            menu_item_toasted = parsed.new_menu_item_toasted
+            logger.info("Multi-item: detected menu item '%s' (qty=%d)", menu_item, menu_item_qty)
 
-        if drink_found:
-            continue
+        # Handle coffee/drink
+        if parsed.new_coffee:
+            coffee_list.append(CoffeeOrderDetails(
+                drink_type=parsed.new_coffee_type or "coffee",
+                size=parsed.new_coffee_size,
+                iced=parsed.new_coffee_iced,
+                quantity=parsed.new_coffee_quantity or 1,
+                milk=parsed.new_coffee_milk,
+                notes=parsed.new_coffee_notes,
+            ))
+            logger.info("Multi-item: detected coffee '%s' (qty=%d, milk=%s, notes=%s)",
+                        parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
+                        parsed.new_coffee_milk, parsed.new_coffee_notes)
 
-        # Try to parse as bagel
-        if re.search(r'\bbagels?\b', part):
+        # Handle bagel
+        if parsed.new_bagel:
             bagel = True
-            bagel_type = _extract_bagel_type(part)
-            bagel_toasted = _extract_toasted(part)
-            qty_match = re.search(r'(\d+|one|two|three|four|five)\s+bagels?', part)
-            if qty_match:
-                qty_str = qty_match.group(1)
-                bagel_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
+            bagel_qty = parsed.new_bagel_quantity or 1
+            bagel_type = parsed.new_bagel_type
+            bagel_toasted = parsed.new_bagel_toasted
+            bagel_spread = parsed.new_bagel_spread
+            bagel_spread_type = parsed.new_bagel_spread_type
             logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s)", bagel_type, bagel_qty, bagel_toasted)
-            continue
 
-        # Try to parse as side item
-        side_found = False
-        for side in SIDE_ITEM_TYPES:
-            if re.search(rf'\b{re.escape(side)}\b', part):
-                side_item = side
-                side_item_qty = 1
-                # Check for quantity
-                qty_match = re.search(r'(\d+|one|two|three|four|five)\s+', part)
-                if qty_match:
-                    qty_str = qty_match.group(1)
-                    side_item_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 1)
-                logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
-                side_found = True
-                break
+        # Handle side item
+        if parsed.new_side_item:
+            side_item = parsed.new_side_item
+            side_item_qty = parsed.new_side_item_quantity or 1
+            logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
 
-        if side_found:
-            continue
-
-    # If we found at least two different item types, return a combined response
-    # Count coffees as a single "item type" but track that we have multiple drinks
+    # Count how many different item types we found
     items_found = sum([
         menu_item is not None,
         len(coffee_list) > 0,
         bagel,
         side_item is not None,
     ])
-    # Also count if we have multiple different coffees - that still needs special handling
-    total_items = items_found + max(0, len(coffee_list) - 1)  # Add extra coffees
+    # Also count if we have multiple different coffees
+    total_items = items_found + max(0, len(coffee_list) - 1)
 
     if items_found >= 2 or total_items >= 2:
         # For backwards compatibility, set the first coffee as the primary
@@ -2507,11 +2746,15 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_quantity=first_coffee.quantity if first_coffee else 1,
             new_coffee_size=first_coffee.size if first_coffee else None,
             new_coffee_iced=first_coffee.iced if first_coffee else None,
-            coffee_details=coffee_list,  # Include all coffees
+            new_coffee_milk=first_coffee.milk if first_coffee else None,
+            new_coffee_notes=first_coffee.notes if first_coffee else None,
+            coffee_details=coffee_list,
             new_bagel=bagel,
             new_bagel_quantity=bagel_qty,
             new_bagel_type=bagel_type,
             new_bagel_toasted=bagel_toasted,
+            new_bagel_spread=bagel_spread,
+            new_bagel_spread_type=bagel_spread_type,
             new_side_item=side_item,
             new_side_item_quantity=side_item_qty,
         )
@@ -2532,10 +2775,19 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_quantity=first_coffee.quantity,
             new_coffee_size=first_coffee.size,
             new_coffee_iced=first_coffee.iced,
+            new_coffee_milk=first_coffee.milk,
+            new_coffee_notes=first_coffee.notes,
             coffee_details=coffee_list,
         )
     if bagel:
-        return OpenInputResponse(new_bagel=True, new_bagel_quantity=bagel_qty, new_bagel_type=bagel_type, new_bagel_toasted=bagel_toasted)
+        return OpenInputResponse(
+            new_bagel=True,
+            new_bagel_quantity=bagel_qty,
+            new_bagel_type=bagel_type,
+            new_bagel_toasted=bagel_toasted,
+            new_bagel_spread=bagel_spread,
+            new_bagel_spread_type=bagel_spread_type,
+        )
     if side_item:
         return OpenInputResponse(new_side_item=side_item, new_side_item_quantity=side_item_qty)
 
@@ -3474,6 +3726,69 @@ class OrderStateMachine:
                             order=order,
                         )
 
+            # Check if there's ALSO a bagel order in the same message
+            if parsed.new_bagel:
+                # Save whether menu item needs configuration BEFORE adding bagel
+                menu_item_needs_config = order.is_configuring_item()
+                menu_item_result = last_result
+
+                # Save pending state - _add_bagel may change it
+                saved_pending_item_id = order.pending_item_id
+                saved_pending_field = order.pending_field
+                saved_phase = order.phase
+
+                # Extract modifiers from raw input for bagel
+                bagel_extracted_modifiers = None
+                if raw_user_input:
+                    bagel_extracted_modifiers = extract_modifiers_from_input(raw_user_input)
+
+                # Add bagel(s) using _add_bagels for quantity support
+                bagel_result = self._add_bagels(
+                    quantity=parsed.new_bagel_quantity,
+                    bagel_type=parsed.new_bagel_type,
+                    toasted=parsed.new_bagel_toasted,
+                    spread=parsed.new_bagel_spread,
+                    spread_type=parsed.new_bagel_spread_type,
+                    order=order,
+                    extracted_modifiers=bagel_extracted_modifiers,
+                )
+                bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
+                items_added.append(bagel_desc)
+                logger.info("Multi-item order: added bagel (type=%s, qty=%d)", parsed.new_bagel_type, parsed.new_bagel_quantity)
+
+                # If menu item needs configuration (e.g., spread sandwich toasted question),
+                # ask menu item questions first (bagels were still added to cart)
+                if menu_item_needs_config:
+                    # Queue bagel for configuration after menu item is done
+                    for item in order.items.items:
+                        if isinstance(item, BagelItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "bagel")
+                            logger.info("Multi-item order: queued bagel %s for config after menu item", item.id[:8])
+
+                    # Restore pending state
+                    order.pending_item_id = saved_pending_item_id
+                    order.pending_field = saved_pending_field
+                    order.phase = saved_phase
+                    logger.info("Multi-item order: menu item needs config, returning menu item config question")
+                    return menu_item_result
+
+                # If bagel needs configuration, ask bagel questions first
+                if order.is_configuring_item():
+                    # If menu item is in progress too, queue it for later
+                    for item in order.items.items:
+                        if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "menu_item")
+                            logger.info("Multi-item order: queued menu item %s for config after bagel", item.id[:8])
+                    logger.info("Multi-item order: bagel needs config, returning bagel config question")
+                    return bagel_result
+
+                # Neither needs config - combine the messages
+                combined_items = ", ".join(items_added)
+                last_result = StateMachineResult(
+                    message=f"Got it, {combined_items}. Anything else?",
+                    order=order,
+                )
+
             # Check if there's ALSO a coffee order in the same message
             if parsed.new_coffee or parsed.coffee_details:
                 # Save whether menu item needs configuration BEFORE adding coffee
@@ -3763,8 +4078,22 @@ class OrderStateMachine:
         if parsed.needs_soda_clarification:
             return self._handle_soda_clarification(order)
 
+        # Handle price inquiries for specific items
+        if parsed.asks_about_price and parsed.price_query_item:
+            return self._handle_price_inquiry(parsed.price_query_item, order)
+
+        # Handle store info inquiries
+        if parsed.asks_store_hours:
+            return self._handle_store_hours_inquiry(order)
+
+        if parsed.asks_store_location:
+            return self._handle_store_location_inquiry(order)
+
+        if parsed.asks_delivery_zone:
+            return self._handle_delivery_zone_inquiry(parsed.delivery_zone_query, order)
+
         if parsed.menu_query:
-            return self._handle_menu_query(parsed.menu_query_type, order)
+            return self._handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 
         if parsed.asking_signature_menu:
             return self._handle_signature_menu_inquiry(parsed.signature_menu_type, order)
@@ -3960,6 +4289,14 @@ class OrderStateMachine:
         elif parsed.spread:
             item.spread = parsed.spread
             item.spread_type = parsed.spread_type
+            # Capture special instructions like "a little", "extra", etc.
+            if parsed.notes:
+                # Build full spread description for notes
+                spread_desc = parsed.spread
+                if parsed.spread_type and parsed.spread_type != "plain":
+                    spread_desc = f"{parsed.spread_type} {parsed.spread}"
+                # Combine modifier with spread (e.g., "a little cream cheese")
+                item.notes = f"{parsed.notes} {spread_desc}"
         else:
             return StateMachineResult(
                 message="Would you like cream cheese, butter, or nothing on that?",
@@ -5613,11 +5950,13 @@ class OrderStateMachine:
         self,
         menu_query_type: str | None,
         order: OrderTask,
+        show_prices: bool = False,
     ) -> StateMachineResult:
         """Handle inquiry about menu items by type.
 
         Args:
             menu_query_type: Type of item being queried (e.g., 'beverage', 'bagel', 'sandwich')
+            show_prices: If True, include prices in the listing (for price inquiries)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
@@ -5658,14 +5997,14 @@ class OrderStateMachine:
             cold_items = items_by_type.get("beverage", [])
             items = sized_items + cold_items
             if items:
-                item_list = []
-                for item in items[:15]:
-                    name = item.get("name", "Unknown")
-                    price = item.get("base_price", 0)
-                    if price > 0:
-                        item_list.append(f"{name} (${price:.2f})")
-                    else:
-                        item_list.append(name)
+                # Conditionally show prices based on show_prices flag
+                if show_prices:
+                    item_list = [
+                        f"{item.get('name', 'Unknown')} (${item.get('price') or item.get('base_price') or 0:.2f})"
+                        for item in items[:15]
+                    ]
+                else:
+                    item_list = [item.get("name", "Unknown") for item in items[:15]]
                 if len(items) > 15:
                     item_list.append(f"...and {len(items) - 15} more")
                 if len(item_list) == 1:
@@ -5680,6 +6019,13 @@ class OrderStateMachine:
                 )
             return StateMachineResult(
                 message="I don't have any beverages on the menu right now. Is there anything else I can help you with?",
+                order=order,
+            )
+
+        # Handle "sandwich" specially - too broad, need to ask what kind
+        if menu_query_type == "sandwich":
+            return StateMachineResult(
+                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
                 order=order,
             )
 
@@ -5702,7 +6048,7 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Format the items list with prices
+        # Format the items list (conditionally show prices)
         type_name = menu_query_type.replace("_", " ")
         # Proper pluralization
         if type_name.endswith("ch") or type_name.endswith("s"):
@@ -5710,14 +6056,21 @@ class OrderStateMachine:
         else:
             type_display = type_name + "s"
 
-        item_list = []
-        for item in items[:15]:  # Limit to 15 items
-            name = item.get("name", "Unknown")
-            price = item.get("base_price", 0)
-            if price > 0:
+        # Conditionally show prices based on show_prices flag
+        if show_prices:
+            item_list = []
+            for item in items[:15]:
+                name = item.get('name', 'Unknown')
+                # Bagels use _lookup_bagel_price since they don't store price in items_by_type
+                if lookup_type == "bagel":
+                    # Extract bagel type from name (e.g., "Plain Bagel" -> "plain")
+                    bagel_type = name.lower().replace(" bagel", "").strip()
+                    price = self._lookup_bagel_price(bagel_type)
+                else:
+                    price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
-            else:
-                item_list.append(name)
+        else:
+            item_list = [item.get("name", "Unknown") for item in items[:15]]
 
         if len(items) > 15:
             item_list.append(f"...and {len(items) - 15} more")
@@ -5770,6 +6123,369 @@ class OrderStateMachine:
             order=order,
         )
 
+    def _handle_price_inquiry(
+        self,
+        item_query: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle price inquiry for a specific item.
+
+        Args:
+            item_query: The item the user is asking about (e.g., 'sesame bagel', 'large latte')
+
+        Returns:
+            StateMachineResult with the price information
+        """
+        if not self.menu_data:
+            return StateMachineResult(
+                message="I'm sorry, I don't have pricing information available. What can I get for you?",
+                order=order,
+            )
+
+        items_by_type = self.menu_data.get("items_by_type", {})
+        query_lower = item_query.lower().strip()
+
+        # Strip leading "a " or "an " from the query
+        query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
+
+        # Check if this is a generic category inquiry (e.g., "a bagel", "coffee", "sandwich")
+        # Map generic terms to their item_type and display name
+        generic_category_map = {
+            "bagel": ("bagel", "bagels"),
+            "coffee": ("sized_beverage", "coffees"),
+            "latte": ("sized_beverage", "lattes"),
+            "cappuccino": ("sized_beverage", "cappuccinos"),
+            "espresso": ("sized_beverage", "espressos"),
+            "tea": ("sized_beverage", "teas"),
+            "drink": ("beverage", "drinks"),
+            "beverage": ("beverage", "beverages"),
+            "soda": ("beverage", "sodas"),
+            "omelette": ("omelette", "omelettes"),
+            "side": ("side", "sides"),
+        }
+
+        # Special handling for "sandwich" - too broad, need to ask what kind
+        if query_lower == "sandwich":
+            return StateMachineResult(
+                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
+                order=order,
+            )
+
+        # Handle specific sandwich types
+        sandwich_type_map = {
+            "egg sandwich": ("egg_sandwich", "egg sandwiches"),
+            "fish sandwich": ("fish_sandwich", "fish sandwiches"),
+            "cream cheese sandwich": ("spread_sandwich", "cream cheese sandwiches"),
+            "spread sandwich": ("spread_sandwich", "spread sandwiches"),
+            "salad sandwich": ("salad_sandwich", "salad sandwiches"),
+            "deli sandwich": ("deli_sandwich", "deli sandwiches"),
+            "signature sandwich": ("signature_sandwich", "signature sandwiches"),
+        }
+
+        if query_lower in sandwich_type_map:
+            item_type, display_name = sandwich_type_map[query_lower]
+            min_price = self._get_min_price_for_category(item_type)
+            if min_price > 0:
+                return StateMachineResult(
+                    message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
+                    order=order,
+                )
+
+        if query_lower in generic_category_map:
+            item_type, display_name = generic_category_map[query_lower]
+            min_price = self._get_min_price_for_category(item_type)
+            if min_price > 0:
+                return StateMachineResult(
+                    message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
+                    order=order,
+                )
+
+        # Search all menu items for a match
+        best_match = None
+        best_match_score = 0
+
+        for item_type, items in items_by_type.items():
+            for item in items:
+                item_name = item.get("name", "").lower()
+                item_price = item.get("price", 0)
+
+                # Exact match
+                if item_name == query_lower:
+                    best_match = item
+                    best_match_score = 100
+                    break
+
+                # Check if query is contained in item name
+                if query_lower in item_name:
+                    score = len(query_lower) / len(item_name) * 80
+                    if score > best_match_score:
+                        best_match = item
+                        best_match_score = score
+
+                # Check if item name is contained in query
+                if item_name in query_lower:
+                    score = len(item_name) / len(query_lower) * 70
+                    if score > best_match_score:
+                        best_match = item
+                        best_match_score = score
+
+            if best_match_score == 100:
+                break
+
+        # Check bagels specifically (they may not be in items_by_type with prices)
+        bagel_items = items_by_type.get("bagel", [])
+        is_bagel_query = "bagel" in query_lower
+        if is_bagel_query and not best_match:
+            # Try to find a matching bagel
+            for bagel in bagel_items:
+                bagel_name = bagel.get("name", "").lower()
+                if query_lower in bagel_name or bagel_name in query_lower:
+                    best_match = bagel
+                    best_match_score = 75
+                    break
+
+            # If they asked about a specific bagel type but we didn't find it,
+            # give the general bagel price if available
+            if not best_match and bagel_items:
+                # Use the first bagel price as the general price
+                best_match = bagel_items[0]
+                best_match_score = 50
+
+        if best_match and best_match_score >= 50:
+            name = best_match.get("name", "Unknown")
+            # Bagels use _lookup_bagel_price since they don't store price in items_by_type
+            if is_bagel_query or "bagel" in name.lower():
+                bagel_type = name.lower().replace(" bagel", "").strip()
+                price = self._lookup_bagel_price(bagel_type)
+            else:
+                price = best_match.get("price") or best_match.get("base_price") or 0
+            return StateMachineResult(
+                message=f"{name} is ${price:.2f}. Would you like one?",
+                order=order,
+            )
+
+        # No match found - give helpful response
+        return StateMachineResult(
+            message=f"I'm not sure about the price for '{item_query}'. Is there something else I can help you with?",
+            order=order,
+        )
+
+    # =========================================================================
+    # Store Info Handlers
+    # =========================================================================
+
+    def _handle_store_hours_inquiry(self, order: OrderTask) -> StateMachineResult:
+        """Handle inquiry about store hours.
+
+        Uses store_info from the process() call to get hours.
+        If store_info is not available (no store context), asks the user which store.
+        """
+        store_info = getattr(self, '_store_info', {}) or {}
+        hours = store_info.get("hours")
+        store_name = store_info.get("name")
+
+        if hours:
+            # We have hours info - return it
+            if store_name:
+                message = f"Our hours at {store_name} are {hours}. Can I help you with an order?"
+            else:
+                message = f"Our hours are {hours}. Can I help you with an order?"
+            return StateMachineResult(message=message, order=order)
+
+        # No hours info available
+        if store_name:
+            # We know the store but don't have hours configured
+            return StateMachineResult(
+                message=f"I don't have the hours for {store_name} right now. Is there anything else I can help you with?",
+                order=order,
+            )
+
+        # No store context at all - we can't determine which store
+        return StateMachineResult(
+            message="Which location would you like the hours for?",
+            order=order,
+        )
+
+    def _handle_store_location_inquiry(self, order: OrderTask) -> StateMachineResult:
+        """Handle inquiry about store location/address.
+
+        Uses store_info from the process() call to get address.
+        If store_info is not available (no store context), asks the user which store.
+        """
+        store_info = getattr(self, '_store_info', {}) or {}
+        address = store_info.get("address")
+        city = store_info.get("city")
+        state = store_info.get("state")
+        zip_code = store_info.get("zip_code")
+        store_name = store_info.get("name")
+
+        # Build full address if we have the parts
+        if address:
+            address_parts = [address]
+            if city:
+                city_state_zip = city
+                if state:
+                    city_state_zip += f", {state}"
+                if zip_code:
+                    city_state_zip += f" {zip_code}"
+                address_parts.append(city_state_zip)
+            full_address = ", ".join(address_parts)
+
+            if store_name:
+                message = f"{store_name} is located at {full_address}. Can I help you with an order?"
+            else:
+                message = f"We're located at {full_address}. Can I help you with an order?"
+            return StateMachineResult(message=message, order=order)
+
+        # No address info available
+        if store_name:
+            # We know the store but don't have address configured
+            return StateMachineResult(
+                message=f"I don't have the address for {store_name} right now. Is there anything else I can help you with?",
+                order=order,
+            )
+
+        # No store context at all - we can't determine which store
+        return StateMachineResult(
+            message="Which location would you like the address for?",
+            order=order,
+        )
+
+    def _handle_delivery_zone_inquiry(self, query: str | None, order: OrderTask) -> StateMachineResult:
+        """Handle inquiry about whether we deliver to a specific location.
+
+        Process:
+        1. If query is a zip code (5 digits), check directly
+        2. If query is a neighborhood, look up zip codes in NYC_NEIGHBORHOOD_ZIPS
+        3. If it looks like an address, geocode it to get the zip code
+        4. Do reverse lookup across all stores to find which deliver to that zip
+
+        Args:
+            query: The location they're asking about (zip, neighborhood, or address)
+            order: Current order state
+        """
+        store_info = getattr(self, '_store_info', {}) or {}
+        all_stores = store_info.get("all_stores", [])
+
+        if not query:
+            return StateMachineResult(
+                message="What area would you like to check for delivery? You can give me a zip code or neighborhood.",
+                order=order,
+            )
+
+        query_clean = query.lower().strip()
+
+        # Check if it's a zip code (5 digits)
+        zip_match = re.match(r'^(\d{5})$', query_clean)
+        if zip_match:
+            zip_code = zip_match.group(1)
+            return self._check_delivery_for_zip(zip_code, all_stores, order)
+
+        # Check if it's a known neighborhood
+        neighborhood_key = query_clean.replace("'", "'").strip()
+        if neighborhood_key in NYC_NEIGHBORHOOD_ZIPS:
+            zip_codes = NYC_NEIGHBORHOOD_ZIPS[neighborhood_key]
+            # Check if any of these zip codes are in delivery zones
+            return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
+
+        # Try fuzzy matching for neighborhoods (common variations)
+        for key in NYC_NEIGHBORHOOD_ZIPS:
+            if key in query_clean or query_clean in key:
+                zip_codes = NYC_NEIGHBORHOOD_ZIPS[key]
+                return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
+
+        # Check if it looks like an address (has numbers suggesting a street address)
+        if re.search(r'\d+\s+\w+', query):
+            # Try to geocode the address to get a zip code
+            from ..address_service import geocode_to_zip
+            zip_code = geocode_to_zip(query)
+            if zip_code:
+                logger.info("Geocoded '%s' to zip code: %s", query, zip_code)
+                return self._check_delivery_for_zip(zip_code, all_stores, order, original_query=query)
+
+        # Unknown location - ask for more specific info
+        return StateMachineResult(
+            message=f"I'm not sure about {query}. Could you give me a zip code or street address so I can check our delivery area?",
+            order=order,
+        )
+
+    def _check_delivery_for_zip(
+        self, zip_code: str, all_stores: list, order: OrderTask, original_query: str | None = None
+    ) -> StateMachineResult:
+        """Check which stores deliver to a specific zip code.
+
+        Args:
+            zip_code: The zip code to check
+            all_stores: List of all stores with delivery zones
+            order: Current order state
+            original_query: Original address/location query (for nicer messages)
+        """
+        delivering_stores = []
+        # Use original query in messages if provided, otherwise use zip code
+        location_display = original_query or zip_code
+
+        for store in all_stores:
+            delivery_zips = store.get("delivery_zip_codes", [])
+            if zip_code in delivery_zips:
+                delivering_stores.append(store)
+
+        if delivering_stores:
+            if len(delivering_stores) == 1:
+                store = delivering_stores[0]
+                store_name = store.get("name", "our store")
+                message = f"Yes! {store_name} delivers to {location_display}. Would you like to place a delivery order?"
+            else:
+                store_names = [s.get("name", "Store") for s in delivering_stores]
+                if len(store_names) == 2:
+                    stores_str = f"{store_names[0]} and {store_names[1]}"
+                else:
+                    stores_str = ", ".join(store_names[:-1]) + f", and {store_names[-1]}"
+                message = f"Yes! We can deliver to {location_display} from {stores_str}. Would you like to place a delivery order?"
+            return StateMachineResult(message=message, order=order)
+
+        # No stores deliver to this zip
+        return StateMachineResult(
+            message=f"Unfortunately, we don't currently deliver to {location_display}. You're welcome to place a pickup order instead. Would you like to do that?",
+            order=order,
+        )
+
+    def _check_delivery_for_neighborhood(
+        self, neighborhood: str, zip_codes: list, all_stores: list, order: OrderTask
+    ) -> StateMachineResult:
+        """Check which stores deliver to any of the neighborhood's zip codes."""
+        delivering_stores = []
+        covered_zips = []
+
+        for store in all_stores:
+            delivery_zips = store.get("delivery_zip_codes", [])
+            matching_zips = [z for z in zip_codes if z in delivery_zips]
+            if matching_zips:
+                if store not in delivering_stores:
+                    delivering_stores.append(store)
+                covered_zips.extend(matching_zips)
+
+        covered_zips = list(set(covered_zips))  # Remove duplicates
+
+        if delivering_stores:
+            if len(delivering_stores) == 1:
+                store = delivering_stores[0]
+                store_name = store.get("name", "our store")
+                message = f"Yes! {store_name} delivers to {neighborhood}. Would you like to place a delivery order?"
+            else:
+                store_names = [s.get("name", "Store") for s in delivering_stores]
+                if len(store_names) == 2:
+                    stores_str = f"{store_names[0]} and {store_names[1]}"
+                else:
+                    stores_str = ", ".join(store_names[:-1]) + f", and {store_names[-1]}"
+                message = f"Yes! We can deliver to {neighborhood} from {stores_str}. Would you like to place a delivery order?"
+            return StateMachineResult(message=message, order=order)
+
+        # No stores deliver to this neighborhood
+        return StateMachineResult(
+            message=f"Unfortunately, we don't currently deliver to {neighborhood}. You're welcome to place a pickup order instead. Would you like to do that?",
+            order=order,
+        )
+
     # =========================================================================
     # Signature/Speed Menu Handlers
     # =========================================================================
@@ -5809,12 +6525,8 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # Build a nice list of items with prices
-        item_descriptions = []
-        for item in items:
-            name = item.get("name", "Unknown")
-            price = item.get("base_price", 0)
-            item_descriptions.append(f"{name} for ${price:.2f}")
+        # Build a nice list of items (without prices - prices only shown when specifically asked)
+        item_descriptions = [item.get("name", "Unknown") for item in items]
 
         # Format the response
         if len(item_descriptions) == 1:
@@ -6295,6 +7007,48 @@ class OrderStateMachine:
             return "What's your email address?"
         else:
             return "Anything else?"
+
+    def _get_min_price_for_category(self, item_type: str) -> float:
+        """
+        Get the minimum (starting) price for a category of items.
+
+        Args:
+            item_type: The item type slug (e.g., 'bagel', 'sized_beverage', 'egg_sandwich')
+
+        Returns:
+            Minimum price found for the category, or 0 if not found
+        """
+        if not self.menu_data:
+            # Return sensible defaults for common categories
+            defaults = {
+                "bagel": 2.50,
+                "sized_beverage": 2.50,
+                "beverage": 2.00,
+                "egg_sandwich": 6.95,
+                "omelette": 8.95,
+                "side": 1.50,
+            }
+            return defaults.get(item_type, 0)
+
+        items_by_type = self.menu_data.get("items_by_type", {})
+
+        # Special handling for bagels - use _lookup_bagel_price
+        if item_type == "bagel":
+            return self._lookup_bagel_price(None)
+
+        # Get items for this category
+        items = items_by_type.get(item_type, [])
+        if not items:
+            return 0
+
+        # Find minimum price
+        prices = []
+        for item in items:
+            price = item.get("price") or item.get("base_price") or 0
+            if price > 0:
+                prices.append(price)
+
+        return min(prices) if prices else 0
 
     def _lookup_bagel_price(self, bagel_type: str | None) -> float:
         """

@@ -317,7 +317,7 @@ class MessageProcessor:
     # -------------------------------------------------------------------------
 
     def _build_store_info(self, store_id: Optional[str]) -> Dict[str, Any]:
-        """Build store info with tax rates and delivery zip codes."""
+        """Build store info with tax rates, delivery zip codes, hours, address, etc."""
         company = self._get_company()
         company_name = company.name if company else "OrderBot"
 
@@ -327,6 +327,15 @@ class MessageProcessor:
             "city_tax_rate": 0.0,
             "state_tax_rate": 0.0,
             "delivery_zip_codes": [],
+            # Store location and contact info
+            "address": None,
+            "city": None,
+            "state": None,
+            "zip_code": None,
+            "phone": None,
+            "hours": None,
+            # All stores info for cross-store delivery lookup
+            "all_stores": [],
         }
 
         if store_id:
@@ -336,6 +345,28 @@ class MessageProcessor:
                 store_info["city_tax_rate"] = store.city_tax_rate or 0.0
                 store_info["state_tax_rate"] = store.state_tax_rate or 0.0
                 store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
+                # Add location and contact info
+                store_info["address"] = store.address
+                store_info["city"] = store.city
+                store_info["state"] = store.state
+                store_info["zip_code"] = store.zip_code
+                store_info["phone"] = store.phone
+                store_info["hours"] = store.hours
+
+        # Get all stores for delivery zone lookup
+        all_stores = self.db.query(Store).filter(Store.status == "open").all()
+        store_info["all_stores"] = [
+            {
+                "store_id": s.store_id,
+                "name": s.name,
+                "delivery_zip_codes": s.delivery_zip_codes or [],
+                "address": s.address,
+                "city": s.city,
+                "state": s.state,
+                "phone": s.phone,
+            }
+            for s in all_stores
+        ]
 
         return store_info
 

@@ -86,7 +86,7 @@ def test_chat_message_add_sandwich_updates_order_state(client, monkeypatch, disa
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_call)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
 
     resp = client.post(
         "/chat/message",
@@ -194,7 +194,7 @@ def test_multi_item_order_adds_all_items(client, monkeypatch, disable_state_mach
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_multi_item_call)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_multi_item_call)
 
     resp = client.post(
         "/chat/message",
@@ -312,7 +312,7 @@ def test_multi_item_order_can_remove_single_item(client, monkeypatch, disable_st
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_multi_item_call)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_multi_item_call)
     resp1 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Turkey club, chips, and a coke"},
@@ -355,7 +355,7 @@ def test_multi_item_order_can_remove_single_item(client, monkeypatch, disable_st
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_remove_call)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_remove_call)
     resp2 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Remove the chips"},
@@ -414,7 +414,7 @@ def test_legacy_single_intent_format_still_works(client, monkeypatch, disable_st
             },
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_legacy_call)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_legacy_call)
 
     resp = client.post(
         "/chat/message",
@@ -445,7 +445,7 @@ def test_chat_message_handles_llm_error_gracefully(client, monkeypatch, disable_
     def fake_call_that_fails(*args, **kwargs):
         raise Exception("OpenAI API is down")
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_call_that_fails)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call_that_fails)
 
     resp = client.post(
         "/chat/message",
@@ -501,8 +501,11 @@ def test_chat_message_rejects_too_long_message(client, monkeypatch):
 def test_rate_limit_returns_429_when_exceeded(client, monkeypatch):
     """Test that rate limiting returns 429 when limit is exceeded."""
     import sandwich_bot.main as main_mod
+    import sandwich_bot.config as config_mod
 
     # Set a very restrictive rate limit for testing via the callable
+    # Patch both main and config since get_rate_limit_chat reads from config
+    monkeypatch.setattr(config_mod, "RATE_LIMIT_CHAT", "2 per minute")
     monkeypatch.setattr(main_mod, "RATE_LIMIT_CHAT", "2 per minute")
 
     # Re-enable rate limiting (might be disabled in test env)
@@ -584,7 +587,7 @@ def test_modification_add_topping_to_existing_sandwich(client, monkeypatch, disa
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_sandwich)
     resp1 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Turkey club with lettuce and tomato"},
@@ -623,7 +626,7 @@ def test_modification_add_topping_to_existing_sandwich(client, monkeypatch, disa
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_topping)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_topping)
     resp2 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Add pickles"},
@@ -677,7 +680,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch,
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_sandwich)
     resp1 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Turkey club with everything"},
@@ -713,7 +716,7 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch,
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_remove_topping)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_remove_topping)
     resp2 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Actually, no tomato"},
@@ -765,7 +768,7 @@ def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_sandwich)
     client.post("/chat/message", json={"session_id": session_id, "message": "BLT please"})
 
     # Step 2: Add onion and remove tomato
@@ -797,7 +800,7 @@ def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_modify_toppings)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_modify_toppings)
     resp = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Add onion and remove the tomato"},
@@ -847,7 +850,7 @@ def test_modification_change_sandwich_type(client, monkeypatch, disable_state_ma
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_sandwich)
     resp1 = client.post("/chat/message", json={"session_id": session_id, "message": "Turkey Club"})
     assert resp1.json()["order_state"]["items"][0]["menu_item_name"] == "Turkey Club"
 
@@ -880,7 +883,7 @@ def test_modification_change_sandwich_type(client, monkeypatch, disable_state_ma
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_change_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_change_sandwich)
     resp2 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Actually make that an Italian Stallion"},
@@ -952,7 +955,7 @@ def test_modification_first_sandwich_by_index(client, monkeypatch, disable_state
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_two_sandwiches)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_two_sandwiches)
     resp1 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Turkey Club and a BLT"},
@@ -991,7 +994,7 @@ def test_modification_first_sandwich_by_index(client, monkeypatch, disable_state
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_modify_first)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_modify_first)
     resp2 = client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Change my first sandwich to sourdough"},
@@ -1086,13 +1089,13 @@ def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeyp
             ],
         }
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_add_sandwich)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_add_sandwich)
     client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "I want a Turkey Club"},
     )
 
-    monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_confirm_order)
+    monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_confirm_order)
     client.post(
         "/chat/message",
         json={"session_id": session_id, "message": "Confirm the order, my name is John and phone is 555-987-6543"},

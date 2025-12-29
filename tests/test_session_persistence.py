@@ -191,7 +191,7 @@ class TestSessionPersistenceIntegration:
                 "slots": {},
             }
 
-        monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_call)
+        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
 
         # Send message
         client.post(
@@ -235,7 +235,7 @@ class TestSessionPersistenceIntegration:
                 "slots": {},
             }
 
-        monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_call)
+        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
 
         # Session should still work (loaded from DB)
         resp = client.post(
@@ -274,8 +274,10 @@ class TestSessionCacheTTL:
         import time
         import sandwich_bot.main as main_mod
         import sandwich_bot.db as db_mod
+        import sandwich_bot.services.session as session_mod
 
-        # Set a very short TTL for testing
+        # Set a very short TTL for testing - patch both main and session module
+        monkeypatch.setattr(session_mod, "SESSION_TTL_SECONDS", 1)
         monkeypatch.setattr(main_mod, "SESSION_TTL_SECONDS", 1)
 
         # Start a session via API
@@ -316,7 +318,7 @@ class TestSessionCacheTTL:
         def fake_call(*args, **kwargs):
             return {"reply": "Hi!", "intent": "small_talk", "slots": {}}
 
-        monkeypatch.setattr(main_mod, "call_sandwich_bot", fake_call)
+        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
 
         # Access the session by sending a message
         client.post(

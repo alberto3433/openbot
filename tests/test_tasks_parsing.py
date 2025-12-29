@@ -1203,6 +1203,32 @@ class TestNotesExtraction:
         # At least one menu item should be captured
         assert result.new_menu_item is not None
 
+    def test_multi_item_coffee_and_spread_sandwich_with_bagel_type(self):
+        """Test that 'a sesame bagel with butter' captures the sesame bagel type."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        result = _parse_multi_item_order("a coffee with a little bit of milk and a sesame bagel with butter")
+        assert result is not None
+        # Coffee should be captured
+        assert result.new_coffee is True
+        # "sesame bagel with butter" should be recognized as Butter Sandwich
+        assert result.new_menu_item is not None
+        assert "butter" in result.new_menu_item.lower()
+        # Most importantly: bagel choice should be "sesame"
+        assert result.new_menu_item_bagel_choice == "sesame"
+
+    def test_bagel_with_cream_cheese_is_build_your_own(self):
+        """Test that 'an everything bagel with cream cheese' is parsed as build-your-own bagel, not menu item."""
+        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        result = _parse_multi_item_order("an everything bagel with cream cheese and a coffee")
+        assert result is not None
+        assert result.new_coffee is True
+        # "everything bagel with cream cheese" should be parsed as a bagel order (not menu item)
+        # because the user explicitly mentioned "bagel"
+        assert result.new_bagel is True
+        assert result.new_bagel_type == "everything"
+        assert result.new_bagel_spread == "cream cheese"
+        assert result.new_menu_item is None  # Not a menu item
+
 
 class TestRecommendationInquiryParsing:
     """Tests for recommendation question detection.

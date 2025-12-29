@@ -317,14 +317,26 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             side_choice = getattr(item, 'side_choice', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
             toasted = getattr(item, 'toasted', None)
+            menu_item_name = item.menu_item_name
+            menu_item_type = getattr(item, 'menu_item_type', None)
+
+            # Build display name with bagel choice and toasted status for spread/salad sandwiches
+            display_name = menu_item_name
+            if menu_item_type in ("spread_sandwich", "salad_sandwich") and bagel_choice:
+                display_name = f"{menu_item_name} on {bagel_choice} bagel"
+            if toasted is True:
+                display_name = f"{display_name} toasted"
+            elif toasted is False and menu_item_type in ("spread_sandwich", "salad_sandwich"):
+                display_name = f"{display_name} not toasted"
 
             item_dict = {
                 "item_type": "menu_item",
                 "id": item.id,  # Preserve item ID
                 "status": item.status.value,
-                "menu_item_name": item.menu_item_name,  # Keep original name (no side choice)
+                "menu_item_name": menu_item_name,  # Keep original name (no side choice)
+                "display_name": display_name,  # Full display with bagel choice and toasted
                 "menu_item_id": getattr(item, 'menu_item_id', None),
-                "menu_item_type": getattr(item, 'menu_item_type', None),
+                "menu_item_type": menu_item_type,
                 "modifications": getattr(item, 'modifications', []),
                 "side_choice": side_choice,
                 "bagel_choice": bagel_choice,

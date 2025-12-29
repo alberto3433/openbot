@@ -166,6 +166,7 @@ class TenantManager:
             engine = create_engine(
                 db_url,
                 connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
+                pool_pre_ping=True,
                 echo=False,  # Set to True for SQL debugging
             )
 

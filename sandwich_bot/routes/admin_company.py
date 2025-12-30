@@ -55,31 +55,13 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import Company
 from ..schemas.company import CompanyOut, CompanyUpdate
+from ..services.helpers import get_or_create_company
 
 
 logger = logging.getLogger(__name__)
 
 # Router definition
 admin_company_router = APIRouter(prefix="/admin/company", tags=["Admin - Company"])
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-def get_or_create_company(db: Session) -> Company:
-    """Get the company record or create a default one."""
-    company = db.query(Company).first()
-    if not company:
-        company = Company(
-            name="OrderBot Restaurant",
-            bot_persona_name="OrderBot",
-        )
-        db.add(company)
-        db.commit()
-        db.refresh(company)
-        logger.info("Created default company record")
-    return company
 
 
 # =============================================================================

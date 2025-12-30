@@ -52,6 +52,7 @@ from ..db import get_db
 from ..models import Store, Company
 from ..schemas.stores import StoreOut
 from ..schemas.company import CompanyOut
+from ..services.helpers import get_or_create_company
 
 
 logger = logging.getLogger(__name__)
@@ -59,24 +60,6 @@ logger = logging.getLogger(__name__)
 # Router definitions
 public_stores_router = APIRouter(prefix="/stores", tags=["Stores"])
 public_company_router = APIRouter(prefix="/company", tags=["Company"])
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-def get_or_create_company(db: Session) -> Company:
-    """Get the company record or create a default one."""
-    company = db.query(Company).first()
-    if not company:
-        company = Company(
-            name="OrderBot Restaurant",
-            bot_persona_name="OrderBot",
-        )
-        db.add(company)
-        db.commit()
-        db.refresh(company)
-    return company
 
 
 # =============================================================================

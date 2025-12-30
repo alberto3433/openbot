@@ -74,7 +74,7 @@ from ..menu_index_builder import build_menu_index, get_menu_version
 from ..email_service import send_payment_link_email
 from ..services.session import get_or_create_session, save_session
 from ..services.order import persist_confirmed_order
-from ..services.helpers import get_customer_info
+from ..services.helpers import get_customer_info, get_or_create_company, get_primary_item_type_name
 from ..sammy.llm_client import call_sandwich_bot
 from ..schemas.chat import (
     ChatStartResponse,
@@ -121,25 +121,6 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     Delegates to the shared get_customer_info helper in services.helpers.
     """
     return get_customer_info(db, phone)
-
-
-def get_or_create_company(db: Session) -> Company:
-    """Get the company record or create a default one."""
-    company = db.query(Company).first()
-    if not company:
-        company = Company(
-            name="OrderBot Restaurant",
-            bot_persona_name="OrderBot",
-        )
-        db.add(company)
-        db.commit()
-    return company
-
-
-def get_primary_item_type_name(db: Session) -> str:
-    """Get the display name of the primary configurable item type."""
-    primary = db.query(ItemType).filter(ItemType.is_configurable == True).first()
-    return primary.display_name if primary else "Sandwich"
 
 
 def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Session] = None) -> Dict[str, Any]:

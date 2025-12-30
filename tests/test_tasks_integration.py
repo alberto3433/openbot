@@ -4857,3 +4857,131 @@ class TestByPoundHandlers:
 
         # Should list salad items
         assert "salads" in result.message.lower() or "salad" in result.message.lower()
+
+
+class TestSignatureMenuInquiryHandler:
+    """Tests for _handle_signature_menu_inquiry."""
+
+    def test_no_items_returns_build_your_own(self):
+        """Test that no signature items suggests building your own."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {"items_by_type": {}}  # No items
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry(None, order)
+
+        assert "build your own" in result.message.lower()
+
+    def test_all_signature_items_listed(self):
+        """Test that all signature items are listed when no type specified."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_sandwich": [
+                    {"name": "Turkey Club"},
+                    {"name": "Italian Sub"},
+                ],
+                "speed_menu_bagel": [
+                    {"name": "The Classic"},
+                    {"name": "The Leo"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry(None, order)
+
+        assert "turkey club" in result.message.lower()
+        assert "italian sub" in result.message.lower()
+        assert "the classic" in result.message.lower()
+        assert "the leo" in result.message.lower()
+        assert "signature menu options" in result.message.lower()
+
+    def test_specific_type_lists_only_that_type(self):
+        """Test that specific type only lists items of that type."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_sandwich": [
+                    {"name": "Turkey Club"},
+                ],
+                "speed_menu_bagel": [
+                    {"name": "The Classic"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry("signature_sandwich", order)
+
+        assert "turkey club" in result.message.lower()
+        assert "the classic" not in result.message.lower()
+        assert "signature sandwiches" in result.message.lower()
+
+    def test_single_item_formatted_correctly(self):
+        """Test that single item is formatted without 'and'."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_sandwich": [
+                    {"name": "Turkey Club"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry("signature_sandwich", order)
+
+        assert "turkey club" in result.message.lower()
+        assert " and " not in result.message.lower().split("are:")[1].split("would")[0]
+
+    def test_two_items_formatted_with_and(self):
+        """Test that two items are formatted with 'and'."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "speed_menu_bagel": [
+                    {"name": "The Classic"},
+                    {"name": "The Leo"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry("speed_menu_bagel", order)
+
+        assert "the classic and the leo" in result.message.lower()
+
+    def test_speed_menu_bagel_type_pluralized(self):
+        """Test that speed_menu_bagel type is pluralized correctly."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "speed_menu_bagel": [
+                    {"name": "The Classic"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm._handle_signature_menu_inquiry("speed_menu_bagel", order)
+
+        assert "speed menu bagels" in result.message.lower()

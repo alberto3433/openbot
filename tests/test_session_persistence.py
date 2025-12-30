@@ -2,6 +2,7 @@
 Tests for session persistence functionality.
 """
 import os
+import uuid
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -14,6 +15,11 @@ from sandwich_bot.main import (
     _cleanup_expired_sessions,
     SESSION_TTL_SECONDS,
 )
+
+
+def unique_session_id(prefix: str = "test") -> str:
+    """Generate a unique session ID for testing."""
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -45,7 +51,7 @@ class TestSessionPersistence:
 
     def test_save_session_creates_new_record(self, db_session):
         """Test that save_session creates a new ChatSession record."""
-        session_id = "test-session-123"
+        session_id = unique_session_id("save-new")
         session_data = {
             "history": [{"role": "assistant", "content": "Hello!"}],
             "order": {"status": "pending", "items": []},
@@ -62,7 +68,7 @@ class TestSessionPersistence:
 
     def test_save_session_updates_existing_record(self, db_session):
         """Test that save_session updates an existing ChatSession record."""
-        session_id = "test-session-456"
+        session_id = unique_session_id("save-update")
 
         # Create initial session
         initial_data = {
@@ -89,12 +95,12 @@ class TestSessionPersistence:
 
     def test_get_or_create_session_returns_none_for_unknown(self, db_session):
         """Test that get_or_create_session returns None for unknown session."""
-        result = get_or_create_session(db_session, "nonexistent-session")
+        result = get_or_create_session(db_session, unique_session_id("nonexistent"))
         assert result is None
 
     def test_get_or_create_session_loads_from_database(self, db_session):
         """Test that get_or_create_session loads session from database."""
-        session_id = "db-session-789"
+        session_id = unique_session_id("db-load")
         session_data = {
             "history": [{"role": "assistant", "content": "Welcome!"}],
             "order": {"status": "pending", "items": [], "total_price": 0.0},
@@ -121,7 +127,7 @@ class TestSessionPersistence:
 
     def test_session_survives_cache_clear(self, db_session):
         """Test that session can be recovered after cache is cleared."""
-        session_id = "persistent-session-202"
+        session_id = unique_session_id("persistent")
         session_data = {
             "history": [
                 {"role": "assistant", "content": "Hello!"},

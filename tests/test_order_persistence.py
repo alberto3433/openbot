@@ -63,20 +63,21 @@ def test_persist_confirmed_order_creates_order_and_items():
     # persist_confirmed_order is what creates Order and OrderItem records
     persist_confirmed_order(db, order_state)
 
-    # There should be one persisted Order and one OrderItem
-    orders = db.query(Order).all()
-    assert len(orders) == 1
-    assert orders[0].total_price == 16.0
-    assert orders[0].customer_name == "Alice"
+    # The order_state should now have the db_order_id
+    assert "db_order_id" in order_state
+    order_id = order_state["db_order_id"]
 
-    items = db.query(OrderItem).all()
+    # Verify the persisted Order
+    order = db.query(Order).filter(Order.id == order_id).first()
+    assert order is not None
+    assert order.total_price == 16.0
+    assert order.customer_name == "Alice"
+
+    # Verify the OrderItem was created for this order
+    items = db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
     assert len(items) == 1
     assert items[0].menu_item_name == "Turkey Club"
     assert items[0].quantity == 2
     assert items[0].line_total == 16.0
-
-    # And the order_state should now have the db_order_id
-    assert "db_order_id" in order_state
-    assert order_state["db_order_id"] == orders[0].id
 
     db.close()

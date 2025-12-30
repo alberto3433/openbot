@@ -3001,3 +3001,196 @@ class TestSodaClarification:
         # Should have "Coke, and Sprite" or similar format
         assert "coke" in result.message.lower()
         assert "sprite" in result.message.lower()
+
+
+# =============================================================================
+# Price Inquiry Handler Tests
+# =============================================================================
+
+class TestPriceInquiry:
+    """Tests for _handle_price_inquiry."""
+
+    def test_no_menu_data_returns_apology(self):
+        """Test that no menu data returns appropriate message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data=None)
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("latte", order)
+
+        assert "sorry" in result.message.lower() or "don't have" in result.message.lower()
+
+    def test_generic_sandwich_asks_for_type(self):
+        """Test that 'sandwich' asks what kind."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={"items_by_type": {}})
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("sandwich", order)
+
+        assert "egg sandwich" in result.message.lower()
+        assert "what kind" in result.message.lower()
+
+    def test_generic_category_returns_starting_price(self):
+        """Test generic category inquiry returns starting price."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [
+                    {"name": "Latte", "price": 4.50},
+                    {"name": "Cappuccino", "price": 4.25},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("coffee", order)
+
+        assert "start at" in result.message.lower()
+        assert "$4.25" in result.message
+
+    def test_specific_sandwich_type_returns_price(self):
+        """Test specific sandwich type returns starting price."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "egg_sandwich": [
+                    {"name": "Bacon Egg Cheese", "price": 7.50},
+                    {"name": "Ham Egg Cheese", "price": 6.99},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("egg sandwich", order)
+
+        assert "start at" in result.message.lower()
+        assert "$6.99" in result.message
+
+    def test_exact_item_match_returns_price(self):
+        """Test exact item name match returns specific price."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "signature_sandwich": [
+                    {"name": "The Classic", "price": 12.99},
+                    {"name": "Turkey Club", "price": 11.50},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        # Use a specific menu item name that won't match generic categories
+        result = sm._handle_price_inquiry("the classic", order)
+
+        assert "classic" in result.message.lower()
+        assert "$12.99" in result.message
+        assert "would you like one" in result.message.lower()
+
+    def test_partial_match_returns_price(self):
+        """Test partial name match returns price."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [
+                    {"name": "Diet Coke", "price": 2.50},
+                    {"name": "Sprite", "price": 2.50},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("diet coke", order)
+
+        assert "diet coke" in result.message.lower()
+        assert "$2.50" in result.message
+
+    def test_strips_article_from_query(self):
+        """Test that 'a' and 'an' are stripped from query."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [
+                    {"name": "Espresso", "price": 3.00},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("an espresso", order)
+
+        assert "espresso" in result.message.lower()
+        assert "$3.00" in result.message
+
+    def test_bagel_price_lookup(self):
+        """Test bagel-specific price lookup."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "bagel": [
+                    {"name": "Plain Bagel", "base_price": 2.50},
+                    {"name": "Everything Bagel", "base_price": 2.75},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("plain bagel", order)
+
+        # Should return a price (uses _lookup_bagel_price)
+        assert "$" in result.message
+        assert "bagel" in result.message.lower()
+
+    def test_no_match_returns_helpful_message(self):
+        """Test no match returns helpful response."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [
+                    {"name": "Coke", "price": 2.50},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("flying saucer", order)
+
+        assert "not sure" in result.message.lower() or "help" in result.message.lower()
+
+    def test_omelette_category_returns_price(self):
+        """Test omelette category inquiry returns starting price."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "omelette": [
+                    {"name": "Western Omelette", "price": 12.99},
+                    {"name": "Cheese Omelette", "price": 10.99},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_price_inquiry("omelette", order)
+
+        assert "start at" in result.message.lower()
+        assert "$10.99" in result.message

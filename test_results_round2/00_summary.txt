@@ -1,0 +1,38 @@
+EXTENDED MENU ITEM TEST SUMMARY - ROUND 2
+Run at: 2025-12-30 11:47:10
+======================================================================
+
+PASSED: 29/30
+FAILED: 1/30
+
+Results:
+  [PASS] The Classic Speed Menu -> 51_the_classic.txt
+  [PASS] The Traditional -> 52_the_traditional.txt
+  [PASS] The Max Zucker -> 53_max_zucker.txt
+  [PASS] The Chelsea Club -> 54_chelsea_club.txt
+  [PASS] The Flatiron Traditional -> 55_flatiron.txt
+  [PASS] Two Plain Bagels -> 56_two_bagels.txt
+  [PASS] Three Coffees -> 57_three_coffees.txt
+  [PASS] Dozen Bagels -> 58_dozen_bagels.txt
+  [PASS] Bagel with Bacon Egg Cheese -> 59_custom_bec.txt
+  [PASS] Bagel with Nova and Capers -> 60_nova_capers.txt
+  [PASS] Bagel with Turkey and Swiss -> 61_turkey_swiss.txt
+  [PASS] Western Omelette -> 62_western_omelette.txt
+  [PASS] Veggie Omelette -> 63_veggie_omelette.txt
+  [FAIL] Spinach Feta Omelette -> 64_spinach_feta.txt
+  [PASS] Turkey Club Sandwich -> 65_turkey_club.txt
+  [PASS] Hot Pastrami Sandwich -> 66_hot_pastrami.txt
+  [PASS] Latte with Vanilla Syrup -> 67_vanilla_latte.txt
+  [PASS] Coffee with Sugar -> 68_coffee_sugar.txt
+  [PASS] Cappuccino with Almond Milk -> 69_almond_cappuccino.txt
+  [PASS] Casual Bagel Order -> 70_casual_bagel.txt
+  [PASS] Casual Coffee Order -> 71_casual_coffee.txt
+  [PASS] Delivery to Tribeca -> 72_delivery_tribeca.txt
+  [PASS] Delivery with Apartment -> 73_delivery_apt.txt
+  [PASS] Tofu Veggie Spread -> 74_tofu_veggie.txt
+  [PASS] Honey Walnut Cream Cheese -> 75_honey_walnut.txt
+  [PASS] Tuna Salad Sandwich -> 76_tuna_salad.txt
+  [PASS] Chicken Salad Sandwich -> 77_chicken_salad.txt
+  [PASS] Bagel Coffee and Side -> 78_combo_with_side.txt
+  [PASS] Two Different Items -> 79_two_different.txt
+  [PASS] Family Order -> 80_family_order.txt

@@ -1758,6 +1758,53 @@ class OrderStateMachine:
         if quantity_result:
             return quantity_result
 
+        # Check for "make it 2" pattern (duplicate last item) - deterministic, no LLM needed
+        from .parsers.deterministic import MAKE_IT_N_PATTERN
+        make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
+        if make_it_n_match:
+            num_str = None
+            for i in range(1, 7):
+                if make_it_n_match.group(i):
+                    num_str = make_it_n_match.group(i).lower()
+                    break
+            if num_str:
+                word_to_num = {
+                    "two": 2, "three": 3, "four": 4, "five": 5,
+                    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+                }
+                if num_str.isdigit():
+                    target_qty = int(num_str)
+                else:
+                    target_qty = word_to_num.get(num_str, 0)
+
+                if target_qty >= 2:
+                    active_items = order.items.get_active_items()
+                    if active_items:
+                        last_item = active_items[-1]
+                        last_item_name = last_item.get_summary()
+                        added_count = target_qty - 1
+
+                        for _ in range(added_count):
+                            new_item = last_item.model_copy(deep=True)
+                            new_item.id = str(uuid.uuid4())
+                            new_item.mark_complete()
+                            order.items.add_item(new_item)
+
+                        logger.info("CONFIRMATION: Added %d more of '%s'", added_count, last_item_name)
+
+                        # Return to confirmation with updated summary
+                        summary = self._build_order_summary(order)
+                        if added_count == 1:
+                            return StateMachineResult(
+                                message=f"I've added a second {last_item_name}.\n\n{summary}\n\nDoes that look right?",
+                                order=order,
+                            )
+                        else:
+                            return StateMachineResult(
+                                message=f"I've added {added_count} more {last_item_name}.\n\n{summary}\n\nDoes that look right?",
+                                order=order,
+                            )
+
         parsed = parse_confirmation(user_input, model=self.model)
         logger.info("CONFIRMATION: parse result - wants_changes=%s, confirmed=%s, asks_about_tax=%s",
                    parsed.wants_changes, parsed.confirmed, parsed.asks_about_tax)

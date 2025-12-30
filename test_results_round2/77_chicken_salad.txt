@@ -1,0 +1,43 @@
+======================================================================
+TEST: Chicken Salad Sandwich
+TIME: 2025-12-30 11:44:39
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: chicken salad sandwich please
+BOT:    What kind of bagel would you like that on?
+
+TESTER: everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: thats all
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: pickup
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: Alice
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: yes
+BOT:    Got it, Chicken Salad Sandwich on everything bagel toasted. Anything else?
+
+TESTER: in store
+BOT:    I didn't catch that. What would you like to order?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] Chicken Salad Sandwich on everything bagel toasted x1 - $13.50 (menu_item)
+      > toasted, bagel: everything
+Total:      $13.50
+----------------------------------------------------------------------
+
+RESULT: PASS

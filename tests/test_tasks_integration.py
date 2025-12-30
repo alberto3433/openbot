@@ -3323,3 +3323,295 @@ class TestItemDescriptionInquiry:
         # Should have title case formatting
         assert "Mulberry" in result.message or "mulberry" in result.message.lower()
         assert "has" in result.message.lower()
+
+
+# =============================================================================
+# Delivery Handler Tests
+# =============================================================================
+
+class TestDeliveryHandler:
+    """Tests for _handle_delivery."""
+
+    def test_pickup_selection_moves_to_name(self):
+        """Test that selecting pickup moves to name state."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+            mock_parse.return_value = DeliveryChoiceResponse(choice="pickup", address=None)
+
+            result = sm._handle_delivery("pickup please", order)
+
+            assert result.order.delivery_method.order_type == "pickup"
+            # Should ask for name next
+            assert "name" in result.message.lower()
+
+    def test_delivery_without_address_asks_for_address(self):
+        """Test that selecting delivery without address asks for address."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        # Add an item so the order flow expects delivery address collection
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+            mock_parse.return_value = DeliveryChoiceResponse(choice="delivery", address=None)
+
+            result = sm._handle_delivery("delivery", order)
+
+            assert result.order.delivery_method.order_type == "delivery"
+            assert "address" in result.message.lower()
+
+    def test_delivery_with_valid_address_proceeds(self):
+        """Test that delivery with valid address proceeds to name."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {"delivery_zip_codes": ["10001", "10002"]}
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+            mock_parse.return_value = DeliveryChoiceResponse(
+                choice="delivery",
+                address="123 Main St, New York, NY 10001"
+            )
+            with patch("sandwich_bot.tasks.state_machine.complete_address") as mock_complete:
+                # Mock successful address completion
+                mock_result = MagicMock()
+                mock_result.success = True
+                mock_result.needs_clarification = False
+                mock_result.single_match = MagicMock()
+                mock_result.single_match.format_full.return_value = "123 Main St, New York, NY 10001"
+                mock_complete.return_value = mock_result
+
+                result = sm._handle_delivery("delivery to 123 Main St 10001", order)
+
+                assert result.order.delivery_method.order_type == "delivery"
+                # Should ask for name next
+                assert "name" in result.message.lower()
+
+    def test_address_confirmation_yes_proceeds(self):
+        """Test that 'yes' to address confirmation proceeds."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        order.delivery_method.order_type = "delivery"
+        order.delivery_method.address.street = "456 Broadway, NYC 10012"
+        order.pending_field = "address_confirmation"
+
+        result = sm._handle_delivery("yes", order)
+
+        assert order.pending_field is None
+        # Should proceed to name collection
+        assert "name" in result.message.lower()
+
+    def test_address_confirmation_no_asks_new_address(self):
+        """Test that 'no' to address confirmation asks for new address."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        order.delivery_method.order_type = "delivery"
+        order.delivery_method.address.street = "456 Broadway, NYC 10012"
+        order.pending_field = "address_confirmation"
+
+        result = sm._handle_delivery("no", order)
+
+        assert order.pending_field is None
+        assert order.delivery_method.address.street is None
+        assert "address" in result.message.lower()
+
+    def test_unclear_input_asks_again(self):
+        """Test that unclear input asks pickup/delivery question again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+            mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
+
+            result = sm._handle_delivery("what?", order)
+
+            # Should ask pickup/delivery question
+            assert "pickup" in result.message.lower() or "delivery" in result.message.lower()
+
+    def test_waiting_for_address_unclear_asks_address_again(self):
+        """Test that unclear input when waiting for address asks for address again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        order.delivery_method.order_type = "delivery"
+        order.delivery_method.address.street = None  # No address yet
+
+        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+            mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
+
+            result = sm._handle_delivery("hmm not sure", order)
+
+            assert "address" in result.message.lower()
+
+
+# =============================================================================
+# Phone Handler Tests
+# =============================================================================
+
+class TestPhoneHandler:
+    """Tests for _handle_phone."""
+
+    def test_valid_phone_completes_order(self):
+        """Test that valid phone number completes the order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "John"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="2015551234")
+
+            result = sm._handle_phone("201-555-1234", order)
+
+            assert result.is_complete is True
+            assert order.customer_info.phone == "+12015551234"
+            assert order.checkout.confirmed is True
+            assert order.checkout.short_order_number is not None
+            assert "order number" in result.message.lower()
+            assert "John" in result.message
+
+    def test_no_phone_extracted_asks_again(self):
+        """Test that when no phone is extracted, it asks again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "Sarah"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone=None)
+
+            result = sm._handle_phone("I don't have one", order)
+
+            assert result.is_complete is False
+            assert order.customer_info.phone is None
+            assert "phone" in result.message.lower()
+
+    def test_invalid_phone_too_short_returns_error(self):
+        """Test that too short phone number returns helpful error."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "Mike"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="12345")  # Too short
+
+            result = sm._handle_phone("12345", order)
+
+            assert result.is_complete is False
+            assert "too short" in result.message.lower()
+
+    def test_invalid_phone_too_long_returns_error(self):
+        """Test that too long phone number returns helpful error."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "Lisa"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="123456789012345")  # Too long
+
+            result = sm._handle_phone("123456789012345", order)
+
+            assert result.is_complete is False
+            assert "too long" in result.message.lower()
+
+    def test_order_confirmation_format(self):
+        """Test that order confirmation message has expected format."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "Alex"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="9085559999")
+
+            result = sm._handle_phone("908-555-9999", order)
+
+            # Should mention order number
+            assert "order number" in result.message.lower()
+            # Should mention text notification
+            assert "text" in result.message.lower()
+            # Should thank by name
+            assert "Alex" in result.message
+            # Order number format is ORD-XXXXXX-XX
+            assert order.checkout.order_number.startswith("ORD-")
+            # short_order_number is just the last 2 digits
+            assert len(order.checkout.short_order_number) == 2
+
+    def test_phone_stored_in_e164_format(self):
+        """Test that phone number is stored in E.164 format."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PhoneResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "Bob"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="7325551234")
+
+            result = sm._handle_phone("732-555-1234", order)
+
+            # Should be in E.164 format with +1 prefix
+            assert order.customer_info.phone == "+17325551234"
+            # Also stored as payment link destination
+            assert order.payment.payment_link_destination == "+17325551234"

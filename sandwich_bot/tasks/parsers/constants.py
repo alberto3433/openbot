@@ -618,6 +618,9 @@ MENU_ITEM_CANONICAL_NAMES = {
     "dr browns": "Dr. Brown's Cream Soda",
     "dr. brown's": "Dr. Brown's Cream Soda",
     "dr. browns": "Dr. Brown's Cream Soda",
+    # Omelettes - map "and" to "&" for database match
+    "spinach and feta omelette": "Spinach & Feta Omelette",
+    "spinach feta omelette": "Spinach & Feta Omelette",
 }
 
 # =============================================================================

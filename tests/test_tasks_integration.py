@@ -2394,3 +2394,133 @@ class TestStoreInfoInquiries:
 
         # Should indicate delivery not available
         assert "deliver" in result.message.lower() or "pickup" in result.message.lower()
+
+
+# =============================================================================
+# Recommendation Inquiry Handler Tests
+# =============================================================================
+
+class TestRecommendationInquiry:
+    """Tests for _handle_recommendation_inquiry and related recommendation methods."""
+
+    def test_bagel_recommendation(self):
+        """Test bagel-specific recommendation."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry("bagel", order)
+
+        # Should recommend popular bagels
+        assert "everything" in result.message.lower() or "plain" in result.message.lower()
+        assert "would you like" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0
+
+    def test_sandwich_recommendation(self):
+        """Test sandwich-specific recommendation."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "signature_sandwich": [
+                    {"name": "The Classic", "description": "A classic sandwich"},
+                    {"name": "Super Deluxe", "description": "Extra toppings"},
+                ],
+                "egg_sandwich": [
+                    {"name": "Bacon Egg Cheese", "description": "Classic BEC"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry("sandwich", order)
+
+        # Should mention sandwiches from menu
+        assert "sandwich" in result.message.lower() or "classic" in result.message.lower() or "egg" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0
+
+    def test_coffee_recommendation(self):
+        """Test coffee-specific recommendation."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [
+                    {"name": "Latte", "base_price": 4.50},
+                    {"name": "Cappuccino", "base_price": 4.25},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry("coffee", order)
+
+        # Should recommend coffee items
+        assert "latte" in result.message.lower() or "coffee" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0
+
+    def test_general_recommendation_with_speed_menu(self):
+        """Test general recommendation when speed menu items exist."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "speed_menu_bagel": [
+                    {"name": "Nova Special"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry(None, order)
+
+        # Should mention the speed menu item
+        assert "nova special" in result.message.lower() or "popular" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0
+
+    def test_general_recommendation_without_speed_menu(self):
+        """Test general recommendation when no speed menu items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={"items_by_type": {}})
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry(None, order)
+
+        # Should give generic recommendation
+        assert "bagel" in result.message.lower() or "favorite" in result.message.lower()
+        # Should ask what they want
+        assert "mood" in result.message.lower() or "like" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0
+
+    def test_breakfast_recommendation(self):
+        """Test breakfast-specific recommendation."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "egg_sandwich": [
+                    {"name": "Bacon Egg Cheese"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_recommendation_inquiry("breakfast", order)
+
+        # Should recommend breakfast items
+        assert "egg" in result.message.lower() or "bagel" in result.message.lower() or "breakfast" in result.message.lower()
+        # Should NOT modify the order
+        assert len(order.items.items) == 0

@@ -3906,3 +3906,296 @@ class TestConfirmationHandler:
             result = sm._handle_confirmation("wait a second", order)
 
             assert order.checkout.order_reviewed is False
+
+
+# =============================================================================
+# Greeting Handler Tests
+# =============================================================================
+
+class TestGreetingHandler:
+    """Tests for _handle_greeting."""
+
+    def test_pure_greeting_returns_welcome(self):
+        """Test that a pure greeting returns welcome message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.GREETING.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                is_greeting=True, unclear=False, new_bagel=False,
+                new_coffee=False, new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_greeting("hello", order)
+
+            assert "welcome" in result.message.lower()
+            assert "zucker" in result.message.lower()
+
+    def test_unclear_input_returns_welcome(self):
+        """Test that unclear input returns welcome message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.GREETING.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                is_greeting=False, unclear=True, new_bagel=False,
+                new_coffee=False, new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_greeting("uh what", order)
+
+            assert "welcome" in result.message.lower() or "get for you" in result.message.lower()
+
+    def test_greeting_with_bagel_order_adds_item(self):
+        """Test that greeting with bagel order adds bagel to cart."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.GREETING.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                is_greeting=False, unclear=False,
+                new_bagel=True, new_bagel_quantity=1, new_bagel_type="plain",
+                new_bagel_toasted=True, new_bagel_spread="cream cheese",
+                new_coffee=False, new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_greeting("can I get a plain bagel toasted with cream cheese", order)
+
+            # Should have added a bagel
+            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            assert len(bagels) >= 1
+            assert bagels[0].bagel_type == "plain"
+
+    def test_greeting_with_coffee_order_adds_item(self):
+        """Test that greeting with coffee order adds coffee to cart."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.GREETING.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                is_greeting=False, unclear=False,
+                new_bagel=False, new_coffee=True, new_coffee_type="latte",
+                new_coffee_size="large", new_coffee_iced=True,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_greeting("I'd like a large iced latte", order)
+
+            # Should have added a coffee
+            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+            assert len(coffees) >= 1
+
+
+# =============================================================================
+# Taking Items Handler Tests
+# =============================================================================
+
+class TestTakingItemsHandler:
+    """Tests for _handle_taking_items."""
+
+    def test_ordering_bagel_adds_to_cart(self):
+        """Test that ordering a bagel adds it to the cart."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                new_bagel=True, new_bagel_quantity=1, new_bagel_type="everything",
+                new_bagel_toasted=True, new_bagel_spread="butter",
+                new_coffee=False, new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("an everything bagel toasted with butter", order)
+
+            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            assert len(bagels) >= 1
+            assert bagels[0].bagel_type == "everything"
+            assert "anything else" in result.message.lower() or "else" in result.message.lower()
+
+    def test_ordering_coffee_adds_to_cart(self):
+        """Test that ordering coffee adds it to the cart."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                new_bagel=False, new_coffee=True, new_coffee_type="cappuccino",
+                new_coffee_size="medium", new_coffee_iced=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("a medium cappuccino", order)
+
+            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+            assert len(coffees) >= 1
+
+    def test_done_ordering_transitions_to_checkout(self):
+        """Test that 'done ordering' transitions to checkout."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        # Add an item first
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                done_ordering=True, new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("that's all", order)
+
+            # Should ask about pickup/delivery
+            assert "pickup" in result.message.lower() or "delivery" in result.message.lower()
+
+    def test_cancel_item_removes_from_cart(self):
+        """Test that canceling an item removes it from cart."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        # Add a coffee
+        coffee = CoffeeItemTask(drink_type="latte", size="large", iced=True)
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        initial_count = len(order.items.items)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                cancel_item="latte", new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("cancel the latte", order)
+
+            assert len(order.items.items) == initial_count - 1
+            assert "removed" in result.message.lower()
+
+    def test_make_it_2_duplicates_last_item(self):
+        """Test that 'make it 2' duplicates the last item."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        bagel = BagelItemTask(bagel_type="sesame", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        initial_count = len(order.items.items)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                duplicate_last_item=1, new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("make it 2", order)
+
+            assert len(order.items.items) == initial_count + 1
+            assert "added" in result.message.lower() or "second" in result.message.lower()
+
+    def test_order_type_pickup_sets_delivery_method(self):
+        """Test that mentioning pickup sets delivery method."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                order_type="pickup", new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("I'd like to place a pickup order", order)
+
+            assert order.delivery_method.order_type == "pickup"
+            assert "pickup" in result.message.lower()
+
+    def test_cancel_from_empty_cart_returns_message(self):
+        """Test that canceling from empty cart returns helpful message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                cancel_item="bagel", new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("cancel the bagel", order)
+
+            assert "nothing" in result.message.lower() or "yet" in result.message.lower()
+
+    def test_multiple_bagels_adds_correct_quantity(self):
+        """Test that ordering multiple bagels adds correct quantity."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                new_bagel=True, new_bagel_quantity=3, new_bagel_type="plain",
+                new_bagel_toasted=True, new_bagel_spread="cream cheese",
+                new_coffee=False, new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("3 plain bagels toasted with cream cheese", order)
+
+            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            assert len(bagels) == 3

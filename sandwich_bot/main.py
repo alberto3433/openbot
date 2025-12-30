@@ -66,6 +66,7 @@ import logging
 import os
 import pathlib
 import uuid
+from contextlib import asynccontextmanager
 from typing import Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -129,6 +130,20 @@ limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 
 
 # =============================================================================
+# Application Lifespan
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events for startup and shutdown."""
+    # Startup
+    logger.info("Sandwich Bot API starting up")
+    yield
+    # Shutdown
+    logger.info("Sandwich Bot API shutting down")
+
+
+# =============================================================================
 # FastAPI Application
 # =============================================================================
 
@@ -152,6 +167,7 @@ app = FastAPI(
         {"name": "Text-to-Speech", "description": "TTS synthesis endpoints"},
         {"name": "VAPI", "description": "Voice API integration"},
     ],
+    lifespan=lifespan,
 )
 
 
@@ -299,22 +315,6 @@ app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)
 app.include_router(vapi_router)
-
-
-# =============================================================================
-# Application Startup/Shutdown Events
-# =============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Log application startup."""
-    logger.info("Sandwich Bot API starting up")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Log application shutdown."""
-    logger.info("Sandwich Bot API shutting down")
 
 
 # =============================================================================

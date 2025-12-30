@@ -3566,6 +3566,17 @@ class OrderStateMachine:
 
         item.size = parsed.size
 
+        # Also extract any sweetener/syrup mentioned with the size response
+        # e.g., "small with two sugars" or "large with vanilla"
+        coffee_mods = extract_coffee_modifiers_from_input(user_input)
+        if coffee_mods.sweetener and not item.sweetener:
+            item.sweetener = coffee_mods.sweetener
+            item.sweetener_quantity = coffee_mods.sweetener_quantity
+            logger.info(f"Extracted sweetener from size response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
+        if coffee_mods.flavor_syrup and not item.flavor_syrup:
+            item.flavor_syrup = coffee_mods.flavor_syrup
+            logger.info(f"Extracted syrup from size response: {coffee_mods.flavor_syrup}")
+
         # Move to hot/iced question with ordinal if multiple coffees
         order.pending_field = "coffee_style"
 

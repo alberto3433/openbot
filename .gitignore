@@ -4,3 +4,18 @@ sandwich_bot/__pycache__/*.*
 __pycache__/
 .env
 *.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Test output
+test_results/
+
+# Temp files
+session.txt
+nul
+
+# Database backups
+db_backup*/

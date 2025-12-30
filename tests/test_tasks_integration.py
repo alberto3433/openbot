@@ -1894,3 +1894,102 @@ class TestDrinkClarification:
         assert len(coffees) == 1
         assert coffees[0].drink_type == "Fresh Squeezed Orange Juice"
         assert order.pending_field != "drink_selection"
+
+
+# =============================================================================
+# Quantity Change Tests
+# =============================================================================
+
+class TestQuantityChange:
+    """Tests for changing quantity of existing items at checkout confirmation."""
+
+    def test_make_it_two_drinks(self):
+        """Test 'make it two orange juices' adds another drink."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+
+        # Add one drink to the order
+        drink = CoffeeItemTask(
+            drink_type="Tropicana No Pulp",
+            unit_price=3.50,
+        )
+        drink.mark_complete()
+        order.items.add_item(drink)
+
+        # User says "make it two orange juices"
+        result = sm._handle_quantity_change("make it two orange juices", order)
+
+        # Should have added one more
+        assert result is not None
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 2
+        assert all(c.drink_type == "Tropicana No Pulp" for c in coffees)
+
+    def test_can_you_make_it_two(self):
+        """Test 'can you make it two' pattern."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+
+        drink = CoffeeItemTask(drink_type="Coffee", unit_price=2.50)
+        drink.mark_complete()
+        order.items.add_item(drink)
+
+        result = sm._handle_quantity_change("can you make it two coffees", order)
+
+        assert result is not None
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 2
+
+    def test_already_has_enough(self):
+        """Test when user already has the requested quantity."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+
+        # Add two drinks already
+        for _ in range(2):
+            drink = CoffeeItemTask(drink_type="Latte", unit_price=4.50)
+            drink.mark_complete()
+            order.items.add_item(drink)
+
+        result = sm._handle_quantity_change("make it two lattes", order)
+
+        # Should NOT add more, just confirm
+        assert result is not None
+        assert "already have 2" in result.message
+        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 2
+
+    def test_no_match_returns_none(self):
+        """Test that non-matching item returns None (lets other handlers try)."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+
+        drink = CoffeeItemTask(drink_type="Coffee", unit_price=2.50)
+        drink.mark_complete()
+        order.items.add_item(drink)
+
+        # Ask for item not in order
+        result = sm._handle_quantity_change("make it two bagels", order)
+
+        # Should return None (no match)
+        assert result is None

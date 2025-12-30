@@ -632,6 +632,11 @@ class OrderTask(BaseTask):
     # Each entry is a dict with: item_id, item_type (e.g., "coffee", "bagel")
     pending_config_queue: list[dict] = Field(default_factory=list)
 
+    # Multiple matching menu items for disambiguation
+    # Used when user says "orange juice" and there are 3 types
+    # Each entry is a dict with: name, base_price, id, etc.
+    pending_drink_options: list[dict] = Field(default_factory=list)
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -650,6 +655,9 @@ class OrderTask(BaseTask):
         """Check if we're waiting for input on a specific item or menu inquiry."""
         # Also handle by-pound category selection (no item, just pending_field)
         if self.pending_field == "by_pound_category":
+            return True
+        # Handle drink selection when multiple options were presented
+        if self.pending_field == "drink_selection":
             return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 

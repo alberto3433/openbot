@@ -1099,6 +1099,10 @@ class OrderStateMachine:
         if order.pending_field == "by_pound_category":
             return self._handle_by_pound_category_selection(user_input, order)
 
+        # Handle drink selection when multiple options were presented
+        if order.pending_field == "drink_selection":
+            return self._handle_drink_selection(user_input, order)
+
         item = self._get_item_by_id(order, order.pending_item_id)
         if item is None:
             order.clear_pending()
@@ -2889,6 +2893,37 @@ class OrderStateMachine:
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
+        # Check for multiple matching items - ask user to clarify if ambiguous
+        if coffee_type:
+            matching_items = self._lookup_menu_items(coffee_type)
+            if len(matching_items) > 1:
+                # Multiple matches - need to ask user which one they want
+                logger.info(
+                    "ADD COFFEE: Multiple matches for '%s': %s",
+                    coffee_type,
+                    [item.get("name") for item in matching_items]
+                )
+                # Store the options and pending state
+                order.pending_drink_options = matching_items
+                order.pending_field = "drink_selection"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                # Build the clarification message
+                option_list = []
+                for i, item in enumerate(matching_items, 1):
+                    name = item.get("name", "Unknown")
+                    price = item.get("base_price", 0)
+                    if price > 0:
+                        option_list.append(f"{i}. {name} (${price:.2f})")
+                    else:
+                        option_list.append(f"{i}. {name}")
+
+                options_str = "\n".join(option_list)
+                return StateMachineResult(
+                    message=f"We have a few options for {coffee_type}:\n{options_str}\nWhich would you like?",
+                    order=order,
+                )
+
         # Look up item from menu to get price and skip_config flag
         menu_item = self._lookup_menu_item(coffee_type) if coffee_type else None
         price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
@@ -4234,6 +4269,117 @@ class OrderStateMachine:
             order=order,
         )
 
+    def _handle_drink_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user selecting from multiple drink options."""
+        if not order.pending_drink_options:
+            order.clear_pending()
+            return StateMachineResult(
+                message="What would you like to order?",
+                order=order,
+            )
+
+        user_lower = user_input.lower().strip()
+        options = order.pending_drink_options
+
+        # Try to match by number (1, 2, 3, "first", "second", etc.)
+        number_map = {
+            "1": 0, "one": 0, "first": 0, "the first": 0, "number 1": 0, "number one": 0,
+            "2": 1, "two": 1, "second": 1, "the second": 1, "number 2": 1, "number two": 1,
+            "3": 2, "three": 2, "third": 2, "the third": 2, "number 3": 2, "number three": 2,
+            "4": 3, "four": 3, "fourth": 3, "the fourth": 3, "number 4": 3, "number four": 3,
+        }
+
+        selected_item = None
+
+        # Check for number/ordinal selection
+        for key, idx in number_map.items():
+            if key in user_lower and idx < len(options):
+                selected_item = options[idx]
+                break
+
+        # If not found by number, try to match by name
+        if not selected_item:
+            for option in options:
+                option_name = option.get("name", "").lower()
+                # Check if the option name is in user input or vice versa
+                if option_name in user_lower or user_lower in option_name:
+                    selected_item = option
+                    break
+                # Also try matching individual words
+                for word in user_lower.split():
+                    if len(word) > 3 and word in option_name:
+                        selected_item = option
+                        break
+
+        if not selected_item:
+            # Couldn't determine which one - ask again
+            option_list = []
+            for i, item in enumerate(options, 1):
+                name = item.get("name", "Unknown")
+                price = item.get("base_price", 0)
+                if price > 0:
+                    option_list.append(f"{i}. {name} (${price:.2f})")
+                else:
+                    option_list.append(f"{i}. {name}")
+            options_str = "\n".join(option_list)
+            return StateMachineResult(
+                message=f"I didn't catch which one. Please choose:\n{options_str}",
+                order=order,
+            )
+
+        # Found the selection - clear pending state and add the drink
+        selected_name = selected_item.get("name", "drink")
+        selected_price = selected_item.get("base_price", 2.50)
+        order.pending_drink_options = []
+        order.clear_pending()
+
+        logger.info("DRINK SELECTION: User chose '%s' (price: $%.2f)", selected_name, selected_price)
+
+        # Check if this drink should skip configuration
+        is_configurable_coffee = any(
+            bev in selected_name.lower() for bev in COFFEE_BEVERAGE_TYPES
+        )
+        should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
+
+        if should_skip_config or not is_configurable_coffee:
+            # Add directly as complete (no size/iced questions)
+            drink = CoffeeItemTask(
+                drink_type=selected_name,
+                size=None,
+                iced=None,
+                milk=None,
+                sweetener=None,
+                sweetener_quantity=0,
+                flavor_syrup=None,
+                unit_price=selected_price,
+            )
+            drink.mark_complete()
+            order.items.add_item(drink)
+
+            return StateMachineResult(
+                message=f"Got it, {selected_name}. Anything else?",
+                order=order,
+            )
+        else:
+            # Needs configuration - add as in_progress
+            drink = CoffeeItemTask(
+                drink_type=selected_name,
+                size=None,
+                iced=None,
+                milk=None,
+                sweetener=None,
+                sweetener_quantity=0,
+                flavor_syrup=None,
+                unit_price=selected_price,
+            )
+            drink.mark_in_progress()
+            order.items.add_item(drink)
+            return self._configure_next_incomplete_coffee(order)
+
     def _parse_quantity_to_pounds(self, quantity_str: str) -> float:
         """Parse a quantity string to pounds.
 
@@ -4760,6 +4906,100 @@ class OrderStateMachine:
             return max(matches, key=lambda x: len(x.get("name", "")))
 
         return None
+
+    def _lookup_menu_items(self, item_name: str) -> list[dict]:
+        """
+        Look up ALL menu items matching a name from the menu data.
+
+        Unlike _lookup_menu_item which returns only the best match, this returns
+        ALL items that match the search term. Used for disambiguation when
+        multiple items match (e.g., "orange juice" matches 3 different OJ types).
+
+        Args:
+            item_name: Name of the item to find (case-insensitive fuzzy match)
+
+        Returns:
+            List of menu item dicts with id, name, base_price, etc.
+        """
+        if not self.menu_data:
+            return []
+
+        item_name_lower = item_name.lower()
+
+        # Known drink synonyms/brands - map generic terms to brand keywords
+        # This helps find "Tropicana No Pulp" when searching "orange juice"
+        drink_synonyms = {
+            "orange juice": ["tropicana", "fresh squeezed"],
+            "oj": ["orange juice", "tropicana", "fresh squeezed"],
+            "apple juice": ["martinelli"],
+            "lemonade": ["minute maid"],
+        }
+
+        # Build list of search terms (original + any synonyms)
+        search_terms = [item_name_lower]
+        for generic_term, synonyms in drink_synonyms.items():
+            if generic_term in item_name_lower:
+                search_terms.extend(synonyms)
+
+        # Collect all items from all categories
+        all_items = []
+        categories_to_search = [
+            "signature_sandwiches", "signature_bagels", "signature_omelettes",
+            "sides", "drinks", "desserts", "other",
+            "custom_sandwiches", "custom_bagels",
+        ]
+
+        for category in categories_to_search:
+            all_items.extend(self.menu_data.get(category, []))
+
+        # Also include items_by_type
+        items_by_type = self.menu_data.get("items_by_type", {})
+        for type_slug, items in items_by_type.items():
+            all_items.extend(items)
+
+        # Deduplicate by item name (some items appear in multiple categories)
+        seen_names = set()
+        unique_items = []
+        for item in all_items:
+            name = item.get("name", "").lower()
+            if name not in seen_names:
+                seen_names.add(name)
+                unique_items.append(item)
+        all_items = unique_items
+
+        # Pass 1: Exact match - if found, return only that
+        for item in all_items:
+            if item.get("name", "").lower() == item_name_lower:
+                return [item]
+
+        # Pass 2: Search term (or synonyms) is contained in item name
+        # e.g., "orange juice" finds "Tropicana Orange Juice", "Fresh Squeezed Orange Juice"
+        # Also "tropicana" (synonym) finds "Tropicana No Pulp"
+        matches = []
+        matched_names = set()
+        for item in all_items:
+            item_name_db = item.get("name", "").lower()
+            for search_term in search_terms:
+                if search_term in item_name_db and item_name_db not in matched_names:
+                    matches.append(item)
+                    matched_names.add(item_name_db)
+                    break
+        if matches:
+            # Sort by name length (shortest first = more specific)
+            return sorted(matches, key=lambda x: len(x.get("name", "")))
+
+        # Pass 3: Item name is contained in search term
+        # e.g., "tropicana orange juice" finds "Tropicana"
+        matches = []
+        for item in all_items:
+            item_name_db = item.get("name", "").lower()
+            if item_name_db in item_name_lower:
+                matches.append(item)
+        if matches:
+            # Sort by name length (longest first = more complete match)
+            return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
+
+        return []
 
     def _infer_item_category(self, item_name: str) -> str | None:
         """

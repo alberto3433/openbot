@@ -415,7 +415,21 @@ class OrderStateMachine:
                     if active_items:
                         last_item = active_items[-1]
                         last_item_name = last_item.get_summary()
-                        added_count = target_qty - 1
+
+                        # Count how many of this same item are already in the order
+                        current_count = sum(
+                            1 for item in active_items
+                            if item.get_summary() == last_item_name
+                        )
+
+                        # Only add enough to reach the target
+                        added_count = target_qty - current_count
+
+                        if added_count <= 0:
+                            # Already have enough or more
+                            msg = f"You already have {current_count} {last_item_name}. Anything else?"
+                            order.add_message("assistant", msg)
+                            return StateMachineResult(message=msg, order=order)
 
                         for _ in range(added_count):
                             new_item = last_item.model_copy(deep=True)
@@ -423,12 +437,12 @@ class OrderStateMachine:
                             new_item.mark_complete()
                             order.items.add_item(new_item)
 
-                        logger.info("GLOBAL: Added %d more of '%s' (make it N pattern)", added_count, last_item_name)
+                        logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
 
                         if added_count == 1:
-                            msg = f"I've added a second {last_item_name}. Anything else?"
+                            msg = f"I've added another {last_item_name}, so that's {target_qty} total. Anything else?"
                         else:
-                            msg = f"I've added {added_count} more {last_item_name}. Anything else?"
+                            msg = f"I've added {added_count} more {last_item_name}, so that's {target_qty} total. Anything else?"
 
                         order.add_message("assistant", msg)
                         return StateMachineResult(message=msg, order=order)

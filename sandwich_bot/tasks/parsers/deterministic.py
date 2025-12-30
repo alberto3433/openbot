@@ -38,6 +38,7 @@ from .constants import (
     MENU_ITEM_CANONICAL_NAMES,
     COFFEE_TYPO_MAP,
     COFFEE_BEVERAGE_TYPES,
+    COMPOUND_TEA_NAMES,
     SODA_DRINK_TYPES,
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,
@@ -512,6 +513,69 @@ def _extract_side_item(text: str) -> tuple[str | None, int]:
     return f"Side of {side_text.title()}", 1
 
 
+def _extract_menu_item_modifications(text: str) -> list[str]:
+    """Extract modifications like 'with mayo and mustard' or 'no onions' from text.
+
+    Returns a list of modification strings (e.g., ['mayo', 'mustard'] or ['no onions']).
+    """
+    modifications = []
+    text_lower = text.lower()
+
+    # Known condiments/sauces that can be added
+    known_additions = {
+        "mayo", "mayonnaise", "mustard", "ketchup", "hot sauce",
+        "salt", "pepper", "salt and pepper",
+        "lettuce", "tomato", "tomatoes", "onion", "onions", "red onion", "red onions",
+        "pickles", "pickle", "capers", "cucumber", "cucumbers",
+        "avocado", "bacon", "extra cheese",
+    }
+
+    # Pattern for "with X and Y" or "with X, Y, and Z"
+    with_pattern = re.search(
+        r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted|on\s+\w+\s+bagel)|\s*$)',
+        text_lower,
+        re.IGNORECASE
+    )
+
+    if with_pattern:
+        with_text = with_pattern.group(1).strip()
+        # Remove trailing punctuation
+        with_text = re.sub(r'[.!?,]+$', '', with_text).strip()
+
+        # Skip if this is a bagel description like "with everything bagel"
+        if re.search(r'\bbagel\b', with_text):
+            pass
+        # Skip if this is a side description like "with fruit salad"
+        elif with_text in ('fruit salad', 'fruit'):
+            pass
+        else:
+            # Split by "and" and commas
+            parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
+            for part in parts:
+                part = part.strip()
+                # Check if it's a known addition or starts with "extra"
+                if part in known_additions or part.startswith('extra '):
+                    modifications.append(part)
+                # Also allow any reasonable single/double word modifiers
+                elif part and len(part.split()) <= 2 and not re.search(r'\bbagel\b', part):
+                    # Exclude common non-modifier words
+                    skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
+                    if part not in skip_words:
+                        modifications.append(part)
+
+    # Pattern for "no X" modifications
+    no_pattern = re.findall(r'\bno\s+(\w+(?:\s+\w+)?)', text_lower)
+    for item in no_pattern:
+        item = item.strip()
+        # Skip common false positives
+        skip_items = {'thanks', 'problem', 'worries', 'that', 'more', 'need'}
+        if item not in skip_items:
+            modifications.append(f"no {item}")
+
+    logger.debug("Extracted modifications from '%s': %s", text[:50], modifications)
+    return modifications
+
+
 def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
     """Try to extract a known menu item from text."""
     text_lower = text.lower().strip()
@@ -634,10 +698,21 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     text_lower = text.lower()
 
     coffee_type = None
-    for bev in COFFEE_BEVERAGE_TYPES:
-        if re.search(rf'\b{bev}s?\b', text_lower):
-            coffee_type = bev
+
+    # First, check for compound tea names (longest first for specificity)
+    # e.g., "chai tea", "iced chai tea", "green tea", "snapple iced tea"
+    for compound_tea in COMPOUND_TEA_NAMES:
+        if compound_tea in text_lower:
+            coffee_type = compound_tea
+            logger.debug("Deterministic parse: matched compound tea name '%s'", compound_tea)
             break
+
+    # If no compound match, check for single beverage keywords
+    if not coffee_type:
+        for bev in sorted(COFFEE_BEVERAGE_TYPES, key=len, reverse=True):
+            if re.search(rf'\b{bev}s?\b', text_lower):
+                coffee_type = bev
+                break
 
     if not coffee_type:
         for typo, correct in COFFEE_TYPO_MAP.items():
@@ -656,7 +731,13 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     quantity = 1
     qty_words = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|couple'
     size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
-    qty_match = re.search(rf'({qty_words})\s+{size_words}(?:{"|".join(COFFEE_BEVERAGE_TYPES)})s?\b', text_lower)
+
+    # Build pattern that matches both compound tea names and single beverage types
+    all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
+    # Escape special regex chars and sort by length (longest first)
+    drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
+
+    qty_match = re.search(rf'({qty_words})\s+{size_words}(?:{drink_pattern})s?\b', text_lower)
     if qty_match:
         qty_str = qty_match.group(1)
         if qty_str.isdigit():
@@ -1003,6 +1084,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         ("eggs and bacon", "EGGS_BACON_PLACEHOLDER"),
         ("black and white", "BLACK_WHITE_PLACEHOLDER"),
         ("spinach and feta", "SPINACH_FETA_PLACEHOLDER"),
+        # Condiment pairs (prevent splitting "with mayo and mustard")
+        ("mayo and mustard", "MAYO_MUSTARD_PLACEHOLDER"),
+        ("mustard and mayo", "MUSTARD_MAYO_PLACEHOLDER"),
+        ("ketchup and mustard", "KETCHUP_MUSTARD_PLACEHOLDER"),
+        ("lettuce and tomato", "LETTUCE_TOMATO_PLACEHOLDER"),
+        ("tomato and lettuce", "TOMATO_LETTUCE_PLACEHOLDER"),
+        ("onions and peppers", "ONIONS_PEPPERS_PLACEHOLDER"),
+        ("pickles and onions", "PICKLES_ONIONS_PLACEHOLDER"),
     ]
 
     preserved_text = text_lower
@@ -1033,6 +1122,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     menu_item_qty = 1
     menu_item_bagel_choice = None
     menu_item_toasted = None
+    menu_item_modifications: list[str] = []
     coffee_list: list[CoffeeOrderDetails] = []
     bagel = False
     bagel_qty = 1
@@ -1054,8 +1144,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             menu_item_qty = item_qty
             menu_item_bagel_choice = _extract_bagel_type(part)
             menu_item_toasted = _extract_toasted(part)
-            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s)",
-                        menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted)
+            menu_item_modifications = _extract_menu_item_modifications(part)
+            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s, mods=%s)",
+                        menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted, menu_item_modifications)
             continue
 
         parsed = parse_open_input_deterministic(part)
@@ -1068,7 +1159,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             menu_item_qty = parsed.new_menu_item_quantity or 1
             menu_item_bagel_choice = parsed.new_menu_item_bagel_choice
             menu_item_toasted = parsed.new_menu_item_toasted
-            logger.info("Multi-item: detected menu item '%s' (qty=%d)", menu_item, menu_item_qty)
+            menu_item_modifications = parsed.new_menu_item_modifications or []
+            logger.info("Multi-item: detected menu item '%s' (qty=%d, mods=%s)", menu_item, menu_item_qty, menu_item_modifications)
 
         if parsed.new_coffee:
             coffee_list.append(CoffeeOrderDetails(
@@ -1107,12 +1199,13 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     if items_found >= 2 or total_items >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
-        logger.info("Multi-item order parsed: menu_item=%s, coffees=%d, bagel=%s, side=%s", menu_item, len(coffee_list), bagel, side_item)
+        logger.info("Multi-item order parsed: menu_item=%s, coffees=%d, bagel=%s, side=%s, mods=%s", menu_item, len(coffee_list), bagel, side_item, menu_item_modifications)
         return OpenInputResponse(
             new_menu_item=menu_item,
             new_menu_item_quantity=menu_item_qty,
             new_menu_item_bagel_choice=menu_item_bagel_choice,
             new_menu_item_toasted=menu_item_toasted,
+            new_menu_item_modifications=menu_item_modifications,
             new_coffee=first_coffee is not None,
             new_coffee_type=first_coffee.drink_type if first_coffee else None,
             new_coffee_quantity=first_coffee.quantity if first_coffee else 1,
@@ -1137,6 +1230,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_menu_item_quantity=menu_item_qty,
             new_menu_item_bagel_choice=menu_item_bagel_choice,
             new_menu_item_toasted=menu_item_toasted,
+            new_menu_item_modifications=menu_item_modifications,
         )
     if coffee_list:
         first_coffee = coffee_list[0]
@@ -1297,8 +1391,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         if menu_item:
             toasted = _extract_toasted(text)
             bagel_choice = _extract_bagel_type(text)
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
-            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
+            modifications = _extract_menu_item_modifications(text)
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
+            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications)
 
     # Early check for standalone side items
     standalone_side_items = {
@@ -1328,8 +1423,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if menu_item:
         toasted = _extract_toasted(text)
         bagel_choice = _extract_bagel_type(text)
-        logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
+        modifications = _extract_menu_item_modifications(text)
+        logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications)
 
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)

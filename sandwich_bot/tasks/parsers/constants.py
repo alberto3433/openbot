@@ -45,6 +45,23 @@ COFFEE_BEVERAGE_TYPES = {
     "mocha", "cold brew", "tea", "chai", "matcha", "hot chocolate",
 }
 
+# Compound tea names - these are full menu item names that should be matched exactly
+# Sorted by length (longest first) to ensure more specific matches take priority
+COMPOUND_TEA_NAMES = [
+    "english breakfast tea",
+    "snapple peach tea",
+    "snapple iced tea",
+    "ito en green tea",
+    "iced chai tea",
+    "peppermint tea",
+    "chamomile tea",
+    "earl grey tea",
+    "green tea",
+    "chai tea",
+    "iced tea",
+    "hot tea",
+]
+
 
 def is_soda_drink(drink_type: str | None) -> bool:
     """Check if a drink type is a soda/cold beverage that doesn't need configuration."""

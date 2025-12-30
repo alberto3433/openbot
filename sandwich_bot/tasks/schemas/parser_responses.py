@@ -174,6 +174,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Bagel type for spread/salad sandwiches if specified (e.g., 'plain bagel with cream cheese' -> 'plain')"
     )
+    new_menu_item_modifications: list[str] = Field(
+        default_factory=list,
+        description="Modifications for menu items (e.g., 'with mayo and mustard' -> ['mayo', 'mustard'], 'no onions' -> ['no onions'])"
+    )
     new_side_item: str | None = Field(
         default=None,
         description="Side item ordered (e.g., 'Side of Sausage', 'Side of Bacon', 'Side of Turkey Bacon'). Use when user says 'with a side of X' or 'side of X'"

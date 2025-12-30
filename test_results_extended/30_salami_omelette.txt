@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Salami Omelette with Bagel
-TIME: 2025-12-30 15:31:52
+TIME: 2025-12-30 16:22:12
 ======================================================================
 
 CONVERSATION:
@@ -26,7 +26,7 @@ TESTER: pickup
 BOT:    Got it, Salami Omelette with sesame bagel toasted with none. Anything else?
 
 TESTER: Chris
-BOT:    What can I get for you?
+BOT:    I didn't catch that. What would you like to order?
 
 TESTER: yes
 BOT:    What can I get for you?

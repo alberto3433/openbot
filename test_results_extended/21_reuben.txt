@@ -1,6 +1,6 @@
 ======================================================================
 TEST: The Reuben Sandwich
-TIME: 2025-12-30 15:26:25
+TIME: 2025-12-30 16:17:25
 ======================================================================
 
 CONVERSATION:
@@ -8,38 +8,32 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: Can I get a Reuben
-BOT:    Got it, The Reuben. Anything else?
+BOT:    I'm sorry, we don't have The Reuben. Would you like to hear what sandwiches and omelettes we have?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Can I get a name for the order?
+BOT:    Great, I'll set this up for pickup. What can I get for you?
 
 TESTER: John Smith
-BOT:    Here's your order:
-• The Reuben
-
-That's $19.95 plus tax.
-
-Does that look right?
+BOT:    What can I get for you?
 
 TESTER: yes
-BOT:    Would you like your order details sent by text or email?
+BOT:    What can I get for you?
 
 TESTER: text
-BOT:    What phone number should I text the confirmation to?
+BOT:    What can I get for you?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     collecting_items
+Status:     pending
 Order Type: pickup
-Items:      1
-  [1] The Reuben - $19.95 (menu_item)
-Customer:   John
-Total:      $19.95
+Items:      0
+Total:      $0.00
 ----------------------------------------------------------------------
 
-RESULT: PASS
+RESULT: FAIL
+REASON: No items in cart

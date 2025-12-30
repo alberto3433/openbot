@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Belly Lox Platter
-TIME: 2025-12-30 15:28:39
+TIME: 2025-12-30 16:19:33
 ======================================================================
 
 CONVERSATION:
@@ -17,26 +17,26 @@ TESTER: not toasted
 BOT:    Would you like cream cheese or butter on that?
 
 TESTER: thats all
-BOT:    Got it, everything bagel with nothing on it. Anything else?
+BOT:    Would you like cream cheese, butter, or nothing on that?
 
 TESTER: pickup
-BOT:    Great, I'll set this up for pickup. What can I get for you?
+BOT:    Got it, everything bagel with nothing on it. Anything else?
 
 TESTER: David
-BOT:    I'm sorry, I couldn't find 'David' on our menu. Could you try again or ask what we have available?
+BOT:    What can I get for you?
 
 TESTER: yes
 BOT:    What can I get for you?
 
 TESTER: text
-BOT:    I'm sorry, I couldn't find 'text' on our menu. Could you try again or ask what we have available?
+BOT:    What can I get for you?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: pickup
+Order Type: None
 Items:      2
   [1] Belly Lox Sandwich - $18.65 (menu_item)
   [2] everything bagel - $2.75 (bagel)

@@ -907,7 +907,7 @@ class OrderStateMachine:
                 )
                 items_added.append(parsed.new_menu_item)
             else:
-                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice)
+                last_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice, parsed.new_menu_item_modifications)
                 items_added.append(parsed.new_menu_item)
                 # If there's also a side item, add it too
                 if parsed.new_side_item:
@@ -1226,7 +1226,7 @@ class OrderStateMachine:
 
             # Check if there's ALSO a menu item in the same message
             if parsed.new_menu_item:
-                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice)
+                menu_result = self._add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice, parsed.new_menu_item_modifications)
                 items_added.append(parsed.new_menu_item)
                 # Combine the messages
                 combined_items = ", ".join(items_added)
@@ -2417,6 +2417,7 @@ class OrderStateMachine:
         order: OrderTask,
         toasted: bool | None = None,
         bagel_choice: str | None = None,
+        modifications: list[str] | None = None,
     ) -> StateMachineResult:
         """Add a menu item and determine next question."""
         # Ensure quantity is at least 1
@@ -2482,13 +2483,14 @@ class OrderStateMachine:
                 menu_item_type=item_type,
                 toasted=toasted,  # Set toasted if specified upfront
                 bagel_choice=bagel_choice,  # Set bagel choice if specified upfront
+                modifications=modifications or [],  # User modifications like "with mayo and mustard"
             )
             item.mark_in_progress()
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
-        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s, bagel=%s)", quantity, canonical_name, price, menu_item_id, toasted, bagel_choice)
+        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s, bagel=%s, mods=%s)", quantity, canonical_name, price, menu_item_id, toasted, bagel_choice, modifications)
 
         if is_omelette:
             # Set state to wait for side choice (applies to first item, others will be configured after)
@@ -3231,28 +3233,29 @@ class OrderStateMachine:
         price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
 
         # Check if this drink should skip configuration questions
-        # Coffee beverages (cappuccino, latte, etc.) ALWAYS need configuration regardless of database flag
-        # This overrides the menu_item skip_config because item_type "beverage" has skip_config=1
-        # but that's intended for sodas/bottled drinks, not coffee drinks
+        # Check if this is a soda/bottled drink FIRST - these skip configuration
+        # This handles cases like "snapple iced tea" which contains "tea" but is a bottled drink
         coffee_type_lower = (coffee_type or "").lower()
-        is_configurable_coffee = coffee_type_lower in COFFEE_BEVERAGE_TYPES or any(
-            bev in coffee_type_lower for bev in COFFEE_BEVERAGE_TYPES
-        )
 
         should_skip_config = False
-        if is_configurable_coffee:
-            # Coffee/tea drinks always need size and hot/iced configuration
-            logger.info("ADD COFFEE: skip_config=False (configurable coffee beverage: %s)", coffee_type)
-            should_skip_config = False
+        if is_soda_drink(coffee_type):
+            # Soda/bottled drinks don't need size or hot/iced configuration
+            logger.info("ADD COFFEE: skip_config=True (soda/bottled drink: %s)", coffee_type)
+            should_skip_config = True
         elif menu_item and menu_item.get("skip_config"):
             logger.info("ADD COFFEE: skip_config=True (from menu_item)")
             should_skip_config = True
-        elif is_soda_drink(coffee_type):
-            # Fallback for items not in database
-            logger.info("ADD COFFEE: skip_config=True (soda drink)")
-            should_skip_config = True
         else:
-            logger.info("ADD COFFEE: skip_config=False, will need configuration")
+            # Coffee beverages (cappuccino, latte, etc.) need configuration
+            # Also regular tea drinks need configuration (hot/iced, size)
+            is_configurable_coffee = coffee_type_lower in COFFEE_BEVERAGE_TYPES or any(
+                bev in coffee_type_lower for bev in COFFEE_BEVERAGE_TYPES
+            )
+            if is_configurable_coffee:
+                logger.info("ADD COFFEE: skip_config=False (configurable coffee beverage: %s)", coffee_type)
+                should_skip_config = False
+            else:
+                logger.info("ADD COFFEE: skip_config=False, will need configuration")
 
         if should_skip_config:
             # This drink doesn't need size or hot/iced questions - add directly as complete

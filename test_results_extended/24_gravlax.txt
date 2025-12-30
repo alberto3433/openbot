@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Gravlax on Bagel
-TIME: 2025-12-30 15:28:03
+TIME: 2025-12-30 16:18:56
 ======================================================================
 
 CONVERSATION:
@@ -11,35 +11,39 @@ TESTER: gravlax on a sesame bagel
 BOT:    Got it, Gravlax Sandwich. Anything else?
 
 TESTER: toasted
-BOT:    What kind of bagel would you like?
+BOT:    I didn't catch that. What would you like to order?
 
 TESTER: thats all
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Can I get a name for the order?
 
 TESTER: Lisa
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Here's your order:
+• Gravlax Sandwich
+
+That's $18.95 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: in store
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Would you like your order confirmation sent by text message or email?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
-Items:      2
+Order Type: pickup
+Items:      1
   [1] Gravlax Sandwich - $18.95 (menu_item)
       > bagel: sesame
-  [2] bagel toasted - $2.50 (bagel)
-      > toasted
-Total:      $21.45
+Customer:   Lisa
+Total:      $18.95
 ----------------------------------------------------------------------
 
 RESULT: PASS

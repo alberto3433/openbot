@@ -378,6 +378,14 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "price": spread_price,
                 })
 
+            # Add user modifications (e.g., "with mayo and mustard") as modifiers with $0 price
+            item_modifications = getattr(item, 'modifications', []) or []
+            for mod in item_modifications:
+                modifiers.append({
+                    "name": mod,
+                    "price": 0,
+                })
+
             item_dict = {
                 "item_type": "menu_item",
                 "id": item.id,  # Preserve item ID

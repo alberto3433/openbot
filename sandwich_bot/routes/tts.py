@@ -89,11 +89,14 @@ class VoiceInfo(BaseModel):
     """Information about an available voice."""
     id: str
     name: str
-    language: Optional[str] = None
+    gender: Optional[str] = None
+    accent: Optional[str] = None
+    description: Optional[str] = None
 
 
 class VoicesResponse(BaseModel):
     """Response containing list of available voices."""
+    provider: str = "openai"
     voices: list[VoiceInfo]
 
 
@@ -111,14 +114,18 @@ async def list_voices() -> VoicesResponse:
     """
     try:
         provider = get_tts_provider()
-        voices = await provider.list_voices()
+        # Use the voices property (not a method)
+        voices = provider.voices
 
         return VoicesResponse(
+            provider=provider.name,
             voices=[
                 VoiceInfo(
-                    id=v.get("id", ""),
-                    name=v.get("name", "Unknown"),
-                    language=v.get("language"),
+                    id=v.id,
+                    name=v.name,
+                    gender=v.gender,
+                    accent=v.accent,
+                    description=v.description,
                 )
                 for v in voices
             ]

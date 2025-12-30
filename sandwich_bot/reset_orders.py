@@ -12,7 +12,6 @@ def reset_orders():
         db.query(OrderItem).delete()
         db.query(Order).delete()
 
-        # No sqlite_sequence wipe – SQLite isn't using it for these tables
         db.commit()
         print("Orders and order_items cleared.")
     finally:

@@ -319,9 +319,11 @@ def chat_message(
 ) -> ChatMessageResponse:
     """Send a message to the chat bot and receive a response with order updates."""
     from ..message_processor import MessageProcessor, ProcessingContext
-    from ..chains.adapter import is_chain_orchestrator_enabled
+    from ..tasks.state_machine_adapter import is_state_machine_enabled
 
-    use_chain_orchestrator = is_chain_orchestrator_enabled()
+    # Use MessageProcessor when state machine is enabled (default)
+    # Fall back to LLM path when state machine is disabled (for testing)
+    use_chain_orchestrator = is_state_machine_enabled()
 
     if use_chain_orchestrator:
         logger.info("Using MessageProcessor for chat message")
@@ -496,7 +498,7 @@ def chat_message_stream(
     Uses Server-Sent Events (SSE) to stream the response as it's generated.
     """
     from ..message_processor import MessageProcessor, ProcessingContext
-    from ..chains.adapter import is_chain_orchestrator_enabled
+    from ..tasks.state_machine_adapter import is_state_machine_enabled
     from ..db import SessionLocal
 
     session = get_or_create_session(db, req.session_id)
@@ -505,7 +507,9 @@ def chat_message_stream(
             yield f"data: {json.dumps({'error': 'Invalid session_id'})}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-    use_chain_orchestrator = is_chain_orchestrator_enabled()
+    # Use MessageProcessor when state machine is enabled (default)
+    # Fall back to LLM path when state machine is disabled (for testing)
+    use_chain_orchestrator = is_state_machine_enabled()
     session_store_id = session.get("store_id")
     session_caller_id = session.get("caller_id")
 

@@ -32,7 +32,6 @@ from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .email_service import send_payment_link_email
 from .chains.integration import process_voice_message
-from .chains.adapter import is_chain_orchestrator_enabled
 
 
 def _build_store_info(store_id: str, company_name: str, db: Session) -> Dict[str, Any]:
@@ -855,9 +854,10 @@ async def vapi_chat_completions(
     current_menu_version = get_menu_version(menu_index)
     include_menu = session_data.get("menu_version") != current_menu_version
 
-    # Check if we should use the new orchestrator system
-    use_orchestrator = is_chain_orchestrator_enabled()
-
+    # Use MessageProcessor when state machine is enabled (default)
+    # Fall back to LLM path when state machine is disabled (for testing)
+    from .tasks.state_machine_adapter import is_state_machine_enabled
+    use_orchestrator = is_state_machine_enabled()
     if use_orchestrator:
         # Use MessageProcessor for unified processing
         logger.info("Using MessageProcessor for voice message")

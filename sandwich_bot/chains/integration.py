@@ -31,12 +31,6 @@ import logging
 import traceback
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
-from .adapter import (
-    is_chain_orchestrator_enabled,
-    process_message_with_chains,
-    process_message_hybrid,
-)
-
 from sandwich_bot.tasks.adapter import (
     is_task_orchestrator_enabled,
     process_message_with_tasks,
@@ -59,7 +53,6 @@ def process_voice_message(
     store_info: Dict[str, Any] = None,
     returning_customer: Dict[str, Any] = None,
     llm_fallback_fn: Callable = None,
-    force_chain_orchestrator: bool = False,
     force_task_orchestrator: bool = False,
     force_state_machine: bool = False,
 ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
@@ -67,10 +60,9 @@ def process_voice_message(
     Process a voice message using the appropriate system.
 
     Priority order:
-    1. State machine (if force_state_machine or STATE_MACHINE_ENABLED)
+    1. State machine (if force_state_machine or STATE_MACHINE_ENABLED) - default
     2. Task-based orchestrator (if force_task_orchestrator or TASK_ORCHESTRATOR_ENABLED)
-    3. Chain-based orchestrator (if force_chain_orchestrator or CHAIN_ORCHESTRATOR_ENABLED)
-    4. LLM fallback function
+    3. LLM fallback function
 
     Args:
         user_message: The transcribed voice message
@@ -81,7 +73,6 @@ def process_voice_message(
         store_info: Store information
         returning_customer: Returning customer data if available
         llm_fallback_fn: Function to call for LLM-based processing
-        force_chain_orchestrator: Override feature flag to force chain orchestrator
         force_task_orchestrator: Override feature flag to force task orchestrator
         force_state_machine: Override feature flag to force state machine
 
@@ -90,9 +81,8 @@ def process_voice_message(
     """
     use_state_machine = force_state_machine or is_state_machine_enabled()
     use_tasks = force_task_orchestrator or is_task_orchestrator_enabled()
-    use_chains = force_chain_orchestrator or is_chain_orchestrator_enabled()
 
-    # Priority 0: State machine
+    # Priority 0: State machine (default)
     if use_state_machine:
         logger.info("Using state machine for voice message")
         try:
@@ -122,36 +112,10 @@ def process_voice_message(
                 store_info=store_info,
             )
         except Exception as e:
-            logger.error("Task orchestrator failed, trying fallback: %s", e)
-            # Fall through to chain orchestrator or LLM
+            logger.error("Task orchestrator failed, trying LLM fallback: %s", e)
+            # Fall through to LLM fallback
 
-    # Priority 2: Chain-based orchestrator
-    if use_chains or (use_tasks and not llm_fallback_fn):
-        logger.info("Using chain-based orchestrator for voice message")
-        try:
-            return process_message_with_chains(
-                user_message=user_message,
-                order_state_dict=order_state,
-                history=history,
-                session_id=session_id,
-                menu_data=menu_index,
-                store_info=store_info,
-            )
-        except Exception as e:
-            logger.error("Chain orchestrator failed, falling back to LLM: %s", e)
-            if llm_fallback_fn:
-                return _call_llm_fallback(
-                    llm_fallback_fn,
-                    user_message,
-                    order_state,
-                    history,
-                    session_id,
-                    menu_index,
-                    returning_customer,
-                )
-            raise
-
-    # Priority 3: LLM fallback
+    # Priority 2: LLM fallback
     if llm_fallback_fn:
         logger.debug("Using LLM-based processing for voice message")
         return _call_llm_fallback(
@@ -164,15 +128,8 @@ def process_voice_message(
             returning_customer,
         )
 
-    # No fallback available, use chains as default
-    return process_message_with_chains(
-        user_message=user_message,
-        order_state_dict=order_state,
-        history=history,
-        session_id=session_id,
-        menu_data=menu_index,
-        store_info=store_info,
-    )
+    # No fallback available - this shouldn't happen in production
+    raise RuntimeError("No message processor available (state machine, task orchestrator, or LLM fallback)")
 
 
 def _call_llm_fallback(

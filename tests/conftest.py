@@ -140,17 +140,11 @@ def admin_auth():
 
 @pytest.fixture
 def disable_state_machine(monkeypatch):
-    """Disable the state machine, task orchestrator, and chain orchestrator for tests that mock call_sandwich_bot.
+    """Disable the state machine and task orchestrator for tests that mock call_sandwich_bot.
 
     These orchestrators bypass call_sandwich_bot entirely, so tests that
     rely on mocking call_sandwich_bot need to disable all of them to use the LLM path.
     """
-    # Disable chain orchestrator at the source (chains.adapter)
-    # This affects all code that imports from here: routes/chat.py, integration.py, etc.
-    monkeypatch.setattr(
-        "sandwich_bot.chains.adapter.is_chain_orchestrator_enabled",
-        lambda: False
-    )
     # Disable state machine and task orchestrator at their sources
     monkeypatch.setattr(
         "sandwich_bot.tasks.state_machine_adapter.is_state_machine_enabled",
@@ -167,14 +161,5 @@ def disable_state_machine(monkeypatch):
     )
     monkeypatch.setattr(
         "sandwich_bot.chains.integration.is_task_orchestrator_enabled",
-        lambda: False
-    )
-    monkeypatch.setattr(
-        "sandwich_bot.chains.integration.is_chain_orchestrator_enabled",
-        lambda: False
-    )
-    # Also patch in main.py for backward compatibility
-    monkeypatch.setattr(
-        "sandwich_bot.main.is_chain_orchestrator_enabled",
         lambda: False
     )

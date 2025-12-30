@@ -5,7 +5,7 @@ This demonstrates the generic item type system working for a different
 restaurant type (pizza instead of sandwiches).
 
 Usage:
-    DATABASE_URL="sqlite:///./data/tonys.db" python -m sandwich_bot.seed_tonys
+    DATABASE_URL="postgresql://..." python -m sandwich_bot.seed_tonys
 """
 
 import json

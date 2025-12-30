@@ -11,38 +11,26 @@ For single-tenant mode (backward compatibility):
     - Use get_db() dependency which uses the default database
 
 Environment variables:
-    - DATABASE_URL: Override the default database URL
+    - DATABASE_URL: PostgreSQL connection URL (required)
     - TENANT_SLUG: Current tenant identifier (set by run_tenant.py)
 """
 
 import os
-from typing import Generator, Optional
+from typing import Generator
 
-from fastapi import Request, Depends
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from .models import Base
 
 # Database URL must be set via environment variable
-# For testing, use in-memory SQLite if DATABASE_URL is not set
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
-    if os.environ.get("TESTING") == "1":
-        DATABASE_URL = "sqlite:///:memory:"
-    else:
-        raise ValueError("DATABASE_URL environment variable is required")
-
-# Ensure directory exists for SQLite databases
-if DATABASE_URL.startswith("sqlite:///./"):
-    db_path = DATABASE_URL.replace("sqlite:///./", "")
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
+    raise ValueError("DATABASE_URL environment variable is required")
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
     pool_pre_ping=True,
     echo=False,
 )

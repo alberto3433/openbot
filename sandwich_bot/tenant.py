@@ -153,19 +153,8 @@ class TenantManager:
             if not tenant:
                 raise ValueError(f"Unknown tenant: {tenant_slug}")
 
-            # Ensure data directory exists for SQLite databases
-            db_url = tenant.database_url
-            if db_url.startswith("sqlite:///"):
-                db_path = db_url.replace("sqlite:///", "")
-                if db_path.startswith("./"):
-                    db_path = db_path[2:]
-                db_dir = os.path.dirname(db_path)
-                if db_dir:
-                    os.makedirs(db_dir, exist_ok=True)
-
             engine = create_engine(
-                db_url,
-                connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
+                tenant.database_url,
                 pool_pre_ping=True,
                 echo=False,  # Set to True for SQL debugging
             )

@@ -418,8 +418,5 @@ from .schemas.modifiers import (
     AttributeOptionUpdate,
 )
 
-# From chains/adapter - orchestrator control
-from .chains.adapter import is_chain_orchestrator_enabled
-
 # From sammy/llm_client - LLM functions
 from .sammy.llm_client import call_sandwich_bot

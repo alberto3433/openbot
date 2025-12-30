@@ -4296,6 +4296,22 @@ class OrderStateMachine:
         user_lower = user_input.lower().strip()
         options = order.pending_drink_options
 
+        # Reject negative numbers or other invalid input early
+        if user_lower.startswith('-') or user_lower.startswith('−'):
+            option_list = []
+            for i, item in enumerate(options, 1):
+                name = item.get("name", "Unknown")
+                price = item.get("base_price", 0)
+                if price > 0:
+                    option_list.append(f"{i}. {name} (${price:.2f})")
+                else:
+                    option_list.append(f"{i}. {name}")
+            options_str = "\n".join(option_list)
+            return StateMachineResult(
+                message=f"Please choose a number from 1 to {len(options)}:\n{options_str}",
+                order=order,
+            )
+
         # Try to match by number (1, 2, 3, "first", "second", etc.)
         number_map = {
             "1": 0, "one": 0, "first": 0, "the first": 0, "number 1": 0, "number one": 0,

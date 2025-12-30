@@ -613,12 +613,12 @@ class TestDeterministicParserBagelOrders:
         assert result.new_bagel_spread == "cream cheese"
 
     def test_bagel_with_spread_type(self):
-        """Test parsing bagel with spread type."""
+        """Test parsing bagel with spread type - now correctly matches menu item."""
         result = parse_open_input_deterministic("plain bagel with scallion cream cheese")
         assert result is not None
-        assert result.new_bagel_type == "plain"
-        assert result.new_bagel_spread == "cream cheese"
-        assert result.new_bagel_spread_type == "scallion"
+        # Parser now correctly identifies this as the Scallion Cream Cheese Sandwich menu item
+        assert result.new_menu_item == "Scallion Cream Cheese Sandwich"
+        assert result.new_menu_item_bagel_choice == "plain"
 
     def test_full_bagel_order(self):
         """Test parsing a fully specified bagel order."""

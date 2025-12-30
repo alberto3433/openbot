@@ -2800,8 +2800,8 @@ class TestSideChoice:
         assert omelette.side_choice == "fruit_salad"
         assert omelette.status == TaskStatus.COMPLETE
 
-    def test_ambiguous_bagel_redirects(self):
-        """Test that just 'bagel' triggers redirect to clarify."""
+    def test_bagel_without_type_asks_for_type(self):
+        """Test that just 'bagel' sets side choice and asks for bagel type."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, MenuItemTask
 
@@ -2818,12 +2818,13 @@ class TestSideChoice:
         order.items.add_item(omelette)
         order.pending_item_id = omelette.id
 
-        # Just "bagel" is ambiguous - could be ordering a new bagel
+        # "bagel" is a valid side choice - should ask for bagel type
         result = sm._handle_side_choice("bagel", omelette, order)
 
-        # Should redirect to finish the omelette first
-        assert "finish" in result.message.lower() or "first" in result.message.lower()
-        assert omelette.side_choice is None
+        # Should set side_choice and ask for bagel type
+        assert "bagel" in result.message.lower() and "kind" in result.message.lower()
+        assert omelette.side_choice == "bagel"
+        assert order.pending_field == "bagel_choice"
 
     def test_bagel_with_type_specified(self):
         """Test selecting bagel with type specified upfront."""

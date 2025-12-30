@@ -194,14 +194,14 @@ ADD_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Bagel quantity pattern
+# Bagel quantity pattern - note: compound expressions like "a dozen" must come before single words
 BAGEL_QUANTITY_PATTERN = re.compile(
     r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
     r"(?:can|could|may)\s+i\s+(?:get|have)|"
     r"give\s+me|"
     r"let\s*(?:me|'s)\s*(?:get|have)|"
     r")?\s*"
-    r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|couple(?:\s+of)?)\s+"
+    r"(\d+|a\s+dozen|a\s+couple(?:\s+of)?|couple(?:\s+of)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\s+"
     r"(?:\w+\s+)*"
     r"bagels?",
     re.IGNORECASE
@@ -419,9 +419,11 @@ def extract_notes_from_input(user_input: str) -> list[str]:
 # =============================================================================
 
 def _extract_quantity(text: str) -> int | None:
-    """Extract quantity from text like '3', 'three', 'a couple of'."""
+    """Extract quantity from text like '3', 'three', 'a couple of', 'a dozen'."""
     text = text.lower().strip()
     text = re.sub(r"\s+of$", "", text)
+    # Normalize whitespace for compound expressions like "a  dozen" -> "a dozen"
+    text = re.sub(r"\s+", " ", text)
 
     if text.isdigit():
         return int(text)
@@ -649,9 +651,12 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     logger.debug("Deterministic parse: detected coffee type '%s'", coffee_type)
 
-    # Extract quantity
+    # Extract quantity - allow optional size/temperature words between qty and coffee type
+    # e.g., "three medium coffees", "2 large iced lattes", "dozen hot coffees"
     quantity = 1
-    qty_match = re.search(r'(\d+|two|three|four|five)\s+(?:' + '|'.join(COFFEE_BEVERAGE_TYPES) + r')', text_lower)
+    qty_words = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|couple'
+    size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
+    qty_match = re.search(rf'({qty_words})\s+{size_words}(?:{"|".join(COFFEE_BEVERAGE_TYPES)})s?\b', text_lower)
     if qty_match:
         qty_str = qty_match.group(1)
         if qty_str.isdigit():

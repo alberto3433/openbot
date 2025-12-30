@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Lox and Onion Omelette
-TIME: 2025-12-30 10:40:52
+TIME: 2025-12-30 15:31:10
 ======================================================================
 
 CONVERSATION:
@@ -40,7 +40,7 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] Lox and Onion Omelette - $15.24 (menu_item)
+  [1] Lox and Onion Omelette with fruit salad - $15.24 (menu_item)
       > side: fruit_salad
 Customer:   Ben
 Total:      $15.24

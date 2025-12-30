@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Veggie Omelette
-TIME: 2025-12-30 11:35:54
+TIME: 2025-12-30 14:43:13
 ======================================================================
 
 CONVERSATION:
@@ -11,41 +11,51 @@ TESTER: veggie omelette please
 BOT:    Would you like a bagel or fruit salad with your Veggie Omelette?
 
 TESTER: bagel
-BOT:    Let's finish up your Veggie Omelette first. Would you like a bagel or fruit salad with it?
-
-TESTER: plain
-BOT:    Got it, Veggie Omelette with plain bagel. Anything else?
-
-TESTER: toasted
 BOT:    What kind of bagel would you like?
 
+TESTER: plain
+BOT:    Would you like the plain bagel toasted?
+
+TESTER: toasted
+BOT:    Would you like butter or cream cheese on the bagel?
+
+TESTER: butter
+BOT:    Got it, Veggie Omelette with plain bagel toasted with butter. Anything else?
+
 TESTER: thats all
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Can I get a name for the order?
 
 TESTER: Mark
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Here's your order:
+• Veggie Omelette with plain bagel toasted with butter
+
+That's $14.95 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Would you like cream cheese or butter on that?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    Got it, plain bagel toasted with nothing on it. Anything else?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
-Items:      2
-  [1] Veggie Omelette x1 - $13.95 (menu_item)
-      > bagel: plain, side: bagel
-  [2] plain bagel toasted x1 - $2.75 (bagel)
-      > toasted, spread: none
-Total:      $16.70
+Order Type: pickup
+Items:      1
+  [1] Veggie Omelette with plain bagel x1 - $14.95 (omelette)
+      > toasted, spread: butter, bagel: plain, side: bagel
+Customer:   Mark
+Total:      $14.95
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Veggie Omelette (omelette)
 
 RESULT: PASS

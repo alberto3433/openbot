@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Poppy Bagel with Veggie CC
-TIME: 2025-12-30 10:45:38
+TIME: 2025-12-30 15:35:57
 ======================================================================
 
 CONVERSATION:
@@ -11,7 +11,7 @@ TESTER: poppy bagel with vegetable cream cheese
 BOT:    Would you like that toasted?
 
 TESTER: toasted
-BOT:    Got it, poppy bagel toasted with vegetable cream cheese. Anything else?
+BOT:    Got it, Vegetable Cream Cheese Sandwich on poppy bagel toasted. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
@@ -21,9 +21,9 @@ BOT:    Can I get a name for the order?
 
 TESTER: Kate
 BOT:    Here's your order:
-• poppy bagel toasted with vegetable cream cheese
+• Vegetable Cream Cheese Sandwich on poppy bagel toasted
 
-That's $6.25 plus tax.
+That's $5.75 plus tax.
 
 Does that look right?
 
@@ -40,10 +40,10 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] poppy bagel toasted - $6.25 (bagel)
-      > toasted, spread: cream cheese
+  [1] Vegetable Cream Cheese Sandwich on poppy bagel toasted - $5.75 (menu_item)
+      > toasted, bagel: poppy
 Customer:   Kate
-Total:      $6.25
+Total:      $5.75
 ----------------------------------------------------------------------
 
 RESULT: PASS

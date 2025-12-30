@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Whitefish Salad on Everything
-TIME: 2025-12-30 10:48:05
+TIME: 2025-12-30 15:38:15
 ======================================================================
 
 CONVERSATION:
@@ -11,33 +11,39 @@ TESTER: whitefish salad on everything bagel
 BOT:    Would you like that toasted?
 
 TESTER: not toasted
-BOT:    Would you like cream cheese or butter on that?
+BOT:    Got it, Whitefish Salad Sandwich on everything bagel. Anything else?
 
 TESTER: thats all
-BOT:    Would you like cream cheese, butter, or nothing on that?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Would you like cream cheese, butter, or nothing on that?
+BOT:    Can I get a name for the order?
 
 TESTER: Olivia
-BOT:    Got it, everything bagel with lox spread cream cheese. Anything else?
+BOT:    Here's your order:
+• Whitefish Salad Sandwich on everything bagel
+
+That's $15.13 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    What can I get for you?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    What can I get for you?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] everything bagel - $5.75 (bagel)
-      > spread: cream cheese
-Total:      $5.75
+  [1] Whitefish Salad Sandwich on everything bagel not toasted - $15.13 (menu_item)
+      > bagel: everything
+Customer:   Olivia
+Total:      $15.13
 ----------------------------------------------------------------------
 
 RESULT: PASS

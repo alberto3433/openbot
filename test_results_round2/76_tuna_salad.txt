@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Tuna Salad Sandwich
-TIME: 2025-12-30 11:44:03
+TIME: 2025-12-30 14:20:34
 ======================================================================
 
 CONVERSATION:
@@ -11,22 +11,27 @@ TESTER: tuna salad on a sesame bagel
 BOT:    Would you like that toasted?
 
 TESTER: not toasted
-BOT:    Would you like cream cheese or butter on that?
+BOT:    Got it, Tuna Salad Sandwich on sesame bagel. Anything else?
 
 TESTER: thats all
-BOT:    Got it, sesame bagel with nothing on it. Anything else?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Great, I'll set this up for pickup. What can I get for you?
+BOT:    Can I get a name for the order?
 
 TESTER: Zach
-BOT:    Would you like that toasted?
+BOT:    Here's your order:
+• Tuna Salad Sandwich on sesame bagel
+
+That's $13.15 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Got it, The Leo toasted. Anything else?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    What can I get for you?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
@@ -34,12 +39,14 @@ ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
 Order Type: pickup
-Items:      2
-  [1] sesame bagel x1 - $2.75 (bagel)
-      > spread: none
-  [2] The Leo toasted x1 - $14.95 (speed_menu_bagel)
-      > toasted
-Total:      $17.70
+Items:      1
+  [1] Tuna Salad Sandwich on sesame bagel not toasted x1 - $13.15 (salad_sandwich)
+      > bagel: sesame
+Customer:   Zach
+Total:      $13.15
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Tuna Salad (salad_sandwich)
 
 RESULT: PASS

@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Oatmeal
-TIME: 2025-12-30 10:48:43
+TIME: 2025-12-30 15:38:48
 ======================================================================
 
 CONVERSATION:
@@ -8,7 +8,7 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: oatmeal please
-BOT:    Got it, oatmeal. Anything else?
+BOT:    Got it, Oatmeal. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
@@ -18,7 +18,7 @@ BOT:    Can I get a name for the order?
 
 TESTER: Pete
 BOT:    Here's your order:
-• oatmeal
+• Oatmeal
 
 That's $4.95 plus tax.
 
@@ -37,7 +37,7 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] oatmeal - $4.95 (drink)
+  [1] Oatmeal - $4.95 (menu_item)
 Customer:   Pete
 Total:      $4.95
 ----------------------------------------------------------------------

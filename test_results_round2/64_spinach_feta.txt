@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Spinach Feta Omelette
-TIME: 2025-12-30 11:36:43
+TIME: 2025-12-30 14:43:59
 ======================================================================
 
 CONVERSATION:
@@ -8,35 +8,38 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: spinach and feta omelette
-BOT:    I'm sorry, we don't have Spinach And Feta Omelette. Would you like to hear what sandwiches and omelettes we have?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: home fries
-BOT:    I'm sorry, we don't have Home Fries. For sides, we have Latkes, Bacon, Fruit Cup, or Bagel Chips. Would any of those work?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: thats all
-BOT:    Is this for pickup or delivery?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: pickup
-BOT:    Great, I'll set this up for pickup. What can I get for you?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: Nancy
-BOT:    What can I get for you?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: yes
-BOT:    I didn't catch that. What would you like to order?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 TESTER: in store
-BOT:    What can I get for you?
+BOT:    Would you like a bagel or fruit salad with your Spinach & Feta Omelette?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     pending
-Order Type: pickup
-Items:      0
-Total:      $0.00
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] Spinach & Feta Omelette x1 - $14.50 (omelette)
+Total:      $14.50
 ----------------------------------------------------------------------
 
-RESULT: FAIL
-REASON: No items in cart
+EXPECTED ITEMS:
+  - Spinach (omelette)
+
+RESULT: PASS

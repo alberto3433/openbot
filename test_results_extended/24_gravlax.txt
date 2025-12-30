@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Gravlax on Bagel
-TIME: 2025-12-30 10:37:39
+TIME: 2025-12-30 15:28:03
 ======================================================================
 
 CONVERSATION:
@@ -8,36 +8,38 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: gravlax on a sesame bagel
-BOT:    Would you like that toasted?
+BOT:    Got it, Gravlax Sandwich. Anything else?
 
 TESTER: toasted
-BOT:    Would you like cream cheese or butter on that?
+BOT:    What kind of bagel would you like?
 
 TESTER: thats all
-BOT:    Got it, sesame bagel toasted with nothing on it. Anything else?
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
 
 TESTER: pickup
-BOT:    Great, I'll set this up for pickup. What can I get for you?
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
 
 TESTER: Lisa
-BOT:    What can I get for you?
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
 
 TESTER: yes
-BOT:    What can I get for you?
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
 
 TESTER: in store
-BOT:    What can I get for you?
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: pickup
-Items:      1
-  [1] sesame bagel toasted - $2.75 (bagel)
-      > toasted, spread: none
-Total:      $2.75
+Order Type: None
+Items:      2
+  [1] Gravlax Sandwich - $18.95 (menu_item)
+      > bagel: sesame
+  [2] bagel toasted - $2.50 (bagel)
+      > toasted
+Total:      $21.45
 ----------------------------------------------------------------------
 
 RESULT: PASS

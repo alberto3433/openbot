@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Western Omelette
-TIME: 2025-12-30 11:35:17
+TIME: 2025-12-30 14:42:35
 ======================================================================
 
 CONVERSATION:
@@ -35,8 +35,11 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: None
 Items:      1
-  [1] Western Omelette x1 - $14.95 (menu_item)
+  [1] Western Omelette x1 - $14.95 (omelette)
 Total:      $14.95
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Western Omelette (omelette)
 
 RESULT: PASS

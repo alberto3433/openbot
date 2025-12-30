@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Salami Omelette with Bagel
-TIME: 2025-12-30 10:41:32
+TIME: 2025-12-30 15:31:52
 ======================================================================
 
 CONVERSATION:
@@ -11,28 +11,28 @@ TESTER: salami omelette please
 BOT:    Would you like a bagel or fruit salad with your Salami Omelette?
 
 TESTER: bagel
-BOT:    Let's finish up your Salami Omelette first. Would you like a bagel or fruit salad with it?
-
-TESTER: sesame
-BOT:    Got it, Salami Omelette with sesame bagel. Anything else?
-
-TESTER: toasted
 BOT:    What kind of bagel would you like?
 
+TESTER: sesame
+BOT:    Would you like the sesame bagel toasted?
+
+TESTER: toasted
+BOT:    Would you like butter or cream cheese on the bagel?
+
 TESTER: thats all
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Would you like butter or cream cheese on the bagel?
 
 TESTER: pickup
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Got it, Salami Omelette with sesame bagel toasted with none. Anything else?
 
 TESTER: Chris
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    What can I get for you?
 
 TESTER: yes
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    What can I get for you?
 
 TESTER: in store
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    I didn't catch that. What would you like to order?
 
 ----------------------------------------------------------------------
 
@@ -40,12 +40,10 @@ ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
 Order Type: None
-Items:      2
-  [1] Salami Omelette - $13.63 (menu_item)
-      > bagel: sesame, side: bagel
-  [2] bagel toasted - $2.50 (bagel)
-      > toasted
-Total:      $16.13
+Items:      1
+  [1] Salami Omelette with sesame bagel - $13.63 (menu_item)
+      > toasted, spread: none, bagel: sesame, side: bagel
+Total:      $13.63
 ----------------------------------------------------------------------
 
 RESULT: PASS

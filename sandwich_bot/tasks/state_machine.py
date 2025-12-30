@@ -1206,6 +1206,10 @@ class OrderStateMachine:
             return result
 
         if parsed.new_coffee:
+            logger.info(
+                "PARSED COFFEE: type=%s, size=%s, QUANTITY=%d",
+                parsed.new_coffee_type, parsed.new_coffee_size, parsed.new_coffee_quantity
+            )
             coffee_result = self._add_coffee(
                 parsed.new_coffee_type,
                 parsed.new_coffee_size,
@@ -3158,8 +3162,8 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, sweetener=%s (qty=%d), syrup=%s, notes=%s",
-            coffee_type, size, iced, sweetener, sweetener_quantity, flavor_syrup, notes
+            "ADD COFFEE: type=%s, size=%s, iced=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, notes=%s",
+            coffee_type, size, iced, quantity, sweetener, sweetener_quantity, flavor_syrup, notes
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)

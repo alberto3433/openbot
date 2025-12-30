@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Belly Lox Platter
-TIME: 2025-12-30 10:38:16
+TIME: 2025-12-30 15:28:39
 ======================================================================
 
 CONVERSATION:
@@ -8,33 +8,28 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: belly lox please
-BOT:    Would you like that toasted?
+BOT:    Got it, Belly Lox Sandwich. Anything else?
 
 TESTER: everything bagel
 BOT:    Would you like that toasted?
 
 TESTER: not toasted
-BOT:    Got it, The Old School Tuna Sandwich not toasted. Anything else?
+BOT:    Would you like cream cheese or butter on that?
 
 TESTER: thats all
-BOT:    Is this for pickup or delivery?
+BOT:    Got it, everything bagel with nothing on it. Anything else?
 
 TESTER: pickup
-BOT:    Can I get a name for the order?
+BOT:    Great, I'll set this up for pickup. What can I get for you?
 
 TESTER: David
-BOT:    Here's your order:
-• The Old School Tuna Sandwich not toasted
-
-That's $10.00 plus tax.
-
-Does that look right?
+BOT:    I'm sorry, I couldn't find 'David' on our menu. Could you try again or ask what we have available?
 
 TESTER: yes
-BOT:    Would you like your order details sent by text or email?
+BOT:    What can I get for you?
 
 TESTER: text
-BOT:    What phone number should I text the confirmation to?
+BOT:    I'm sorry, I couldn't find 'text' on our menu. Could you try again or ask what we have available?
 
 ----------------------------------------------------------------------
 
@@ -42,10 +37,11 @@ ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
 Order Type: pickup
-Items:      1
-  [1] The Old School Tuna Sandwich not toasted - $10.00 (speed_menu_bagel)
-Customer:   David
-Total:      $10.00
+Items:      2
+  [1] Belly Lox Sandwich - $18.65 (menu_item)
+  [2] everything bagel - $2.75 (bagel)
+      > spread: none
+Total:      $21.40
 ----------------------------------------------------------------------
 
 RESULT: PASS

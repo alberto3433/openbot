@@ -1,6 +1,6 @@
 ======================================================================
 TEST: The Flatiron Traditional
-TIME: 2025-12-30 11:31:25
+TIME: 2025-12-30 14:38:23
 ======================================================================
 
 CONVERSATION:
@@ -10,31 +10,43 @@ BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our spee
 TESTER: flatiron traditional please
 BOT:    Would you like that toasted?
 
-TESTER: thats all
-BOT:    Would you like that toasted?
-
-TESTER: pickup
-BOT:    Would you like that toasted?
-
-TESTER: Edward
-BOT:    Would you like that toasted?
-
-TESTER: yes
+TESTER: toasted
 BOT:    Got it, The Flatiron Traditional toasted. Anything else?
 
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Edward
+BOT:    Here's your order:
+• The Flatiron Traditional toasted
+
+That's $19.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
 TESTER: text
-BOT:    What can I get for you?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
   [1] The Flatiron Traditional toasted x1 - $19.95 (speed_menu_bagel)
       > toasted
+Customer:   Edward
 Total:      $19.95
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Flatiron Traditional (speed_menu_bagel)
 
 RESULT: PASS

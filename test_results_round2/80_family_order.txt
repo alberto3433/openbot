@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Family Order
-TIME: 2025-12-30 11:46:34
+TIME: 2025-12-30 14:22:56
 ======================================================================
 
 CONVERSATION:
@@ -42,4 +42,10 @@ Items:      2
 Total:      $7.50
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - plain bagel (bagel) x2
+  - chocolate milk x2
+
+RESULT: FAIL
+FAILURES:
+  - Expected at least 2 items matching 'chocolate milk', found 0

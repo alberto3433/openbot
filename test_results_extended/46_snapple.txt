@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Snapple Iced Tea
-TIME: 2025-12-30 10:50:59
+TIME: 2025-12-30 15:40:50
 ======================================================================
 
 CONVERSATION:
@@ -8,33 +8,105 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: snapple iced tea
-BOT:    What size would you like for the tea? Small, medium, or large?
+BOT:    We have a few options for tea:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
+Which would you like?
 
 TESTER: thats all
-BOT:    What size would you like for your tea? Small, medium, or large?
+BOT:    I didn't catch which one. Please choose:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
 
 TESTER: pickup
-BOT:    What size would you like for your tea? Small, medium, or large?
+BOT:    I didn't catch which one. Please choose:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
 
 TESTER: Tina
-BOT:    What size would you like for your tea? Small, medium, or large?
+BOT:    I didn't catch which one. Please choose:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
 
 TESTER: yes
-BOT:    What size would you like for your tea? Small, medium, or large?
+BOT:    I didn't catch which one. Please choose:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
 
 TESTER: in store
-BOT:    What size would you like for your tea? Small, medium, or large?
+BOT:    I didn't catch which one. Please choose:
+1. Hot Tea ($3.00)
+2. Chai Tea ($4.50)
+3. Iced Tea ($3.50)
+4. Green Tea ($3.00)
+5. Earl Grey Tea ($3.00)
+6. Chamomile Tea ($3.00)
+7. Iced Chai Tea ($5.00)
+8. Peppermint Tea ($3.00)
+9. Snapple Iced Tea ($3.00)
+10. ITO EN Green Tea ($3.50)
+11. Snapple Peach Tea ($3.00)
+12. English Breakfast Tea ($3.00)
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     collecting_items
+Status:     pending
 Order Type: None
-Items:      1
-  [1] tea - $3.00 (drink)
-      > iced
-Total:      $3.00
+Items:      0
+Total:      $0.00
 ----------------------------------------------------------------------
 
-RESULT: PASS
+RESULT: FAIL
+REASON: No items in cart

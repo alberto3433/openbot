@@ -1,6 +1,6 @@
 ======================================================================
 TEST: The Chelsea Club
-TIME: 2025-12-30 11:30:54
+TIME: 2025-12-30 14:37:48
 ======================================================================
 
 CONVERSATION:
@@ -10,31 +10,43 @@ BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our spee
 TESTER: chelsea club
 BOT:    Would you like that toasted?
 
-TESTER: thats all
-BOT:    Would you like that toasted?
-
-TESTER: pickup
-BOT:    Would you like that toasted?
-
-TESTER: Diana
-BOT:    Would you like that toasted?
-
-TESTER: yes
+TESTER: toasted
 BOT:    Got it, The Chelsea Club toasted. Anything else?
 
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Diana
+BOT:    Here's your order:
+• The Chelsea Club toasted
+
+That's $15.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
 TESTER: email
-BOT:    What can I get for you?
+BOT:    What email address should I send it to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
   [1] The Chelsea Club toasted x1 - $15.95 (speed_menu_bagel)
       > toasted
+Customer:   Diana
 Total:      $15.95
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Chelsea Club (speed_menu_bagel)
 
 RESULT: PASS

@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Cappuccino with Almond Milk
-TIME: 2025-12-30 11:39:29
+TIME: 2025-12-30 14:16:08
 ======================================================================
 
 CONVERSATION:
@@ -10,31 +10,43 @@ BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our spee
 TESTER: small cappuccino with almond milk
 BOT:    Would you like that hot or iced?
 
+TESTER: hot
+BOT:    Got it, small hot cappuccino with almond syrup (+$0.50) with almond milk (+$0.50). Anything else?
+
 TESTER: thats all
-BOT:    Would you like that hot or iced?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Would you like that hot or iced?
+BOT:    Can I get a name for the order?
 
 TESTER: Steve
-BOT:    Would you like that hot or iced?
+BOT:    Here's your order:
+• small hot cappuccino with almond syrup (+$0.50) with almond milk (+$0.50)
+
+That's $6.50 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Would you like that hot or iced?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    Would you like that hot or iced?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] cappuccino x1 - $5.50 (drink)
-      > size: small, milk: almond
-Total:      $5.50
+  [1] cappuccino x1 - $6.50 (drink)
+      > size: small, hot, milk: almond
+Customer:   Steve
+Total:      $6.50
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - cappuccino (drink)
 
 RESULT: PASS

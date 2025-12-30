@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Tofu Veggie Spread
-TIME: 2025-12-30 11:42:50
+TIME: 2025-12-30 14:19:24
 ======================================================================
 
 CONVERSATION:
@@ -11,7 +11,7 @@ TESTER: plain bagel with tofu vegetable cream cheese
 BOT:    Would you like that toasted?
 
 TESTER: not toasted
-BOT:    Got it, plain bagel with tofu vegetable cream cheese. Anything else?
+BOT:    Got it, Vegetable Cream Cheese Sandwich on plain bagel. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
@@ -21,9 +21,9 @@ BOT:    Can I get a name for the order?
 
 TESTER: Xavier
 BOT:    Here's your order:
-• plain bagel with tofu vegetable cream cheese
+• Vegetable Cream Cheese Sandwich on plain bagel
 
-That's $6.50 plus tax.
+That's $5.75 plus tax.
 
 Does that look right?
 
@@ -40,10 +40,15 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] plain bagel x1 - $6.50 (bagel)
-      > spread: cream cheese
+  [1] Vegetable Cream Cheese Sandwich on plain bagel not toasted x1 - $5.75 (spread_sandwich)
+      > bagel: plain
 Customer:   Xavier
-Total:      $6.50
+Total:      $5.75
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - plain bagel (bagel)
+
+RESULT: FAIL
+FAILURES:
+  - Missing expected item: 'plain bagel' (type=bagel)

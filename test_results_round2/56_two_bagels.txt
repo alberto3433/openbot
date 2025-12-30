@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Two Plain Bagels
-TIME: 2025-12-30 11:31:57
+TIME: 2025-12-30 14:38:58
 ======================================================================
 
 CONVERSATION:
@@ -26,7 +26,7 @@ TESTER: yes
 BOT:    Got it, 2 plain bagel toasted with cream cheeses. Anything else?
 
 TESTER: in store
-BOT:    What can I get for you?
+BOT:    I didn't catch that. What would you like to order?
 
 ----------------------------------------------------------------------
 
@@ -41,5 +41,8 @@ Items:      2
       > toasted, spread: cream cheese
 Total:      $11.50
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - plain bagel (bagel) x2
 
 RESULT: PASS

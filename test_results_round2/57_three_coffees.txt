@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Three Coffees
-TIME: 2025-12-30 11:32:35
+TIME: 2025-12-30 14:39:38
 ======================================================================
 
 CONVERSATION:
@@ -10,31 +10,45 @@ BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our spee
 TESTER: three medium coffees
 BOT:    Would you like that hot or iced?
 
+TESTER: hot
+BOT:    Got it, medium hot coffee. Anything else?
+
 TESTER: thats all
-BOT:    Would you like that hot or iced?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Would you like that hot or iced?
+BOT:    Can I get a name for the order?
 
 TESTER: George
-BOT:    Would you like that hot or iced?
+BOT:    Here's your order:
+• medium hot coffee
+
+That's $3.75 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Would you like that hot or iced?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    Would you like that hot or iced?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] coffee x1 - $3.25 (drink)
-      > size: medium
-Total:      $3.25
+  [1] coffee x1 - $3.75 (drink)
+      > size: medium, hot
+Customer:   George
+Total:      $3.75
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - coffee (drink) x3
+
+RESULT: FAIL
+FAILURES:
+  - Expected at least 3 items matching 'coffee' (type=drink), found 1

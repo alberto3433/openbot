@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Chicken Salad Sandwich
-TIME: 2025-12-30 11:44:39
+TIME: 2025-12-30 14:21:07
 ======================================================================
 
 CONVERSATION:
@@ -13,31 +13,43 @@ BOT:    What kind of bagel would you like that on?
 TESTER: everything bagel
 BOT:    Would you like that toasted?
 
-TESTER: thats all
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: pickup
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: Alice
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: yes
+TESTER: toasted
 BOT:    Got it, Chicken Salad Sandwich on everything bagel toasted. Anything else?
 
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Alice
+BOT:    Here's your order:
+• Chicken Salad Sandwich on everything bagel toasted
+
+That's $13.50 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
 TESTER: in store
-BOT:    I didn't catch that. What would you like to order?
+BOT:    Would you like your order confirmation sent by text message or email?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] Chicken Salad Sandwich on everything bagel toasted x1 - $13.50 (menu_item)
+  [1] Chicken Salad Sandwich on everything bagel toasted x1 - $13.50 (salad_sandwich)
       > toasted, bagel: everything
+Customer:   Alice
 Total:      $13.50
 ----------------------------------------------------------------------
+
+EXPECTED ITEMS:
+  - Chicken Salad (salad_sandwich)
 
 RESULT: PASS

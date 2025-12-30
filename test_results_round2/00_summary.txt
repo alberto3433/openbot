@@ -1,9 +1,9 @@
 EXTENDED MENU ITEM TEST SUMMARY - ROUND 2
-Run at: 2025-12-30 11:47:10
+Run at: 2025-12-30 14:23:28
 ======================================================================
 
-PASSED: 29/30
-FAILED: 1/30
+PASSED: 24/30
+FAILED: 6/30
 
 Results:
   [PASS] The Classic Speed Menu -> 51_the_classic.txt
@@ -12,14 +12,16 @@ Results:
   [PASS] The Chelsea Club -> 54_chelsea_club.txt
   [PASS] The Flatiron Traditional -> 55_flatiron.txt
   [PASS] Two Plain Bagels -> 56_two_bagels.txt
-  [PASS] Three Coffees -> 57_three_coffees.txt
-  [PASS] Dozen Bagels -> 58_dozen_bagels.txt
+  [FAIL] Three Coffees -> 57_three_coffees.txt
+         REASON: Expected at least 3 items matching 'coffee' (type=drink), found 1
+  [FAIL] Dozen Bagels -> 58_dozen_bagels.txt
+         REASON: Expected at least 12 items matching 'everything bagel' (type=bagel), found 1
   [PASS] Bagel with Bacon Egg Cheese -> 59_custom_bec.txt
   [PASS] Bagel with Nova and Capers -> 60_nova_capers.txt
   [PASS] Bagel with Turkey and Swiss -> 61_turkey_swiss.txt
   [PASS] Western Omelette -> 62_western_omelette.txt
   [PASS] Veggie Omelette -> 63_veggie_omelette.txt
-  [FAIL] Spinach Feta Omelette -> 64_spinach_feta.txt
+  [PASS] Spinach Feta Omelette -> 64_spinach_feta.txt
   [PASS] Turkey Club Sandwich -> 65_turkey_club.txt
   [PASS] Hot Pastrami Sandwich -> 66_hot_pastrami.txt
   [PASS] Latte with Vanilla Syrup -> 67_vanilla_latte.txt
@@ -29,10 +31,15 @@ Results:
   [PASS] Casual Coffee Order -> 71_casual_coffee.txt
   [PASS] Delivery to Tribeca -> 72_delivery_tribeca.txt
   [PASS] Delivery with Apartment -> 73_delivery_apt.txt
-  [PASS] Tofu Veggie Spread -> 74_tofu_veggie.txt
+  [FAIL] Tofu Veggie Spread -> 74_tofu_veggie.txt
+         REASON: Missing expected item: 'plain bagel' (type=bagel)
   [PASS] Honey Walnut Cream Cheese -> 75_honey_walnut.txt
   [PASS] Tuna Salad Sandwich -> 76_tuna_salad.txt
   [PASS] Chicken Salad Sandwich -> 77_chicken_salad.txt
-  [PASS] Bagel Coffee and Side -> 78_combo_with_side.txt
-  [PASS] Two Different Items -> 79_two_different.txt
-  [PASS] Family Order -> 80_family_order.txt
+  [FAIL] Bagel Coffee and Side -> 78_combo_with_side.txt
+         REASON: Missing expected item: 'home fries'
+  [FAIL] Two Different Items -> 79_two_different.txt
+         REASON: Missing expected item: 'The Leo' (type=speed_menu_bagel)
+  [FAIL] Family Order -> 80_family_order.txt
+         REASON: Expected at least 2 items matching 'chocolate milk', found 0
+

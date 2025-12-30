@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Cinnamon Raisin with Strawberry CC
-TIME: 2025-12-30 10:46:14
+TIME: 2025-12-30 15:36:31
 ======================================================================
 
 CONVERSATION:
@@ -11,7 +11,7 @@ TESTER: cinnamon raisin bagel with strawberry cream cheese
 BOT:    Would you like that toasted?
 
 TESTER: not toasted
-BOT:    Got it, cinnamon raisin bagel with strawberry cream cheese. Anything else?
+BOT:    Got it, Strawberry Cream Cheese Sandwich on cinnamon raisin bagel. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
@@ -21,9 +21,9 @@ BOT:    Can I get a name for the order?
 
 TESTER: Leo
 BOT:    Here's your order:
-• cinnamon raisin bagel with strawberry cream cheese
+• Strawberry Cream Cheese Sandwich on cinnamon raisin bagel
 
-That's $6.25 plus tax.
+That's $5.75 plus tax.
 
 Does that look right?
 
@@ -40,10 +40,10 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] cinnamon raisin bagel - $6.25 (bagel)
-      > spread: cream cheese
+  [1] Strawberry Cream Cheese Sandwich on cinnamon raisin bagel not toasted - $5.75 (menu_item)
+      > bagel: cinnamon raisin
 Customer:   Leo
-Total:      $6.25
+Total:      $5.75
 ----------------------------------------------------------------------
 
 RESULT: PASS

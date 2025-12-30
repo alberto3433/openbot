@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Onion Bagel with Lox Spread
-TIME: 2025-12-30 10:46:48
+TIME: 2025-12-30 15:37:07
 ======================================================================
 
 CONVERSATION:
@@ -11,7 +11,7 @@ TESTER: onion bagel with nova cream cheese
 BOT:    Would you like that toasted?
 
 TESTER: toasted please
-BOT:    Got it, onion bagel toasted with cream cheese, nova scotia salmon. Anything else?
+BOT:    Got it, Nova Scotia Cream Cheese Sandwich on onion bagel toasted. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
@@ -21,9 +21,9 @@ BOT:    Can I get a name for the order?
 
 TESTER: Maria
 BOT:    Here's your order:
-• onion bagel toasted with cream cheese, nova scotia salmon
+• Nova Scotia Cream Cheese Sandwich on onion bagel toasted
 
-That's $5.75 plus tax.
+That's $6.95 plus tax.
 
 Does that look right?
 
@@ -40,10 +40,10 @@ ORDER DETAILS:
 Status:     collecting_items
 Order Type: pickup
 Items:      1
-  [1] onion bagel toasted - $5.75 (bagel)
-      > toasted, spread: cream cheese
+  [1] Nova Scotia Cream Cheese Sandwich on onion bagel toasted - $6.95 (menu_item)
+      > toasted, bagel: onion
 Customer:   Maria
-Total:      $5.75
+Total:      $6.95
 ----------------------------------------------------------------------
 
 RESULT: PASS

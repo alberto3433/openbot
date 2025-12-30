@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Dozen Bagels
-TIME: 2025-12-30 11:33:08
+TIME: 2025-12-30 14:40:12
 ======================================================================
 
 CONVERSATION:
@@ -10,31 +10,48 @@ BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our spee
 TESTER: a dozen everything bagels
 BOT:    Would you like that toasted?
 
-TESTER: thats all
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: pickup
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: Hannah
-BOT:    Would you like that toasted? Yes or no?
-
-TESTER: yes
+TESTER: not toasted
 BOT:    Would you like cream cheese or butter on that?
 
+TESTER: nothing
+BOT:    Got it, everything bagel with nothing on it. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Hannah
+BOT:    Here's your order:
+• everything bagel with nothing on it
+
+That's $2.75 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
 TESTER: in store
-BOT:    Got it, everything bagel toasted with nothing on it. Anything else?
+BOT:    Would you like your order confirmation sent by text message or email?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] everything bagel toasted x1 - $2.75 (bagel)
-      > toasted, spread: none
+  [1] everything bagel x1 - $2.75 (bagel)
+      > spread: none
+Customer:   Hannah
 Total:      $2.75
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - everything bagel (bagel) x12
+
+RESULT: FAIL
+FAILURES:
+  - Expected at least 12 items matching 'everything bagel' (type=bagel), found 1

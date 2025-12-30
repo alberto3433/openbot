@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Two Different Items
-TIME: 2025-12-30 11:45:53
+TIME: 2025-12-30 14:22:20
 ======================================================================
 
 CONVERSATION:
@@ -43,4 +43,10 @@ Items:      3
 Total:      $23.95
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - The Leo (speed_menu_bagel)
+  - latte (drink)
+
+RESULT: FAIL
+FAILURES:
+  - Missing expected item: 'The Leo' (type=speed_menu_bagel)

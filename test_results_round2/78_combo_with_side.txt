@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Bagel Coffee and Side
-TIME: 2025-12-30 11:45:15
+TIME: 2025-12-30 14:21:43
 ======================================================================
 
 CONVERSATION:
@@ -13,33 +13,50 @@ BOT:    Would you like that toasted?
 TESTER: toasted
 BOT:    Would you like that hot or iced?
 
+TESTER: hot
+BOT:    Got it, medium hot coffee. Anything else?
+
 TESTER: thats all
-BOT:    Would you like that hot or iced?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Would you like that hot or iced?
+BOT:    Can I get a name for the order?
 
 TESTER: Bob
-BOT:    Would you like that hot or iced?
+BOT:    Here's your order:
+• everything bagel toasted with cream cheese
+• medium hot coffee
+
+That's $9.50 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Would you like that hot or iced?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    Would you like that hot or iced?
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      2
   [1] everything bagel toasted x1 - $5.75 (bagel)
       > toasted, spread: cream cheese
-  [2] coffee x1 - $3.25 (drink)
-      > size: medium
-Total:      $9.00
+  [2] coffee x1 - $3.75 (drink)
+      > size: medium, hot
+Customer:   Bob
+Total:      $9.50
 ----------------------------------------------------------------------
 
-RESULT: PASS
+EXPECTED ITEMS:
+  - everything bagel (bagel)
+  - coffee (drink)
+  - home fries
+
+RESULT: FAIL
+FAILURES:
+  - Missing expected item: 'home fries'

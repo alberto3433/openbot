@@ -167,17 +167,10 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
         for item in recent_order.items:
             item_data = {
                 "menu_item_name": item.menu_item_name,
-                "item_type": item.item_type,
-                "bread": item.bread,
-                "protein": item.protein,
-                "cheese": item.cheese,
-                "toppings": item.toppings,
-                "sauces": item.sauces,
-                "toasted": item.toasted,
                 "quantity": item.quantity,
                 "price": item.unit_price,  # Unit price for repeat order calculations
             }
-            # Add item_config fields if present (coffee/drink modifiers: size, style, milk, etc.)
+            # All item-specific fields (item_type, bread, toasted, etc.) are in item_config
             if item.item_config:
                 item_data.update(item.item_config)
             last_order_items.append(item_data)

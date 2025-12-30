@@ -126,7 +126,7 @@ class TestPydanticV2ModelValidate:
         order_item = OrderItem(
             order_id=order.id,
             menu_item_name="Test Sandwich",
-            item_type="sandwich",
+            item_config={"item_type": "sandwich", "bread": "wheat", "toasted": True},
             quantity=1,
             unit_price=9.99,
             line_total=9.99,

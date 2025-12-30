@@ -187,20 +187,10 @@ class OrderItem(Base):
     # Generic item type system
     item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)
 
-    # Generic item configuration (JSON)
-    # e.g., {"bread": "italian", "protein": "turkey", "cheese": "provolone", "toppings": ["lettuce", "tomato"], "toasted": true}
+    # Item configuration (JSON) - stores all item-specific details
+    # e.g., {"item_type": "bagel", "bagel_type": "everything", "spread": "cream cheese", "toasted": true}
+    # e.g., {"item_type": "drink", "size": "large", "milk": "oat", "style": "iced"}
     item_config = Column(JSON, nullable=True)
-
-    # Legacy columns (kept for backward compatibility during migration)
-    # TODO: Remove these after full migration to generic system
-    item_type = Column(String, nullable=True)  # Legacy: "sandwich", "side", "drink"
-    size = Column(String, nullable=True)
-    bread = Column(String, nullable=True)
-    protein = Column(String, nullable=True)
-    cheese = Column(String, nullable=True)
-    toppings = Column(JSON, nullable=True)   # stores list
-    sauces = Column(JSON, nullable=True)     # stores list
-    toasted = Column(Boolean, nullable=True)
 
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Float, nullable=False)

@@ -332,7 +332,11 @@ def persist_confirmed_order(
 
 
 def _add_order_items(db: Session, order: Order, items: list) -> None:
-    """Add order items to an order."""
+    """Add order items to an order.
+
+    All item-specific configuration (bread, protein, toasted, etc.) is stored
+    in the item_config JSON column. Only common fields are stored as direct columns.
+    """
     for it in items:
         menu_item_name = (
             it.get("menu_item_name")
@@ -354,47 +358,19 @@ def _add_order_items(db: Session, order: Order, items: list) -> None:
         line_total = it.get("line_total", 0.0)
         unit_price = line_total / quantity if quantity > 0 else line_total
 
-        # Map fields based on item type
-        if item_type == "bagel":
-            bread_field = it.get("bagel_type")
-            spread = it.get("spread")
-            spread_type = it.get("spread_type")
-            if spread and spread.lower() != "none":
-                if spread_type and spread_type != "plain":
-                    cheese_field = f"{spread_type} {spread}"
-                else:
-                    cheese_field = spread
-            else:
-                cheese_field = None
-            protein_field = it.get("sandwich_protein")
-            if protein_field and protein_field.lower() == "none":
-                protein_field = None
-            toppings_field = it.get("extras")
-        else:
-            bread_field = it.get("bread") or it.get("crust") or it.get("bagel_choice")
-            cheese_field = it.get("cheese")
-            if cheese_field and cheese_field.lower() == "none":
-                cheese_field = None
-            protein_field = it.get("protein")
-            if protein_field and protein_field.lower() == "none":
-                protein_field = None
-            toppings_field = it.get("toppings")
+        # Get item_config - all item-specific details are stored here
+        item_config = it.get("item_config") or {}
+
+        # Ensure item_type is in item_config for reads that merge it
+        item_config["item_type"] = item_type
 
         order_item = OrderItem(
             order_id=order.id,
             menu_item_name=menu_item_name,
-            item_type=item_type,
             quantity=quantity,
-            size=it.get("size"),
-            bread=bread_field,
-            protein=protein_field,
-            cheese=cheese_field,
-            toasted=it.get("toasted"),
-            toppings=json.dumps(toppings_field) if toppings_field else None,
-            sauces=json.dumps(it.get("sauces") or it.get("sauce")) if (it.get("sauces") or it.get("sauce")) else None,
             unit_price=unit_price,
             line_total=line_total,
-            item_config=json.dumps(it.get("item_config")) if it.get("item_config") else None,
+            item_config=item_config,  # SQLAlchemy JSON column handles serialization
             notes=it.get("notes"),
         )
         db.add(order_item)

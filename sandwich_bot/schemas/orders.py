@@ -55,7 +55,7 @@ Usage:
 import json
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class OrderItemOut(BaseModel):
@@ -99,6 +99,41 @@ class OrderItemOut(BaseModel):
     quantity: int
     unit_price: float
     line_total: float
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_from_item_config(cls, data):
+        """Extract fields from item_config for backward compatibility.
+
+        Item configuration is now stored in the item_config JSON column.
+        This validator extracts fields from item_config to populate the
+        individual fields (item_type, bread, toasted, etc.) for API responses.
+        """
+        # Handle ORM objects with from_attributes=True
+        if hasattr(data, '__dict__'):
+            # Convert ORM object to dict
+            obj_dict = {
+                'id': getattr(data, 'id', None),
+                'menu_item_name': getattr(data, 'menu_item_name', None),
+                'quantity': getattr(data, 'quantity', None),
+                'unit_price': getattr(data, 'unit_price', None),
+                'line_total': getattr(data, 'line_total', None),
+                'notes': getattr(data, 'notes', None),
+                'item_config': getattr(data, 'item_config', None),
+            }
+            # Extract fields from item_config
+            item_config = obj_dict.get('item_config') or {}
+            if isinstance(item_config, dict):
+                obj_dict['item_type'] = item_config.get('item_type')
+                obj_dict['size'] = item_config.get('size')
+                obj_dict['bread'] = item_config.get('bread') or item_config.get('bagel_type') or item_config.get('bagel_choice')
+                obj_dict['protein'] = item_config.get('protein') or item_config.get('sandwich_protein')
+                obj_dict['cheese'] = item_config.get('cheese') or item_config.get('spread')
+                obj_dict['toppings'] = item_config.get('toppings') or item_config.get('extras')
+                obj_dict['sauces'] = item_config.get('sauces')
+                obj_dict['toasted'] = item_config.get('toasted')
+            return obj_dict
+        return data
 
     @field_validator('toppings', 'sauces', mode='before')
     @classmethod

@@ -111,6 +111,13 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 
         if item_type == "menu_item":
             # MenuItemTask (omelettes, sandwiches, etc.)
+            # Extract spread_price from modifiers if present
+            spread_price = None
+            item_modifiers = item.get("modifiers") or []
+            for mod in item_modifiers:
+                if isinstance(mod, dict) and mod.get("name") == item.get("spread"):
+                    spread_price = mod.get("price")
+                    break
             menu_item = MenuItemTask(
                 menu_item_name=item.get("menu_item_name") or "Unknown",
                 menu_item_id=item.get("menu_item_id"),
@@ -118,7 +125,9 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 modifications=item.get("modifications") or [],
                 side_choice=item.get("side_choice"),
                 bagel_choice=item.get("bagel_choice"),
-                toasted=item.get("toasted"),  # For spread/salad sandwiches
+                toasted=item.get("toasted"),  # For spread/salad sandwiches and omelette side bagels
+                spread=item.get("spread"),  # For omelette side bagels
+                spread_price=spread_price,  # For itemized display
                 requires_side_choice=item.get("requires_side_choice", False),
                 quantity=item.get("quantity", 1),
                 notes=item.get("notes"),
@@ -315,6 +324,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             side_choice = getattr(item, 'side_choice', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
             toasted = getattr(item, 'toasted', None)
+            spread = getattr(item, 'spread', None)
             menu_item_name = item.menu_item_name
             menu_item_type = getattr(item, 'menu_item_type', None)
 
@@ -322,17 +332,51 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             display_name = menu_item_name
             if menu_item_type in ("spread_sandwich", "salad_sandwich") and bagel_choice:
                 display_name = f"{menu_item_name} on {bagel_choice} bagel"
+                if toasted is True:
+                    display_name = f"{display_name} toasted"
+                elif toasted is False:
+                    display_name = f"{display_name} not toasted"
             # Add side choice for omelettes (bagel or fruit salad)
-            if side_choice == "fruit_salad":
+            elif side_choice == "fruit_salad":
                 display_name = f"{display_name} with fruit salad"
-            elif side_choice == "bagel" and bagel_choice:
-                display_name = f"{display_name} with {bagel_choice} bagel"
             elif side_choice == "bagel":
-                display_name = f"{display_name} with bagel"
-            if toasted is True:
-                display_name = f"{display_name} toasted"
-            elif toasted is False and menu_item_type in ("spread_sandwich", "salad_sandwich"):
-                display_name = f"{display_name} not toasted"
+                # Build side bagel description with all details
+                if bagel_choice:
+                    display_name = f"{display_name} with {bagel_choice} bagel"
+                else:
+                    display_name = f"{display_name} with bagel"
+                # Note: toasted status is shown in modifiers list, not display_name
+
+            # Build side bagel config for omelettes (shown as modifier)
+            side_bagel_config = None
+            if side_choice == "bagel" and bagel_choice:
+                side_bagel_parts = [bagel_choice, "bagel"]
+                if toasted is True:
+                    side_bagel_parts.append("toasted")
+                if spread and spread != "none":
+                    side_bagel_parts.append(f"with {spread}")
+                side_bagel_config = {
+                    "bagel_type": bagel_choice,
+                    "toasted": toasted,
+                    "spread": spread,
+                    "description": " ".join(side_bagel_parts),
+                }
+
+            # Build modifiers list with prices for itemized display (like standalone bagels)
+            modifiers = []
+            # Add toasted as a modifier (no price) for omelette side bagels
+            if side_choice == "bagel" and toasted is True:
+                modifiers.append({
+                    "name": "Toasted",
+                    "price": 0,
+                })
+            # Add spread with price
+            spread_price = getattr(item, 'spread_price', None)
+            if spread and spread != "none" and spread_price and spread_price > 0:
+                modifiers.append({
+                    "name": spread,
+                    "price": spread_price,
+                })
 
             item_dict = {
                 "item_type": "menu_item",
@@ -343,14 +387,25 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "menu_item_id": getattr(item, 'menu_item_id', None),
                 "menu_item_type": menu_item_type,
                 "modifications": getattr(item, 'modifications', []),
+                "modifiers": modifiers,  # Itemized price breakdown (spread, etc.)
                 "side_choice": side_choice,
                 "bagel_choice": bagel_choice,
                 "toasted": toasted,  # For spread/salad sandwiches
+                "spread": spread,  # For omelette side bagels
+                "side_bagel_config": side_bagel_config,  # Full side bagel details as modifier
                 "requires_side_choice": getattr(item, 'requires_side_choice', False),
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
                 "notes": getattr(item, 'notes', None),
+                "item_config": {
+                    "menu_item_type": menu_item_type,
+                    "side_choice": side_choice,
+                    "bagel_choice": bagel_choice,
+                    "toasted": toasted,
+                    "spread": spread,
+                    "modifications": getattr(item, 'modifications', []),
+                },
             }
             items.append(item_dict)
 
@@ -421,6 +476,14 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
                 "notes": getattr(item, 'notes', None),
+                "item_config": {
+                    "bagel_type": bagel_type,
+                    "spread": spread,
+                    "spread_type": spread_type,
+                    "toasted": toasted,
+                    "sandwich_protein": sandwich_protein,
+                    "extras": extras,
+                },
             }
             items.append(item_dict)
 
@@ -482,6 +545,10 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
                 "notes": getattr(item, 'notes', None),
+                "item_config": {
+                    "toasted": toasted,
+                    "bagel_choice": bagel_choice,
+                },
             }
             items.append(item_dict)
 

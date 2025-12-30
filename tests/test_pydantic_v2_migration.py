@@ -6,11 +6,11 @@ These tests ensure:
 2. model_validate() works correctly with ORM objects (not deprecated from_orm())
 3. No Pydantic v1 deprecation warnings are raised
 """
+import os
 import warnings
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from sandwich_bot.models import Base, MenuItem, Order, OrderItem
 from sandwich_bot.main import (
@@ -20,15 +20,17 @@ from sandwich_bot.main import (
     OrderDetailOut,
 )
 
+# Use TEST_DATABASE_URL or derive from DATABASE_URL
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
 
 @pytest.fixture
 def db_session():
-    """Create an in-memory SQLite database for testing."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    """Create a PostgreSQL database session for testing."""
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL or DATABASE_URL required for this test")
+
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
 

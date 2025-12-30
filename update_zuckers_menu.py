@@ -1,13 +1,13 @@
 """
 Update Zucker's menu from CSV file.
 Handles items with Small/Large variants by creating configurable item types.
+
+Requires DATABASE_URL environment variable to be set to a PostgreSQL connection URL.
 """
 import csv
 import os
 import re
 from decimal import Decimal
-
-os.environ["DATABASE_URL"] = "sqlite:///./data/zuckers.db"
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,7 +16,11 @@ from sandwich_bot.models import (
     Ingredient, AttributeOptionIngredient
 )
 
-DB_URL = "sqlite:///./data/zuckers.db"
+# Require DATABASE_URL environment variable (PostgreSQL)
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
+
 CSV_PATH = r"C:\Users\alber\Downloads\zuckers_menu_items_complete_v3.csv"
 
 

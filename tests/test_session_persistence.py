@@ -1,10 +1,10 @@
 """
 Tests for session persistence functionality.
 """
+import os
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from sandwich_bot.models import Base, ChatSession, MenuItem
 from sandwich_bot.main import (
@@ -15,18 +15,20 @@ from sandwich_bot.main import (
     SESSION_TTL_SECONDS,
 )
 
+# Use TEST_DATABASE_URL or derive from DATABASE_URL
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
 
 @pytest.fixture
 def db_session():
-    """Create an in-memory SQLite database for testing."""
+    """Create a PostgreSQL database session for testing."""
     # Clear cache before test
     SESSION_CACHE.clear()
 
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL or DATABASE_URL required for this test")
+
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
 

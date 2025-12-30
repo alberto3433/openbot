@@ -70,7 +70,12 @@ def run_tenant(
 
     tenant = tenants[tenant_slug]
     tenant_port = port or tenant.get("port", 8006)
-    database_url = tenant.get("database_url", f"sqlite:///./data/{tenant_slug}.db")
+    database_url = tenant.get("database_url")
+
+    if not database_url:
+        print(f"Error: No database_url configured for tenant '{tenant_slug}'")
+        print("PostgreSQL database URL is required in tenants.json")
+        sys.exit(1)
 
     # Set environment variables for this tenant
     os.environ["TENANT_SLUG"] = tenant_slug
@@ -81,15 +86,8 @@ def run_tenant(
     print(f"Starting: {tenant.get('name', tenant_slug)}")
     print(f"Tenant:   {tenant_slug}")
     print(f"Port:     {tenant_port}")
-    print(f"Database: {database_url}")
+    print(f"Database: {database_url[:50]}..." if len(database_url) > 50 else f"Database: {database_url}")
     print(f"{'=' * 50}\n")
-
-    # Ensure data directory exists
-    if database_url.startswith("sqlite:///./"):
-        db_path = database_url.replace("sqlite:///./", "")
-        db_dir = os.path.dirname(db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
 
     # Import and run
     import uvicorn

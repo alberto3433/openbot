@@ -1,19 +1,21 @@
+import os
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from sandwich_bot.models import Base, MenuItem, Order, OrderItem
 from sandwich_bot.main import persist_confirmed_order
 
+# Use TEST_DATABASE_URL or derive from DATABASE_URL
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
 
 def test_persist_confirmed_order_creates_order_and_items():
     """Test that persist_confirmed_order creates Order and OrderItem records."""
-    # In-memory SQLite shared connection
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL or DATABASE_URL required for this test")
+
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     Base.metadata.create_all(bind=engine)

@@ -1,28 +1,35 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-import sandwich_bot.db as db
-import sandwich_bot.main as main_mod
-import sandwich_bot.config as config_mod
-import sandwich_bot.auth as auth_mod
-from sandwich_bot.models import Base, MenuItem
-from sandwich_bot.main import app, SESSION_CACHE
 
 # Test admin credentials
 TEST_ADMIN_USERNAME = "testadmin"
 TEST_ADMIN_PASSWORD = "testpassword123"
 
+# Use TEST_DATABASE_URL or derive from DATABASE_URL (checked lazily in fixtures)
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
 
 @pytest.fixture
 def client():
-    """Shared FastAPI TestClient using an in-memory SQLite DB.
+    """Shared FastAPI TestClient using PostgreSQL test database.
 
-    Uses StaticPool so all connections share the same in-memory database.
+    Uses transaction rollback for test isolation.
     Sets up test admin credentials for authentication.
     """
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL or DATABASE_URL environment variable required")
+
+    # Lazy imports to avoid requiring DATABASE_URL for non-db tests
+    import sandwich_bot.db as db
+    import sandwich_bot.main as main_mod
+    import sandwich_bot.config as config_mod
+    import sandwich_bot.auth as auth_mod
+    from sandwich_bot.models import Base, MenuItem
+    from sandwich_bot.main import app, SESSION_CACHE
+
     # Store original values from all modules that may cache these
     original_username = main_mod.ADMIN_USERNAME
     original_password = main_mod.ADMIN_PASSWORD
@@ -39,11 +46,7 @@ def client():
     auth_mod.ADMIN_USERNAME = TEST_ADMIN_USERNAME
     auth_mod.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # Patch the db module used by the app

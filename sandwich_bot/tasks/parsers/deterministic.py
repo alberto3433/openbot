@@ -15,6 +15,7 @@ from ..schemas import (
     ExtractedModifiers,
     ExtractedCoffeeModifiers,
     CoffeeOrderDetails,
+    MenuItemOrderDetails,
 )
 from .constants import (
     WORD_TO_NUM,
@@ -1122,11 +1123,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
 
-    menu_item = None
-    menu_item_qty = 1
-    menu_item_bagel_choice = None
-    menu_item_toasted = None
-    menu_item_modifications: list[str] = []
+    # Use a list to collect ALL menu items instead of overwriting
+    menu_item_list: list[MenuItemOrderDetails] = []
     coffee_list: list[CoffeeOrderDetails] = []
     bagel = False
     bagel_qty = 1
@@ -1144,13 +1142,18 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
         item_name, item_qty = _extract_menu_item_from_text(part)
         if item_name:
-            menu_item = item_name
-            menu_item_qty = item_qty
-            menu_item_bagel_choice = _extract_bagel_type(part)
-            menu_item_toasted = _extract_toasted(part)
-            menu_item_modifications = _extract_menu_item_modifications(part)
+            bagel_choice = _extract_bagel_type(part)
+            toasted = _extract_toasted(part)
+            modifications = _extract_menu_item_modifications(part)
+            menu_item_list.append(MenuItemOrderDetails(
+                name=item_name,
+                quantity=item_qty,
+                bagel_choice=bagel_choice,
+                toasted=toasted,
+                modifications=modifications,
+            ))
             logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s, mods=%s)",
-                        menu_item, menu_item_qty, menu_item_bagel_choice, menu_item_toasted, menu_item_modifications)
+                        item_name, item_qty, bagel_choice, toasted, modifications)
             continue
 
         parsed = parse_open_input_deterministic(part)
@@ -1159,12 +1162,15 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             continue
 
         if parsed.new_menu_item:
-            menu_item = parsed.new_menu_item
-            menu_item_qty = parsed.new_menu_item_quantity or 1
-            menu_item_bagel_choice = parsed.new_menu_item_bagel_choice
-            menu_item_toasted = parsed.new_menu_item_toasted
-            menu_item_modifications = parsed.new_menu_item_modifications or []
-            logger.info("Multi-item: detected menu item '%s' (qty=%d, mods=%s)", menu_item, menu_item_qty, menu_item_modifications)
+            menu_item_list.append(MenuItemOrderDetails(
+                name=parsed.new_menu_item,
+                quantity=parsed.new_menu_item_quantity or 1,
+                bagel_choice=parsed.new_menu_item_bagel_choice,
+                toasted=parsed.new_menu_item_toasted,
+                modifications=parsed.new_menu_item_modifications or [],
+            ))
+            logger.info("Multi-item: detected menu item '%s' (qty=%d, mods=%s)",
+                        parsed.new_menu_item, parsed.new_menu_item_quantity or 1, parsed.new_menu_item_modifications)
 
         if parsed.new_coffee:
             coffee_list.append(CoffeeOrderDetails(
@@ -1193,23 +1199,29 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             side_item_qty = parsed.new_side_item_quantity or 1
             logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
 
+    # Get first menu item for primary fields, rest go to additional_menu_items
+    first_menu_item = menu_item_list[0] if menu_item_list else None
+    additional_menu_items = menu_item_list[1:] if len(menu_item_list) > 1 else []
+
     items_found = sum([
-        menu_item is not None,
+        len(menu_item_list) > 0,
         len(coffee_list) > 0,
         bagel,
         side_item is not None,
     ])
-    total_items = items_found + max(0, len(coffee_list) - 1)
+    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0)
 
     if items_found >= 2 or total_items >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
-        logger.info("Multi-item order parsed: menu_item=%s, coffees=%d, bagel=%s, side=%s, mods=%s", menu_item, len(coffee_list), bagel, side_item, menu_item_modifications)
+        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s",
+                    len(menu_item_list), len(coffee_list), bagel, side_item)
         return OpenInputResponse(
-            new_menu_item=menu_item,
-            new_menu_item_quantity=menu_item_qty,
-            new_menu_item_bagel_choice=menu_item_bagel_choice,
-            new_menu_item_toasted=menu_item_toasted,
-            new_menu_item_modifications=menu_item_modifications,
+            new_menu_item=first_menu_item.name if first_menu_item else None,
+            new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,
+            new_menu_item_bagel_choice=first_menu_item.bagel_choice if first_menu_item else None,
+            new_menu_item_toasted=first_menu_item.toasted if first_menu_item else None,
+            new_menu_item_modifications=first_menu_item.modifications if first_menu_item else [],
+            additional_menu_items=additional_menu_items,
             new_coffee=first_coffee is not None,
             new_coffee_type=first_coffee.drink_type if first_coffee else None,
             new_coffee_quantity=first_coffee.quantity if first_coffee else 1,
@@ -1228,13 +1240,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_side_item_quantity=side_item_qty,
         )
 
-    if menu_item:
+    if menu_item_list:
         return OpenInputResponse(
-            new_menu_item=menu_item,
-            new_menu_item_quantity=menu_item_qty,
-            new_menu_item_bagel_choice=menu_item_bagel_choice,
-            new_menu_item_toasted=menu_item_toasted,
-            new_menu_item_modifications=menu_item_modifications,
+            new_menu_item=first_menu_item.name,
+            new_menu_item_quantity=first_menu_item.quantity,
+            new_menu_item_bagel_choice=first_menu_item.bagel_choice,
+            new_menu_item_toasted=first_menu_item.toasted,
+            new_menu_item_modifications=first_menu_item.modifications,
+            additional_menu_items=additional_menu_items,
         )
     if coffee_list:
         first_coffee = coffee_list[0]

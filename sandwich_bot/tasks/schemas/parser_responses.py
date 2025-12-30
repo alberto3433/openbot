@@ -147,6 +147,15 @@ class CoffeeOrderDetails(BaseModel):
     notes: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
 
 
+class MenuItemOrderDetails(BaseModel):
+    """Details for a single menu item in a multi-item order."""
+    name: str = Field(description="Menu item name (e.g., 'The BLT', 'The Lexington')")
+    quantity: int = Field(default=1, description="Number of this item")
+    bagel_choice: str | None = Field(default=None, description="Bagel type if specified")
+    toasted: bool | None = Field(default=None, description="Whether toasted")
+    modifications: list[str] = Field(default_factory=list, description="Modifications like 'no onions'")
+
+
 class ByPoundOrderItem(BaseModel):
     """A single by-the-pound item being ordered."""
     item_name: str = Field(description="Name of the item (e.g., 'Muenster', 'Nova', 'Tuna Salad')")
@@ -177,6 +186,11 @@ class OpenInputResponse(BaseModel):
     new_menu_item_modifications: list[str] = Field(
         default_factory=list,
         description="Modifications for menu items (e.g., 'with mayo and mustard' -> ['mayo', 'mustard'], 'no onions' -> ['no onions'])"
+    )
+    # For multiple menu items in a single order (e.g., "A Lexington and a BLT")
+    additional_menu_items: list[MenuItemOrderDetails] = Field(
+        default_factory=list,
+        description="Additional menu items when ordering multiple in one request. The first item uses new_menu_item fields."
     )
     new_side_item: str | None = Field(
         default=None,

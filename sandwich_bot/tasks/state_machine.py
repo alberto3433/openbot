@@ -1235,24 +1235,42 @@ class OrderStateMachine:
                 )
             return result
 
-        if parsed.new_coffee:
-            logger.info(
-                "PARSED COFFEE: type=%s, size=%s, QUANTITY=%d",
-                parsed.new_coffee_type, parsed.new_coffee_size, parsed.new_coffee_quantity
-            )
-            coffee_result = self._add_coffee(
-                parsed.new_coffee_type,
-                parsed.new_coffee_size,
-                parsed.new_coffee_iced,
-                parsed.new_coffee_milk,
-                parsed.new_coffee_sweetener,
-                parsed.new_coffee_sweetener_quantity,
-                parsed.new_coffee_flavor_syrup,
-                parsed.new_coffee_quantity,
-                order,
-                notes=parsed.new_coffee_notes,
-            )
-            items_added.append(parsed.new_coffee_type or "drink")
+        if parsed.new_coffee or parsed.coffee_details:
+            # Handle multiple coffees from coffee_details, or fall back to single coffee
+            coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+            if not coffees_to_add and parsed.new_coffee:
+                # Fallback to single coffee if no coffee_details
+                coffees_to_add = [CoffeeOrderDetails(
+                    drink_type=parsed.new_coffee_type or "coffee",
+                    size=parsed.new_coffee_size,
+                    iced=parsed.new_coffee_iced,
+                    quantity=parsed.new_coffee_quantity,
+                    milk=parsed.new_coffee_milk,
+                    notes=parsed.new_coffee_notes,
+                )]
+
+            coffee_result = None
+            for coffee_detail in coffees_to_add:
+                logger.info(
+                    "PARSED COFFEE: type=%s, size=%s, QUANTITY=%d",
+                    coffee_detail.drink_type, coffee_detail.size, coffee_detail.quantity or 1
+                )
+                # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
+                coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                coffee_result = self._add_coffee(
+                    coffee_detail.drink_type,
+                    coffee_detail.size,
+                    coffee_detail.iced,
+                    coffee_milk,
+                    parsed.new_coffee_sweetener,
+                    parsed.new_coffee_sweetener_quantity,
+                    parsed.new_coffee_flavor_syrup,
+                    coffee_detail.quantity or 1,
+                    order,
+                    notes=coffee_notes,
+                )
+                items_added.append(coffee_detail.drink_type or "drink")
 
             # Check if there's ALSO a menu item in the same message
             if parsed.new_menu_item:

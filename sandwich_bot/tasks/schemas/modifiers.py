@@ -17,6 +17,7 @@ class ExtractedModifiers:
         self.toppings: list[str] = []
         self.spreads: list[str] = []
         self.notes: list[str] = []  # Free-form notes for qualifiers like "light", "extra"
+        self.needs_cheese_clarification: bool = False  # True if user said "cheese" without type
 
     def has_modifiers(self) -> bool:
         """Check if any modifiers were extracted."""

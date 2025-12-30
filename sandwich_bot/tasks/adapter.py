@@ -181,6 +181,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 sandwich_protein=item.get("sandwich_protein"),
                 extras=item.get("extras") or [],
                 notes=item.get("notes"),
+                needs_cheese_clarification=item.get("needs_cheese_clarification", False),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -440,6 +441,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "toasted": toasted,
                 "sandwich_protein": getattr(item, 'sandwich_protein', None),
                 "extras": getattr(item, 'extras', []),
+                "needs_cheese_clarification": getattr(item, 'needs_cheese_clarification', False),
                 "base_price": base_price,
                 "modifiers": modifiers,
                 "quantity": item.quantity,

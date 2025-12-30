@@ -161,6 +161,7 @@ class BagelItemTask(ItemTask):
     spread_type: str | None = None  # plain, scallion, veggie, etc.
     extras: list[str] = Field(default_factory=list)
     sandwich_protein: str | None = None  # egg, bacon, lox, etc.
+    needs_cheese_clarification: bool = False  # True if user said "cheese" without type
 
     def get_display_name(self) -> str:
         """Get display name for this bagel."""

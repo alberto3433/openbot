@@ -52,9 +52,10 @@ Usage:
         print(f"{item.menu_item_name}: ${item.line_total}")
 """
 
+import json
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class OrderItemOut(BaseModel):
@@ -98,6 +99,21 @@ class OrderItemOut(BaseModel):
     quantity: int
     unit_price: float
     line_total: float
+
+    @field_validator('toppings', 'sauces', mode='before')
+    @classmethod
+    def parse_json_list(cls, v):
+        """Parse JSON string to list if stored as string in database."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                return None
+        return v
 
 
 class OrderSummaryOut(BaseModel):

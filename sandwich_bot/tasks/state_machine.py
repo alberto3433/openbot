@@ -103,6 +103,9 @@ from .parsers import (
     CANCEL_ITEM_PATTERN,
     TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
+    BAGEL_QUANTITY_PATTERN,
+    SIMPLE_BAGEL_PATTERN,
+    COFFEE_ORDER_PATTERN,
     # Deterministic parsers - Modifier extraction
     extract_modifiers_from_input,
     extract_coffee_modifiers_from_input,
@@ -157,6 +160,67 @@ class StateMachineResult:
     message: str
     order: OrderTask
     is_complete: bool = False
+
+
+def _looks_like_new_order_attempt(user_input: str) -> bool:
+    """
+    Detect if user input looks like an attempt to order a new item
+    rather than answer a pending configuration question.
+
+    This helps redirect users who say "bagel with cream cheese" when
+    asked "What kind of bagel?" for their ham, egg, and cheese bagel.
+    """
+    text = user_input.lower().strip()
+
+    # First, check if this looks like a simple answer rather than a new order
+    # "[type] bagel" or just "[type]" are valid answers, not new orders
+    # e.g., "plain bagel", "everything", "sesame bagel"
+    bagel_type_pattern = r'^(' + '|'.join(re.escape(bt) for bt in BAGEL_TYPES) + r')(?:\s+bagel)?s?(?:\s+please)?$'
+    if re.search(bagel_type_pattern, text):
+        return False
+
+    # Pattern: "bagel with X" (ordering a new item with modifiers)
+    if re.search(r'\bbagel\s+with\s+\w+', text):
+        return True
+
+    # Pattern: quantity-based ordering ("2 bagels", "a bagel")
+    if BAGEL_QUANTITY_PATTERN.search(text):
+        return True
+
+    # Pattern: simple bagel ordering ("a bagel please", "bagel please")
+    if SIMPLE_BAGEL_PATTERN.search(text):
+        return True
+
+    # Pattern: coffee ordering
+    if COFFEE_ORDER_PATTERN.search(text):
+        return True
+
+    # Pattern: explicit ordering language ("I'd like", "can I get", "I want")
+    if re.search(r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|(?:can|could|may)\s+i\s+(?:get|have))", text):
+        return True
+
+    return False
+
+
+def _get_pending_item_description(item: "ItemTask") -> str:
+    """Get a short description of the pending item for redirect messages."""
+    if isinstance(item, BagelItemTask):
+        # Describe based on what's been specified
+        parts = []
+        if item.sandwich_protein:
+            parts.append(item.sandwich_protein)
+        if item.extras:
+            parts.extend(item.extras[:2])  # Limit to avoid long descriptions
+        if parts:
+            return " ".join(parts) + " bagel"
+        return "bagel"
+    elif isinstance(item, MenuItemTask):
+        return item.menu_item_name or "item"
+    elif isinstance(item, CoffeeItemTask):
+        return item.beverage_type or "coffee"
+    elif isinstance(item, SpeedMenuBagelItemTask):
+        return item.speed_menu_name or "bagel"
+    return "item"
 
 
 class OrderStateMachine:
@@ -1052,6 +1116,8 @@ class OrderStateMachine:
             return self._handle_spread_choice(user_input, item, order)
         elif order.pending_field == "toasted":
             return self._handle_toasted_choice(user_input, item, order)
+        elif order.pending_field == "cheese_choice":
+            return self._handle_cheese_choice(user_input, item, order)
         elif order.pending_field == "coffee_size":
             return self._handle_coffee_size(user_input, item, order)
         elif order.pending_field == "coffee_style":
@@ -1071,6 +1137,14 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle side choice for omelette - uses constrained parser."""
+        # Check if user is trying to order a new item instead of answering the question
+        if _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. Would you like a bagel or fruit salad with it?",
+                order=order,
+            )
+
         # This parser can ONLY return side choice - no new items possible!
         parsed = parse_side_choice(user_input, item.menu_item_name, model=self.model)
 
@@ -1123,20 +1197,51 @@ class OrderStateMachine:
         This handles one item at a time. After configuring this item,
         _configure_next_incomplete_bagel will move to the next item.
         """
-        # Use simple parser - just extract the bagel type from user input
-        parsed = parse_bagel_choice(user_input, num_pending_bagels=1, model=self.model)
+        # Try deterministic parsing first - check if input matches a known bagel type
+        # Do this BEFORE redirect check so "do you have everything bagel" works
+        input_lower = user_input.lower().strip()
+        bagel_type = None
 
-        if parsed.unclear or not parsed.bagel_type:
+        # Check for exact match or "[type] bagel" pattern
+        for bt in BAGEL_TYPES:
+            if input_lower == bt or input_lower == f"{bt} bagel":
+                bagel_type = bt
+                break
+            # Also check if type is contained in the input
+            if bt in input_lower:
+                bagel_type = bt
+                break
+
+        # If no bagel type found, check if user is trying to order a new item
+        if not bagel_type and _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. What kind of bagel would you like?",
+                order=order,
+            )
+
+        # Fall back to LLM parser only if deterministic parsing failed
+        if not bagel_type:
+            parsed = parse_bagel_choice(user_input, num_pending_bagels=1, model=self.model)
+            if not parsed.unclear and parsed.bagel_type:
+                bagel_type = parsed.bagel_type
+
+        if not bagel_type:
             return StateMachineResult(
                 message="What kind of bagel? We have plain, everything, sesame, and more.",
                 order=order,
             )
 
-        logger.info("Parsed bagel type '%s' for item %s", parsed.bagel_type, type(item).__name__)
+        logger.info("Parsed bagel type '%s' for item %s", bagel_type, type(item).__name__)
+
+        # Extract any additional modifiers from the input (e.g., "plain with salt pepper and ketchup")
+        extracted_modifiers = extract_modifiers_from_input(user_input)
+        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+            logger.info("Extracted additional modifiers from bagel choice: %s", extracted_modifiers)
 
         # Apply to the current pending item
         if isinstance(item, MenuItemTask):
-            item.bagel_choice = parsed.bagel_type
+            item.bagel_choice = bagel_type
 
             # For spread/salad sandwiches, use unified config flow for toasted question
             if item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
@@ -1149,7 +1254,30 @@ class OrderStateMachine:
             return self._get_next_question(order)
 
         elif isinstance(item, BagelItemTask):
-            item.bagel_type = parsed.bagel_type
+            item.bagel_type = bagel_type
+
+            # Apply any additional modifiers from the input
+            if extracted_modifiers.proteins:
+                # If no protein set yet, use first as main protein
+                if not item.sandwich_protein:
+                    item.sandwich_protein = extracted_modifiers.proteins[0]
+                    item.extras.extend(extracted_modifiers.proteins[1:])
+                else:
+                    item.extras.extend(extracted_modifiers.proteins)
+            if extracted_modifiers.cheeses:
+                item.extras.extend(extracted_modifiers.cheeses)
+            if extracted_modifiers.toppings:
+                item.extras.extend(extracted_modifiers.toppings)
+            if extracted_modifiers.spreads and not item.spread:
+                item.spread = extracted_modifiers.spreads[0]
+            if extracted_modifiers.has_notes():
+                existing_notes = item.notes or ""
+                new_notes = extracted_modifiers.get_notes_string()
+                item.notes = f"{existing_notes}, {new_notes}".strip(", ") if existing_notes else new_notes
+            # Check if user said "cheese" without type
+            if extracted_modifiers.needs_cheese_clarification:
+                item.needs_cheese_clarification = True
+
             self.recalculate_bagel_price(item)
 
             # Clear pending and configure next incomplete item
@@ -1241,15 +1369,63 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for bagel or sandwich."""
-        parsed = parse_toasted_choice(user_input, model=self.model)
+        # Check if user is trying to order a new item instead of answering the question
+        if _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. Would you like it toasted?",
+                order=order,
+            )
 
-        if parsed.toasted is None:
+        # Try deterministic parsing first
+        input_lower = user_input.lower().strip()
+        toasted = None
+
+        # Check for no/negative patterns FIRST (before yes patterns)
+        # This ensures "not toasted" is matched before "toasted"
+        if re.search(r'\b(not toasted|untoasted|don\'t toast|no|nope|nah)\b', input_lower):
+            toasted = False
+        # Check for yes patterns (only if no pattern didn't match)
+        elif re.search(r'\b(yes|yeah|yep|yup|sure|please|toasted|toast it)\b', input_lower):
+            toasted = True
+
+        # Fall back to LLM only if deterministic parsing failed
+        if toasted is None:
+            parsed = parse_toasted_choice(user_input, model=self.model)
+            toasted = parsed.toasted
+
+        if toasted is None:
             return StateMachineResult(
                 message="Would you like that toasted? Yes or no?",
                 order=order,
             )
 
-        item.toasted = parsed.toasted
+        item.toasted = toasted
+
+        # Extract any additional modifiers from the input (e.g., "yes with extra cheese")
+        if isinstance(item, BagelItemTask):
+            extracted_modifiers = extract_modifiers_from_input(user_input)
+            if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+                logger.info("Extracted additional modifiers from toasted choice: %s", extracted_modifiers)
+                # Apply modifiers
+                if extracted_modifiers.proteins:
+                    if not item.sandwich_protein:
+                        item.sandwich_protein = extracted_modifiers.proteins[0]
+                        item.extras.extend(extracted_modifiers.proteins[1:])
+                    else:
+                        item.extras.extend(extracted_modifiers.proteins)
+                if extracted_modifiers.cheeses:
+                    item.extras.extend(extracted_modifiers.cheeses)
+                if extracted_modifiers.toppings:
+                    item.extras.extend(extracted_modifiers.toppings)
+                if extracted_modifiers.spreads and not item.spread:
+                    item.spread = extracted_modifiers.spreads[0]
+                if extracted_modifiers.has_notes():
+                    existing_notes = item.notes or ""
+                    new_notes = extracted_modifiers.get_notes_string()
+                    item.notes = f"{existing_notes}, {new_notes}".strip(", ") if existing_notes else new_notes
+                if extracted_modifiers.needs_cheese_clarification:
+                    item.needs_cheese_clarification = True
 
         # For MenuItemTask (spread/salad sandwiches), mark complete after toasted
         if isinstance(item, MenuItemTask):
@@ -1266,10 +1442,13 @@ class OrderStateMachine:
             return self._configure_next_incomplete_bagel(order)
 
         # Skip spread question if bagel already has sandwich toppings (ham, egg, cheese, etc.)
+        # But continue to cheese clarification if needed
         if item.extras or item.sandwich_protein:
             logger.info("Skipping spread question - bagel has toppings: extras=%s, protein=%s", item.extras, item.sandwich_protein)
-            self.recalculate_bagel_price(item)
-            item.mark_complete()
+            # If cheese clarification still needed, don't mark complete yet
+            if not item.needs_cheese_clarification:
+                self.recalculate_bagel_price(item)
+                item.mark_complete()
             order.clear_pending()
             return self._configure_next_incomplete_bagel(order)
 
@@ -1279,6 +1458,80 @@ class OrderStateMachine:
             message="Would you like cream cheese or butter on that?",
             order=order,
         )
+
+    def _handle_cheese_choice(
+        self,
+        user_input: str,
+        item: BagelItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle cheese type selection when user said generic 'cheese'."""
+        # Check if user is trying to order a new item instead of answering the question
+        if _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. What kind of cheese would you like?",
+                order=order,
+            )
+
+        input_lower = user_input.lower().strip()
+
+        # Try to extract cheese type from input
+        cheese_types = {
+            "american": ["american", "america"],
+            "cheddar": ["cheddar", "ched"],
+            "swiss": ["swiss"],
+            "muenster": ["muenster", "munster"],
+            "provolone": ["provolone", "prov"],
+        }
+
+        selected_cheese = None
+        for cheese, patterns in cheese_types.items():
+            for pattern in patterns:
+                if pattern in input_lower:
+                    selected_cheese = cheese
+                    break
+            if selected_cheese:
+                break
+
+        if not selected_cheese:
+            return StateMachineResult(
+                message="What kind of cheese? We have American, cheddar, Swiss, and muenster.",
+                order=order,
+            )
+
+        # Add the cheese to extras
+        item.extras.append(selected_cheese)
+        item.needs_cheese_clarification = False
+
+        # Extract any additional modifiers from the input (e.g., "cheddar with extra bacon")
+        extracted_modifiers = extract_modifiers_from_input(user_input)
+        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+            logger.info("Extracted additional modifiers from cheese choice: %s", extracted_modifiers)
+            # Apply modifiers (skip cheeses since we already handled cheese above)
+            if extracted_modifiers.proteins:
+                if not item.sandwich_protein:
+                    item.sandwich_protein = extracted_modifiers.proteins[0]
+                    item.extras.extend(extracted_modifiers.proteins[1:])
+                else:
+                    item.extras.extend(extracted_modifiers.proteins)
+            if extracted_modifiers.toppings:
+                item.extras.extend(extracted_modifiers.toppings)
+            if extracted_modifiers.spreads and not item.spread:
+                item.spread = extracted_modifiers.spreads[0]
+            if extracted_modifiers.has_notes():
+                existing_notes = item.notes or ""
+                new_notes = extracted_modifiers.get_notes_string()
+                item.notes = f"{existing_notes}, {new_notes}".strip(", ") if existing_notes else new_notes
+
+        # Recalculate price with the new cheese
+        self.recalculate_bagel_price(item)
+
+        logger.info("Cheese choice '%s' applied to bagel", selected_cheese)
+
+        # Clear pending and continue configuration
+        order.clear_pending()
+        return self._configure_next_incomplete_bagel(order)
 
     def _handle_delivery(
         self,
@@ -2133,6 +2386,12 @@ class OrderStateMachine:
             notes = extracted_modifiers.get_notes_string()
             logger.info("Applying notes to bagel: %s", notes)
 
+        # Check if bagel needs cheese clarification
+        needs_cheese = False
+        if extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
+            needs_cheese = True
+            logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
+
         # Create bagel with all provided details
         bagel = BagelItemTask(
             bagel_type=bagel_type,
@@ -2143,6 +2402,7 @@ class OrderStateMachine:
             extras=extras,
             unit_price=price,
             notes=notes,
+            needs_cheese_clarification=needs_cheese,
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
@@ -2172,6 +2432,16 @@ class OrderStateMachine:
             order.pending_field = "toasted"
             return StateMachineResult(
                 message="Would you like that toasted?",
+                order=order,
+            )
+
+        # Check if user said "cheese" without specifying type
+        if needs_cheese:
+            order.phase = OrderPhase.CONFIGURING_ITEM
+            order.pending_item_id = bagel.id
+            order.pending_field = "cheese_choice"
+            return StateMachineResult(
+                message="What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
                 order=order,
             )
 
@@ -2254,6 +2524,12 @@ class OrderStateMachine:
                 notes = extracted_modifiers.get_notes_string()
                 logger.info("Applying notes to first bagel: %s", notes)
 
+            # Check if first bagel needs cheese clarification
+            needs_cheese = False
+            if i == 0 and extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
+                needs_cheese = True
+                logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
+
             # Calculate total price including modifiers (for first bagel with modifiers)
             price = self._calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, bagel_spread, spread_type
@@ -2268,9 +2544,10 @@ class OrderStateMachine:
                 extras=extras,
                 unit_price=price,
                 notes=notes,
+                needs_cheese_clarification=needs_cheese,
             )
-            # Mark complete if all fields provided, otherwise in_progress
-            if bagel_type and toasted is not None and bagel_spread is not None:
+            # Mark complete if all fields provided (and no cheese clarification needed), otherwise in_progress
+            if bagel_type and toasted is not None and bagel_spread is not None and not needs_cheese:
                 bagel.mark_complete()
             else:
                 bagel.mark_in_progress()
@@ -2337,6 +2614,12 @@ class OrderStateMachine:
                 notes = extracted_modifiers.get_notes_string()
                 logger.info("Applying notes to first bagel: %s", notes)
 
+            # Check if first bagel needs cheese clarification
+            needs_cheese = False
+            if i == 0 and extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
+                needs_cheese = True
+                logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
+
             # Calculate total price including modifiers
             price = self._calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, spread, details.spread_type
@@ -2351,10 +2634,11 @@ class OrderStateMachine:
                 extras=extras,
                 unit_price=price,
                 notes=notes,
+                needs_cheese_clarification=needs_cheese,
             )
 
-            # Mark complete if all fields provided
-            if details.bagel_type and details.toasted is not None and details.spread is not None:
+            # Mark complete if all fields provided (and no cheese clarification needed)
+            if details.bagel_type and details.toasted is not None and details.spread is not None and not needs_cheese:
                 bagel.mark_complete()
             else:
                 bagel.mark_in_progress()
@@ -2492,6 +2776,22 @@ class OrderStateMachine:
                 else:
                     return StateMachineResult(
                         message="Would you like that toasted?",
+                        order=order,
+                    )
+
+            # Then ask about cheese type if user said generic "cheese"
+            if bagel.needs_cheese_clarification:
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = bagel.id
+                order.pending_field = "cheese_choice"
+                if total_items > 1:
+                    return StateMachineResult(
+                        message=f"For {bagel_desc}, what kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
                         order=order,
                     )
 
@@ -2726,6 +3026,14 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle coffee size selection."""
+        # Check if user is trying to order a new item instead of answering the question
+        if _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. What size would you like? Small, medium, or large?",
+                order=order,
+            )
+
         parsed = parse_coffee_size(user_input, model=self.model)
 
         if not parsed.size:
@@ -2751,6 +3059,14 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle hot/iced preference for coffee."""
+        # Check if user is trying to order a new item instead of answering the question
+        if _looks_like_new_order_attempt(user_input):
+            item_desc = _get_pending_item_description(item)
+            return StateMachineResult(
+                message=f"Let's finish up your {item_desc} first. Would you like it hot or iced?",
+                order=order,
+            )
+
         input_lower = user_input.lower()
 
         # Try deterministic parsing first for hot/iced
@@ -2903,15 +3219,30 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for speed menu bagel."""
-        parsed = parse_toasted_choice(user_input, model=self.model)
+        # Try deterministic parsing first
+        input_lower = user_input.lower().strip()
+        toasted = None
 
-        if parsed.toasted is None:
+        # Check for no/negative patterns FIRST (before yes patterns)
+        # This ensures "not toasted" is matched before "toasted"
+        if re.search(r'\b(not toasted|untoasted|don\'t toast|no|nope|nah)\b', input_lower):
+            toasted = False
+        # Check for yes patterns (only if no pattern didn't match)
+        elif re.search(r'\b(yes|yeah|yep|yup|sure|please|toasted|toast it)\b', input_lower):
+            toasted = True
+
+        # Fall back to LLM only if deterministic parsing failed
+        if toasted is None:
+            parsed = parse_toasted_choice(user_input, model=self.model)
+            toasted = parsed.toasted
+
+        if toasted is None:
             return StateMachineResult(
                 message="Would you like that toasted?",
                 order=order,
             )
 
-        item.toasted = parsed.toasted
+        item.toasted = toasted
         item.mark_complete()
         order.clear_pending()
 

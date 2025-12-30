@@ -528,8 +528,9 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             toasted = getattr(item, 'toasted', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
             menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
+            modifications = getattr(item, 'modifications', []) or []
 
-            # Build display name with bagel choice and toasted status (for UI only)
+            # Build display name with bagel choice, toasted status, and modifications (for UI only)
             display_name = menu_item_name
             if bagel_choice:
                 display_name = f"{menu_item_name} on {bagel_choice} bagel"
@@ -537,6 +538,8 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 display_name = f"{display_name} toasted"
             elif toasted is False:
                 display_name = f"{display_name} not toasted"
+            if modifications:
+                display_name = f"{display_name} ({', '.join(modifications)})"
 
             item_dict = {
                 "item_type": "speed_menu_bagel",

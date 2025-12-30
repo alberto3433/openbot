@@ -675,9 +675,12 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
                 bagel_choice = bagel_type
                 break
 
+    # Extract modifications (e.g., "with mayo and mustard", "no onions")
+    modifications = _extract_menu_item_modifications(text)
+
     logger.info(
-        "SPEED MENU PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s",
-        matched_item, quantity, toasted, bagel_choice
+        "SPEED MENU PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s, mods=%s",
+        matched_item, quantity, toasted, bagel_choice, modifications
     )
 
     return OpenInputResponse(
@@ -686,6 +689,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
         new_speed_menu_bagel_quantity=quantity,
         new_speed_menu_bagel_toasted=toasted,
         new_speed_menu_bagel_bagel_choice=bagel_choice,
+        new_speed_menu_bagel_modifications=modifications,
     )
 
 

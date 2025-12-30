@@ -2629,6 +2629,91 @@ class TestCoffeeSize:
         # Should mention the drink type in reprompt
         assert "espresso" in result.message.lower() or "size" in result.message.lower()
 
+    def test_cancel_coffee_during_size_config(self):
+        """Test canceling coffee during size configuration via _handle_configuring_item."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="latte")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        # Use _handle_configuring_item which includes cancellation check
+        result = sm._handle_configuring_item("remove the coffee", order)
+
+        # Coffee should be removed
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 0
+        # Should be back to TAKING_ITEMS phase
+        assert order.phase == OrderPhase.TAKING_ITEMS.value
+        assert "removed" in result.message.lower()
+
+    def test_cancel_this_during_size_config(self):
+        """Test canceling 'this' during size configuration."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="cappuccino")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm._handle_configuring_item("cancel this", order)
+
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 0
+        assert order.phase == OrderPhase.TAKING_ITEMS.value
+        assert "removed" in result.message.lower()
+        assert "cappuccino" in result.message.lower()
+
+    def test_cancel_plural_coffees_during_config(self):
+        """Test 'remove the coffees' removes all coffee items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "coffee_size"
+
+        # Add a bagel (complete)
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="butter")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # Add two coffees
+        coffee1 = CoffeeItemTask(drink_type="latte", size="small", style="hot")
+        coffee1.mark_complete()
+        order.items.add_item(coffee1)
+
+        coffee2 = CoffeeItemTask(drink_type="espresso")
+        coffee2.mark_in_progress()
+        order.items.add_item(coffee2)
+        order.pending_item_id = coffee2.id
+
+        result = sm._handle_configuring_item("remove the coffees", order)
+
+        active_items = order.items.get_active_items()
+        # Should only have the bagel left
+        assert len(active_items) == 1
+        assert active_items[0].bagel_type == "plain"
+        assert order.phase == OrderPhase.TAKING_ITEMS.value
+        assert "removed" in result.message.lower()
+
 
 # =============================================================================
 # Coffee Style Handler Tests
@@ -4111,6 +4196,47 @@ class TestTakingItemsHandler:
 
             assert len(order.items.items) == initial_count - 1
             assert "removed" in result.message.lower()
+
+    def test_cancel_plural_items_removes_all_matching(self):
+        """Test that 'remove the coffees' removes all coffee items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Add a bagel
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="butter")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # Add two coffees
+        coffee1 = CoffeeItemTask(drink_type="latte", size="small", iced=False)
+        coffee1.mark_complete()
+        order.items.add_item(coffee1)
+
+        coffee2 = CoffeeItemTask(drink_type="espresso", size="large", iced=True)
+        coffee2.mark_complete()
+        order.items.add_item(coffee2)
+
+        assert len(order.items.items) == 3
+
+        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                cancel_item="coffees", new_bagel=False, new_coffee=False,
+                new_speed_menu_bagel=False
+            )
+
+            result = sm._handle_taking_items("remove the coffees", order)
+
+            # Should only have the bagel left
+            active_items = order.items.get_active_items()
+            assert len(active_items) == 1
+            assert active_items[0].bagel_type == "plain"
+            assert "removed" in result.message.lower()
+            assert "2 coffees" in result.message.lower()
 
     def test_make_it_2_duplicates_last_item(self):
         """Test that 'make it 2' duplicates the last item."""

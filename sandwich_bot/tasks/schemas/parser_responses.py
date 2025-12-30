@@ -282,6 +282,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Custom bagel choice for speed menu item (e.g., 'wheat' for 'Classic BEC on a wheat bagel')"
     )
+    new_speed_menu_bagel_modifications: list[str] = Field(
+        default_factory=list,
+        description="Modifications for speed menu bagels (e.g., 'with mayo' -> ['mayo'], 'no onions' -> ['no onions'])"
+    )
 
     # Clarifications needed
     needs_soda_clarification: bool = Field(

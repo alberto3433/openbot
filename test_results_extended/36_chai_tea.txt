@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Chai Tea
-TIME: 2025-12-30 15:35:32
+TIME: 2025-12-30 17:05:04
 ======================================================================
 
 CONVERSATION:
@@ -8,45 +8,32 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: chai tea
-BOT:    We have a few options for chai:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
-Which would you like?
+BOT:    What size would you like for the chai tea? Small, medium, or large?
 
 TESTER: thats all
-BOT:    I didn't catch which one. Please choose:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
+BOT:    What size would you like for your chai tea? Small, medium, or large?
 
 TESTER: pickup
-BOT:    I didn't catch which one. Please choose:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
+BOT:    What size would you like for your chai tea? Small, medium, or large?
 
 TESTER: Jack
-BOT:    I didn't catch which one. Please choose:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
+BOT:    What size would you like for your chai tea? Small, medium, or large?
 
 TESTER: yes
-BOT:    I didn't catch which one. Please choose:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
+BOT:    What size would you like for your chai tea? Small, medium, or large?
 
 TESTER: in store
-BOT:    I didn't catch which one. Please choose:
-1. Chai Tea ($4.50)
-2. Iced Chai Tea ($5.00)
+BOT:    What size would you like for your chai tea? Small, medium, or large?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     pending
+Status:     collecting_items
 Order Type: None
-Items:      0
-Total:      $0.00
+Items:      1
+  [1] chai tea - $4.50 (drink)
+Total:      $4.50
 ----------------------------------------------------------------------
 
-RESULT: FAIL
-REASON: No items in cart
+RESULT: PASS

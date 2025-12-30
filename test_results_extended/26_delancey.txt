@@ -1,6 +1,6 @@
 ======================================================================
 TEST: The Delancey
-TIME: 2025-12-30 16:20:07
+TIME: 2025-12-30 16:59:40
 ======================================================================
 
 CONVERSATION:
@@ -8,35 +8,41 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: The Delancey please
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    Got it, The Delancey. Anything else?
 
 TESTER: toasted
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    I didn't catch that. What would you like to order?
 
 TESTER: thats all
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    Can I get a name for the order?
 
 TESTER: Rachel
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    Here's your order:
+• The Delancey
+
+That's $11.95 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: email
-BOT:    Would you like a bagel or fruit salad with your The Delancey Omelette?
+BOT:    What email address should I send it to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      1
-  [1] The Delancey Omelette - $15.25 (menu_item)
-Total:      $15.25
+  [1] The Delancey - $11.95 (menu_item)
+Customer:   Rachel
+Total:      $11.95
 ----------------------------------------------------------------------
 
 RESULT: PASS

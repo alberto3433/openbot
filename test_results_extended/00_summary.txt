@@ -1,9 +1,9 @@
 EXTENDED MENU ITEM TEST SUMMARY
-Run at: 2025-12-30 15:43:53
+Run at: 2025-12-30 17:12:53
 ======================================================================
 
-PASSED: 28/30
-FAILED: 2/30
+PASSED: 30/30
+FAILED: 0/30
 
 Results:
   [PASS] The Reuben Sandwich -> 21_reuben.txt
@@ -21,7 +21,7 @@ Results:
   [PASS] Decaf Coffee -> 33_decaf.txt
   [PASS] Double Espresso -> 34_espresso.txt
   [PASS] Hot Chocolate -> 35_hot_chocolate.txt
-  [FAIL] Chai Tea -> 36_chai_tea.txt
+  [PASS] Chai Tea -> 36_chai_tea.txt
   [PASS] Poppy Bagel with Veggie CC -> 37_poppy_veggie.txt
   [PASS] Cinnamon Raisin with Strawberry CC -> 38_cinnamon_strawberry.txt
   [PASS] Onion Bagel with Lox Spread -> 39_onion_nova.txt
@@ -31,7 +31,7 @@ Results:
   [PASS] Yogurt Parfait -> 43_yogurt_parfait.txt
   [PASS] Potato Latkes -> 44_latkes.txt
   [PASS] Side of Sausage -> 45_sausage.txt
-  [FAIL] Snapple Iced Tea -> 46_snapple.txt
+  [PASS] Snapple Iced Tea -> 46_snapple.txt
   [PASS] Dr Browns Cream Soda -> 47_dr_browns.txt
   [PASS] Bagel and Coffee Combo -> 48_bagel_coffee_combo.txt
   [PASS] Breakfast Combo Order -> 49_breakfast_combo.txt

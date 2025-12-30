@@ -1,6 +1,6 @@
 ======================================================================
 TEST: BLT Sandwich
-TIME: 2025-12-30 16:18:20
+TIME: 2025-12-30 16:57:53
 ======================================================================
 
 CONVERSATION:
@@ -8,35 +8,35 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: I want a BLT
-BOT:    I'm sorry, we don't have BLT. Would you like to hear what sandwiches and omelettes we have?
+BOT:    Got it, The BLT. Anything else?
 
 TESTER: thats all
 BOT:    Is this for pickup or delivery?
 
 TESTER: delivery
-BOT:    Great, I'll set this up for delivery. What can I get for you?
+BOT:    What's the delivery address?
 
 TESTER: 123 Main Street, New York, NY 10001
-BOT:    Zucker's - Tribeca is located at 143 Chambers Street, New York, NY 10007. Can I help you with an order?
+BOT:    Sorry, we don't deliver to 10001. Would you like to do pickup instead?
 
 TESTER: Mike
-BOT:    What can I get for you?
+BOT:    Is this for pickup or delivery?
 
 TESTER: yes
-BOT:    What can I get for you?
+BOT:    Is this for pickup or delivery?
 
 TESTER: text
-BOT:    What can I get for you?
+BOT:    Is this for pickup or delivery?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     pending
-Order Type: delivery
-Items:      0
-Total:      $0.00
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] The BLT - $12.95 (menu_item)
+Total:      $12.95
 ----------------------------------------------------------------------
 
-RESULT: FAIL
-REASON: No items in cart
+RESULT: PASS

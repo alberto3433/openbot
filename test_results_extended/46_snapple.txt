@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Snapple Iced Tea
-TIME: 2025-12-30 15:40:50
+TIME: 2025-12-30 17:10:08
 ======================================================================
 
 CONVERSATION:
@@ -8,105 +8,38 @@ CONVERSATION:
 BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: snapple iced tea
-BOT:    We have a few options for tea:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
-Which would you like?
+BOT:    Got it, snapple iced tea. Anything else?
 
 TESTER: thats all
-BOT:    I didn't catch which one. Please choose:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    I didn't catch which one. Please choose:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
+BOT:    Can I get a name for the order?
 
 TESTER: Tina
-BOT:    I didn't catch which one. Please choose:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
+BOT:    Here's your order:
+• snapple iced tea
+
+That's $3.00 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    I didn't catch which one. Please choose:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: in store
-BOT:    I didn't catch which one. Please choose:
-1. Hot Tea ($3.00)
-2. Chai Tea ($4.50)
-3. Iced Tea ($3.50)
-4. Green Tea ($3.00)
-5. Earl Grey Tea ($3.00)
-6. Chamomile Tea ($3.00)
-7. Iced Chai Tea ($5.00)
-8. Peppermint Tea ($3.00)
-9. Snapple Iced Tea ($3.00)
-10. ITO EN Green Tea ($3.50)
-11. Snapple Peach Tea ($3.00)
-12. English Breakfast Tea ($3.00)
+BOT:    Would you like your order confirmation sent by text message or email?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
-Status:     pending
-Order Type: None
-Items:      0
-Total:      $0.00
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] snapple iced tea - $3.00 (drink)
+Customer:   Tina
+Total:      $3.00
 ----------------------------------------------------------------------
 
-RESULT: FAIL
-REASON: No items in cart
+RESULT: PASS

@@ -1,6 +1,6 @@
 ======================================================================
 TEST: Breakfast Combo Order
-TIME: 2025-12-30 15:42:17
+TIME: 2025-12-30 17:11:32
 ======================================================================
 
 CONVERSATION:
@@ -11,42 +11,50 @@ TESTER: classic BEC and a large iced latte
 BOT:    Got it, The Classic Bec, latte. Anything else?
 
 TESTER: toasted
-BOT:    What kind of bagel would you like?
+BOT:    I didn't catch that. What would you like to order?
 
 TESTER: large
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Would you like that hot or iced?
 
 TESTER: iced
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Got it, large iced coffee. Anything else?
 
 TESTER: thats all
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Is this for pickup or delivery?
 
 TESTER: pickup
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Can I get a name for the order?
 
 TESTER: Wendy
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Here's your order:
+• The Classic BEC
+• large iced latte
+• large iced coffee
+
+That's $20.70 plus tax.
+
+Does that look right?
 
 TESTER: yes
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    Would you like your order details sent by text or email?
 
 TESTER: text
-BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+BOT:    What phone number should I text the confirmation to?
 
 ----------------------------------------------------------------------
 
 ORDER DETAILS:
 ----------------------------------------------------------------------
 Status:     collecting_items
-Order Type: None
+Order Type: pickup
 Items:      3
   [1] The Classic BEC - $9.95 (menu_item)
   [2] latte - $6.50 (drink)
       > size: large, iced
-  [3] bagel toasted - $2.50 (bagel)
-      > toasted
-Total:      $18.95
+  [3] coffee - $4.25 (drink)
+      > size: large, iced
+Customer:   Wendy
+Total:      $20.70
 ----------------------------------------------------------------------
 
 RESULT: PASS

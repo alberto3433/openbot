@@ -559,6 +559,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "item_config": {
                     "toasted": toasted,
                     "bagel_choice": bagel_choice,
+                    "modifications": modifications,  # Include modifications for database persistence
                 },
             }
             items.append(item_dict)

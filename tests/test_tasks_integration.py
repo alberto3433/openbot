@@ -1993,3 +1993,404 @@ class TestQuantityChange:
 
         # Should return None (no match)
         assert result is None
+
+
+# =============================================================================
+# Cheese Choice Handler Tests
+# =============================================================================
+
+class TestCheeseChoice:
+    """Tests for _handle_cheese_choice when user said generic 'cheese'."""
+
+    def test_american_cheese_selected(self):
+        """Test selecting American cheese."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "cheese_choice"
+
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.needs_cheese_clarification = True
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+        order.pending_item_id = bagel.id
+
+        result = sm._handle_cheese_choice("american please", bagel, order)
+
+        assert "american" in bagel.extras
+        assert bagel.needs_cheese_clarification is False
+
+    def test_cheddar_cheese_selected(self):
+        """Test selecting cheddar cheese."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        bagel = BagelItemTask(bagel_type="everything", toasted=True)
+        bagel.needs_cheese_clarification = True
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        result = sm._handle_cheese_choice("cheddar", bagel, order)
+
+        assert "cheddar" in bagel.extras
+        assert bagel.needs_cheese_clarification is False
+
+    def test_swiss_cheese_selected(self):
+        """Test selecting Swiss cheese."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        bagel = BagelItemTask(bagel_type="plain")
+        bagel.needs_cheese_clarification = True
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        result = sm._handle_cheese_choice("swiss cheese", bagel, order)
+
+        assert "swiss" in bagel.extras
+
+    def test_muenster_cheese_selected(self):
+        """Test selecting muenster cheese (with alternate spelling)."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        bagel = BagelItemTask(bagel_type="plain")
+        bagel.needs_cheese_clarification = True
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        # Test alternate spelling "munster"
+        result = sm._handle_cheese_choice("munster", bagel, order)
+
+        assert "muenster" in bagel.extras
+
+    def test_invalid_cheese_prompts_again(self):
+        """Test that invalid cheese type re-prompts user."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        bagel = BagelItemTask(bagel_type="plain")
+        bagel.needs_cheese_clarification = True
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        result = sm._handle_cheese_choice("brie", bagel, order)
+
+        # Should re-prompt, not add cheese
+        assert len(bagel.extras) == 0
+        assert "What kind of cheese" in result.message
+        assert bagel.needs_cheese_clarification is True
+
+
+# =============================================================================
+# Menu Query Handler Tests
+# =============================================================================
+
+class TestMenuQuery:
+    """Tests for _handle_menu_query."""
+
+    def test_generic_menu_query_lists_categories(self):
+        """Test generic 'what do you have' lists available categories."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "bagel": [{"name": "Plain Bagel"}],
+                "beverage": [{"name": "Coffee"}],
+                "sandwich": [{"name": "Turkey Club"}],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_menu_query(None, order)
+
+        assert "We have:" in result.message
+        assert "bagel" in result.message
+        assert "beverage" in result.message
+
+    def test_beverage_query_combines_types(self):
+        """Test that 'beverage' query combines sized_beverage and beverage types."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [{"name": "Latte", "price": 4.50}],
+                "beverage": [{"name": "Coke", "price": 2.00}],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_menu_query("beverage", order)
+
+        assert "beverages include" in result.message.lower()
+        assert "Latte" in result.message
+        assert "Coke" in result.message
+
+    def test_beverage_query_with_prices(self):
+        """Test beverage query shows prices when requested."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [{"name": "Latte", "price": 4.50}],
+                "beverage": [{"name": "Coke", "price": 2.00}],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_menu_query("beverage", order, show_prices=True)
+
+        assert "$4.50" in result.message
+        assert "$2.00" in result.message
+
+    def test_sandwich_query_asks_for_type(self):
+        """Test that 'sandwich' query asks for more specifics."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_menu_query("sandwich", order)
+
+        assert "egg sandwiches" in result.message.lower() or "what kind" in result.message.lower()
+
+    def test_empty_menu_data(self):
+        """Test handling when no menu data available."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={})
+        order = OrderTask()
+
+        result = sm._handle_menu_query(None, order)
+
+        assert "What can I get for you?" in result.message
+
+    def test_coffee_alias_maps_to_sized_beverage(self):
+        """Test that 'coffee' query maps to sized_beverage type."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "sized_beverage": [
+                    {"name": "Drip Coffee", "price": 2.50},
+                    {"name": "Latte", "price": 4.50},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_menu_query("coffee", order)
+
+        assert "Drip Coffee" in result.message or "Latte" in result.message
+
+
+# =============================================================================
+# Tax Question and Order Status Handler Tests
+# =============================================================================
+
+class TestTaxAndOrderStatus:
+    """Tests for _handle_tax_question and _handle_order_status."""
+
+    def test_tax_question_with_tax_rates(self):
+        """Test tax calculation with configured rates."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {
+            "city_tax_rate": 0.045,  # 4.5%
+            "state_tax_rate": 0.04,  # 4%
+        }
+
+        order = OrderTask()
+        bagel = BagelItemTask(bagel_type="plain", unit_price=3.00)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        result = sm._handle_tax_question(order)
+
+        # Subtotal $3.00, tax 8.5% = $0.255, total = $3.255 -> $3.26
+        assert "subtotal" in result.message.lower()
+        assert "$3.00" in result.message
+        assert "tax" in result.message.lower()
+
+    def test_tax_question_no_tax_configured(self):
+        """Test tax question when no tax rates configured."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {}  # No tax rates
+
+        order = OrderTask()
+        bagel = BagelItemTask(bagel_type="plain", unit_price=5.00)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        result = sm._handle_tax_question(order)
+
+        # Should just show total without tax breakdown
+        assert "$5.00" in result.message
+
+    def test_order_status_empty_order(self):
+        """Test order status with no items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_order_status(order)
+
+        assert "haven't ordered anything" in result.message.lower()
+
+    def test_order_status_with_items(self):
+        """Test order status shows current items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        bagel = BagelItemTask(bagel_type="plain", spread="cream cheese", unit_price=4.00)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        coffee = CoffeeItemTask(drink_type="Latte", size="medium", unit_price=4.50)
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        result = sm._handle_order_status(order)
+
+        assert "So far you have" in result.message
+        # Should show the items
+        assert "•" in result.message  # Bullet points
+
+    def test_order_status_consolidates_duplicates(self):
+        """Test that identical items are consolidated with count."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        # Add two identical bagels
+        for _ in range(2):
+            bagel = BagelItemTask(bagel_type="plain", spread="butter", unit_price=3.00)
+            bagel.mark_complete()
+            order.items.add_item(bagel)
+
+        result = sm._handle_order_status(order)
+
+        # Should consolidate and show "2 ..."
+        assert "2" in result.message
+
+
+# =============================================================================
+# Store Info Inquiry Tests
+# =============================================================================
+
+class TestStoreInfoInquiries:
+    """Tests for store hours, location, and delivery zone inquiries."""
+
+    def test_store_hours_inquiry(self):
+        """Test store hours inquiry returns hours info."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {
+            "hours": "7am-4pm Monday-Friday, 8am-3pm Saturday-Sunday",
+            "name": "Test Bagels",
+        }
+
+        order = OrderTask()
+        result = sm._handle_store_hours_inquiry(order)
+
+        assert "7am" in result.message or "hours" in result.message.lower()
+
+    def test_store_hours_no_info(self):
+        """Test store hours when not configured."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {}
+
+        order = OrderTask()
+        result = sm._handle_store_hours_inquiry(order)
+
+        # Should have some fallback message
+        assert result.message is not None
+
+    def test_store_location_inquiry(self):
+        """Test store location inquiry."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {
+            "address": "123 Main St, New York, NY 10001",
+            "name": "Test Bagels",
+        }
+
+        order = OrderTask()
+        result = sm._handle_store_location_inquiry(order)
+
+        assert "123 Main St" in result.message or "location" in result.message.lower()
+
+    def test_delivery_zone_inquiry_valid_zip(self):
+        """Test delivery zone inquiry with valid ZIP."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {
+            "delivery_zip_codes": ["10001", "10002", "10003"],
+        }
+
+        order = OrderTask()
+        result = sm._handle_delivery_zone_inquiry("10001", order)
+
+        # Should confirm delivery is available
+        assert "deliver" in result.message.lower()
+
+    def test_delivery_zone_inquiry_invalid_zip(self):
+        """Test delivery zone inquiry with ZIP outside delivery area."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm._store_info = {
+            "delivery_zip_codes": ["10001", "10002"],
+        }
+
+        order = OrderTask()
+        result = sm._handle_delivery_zone_inquiry("90210", order)
+
+        # Should indicate delivery not available
+        assert "deliver" in result.message.lower() or "pickup" in result.message.lower()

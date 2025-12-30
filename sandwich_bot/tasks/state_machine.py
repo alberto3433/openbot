@@ -4308,16 +4308,34 @@ class OrderStateMachine:
 
         # Check for number/ordinal selection
         for key, idx in number_map.items():
-            if key in user_lower and idx < len(options):
-                selected_item = options[idx]
-                break
+            if key in user_lower:
+                if idx < len(options):
+                    selected_item = options[idx]
+                    break
+                else:
+                    # User selected a number that's out of range - ask again
+                    logger.info("DRINK SELECTION: User selected %s but only %d options available", key, len(options))
+                    option_list = []
+                    for i, item in enumerate(options, 1):
+                        name = item.get("name", "Unknown")
+                        price = item.get("base_price", 0)
+                        if price > 0:
+                            option_list.append(f"{i}. {name} (${price:.2f})")
+                        else:
+                            option_list.append(f"{i}. {name}")
+                    options_str = "\n".join(option_list)
+                    return StateMachineResult(
+                        message=f"I only have {len(options)} options. Please choose:\n{options_str}",
+                        order=order,
+                    )
 
         # If not found by number, try to match by name
         if not selected_item:
             for option in options:
                 option_name = option.get("name", "").lower()
                 # Check if the option name is in user input or vice versa
-                if option_name in user_lower or user_lower in option_name:
+                # But require minimum length to avoid false matches like "4" in "46 oz"
+                if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
                     selected_item = option
                     break
                 # Also try matching individual words

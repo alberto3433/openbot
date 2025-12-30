@@ -689,6 +689,11 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     """Try to parse soda/bottled drink orders deterministically."""
     text_lower = text.lower()
 
+    # Debug logging to diagnose server behavior
+    dr_browns_in_set = "dr brown's cream soda" in SODA_DRINK_TYPES
+    logger.info("Soda parse debug: input='%s', dr_browns_in_set=%s, set_size=%d",
+                text_lower, dr_browns_in_set, len(SODA_DRINK_TYPES))
+
     drink_type = None
     for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
         if re.search(rf'\b{re.escape(soda)}\b', text_lower):

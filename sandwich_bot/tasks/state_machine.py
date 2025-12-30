@@ -755,37 +755,67 @@ class OrderStateMachine:
             cancel_item_desc = parsed.cancel_item.lower()
             active_items = order.items.get_active_items()
             if active_items:
-                # Find the item to cancel by matching the description
-                item_to_remove = None
-                item_index = None
+                # Check if plural removal (e.g., "coffees", "bagels")
+                is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
+                singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
+
+                # Find matching items
+                items_to_remove = []
                 for item in reversed(active_items):  # Search from most recent
                     item_summary = item.get_summary().lower()
                     item_name = getattr(item, 'menu_item_name', '') or ''
                     item_name_lower = item_name.lower()
-                    # Match if the cancel description appears in the item summary or name
-                    if (cancel_item_desc in item_summary or
-                        cancel_item_desc in item_name_lower or
-                        item_name_lower in cancel_item_desc or
-                        # Also check for partial matches like "coke" matching "diet coke"
-                        any(word in item_summary for word in cancel_item_desc.split())):
-                        item_to_remove = item
-                        item_index = order.items.items.index(item)
-                        break
+                    item_type = getattr(item, 'item_type', '') or ''
 
-                if item_to_remove:
-                    removed_name = item_to_remove.get_summary()
-                    order.items.remove_item(item_index)
-                    logger.info("Cancellation: removed item '%s' from cart", removed_name)
-                    # Check if cart is now empty
+                    # Check for matches - be careful with empty strings
+                    matches = False
+                    if cancel_item_desc in item_summary:
+                        matches = True
+                    elif singular_desc in item_summary:
+                        matches = True
+                    elif item_name_lower and cancel_item_desc in item_name_lower:
+                        matches = True
+                    elif item_name_lower and singular_desc in item_name_lower:
+                        matches = True
+                    elif item_name_lower and item_name_lower in cancel_item_desc:
+                        matches = True
+                    # Check item_type for "coffees" -> item_type="coffee"
+                    elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
+                        matches = True
+                    elif any(word in item_summary for word in cancel_item_desc.split() if word):
+                        matches = True
+
+                    if matches:
+                        items_to_remove.append(item)
+                        # If not plural, only remove one item
+                        if not is_plural:
+                            break
+
+                if items_to_remove:
+                    # Remove all matching items
+                    removed_names = []
+                    for item in items_to_remove:
+                        removed_names.append(item.get_summary())
+                        idx = order.items.items.index(item)
+                        order.items.remove_item(idx)
+
+                    # Build response message
+                    if len(removed_names) == 1:
+                        removed_str = f"the {removed_names[0]}"
+                    else:
+                        removed_str = f"the {len(removed_names)} {singular_desc}s"
+
+                    logger.info("Cancellation: removed %d item(s) from cart: %s", len(removed_names), removed_names)
+
                     remaining_items = order.items.get_active_items()
                     if remaining_items:
                         return StateMachineResult(
-                            message=f"OK, I've removed the {removed_name}. Anything else?",
+                            message=f"OK, I've removed {removed_str}. Anything else?",
                             order=order,
                         )
                     else:
                         return StateMachineResult(
-                            message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                            message=f"OK, I've removed {removed_str}. What would you like to order?",
                             order=order,
                         )
                 else:
@@ -5550,13 +5580,16 @@ class OrderStateMachine:
             # Return the longest matching name (most complete)
             return max(matches, key=lambda x: len(x.get("name", "")))
 
-        # Pass 4: Space-normalized matching (handles "blue berry" matching "blueberry")
-        # Remove all spaces for comparison to handle compound word variations
-        item_name_compact = item_name_lower.replace(" ", "")
+        # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
+        # Normalize: remove spaces, convert & to "and"
+        def normalize_for_match(s: str) -> str:
+            return s.replace("&", "and").replace(" ", "")
+
+        item_name_compact = normalize_for_match(item_name_lower)
         matches = []
         for item in all_items:
             item_name_db = item.get("name", "").lower()
-            item_name_db_compact = item_name_db.replace(" ", "")
+            item_name_db_compact = normalize_for_match(item_name_db)
             # Check if compact search term is in compact item name or vice versa
             if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
                 matches.append(item)
@@ -5658,12 +5691,15 @@ class OrderStateMachine:
             # Sort by name length (longest first = more complete match)
             return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
 
-        # Pass 4: Space-normalized matching (handles "blue berry" matching "blueberry")
-        item_name_compact = item_name_lower.replace(" ", "")
+        # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
+        def normalize_for_match(s: str) -> str:
+            return s.replace("&", "and").replace(" ", "")
+
+        item_name_compact = normalize_for_match(item_name_lower)
         matches = []
         for item in all_items:
             item_name_db = item.get("name", "").lower()
-            item_name_db_compact = item_name_db.replace(" ", "")
+            item_name_db_compact = normalize_for_match(item_name_db)
             if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
                 matches.append(item)
         if matches:

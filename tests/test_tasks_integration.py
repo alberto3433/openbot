@@ -3194,3 +3194,132 @@ class TestPriceInquiry:
 
         assert "start at" in result.message.lower()
         assert "$10.99" in result.message
+
+
+# =============================================================================
+# Item Description Inquiry Handler Tests
+# =============================================================================
+
+class TestItemDescriptionInquiry:
+    """Tests for _handle_item_description_inquiry."""
+
+    def test_no_item_query_asks_which_item(self):
+        """Test that no item query asks which item to describe."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry(None, order)
+
+        assert "which item" in result.message.lower()
+
+    def test_exact_match_returns_description(self):
+        """Test exact match in ITEM_DESCRIPTIONS returns description."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("the classic bec", order)
+
+        assert "eggs" in result.message.lower()
+        assert "bacon" in result.message.lower()
+        assert "would you like to order one" in result.message.lower()
+
+    def test_partial_match_returns_description(self):
+        """Test partial match in ITEM_DESCRIPTIONS returns description."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        # "health nut" should match "the health nut"
+        result = sm._handle_item_description_inquiry("health nut", order)
+
+        assert "egg whites" in result.message.lower()
+        assert "spinach" in result.message.lower()
+
+    def test_signature_sandwich_description(self):
+        """Test signature sandwich description."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("the flatiron", order)
+
+        assert "salmon" in result.message.lower()
+        assert "avocado" in result.message.lower()
+
+    def test_unknown_item_returns_helpful_message(self):
+        """Test unknown item returns helpful message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("mystery sandwich", order)
+
+        assert "don't have" in result.message.lower() or "not" in result.message.lower()
+        assert "sandwiches" in result.message.lower() or "help" in result.message.lower()
+
+    def test_does_not_modify_order(self):
+        """Test that description inquiry does NOT add item to order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("the leo", order)
+
+        # Should describe the item
+        assert "salmon" in result.message.lower() or "eggs" in result.message.lower()
+        # But NOT add to order
+        assert len(order.items.items) == 0
+
+    def test_case_insensitive_matching(self):
+        """Test that matching is case-insensitive."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("THE DELANCEY", order)
+
+        assert "eggs" in result.message.lower()
+        assert "corned beef" in result.message.lower() or "pastrami" in result.message.lower()
+
+    def test_traditional_sandwich_description(self):
+        """Test the traditional (zucker's) sandwich description."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("traditional", order)
+
+        assert "salmon" in result.message.lower()
+        assert "cream cheese" in result.message.lower()
+
+    def test_formats_item_name_in_response(self):
+        """Test that item name is properly formatted in response."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_item_description_inquiry("the mulberry", order)
+
+        # Should have title case formatting
+        assert "Mulberry" in result.message or "mulberry" in result.message.lower()
+        assert "has" in result.message.lower()

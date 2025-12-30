@@ -4586,3 +4586,142 @@ class TestSpeedMenuBagelToastedHandler:
 
         assert item.toasted is False
         assert item.status == TaskStatus.COMPLETE
+
+
+class TestDrinkSelectionHandler:
+    """Tests for _handle_drink_selection."""
+
+    def test_no_pending_options_clears_state(self):
+        """Test that no pending options returns to taking items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = []
+
+        result = sm._handle_drink_selection("1", order)
+
+        assert "what would you like" in result.message.lower()
+
+    def test_select_by_number(self):
+        """Test selecting drink by number."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Coke", "base_price": 2.50},
+            {"name": "Sprite", "base_price": 2.50},
+        ]
+
+        result = sm._handle_drink_selection("1", order)
+
+        assert "coke" in result.message.lower()
+        assert len(order.items.items) == 1
+        assert order.items.items[0].drink_type == "Coke"
+
+    def test_select_by_ordinal(self):
+        """Test selecting drink by ordinal (first, second)."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Pepsi", "base_price": 2.50},
+            {"name": "Dr Pepper", "base_price": 2.75},
+        ]
+
+        result = sm._handle_drink_selection("the second", order)
+
+        assert "dr pepper" in result.message.lower()
+        assert order.items.items[0].drink_type == "Dr Pepper"
+
+    def test_select_by_name(self):
+        """Test selecting drink by name."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Orange Juice", "base_price": 3.00},
+            {"name": "Apple Juice", "base_price": 3.00},
+        ]
+
+        result = sm._handle_drink_selection("apple juice please", order)
+
+        assert "apple juice" in result.message.lower()
+        assert order.items.items[0].drink_type == "Apple Juice"
+
+    def test_invalid_selection_asks_again(self):
+        """Test that unclear input asks again with options."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Coke", "base_price": 2.50},
+            {"name": "Sprite", "base_price": 2.50},
+        ]
+
+        result = sm._handle_drink_selection("xyz", order)
+
+        assert "choose" in result.message.lower()
+        assert "1." in result.message
+        assert "2." in result.message
+        assert len(order.items.items) == 0
+
+    def test_out_of_range_number_asks_again(self):
+        """Test that out of range number asks again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Coke", "base_price": 2.50},
+            {"name": "Sprite", "base_price": 2.50},
+        ]
+
+        result = sm._handle_drink_selection("3", order)
+
+        assert "only" in result.message.lower() and "2" in result.message
+        assert len(order.items.items) == 0
+
+    def test_negative_number_rejected(self):
+        """Test that negative numbers are rejected."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Coke", "base_price": 2.50},
+        ]
+
+        result = sm._handle_drink_selection("-1", order)
+
+        assert "choose" in result.message.lower()
+        assert len(order.items.items) == 0
+
+    def test_soda_added_as_complete(self):
+        """Test that soda drink is added as complete without configuration."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_drink_options = [
+            {"name": "Coca-Cola", "base_price": 2.50},
+        ]
+
+        result = sm._handle_drink_selection("1", order)
+
+        assert len(order.items.items) == 1
+        drink = order.items.items[0]
+        assert drink.status == TaskStatus.COMPLETE
+        assert "anything else" in result.message.lower()

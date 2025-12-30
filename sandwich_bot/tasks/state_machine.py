@@ -11,7 +11,7 @@ is interpreted in the context of that item - no new items can be created.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal, Union
+from typing import Any, Literal, Optional, Union
 import logging
 import re
 import uuid
@@ -1348,6 +1348,12 @@ class OrderStateMachine:
                 order=order,
             )
 
+        # Check for cancellation requests BEFORE routing to field-specific handlers
+        # This allows "remove the coffee", "cancel this", "remove the coffees" etc. during configuration
+        cancel_result = self._check_cancellation_during_config(user_input, item, order)
+        if cancel_result:
+            return cancel_result
+
         # Route to field-specific handler
         if order.pending_field == "side_choice":
             return self._handle_side_choice(user_input, item, order)
@@ -1370,6 +1376,138 @@ class OrderStateMachine:
         else:
             order.clear_pending()
             return self._get_next_question(order)
+
+    def _check_cancellation_during_config(
+        self,
+        user_input: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> Optional[StateMachineResult]:
+        """
+        Check if user wants to cancel/remove items while in configuration phase.
+
+        This allows users to say things like "remove the coffee" or "cancel this"
+        while they're being asked for coffee size, instead of being forced to answer.
+
+        Returns StateMachineResult if cancellation handled, None otherwise.
+        """
+        cancel_match = CANCEL_ITEM_PATTERN.match(user_input.strip())
+        if not cancel_match:
+            return None
+
+        # Extract what they want to cancel from any of the capture groups
+        cancel_desc = None
+        for group in cancel_match.groups():
+            if group:
+                cancel_desc = group.strip().lower()
+                break
+
+        if not cancel_desc:
+            return None
+
+        logger.info("Cancel request during config: '%s'", cancel_desc)
+
+        # Handle "this" or "it" - cancel the current item being configured
+        if cancel_desc in ("this", "it", "that", "this one", "that one"):
+            item_name = current_item.get_summary()
+            current_item.mark_skipped()
+            order.clear_pending()
+            order.phase = OrderPhase.TAKING_ITEMS.value
+            remaining = order.items.get_active_items()
+            if remaining:
+                return StateMachineResult(
+                    message=f"OK, I've removed the {item_name}. Anything else?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"OK, I've removed the {item_name}. What would you like to order?",
+                    order=order,
+                )
+
+        # Get all active items to search through
+        active_items = order.items.get_active_items()
+        if not active_items:
+            order.clear_pending()
+            return StateMachineResult(
+                message="There's nothing in your order yet. What can I get for you?",
+                order=order,
+            )
+
+        # Check if this is a plural removal (e.g., "coffees", "bagels")
+        # If plural, we remove ALL matching items
+        is_plural = cancel_desc.endswith('s') and len(cancel_desc) > 2
+        singular_desc = cancel_desc[:-1] if is_plural else cancel_desc
+
+        # Find matching items
+        items_to_remove = []
+        for item in active_items:
+            item_summary = item.get_summary().lower()
+            item_name = getattr(item, 'menu_item_name', '') or ''
+            item_name_lower = item_name.lower()
+            item_type = getattr(item, 'item_type', '') or ''
+
+            # Check for matches - be careful with empty strings
+            matches = False
+            if cancel_desc in item_summary:
+                matches = True
+            elif singular_desc in item_summary:
+                matches = True
+            elif item_name_lower and cancel_desc in item_name_lower:
+                matches = True
+            elif item_name_lower and singular_desc in item_name_lower:
+                matches = True
+            elif item_name_lower and item_name_lower in cancel_desc:
+                matches = True
+            # Check item_type for things like "coffee" -> matches item_type="coffee"
+            elif item_type and (cancel_desc == item_type or singular_desc == item_type):
+                matches = True
+            elif any(word in item_summary for word in cancel_desc.split() if word):
+                matches = True
+
+            if matches:
+                items_to_remove.append(item)
+                # If not plural, only remove one item
+                if not is_plural:
+                    break
+
+        if items_to_remove:
+            # Remove the items
+            removed_names = []
+            for item in items_to_remove:
+                removed_names.append(item.get_summary())
+                idx = order.items.items.index(item)
+                order.items.remove_item(idx)
+
+            # Clear pending state since we're leaving config phase
+            order.clear_pending()
+            order.phase = OrderPhase.TAKING_ITEMS.value
+
+            # Build response message
+            remaining = order.items.get_active_items()
+            if len(removed_names) == 1:
+                removed_str = f"the {removed_names[0]}"
+            else:
+                removed_str = f"the {len(removed_names)} {singular_desc}s"
+
+            logger.info("Removed %d item(s) during config: %s", len(removed_names), removed_names)
+
+            if remaining:
+                return StateMachineResult(
+                    message=f"OK, I've removed {removed_str}. Anything else?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"OK, I've removed {removed_str}. What would you like to order?",
+                    order=order,
+                )
+        else:
+            # Couldn't find a matching item
+            return StateMachineResult(
+                message=f"I couldn't find {cancel_desc} in your order. What would you like to do?",
+                order=order,
+            )
 
     def _handle_side_choice(
         self,
@@ -3317,9 +3455,11 @@ class OrderStateMachine:
         )
 
         # Configure coffees one at a time (fully configure each before moving to next)
-        for coffee in all_coffees:
+        for idx, coffee in enumerate(all_coffees):
             if coffee.status != TaskStatus.IN_PROGRESS:
                 continue
+
+            item_num = idx + 1
 
             logger.info(
                 "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, iced=%s, status=%s",
@@ -3329,12 +3469,19 @@ class OrderStateMachine:
             # Get drink name for the question
             drink_name = coffee.drink_type or "coffee"
 
+            # Build ordinal descriptor if multiple items
+            if total_coffees > 1:
+                ordinal = self._get_ordinal(item_num)
+                drink_desc = f"the {ordinal} {drink_name}"
+            else:
+                drink_desc = f"the {drink_name}"
+
             # Ask about size first
             if not coffee.size:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_size"
-                message = f"What size would you like for the {drink_name}? Small, medium, or large?"
+                message = f"What size would you like for {drink_desc}? Small, medium, or large?"
                 return StateMachineResult(
                     message=message,
                     order=order,
@@ -3345,10 +3492,16 @@ class OrderStateMachine:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_style"
-                return StateMachineResult(
-                    message="Would you like that hot or iced?",
-                    order=order,
-                )
+                if total_coffees > 1:
+                    return StateMachineResult(
+                        message=f"Would you like {drink_desc} hot or iced?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="Would you like that hot or iced?",
+                        order=order,
+                    )
 
             # This coffee is complete - recalculate price with modifiers
             self.recalculate_coffee_price(coffee)
@@ -3383,12 +3536,30 @@ class OrderStateMachine:
 
         item.size = parsed.size
 
-        # Move to hot/iced question
+        # Move to hot/iced question with ordinal if multiple coffees
         order.pending_field = "coffee_style"
-        return StateMachineResult(
-            message="Would you like that hot or iced?",
-            order=order,
-        )
+
+        # Count total coffees and find current item's position
+        all_coffees = [
+            c for c in order.items.items
+            if isinstance(c, CoffeeItemTask)
+        ]
+        total_coffees = len(all_coffees)
+
+        if total_coffees > 1:
+            # Find this coffee's position in the list
+            item_num = next((i + 1 for i, c in enumerate(all_coffees) if c.id == item.id), 1)
+            ordinal = self._get_ordinal(item_num)
+            drink_name = item.drink_type or "coffee"
+            return StateMachineResult(
+                message=f"Would you like the {ordinal} {drink_name} hot or iced?",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message="Would you like that hot or iced?",
+                order=order,
+            )
 
     def _handle_coffee_style(
         self,
@@ -5379,6 +5550,20 @@ class OrderStateMachine:
             # Return the longest matching name (most complete)
             return max(matches, key=lambda x: len(x.get("name", "")))
 
+        # Pass 4: Space-normalized matching (handles "blue berry" matching "blueberry")
+        # Remove all spaces for comparison to handle compound word variations
+        item_name_compact = item_name_lower.replace(" ", "")
+        matches = []
+        for item in all_items:
+            item_name_db = item.get("name", "").lower()
+            item_name_db_compact = item_name_db.replace(" ", "")
+            # Check if compact search term is in compact item name or vice versa
+            if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
+                matches.append(item)
+        if matches:
+            # Return the shortest matching name (most specific)
+            return min(matches, key=lambda x: len(x.get("name", "")))
+
         return None
 
     def _lookup_menu_items(self, item_name: str) -> list[dict]:
@@ -5472,6 +5657,17 @@ class OrderStateMachine:
         if matches:
             # Sort by name length (longest first = more complete match)
             return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
+
+        # Pass 4: Space-normalized matching (handles "blue berry" matching "blueberry")
+        item_name_compact = item_name_lower.replace(" ", "")
+        matches = []
+        for item in all_items:
+            item_name_db = item.get("name", "").lower()
+            item_name_db_compact = item_name_db.replace(" ", "")
+            if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
+                matches.append(item)
+        if matches:
+            return sorted(matches, key=lambda x: len(x.get("name", "")))
 
         return []
 

@@ -32,6 +32,11 @@ SODA_DRINK_TYPES = {
     "juice", "orange juice", "apple juice", "cranberry juice",
     "snapple",
     "gatorade",
+    # Dr. Brown's sodas
+    "dr brown's", "dr browns", "dr. brown's", "dr. browns",
+    "dr brown's cream soda", "dr browns cream soda",
+    "dr brown's black cherry", "dr browns black cherry",
+    "dr brown's cel-ray", "dr browns cel-ray", "cel-ray",
 }
 
 # Coffee/tea beverages that need hot/iced and size configuration
@@ -477,6 +482,10 @@ KNOWN_MENU_ITEMS = {
     "tofu scallion sandwich", "tofu scallion", "scallion tofu",
     "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
     "tofu nova sandwich", "tofu nova", "nova tofu",
+    # Smoked Fish Sandwiches (not salads - these are actual fish)
+    "belly lox sandwich", "belly lox", "belly lox on bagel",
+    "gravlax sandwich", "gravlax", "gravlax on bagel",
+    "nova scotia salmon sandwich", "nova sandwich", "nova on bagel",
     # Salad Sandwiches
     "tuna salad sandwich", "tuna salad", "tuna sandwich",
     "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
@@ -513,6 +522,11 @@ NO_THE_PREFIX_ITEMS = {
     "tofu scallion sandwich", "tofu scallion", "scallion tofu",
     "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
     "tofu nova sandwich", "tofu nova", "nova tofu",
+    # Smoked Fish Sandwiches
+    "belly lox sandwich", "belly lox", "belly lox on bagel",
+    "gravlax sandwich", "gravlax", "gravlax on bagel",
+    "nova scotia salmon sandwich", "nova sandwich", "nova on bagel",
+    # Salad Sandwiches
     "tuna salad sandwich", "tuna salad", "tuna sandwich",
     "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
     "baked salmon salad sandwich", "baked salmon salad", "salmon salad sandwich",
@@ -564,6 +578,15 @@ MENU_ITEM_CANONICAL_NAMES = {
     "veggie tofu": "Tofu Vegetable Sandwich",
     "tofu nova": "Tofu Nova Sandwich",
     "nova tofu": "Tofu Nova Sandwich",
+    # Smoked fish sandwiches - map short forms to full names
+    "belly lox": "Belly Lox Sandwich",
+    "belly lox sandwich": "Belly Lox Sandwich",
+    "belly lox on bagel": "Belly Lox Sandwich",
+    "gravlax": "Gravlax Sandwich",
+    "gravlax sandwich": "Gravlax Sandwich",
+    "gravlax on bagel": "Gravlax Sandwich",
+    "nova sandwich": "Nova Scotia Salmon Sandwich",
+    "nova on bagel": "Nova Scotia Salmon Sandwich",
     # Salad sandwiches - map short forms to full names
     "tuna salad": "Tuna Salad Sandwich",
     "tuna sandwich": "Tuna Salad Sandwich",
@@ -583,6 +606,18 @@ MENU_ITEM_CANONICAL_NAMES = {
     "tropicana no pulp": "Tropicana No Pulp",
     "tropicana": "Tropicana No Pulp",
     "fresh squeezed orange juice": "Fresh Squeezed Orange Juice",
+    # Dr. Brown's sodas - map to database names (with period)
+    "dr brown's cream soda": "Dr. Brown's Cream Soda",
+    "dr browns cream soda": "Dr. Brown's Cream Soda",
+    "dr brown's black cherry": "Dr. Brown's Black Cherry",
+    "dr browns black cherry": "Dr. Brown's Black Cherry",
+    "dr brown's cel-ray": "Dr. Brown's Cel-Ray",
+    "dr browns cel-ray": "Dr. Brown's Cel-Ray",
+    "cel-ray": "Dr. Brown's Cel-Ray",
+    "dr brown's": "Dr. Brown's Cream Soda",  # Default to cream soda
+    "dr browns": "Dr. Brown's Cream Soda",
+    "dr. brown's": "Dr. Brown's Cream Soda",
+    "dr. browns": "Dr. Brown's Cream Soda",
 }
 
 # =============================================================================

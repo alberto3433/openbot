@@ -1757,6 +1757,12 @@ class OrderStateMachine:
                 logger.info("CONFIRMATION: original order items = %s", [i.get_summary() for i in order.items.items])
                 logger.info("CONFIRMATION: result.order.phase = %s", result.order.phase)
 
+                # If there are pending drink options awaiting clarification, return that result
+                # Don't override the clarification message with order summary
+                if result.order.pending_drink_options:
+                    logger.info("CONFIRMATION: Pending drink options, returning clarification message")
+                    return result
+
                 # Use orchestrator to determine if we should go back to confirmation
                 # If all items complete and we have name and delivery, orchestrator will say ORDER_CONFIRM
                 orchestrator = SlotOrchestrator(result.order)
@@ -2901,6 +2907,27 @@ class OrderStateMachine:
         # Check for multiple matching items - ask user to clarify if ambiguous
         if coffee_type:
             matching_items = self._lookup_menu_items(coffee_type)
+            if len(matching_items) > 1:
+                # Before asking for clarification, check if user already has a matching
+                # drink in their cart - if so, add another of the same type
+                coffee_type_lower = coffee_type.lower()
+                for cart_item in order.items.items:
+                    cart_name = cart_item.name.lower() if cart_item.name else ""
+                    # Check if any matching item matches something in the cart
+                    for match_item in matching_items:
+                        match_name = match_item.get("name", "").lower()
+                        if cart_name == match_name or match_name in cart_name:
+                            logger.info(
+                                "ADD COFFEE: User already has '%s' in cart, adding another",
+                                cart_item.name
+                            )
+                            # Use the exact item from cart
+                            coffee_type = cart_item.name
+                            matching_items = []  # Clear to skip clarification
+                            break
+                    if not matching_items:
+                        break
+
             if len(matching_items) > 1:
                 # Multiple matches - need to ask user which one they want
                 logger.info(

@@ -951,6 +951,24 @@ class OrderStateMachine:
                             order=order,
                         )
 
+            # Add any additional menu items (from multi-item orders like "A Lexington and a BLT")
+            if parsed.additional_menu_items:
+                for extra_item in parsed.additional_menu_items:
+                    extra_result = self._add_menu_item(
+                        extra_item.name,
+                        extra_item.quantity,
+                        order,
+                        extra_item.toasted,
+                        extra_item.bagel_choice,
+                        extra_item.modifications,
+                    )
+                    items_added.append(extra_item.name)
+                    logger.info("Multi-item order: added additional menu item '%s' (qty=%d)",
+                                extra_item.name, extra_item.quantity)
+                    # Use the last result to capture any configuration questions
+                    if extra_result:
+                        last_result = extra_result
+
             # Check if there's ALSO a bagel order in the same message
             if parsed.new_bagel:
                 # Save whether menu item needs configuration BEFORE adding bagel

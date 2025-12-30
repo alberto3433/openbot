@@ -471,6 +471,9 @@ KNOWN_MENU_ITEMS = {
     "the health nut", "health nut",
     "the zucker's traditional", "zucker's traditional", "the traditional", "traditional",
     "the reuben", "reuben",
+    "the blt", "blt",
+    "the chelsea club", "chelsea club",
+    "the natural", "natural",
     "turkey club",
     "hot pastrami sandwich", "pastrami sandwich",
     "nova scotia salmon", "nova salmon",
@@ -620,6 +623,13 @@ MENU_ITEM_CANONICAL_NAMES = {
     "cranberry pecan chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
     "cranberry chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
     "lemon chicken salad": "Lemon Chicken Salad Sandwich",
+    # Signature sandwiches - uppercase acronyms
+    "blt": "The BLT",
+    "the blt": "The BLT",
+    "chelsea club": "The Chelsea Club",
+    "the chelsea club": "The Chelsea Club",
+    "natural": "The Natural",
+    "the natural": "The Natural",
     # Specific beverage items
     "tropicana orange juice 46 oz": "Tropicana Orange Juice 46 oz",
     "tropicana orange juice": "Tropicana Orange Juice 46 oz",

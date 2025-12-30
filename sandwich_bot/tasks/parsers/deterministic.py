@@ -1135,6 +1135,20 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     side_item = None
     side_item_qty = 1
 
+    # First pass: count how many parts have menu items
+    # If only ONE part has a menu item, we should extract modifications from the ORIGINAL text
+    # (to handle cases like "the Lexington with mayo, mustard and ketchup" which gets split incorrectly)
+    parts_with_menu_items = 0
+    for part in restored_parts:
+        item_name, _ = _extract_menu_item_from_text(part.strip())
+        if item_name:
+            parts_with_menu_items += 1
+
+    # Extract modifications from original text if only one menu item detected
+    # This captures "with mayo, mustard and ketchup" that gets split into separate parts
+    use_original_text_for_mods = parts_with_menu_items == 1
+    original_modifications = _extract_menu_item_modifications(text) if use_original_text_for_mods else []
+
     for part in restored_parts:
         part = part.strip()
         if not part:
@@ -1144,7 +1158,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         if item_name:
             bagel_choice = _extract_bagel_type(part)
             toasted = _extract_toasted(part)
-            modifications = _extract_menu_item_modifications(part)
+            # Use original text mods if single menu item, otherwise extract from part
+            modifications = original_modifications if use_original_text_for_mods else _extract_menu_item_modifications(part)
             menu_item_list.append(MenuItemOrderDetails(
                 name=item_name,
                 quantity=item_qty,

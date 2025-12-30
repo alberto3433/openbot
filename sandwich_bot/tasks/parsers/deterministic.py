@@ -263,14 +263,14 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     find_and_add(BAGEL_CHEESES, result.cheeses, "cheese")
     find_and_add(BAGEL_TOPPINGS, result.toppings, "topping")
 
-    # Special case: if user just says "cheese" without a specific type, default to american
+    # Special case: if user just says "cheese" without a specific type, mark for clarification
     if "cheese" in input_lower and not result.cheeses:
         cheese_match = re.search(r'\bcheese\b', input_lower)
         if cheese_match:
             pos = cheese_match.start()
             if "cream cheese" not in input_lower[max(0, pos-6):pos+7]:
-                result.cheeses.append("american")
-                logger.debug("Extracted cheese: 'cheese' -> 'american' (default)")
+                result.needs_cheese_clarification = True
+                logger.debug("Generic 'cheese' detected - needs clarification")
 
     # Extract notes (filter to only bagel-related notes)
     notes_list = extract_notes_from_input(user_input)
@@ -1106,8 +1106,9 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         menu_item, qty = _extract_menu_item_from_text(text)
         if menu_item:
             toasted = _extract_toasted(text)
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s)", text[:50], menu_item, qty, toasted)
-            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted)
+            bagel_choice = _extract_bagel_type(text)
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
+            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
 
     # Early check for standalone side items
     standalone_side_items = {
@@ -1204,6 +1205,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 new_side_item_quantity=side_qty,
             )
 
+    # Check for known menu items FIRST (before generic coffee/beverage parsing)
+    # This ensures specific items like "Tropicana Orange Juice 46 oz" are matched
+    # before "orange juice" is matched as a generic beverage type
+    menu_item, qty = _extract_menu_item_from_text(text)
+    if menu_item:
+        toasted = _extract_toasted(text)
+        bagel_choice = _extract_bagel_type(text)
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
+
     # Check for coffee/beverage order
     coffee_result = _parse_coffee_deterministic(text)
     if coffee_result:
@@ -1214,13 +1225,6 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     soda_result = _parse_soda_deterministic(text)
     if soda_result:
         return soda_result
-
-    # Check for known menu items
-    menu_item, qty = _extract_menu_item_from_text(text)
-    if menu_item:
-        toasted = _extract_toasted(text)
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s)", text[:50], menu_item, qty, toasted)
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted)
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])

@@ -485,6 +485,10 @@ KNOWN_MENU_ITEMS = {
     "chicken salad sandwich", "chicken salad",
     "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
     "lemon chicken salad sandwich", "lemon chicken salad",
+    # Specific beverage items (need to match before generic coffee parsing)
+    "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
+    "tropicana no pulp", "tropicana",
+    "fresh squeezed orange juice",
 }
 
 # Items that should NOT get "The " prefix (salad and spread sandwiches)
@@ -522,6 +526,10 @@ NO_THE_PREFIX_ITEMS = {
     "western omelette",
     "veggie omelette",
     "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
+    # Specific beverage items
+    "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
+    "tropicana no pulp", "tropicana",
+    "fresh squeezed orange juice",
 }
 
 # Mapping from short forms to canonical menu item names
@@ -568,6 +576,13 @@ MENU_ITEM_CANONICAL_NAMES = {
     "cranberry pecan chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
     "cranberry chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
     "lemon chicken salad": "Lemon Chicken Salad Sandwich",
+    # Specific beverage items
+    "tropicana orange juice 46 oz": "Tropicana Orange Juice 46 oz",
+    "tropicana orange juice": "Tropicana Orange Juice 46 oz",
+    "tropicana 46 oz": "Tropicana Orange Juice 46 oz",
+    "tropicana no pulp": "Tropicana No Pulp",
+    "tropicana": "Tropicana No Pulp",
+    "fresh squeezed orange juice": "Fresh Squeezed Orange Juice",
 }
 
 # =============================================================================

@@ -2524,3 +2524,247 @@ class TestRecommendationInquiry:
         assert "egg" in result.message.lower() or "bagel" in result.message.lower() or "breakfast" in result.message.lower()
         # Should NOT modify the order
         assert len(order.items.items) == 0
+
+
+# =============================================================================
+# Coffee Size Handler Tests
+# =============================================================================
+
+class TestCoffeeSize:
+    """Tests for _handle_coffee_size."""
+
+    def test_small_size_selected(self):
+        """Test selecting small size."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="latte")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm._handle_coffee_size("small please", coffee, order)
+
+        assert coffee.size == "small"
+        assert order.pending_field == "coffee_style"
+        assert "hot or iced" in result.message.lower()
+
+    def test_medium_size_selected(self):
+        """Test selecting medium size."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="cappuccino")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_size("medium", coffee, order)
+
+        assert coffee.size == "medium"
+        assert order.pending_field == "coffee_style"
+
+    def test_large_size_selected(self):
+        """Test selecting large size."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="drip coffee")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_size("I'll take a large", coffee, order)
+
+        assert coffee.size == "large"
+        assert "hot or iced" in result.message.lower()
+
+    def test_invalid_size_reprompts(self):
+        """Test that invalid size re-prompts user."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="latte")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_size("extra large", coffee, order)
+
+        # Size should not be set
+        assert coffee.size is None
+        # Should re-prompt
+        assert "small" in result.message.lower() and "medium" in result.message.lower()
+
+    def test_size_with_drink_name_in_prompt(self):
+        """Test that reprompt includes drink name."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_size"
+
+        coffee = CoffeeItemTask(drink_type="espresso")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_size("hmm", coffee, order)
+
+        # Should mention the drink type in reprompt
+        assert "espresso" in result.message.lower() or "size" in result.message.lower()
+
+
+# =============================================================================
+# Coffee Style Handler Tests
+# =============================================================================
+
+class TestCoffeeStyle:
+    """Tests for _handle_coffee_style (hot/iced preference)."""
+
+    def test_hot_selected(self):
+        """Test selecting hot."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm._handle_coffee_style("hot please", coffee, order)
+
+        assert coffee.iced is False
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_iced_selected(self):
+        """Test selecting iced."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="large")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm._handle_coffee_style("iced", coffee, order)
+
+        assert coffee.iced is True
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_cold_maps_to_iced(self):
+        """Test that 'cold' maps to iced."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="coffee", size="small")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_style("cold", coffee, order)
+
+        assert coffee.iced is True
+
+    def test_invalid_style_reprompts(self):
+        """Test that invalid style re-prompts user."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_style("lukewarm", coffee, order)
+
+        # Should not be set
+        assert coffee.iced is None
+        # Should re-prompt
+        assert "hot or iced" in result.message.lower()
+
+    def test_style_with_sweetener_extracts_both(self):
+        """Test that sweetener mentioned with style is extracted."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="coffee", size="medium")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_style("hot with 2 sugars", coffee, order)
+
+        assert coffee.iced is False
+        assert coffee.sweetener == "sugar"
+        assert coffee.sweetener_quantity == 2
+
+    def test_style_with_syrup_extracts_both(self):
+        """Test that syrup mentioned with style is extracted."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="large")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+
+        result = sm._handle_coffee_style("iced with vanilla", coffee, order)
+
+        assert coffee.iced is True
+        assert coffee.flavor_syrup == "vanilla"
+
+    def test_completes_coffee_and_clears_pending(self):
+        """Test that coffee is marked complete and pending is cleared."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm._handle_coffee_style("hot", coffee, order)
+
+        assert coffee.status == TaskStatus.COMPLETE
+        assert order.pending_item_id is None
+        assert order.pending_field is None

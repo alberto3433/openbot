@@ -21,7 +21,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -270,6 +270,8 @@ class VapiChatCompletionRequest(BaseModel):
 
     Vapi sends this format when using Custom LLM integration.
     """
+    model_config = ConfigDict(extra="allow")  # Allow additional fields from Vapi
+
     model: Optional[str] = "gpt-4"
     messages: List[VapiMessage] = Field(default_factory=list)
     stream: bool = False
@@ -278,20 +280,15 @@ class VapiChatCompletionRequest(BaseModel):
     # Vapi-specific fields
     call: Optional[VapiCall] = None
 
-    class Config:
-        extra = "allow"  # Allow additional fields from Vapi
-
 
 class VapiWebhookMessage(BaseModel):
     """Vapi webhook message wrapper."""
+    model_config = ConfigDict(extra="allow")  # Additional fields vary by message type
+
     type: str
     call: Optional[Dict[str, Any]] = None
     artifact: Optional[Dict[str, Any]] = None
     endedReason: Optional[str] = None
-    # Additional fields vary by message type
-
-    class Config:
-        extra = "allow"
 
 
 class VapiWebhookRequest(BaseModel):

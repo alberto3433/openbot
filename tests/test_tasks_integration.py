@@ -3615,3 +3615,294 @@ class TestPhoneHandler:
             assert order.customer_info.phone == "+17325551234"
             # Also stored as payment link destination
             assert order.payment.payment_link_destination == "+17325551234"
+
+
+# =============================================================================
+# Name Handler Tests
+# =============================================================================
+
+class TestNameHandler:
+    """Tests for _handle_name."""
+
+    def test_valid_name_sets_customer_info(self):
+        """Test that valid name is saved to customer_info."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_NAME.value
+        # Add an item for the order summary
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+            mock_parse.return_value = NameResponse(name="John")
+
+            result = sm._handle_name("John", order)
+
+            assert order.customer_info.name == "John"
+            assert "does that look right" in result.message.lower()
+
+    def test_no_name_extracted_asks_again(self):
+        """Test that when no name is extracted, it asks again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_NAME.value
+
+        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+            mock_parse.return_value = NameResponse(name=None)
+
+            result = sm._handle_name("what?", order)
+
+            assert order.customer_info.name is None
+            assert "name" in result.message.lower()
+
+    def test_name_shows_order_summary(self):
+        """Test that after name is set, order summary is shown."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_NAME.value
+        # Add a coffee for the order summary
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=False)
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+            mock_parse.return_value = NameResponse(name="Sarah")
+
+            result = sm._handle_name("Sarah", order)
+
+            # Summary should include the item
+            assert "latte" in result.message.lower()
+            assert "does that look right" in result.message.lower()
+
+    def test_name_with_prefix_extracts_just_name(self):
+        """Test that 'My name is John' extracts just 'John'."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_NAME.value
+        bagel = BagelItemTask(bagel_type="everything", toasted=False, spread="butter")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+            # The LLM parser extracts just the name
+            mock_parse.return_value = NameResponse(name="Mike")
+
+            result = sm._handle_name("My name is Mike", order)
+
+            assert order.customer_info.name == "Mike"
+
+    def test_name_transitions_to_confirmation(self):
+        """Test that after name, phase transitions correctly."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_NAME.value
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="sesame", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+            mock_parse.return_value = NameResponse(name="Lisa")
+
+            result = sm._handle_name("Lisa", order)
+
+            # Should transition to confirmation phase
+            assert order.phase == OrderPhase.CHECKOUT_CONFIRM.value
+
+
+# =============================================================================
+# Confirmation Handler Tests
+# =============================================================================
+
+class TestConfirmationHandler:
+    """Tests for _handle_confirmation."""
+
+    def test_confirmed_marks_order_reviewed(self):
+        """Test that confirming marks order_reviewed and asks text/email."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "John"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+            mock_parse.return_value = ConfirmationResponse(
+                confirmed=True, wants_changes=False, asks_about_tax=False
+            )
+
+            result = sm._handle_confirmation("yes that looks good", order)
+
+            assert order.checkout.order_reviewed is True
+            assert "text" in result.message.lower() or "email" in result.message.lower()
+
+    def test_wants_changes_asks_what_to_change(self):
+        """Test that wants_changes response asks what to change."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Sarah"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_confirm:
+            mock_confirm.return_value = ConfirmationResponse(
+                confirmed=False, wants_changes=True, asks_about_tax=False
+            )
+            with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_open:
+                # No new item detected
+                mock_open.return_value = OpenInputResponse(
+                    new_menu_item=None, new_bagel=False, new_coffee=False,
+                    new_speed_menu_bagel=False
+                )
+
+                result = sm._handle_confirmation("no I want to change something", order)
+
+                assert "change" in result.message.lower()
+
+    def test_tax_question_returns_tax_info(self):
+        """Test that tax question triggers tax calculation."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        # Set store info for tax calculation
+        sm._store_info = {"city_tax_rate": 0.045, "state_tax_rate": 0.04}
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Mike"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # TAX_QUESTION_PATTERN should match this
+        result = sm._handle_confirmation("what's my total with tax?", order)
+
+        assert "tax" in result.message.lower() or "$" in result.message
+
+    def test_make_it_2_duplicates_last_item(self):
+        """Test that 'make it 2' duplicates the last item."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Alex"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="everything", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        initial_count = len(order.items.items)
+        result = sm._handle_confirmation("make it 2", order)
+
+        # Should have doubled the items
+        assert len(order.items.items) == initial_count + 1
+        assert "added" in result.message.lower() or "second" in result.message.lower()
+
+    def test_unclear_response_asks_if_correct(self):
+        """Test that unclear response asks if order is correct."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Bob"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=False, spread="butter")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+            mock_parse.return_value = ConfirmationResponse(
+                confirmed=False, wants_changes=False, asks_about_tax=False
+            )
+
+            result = sm._handle_confirmation("hmm let me think", order)
+
+            assert "correct" in result.message.lower() or "look" in result.message.lower()
+
+    def test_make_it_three_adds_two_more(self):
+        """Test that 'make it 3' adds 2 more items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Lisa"
+        order.delivery_method.order_type = "pickup"
+        coffee = CoffeeItemTask(drink_type="latte", size="large", iced=True)
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        initial_count = len(order.items.items)
+        result = sm._handle_confirmation("make it three", order)
+
+        # Should have added 2 more (total of 3)
+        assert len(order.items.items) == initial_count + 2
+        assert "added" in result.message.lower()
+
+    def test_order_reviewed_not_set_until_confirmed(self):
+        """Test that order_reviewed stays False until user confirms."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "Tom"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="sesame", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+            mock_parse.return_value = ConfirmationResponse(
+                confirmed=False, wants_changes=False, asks_about_tax=False
+            )
+
+            result = sm._handle_confirmation("wait a second", order)
+
+            assert order.checkout.order_reviewed is False

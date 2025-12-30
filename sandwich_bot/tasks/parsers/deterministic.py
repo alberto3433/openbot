@@ -1375,6 +1375,12 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if add_more_result:
         return add_more_result
 
+    # Check for multi-item orders (e.g., "one coffee and one latte", "bagel and a coffee")
+    # Must be checked before single-item parsers to handle "X and Y" patterns
+    multi_item_result = _parse_multi_item_order(text)
+    if multi_item_result:
+        return multi_item_result
+
     # Early check for spread/salad sandwiches
     text_lower = text.lower()
     has_bagel_mention = re.search(r"\bbagels?\b", text_lower)

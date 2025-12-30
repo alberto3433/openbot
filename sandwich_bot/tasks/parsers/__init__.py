@@ -16,6 +16,10 @@ from .validators import (
     validate_phone_number,
     extract_zip_code,
     validate_delivery_zip_code,
+    # Deterministic yes/no parsing
+    parse_yes_no_deterministic,
+    parse_toasted_deterministic,
+    parse_hot_iced_deterministic,
 )
 
 from .deterministic import (
@@ -128,6 +132,10 @@ __all__ = [
     "validate_phone_number",
     "extract_zip_code",
     "validate_delivery_zip_code",
+    # Deterministic yes/no parsing
+    "parse_yes_no_deterministic",
+    "parse_toasted_deterministic",
+    "parse_hot_iced_deterministic",
     # Deterministic parsers - Compiled patterns
     "REPLACE_ITEM_PATTERN",
     "CANCEL_ITEM_PATTERN",

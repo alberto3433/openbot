@@ -136,6 +136,82 @@ def extract_zip_code(address: str) -> str | None:
     return None
 
 
+def parse_yes_no_deterministic(
+    user_input: str,
+    no_patterns: str | None = None,
+    yes_patterns: str | None = None,
+) -> bool | None:
+    """
+    Deterministically parse yes/no responses using regex patterns.
+
+    Checks NO patterns FIRST (before yes) to handle phrases like
+    "not toasted" which contains "toasted" but means no.
+
+    Args:
+        user_input: The user's response text
+        no_patterns: Regex pattern for negative responses.
+                     Defaults to common negative words.
+        yes_patterns: Regex pattern for positive responses.
+                      Defaults to common positive words.
+
+    Returns:
+        True if positive, False if negative, None if unclear
+    """
+    if not user_input:
+        return None
+
+    input_lower = user_input.lower().strip()
+
+    # Default patterns
+    if no_patterns is None:
+        no_patterns = r'\b(no|nope|nah|not|don\'t|none|neither)\b'
+    if yes_patterns is None:
+        yes_patterns = r'\b(yes|yeah|yep|yup|sure|please|ok|okay)\b'
+
+    # Check NO first (important for "not X" phrases)
+    if re.search(no_patterns, input_lower):
+        return False
+
+    # Then check YES
+    if re.search(yes_patterns, input_lower):
+        return True
+
+    return None
+
+
+def parse_toasted_deterministic(user_input: str) -> bool | None:
+    """
+    Deterministically parse toasted preference.
+
+    Handles special cases like "not toasted", "untoasted", "toast it".
+
+    Returns:
+        True if wants toasted, False if not, None if unclear
+    """
+    return parse_yes_no_deterministic(
+        user_input,
+        no_patterns=r'\b(not toasted|untoasted|don\'t toast|no|nope|nah)\b',
+        yes_patterns=r'\b(yes|yeah|yep|yup|sure|please|toasted|toast it)\b',
+    )
+
+
+def parse_hot_iced_deterministic(user_input: str) -> bool | None:
+    """
+    Deterministically parse hot/iced preference for coffee.
+
+    Returns:
+        True if wants iced, False if wants hot, None if unclear
+    """
+    input_lower = user_input.lower()
+
+    if re.search(r'\b(iced|cold)\b', input_lower):
+        return True
+    if re.search(r'\b(hot|warm|regular)\b', input_lower):
+        return False
+
+    return None
+
+
 def validate_delivery_zip_code(
     address: str,
     allowed_zip_codes: list[str],

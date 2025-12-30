@@ -4725,3 +4725,135 @@ class TestDrinkSelectionHandler:
         drink = order.items.items[0]
         assert drink.status == TaskStatus.COMPLETE
         assert "anything else" in result.message.lower()
+
+
+class TestByPoundHandlers:
+    """Tests for _handle_by_pound_inquiry and _handle_by_pound_category_selection."""
+
+    def test_general_inquiry_asks_for_category(self):
+        """Test that general by-the-pound inquiry asks which category."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_by_pound_inquiry(None, order)
+
+        assert "cheeses" in result.message.lower()
+        assert "spreads" in result.message.lower()
+        assert "cold cuts" in result.message.lower()
+        assert order.pending_field == "by_pound_category"
+
+    def test_specific_category_inquiry_lists_items(self):
+        """Test that asking about specific category lists items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_by_pound_inquiry("cheese", order)
+
+        assert "muenster" in result.message.lower()
+        assert "swiss" in result.message.lower()
+        assert "by the pound" in result.message.lower()
+
+    def test_category_selection_cheese_lists_items(self):
+        """Test that selecting cheese category lists cheese items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import ByPoundCategoryResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "by_pound_category"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+            mock_parse.return_value = ByPoundCategoryResponse(category="cheese")
+
+            result = sm._handle_by_pound_category_selection("cheese please", order)
+
+            assert "muenster" in result.message.lower()
+            assert "cheeses" in result.message.lower()
+
+    def test_category_selection_cold_cuts_lists_items(self):
+        """Test that selecting cold cuts category lists items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import ByPoundCategoryResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "by_pound_category"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+            mock_parse.return_value = ByPoundCategoryResponse(category="cold_cut")
+
+            result = sm._handle_by_pound_category_selection("cold cuts", order)
+
+            assert "turkey" in result.message.lower() or "pastrami" in result.message.lower()
+            assert "cold cuts" in result.message.lower()
+
+    def test_category_selection_unclear_asks_again(self):
+        """Test that unclear input asks for category again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import ByPoundCategoryResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "by_pound_category"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+            mock_parse.return_value = ByPoundCategoryResponse(unclear=True)
+
+            result = sm._handle_by_pound_category_selection("huh?", order)
+
+            assert "cheeses" in result.message.lower()
+            assert "spreads" in result.message.lower()
+
+    def test_category_selection_declined_returns_to_ordering(self):
+        """Test that declining returns to ordering."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import ByPoundCategoryResponse
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "by_pound_category"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+            mock_parse.return_value = ByPoundCategoryResponse(category=None, unclear=False)
+
+            result = sm._handle_by_pound_category_selection("never mind", order)
+
+            assert "what else" in result.message.lower()
+            assert order.pending_field is None
+
+    def test_fish_category_lists_fish_items(self):
+        """Test that fish category lists fish items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_by_pound_inquiry("fish", order)
+
+        # Should list fish items like nova lox, etc.
+        assert "by the pound" in result.message.lower()
+
+    def test_salad_category_lists_salad_items(self):
+        """Test that salad category lists salad items."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm._handle_by_pound_inquiry("salad", order)
+
+        # Should list salad items
+        assert "salads" in result.message.lower() or "salad" in result.message.lower()

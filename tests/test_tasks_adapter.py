@@ -1,18 +1,14 @@
 """
-Tests for the task orchestrator adapter module.
+Tests for the adapter module.
 
 Tests state conversion between dict-based order state and OrderTask.
 """
 
 import pytest
-import os
-from unittest.mock import patch
 
 from sandwich_bot.tasks.adapter import (
-    is_task_orchestrator_enabled,
     dict_to_order_task,
     order_task_to_dict,
-    process_message_with_tasks,
 )
 from sandwich_bot.tasks.models import (
     TaskStatus,
@@ -20,37 +16,6 @@ from sandwich_bot.tasks.models import (
     BagelItemTask,
     CoffeeItemTask,
 )
-
-
-# =============================================================================
-# Feature Flag Tests
-# =============================================================================
-
-class TestFeatureFlag:
-    """Tests for is_task_orchestrator_enabled."""
-
-    def test_enabled_by_default(self):
-        """Test that feature is enabled by default."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_task_orchestrator_enabled() is True
-
-    def test_enabled_when_true(self):
-        """Test enabling with 'true'."""
-        with patch.dict(os.environ, {"TASK_ORCHESTRATOR_ENABLED": "true"}):
-            assert is_task_orchestrator_enabled() is True
-
-    def test_disabled_when_false(self):
-        """Test explicit disable with 'false'."""
-        with patch.dict(os.environ, {"TASK_ORCHESTRATOR_ENABLED": "false"}):
-            assert is_task_orchestrator_enabled() is False
-
-    def test_percentage_rollout(self):
-        """Test percentage-based rollout."""
-        with patch.dict(os.environ, {"TASK_ORCHESTRATOR_ENABLED": "100"}):
-            assert is_task_orchestrator_enabled() is True
-
-        with patch.dict(os.environ, {"TASK_ORCHESTRATOR_ENABLED": "0"}):
-            assert is_task_orchestrator_enabled() is False
 
 
 # =============================================================================

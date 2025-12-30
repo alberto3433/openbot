@@ -29,12 +29,7 @@ Usage in voice_vapi.py:
 
 import logging
 import traceback
-from typing import Any, Dict, List, Optional, Tuple, Callable
-
-from sandwich_bot.tasks.adapter import (
-    is_task_orchestrator_enabled,
-    process_message_with_tasks,
-)
+from typing import Any, Callable, Dict, List, Tuple
 
 from sandwich_bot.tasks.state_machine_adapter import (
     is_state_machine_enabled,
@@ -53,7 +48,6 @@ def process_voice_message(
     store_info: Dict[str, Any] = None,
     returning_customer: Dict[str, Any] = None,
     llm_fallback_fn: Callable = None,
-    force_task_orchestrator: bool = False,
     force_state_machine: bool = False,
 ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
     """
@@ -61,8 +55,7 @@ def process_voice_message(
 
     Priority order:
     1. State machine (if force_state_machine or STATE_MACHINE_ENABLED) - default
-    2. Task-based orchestrator (if force_task_orchestrator or TASK_ORCHESTRATOR_ENABLED)
-    3. LLM fallback function
+    2. LLM fallback function
 
     Args:
         user_message: The transcribed voice message
@@ -73,16 +66,14 @@ def process_voice_message(
         store_info: Store information
         returning_customer: Returning customer data if available
         llm_fallback_fn: Function to call for LLM-based processing
-        force_task_orchestrator: Override feature flag to force task orchestrator
         force_state_machine: Override feature flag to force state machine
 
     Returns:
         Tuple of (reply, updated_order_state, actions)
     """
     use_state_machine = force_state_machine or is_state_machine_enabled()
-    use_tasks = force_task_orchestrator or is_task_orchestrator_enabled()
 
-    # Priority 0: State machine (default)
+    # Priority 1: State machine (default)
     if use_state_machine:
         logger.info("Using state machine for voice message")
         try:
@@ -96,23 +87,7 @@ def process_voice_message(
                 returning_customer=returning_customer,
             )
         except Exception as e:
-            logger.error("State machine failed, trying fallback: %s\n%s", e, traceback.format_exc())
-            # Fall through to task orchestrator or LLM
-
-    # Priority 1: Task-based orchestrator
-    if use_tasks:
-        logger.info("Using task-based orchestrator for voice message")
-        try:
-            return process_message_with_tasks(
-                user_message=user_message,
-                order_state_dict=order_state,
-                history=history,
-                session_id=session_id,
-                menu_data=menu_index,
-                store_info=store_info,
-            )
-        except Exception as e:
-            logger.error("Task orchestrator failed, trying LLM fallback: %s", e)
+            logger.error("State machine failed, trying LLM fallback: %s\n%s", e, traceback.format_exc())
             # Fall through to LLM fallback
 
     # Priority 2: LLM fallback
@@ -129,7 +104,7 @@ def process_voice_message(
         )
 
     # No fallback available - this shouldn't happen in production
-    raise RuntimeError("No message processor available (state machine, task orchestrator, or LLM fallback)")
+    raise RuntimeError("No message processor available (state machine or LLM fallback)")
 
 
 def _call_llm_fallback(
@@ -171,7 +146,6 @@ def process_chat_message(
     store_info: Dict[str, Any] = None,
     returning_customer: Dict[str, Any] = None,
     llm_fallback_fn: Callable = None,
-    force_task_orchestrator: bool = False,
     force_state_machine: bool = False,
 ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
     """
@@ -188,7 +162,6 @@ def process_chat_message(
         store_info=store_info,
         returning_customer=returning_customer,
         llm_fallback_fn=llm_fallback_fn,
-        force_task_orchestrator=force_task_orchestrator,
         force_state_machine=force_state_machine,
     )
 

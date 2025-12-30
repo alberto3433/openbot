@@ -1,15 +1,13 @@
 """
-Adapter layer to bridge the TaskOrchestrator with existing endpoints.
+Adapter layer for state conversion.
 
-This module provides:
-1. State conversion between dict-based order_state and OrderTask
-2. Feature flag for gradual rollout
-3. Wrapper functions that can be used as drop-in replacements
+This module provides bidirectional conversion between:
+- Dict-based order_state (used by database/API layer)
+- OrderTask (used by state machine)
 """
 
-import os
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .models import (
     TaskStatus,
@@ -19,7 +17,6 @@ from .models import (
     MenuItemTask,
     SpeedMenuBagelItemTask,
 )
-from .orchestrator import TaskOrchestrator, TaskOrchestratorResult
 from .field_config import MenuFieldConfig
 
 logger = logging.getLogger(__name__)
@@ -54,38 +51,6 @@ DEFAULT_MODIFIER_PRICES = {
 
 # Base bagel price
 DEFAULT_BAGEL_BASE_PRICE = 2.50
-
-
-# -----------------------------------------------------------------------------
-# Feature Flag
-# -----------------------------------------------------------------------------
-
-def is_task_orchestrator_enabled() -> bool:
-    """
-    Check if the task-based orchestrator is enabled.
-
-    Control via environment variable:
-        TASK_ORCHESTRATOR_ENABLED=true|false|percentage
-
-    Examples:
-        TASK_ORCHESTRATOR_ENABLED=true      - Always use task system (default)
-        TASK_ORCHESTRATOR_ENABLED=false     - Don't use task system
-        TASK_ORCHESTRATOR_ENABLED=50        - 50% of sessions use task system
-    """
-    flag_value = os.environ.get("TASK_ORCHESTRATOR_ENABLED", "true").lower()
-
-    if flag_value == "true":
-        return True
-    elif flag_value == "false":
-        return False
-    else:
-        # Percentage-based rollout
-        try:
-            percentage = int(flag_value)
-            import random
-            return random.randint(1, 100) <= percentage
-        except ValueError:
-            return False
 
 
 # -----------------------------------------------------------------------------
@@ -279,8 +244,8 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 speed_menu_item.unit_price = item["unit_price"]
             order.items.add_item(speed_menu_item)
 
-    # Restore task orchestrator state if present
-    task_state = order_dict.get("task_orchestrator_state", {})
+    # Restore conversation history if present
+    task_state = order_dict.get("task_orchestrator_state", {})  # Legacy key name
     if task_state.get("conversation_history"):
         order.conversation_history = task_state["conversation_history"]
 
@@ -602,7 +567,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
         "total": total,
     }
 
-    # Preserve task orchestrator state
+    # Preserve conversation history (legacy key name for compatibility)
     order_dict["task_orchestrator_state"] = {
         "conversation_history": order.conversation_history,
     }
@@ -618,215 +583,3 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
     }
 
     return order_dict
-
-
-# -----------------------------------------------------------------------------
-# Orchestrator Wrapper
-# -----------------------------------------------------------------------------
-
-# Global orchestrator instance (lazy initialized)
-_task_orchestrator: Optional[TaskOrchestrator] = None
-
-
-def get_task_orchestrator(menu_data: Dict = None) -> TaskOrchestrator:
-    """
-    Get or create the global TaskOrchestrator instance.
-
-    Args:
-        menu_data: Optional menu data for configuration
-
-    Returns:
-        Configured TaskOrchestrator instance
-    """
-    global _task_orchestrator
-
-    if _task_orchestrator is None:
-        menu_config = MenuFieldConfig.from_menu_data(menu_data) if menu_data else None
-        _task_orchestrator = TaskOrchestrator(
-            menu_config=menu_config,
-            menu_data=menu_data,
-        )
-        logger.info("Created new task orchestrator instance")
-
-    return _task_orchestrator
-
-
-def process_message_with_tasks(
-    user_message: str,
-    order_state_dict: Dict[str, Any],
-    history: List[Dict[str, str]],
-    session_id: str = None,
-    menu_data: Dict = None,
-    store_info: Dict = None,
-) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
-    """
-    Process a user message using the task-based orchestrator.
-
-    This is designed to be a drop-in replacement for the other orchestrators.
-
-    Args:
-        user_message: The user's input message
-        order_state_dict: Current order state in dict format
-        history: Conversation history
-        session_id: Session identifier
-        menu_data: Menu data for pricing
-        store_info: Store information (currently unused)
-
-    Returns:
-        Tuple of (reply, updated_order_state_dict, actions)
-    """
-    # Convert dict state to OrderTask
-    order = dict_to_order_task(order_state_dict, session_id)
-
-    # Copy conversation history if not already present
-    if not order.conversation_history and history:
-        order.conversation_history = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in history
-        ]
-
-    # Get the pending question for context
-    orchestrator = get_task_orchestrator(menu_data)
-    pending_question = orchestrator.get_pending_question(order)
-
-    # Process the message
-    result: TaskOrchestratorResult = orchestrator.process(
-        user_input=user_message,
-        order=order,
-        pending_question=pending_question,
-    )
-
-    # Convert state back to dict (pass store_info for tax calculation)
-    updated_dict = order_task_to_dict(result.order, store_info=store_info)
-
-    # Build actions list for compatibility
-    actions = _infer_actions_from_result(order_state_dict, updated_dict, result)
-
-    logger.info(
-        "Task orchestrator processed message - action: %s, complete: %s",
-        result.action_type,
-        result.is_complete
-    )
-
-    return result.message, updated_dict, actions
-
-
-async def process_message_with_tasks_async(
-    user_message: str,
-    order_state_dict: Dict[str, Any],
-    history: List[Dict[str, str]],
-    session_id: str = None,
-    menu_data: Dict = None,
-    store_info: Dict = None,
-) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
-    """
-    Process a user message asynchronously using the task-based orchestrator.
-
-    Args:
-        user_message: The user's input message
-        order_state_dict: Current order state in dict format
-        history: Conversation history
-        session_id: Session identifier
-        menu_data: Menu data for pricing
-        store_info: Store information (currently unused)
-
-    Returns:
-        Tuple of (reply, updated_order_state_dict, actions)
-    """
-    # Convert dict state to OrderTask
-    order = dict_to_order_task(order_state_dict, session_id)
-
-    # Copy conversation history if not already present
-    if not order.conversation_history and history:
-        order.conversation_history = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in history
-        ]
-
-    # Get the pending question for context
-    orchestrator = get_task_orchestrator(menu_data)
-    pending_question = orchestrator.get_pending_question(order)
-
-    # Process the message asynchronously
-    result: TaskOrchestratorResult = await orchestrator.process_async(
-        user_input=user_message,
-        order=order,
-        pending_question=pending_question,
-    )
-
-    # Convert state back to dict (pass store_info for tax calculation)
-    updated_dict = order_task_to_dict(result.order, store_info=store_info)
-
-    # Build actions list for compatibility
-    actions = _infer_actions_from_result(order_state_dict, updated_dict, result)
-
-    logger.info(
-        "Task orchestrator (async) processed message - action: %s, complete: %s",
-        result.action_type,
-        result.is_complete
-    )
-
-    return result.message, updated_dict, actions
-
-
-def _infer_actions_from_result(
-    old_state: Dict[str, Any],
-    new_state: Dict[str, Any],
-    result: TaskOrchestratorResult,
-) -> List[Dict[str, Any]]:
-    """
-    Infer actions taken by comparing old and new state.
-
-    This provides backward compatibility with code that expects
-    discrete actions like "add_sandwich", "confirm_order", etc.
-    """
-    actions = []
-
-    old_items = old_state.get("items", [])
-    new_items = new_state.get("items", [])
-
-    # Check for added items
-    if len(new_items) > len(old_items):
-        for i in range(len(old_items), len(new_items)):
-            item = new_items[i]
-            item_type = item.get("item_type", "sandwich")
-
-            if item_type == "drink":
-                intent = "add_drink"
-            else:
-                intent = "add_sandwich"
-
-            actions.append({
-                "intent": intent,
-                "slots": {
-                    "menu_item_name": item.get("menu_item_name"),
-                    "quantity": item.get("quantity", 1),
-                }
-            })
-
-    # Check for order type change
-    old_type = old_state.get("order_type")
-    new_type = new_state.get("order_type")
-    if new_type and new_type != old_type:
-        actions.append({
-            "intent": "set_order_type",
-            "slots": {"order_type": new_type}
-        })
-
-    # Check for confirmation
-    old_status = old_state.get("status")
-    new_status = new_state.get("status")
-    if new_status == "confirmed" and old_status != "confirmed":
-        actions.append({
-            "intent": "confirm_order",
-            "slots": {}
-        })
-
-    # If no specific actions detected, use a generic "conversation" action
-    if not actions:
-        actions.append({
-            "intent": "conversation",
-            "slots": {}
-        })
-
-    return actions

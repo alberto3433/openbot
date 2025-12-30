@@ -4472,3 +4472,117 @@ class TestEmailHandler:
             assert result.is_complete
             # email-validator normalizes the domain to lowercase
             assert order.customer_info.email == "John@example.com"
+
+
+class TestSpeedMenuBagelToastedHandler:
+    """Tests for _handle_speed_menu_bagel_toasted."""
+
+    def test_yes_toasted_completes_item(self):
+        """Test that 'yes' sets toasted=True and completes item."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item.mark_in_progress()
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+        order.pending_field = "toasted"
+
+        result = sm._handle_speed_menu_bagel_toasted("yes please", item, order)
+
+        assert item.toasted is True
+        assert item.status == TaskStatus.COMPLETE
+        assert order.pending_item_id is None
+
+    def test_no_toasted_completes_item(self):
+        """Test that 'no' sets toasted=False and completes item."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        item = SpeedMenuBagelItemTask(menu_item_name="The Leo")
+        item.mark_in_progress()
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+        order.pending_field = "toasted"
+
+        result = sm._handle_speed_menu_bagel_toasted("no thanks", item, order)
+
+        assert item.toasted is False
+        assert item.status == TaskStatus.COMPLETE
+
+    def test_unclear_response_asks_again(self):
+        """Test that unclear input asks for toasted preference again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, ToastedChoiceResponse
+        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item.mark_in_progress()
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+        order.pending_field = "toasted"
+
+        with patch("sandwich_bot.tasks.state_machine.parse_toasted_choice") as mock_parse:
+            mock_parse.return_value = ToastedChoiceResponse(toasted=None)
+
+            result = sm._handle_speed_menu_bagel_toasted("what?", item, order)
+
+            assert "toasted" in result.message.lower()
+            assert item.toasted is None
+
+    def test_deterministic_toasted_works(self):
+        """Test that 'toasted' is parsed deterministically without LLM."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item.mark_in_progress()
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+        order.pending_field = "toasted"
+
+        # "toasted" should be parsed deterministically
+        result = sm._handle_speed_menu_bagel_toasted("toasted", item, order)
+
+        assert item.toasted is True
+        assert item.status == TaskStatus.COMPLETE
+
+    def test_not_toasted_deterministic(self):
+        """Test that 'not toasted' is parsed deterministically."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        item = SpeedMenuBagelItemTask(menu_item_name="The Leo")
+        item.mark_in_progress()
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+        order.pending_field = "toasted"
+
+        result = sm._handle_speed_menu_bagel_toasted("not toasted", item, order)
+
+        assert item.toasted is False
+        assert item.status == TaskStatus.COMPLETE

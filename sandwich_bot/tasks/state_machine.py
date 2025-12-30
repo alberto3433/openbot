@@ -232,6 +232,7 @@ def _check_redirect_to_pending_item(
     item: "ItemTask",
     order: "OrderTask",
     question: str,
+    valid_answers: set[str] | None = None,
 ) -> "StateMachineResult | None":
     """
     Check if user is trying to order a new item instead of answering a pending question.
@@ -245,11 +246,21 @@ def _check_redirect_to_pending_item(
         item: The pending item being configured
         order: The current order
         question: The question to re-ask (e.g., "Would you like it toasted?")
+        valid_answers: Optional set of valid answer keywords that should NOT be
+                       considered new order attempts (e.g., {"bagel", "fruit salad"}
+                       for side_choice questions)
 
     Returns:
         StateMachineResult with redirect message if user is ordering new item,
         None if user is answering the pending question normally.
     """
+    # If user input matches a valid answer for this question, don't redirect
+    if valid_answers:
+        text_lower = user_input.lower().strip()
+        for answer in valid_answers:
+            if answer in text_lower:
+                return None
+
     if _looks_like_new_order_attempt(user_input):
         item_desc = _get_pending_item_description(item)
         return StateMachineResult(
@@ -378,6 +389,49 @@ class OrderStateMachine:
             result = self._handle_order_status(order)
             order.add_message("assistant", result.message)
             return result
+
+        # Check for "make it 2" pattern early (works from any state with items)
+        # This must be before phase routing to catch it no matter what phase we're in
+        from .parsers.deterministic import MAKE_IT_N_PATTERN
+        make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
+        if make_it_n_match and order.items.get_item_count() > 0:
+            num_str = None
+            for i in range(1, 8):
+                if make_it_n_match.group(i):
+                    num_str = make_it_n_match.group(i).lower()
+                    break
+            if num_str:
+                word_to_num = {
+                    "two": 2, "three": 3, "four": 4, "five": 5,
+                    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+                }
+                if num_str.isdigit():
+                    target_qty = int(num_str)
+                else:
+                    target_qty = word_to_num.get(num_str, 0)
+
+                if target_qty >= 2:
+                    active_items = order.items.get_active_items()
+                    if active_items:
+                        last_item = active_items[-1]
+                        last_item_name = last_item.get_summary()
+                        added_count = target_qty - 1
+
+                        for _ in range(added_count):
+                            new_item = last_item.model_copy(deep=True)
+                            new_item.id = str(uuid.uuid4())
+                            new_item.mark_complete()
+                            order.items.add_item(new_item)
+
+                        logger.info("GLOBAL: Added %d more of '%s' (make it N pattern)", added_count, last_item_name)
+
+                        if added_count == 1:
+                            msg = f"I've added a second {last_item_name}. Anything else?"
+                        else:
+                            msg = f"I've added {added_count} more {last_item_name}. Anything else?"
+
+                        order.add_message("assistant", msg)
+                        return StateMachineResult(message=msg, order=order)
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
@@ -1306,8 +1360,10 @@ class OrderStateMachine:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle side choice for omelette - uses constrained parser."""
+        # "bagel" and "fruit salad" are valid answers, not new order attempts
         redirect = _check_redirect_to_pending_item(
-            user_input, item, order, "Would you like a bagel or fruit salad with it?"
+            user_input, item, order, "Would you like a bagel or fruit salad with it?",
+            valid_answers={"bagel", "fruit", "fruit salad"}
         )
         if redirect:
             return redirect

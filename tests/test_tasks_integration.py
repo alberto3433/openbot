@@ -4199,3 +4199,269 @@ class TestTakingItemsHandler:
 
             bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
             assert len(bagels) == 3
+
+
+class TestPaymentMethodHandler:
+    """Tests for _handle_payment_method."""
+
+    def test_unclear_choice_returns_clarification(self):
+        """Test that unclear input asks for clarification."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(choice="unclear")
+
+            result = sm._handle_payment_method("what?", order)
+
+            assert "text" in result.message.lower() or "email" in result.message.lower()
+
+    def test_text_without_phone_asks_for_phone(self):
+        """Test that selecting text without phone asks for phone number."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(choice="text")
+
+            result = sm._handle_payment_method("text me", order)
+
+            assert "phone" in result.message.lower()
+            assert order.payment.method == "card_link"
+
+    def test_text_with_phone_completes_order(self):
+        """Test that selecting text with phone completes order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(
+                choice="text", phone_number="2015551234"
+            )
+
+            result = sm._handle_payment_method("text me at 201-555-1234", order)
+
+            assert result.is_complete
+            assert order.checkout.confirmed
+            assert order.customer_info.phone == "+12015551234"
+            assert order.checkout.order_number.startswith("ORD-")
+
+    def test_text_with_existing_phone_completes_order(self):
+        """Test that selecting text with already-set phone completes order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        order.customer_info.phone = "+12015551234"  # Already has phone
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(choice="text")
+
+            result = sm._handle_payment_method("text me", order)
+
+            assert result.is_complete
+            assert order.checkout.confirmed
+            assert "text" in result.message.lower()
+
+    def test_email_without_address_asks_for_email(self):
+        """Test that selecting email without address asks for email."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(choice="email")
+
+            result = sm._handle_payment_method("email me", order)
+
+            assert "email" in result.message.lower()
+            assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
+
+    def test_email_with_address_completes_order(self):
+        """Test that selecting email with address completes order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(
+                choice="email", email_address="john@example.com"
+            )
+
+            result = sm._handle_payment_method("email me at john@example.com", order)
+
+            assert result.is_complete
+            assert order.checkout.confirmed
+            assert order.customer_info.email == "john@example.com"
+            assert order.checkout.order_number.startswith("ORD-")
+
+    def test_text_with_invalid_phone_returns_error(self):
+        """Test that invalid phone number returns error message."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+            mock_parse.return_value = PaymentMethodResponse(
+                choice="text", phone_number="123"  # Too short
+            )
+
+            result = sm._handle_payment_method("text me at 123", order)
+
+            assert not result.is_complete
+            assert "short" in result.message.lower() or "number" in result.message.lower()
+
+
+class TestEmailHandler:
+    """Tests for _handle_email."""
+
+    def test_no_email_asks_again(self):
+        """Test that no email extracted asks for email again."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            mock_parse.return_value = EmailResponse(email=None)
+
+            result = sm._handle_email("I don't know", order)
+
+            assert "email" in result.message.lower()
+            assert not result.is_complete
+
+    def test_valid_email_completes_order(self):
+        """Test that valid email completes order."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            mock_parse.return_value = EmailResponse(email="john@example.com")
+
+            result = sm._handle_email("john@example.com", order)
+
+            assert result.is_complete
+            assert order.checkout.confirmed
+            assert order.customer_info.email == "john@example.com"
+            assert order.payment.payment_link_destination == "john@example.com"
+            assert order.checkout.order_number.startswith("ORD-")
+
+    def test_invalid_email_returns_validation_error(self):
+        """Test that invalid email returns validation error."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            mock_parse.return_value = EmailResponse(email="notanemail")
+
+            result = sm._handle_email("notanemail", order)
+
+            assert not result.is_complete
+            # Should have an error message about the email
+
+    def test_email_normalized_and_stored(self):
+        """Test that email is normalized before storing."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+            # Email with uppercase domain
+            mock_parse.return_value = EmailResponse(email="John@EXAMPLE.COM")
+
+            result = sm._handle_email("John@EXAMPLE.COM", order)
+
+            assert result.is_complete
+            # email-validator normalizes the domain to lowercase
+            assert order.customer_info.email == "John@example.com"

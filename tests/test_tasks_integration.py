@@ -2768,3 +2768,236 @@ class TestCoffeeStyle:
         assert coffee.status == TaskStatus.COMPLETE
         assert order.pending_item_id is None
         assert order.pending_field is None
+
+
+# =============================================================================
+# Side Choice Handler Tests
+# =============================================================================
+
+class TestSideChoice:
+    """Tests for _handle_side_choice (omelette side selection)."""
+
+    def test_fruit_salad_selected(self):
+        """Test selecting fruit salad as side."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "side_choice"
+
+        omelette = MenuItemTask(
+            menu_item_name="Western Omelette",
+            menu_item_type="omelette",
+            requires_side_choice=True,
+        )
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
+        order.pending_item_id = omelette.id
+
+        result = sm._handle_side_choice("fruit salad please", omelette, order)
+
+        assert omelette.side_choice == "fruit_salad"
+        assert omelette.status == TaskStatus.COMPLETE
+
+    def test_ambiguous_bagel_redirects(self):
+        """Test that just 'bagel' triggers redirect to clarify."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "side_choice"
+
+        omelette = MenuItemTask(
+            menu_item_name="Greek Omelette",
+            menu_item_type="omelette",
+            requires_side_choice=True,
+        )
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
+        order.pending_item_id = omelette.id
+
+        # Just "bagel" is ambiguous - could be ordering a new bagel
+        result = sm._handle_side_choice("bagel", omelette, order)
+
+        # Should redirect to finish the omelette first
+        assert "finish" in result.message.lower() or "first" in result.message.lower()
+        assert omelette.side_choice is None
+
+    def test_bagel_with_type_specified(self):
+        """Test selecting bagel with type specified upfront."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "side_choice"
+
+        omelette = MenuItemTask(
+            menu_item_name="Veggie Omelette",
+            menu_item_type="omelette",
+            requires_side_choice=True,
+        )
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
+        order.pending_item_id = omelette.id
+
+        result = sm._handle_side_choice("plain bagel", omelette, order)
+
+        assert omelette.side_choice == "bagel"
+        assert omelette.bagel_choice == "plain"
+        assert omelette.status == TaskStatus.COMPLETE
+
+    def test_cancel_side_removes_item(self):
+        """Test canceling removes the omelette."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask, TaskStatus
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "side_choice"
+
+        omelette = MenuItemTask(
+            menu_item_name="Cheese Omelette",
+            menu_item_type="omelette",
+            requires_side_choice=True,
+        )
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
+        order.pending_item_id = omelette.id
+
+        result = sm._handle_side_choice("never mind cancel that", omelette, order)
+
+        assert omelette.status == TaskStatus.SKIPPED
+        assert order.phase == OrderPhase.TAKING_ITEMS.value
+        assert "removed" in result.message.lower()
+
+    def test_unclear_response_reprompts(self):
+        """Test unclear response re-prompts with item name."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "side_choice"
+
+        omelette = MenuItemTask(
+            menu_item_name="Ham Omelette",
+            menu_item_type="omelette",
+            requires_side_choice=True,
+        )
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
+
+        result = sm._handle_side_choice("hmm not sure", omelette, order)
+
+        assert omelette.side_choice is None
+        assert "bagel" in result.message.lower() and "fruit" in result.message.lower()
+        assert "ham omelette" in result.message.lower()
+
+
+# =============================================================================
+# Soda Clarification Handler Tests
+# =============================================================================
+
+class TestSodaClarification:
+    """Tests for _handle_soda_clarification."""
+
+    def test_lists_available_sodas_from_menu(self):
+        """Test that available sodas are listed from menu data."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [
+                    {"name": "Coke"},
+                    {"name": "Diet Coke"},
+                    {"name": "Sprite"},
+                    {"name": "Ginger Ale"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_soda_clarification(order)
+
+        assert "what kind" in result.message.lower()
+        assert "coke" in result.message.lower()
+
+    def test_lists_many_sodas_with_and_others(self):
+        """Test that long list uses 'and others' format."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [
+                    {"name": "Coke"},
+                    {"name": "Diet Coke"},
+                    {"name": "Sprite"},
+                    {"name": "Ginger Ale"},
+                    {"name": "Root Beer"},
+                    {"name": "Lemonade"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_soda_clarification(order)
+
+        assert "and others" in result.message.lower()
+
+    def test_fallback_when_no_menu_data(self):
+        """Test fallback message when no menu beverages."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data=None)
+        order = OrderTask()
+
+        result = sm._handle_soda_clarification(order)
+
+        assert "what kind" in result.message.lower()
+        assert "coke" in result.message.lower()
+        assert "sprite" in result.message.lower()
+
+    def test_fallback_with_empty_beverages(self):
+        """Test fallback when beverages list is empty."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_soda_clarification(order)
+
+        # Should use fallback message
+        assert "coke" in result.message.lower()
+
+    def test_two_sodas_uses_and_format(self):
+        """Test that two sodas uses proper 'and' format."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "items_by_type": {
+                "beverage": [
+                    {"name": "Coke"},
+                    {"name": "Sprite"},
+                ],
+            }
+        })
+        order = OrderTask()
+
+        result = sm._handle_soda_clarification(order)
+
+        # Should have "Coke, and Sprite" or similar format
+        assert "coke" in result.message.lower()
+        assert "sprite" in result.message.lower()

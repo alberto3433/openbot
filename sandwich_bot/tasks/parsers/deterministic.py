@@ -146,6 +146,24 @@ ORDER_STATUS_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# "Add more" patterns - phrases that mean "add 1 more" like "add a third", "add another"
+# These ordinals mean "add 1 more to reach that total", NOT "add that quantity"
+ADD_MORE_PATTERN = re.compile(
+    r"(?:can\s+you\s+|could\s+you\s+|please\s+)?"
+    r"(?:add|throw\s+in|get\s+me|give\s+me|i(?:'?d|\s+would)?\s+(?:like|want))"
+    r"\s+"
+    r"(?:"
+    # "a third", "a fourth", "a fifth" etc. - ordinals meaning "one more"
+    r"(?:a\s+)?(?:third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"|"
+    # "another", "one more", "an additional"
+    r"(?:another|one\s+more|an?\s+additional)"
+    r")"
+    r"(?:\s+(?:one|1))?"  # optional "one" after
+    r"(?:\s+(.+?))?$",  # optional item description
+    re.IGNORECASE
+)
+
 # Bagel quantity pattern
 BAGEL_QUANTITY_PATTERN = re.compile(
     r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
@@ -687,7 +705,9 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     if not drink_type:
         return None
 
-    logger.debug("Deterministic parse: detected soda type '%s'", drink_type)
+    # Normalize to canonical name if available (e.g., "dr brown's cream soda" -> "Dr. Brown's Cream Soda")
+    canonical_name = MENU_ITEM_CANONICAL_NAMES.get(drink_type, drink_type)
+    logger.debug("Deterministic parse: detected soda type '%s' -> canonical '%s'", drink_type, canonical_name)
 
     quantity = 1
     qty_match = re.search(r'(\d+|two|three|four|five)\s+', text_lower)
@@ -698,11 +718,11 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
-    logger.debug("Deterministic parse: soda order - type=%s, qty=%d", drink_type, quantity)
+    logger.debug("Deterministic parse: soda order - type=%s, qty=%d", canonical_name, quantity)
 
     return OpenInputResponse(
         new_coffee=True,
-        new_coffee_type=drink_type,
+        new_coffee_type=canonical_name,
         new_coffee_quantity=quantity,
         new_coffee_size=None,
         new_coffee_iced=None,
@@ -822,6 +842,110 @@ def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
                     item_description_query=item_name,
                 )
 
+    return None
+
+
+# =============================================================================
+# "Add More" Parsing (add a third, add another, etc.)
+# =============================================================================
+
+def _parse_add_more_request(text: str) -> OpenInputResponse | None:
+    """
+    Parse "add more" requests like "add a third orange juice", "add another coffee".
+
+    These phrases mean "add 1 more" - ordinals like "third" mean "one more to make 3 total",
+    NOT "add 3 items".
+
+    Returns OpenInputResponse with quantity=1 for the item, or None if no match.
+    """
+    match = ADD_MORE_PATTERN.match(text.strip())
+    if not match:
+        return None
+
+    item_text = match.group(1)
+    if item_text:
+        item_text = item_text.strip()
+        # Clean up trailing punctuation
+        item_text = re.sub(r'[.!?,]+$', '', item_text).strip()
+
+    logger.info("ADD MORE REQUEST: detected in '%s', item_text='%s'", text[:50], item_text)
+
+    # If no item specified, we can't parse deterministically - need context
+    # The state machine will need to infer from the last item type
+    if not item_text:
+        # Return a special marker that indicates "add 1 more of whatever was last ordered"
+        # For now, return None and let it fall through to LLM or state machine handling
+        logger.debug("ADD MORE: no item specified, needs context")
+        return None
+
+    # Try to parse the item text as a specific item type
+    # First, try coffee/soda
+    coffee_result = _parse_coffee_deterministic(item_text)
+    if coffee_result and coffee_result.new_coffee:
+        coffee_result.new_coffee_quantity = 1  # Always 1 for "add another"
+        logger.info("ADD MORE: parsed as coffee '%s' (qty=1)", coffee_result.new_coffee_type)
+        return coffee_result
+
+    soda_result = _parse_soda_deterministic(item_text)
+    if soda_result and soda_result.new_coffee:
+        soda_result.new_coffee_quantity = 1  # Always 1 for "add another"
+        logger.info("ADD MORE: parsed as soda '%s' (qty=1)", soda_result.new_coffee_type)
+        return soda_result
+
+    # Try speed menu bagel
+    speed_result = _parse_speed_menu_bagel_deterministic(item_text)
+    if speed_result and speed_result.new_speed_menu_bagel:
+        speed_result.new_speed_menu_bagel_quantity = 1
+        logger.info("ADD MORE: parsed as speed menu '%s' (qty=1)", speed_result.new_speed_menu_bagel_name)
+        return speed_result
+
+    # Try menu item
+    menu_item, _ = _extract_menu_item_from_text(item_text)
+    if menu_item:
+        logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
+        return OpenInputResponse(
+            new_menu_item=menu_item,
+            new_menu_item_quantity=1,
+        )
+
+    # Try bagel
+    if re.search(r'\bbagels?\b', item_text, re.IGNORECASE):
+        bagel_type = _extract_bagel_type(item_text)
+        toasted = _extract_toasted(item_text)
+        spread, spread_type = _extract_spread(item_text)
+        logger.info("ADD MORE: parsed as bagel type='%s' (qty=1)", bagel_type)
+        return OpenInputResponse(
+            new_bagel=True,
+            new_bagel_quantity=1,
+            new_bagel_type=bagel_type,
+            new_bagel_toasted=toasted,
+            new_bagel_spread=spread,
+            new_bagel_spread_type=spread_type,
+        )
+
+    # Check for common drink shorthand like "orange juice", "OJ", etc.
+    # that might not match the full soda pattern
+    drink_shorthands = {
+        "orange juice": "Tropicana Orange Juice",
+        "oj": "Tropicana Orange Juice",
+        "apple juice": "Apple Juice",
+        "cranberry juice": "Cranberry Juice",
+        "lemonade": "Lemonade",
+        "water": "Water",
+        "bottled water": "Bottled Water",
+    }
+    item_lower = item_text.lower()
+    for shorthand, canonical in drink_shorthands.items():
+        if shorthand in item_lower:
+            logger.info("ADD MORE: parsed shorthand '%s' as '%s' (qty=1)", shorthand, canonical)
+            return OpenInputResponse(
+                new_coffee=True,
+                new_coffee_type=canonical,
+                new_coffee_quantity=1,
+            )
+
+    # Couldn't parse the item - fall back to LLM
+    logger.debug("ADD MORE: couldn't parse item '%s', falling back", item_text)
     return None
 
 
@@ -1091,6 +1215,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
             return OpenInputResponse(cancel_item=cancel_item)
 
+    # Check for "add more" requests (add a third, add another, etc.)
+    add_more_result = _parse_add_more_request(text)
+    if add_more_result:
+        return add_more_result
+
     # Early check for spread/salad sandwiches
     text_lower = text.lower()
     has_bagel_mention = re.search(r"\bbagels?\b", text_lower)
@@ -1130,6 +1259,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                     qty = WORD_TO_NUM.get(qty_str, 1)
             logger.info("STANDALONE SIDE ITEM: matched '%s' -> %s (qty=%d)", text[:50], canonical_name, qty)
             return OpenInputResponse(new_side_item=canonical_name, new_side_item_quantity=qty)
+
+    # Check for known menu items FIRST - BEFORE any bagel patterns
+    # This ensures specific items like "whitefish salad on everything bagel" are recognized
+    # as menu items rather than just "everything bagel"
+    menu_item, qty = _extract_menu_item_from_text(text)
+    if menu_item:
+        toasted = _extract_toasted(text)
+        bagel_choice = _extract_bagel_type(text)
+        logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
+        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
 
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)
@@ -1182,7 +1321,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             new_side_item_quantity=side_qty,
         )
 
-    # Check if text contains "bagel" anywhere
+    # Check if text contains "bagel" anywhere (but only if no menu item was matched earlier)
     if re.search(r"\bbagels?\b", text, re.IGNORECASE):
         bagel_type = _extract_bagel_type(text)
         toasted = _extract_toasted(text)
@@ -1204,16 +1343,6 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 new_side_item=side_item,
                 new_side_item_quantity=side_qty,
             )
-
-    # Check for known menu items FIRST (before generic coffee/beverage parsing)
-    # This ensures specific items like "Tropicana Orange Juice 46 oz" are matched
-    # before "orange juice" is matched as a generic beverage type
-    menu_item, qty = _extract_menu_item_from_text(text)
-    if menu_item:
-        toasted = _extract_toasted(text)
-        bagel_choice = _extract_bagel_type(text)
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s)", text[:50], menu_item, qty, toasted, bagel_choice)
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice)
 
     # Check for coffee/beverage order
     coffee_result = _parse_coffee_deterministic(text)

@@ -612,7 +612,7 @@ def ensure_salad_sandwich_attributes(db: Session, salad_sandwich_type: ItemType)
 def populate_menu_items(db: Session):
     """Populate the menu with Zucker's items."""
     bagel_type = db.query(ItemType).filter(ItemType.slug == "bagel").first()
-    sandwich_type = db.query(ItemType).filter(ItemType.slug == "sandwich").first()
+    signature_sandwich_type = db.query(ItemType).filter(ItemType.slug == "signature_sandwich").first()
     omelette_type = db.query(ItemType).filter(ItemType.slug == "omelette").first()
     spread_sandwich_type = db.query(ItemType).filter(ItemType.slug == "spread_sandwich").first()
     salad_sandwich_type = db.query(ItemType).filter(ItemType.slug == "salad_sandwich").first()
@@ -645,41 +645,41 @@ def populate_menu_items(db: Session):
         {"name": "Bagel with Butter", "category": "bagel", "base_price": 3.50, "is_signature": False, "item_type_id": bagel_type.id if bagel_type else None},
 
         # Egg Sandwiches (Signature)
-        {"name": "The Classic BEC", "category": "signature", "base_price": 9.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Classic BEC", "category": "signature", "base_price": 9.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Everything Bagel", "protein": "Bacon", "cheese": "American", "extras": ["Egg"]}},
-        {"name": "The Leo", "category": "signature", "base_price": 14.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Leo", "category": "signature", "base_price": 14.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Nova Scotia Salmon", "extras": ["Scrambled Eggs", "Onion"]}},
-        {"name": "The Avocado Toast", "category": "signature", "base_price": 12.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Avocado Toast", "category": "signature", "base_price": 12.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Everything Bagel", "extras": ["Avocado", "Egg", "Everything Seeds"]}},
-        {"name": "The Delancey", "category": "signature", "base_price": 11.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Delancey", "category": "signature", "base_price": 11.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Bialy", "protein": "Pastrami", "extras": ["Scrambled Eggs", "Mustard"]}},
-        {"name": "The Health Nut", "category": "signature", "base_price": 10.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Health Nut", "category": "signature", "base_price": 10.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Whole Wheat Bagel", "extras": ["Egg White", "Avocado", "Tomato"]}},
 
         # Lox & Smoked Fish
-        {"name": "Nova Scotia Salmon on Bagel", "category": "signature", "base_price": 16.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "Nova Scotia Salmon on Bagel", "category": "signature", "base_price": 16.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Nova Scotia Salmon", "extras": ["Cream Cheese", "Tomato", "Onion", "Capers"]}},
-        {"name": "The Zucker's Traditional", "category": "signature", "base_price": 18.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Zucker's Traditional", "category": "signature", "base_price": 18.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Nova Scotia Salmon", "extras": ["Cream Cheese", "Tomato", "Onion", "Capers"]}},
 
         # Deli Sandwiches
-        {"name": "Hot Pastrami Sandwich", "category": "signature", "base_price": 18.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "Hot Pastrami Sandwich", "category": "signature", "base_price": 18.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "New York Rye", "protein": "Pastrami", "extras": ["Mustard"]}},
-        {"name": "The Reuben", "category": "signature", "base_price": 19.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Reuben", "category": "signature", "base_price": 19.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "New York Rye", "protein": "Corned Beef", "cheese": "Swiss", "extras": ["Sauerkraut", "Russian Dressing"]}},
-        {"name": "Turkey Club", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "Turkey Club", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Turkey", "extras": ["Bacon", "Lettuce", "Tomato", "Mayo"]}},
 
         # Club & Deli Sandwiches
-        {"name": "The Chelsea Club", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Chelsea Club", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Chicken Salad", "cheese": "Cheddar", "extras": ["Bacon", "Tomato", "Lettuce", "Red Onion"]}},
-        {"name": "The Grand Central", "category": "signature", "base_price": 16.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Grand Central", "category": "signature", "base_price": 16.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Grilled Chicken", "extras": ["Bacon", "Tomato", "Lettuce", "Dijon Mayo"]}},
-        {"name": "The Tribeca", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Tribeca", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Turkey", "cheese": "Havarti", "extras": ["Tomato", "Lettuce", "Basil Mayo"]}},
-        {"name": "The Natural", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The Natural", "category": "signature", "base_price": 15.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Whole Wheat Bagel", "protein": "Smoked Turkey", "cheese": "Brie", "extras": ["Tomato", "Lettuce", "Dijon Dill Sauce"]}},
-        {"name": "The BLT", "category": "signature", "base_price": 12.95, "is_signature": True, "item_type_id": sandwich_type.id if sandwich_type else None,
+        {"name": "The BLT", "category": "signature", "base_price": 12.95, "is_signature": True, "item_type_id": signature_sandwich_type.id if signature_sandwich_type else None,
          "default_config": {"bread": "Plain Bagel", "protein": "Bacon", "extras": ["Lettuce", "Tomato", "Mayo"]}},
 
         # ===========================================
@@ -745,11 +745,11 @@ def populate_menu_items(db: Session):
         {"name": "Chocolate Milk", "category": "drink", "base_price": 4.00, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
 
         # Sides
-        {"name": "Latkes", "category": "side", "base_price": 5.95, "is_signature": False},
-        {"name": "Bacon", "category": "side", "base_price": 4.50, "is_signature": False},
-        {"name": "Fruit Cup", "category": "side", "base_price": 6.95, "is_signature": False},
-        {"name": "Bagel Chips", "category": "side", "base_price": 3.50, "is_signature": False},
-        {"name": "Fruit Salad", "category": "side", "base_price": 7.95, "is_signature": False},
+        {"name": "Latkes", "category": "side", "base_price": 5.95, "is_signature": False, "item_type_id": side_type.id if side_type else None},
+        {"name": "Bacon", "category": "side", "base_price": 4.50, "is_signature": False, "item_type_id": side_type.id if side_type else None},
+        {"name": "Fruit Cup", "category": "side", "base_price": 6.95, "is_signature": False, "item_type_id": side_type.id if side_type else None},
+        {"name": "Bagel Chips", "category": "side", "base_price": 3.50, "is_signature": False, "item_type_id": side_type.id if side_type else None},
+        {"name": "Fruit Salad", "category": "side", "base_price": 7.95, "is_signature": False, "item_type_id": side_type.id if side_type else None},
 
         # Omelettes (come with choice of bagel or fruit salad)
         # All omelettes are 3 eggs unless noted as egg whites

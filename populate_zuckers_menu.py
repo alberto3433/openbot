@@ -201,6 +201,19 @@ def ensure_item_types(db: Session):
         db.commit()
         print("Created 'snack' item type")
 
+    # Check for pastry item type (Desserts & Pastries category)
+    pastry_type = db.query(ItemType).filter(ItemType.slug == "pastry").first()
+    if not pastry_type:
+        pastry_type = ItemType(
+            slug="pastry",
+            display_name="Desserts & Pastries",
+            is_configurable=False,
+            skip_config=True,
+        )
+        db.add(pastry_type)
+        db.commit()
+        print("Created 'pastry' item type")
+
     # Check for side item type
     side_type = db.query(ItemType).filter(ItemType.slug == "side").first()
     if not side_type:
@@ -216,7 +229,7 @@ def ensure_item_types(db: Session):
 
     return (bagel_type, sandwich_type, omelette_type, spread_sandwich_type,
             salad_sandwich_type, sized_beverage_type, beverage_type,
-            fish_sandwich_type, by_the_lb_type, cream_cheese_type, snack_type, side_type)
+            fish_sandwich_type, by_the_lb_type, cream_cheese_type, snack_type, pastry_type, side_type)
 
 
 def ensure_bread_ingredients(db: Session):
@@ -609,6 +622,7 @@ def populate_menu_items(db: Session):
     by_the_lb_type = db.query(ItemType).filter(ItemType.slug == "by_the_lb").first()
     cream_cheese_type = db.query(ItemType).filter(ItemType.slug == "cream_cheese").first()
     snack_type = db.query(ItemType).filter(ItemType.slug == "snack").first()
+    pastry_type = db.query(ItemType).filter(ItemType.slug == "pastry").first()
     side_type = db.query(ItemType).filter(ItemType.slug == "side").first()
 
     # Define menu items
@@ -908,9 +922,47 @@ def populate_menu_items(db: Session):
         {"name": "Bagel Chips - BBQ", "category": "snack", "base_price": 3.50, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
         {"name": "Bagel Chips - Sea Salt & Vinegar", "category": "snack", "base_price": 3.50, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
         {"name": "Kettle Chips", "category": "snack", "base_price": 2.75, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
-        {"name": "Rugelach", "category": "snack", "base_price": 3.50, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
-        {"name": "Black & White Cookie", "category": "snack", "base_price": 4.50, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
-        {"name": "Chocolate Chip Cookie", "category": "snack", "base_price": 3.50, "is_signature": False, "item_type_id": snack_type.id if snack_type else None},
+
+        # ===========================================
+        # DESSERTS & PASTRIES - Baked goods and sweets
+        # Prices from Zucker's Fall 2023 menu and SinglePlatform (2024-2025)
+        # https://www.zuckersbagels.com/menu/
+        # ===========================================
+
+        # MUFFINS - Baked In-House ($3.95 each)
+        {"name": "Corn Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Blueberry Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Lemon Poppy Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Banana Walnut Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Cranberry Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Chocolate Chip Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Morning Glory Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Apple Cinnamon Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Double-Chocolate Muffin", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+
+        # COOKIES - Large, Homemade ($3.95 each)
+        {"name": "Chocolate Chip Cookie", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Peanut Butter Cookie", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Oatmeal Raisin Cookie", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Black & White Cookie", "category": "pastry", "base_price": 4.75, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Black & White Cookie Minis (3-Pack)", "category": "pastry", "base_price": 4.75, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+
+        # SPECIALTY PASTRIES
+        {"name": "Rugelach (3-Pack)", "category": "pastry", "base_price": 4.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Chocolate-Dipped Macaroons (3-Pack)", "category": "pastry", "base_price": 4.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Brownie", "category": "pastry", "base_price": 4.50, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Danish", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Babka - Chocolate", "category": "pastry", "base_price": 14.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Babka - Cinnamon", "category": "pastry", "base_price": 14.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+
+        # CAKES & BARS
+        {"name": "Russian Coffee Cake", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Rice Krispy Treat", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Pound Cake", "category": "pastry", "base_price": 3.75, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Blondie Square", "category": "pastry", "base_price": 3.95, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Pecan Pie Square", "category": "pastry", "base_price": 3.75, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Jelly Rings (3-Pack)", "category": "pastry", "base_price": 1.25, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
+        {"name": "Halvah Bar", "category": "pastry", "base_price": 1.25, "is_signature": False, "item_type_id": pastry_type.id if pastry_type else None},
     ]
 
     added = 0
@@ -941,7 +993,7 @@ def main():
         ensure_company_and_stores(db)
         (bagel_type, sandwich_type, omelette_type, spread_sandwich_type,
          salad_sandwich_type, sized_beverage_type, beverage_type,
-         fish_sandwich_type, by_the_lb_type, cream_cheese_type, snack_type, side_type) = ensure_item_types(db)
+         fish_sandwich_type, by_the_lb_type, cream_cheese_type, snack_type, pastry_type, side_type) = ensure_item_types(db)
         ensure_bread_ingredients(db)
         ensure_schmear_ingredients(db)
         ensure_protein_ingredients(db)
@@ -956,7 +1008,7 @@ def main():
 
         print("\nMenu population complete!")
         print("\nMenu summary:")
-        for cat in ["bagel", "signature", "omelette", "drink", "side", "spread_sandwich", "salad_sandwich", "fish_sandwich", "by_the_lb", "cream_cheese", "snack"]:
+        for cat in ["bagel", "signature", "omelette", "drink", "side", "spread_sandwich", "salad_sandwich", "fish_sandwich", "by_the_lb", "cream_cheese", "snack", "pastry"]:
             count = db.query(MenuItem).filter(MenuItem.category == cat).count()
             if count > 0:
                 print(f"  {cat}: {count} items")

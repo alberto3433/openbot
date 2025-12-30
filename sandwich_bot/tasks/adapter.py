@@ -318,10 +318,17 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             menu_item_name = item.menu_item_name
             menu_item_type = getattr(item, 'menu_item_type', None)
 
-            # Build display name with bagel choice and toasted status for spread/salad sandwiches
+            # Build display name with bagel choice, side choice, and toasted status
             display_name = menu_item_name
             if menu_item_type in ("spread_sandwich", "salad_sandwich") and bagel_choice:
                 display_name = f"{menu_item_name} on {bagel_choice} bagel"
+            # Add side choice for omelettes (bagel or fruit salad)
+            if side_choice == "fruit_salad":
+                display_name = f"{display_name} with fruit salad"
+            elif side_choice == "bagel" and bagel_choice:
+                display_name = f"{display_name} with {bagel_choice} bagel"
+            elif side_choice == "bagel":
+                display_name = f"{display_name} with bagel"
             if toasted is True:
                 display_name = f"{display_name} toasted"
             elif toasted is False and menu_item_type in ("spread_sandwich", "salad_sandwich"):

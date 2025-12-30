@@ -1763,7 +1763,7 @@ class OrderStateMachine:
         make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
         if make_it_n_match:
             num_str = None
-            for i in range(1, 7):
+            for i in range(1, 8):
                 if make_it_n_match.group(i):
                     num_str = make_it_n_match.group(i).lower()
                     break

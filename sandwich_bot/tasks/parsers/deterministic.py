@@ -109,7 +109,7 @@ CANCEL_ITEM_PATTERN = re.compile(
 )
 
 # "Make it 2" pattern - user wants to change quantity of last item to N
-# e.g., "make it 2", "I'll take 2", "actually 2", "give me 2", "let's do 2"
+# e.g., "make it 2", "I'll take 2", "actually 2", "give me 2", "let's do 2", "can I get 2?"
 MAKE_IT_N_PATTERN = re.compile(
     r"^(?:"
     # "make it 2", "make it two", "make that 2"
@@ -117,6 +117,9 @@ MAKE_IT_N_PATTERN = re.compile(
     r"|"
     # "I'll take 2", "I'll have 2", "I want 2"
     r"i'?ll?\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "can I get 2?", "can I have 2?", "could I get 2?", "may I have 2?"
+    r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     # "actually 2", "actually let's do 2"
     r"actually\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
@@ -131,7 +134,7 @@ MAKE_IT_N_PATTERN = re.compile(
     # "2 of those", "2 of them"
     r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
     r")"
-    r"[\s!.,]*$",
+    r"[\s!.,?]*$",
     re.IGNORECASE
 )
 
@@ -1214,7 +1217,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if make_it_n_match:
         # Find which group matched
         num_str = None
-        for i in range(1, 7):
+        for i in range(1, 8):
             if make_it_n_match.group(i):
                 num_str = make_it_n_match.group(i).lower()
                 break

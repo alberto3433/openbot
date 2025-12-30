@@ -1297,6 +1297,7 @@ class OrderStateMachine:
                 parsed.new_speed_menu_bagel_toasted,
                 order,
                 bagel_choice=parsed.new_speed_menu_bagel_bagel_choice,
+                modifications=parsed.new_speed_menu_bagel_modifications,
             )
             items_added.append(parsed.new_speed_menu_bagel_name)
 
@@ -3503,11 +3504,9 @@ class OrderStateMachine:
         )
 
         # Configure coffees one at a time (fully configure each before moving to next)
-        for idx, coffee in enumerate(all_coffees):
+        for coffee in all_coffees:
             if coffee.status != TaskStatus.IN_PROGRESS:
                 continue
-
-            item_num = idx + 1
 
             logger.info(
                 "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, iced=%s, status=%s",
@@ -3517,8 +3516,14 @@ class OrderStateMachine:
             # Get drink name for the question
             drink_name = coffee.drink_type or "coffee"
 
-            # Build ordinal descriptor if multiple items
-            if total_coffees > 1:
+            # Count items of the SAME drink type to determine if ordinals needed
+            same_type_items = [c for c in all_coffees if (c.drink_type or "coffee") == drink_name]
+            same_type_count = len(same_type_items)
+
+            # Build ordinal descriptor only if multiple items of same type
+            if same_type_count > 1:
+                # Find position among items of same type
+                item_num = next((i + 1 for i, c in enumerate(same_type_items) if c.id == coffee.id), 1)
                 ordinal = self._get_ordinal(item_num)
                 drink_desc = f"the {ordinal} {drink_name}"
             else:
@@ -3540,7 +3545,7 @@ class OrderStateMachine:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_style"
-                if total_coffees > 1:
+                if same_type_count > 1:
                     return StateMachineResult(
                         message=f"Would you like {drink_desc} hot or iced?",
                         order=order,
@@ -3595,21 +3600,22 @@ class OrderStateMachine:
             item.flavor_syrup = coffee_mods.flavor_syrup
             logger.info(f"Extracted syrup from size response: {coffee_mods.flavor_syrup}")
 
-        # Move to hot/iced question with ordinal if multiple coffees
+        # Move to hot/iced question with ordinal if multiple items of same drink type
         order.pending_field = "coffee_style"
 
-        # Count total coffees and find current item's position
+        # Count items of the SAME drink type to determine if ordinals needed
+        drink_name = item.drink_type or "coffee"
         all_coffees = [
             c for c in order.items.items
             if isinstance(c, CoffeeItemTask)
         ]
-        total_coffees = len(all_coffees)
+        same_type_items = [c for c in all_coffees if (c.drink_type or "coffee") == drink_name]
+        same_type_count = len(same_type_items)
 
-        if total_coffees > 1:
-            # Find this coffee's position in the list
-            item_num = next((i + 1 for i, c in enumerate(all_coffees) if c.id == item.id), 1)
+        if same_type_count > 1:
+            # Find this coffee's position among items of same type
+            item_num = next((i + 1 for i, c in enumerate(same_type_items) if c.id == item.id), 1)
             ordinal = self._get_ordinal(item_num)
-            drink_name = item.drink_type or "coffee"
             return StateMachineResult(
                 message=f"Would you like the {ordinal} {drink_name} hot or iced?",
                 order=order,
@@ -3696,6 +3702,7 @@ class OrderStateMachine:
         toasted: bool | None,
         order: OrderTask,
         bagel_choice: str | None = None,
+        modifications: list[str] | None = None,
     ) -> StateMachineResult:
         """Add speed menu bagel(s) to the order."""
         if not item_name:
@@ -3719,6 +3726,7 @@ class OrderStateMachine:
                 menu_item_id=menu_item_id,
                 toasted=toasted,
                 bagel_choice=bagel_choice,
+                modifications=modifications or [],
                 unit_price=price,
             )
             if toasted is not None:

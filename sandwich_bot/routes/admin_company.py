@@ -53,7 +53,6 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import Company
 from ..schemas.company import CompanyOut, CompanyUpdate
 from ..services.helpers import get_or_create_company
 

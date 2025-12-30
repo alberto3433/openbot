@@ -16,13 +16,12 @@ request/response format handling done in the endpoint itself.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import flag_modified
 
-from .models import ChatSession, SessionAnalytics, Order, Store, Company, ItemType
-from .menu_index_builder import build_menu_index, get_menu_version
+from .models import SessionAnalytics, Company
+from .menu_index_builder import build_menu_index
 from .email_service import send_payment_link_email
 from .chains.integration import process_voice_message
 from .services.helpers import get_customer_info, build_store_info

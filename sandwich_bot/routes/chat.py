@@ -58,7 +58,7 @@ looks up previous orders to personalize the experience:
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -68,10 +68,9 @@ from sqlalchemy.orm import Session
 
 from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
-from ..models import Order, OrderItem, Store, Company, SessionAnalytics, ItemType
+from ..models import Store, SessionAnalytics
 from ..order_logic import apply_intent_to_order_state
 from ..menu_index_builder import build_menu_index, get_menu_version
-from ..email_service import send_payment_link_email
 from ..services.session import get_or_create_session, save_session
 from ..services.order import persist_confirmed_order
 from ..services.helpers import get_customer_info, get_or_create_company, get_primary_item_type_name
@@ -82,7 +81,6 @@ from ..schemas.chat import (
     ChatMessageResponse,
     ActionOut,
     AbandonedSessionRequest,
-    ReturningCustomerInfo,
 )
 
 

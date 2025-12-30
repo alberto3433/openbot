@@ -49,7 +49,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Store, Company
+from ..models import Store
 from ..schemas.stores import StoreOut
 from ..schemas.company import CompanyOut
 from ..services.helpers import get_or_create_company

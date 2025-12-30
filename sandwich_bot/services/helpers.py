@@ -180,11 +180,16 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
         "phone": recent_order.phone,
         "email": recent_order.customer_email,
         "order_count": order_count,
+        "last_order_id": recent_order.id,
         "last_order_items": last_order_items,
         "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
         "last_order_type": recent_order.order_type,  # "pickup" or "delivery"
         "last_order_address": recent_order.delivery_address,  # For repeat delivery orders
     }
+
+
+# Alias for backward compatibility
+get_customer_info = lookup_customer_by_phone
 
 
 def get_primary_item_type_name(db: Session) -> str:

@@ -74,6 +74,7 @@ from ..menu_index_builder import build_menu_index, get_menu_version
 from ..email_service import send_payment_link_email
 from ..services.session import get_or_create_session, save_session
 from ..services.order import persist_confirmed_order
+from ..services.helpers import get_customer_info
 from ..sammy.llm_client import call_sandwich_bot
 from ..schemas.chat import (
     ChatStartResponse,
@@ -115,73 +116,11 @@ limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 # =============================================================================
 
 def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
+    """Look up a returning customer by phone number.
+
+    Delegates to the shared get_customer_info helper in services.helpers.
     """
-    Look up a returning customer by phone number.
-    Returns customer info and order history if found.
-    """
-    if not phone:
-        return None
-
-    # Normalize phone number
-    normalized_phone = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-    phone_suffix = normalized_phone[-10:] if len(normalized_phone) >= 10 else normalized_phone
-
-    from sqlalchemy import func
-    from sqlalchemy.orm import joinedload
-
-    normalized_db_phone = func.replace(
-        func.replace(
-            func.replace(
-                func.replace(Order.phone, "-", ""),
-                " ", ""
-            ),
-            "(", ""
-        ),
-        ")", ""
-    )
-
-    recent_order = (
-        db.query(Order)
-        .options(joinedload(Order.items))
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
-        .order_by(Order.created_at.desc())
-        .first()
-    )
-
-    if not recent_order:
-        return None
-
-    order_count = (
-        db.query(Order)
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
-        .count()
-    )
-
-    last_order_items = []
-    if recent_order.items:
-        for item in recent_order.items:
-            item_data = {
-                "menu_item_name": item.menu_item_name,
-                "quantity": item.quantity,
-                "price": item.unit_price,
-            }
-            # All item-specific fields (item_type, bread, toasted, etc.) are in item_config
-            if item.item_config:
-                item_data.update(item.item_config)
-            last_order_items.append(item_data)
-
-    return {
-        "name": recent_order.customer_name,
-        "phone": recent_order.phone,
-        "email": recent_order.customer_email,
-        "order_count": order_count,
-        "last_order_items": last_order_items,
-        "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
-        "last_order_type": recent_order.order_type,
-        "last_order_address": recent_order.delivery_address,
-    }
+    return get_customer_info(db, phone)
 
 
 def get_or_create_company(db: Session) -> Company:

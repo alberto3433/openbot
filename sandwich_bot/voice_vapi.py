@@ -28,6 +28,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index_builder import build_menu_index, get_menu_version
+from .services.helpers import get_customer_info
 from sandwich_bot.sammy.llm_client import call_sandwich_bot
 from .order_logic import apply_intent_to_order_state
 from .email_service import send_payment_link_email
@@ -455,63 +456,11 @@ def _get_or_create_phone_session(
 
 
 def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
-    """Look up returning customer by phone number from past orders."""
-    from sqlalchemy.orm import joinedload
-    from .models import Order
+    """Look up returning customer by phone number from past orders.
 
-    # Normalize phone for lookup - extract just digits
-    normalized = "".join(c for c in phone if c.isdigit())
-    # Get last 10 digits for matching (handles +1 prefix variations)
-    phone_suffix = normalized[-10:] if len(normalized) >= 10 else normalized
-
-    if not phone_suffix:
-        return None
-
-    # Find most recent confirmed order matching this phone number
-    # Use joinedload to eagerly load items for repeat order functionality
-    recent_orders = (
-        db.query(Order)
-        .options(joinedload(Order.items))
-        .filter(
-            Order.phone.isnot(None),
-            Order.status == "confirmed",
-        )
-        .order_by(Order.created_at.desc())
-        .limit(20)  # Check recent orders for a match
-        .all()
-    )
-
-    # Find an order that matches this phone number
-    for order in recent_orders:
-        if order.phone:
-            order_phone = "".join(c for c in order.phone if c.isdigit())
-            order_suffix = order_phone[-10:] if len(order_phone) >= 10 else order_phone
-
-            if order_suffix == phone_suffix:
-                # Build last_order_items from the order's items
-                last_order_items = []
-                for item in order.items:
-                    item_data = {
-                        "menu_item_name": item.menu_item_name,
-                        "quantity": item.quantity,
-                        "price": item.unit_price,
-                    }
-                    # All item-specific fields (item_type, bread, toasted, etc.) are in item_config
-                    if item.item_config:
-                        item_data.update(item.item_config)
-                    last_order_items.append(item_data)
-
-                return {
-                    "name": order.customer_name,
-                    "phone": order.phone,
-                    "email": order.customer_email,
-                    "last_order_id": order.id,
-                    "last_order_items": last_order_items,
-                    "last_order_type": order.order_type,  # "pickup" or "delivery"
-                    "last_order_address": order.delivery_address,  # For repeat delivery orders
-                }
-
-    return None
+    Delegates to the shared get_customer_info helper in services.helpers.
+    """
+    return get_customer_info(db, phone)
 
 
 def _get_session_data(db: Session, session_id: str) -> Optional[Dict[str, Any]]:

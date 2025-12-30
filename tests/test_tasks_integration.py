@@ -4333,10 +4333,12 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse, \
+             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="email", email_address="john@example.com"
             )
+            mock_validate.return_value = ("john@example.com", None)
 
             result = sm._handle_payment_method("email me at john@example.com", order)
 
@@ -4409,8 +4411,10 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse, \
+             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
             mock_parse.return_value = EmailResponse(email="john@example.com")
+            mock_validate.return_value = ("john@example.com", None)
 
             result = sm._handle_email("john@example.com", order)
 
@@ -4456,9 +4460,11 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
-            # Email with uppercase domain
+        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse, \
+             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
+            # Email with uppercase domain - validator normalizes it
             mock_parse.return_value = EmailResponse(email="John@EXAMPLE.COM")
+            mock_validate.return_value = ("John@example.com", None)  # Normalized
 
             result = sm._handle_email("John@EXAMPLE.COM", order)
 

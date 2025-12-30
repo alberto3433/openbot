@@ -35,57 +35,6 @@ from .email_service import send_payment_link_email
 from .chains.integration import process_voice_message
 
 
-def _build_store_info(store_id: str, company_name: str, db: Session) -> Dict[str, Any]:
-    """Build store info dict for orchestrator."""
-    store_info = {
-        "name": company_name,
-        "store_id": store_id,
-        "city_tax_rate": 0.0,
-        "state_tax_rate": 0.0,
-        "delivery_zip_codes": [],
-        # Store location and contact info
-        "address": None,
-        "city": None,
-        "state": None,
-        "zip_code": None,
-        "phone": None,
-        "hours": None,
-        # All stores info for cross-store delivery lookup
-        "all_stores": [],
-    }
-    if db and store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            store_info["name"] = store.name or company_name
-            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
-            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
-            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
-            # Add location and contact info
-            store_info["address"] = store.address
-            store_info["city"] = store.city
-            store_info["state"] = store.state
-            store_info["zip_code"] = store.zip_code
-            store_info["phone"] = store.phone
-            store_info["hours"] = store.hours
-
-    # Get all stores for delivery zone lookup
-    if db:
-        all_stores = db.query(Store).filter(Store.status == "open").all()
-        store_info["all_stores"] = [
-            {
-                "store_id": s.store_id,
-                "name": s.name,
-                "delivery_zip_codes": s.delivery_zip_codes or [],
-                "address": s.address,
-                "city": s.city,
-                "state": s.state,
-                "phone": s.phone,
-            }
-            for s in all_stores
-        ]
-
-    return store_info
-
 logger = logging.getLogger(__name__)
 
 # Router for Vapi voice endpoints

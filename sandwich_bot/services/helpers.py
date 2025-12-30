@@ -56,7 +56,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import Company, ItemType, MenuItem, Order
+from ..models import Company, ItemType, MenuItem, Order, Store
 from ..schemas.menu import MenuItemOut
 
 
@@ -88,6 +88,84 @@ def get_or_create_company(db: Session) -> Company:
         db.commit()
         db.refresh(company)
     return company
+
+
+def build_store_info(
+    db: Session,
+    store_id: Optional[str],
+    company_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Build store info dict with tax rates, delivery zones, and location details.
+
+    This provides context about the store for order processing, including:
+    - Tax rates for price calculations
+    - Delivery zip codes for zone validation
+    - Store location and contact info
+    - All stores list for cross-store delivery lookup
+
+    Args:
+        db: Database session
+        store_id: The store ID to look up (optional)
+        company_name: Fallback company name if store not found (optional,
+                      will be looked up from Company table if not provided)
+
+    Returns:
+        Dict with store info including tax rates, delivery zones, and location
+    """
+    # Get company name if not provided
+    if not company_name:
+        company = db.query(Company).first()
+        company_name = company.name if company else "OrderBot"
+
+    store_info = {
+        "name": company_name,
+        "store_id": store_id,
+        "city_tax_rate": 0.0,
+        "state_tax_rate": 0.0,
+        "delivery_zip_codes": [],
+        # Store location and contact info
+        "address": None,
+        "city": None,
+        "state": None,
+        "zip_code": None,
+        "phone": None,
+        "hours": None,
+        # All stores info for cross-store delivery lookup
+        "all_stores": [],
+    }
+
+    if store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            store_info["name"] = store.name or company_name
+            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
+            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
+            # Add location and contact info
+            store_info["address"] = store.address
+            store_info["city"] = store.city
+            store_info["state"] = store.state
+            store_info["zip_code"] = store.zip_code
+            store_info["phone"] = store.phone
+            store_info["hours"] = store.hours
+
+    # Get all stores for delivery zone lookup
+    all_stores = db.query(Store).filter(Store.status == "open").all()
+    store_info["all_stores"] = [
+        {
+            "store_id": s.store_id,
+            "name": s.name,
+            "delivery_zip_codes": s.delivery_zip_codes or [],
+            "address": s.address,
+            "city": s.city,
+            "state": s.state,
+            "phone": s.phone,
+        }
+        for s in all_stores
+    ]
+
+    return store_info
 
 
 def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:

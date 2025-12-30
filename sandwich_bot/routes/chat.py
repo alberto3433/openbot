@@ -123,27 +123,6 @@ def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any
     return get_customer_info(db, phone)
 
 
-def build_store_info(store_id: Optional[str], company_name: str, db: Optional[Session] = None) -> Dict[str, Any]:
-    """Build store_info dict with tax rates and delivery zip codes."""
-    store_info = {
-        "name": company_name,
-        "store_id": store_id,
-        "city_tax_rate": 0.0,
-        "state_tax_rate": 0.0,
-        "delivery_zip_codes": [],
-    }
-
-    if db and store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            store_info["name"] = store.name or company_name
-            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
-            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
-            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
-
-    return store_info
-
-
 # =============================================================================
 # Chat Endpoints
 # =============================================================================

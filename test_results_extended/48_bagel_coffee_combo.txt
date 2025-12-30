@@ -1,0 +1,45 @@
+======================================================================
+TEST: Bagel and Coffee Combo
+TIME: 2025-12-30 10:52:04
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: plain bagel with cream cheese and a medium coffee
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Would you like that hot or iced?
+
+TESTER: thats all
+BOT:    Would you like that hot or iced?
+
+TESTER: pickup
+BOT:    Would you like that hot or iced?
+
+TESTER: Victor
+BOT:    Would you like that hot or iced?
+
+TESTER: yes
+BOT:    Would you like that hot or iced?
+
+TESTER: in store
+BOT:    Would you like that hot or iced?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] plain bagel toasted - $5.75 (bagel)
+      > toasted, spread: cream cheese
+  [2] coffee - $3.25 (drink)
+      > size: medium
+Total:      $9.00
+----------------------------------------------------------------------
+
+RESULT: PASS

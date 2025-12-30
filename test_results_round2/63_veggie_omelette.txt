@@ -1,0 +1,51 @@
+======================================================================
+TEST: Veggie Omelette
+TIME: 2025-12-30 11:35:54
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: veggie omelette please
+BOT:    Would you like a bagel or fruit salad with your Veggie Omelette?
+
+TESTER: bagel
+BOT:    Let's finish up your Veggie Omelette first. Would you like a bagel or fruit salad with it?
+
+TESTER: plain
+BOT:    Got it, Veggie Omelette with plain bagel. Anything else?
+
+TESTER: toasted
+BOT:    What kind of bagel would you like?
+
+TESTER: thats all
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: pickup
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: Mark
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: yes
+BOT:    Would you like cream cheese or butter on that?
+
+TESTER: text
+BOT:    Got it, plain bagel toasted with nothing on it. Anything else?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] Veggie Omelette x1 - $13.95 (menu_item)
+      > bagel: plain, side: bagel
+  [2] plain bagel toasted x1 - $2.75 (bagel)
+      > toasted, spread: none
+Total:      $16.70
+----------------------------------------------------------------------
+
+RESULT: PASS

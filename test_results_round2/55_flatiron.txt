@@ -1,0 +1,40 @@
+======================================================================
+TEST: The Flatiron Traditional
+TIME: 2025-12-30 11:31:25
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: flatiron traditional please
+BOT:    Would you like that toasted?
+
+TESTER: thats all
+BOT:    Would you like that toasted?
+
+TESTER: pickup
+BOT:    Would you like that toasted?
+
+TESTER: Edward
+BOT:    Would you like that toasted?
+
+TESTER: yes
+BOT:    Got it, The Flatiron Traditional toasted. Anything else?
+
+TESTER: text
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] The Flatiron Traditional toasted x1 - $19.95 (speed_menu_bagel)
+      > toasted
+Total:      $19.95
+----------------------------------------------------------------------
+
+RESULT: PASS

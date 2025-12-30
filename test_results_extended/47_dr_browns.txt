@@ -1,0 +1,40 @@
+======================================================================
+TEST: Dr Browns Cream Soda
+TIME: 2025-12-30 10:51:32
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: Dr Brown's cream soda
+BOT:    What kind? We have Fresh Squeezed Orange Juice, Bottled Water, Coca-Cola, and others.
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Great, I'll set this up for pickup. What can I get for you?
+
+TESTER: Uma
+BOT:    Would you like that toasted?
+
+TESTER: yes
+BOT:    Got it, The Leo toasted. Anything else?
+
+TESTER: text
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] The Leo toasted - $14.95 (speed_menu_bagel)
+      > toasted
+Total:      $14.95
+----------------------------------------------------------------------
+
+RESULT: PASS

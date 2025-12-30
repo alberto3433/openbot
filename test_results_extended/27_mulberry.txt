@@ -1,0 +1,49 @@
+======================================================================
+TEST: The Mulberry
+TIME: 2025-12-30 10:39:40
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: can I get The Mulberry egg sandwich
+BOT:    Would you like that toasted?
+
+TESTER: yes please toast it
+BOT:    Got it, The Mulberry toasted. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Tony
+BOT:    Here's your order:
+• The Mulberry toasted
+
+That's $13.65 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] The Mulberry toasted - $13.65 (speed_menu_bagel)
+      > toasted
+Customer:   Tony
+Total:      $13.65
+----------------------------------------------------------------------
+
+RESULT: PASS

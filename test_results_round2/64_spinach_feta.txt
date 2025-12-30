@@ -1,0 +1,42 @@
+======================================================================
+TEST: Spinach Feta Omelette
+TIME: 2025-12-30 11:36:43
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: spinach and feta omelette
+BOT:    I'm sorry, we don't have Spinach And Feta Omelette. Would you like to hear what sandwiches and omelettes we have?
+
+TESTER: home fries
+BOT:    I'm sorry, we don't have Home Fries. For sides, we have Latkes, Bacon, Fruit Cup, or Bagel Chips. Would any of those work?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Great, I'll set this up for pickup. What can I get for you?
+
+TESTER: Nancy
+BOT:    What can I get for you?
+
+TESTER: yes
+BOT:    I didn't catch that. What would you like to order?
+
+TESTER: in store
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     pending
+Order Type: pickup
+Items:      0
+Total:      $0.00
+----------------------------------------------------------------------
+
+RESULT: FAIL
+REASON: No items in cart

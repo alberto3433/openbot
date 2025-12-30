@@ -1,0 +1,49 @@
+======================================================================
+TEST: Scrambled Eggs on Bagel
+TIME: 2025-12-30 10:40:16
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: scrambled eggs on an everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Got it, everything bagel toasted with scrambled egg. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Amy
+BOT:    Here's your order:
+• everything bagel toasted with scrambled egg
+
+That's $2.75 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] everything bagel toasted - $2.75 (bagel)
+      > toasted
+Customer:   Amy
+Total:      $2.75
+----------------------------------------------------------------------
+
+RESULT: PASS

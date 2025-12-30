@@ -1,0 +1,42 @@
+======================================================================
+TEST: BLT Sandwich
+TIME: 2025-12-30 10:36:59
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: I want a BLT
+BOT:    Got it, The BLT. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: delivery
+BOT:    What's the delivery address?
+
+TESTER: 123 Main Street, New York, NY 10001
+BOT:    Sorry, we don't deliver to 10001. Would you like to do pickup instead?
+
+TESTER: Mike
+BOT:    Is this for pickup or delivery?
+
+TESTER: yes
+BOT:    Is this for pickup or delivery?
+
+TESTER: text
+BOT:    Is this for pickup or delivery?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] The BLT - $12.95 (menu_item)
+Total:      $12.95
+----------------------------------------------------------------------
+
+RESULT: PASS

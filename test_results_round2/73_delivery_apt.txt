@@ -1,0 +1,46 @@
+======================================================================
+TEST: Delivery with Apartment
+TIME: 2025-12-30 11:42:09
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: classic BEC
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Got it, The Classic BEC toasted. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: delivery
+BOT:    What's the delivery address?
+
+TESTER: 75 Greenwich Street Apt 4B, New York, NY 10006
+BOT:    Sorry, we don't deliver to 10006. Would you like to do pickup instead?
+
+TESTER: Wendy
+BOT:    Is this for pickup or delivery?
+
+TESTER: yes
+BOT:    Is this for pickup or delivery?
+
+TESTER: email
+BOT:    Is this for pickup or delivery?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] The Classic BEC toasted x1 - $9.95 (speed_menu_bagel)
+      > toasted
+Total:      $9.95
+----------------------------------------------------------------------
+
+RESULT: PASS

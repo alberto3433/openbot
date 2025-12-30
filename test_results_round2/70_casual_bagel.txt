@@ -1,0 +1,48 @@
+======================================================================
+TEST: Casual Bagel Order
+TIME: 2025-12-30 11:40:00
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: hey can I get an everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: yeah with scallion cream cheese
+BOT:    Got it, everything bagel toasted with scallion cream cheese. Anything else?
+
+TESTER: toasted please
+BOT:    What kind of bagel would you like?
+
+TESTER: thats it
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: pickup
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: Tom
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: yes
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: text
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] everything bagel toasted x1 - $6.25 (bagel)
+      > toasted, spread: scallion cream cheese
+  [2] bagel toasted x1 - $2.50 (bagel)
+      > toasted
+Total:      $8.75
+----------------------------------------------------------------------
+
+RESULT: PASS

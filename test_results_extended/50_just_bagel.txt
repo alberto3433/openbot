@@ -1,0 +1,46 @@
+======================================================================
+TEST: Just a Plain Bagel
+TIME: 2025-12-30 10:53:40
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: just a plain bagel
+BOT:    Would you like that toasted?
+
+TESTER: no spread
+BOT:    Would you like cream cheese or butter on that?
+
+TESTER: not toasted
+BOT:    Would you like cream cheese, butter, or nothing on that?
+
+TESTER: thats all
+BOT:    Got it, plain bagel with nothing on it (no spread). Anything else?
+
+TESTER: pickup
+BOT:    Great, I'll set this up for pickup. What can I get for you?
+
+TESTER: Xavier
+BOT:    What can I get for you?
+
+TESTER: yes
+BOT:    What can I get for you?
+
+TESTER: in store
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] plain bagel - $2.75 (bagel)
+      > spread: none
+Total:      $2.75
+----------------------------------------------------------------------
+
+RESULT: PASS

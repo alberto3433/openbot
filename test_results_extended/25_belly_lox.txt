@@ -1,0 +1,51 @@
+======================================================================
+TEST: Belly Lox Platter
+TIME: 2025-12-30 10:38:16
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: belly lox please
+BOT:    Would you like that toasted?
+
+TESTER: everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Got it, The Old School Tuna Sandwich not toasted. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: David
+BOT:    Here's your order:
+• The Old School Tuna Sandwich not toasted
+
+That's $10.00 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] The Old School Tuna Sandwich not toasted - $10.00 (speed_menu_bagel)
+Customer:   David
+Total:      $10.00
+----------------------------------------------------------------------
+
+RESULT: PASS

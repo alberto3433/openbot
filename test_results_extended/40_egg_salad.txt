@@ -1,0 +1,52 @@
+======================================================================
+TEST: Egg Salad Sandwich
+TIME: 2025-12-30 10:47:24
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: egg salad sandwich
+BOT:    Would you like that toasted?
+
+TESTER: plain bagel
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: not toasted
+BOT:    Got it, Egg Salad Sandwich on egg bagel. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Nick
+BOT:    Here's your order:
+• Egg Salad Sandwich on egg bagel
+
+That's $9.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] Egg Salad Sandwich on egg bagel not toasted - $9.95 (menu_item)
+      > bagel: egg
+Customer:   Nick
+Total:      $9.95
+----------------------------------------------------------------------
+
+RESULT: PASS

@@ -1,0 +1,46 @@
+======================================================================
+TEST: Coffee with Sugar
+TIME: 2025-12-30 11:38:58
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: medium hot coffee with two sugars
+BOT:    Got it, medium hot coffee with 2 sugars. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Rita
+BOT:    Here's your order:
+• medium hot coffee with 2 sugars
+
+That's $3.75 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] coffee x1 - $3.75 (drink)
+      > size: medium, hot, sweetener: sugar
+Customer:   Rita
+Total:      $3.75
+----------------------------------------------------------------------
+
+RESULT: PASS

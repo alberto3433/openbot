@@ -394,6 +394,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="User wants to cancel/remove an item (e.g., 'cancel the coke', 'remove the bagel', 'nevermind the coffee'). Contains the item description to remove."
     )
+    duplicate_last_item: int = Field(
+        default=0,
+        description="User wants to add more of the last item (e.g., 'make it 2' -> 1, 'I'll take 3' -> 2). Value is how many MORE to add."
+    )
 
     # Order type preference (pickup/delivery mentioned upfront)
     order_type: Literal["pickup", "delivery"] | None = Field(

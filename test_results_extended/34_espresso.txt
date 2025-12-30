@@ -1,0 +1,39 @@
+======================================================================
+TEST: Double Espresso
+TIME: 2025-12-30 10:44:01
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: double espresso
+BOT:    What size would you like for the espresso? Small, medium, or large?
+
+TESTER: thats all
+BOT:    What size would you like for your espresso? Small, medium, or large?
+
+TESTER: pickup
+BOT:    What size would you like for your espresso? Small, medium, or large?
+
+TESTER: Henry
+BOT:    What size would you like for your espresso? Small, medium, or large?
+
+TESTER: yes
+BOT:    What size would you like for your espresso? Small, medium, or large?
+
+TESTER: in store
+BOT:    What size would you like for your espresso? Small, medium, or large?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] espresso - $3.50 (drink)
+Total:      $3.50
+----------------------------------------------------------------------
+
+RESULT: PASS

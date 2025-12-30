@@ -1,0 +1,52 @@
+======================================================================
+TEST: Breakfast Combo Order
+TIME: 2025-12-30 10:52:43
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: classic BEC and a large iced latte
+BOT:    Got it, The Classic Bec, latte. Anything else?
+
+TESTER: toasted
+BOT:    What kind of bagel would you like?
+
+TESTER: large
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: iced
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: thats all
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: pickup
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: Wendy
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: yes
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: text
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      3
+  [1] The Classic BEC - $9.95 (menu_item)
+  [2] latte - $6.50 (drink)
+      > size: large, iced
+  [3] bagel toasted - $2.50 (bagel)
+      > toasted
+Total:      $18.95
+----------------------------------------------------------------------
+
+RESULT: PASS

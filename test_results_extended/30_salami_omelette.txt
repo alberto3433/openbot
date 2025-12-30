@@ -1,0 +1,51 @@
+======================================================================
+TEST: Salami Omelette with Bagel
+TIME: 2025-12-30 10:41:32
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: salami omelette please
+BOT:    Would you like a bagel or fruit salad with your Salami Omelette?
+
+TESTER: bagel
+BOT:    Let's finish up your Salami Omelette first. Would you like a bagel or fruit salad with it?
+
+TESTER: sesame
+BOT:    Got it, Salami Omelette with sesame bagel. Anything else?
+
+TESTER: toasted
+BOT:    What kind of bagel would you like?
+
+TESTER: thats all
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: pickup
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: Chris
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: yes
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: in store
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] Salami Omelette - $13.63 (menu_item)
+      > bagel: sesame, side: bagel
+  [2] bagel toasted - $2.50 (bagel)
+      > toasted
+Total:      $16.13
+----------------------------------------------------------------------
+
+RESULT: PASS

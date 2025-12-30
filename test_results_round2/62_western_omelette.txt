@@ -1,0 +1,42 @@
+======================================================================
+TEST: Western Omelette
+TIME: 2025-12-30 11:35:17
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: western omelette
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: toast
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: thats all
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: pickup
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: Linda
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: yes
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+TESTER: in store
+BOT:    Would you like a bagel or fruit salad with your Western Omelette?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] Western Omelette x1 - $14.95 (menu_item)
+Total:      $14.95
+----------------------------------------------------------------------
+
+RESULT: PASS

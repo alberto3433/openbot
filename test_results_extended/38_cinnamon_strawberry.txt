@@ -1,0 +1,49 @@
+======================================================================
+TEST: Cinnamon Raisin with Strawberry CC
+TIME: 2025-12-30 10:46:14
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: cinnamon raisin bagel with strawberry cream cheese
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Got it, cinnamon raisin bagel with strawberry cream cheese. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Leo
+BOT:    Here's your order:
+• cinnamon raisin bagel with strawberry cream cheese
+
+That's $6.25 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] cinnamon raisin bagel - $6.25 (bagel)
+      > spread: cream cheese
+Customer:   Leo
+Total:      $6.25
+----------------------------------------------------------------------
+
+RESULT: PASS

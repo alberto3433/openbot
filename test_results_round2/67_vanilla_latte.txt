@@ -1,0 +1,46 @@
+======================================================================
+TEST: Latte with Vanilla Syrup
+TIME: 2025-12-30 11:38:27
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: large iced latte with vanilla syrup
+BOT:    Got it, large iced latte with vanilla syrup (+$0.65). Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Quinn
+BOT:    Here's your order:
+• large iced latte with vanilla syrup (+$0.65)
+
+That's $7.15 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] latte x1 - $7.15 (drink)
+      > size: large, iced
+Customer:   Quinn
+Total:      $7.15
+----------------------------------------------------------------------
+
+RESULT: PASS

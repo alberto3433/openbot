@@ -1,0 +1,46 @@
+======================================================================
+TEST: Small Hot Cappuccino
+TIME: 2025-12-30 10:42:53
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: small hot cappuccino
+BOT:    Got it, small hot cappuccino. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Frank
+BOT:    Here's your order:
+• small hot cappuccino
+
+That's $5.50 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] cappuccino - $5.50 (drink)
+      > size: small, hot
+Customer:   Frank
+Total:      $5.50
+----------------------------------------------------------------------
+
+RESULT: PASS

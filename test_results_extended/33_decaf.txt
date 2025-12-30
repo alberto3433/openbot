@@ -1,0 +1,43 @@
+======================================================================
+TEST: Decaf Coffee
+TIME: 2025-12-30 10:43:23
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: decaf coffee please
+BOT:    What size would you like for the coffee? Small, medium, or large?
+
+TESTER: medium
+BOT:    Would you like that hot or iced?
+
+TESTER: thats all
+BOT:    Would you like that hot or iced?
+
+TESTER: pickup
+BOT:    Would you like that hot or iced?
+
+TESTER: Grace
+BOT:    Would you like that hot or iced?
+
+TESTER: yes
+BOT:    Would you like that hot or iced?
+
+TESTER: text
+BOT:    Would you like that hot or iced?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] coffee - $3.25 (drink)
+      > size: medium
+Total:      $3.25
+----------------------------------------------------------------------
+
+RESULT: PASS

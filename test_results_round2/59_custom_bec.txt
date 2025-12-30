@@ -1,0 +1,43 @@
+======================================================================
+TEST: Bagel with Bacon Egg Cheese
+TIME: 2025-12-30 11:33:39
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: everything bagel with bacon egg and cheese
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.
+
+TESTER: thats all
+BOT:    What kind of cheese? We have American, cheddar, Swiss, and muenster.
+
+TESTER: pickup
+BOT:    What kind of cheese? We have American, cheddar, Swiss, and muenster.
+
+TESTER: Ivan
+BOT:    What kind of cheese? We have American, cheddar, Swiss, and muenster.
+
+TESTER: yes
+BOT:    What kind of cheese? We have American, cheddar, Swiss, and muenster.
+
+TESTER: text
+BOT:    What kind of cheese? We have American, cheddar, Swiss, and muenster.
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] everything bagel toasted x1 - $6.25 (bagel)
+      > toasted
+Total:      $6.25
+----------------------------------------------------------------------
+
+RESULT: PASS

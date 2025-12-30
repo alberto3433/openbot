@@ -1,0 +1,45 @@
+======================================================================
+TEST: Turkey Club Sandwich
+TIME: 2025-12-30 11:37:22
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: turkey club
+BOT:    Got it, Turkey Club. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Oscar
+BOT:    Here's your order:
+• Turkey Club
+
+That's $15.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] Turkey Club x1 - $15.95 (menu_item)
+Customer:   Oscar
+Total:      $15.95
+----------------------------------------------------------------------
+
+RESULT: PASS

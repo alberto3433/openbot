@@ -1,0 +1,45 @@
+======================================================================
+TEST: Two Plain Bagels
+TIME: 2025-12-30 11:31:57
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: two plain bagels with cream cheese
+BOT:    For the first bagel, would you like that toasted?
+
+TESTER: both toasted
+BOT:    For the second bagel, would you like that toasted?
+
+TESTER: thats all
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: pickup
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: Fiona
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: yes
+BOT:    Got it, 2 plain bagel toasted with cream cheeses. Anything else?
+
+TESTER: in store
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] plain bagel toasted x1 - $5.75 (bagel)
+      > toasted, spread: cream cheese
+  [2] plain bagel toasted x1 - $5.75 (bagel)
+      > toasted, spread: cream cheese
+Total:      $11.50
+----------------------------------------------------------------------
+
+RESULT: PASS

@@ -108,6 +108,33 @@ CANCEL_ITEM_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# "Make it 2" pattern - user wants to change quantity of last item to N
+# e.g., "make it 2", "I'll take 2", "actually 2", "give me 2", "let's do 2"
+MAKE_IT_N_PATTERN = re.compile(
+    r"^(?:"
+    # "make it 2", "make it two", "make that 2"
+    r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "I'll take 2", "I'll have 2", "I want 2"
+    r"i'?ll?\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "actually 2", "actually let's do 2"
+    r"actually\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "give me 2", "get me 2"
+    r"(?:give|get)\s+me\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "let's do 2", "let's make it 2"
+    r"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # Just a number by itself when we have context (e.g., "2" after adding item) - handled differently
+    # "2 of those", "2 of them"
+    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    r")"
+    r"[\s!.,]*$",
+    re.IGNORECASE
+)
+
 # Tax question pattern
 TAX_QUESTION_PATTERN = re.compile(
     r"(?:"
@@ -689,11 +716,6 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     """Try to parse soda/bottled drink orders deterministically."""
     text_lower = text.lower()
 
-    # Debug logging to diagnose server behavior
-    dr_browns_in_set = "dr brown's cream soda" in SODA_DRINK_TYPES
-    logger.info("Soda parse debug: input='%s', dr_browns_in_set=%s, set_size=%d",
-                text_lower, dr_browns_in_set, len(SODA_DRINK_TYPES))
-
     drink_type = None
     for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
         if re.search(rf'\b{re.escape(soda)}\b', text_lower):
@@ -1186,6 +1208,32 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     speed_menu_result = _parse_speed_menu_bagel_deterministic(text)
     if speed_menu_result:
         return speed_menu_result
+
+    # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
+    make_it_n_match = MAKE_IT_N_PATTERN.match(text)
+    if make_it_n_match:
+        # Find which group matched
+        num_str = None
+        for i in range(1, 7):
+            if make_it_n_match.group(i):
+                num_str = make_it_n_match.group(i).lower()
+                break
+        if num_str:
+            # Convert to number
+            word_to_num = {
+                "two": 2, "three": 3, "four": 4, "five": 5,
+                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+            }
+            if num_str.isdigit():
+                target_qty = int(num_str)
+            else:
+                target_qty = word_to_num.get(num_str, 0)
+
+            if target_qty >= 2:
+                # User says "make it 2" means they want 2 total, so add (target - 1) more
+                additional = target_qty - 1
+                logger.info("Deterministic parse: 'make it N' detected, target=%d, adding %d more", target_qty, additional)
+                return OpenInputResponse(duplicate_last_item=additional)
 
     # Check for replacement phrases
     replace_match = REPLACE_ITEM_PATTERN.match(text)

@@ -1,0 +1,49 @@
+======================================================================
+TEST: Bagel with Turkey and Swiss
+TIME: 2025-12-30 11:34:43
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: onion bagel with turkey and swiss cheese
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Got it, onion bagel toasted with turkey, swiss. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Kevin
+BOT:    Here's your order:
+• onion bagel toasted with turkey, swiss
+
+That's $6.00 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] onion bagel toasted x1 - $6.00 (bagel)
+      > toasted
+Customer:   Kevin
+Total:      $6.00
+----------------------------------------------------------------------
+
+RESULT: PASS

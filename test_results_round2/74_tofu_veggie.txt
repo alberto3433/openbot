@@ -1,0 +1,49 @@
+======================================================================
+TEST: Tofu Veggie Spread
+TIME: 2025-12-30 11:42:50
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: plain bagel with tofu vegetable cream cheese
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Got it, plain bagel with tofu vegetable cream cheese. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Xavier
+BOT:    Here's your order:
+• plain bagel with tofu vegetable cream cheese
+
+That's $6.50 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] plain bagel x1 - $6.50 (bagel)
+      > spread: cream cheese
+Customer:   Xavier
+Total:      $6.50
+----------------------------------------------------------------------
+
+RESULT: PASS

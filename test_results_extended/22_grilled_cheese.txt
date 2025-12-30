@@ -1,0 +1,45 @@
+======================================================================
+TEST: Grilled Cheese on Rye
+TIME: 2025-12-30 10:36:24
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: grilled cheese on rye bread please
+BOT:    Got it, Grilled Cheese. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Sarah
+BOT:    Here's your order:
+• Grilled Cheese
+
+That's $8.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: email
+BOT:    What email address should I send it to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] Grilled Cheese - $8.95 (menu_item)
+Customer:   Sarah
+Total:      $8.95
+----------------------------------------------------------------------
+
+RESULT: PASS

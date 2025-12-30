@@ -1,0 +1,52 @@
+======================================================================
+TEST: Casual Coffee Order
+TIME: 2025-12-30 11:40:42
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: yeah just a coffee
+BOT:    What size would you like for the coffee? Small, medium, or large?
+
+TESTER: medium
+BOT:    Would you like that hot or iced?
+
+TESTER: hot
+BOT:    Got it, medium hot coffee. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Uma
+BOT:    Here's your order:
+• medium hot coffee
+
+That's $3.75 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] coffee x1 - $3.75 (drink)
+      > size: medium, hot
+Customer:   Uma
+Total:      $3.75
+----------------------------------------------------------------------
+
+RESULT: PASS

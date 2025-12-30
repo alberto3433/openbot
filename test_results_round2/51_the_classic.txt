@@ -1,0 +1,52 @@
+======================================================================
+TEST: The Classic Speed Menu
+TIME: 2025-12-30 11:28:55
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: The Classic please
+BOT:    Would you like that toasted?
+
+TESTER: everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Got it, The Classic toasted. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Alex
+BOT:    Here's your order:
+• The Classic toasted
+
+That's $9.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] The Classic toasted x1 - $9.95 (speed_menu_bagel)
+      > toasted
+Customer:   Alex
+Total:      $9.95
+----------------------------------------------------------------------
+
+RESULT: PASS

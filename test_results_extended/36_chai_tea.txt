@@ -1,0 +1,39 @@
+======================================================================
+TEST: Chai Tea
+TIME: 2025-12-30 10:45:05
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: chai tea
+BOT:    What size would you like for the chai? Small, medium, or large?
+
+TESTER: thats all
+BOT:    What size would you like for your chai? Small, medium, or large?
+
+TESTER: pickup
+BOT:    What size would you like for your chai? Small, medium, or large?
+
+TESTER: Jack
+BOT:    What size would you like for your chai? Small, medium, or large?
+
+TESTER: yes
+BOT:    What size would you like for your chai? Small, medium, or large?
+
+TESTER: in store
+BOT:    What size would you like for your chai? Small, medium, or large?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] chai - $4.50 (drink)
+Total:      $4.50
+----------------------------------------------------------------------
+
+RESULT: PASS

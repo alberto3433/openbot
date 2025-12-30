@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Any, Literal, Union
 import logging
 import re
+import uuid
 
 from .models import (
     OrderTask,
@@ -684,6 +685,42 @@ class OrderStateMachine:
             else:
                 # No items to cancel
                 logger.info("Cancellation requested but no items in cart")
+                return StateMachineResult(
+                    message="There's nothing in your order yet. What can I get for you?",
+                    order=order,
+                )
+
+        # Handle "make it 2" - add more of the last item
+        if parsed.duplicate_last_item > 0:
+            active_items = order.items.get_active_items()
+            if active_items:
+                last_item = active_items[-1]
+                last_item_name = last_item.get_summary()
+                added_count = parsed.duplicate_last_item
+
+                # Add copies of the last item
+                for _ in range(added_count):
+                    # Create a copy of the item
+                    new_item = last_item.model_copy(deep=True)
+                    # Generate a new ID for the copy
+                    new_item.id = str(uuid.uuid4())
+                    new_item.mark_complete()
+                    order.items.add_item(new_item)
+
+                if added_count == 1:
+                    logger.info("Added 1 more of '%s' to order", last_item_name)
+                    return StateMachineResult(
+                        message=f"I've added a second {last_item_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    logger.info("Added %d more of '%s' to order", added_count, last_item_name)
+                    return StateMachineResult(
+                        message=f"I've added {added_count} more {last_item_name}. Anything else?",
+                        order=order,
+                    )
+            else:
+                logger.info("'Make it N' requested but no items in cart")
                 return StateMachineResult(
                     message="There's nothing in your order yet. What can I get for you?",
                     order=order,

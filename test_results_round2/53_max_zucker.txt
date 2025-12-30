@@ -1,0 +1,49 @@
+======================================================================
+TEST: The Max Zucker
+TIME: 2025-12-30 11:30:18
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: max zucker sandwich
+BOT:    Would you like that toasted?
+
+TESTER: toasted please
+BOT:    Got it, The Max Zucker toasted. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Carl
+BOT:    Here's your order:
+• The Max Zucker toasted
+
+That's $17.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] The Max Zucker toasted x1 - $17.95 (speed_menu_bagel)
+      > toasted
+Customer:   Carl
+Total:      $17.95
+----------------------------------------------------------------------
+
+RESULT: PASS

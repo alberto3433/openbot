@@ -1,0 +1,38 @@
+EXTENDED MENU ITEM TEST SUMMARY
+Run at: 2025-12-30 10:54:28
+======================================================================
+
+PASSED: 30/30
+FAILED: 0/30
+
+Results:
+  [PASS] The Reuben Sandwich -> 21_reuben.txt
+  [PASS] Grilled Cheese on Rye -> 22_grilled_cheese.txt
+  [PASS] BLT Sandwich -> 23_blt.txt
+  [PASS] Gravlax on Bagel -> 24_gravlax.txt
+  [PASS] Belly Lox Platter -> 25_belly_lox.txt
+  [PASS] The Delancey -> 26_delancey.txt
+  [PASS] The Mulberry -> 27_mulberry.txt
+  [PASS] Scrambled Eggs on Bagel -> 28_scrambled_eggs.txt
+  [PASS] Lox and Onion Omelette -> 29_lox_omelette.txt
+  [PASS] Salami Omelette with Bagel -> 30_salami_omelette.txt
+  [PASS] Large Iced Latte with Oat Milk -> 31_large_iced_latte.txt
+  [PASS] Small Hot Cappuccino -> 32_small_cappuccino.txt
+  [PASS] Decaf Coffee -> 33_decaf.txt
+  [PASS] Double Espresso -> 34_espresso.txt
+  [PASS] Hot Chocolate -> 35_hot_chocolate.txt
+  [PASS] Chai Tea -> 36_chai_tea.txt
+  [PASS] Poppy Bagel with Veggie CC -> 37_poppy_veggie.txt
+  [PASS] Cinnamon Raisin with Strawberry CC -> 38_cinnamon_strawberry.txt
+  [PASS] Onion Bagel with Lox Spread -> 39_onion_nova.txt
+  [PASS] Egg Salad Sandwich -> 40_egg_salad.txt
+  [PASS] Whitefish Salad on Everything -> 41_whitefish.txt
+  [PASS] Oatmeal -> 42_oatmeal.txt
+  [PASS] Yogurt Parfait -> 43_yogurt_parfait.txt
+  [PASS] Potato Latkes -> 44_latkes.txt
+  [PASS] Side of Sausage -> 45_sausage.txt
+  [PASS] Snapple Iced Tea -> 46_snapple.txt
+  [PASS] Dr Browns Cream Soda -> 47_dr_browns.txt
+  [PASS] Bagel and Coffee Combo -> 48_bagel_coffee_combo.txt
+  [PASS] Breakfast Combo Order -> 49_breakfast_combo.txt
+  [PASS] Just a Plain Bagel -> 50_just_bagel.txt

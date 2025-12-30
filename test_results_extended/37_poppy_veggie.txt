@@ -1,0 +1,49 @@
+======================================================================
+TEST: Poppy Bagel with Veggie CC
+TIME: 2025-12-30 10:45:38
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: poppy bagel with vegetable cream cheese
+BOT:    Would you like that toasted?
+
+TESTER: toasted
+BOT:    Got it, poppy bagel toasted with vegetable cream cheese. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Kate
+BOT:    Here's your order:
+• poppy bagel toasted with vegetable cream cheese
+
+That's $6.25 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] poppy bagel toasted - $6.25 (bagel)
+      > toasted, spread: cream cheese
+Customer:   Kate
+Total:      $6.25
+----------------------------------------------------------------------
+
+RESULT: PASS

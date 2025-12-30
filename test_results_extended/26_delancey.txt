@@ -1,0 +1,44 @@
+======================================================================
+TEST: The Delancey
+TIME: 2025-12-30 10:38:58
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: The Delancey please
+BOT:    Got it, The Delancey. Anything else?
+
+TESTER: toasted
+BOT:    What kind of bagel would you like?
+
+TESTER: thats all
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: pickup
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: Rachel
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: yes
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+TESTER: email
+BOT:    What kind of bagel? We have plain, everything, sesame, and more.
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      2
+  [1] The Delancey - $11.95 (menu_item)
+  [2] bagel toasted - $2.50 (bagel)
+      > toasted
+Total:      $14.45
+----------------------------------------------------------------------
+
+RESULT: PASS

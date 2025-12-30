@@ -1,0 +1,45 @@
+======================================================================
+TEST: Tuna Salad Sandwich
+TIME: 2025-12-30 11:44:03
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: tuna salad on a sesame bagel
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Would you like cream cheese or butter on that?
+
+TESTER: thats all
+BOT:    Got it, sesame bagel with nothing on it. Anything else?
+
+TESTER: pickup
+BOT:    Great, I'll set this up for pickup. What can I get for you?
+
+TESTER: Zach
+BOT:    Would you like that toasted?
+
+TESTER: yes
+BOT:    Got it, The Leo toasted. Anything else?
+
+TESTER: text
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      2
+  [1] sesame bagel x1 - $2.75 (bagel)
+      > spread: none
+  [2] The Leo toasted x1 - $14.95 (speed_menu_bagel)
+      > toasted
+Total:      $17.70
+----------------------------------------------------------------------
+
+RESULT: PASS

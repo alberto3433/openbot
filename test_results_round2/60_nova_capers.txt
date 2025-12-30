@@ -1,0 +1,49 @@
+======================================================================
+TEST: Bagel with Nova and Capers
+TIME: 2025-12-30 11:34:07
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: sesame bagel with nova, cream cheese, and capers
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Got it, sesame bagel with cream cheese, nova scotia salmon, capers. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Julia
+BOT:    Here's your order:
+• sesame bagel with cream cheese, nova scotia salmon, capers
+
+That's $6.50 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] sesame bagel x1 - $6.50 (bagel)
+      > spread: cream cheese
+Customer:   Julia
+Total:      $6.50
+----------------------------------------------------------------------
+
+RESULT: PASS

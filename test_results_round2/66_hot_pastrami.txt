@@ -1,0 +1,45 @@
+======================================================================
+TEST: Hot Pastrami Sandwich
+TIME: 2025-12-30 11:37:54
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: hot pastrami sandwich
+BOT:    Got it, Hot Pastrami Sandwich. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Paula
+BOT:    Here's your order:
+• Hot Pastrami Sandwich
+
+That's $18.95 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: in store
+BOT:    Would you like your order confirmation sent by text message or email?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] Hot Pastrami Sandwich x1 - $18.95 (menu_item)
+Customer:   Paula
+Total:      $18.95
+----------------------------------------------------------------------
+
+RESULT: PASS

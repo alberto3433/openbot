@@ -1,0 +1,40 @@
+======================================================================
+TEST: Dozen Bagels
+TIME: 2025-12-30 11:33:08
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: a dozen everything bagels
+BOT:    Would you like that toasted?
+
+TESTER: thats all
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: pickup
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: Hannah
+BOT:    Would you like that toasted? Yes or no?
+
+TESTER: yes
+BOT:    Would you like cream cheese or butter on that?
+
+TESTER: in store
+BOT:    Got it, everything bagel toasted with nothing on it. Anything else?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] everything bagel toasted x1 - $2.75 (bagel)
+      > toasted, spread: none
+Total:      $2.75
+----------------------------------------------------------------------
+
+RESULT: PASS

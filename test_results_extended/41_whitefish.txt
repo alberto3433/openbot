@@ -1,0 +1,43 @@
+======================================================================
+TEST: Whitefish Salad on Everything
+TIME: 2025-12-30 10:48:05
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: whitefish salad on everything bagel
+BOT:    Would you like that toasted?
+
+TESTER: not toasted
+BOT:    Would you like cream cheese or butter on that?
+
+TESTER: thats all
+BOT:    Would you like cream cheese, butter, or nothing on that?
+
+TESTER: pickup
+BOT:    Would you like cream cheese, butter, or nothing on that?
+
+TESTER: Olivia
+BOT:    Got it, everything bagel with lox spread cream cheese. Anything else?
+
+TESTER: yes
+BOT:    What can I get for you?
+
+TESTER: text
+BOT:    What can I get for you?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] everything bagel - $5.75 (bagel)
+      > spread: cream cheese
+Total:      $5.75
+----------------------------------------------------------------------
+
+RESULT: PASS

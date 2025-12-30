@@ -1,0 +1,40 @@
+======================================================================
+TEST: Snapple Iced Tea
+TIME: 2025-12-30 10:50:59
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: snapple iced tea
+BOT:    What size would you like for the tea? Small, medium, or large?
+
+TESTER: thats all
+BOT:    What size would you like for your tea? Small, medium, or large?
+
+TESTER: pickup
+BOT:    What size would you like for your tea? Small, medium, or large?
+
+TESTER: Tina
+BOT:    What size would you like for your tea? Small, medium, or large?
+
+TESTER: yes
+BOT:    What size would you like for your tea? Small, medium, or large?
+
+TESTER: in store
+BOT:    What size would you like for your tea? Small, medium, or large?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: None
+Items:      1
+  [1] tea - $3.00 (drink)
+      > iced
+Total:      $3.00
+----------------------------------------------------------------------
+
+RESULT: PASS

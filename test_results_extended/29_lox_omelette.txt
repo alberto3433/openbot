@@ -1,0 +1,49 @@
+======================================================================
+TEST: Lox and Onion Omelette
+TIME: 2025-12-30 10:40:52
+======================================================================
+
+CONVERSATION:
+----------------------------------------------------------------------
+BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+
+TESTER: lox and onion omelette
+BOT:    Would you like a bagel or fruit salad with your Lox and Onion Omelette?
+
+TESTER: fruit salad
+BOT:    Got it, Lox and Onion Omelette with fruit salad. Anything else?
+
+TESTER: thats all
+BOT:    Is this for pickup or delivery?
+
+TESTER: pickup
+BOT:    Can I get a name for the order?
+
+TESTER: Ben
+BOT:    Here's your order:
+• Lox and Onion Omelette with fruit salad
+
+That's $15.24 plus tax.
+
+Does that look right?
+
+TESTER: yes
+BOT:    Would you like your order details sent by text or email?
+
+TESTER: text
+BOT:    What phone number should I text the confirmation to?
+
+----------------------------------------------------------------------
+
+ORDER DETAILS:
+----------------------------------------------------------------------
+Status:     collecting_items
+Order Type: pickup
+Items:      1
+  [1] Lox and Onion Omelette - $15.24 (menu_item)
+      > side: fruit_salad
+Customer:   Ben
+Total:      $15.24
+----------------------------------------------------------------------
+
+RESULT: PASS

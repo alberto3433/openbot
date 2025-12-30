@@ -1834,9 +1834,10 @@
 
       let html = "";
 
-      if (hasModifiers && item.item_type === "bagel") {
-        // Bagel with modifiers - show base price, then each modifier
-        const basePrice = item.base_price || 0;
+      if (hasModifiers && (item.item_type === "bagel" || item.item_type === "menu_item")) {
+        // Item with modifiers - show base price, then each modifier
+        // Works for bagels and menu items (omelettes with side bagel spreads)
+        const basePrice = item.base_price || (item.unit_price - item.modifiers.reduce((sum, m) => sum + (m.price || 0), 0));
 
         html += `
           <div class="order-item-header">
@@ -1845,13 +1846,14 @@
           </div>
         `;
 
-        // Render each modifier with its price
+        // Render each modifier with its price (skip $0 prices)
         html += `<div class="order-item-modifiers">`;
         for (const mod of item.modifiers) {
+          const priceHtml = mod.price > 0 ? formatCurrency(mod.price) : '';
           html += `
             <div class="order-item-modifier">
               <span class="order-item-modifier-name">${mod.name}</span>
-              <span class="order-item-modifier-price">${formatCurrency(mod.price)}</span>
+              <span class="order-item-modifier-price">${priceHtml}</span>
             </div>
           `;
         }

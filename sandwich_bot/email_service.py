@@ -167,16 +167,45 @@ def send_payment_link_email(
 
             details_str = ", ".join(details) if details else ""
 
-            # Plain text
-            items_text += f"  {quantity}x {item_name}"
-            if details_str:
-                items_text += f" ({details_str})"
-            items_text += f" - ${line_total:.2f}\n"
+            # Check if item has modifiers for itemized display (e.g., omelette side bagel with spread)
+            modifiers = item.get("modifiers", [])
+            has_modifiers = modifiers and len(modifiers) > 0
 
-            # HTML
-            items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
-            items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
-            items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
+            if has_modifiers:
+                # Calculate base price by subtracting modifiers
+                modifiers_total = sum(m.get("price", 0) for m in modifiers)
+                base_price = item.get("unit_price", line_total) - modifiers_total
+                display_name = item.get("display_name", item_name)
+
+                # Plain text - show base item, then each modifier
+                items_text += f"  {quantity}x {display_name} - ${base_price:.2f}\n"
+                for mod in modifiers:
+                    mod_price = mod.get("price", 0)
+                    price_str = f"${mod_price:.2f}" if mod_price > 0 else ""
+                    items_text += f"    + {mod['name']} {price_str}\n"
+
+                # HTML - show base item row, then modifier rows
+                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {display_name}</td>"
+                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'></td>"
+                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
+                for mod in modifiers:
+                    mod_price = mod.get("price", 0)
+                    price_str = f"${mod_price:.2f}" if mod_price > 0 else ""
+                    items_html += f"<tr><td style='padding: 8px 8px 8px 24px; border-bottom: 1px solid #eee; color: #666;'>+ {mod['name']}</td>"
+                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee;'></td>"
+                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>{price_str}</td></tr>"
+            else:
+                # Standard item display (no modifiers)
+                # Plain text
+                items_text += f"  {quantity}x {item_name}"
+                if details_str:
+                    items_text += f" ({details_str})"
+                items_text += f" - ${line_total:.2f}\n"
+
+                # HTML
+                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
+                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
+                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
 
         # Build totals section
         # Subtotal row (if provided)

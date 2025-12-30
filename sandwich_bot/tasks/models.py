@@ -361,7 +361,9 @@ class MenuItemTask(ItemTask):
     # Customization fields for configurable items (e.g., omelettes, sandwiches)
     side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
     bagel_choice: str | None = None  # Which bagel if side is bagel, or bagel for sandwiches
-    toasted: bool | None = None  # Whether sandwich should be toasted
+    toasted: bool | None = None  # Whether sandwich/bagel should be toasted
+    spread: str | None = None  # Spread for side bagel (butter, cream cheese, etc.)
+    spread_price: float | None = None  # Price of spread for itemized display
     requires_side_choice: bool = False  # Whether this item needs side selection
 
     def get_display_name(self) -> str:
@@ -384,7 +386,12 @@ class MenuItemTask(ItemTask):
                 parts.append("toasted")
         # Add side choice info for omelettes
         elif self.side_choice == "bagel" and self.bagel_choice:
-            parts.append(f"with {self.bagel_choice} bagel")
+            bagel_parts = [self.bagel_choice, "bagel"]
+            if self.toasted:
+                bagel_parts.append("toasted")
+            if self.spread:
+                bagel_parts.append(f"with {self.spread}")
+            parts.append(f"with {' '.join(bagel_parts)}")
         elif self.side_choice == "fruit_salad":
             parts.append("with fruit salad")
 

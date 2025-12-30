@@ -1485,7 +1485,12 @@ class OrderStateMachine:
                 order.clear_pending()
                 return self._configure_next_incomplete_bagel(order)
 
-            # For omelettes and other menu items, mark complete
+            # For omelettes with bagel side, use unified config flow for toasted/spread questions
+            if item.side_choice == "bagel":
+                order.clear_pending()
+                return self._configure_next_incomplete_bagel(order)
+
+            # For other menu items, mark complete
             item.mark_complete()
             order.clear_pending()
             return self._get_next_question(order)
@@ -1507,10 +1512,44 @@ class OrderStateMachine:
     def _handle_spread_choice(
         self,
         user_input: str,
-        item: BagelItemTask,
+        item: Union[BagelItemTask, MenuItemTask],
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle spread selection for bagel."""
+        """Handle spread selection for bagel or omelette side bagel."""
+        # For MenuItemTask (omelette side bagels), use simpler handling
+        if isinstance(item, MenuItemTask):
+            parsed = parse_spread_choice(user_input, model=self.model)
+
+            if parsed.no_spread:
+                item.spread = "none"
+            elif parsed.spread:
+                # Build spread description (e.g., "scallion cream cheese")
+                if parsed.spread_type and parsed.spread_type != "plain":
+                    item.spread = f"{parsed.spread_type} {parsed.spread}"
+                else:
+                    item.spread = parsed.spread
+
+                # Add spread price to omelette (same as standalone bagel)
+                spread_price = self._lookup_spread_price(parsed.spread, parsed.spread_type)
+                if spread_price > 0 and item.unit_price is not None:
+                    item.spread_price = spread_price  # Store for itemized display
+                    item.unit_price += spread_price
+                    logger.info(
+                        "Added spread price to omelette: %s ($%.2f) -> new total $%.2f",
+                        item.spread, spread_price, item.unit_price
+                    )
+            else:
+                return StateMachineResult(
+                    message="Would you like butter or cream cheese on the bagel?",
+                    order=order,
+                )
+
+            # Omelette side bagel is complete
+            item.mark_complete()
+            order.clear_pending()
+            return self._configure_next_incomplete_bagel(order)
+
+        # For BagelItemTask - full handling with modifiers
         # First check if the user is requesting modifiers instead of a spread
         # e.g., "make it bacon egg and cheese" when asked about spread
         modifiers = extract_modifiers_from_input(user_input)
@@ -1594,8 +1633,13 @@ class OrderStateMachine:
                 logger.info("Extracted additional modifiers from toasted choice: %s", extracted_modifiers)
                 apply_modifiers_to_bagel(item, extracted_modifiers)
 
-        # For MenuItemTask (spread/salad sandwiches), mark complete after toasted
+        # For MenuItemTask, handle based on type
         if isinstance(item, MenuItemTask):
+            # For omelette side bagels, continue to spread question
+            if item.side_choice == "bagel":
+                order.clear_pending()
+                return self._configure_next_incomplete_bagel(order)
+            # For spread/salad sandwiches, mark complete after toasted
             item.mark_complete()
             order.clear_pending()
             return self._get_next_question(order)
@@ -2883,9 +2927,10 @@ class OrderStateMachine:
         """
         Find the next incomplete bagel item and configure it fully before moving on.
 
-        This handles BOTH:
+        This handles:
         - BagelItemTask (bagels with spreads/toppings)
         - MenuItemTask for spread_sandwich/salad_sandwich (Butter Sandwich, etc.)
+        - MenuItemTask for omelettes with side_choice == "bagel"
 
         Each item is fully configured (type → toasted → spread) before
         moving to the next item.
@@ -2896,6 +2941,9 @@ class OrderStateMachine:
             if isinstance(item, BagelItemTask):
                 all_bagel_items.append(item)
             elif isinstance(item, MenuItemTask) and item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
+                all_bagel_items.append(item)
+            elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
+                # Omelettes with bagel side need bagel configuration
                 all_bagel_items.append(item)
 
         total_items = len(all_bagel_items)
@@ -2916,8 +2964,10 @@ class OrderStateMachine:
                 bagel_desc = "your bagel"
                 your_bagel_desc = "your bagel"
 
-            # Handle MenuItemTask (spread_sandwich, salad_sandwich)
+            # Handle MenuItemTask (spread_sandwich, salad_sandwich, omelette with bagel side)
             if isinstance(item, MenuItemTask):
+                is_omelette_side = item.side_choice == "bagel"
+
                 # Ask about bagel type first
                 if not item.bagel_choice:
                     order.phase = OrderPhase.CONFIGURING_ITEM
@@ -2939,7 +2989,12 @@ class OrderStateMachine:
                     order.phase = OrderPhase.CONFIGURING_ITEM
                     order.pending_item_id = item.id
                     order.pending_field = "toasted"
-                    if total_items > 1:
+                    if is_omelette_side:
+                        return StateMachineResult(
+                            message=f"Would you like the {item.bagel_choice} bagel toasted?",
+                            order=order,
+                        )
+                    elif total_items > 1:
                         return StateMachineResult(
                             message=f"For {bagel_desc}, would you like that toasted?",
                             order=order,
@@ -2949,6 +3004,16 @@ class OrderStateMachine:
                             message="Would you like that toasted?",
                             order=order,
                         )
+
+                # For omelette side bagels, ask about spread (butter/cream cheese)
+                if is_omelette_side and item.spread is None:
+                    order.phase = OrderPhase.CONFIGURING_ITEM
+                    order.pending_item_id = item.id
+                    order.pending_field = "spread"
+                    return StateMachineResult(
+                        message="Would you like butter or cream cheese on the bagel?",
+                        order=order,
+                    )
 
                 # MenuItemTask is complete
                 item.mark_complete()

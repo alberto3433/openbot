@@ -67,7 +67,7 @@ def is_soda_drink(drink_type: str | None) -> bool:
 
 WORD_TO_NUM = {
     "a": 1, "an": 1, "one": 1,
-    "two": 2, "couple": 2,
+    "two": 2, "couple": 2, "a couple": 2,
     "three": 3,
     "four": 4,
     "five": 5,
@@ -76,6 +76,8 @@ WORD_TO_NUM = {
     "eight": 8,
     "nine": 9,
     "ten": 10,
+    "eleven": 11,
+    "twelve": 12, "dozen": 12, "a dozen": 12,
 }
 
 # =============================================================================
@@ -461,6 +463,7 @@ KNOWN_MENU_ITEMS = {
     "western omelette",
     "veggie omelette",
     "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
+    "spinach & feta omelet", "spinach and feta omelet", "spinach feta omelet",
     # Spread Sandwiches (cream cheese, butter, etc.)
     "plain cream cheese sandwich", "plain cream cheese",
     "scallion cream cheese sandwich", "scallion cream cheese",
@@ -540,6 +543,7 @@ NO_THE_PREFIX_ITEMS = {
     "western omelette",
     "veggie omelette",
     "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
+    "spinach & feta omelet", "spinach and feta omelet", "spinach feta omelet",
     # Specific beverage items
     "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
     "tropicana no pulp", "tropicana",
@@ -621,6 +625,10 @@ MENU_ITEM_CANONICAL_NAMES = {
     # Omelettes - map "and" to "&" for database match
     "spinach and feta omelette": "Spinach & Feta Omelette",
     "spinach feta omelette": "Spinach & Feta Omelette",
+    # Single 't' spelling variants (omelet vs omelette)
+    "spinach and feta omelet": "Spinach & Feta Omelette",
+    "spinach feta omelet": "Spinach & Feta Omelette",
+    "spinach & feta omelet": "Spinach & Feta Omelette",
 }
 
 # =============================================================================

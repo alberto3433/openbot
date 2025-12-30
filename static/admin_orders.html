@@ -631,6 +631,30 @@
             // Add notes if present
             const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
 
+            // Check if item has modifiers (for itemized display like omelette side bagel spreads)
+            const hasModifiers = item.modifiers && item.modifiers.length > 0;
+
+            if (hasModifiers) {
+              // Calculate base price by subtracting modifiers
+              const modifiersTotal = item.modifiers.reduce((sum, m) => sum + (m.price || 0), 0);
+              const basePrice = (item.unit_price || item.line_total || 0) - modifiersTotal;
+
+              // Build modifiers HTML
+              const modifiersHtml = item.modifiers.map(mod => {
+                const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
+                return `<div class="muted" style="display: flex; justify-content: space-between; padding-left: 16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
+              }).join('');
+
+              return `
+                <div class="item-card">
+                  <div style="display: flex; justify-content: space-between;"><strong>${item.quantity}× ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
+                  ${modifiersHtml}
+                  ${notesDisplay}
+                  <div style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>
+                </div>
+              `;
+            }
+
             return `
               <div class="item-card">
                 <div><strong>${item.quantity}× ${item.menu_item_name}</strong></div>

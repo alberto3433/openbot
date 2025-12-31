@@ -656,9 +656,10 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     toasted = _extract_toasted(text)
 
     # Extract bagel choice
+    # IMPORTANT: Use word boundary \b before "on/with" to prevent matching "bacon" as "bac-ON"
     bagel_choice = None
     bagel_choice_pattern = re.compile(
-        r"(?:on|with)\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\s+bagels?",
+        r"\b(?:on|with)\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\s+bagels?",
         re.IGNORECASE
     )
     bagel_match = bagel_choice_pattern.search(text)
@@ -675,7 +676,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     if not bagel_choice:
         for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
             pattern = re.compile(
-                r"(?:on|with)\s+(?:(?:a|an)\s+)?" + re.escape(bagel_type) + r"(?:\s|$|[,.])",
+                r"\b(?:on|with)\s+(?:(?:a|an)\s+)?" + re.escape(bagel_type) + r"(?:\s|$|[,.])",
                 re.IGNORECASE
             )
             if pattern.search(text_lower):
@@ -839,7 +840,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, notes
     )
 
-    return OpenInputResponse(
+    response = OpenInputResponse(
         new_coffee=True,
         new_coffee_type=coffee_type,
         new_coffee_quantity=quantity,
@@ -851,6 +852,35 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
         new_coffee_notes=notes,
     )
+
+    # Check if there's also a speed menu bagel mentioned in the input
+    # Look for patterns like "and a bec", "and a classic", "and the leo"
+    for key in sorted(SPEED_MENU_BAGELS.keys(), key=len, reverse=True):
+        # Check for speed menu item after "and"
+        and_pattern = rf'\band\s+(?:a\s+|an\s+|the\s+)?{re.escape(key)}\b'
+        if re.search(and_pattern, text_lower):
+            matched_item = SPEED_MENU_BAGELS[key]
+            logger.info(
+                "COFFEE + SPEED MENU: also found speed menu item '%s' -> %s",
+                key, matched_item
+            )
+            response.new_speed_menu_bagel = True
+            response.new_speed_menu_bagel_name = matched_item
+            response.new_speed_menu_bagel_quantity = 1
+            # Extract toasted/bagel choice from the remainder after "and"
+            and_match = re.search(rf'\band\s+(.+)$', text_lower)
+            if and_match:
+                remainder = and_match.group(1)
+                response.new_speed_menu_bagel_toasted = _extract_toasted(remainder)
+                # Check for bagel choice (use \b word boundary to prevent "bacon" matching "bac-ON")
+                for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+                    bagel_pattern = rf'\b(?:on|with)\s+(?:a\s+|an\s+)?{re.escape(bagel_type)}'
+                    if re.search(bagel_pattern, remainder):
+                        response.new_speed_menu_bagel_bagel_choice = bagel_type
+                        break
+            break
+
+    return response
 
 
 def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
@@ -1163,6 +1193,16 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     text_lower = text.lower()
 
     compound_phrases = [
+        # Egg sandwich phrases (longer phrases first to match properly)
+        ("bacon egg and cheese", "BACON_EGG_CHEESE_PLACEHOLDER"),
+        ("ham egg and cheese", "HAM_EGG_CHEESE_PLACEHOLDER"),
+        ("sausage egg and cheese", "SAUSAGE_EGG_CHEESE_PLACEHOLDER"),
+        ("egg and cheese", "EGG_CHEESE_PLACEHOLDER"),
+        ("bacon and egg and cheese", "BACON_AND_EGG_CHEESE_PLACEHOLDER"),
+        ("ham and egg and cheese", "HAM_AND_EGG_CHEESE_PLACEHOLDER"),
+        ("bacon eggs and cheese", "BACON_EGGS_CHEESE_PLACEHOLDER"),
+        ("ham eggs and cheese", "HAM_EGGS_CHEESE_PLACEHOLDER"),
+        # Other compound phrases
         ("ham and cheese", "HAM_CHEESE_PLACEHOLDER"),
         ("ham and egg", "HAM_EGG_PLACEHOLDER"),
         ("bacon and egg", "BACON_EGG_PLACEHOLDER"),
@@ -1217,6 +1257,13 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     bagel_spread_type = None
     side_item = None
     side_item_qty = 1
+    # Speed menu bagel tracking
+    speed_menu_bagel = False
+    speed_menu_bagel_name = None
+    speed_menu_bagel_qty = 1
+    speed_menu_bagel_toasted = None
+    speed_menu_bagel_bagel_choice = None
+    speed_menu_bagel_modifications = None
 
     # First pass: count how many parts have menu items
     # If only ONE part has a menu item, we should extract modifications from the ORIGINAL text
@@ -1235,6 +1282,20 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     for part in restored_parts:
         part = part.strip()
         if not part:
+            continue
+
+        # Try speed menu bagel FIRST - important because "bacon egg and cheese"
+        # would otherwise be matched as a menu item "Bacon"
+        speed_result = _parse_speed_menu_bagel_deterministic(part)
+        if speed_result and speed_result.new_speed_menu_bagel:
+            speed_menu_bagel = True
+            speed_menu_bagel_name = speed_result.new_speed_menu_bagel_name
+            speed_menu_bagel_qty = speed_result.new_speed_menu_bagel_quantity or 1
+            speed_menu_bagel_toasted = speed_result.new_speed_menu_bagel_toasted
+            speed_menu_bagel_bagel_choice = speed_result.new_speed_menu_bagel_bagel_choice
+            speed_menu_bagel_modifications = speed_result.new_speed_menu_bagel_modifications
+            logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d) via direct parse",
+                        speed_menu_bagel_name, speed_menu_bagel_qty)
             continue
 
         item_name, item_qty = _extract_menu_item_from_text(part)
@@ -1297,6 +1358,16 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             side_item_qty = parsed.new_side_item_quantity or 1
             logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
 
+        if parsed.new_speed_menu_bagel:
+            speed_menu_bagel = True
+            speed_menu_bagel_name = parsed.new_speed_menu_bagel_name
+            speed_menu_bagel_qty = parsed.new_speed_menu_bagel_quantity or 1
+            speed_menu_bagel_toasted = parsed.new_speed_menu_bagel_toasted
+            speed_menu_bagel_bagel_choice = parsed.new_speed_menu_bagel_bagel_choice
+            speed_menu_bagel_modifications = parsed.new_speed_menu_bagel_modifications
+            logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d, toasted=%s, bagel=%s)",
+                        speed_menu_bagel_name, speed_menu_bagel_qty, speed_menu_bagel_toasted, speed_menu_bagel_bagel_choice)
+
     # Get first menu item for primary fields, rest go to additional_menu_items
     first_menu_item = menu_item_list[0] if menu_item_list else None
     additional_menu_items = menu_item_list[1:] if len(menu_item_list) > 1 else []
@@ -1306,13 +1377,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         len(coffee_list) > 0,
         bagel,
         side_item is not None,
+        speed_menu_bagel,
     ])
-    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0)
+    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if speed_menu_bagel else 0)
 
     if items_found >= 2 or total_items >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
-        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s",
-                    len(menu_item_list), len(coffee_list), bagel, side_item)
+        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s",
+                    len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name)
         return OpenInputResponse(
             new_menu_item=first_menu_item.name if first_menu_item else None,
             new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,
@@ -1336,6 +1408,12 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_bagel_spread_type=bagel_spread_type,
             new_side_item=side_item,
             new_side_item_quantity=side_item_qty,
+            new_speed_menu_bagel=speed_menu_bagel,
+            new_speed_menu_bagel_name=speed_menu_bagel_name,
+            new_speed_menu_bagel_quantity=speed_menu_bagel_qty,
+            new_speed_menu_bagel_toasted=speed_menu_bagel_toasted,
+            new_speed_menu_bagel_bagel_choice=speed_menu_bagel_bagel_choice,
+            new_speed_menu_bagel_modifications=speed_menu_bagel_modifications or [],
         )
 
     if menu_item_list:

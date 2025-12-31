@@ -79,20 +79,20 @@ class SpeedMenuBagelHandler:
                 modifications=modifications or [],
                 unit_price=price,
             )
-            if toasted is not None:
-                # Toasted preference already specified - mark complete
+            # Item is complete only if both bagel_choice and toasted are specified
+            if bagel_choice is not None and toasted is not None:
                 item.mark_complete()
             else:
-                # Need to ask about toasting
+                # Need to ask about bagel type and/or toasting
                 item.mark_in_progress()
             order.items.add_item(item)
 
-        # If toasted was specified, we're done
-        if toasted is not None:
+        # If both are specified, we're done
+        if bagel_choice is not None and toasted is not None:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Need to configure toasted preference
+        # Need to configure bagel type and/or toasted preference
         return self.configure_next_incomplete_speed_menu_bagel(order)
 
     def configure_next_incomplete_speed_menu_bagel(
@@ -110,8 +110,19 @@ class SpeedMenuBagelHandler:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Configure items one at a time
+        # Configure items one at a time - ask bagel type first, then toasted
         for item in incomplete_items:
+            # First ask for bagel type if not specified
+            if item.bagel_choice is None:
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = item.id
+                order.pending_field = "speed_menu_bagel_type"
+                return StateMachineResult(
+                    message="What type of bagel would you like for that?",
+                    order=order,
+                )
+
+            # Then ask for toasted if not specified
             if item.toasted is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = item.id
@@ -125,6 +136,39 @@ class SpeedMenuBagelHandler:
             item.mark_complete()
 
         # All items configured
+        order.clear_pending()
+        return self._get_next_question(order)
+
+    def handle_speed_menu_bagel_type(
+        self,
+        user_input: str,
+        item: SpeedMenuBagelItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle bagel type selection for speed menu bagel."""
+        from .parsers.deterministic import _extract_bagel_type as parse_bagel_type_response
+
+        # Parse the bagel type from user input
+        bagel_type = parse_bagel_type_response(user_input)
+
+        if bagel_type is None:
+            return StateMachineResult(
+                message="What type of bagel would you like? For example, plain, everything, sesame, or whole wheat.",
+                order=order,
+            )
+
+        item.bagel_choice = bagel_type
+
+        # Continue to ask for toasted if not set
+        if item.toasted is None:
+            order.pending_field = "speed_menu_bagel_toasted"
+            return StateMachineResult(
+                message="Would you like that toasted?",
+                order=order,
+            )
+
+        # Both fields are set - mark complete
+        item.mark_complete()
         order.clear_pending()
         return self._get_next_question(order)
 

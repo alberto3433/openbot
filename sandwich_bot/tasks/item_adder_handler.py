@@ -63,6 +63,12 @@ class ItemAdderHandler:
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
 
+    # Generic category terms that should trigger disambiguation when multiple items match
+    GENERIC_CATEGORY_TERMS = frozenset([
+        "cookie", "cookies", "muffin", "muffins", "brownie", "brownies",
+        "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
+    ])
+
     def add_menu_item(
         self,
         item_name: str,
@@ -76,8 +82,44 @@ class ItemAdderHandler:
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
-        # Look up item in menu to get price and other details
-        menu_item = self.menu_lookup.lookup_menu_item(item_name)
+        # Check if the item_name is a generic category term (like "cookie", "muffin")
+        # In this case, we should check for multiple matches and disambiguate
+        item_lower = item_name.lower().strip()
+        if item_lower in self.GENERIC_CATEGORY_TERMS:
+            # For generic terms, check if there are multiple matching items
+            matching_items = self.menu_lookup.lookup_menu_items(item_name)
+            if len(matching_items) > 1:
+                # Multiple matches - ask user to clarify
+                logger.info(
+                    "Generic term '%s' matched %d items - asking for disambiguation",
+                    item_name, len(matching_items)
+                )
+                order.pending_item_options = matching_items
+                order.pending_item_quantity = quantity
+                order.pending_field = "item_selection"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                # Build the clarification message (without prices for generic queries)
+                option_list = []
+                for i, item in enumerate(matching_items[:6], 1):  # Limit to 6 options
+                    name = item.get("name", "Unknown")
+                    option_list.append(f"{i}. {name}")
+
+                options_str = "\n".join(option_list)
+                return StateMachineResult(
+                    message=f"We have a few {item_name} options:\n{options_str}\nWhich would you like?",
+                    order=order,
+                )
+            elif len(matching_items) == 1:
+                # Single match - use it directly
+                menu_item = matching_items[0]
+                logger.info("Generic term '%s' matched single item: %s", item_name, menu_item.get("name"))
+            else:
+                # No matches found for generic term - let the regular flow handle the error
+                menu_item = None
+        else:
+            # Not a generic term - use regular lookup
+            menu_item = self.menu_lookup.lookup_menu_item(item_name)
 
         # Log omelette items in menu for debugging
         omelette_items = self._menu_data.get("items_by_type", {}).get("omelette", [])
@@ -142,12 +184,13 @@ class ItemAdderHandler:
                     menu_item = matching_items[0]
                     logger.info("Single partial match found, using: %s", menu_item.get("name"))
                 else:
-                    # Multiple matches - ask user to clarify (like drinks)
-                    order.pending_drink_options = matching_items
-                    order.pending_field = "drink_selection"
+                    # Multiple matches - ask user to clarify
+                    order.pending_item_options = matching_items
+                    order.pending_item_quantity = quantity
+                    order.pending_field = "item_selection"
                     order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-                    # Build the clarification message
+                    # Build the clarification message (with prices for specific item lookups)
                     option_list = []
                     for i, item in enumerate(matching_items[:6], 1):  # Limit to 6 options
                         name = item.get("name", "Unknown")

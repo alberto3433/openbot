@@ -341,6 +341,8 @@ class OrderStateMachine:
             menu_lookup=self.menu_lookup,
             get_next_question=self.checkout_utils_handler.get_next_question,
         )
+        # Now set the speed menu bagel callback on checkout_utils_handler
+        self.checkout_utils_handler._configure_next_incomplete_speed_menu_bagel = self.speed_menu_handler.configure_next_incomplete_speed_menu_bagel
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize by-the-pound handler
@@ -393,6 +395,7 @@ class OrderStateMachine:
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             modifier_change_handler=self.modifier_change_handler,
+            item_adder_handler=self.item_adder_handler,
         )
         # Initialize taking items handler
         self.taking_items_handler = TakingItemsHandler(

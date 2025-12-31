@@ -938,12 +938,23 @@ class TakingItemsHandler:
             if parsed.new_menu_item:
                 menu_result = self.item_adder_handler.add_menu_item(parsed.new_menu_item, parsed.new_menu_item_quantity, order, parsed.new_menu_item_toasted, parsed.new_menu_item_bagel_choice, parsed.new_menu_item_modifications)
                 items_added.append(parsed.new_menu_item)
-                # Combine the messages
-                combined_items = ", ".join(items_added)
-                return StateMachineResult(
-                    message=f"Got it, {combined_items}. Anything else?",
-                    order=order,
+                # Let get_next_question handle the configuration flow for all items
+                return self.checkout_utils_handler.get_next_question(order)
+
+            # Check if there's ALSO a speed menu bagel in the same message
+            if parsed.new_speed_menu_bagel:
+                self.speed_menu_handler.add_speed_menu_bagel(
+                    parsed.new_speed_menu_bagel_name,
+                    parsed.new_speed_menu_bagel_quantity,
+                    parsed.new_speed_menu_bagel_toasted,
+                    order,
+                    bagel_choice=parsed.new_speed_menu_bagel_bagel_choice,
+                    modifications=parsed.new_speed_menu_bagel_modifications,
                 )
+                items_added.append(parsed.new_speed_menu_bagel_name)
+                # Let get_next_question handle the configuration flow for all items
+                return self.checkout_utils_handler.get_next_question(order)
+
             # If this was a replacement, modify the message
             if replaced_item_name and coffee_result and "Got it" in coffee_result.message:
                 coffee_result = StateMachineResult(
@@ -965,7 +976,7 @@ class TakingItemsHandler:
 
             # Check if there's ALSO a coffee in the same message
             if parsed.new_coffee:
-                coffee_result = self.coffee_handler.add_coffee(
+                self.coffee_handler.add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
                     parsed.new_coffee_iced,
@@ -978,12 +989,8 @@ class TakingItemsHandler:
                     notes=parsed.new_coffee_notes,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
-                # Combine the messages
-                combined_items = ", ".join(items_added)
-                return StateMachineResult(
-                    message=f"Got it, {combined_items}. Anything else?",
-                    order=order,
-                )
+                # Let get_next_question handle the configuration flow for all items
+                return self.checkout_utils_handler.get_next_question(order)
             return speed_result
 
         if parsed.needs_soda_clarification:

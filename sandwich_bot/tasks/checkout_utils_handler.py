@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -55,11 +55,23 @@ class CheckoutUtilsHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Determine the next question to ask."""
-        # Check for incomplete items
+        # Check for incomplete items that need configuration
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
-                # This shouldn't happen if we're tracking state correctly
-                logger.warning(f"Found in-progress item without pending state: {item}")
+                # Handle speed menu bagels that need configuration
+                if isinstance(item, SpeedMenuBagelItemTask):
+                    if item.bagel_choice is None or item.toasted is None:
+                        logger.info("Found incomplete speed menu bagel, starting configuration")
+                        if self._configure_next_incomplete_speed_menu_bagel:
+                            return self._configure_next_incomplete_speed_menu_bagel(order)
+                # Handle coffee that needs configuration
+                elif isinstance(item, CoffeeItemTask):
+                    logger.info("Found incomplete coffee, starting configuration")
+                    if self._configure_next_incomplete_coffee:
+                        return self._configure_next_incomplete_coffee(order)
+                else:
+                    # Other in-progress items - log warning
+                    logger.warning(f"Found in-progress item without handler: {item}")
 
         # Check if there are items queued for configuration
         if order.has_queued_config_items():

@@ -338,20 +338,24 @@ def _add_order_items(db: Session, order: Order, items: list) -> None:
     in the item_config JSON column. Only common fields are stored as direct columns.
     """
     for it in items:
+        # Prefer display_name which includes all item details (bagel choice, toasted, etc.)
+        # Fall back to menu_item_name for compatibility
         menu_item_name = (
-            it.get("menu_item_name")
+            it.get("display_name")
+            or it.get("menu_item_name")
             or it.get("name")
             or it.get("item_type")
             or "Unknown item"
         )
 
-        # Include side choice in display name
-        side_choice = it.get("side_choice")
-        bagel_choice = it.get("bagel_choice")
-        if side_choice == "bagel" and bagel_choice:
-            menu_item_name = f"{menu_item_name} with {bagel_choice} bagel"
-        elif side_choice == "fruit_salad":
-            menu_item_name = f"{menu_item_name} with fruit salad"
+        # Include side choice in display name (for items without display_name)
+        if not it.get("display_name"):
+            side_choice = it.get("side_choice")
+            bagel_choice = it.get("bagel_choice")
+            if side_choice == "bagel" and bagel_choice:
+                menu_item_name = f"{menu_item_name} with {bagel_choice} bagel"
+            elif side_choice == "fruit_salad":
+                menu_item_name = f"{menu_item_name} with fruit salad"
 
         item_type = it.get("item_type")
         quantity = it.get("quantity", 1)

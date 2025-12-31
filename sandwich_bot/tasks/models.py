@@ -683,6 +683,12 @@ class OrderTask(BaseTask):
         # Handle drink selection when multiple options were presented
         if self.pending_field == "drink_selection":
             return True
+        # Handle generic item selection (cookies, muffins, etc.) when multiple options presented
+        if self.pending_field == "item_selection":
+            return True
+        # Handle category inquiry follow-up
+        if self.pending_field == "category_inquiry":
+            return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 
     def is_configuring_multiple(self) -> bool:

@@ -343,10 +343,18 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
     # Clean up common phrases that contain "and" but aren't multi-item orders
+    # Order matters: longer phrases first to match properly
     cleaned = input_lower
-    for phrase in ["ham and cheese", "ham and egg", "bacon and egg", "lox and cream cheese",
-                   "salt and pepper", "cream cheese and lox", "eggs and bacon", "black and white",
-                   "spinach and feta"]:
+    for phrase in [
+        # Egg sandwich phrases (must come first - longer phrases)
+        "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
+        "bacon and egg and cheese", "ham and egg and cheese",
+        "bacon eggs and cheese", "ham eggs and cheese", "egg and cheese",
+        # Other compound phrases
+        "ham and cheese", "ham and egg", "bacon and egg", "lox and cream cheese",
+        "salt and pepper", "cream cheese and lox", "eggs and bacon", "black and white",
+        "spinach and feta",
+    ]:
         cleaned = cleaned.replace(phrase, "")
 
     # If "and" or comma still appears, try multi-item deterministic parsing first
@@ -471,12 +479,17 @@ Speed menu bagel orders (pre-configured sandwiches):
 - These are specific named menu items that come pre-configured: "The Classic", "The Classic BEC",
   "The Traditional", "The Leo", "The Max Zucker", "The Avocado Toast", "The Chelsea Club",
   "The Flatiron Traditional", "The Old School Tuna Sandwich"
+- "bacon egg and cheese" / "BEC" / "bacon egg cheese" are ALL "The Classic BEC"
+- "ham egg and cheese" / "HEC" are The Classic with ham instead of bacon
 - When user orders these by name, set new_speed_menu_bagel=true and new_speed_menu_bagel_name to the item name
 - "3 Classics" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic", new_speed_menu_bagel_quantity: 3
 - "The Leo please" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Leo"
 - "two Traditionals toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Traditional", new_speed_menu_bagel_quantity: 2, new_speed_menu_bagel_toasted: true
 - "a Max Zucker" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Max Zucker"
 - "Classic BEC" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC"
+- "bacon egg and cheese bagel" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC" (DO NOT set bagel_choice to "egg" - the "egg" is part of the item name, not the bagel type!)
+- "bacon egg and cheese on everything" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC", new_speed_menu_bagel_bagel_choice: "everything"
+- "ham egg and cheese bagel" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC" (ham variant, but map to BEC)
 - "the avocado toast" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Avocado Toast"
 - "Chelsea Club toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Chelsea Club", new_speed_menu_bagel_toasted: true
 

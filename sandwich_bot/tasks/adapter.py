@@ -273,6 +273,8 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.phase = sm_state.get("phase", "greeting")
         order.pending_config_queue = sm_state.get("pending_config_queue", [])
         order.pending_drink_options = sm_state.get("pending_drink_options", [])
+        order.pending_item_options = sm_state.get("pending_item_options", [])
+        order.pending_item_quantity = sm_state.get("pending_item_quantity", 1)
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -668,6 +670,8 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
         "last_bot_message": order.last_bot_message,
         "pending_config_queue": order.pending_config_queue,  # Queue of items needing config
         "pending_drink_options": order.pending_drink_options,  # Multiple drink options for disambiguation
+        "pending_item_options": order.pending_item_options,  # Generic item options for disambiguation (cookies, etc.)
+        "pending_item_quantity": order.pending_item_quantity,  # Quantity stored during item disambiguation
     }
 
     return order_dict

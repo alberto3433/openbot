@@ -189,6 +189,21 @@ MAKE_IT_N_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# "one more" / "another" pattern - adds 1 more of the last item
+ONE_MORE_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:and\s+)?one\s+more"  # "one more", "and one more"
+    r"|"
+    r"(?:and\s+)?another(?:\s+one)?"  # "another", "another one", "and another"
+    r"|"
+    r"add\s+(?:one\s+more|another)"  # "add one more", "add another"
+    r"|"
+    r"(?:one|1)\s+more\s+(?:of\s+)?(?:those|them|that)"  # "one more of those"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 # Tax question pattern
 TAX_QUESTION_PATTERN = re.compile(
     r"(?:"
@@ -245,14 +260,14 @@ ADD_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Bagel quantity pattern - note: compound expressions like "a dozen" must come before single words
+# Bagel quantity pattern - note: compound expressions like "half dozen" must come before single words
 BAGEL_QUANTITY_PATTERN = re.compile(
     r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
     r"(?:can|could|may)\s+i\s+(?:get|have)|"
     r"give\s+me|"
     r"let\s*(?:me|'s)\s*(?:get|have)|"
     r")?\s*"
-    r"(\d+|a\s+dozen|a\s+couple(?:\s+of)?|couple(?:\s+of)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\s+"
+    r"(\d+|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+couple(?:\s+of)?|couple(?:\s+of)?|a\s+few|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\s+"
     r"(?:\w+\s+)*"
     r"bagels?",
     re.IGNORECASE
@@ -930,7 +945,8 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     # Extract quantity - allow optional size/temperature words between qty and coffee type
     # e.g., "three medium coffees", "2 large iced lattes", "dozen hot coffees"
     quantity = 1
-    qty_words = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|couple'
+    # Compound expressions first, then single words
+    qty_words = r'\d+|(?:a\s+)?couple(?:\s+of)?|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+few|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen'
     size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
 
     # Build pattern that matches both compound tea names and single beverage types
@@ -1686,6 +1702,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 additional = target_qty - 1
                 logger.info("Deterministic parse: 'make it N' detected, target=%d, adding %d more", target_qty, additional)
                 return OpenInputResponse(duplicate_last_item=additional)
+
+    # Check for "one more" / "another" patterns
+    if ONE_MORE_PATTERN.match(text):
+        logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
+        return OpenInputResponse(duplicate_last_item=1)
 
     # Check for replacement phrases
     replace_match = REPLACE_ITEM_PATTERN.match(text)

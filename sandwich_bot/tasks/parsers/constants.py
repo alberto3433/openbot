@@ -84,11 +84,11 @@ def is_soda_drink(drink_type: str | None) -> bool:
 
 WORD_TO_NUM = {
     "a": 1, "an": 1, "one": 1,
-    "two": 2, "couple": 2, "a couple": 2,
-    "three": 3,
+    "two": 2, "couple": 2, "a couple": 2, "a couple of": 2, "couple of": 2,
+    "three": 3, "a few": 3, "few": 3,
     "four": 4,
     "five": 5,
-    "six": 6,
+    "six": 6, "half dozen": 6, "half a dozen": 6, "a half dozen": 6,
     "seven": 7,
     "eight": 8,
     "nine": 9,

@@ -1,329 +1,624 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <title>Order Bot</title>
+  <title>Zucker's Order Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    /* =====================================================
+       Theme System - CSS Custom Properties
+       ===================================================== */
+    :root {
+      /* Brand Colors - Zucker's warm palette */
+      --brand-primary: #D4754E;
+      --brand-primary-hover: #C46842;
+      --brand-secondary: #8B5A2B;
+      --brand-accent: #F5A623;
+
+      /* Light Theme (default) */
+      --bg-primary: #FAF7F4;
+      --bg-secondary: #FFFFFF;
+      --bg-tertiary: #F5F0EB;
+      --bg-input: #FFFFFF;
+
+      --text-primary: #2D2A26;
+      --text-secondary: #5C574F;
+      --text-tertiary: #8A847A;
+      --text-inverse: #FFFFFF;
+
+      --border-light: #E8E2DA;
+      --border-medium: #D4CCC2;
+
+      --shadow-sm: 0 1px 3px rgba(45, 42, 38, 0.06);
+      --shadow-md: 0 4px 12px rgba(45, 42, 38, 0.08);
+      --shadow-lg: 0 8px 24px rgba(45, 42, 38, 0.12);
+
+      /* Component Colors */
+      --header-bg: linear-gradient(135deg, #D4754E 0%, #C46842 100%);
+      --chat-bg: #FDFCFB;
+      --user-bubble-bg: var(--brand-primary);
+      --user-bubble-text: #FFFFFF;
+      --assistant-bubble-bg: #FFFFFF;
+      --assistant-bubble-border: #E8E2DA;
+      --assistant-bubble-text: var(--text-primary);
+
+      --input-border: #D4CCC2;
+      --input-focus-border: var(--brand-primary);
+      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.15);
+
+      --badge-bg: #FFF3E8;
+      --badge-text: #B35E2C;
+      --badge-delivery-bg: #FFF0E6;
+      --badge-delivery-text: #D4754E;
+
+      --success-bg: #E8F5E9;
+      --success-text: #2E7D32;
+      --warning-bg: #FFF8E1;
+      --warning-text: #F57F17;
+      --error-bg: #FFEBEE;
+      --error-text: #C62828;
+
+      /* Bagel icon colors */
+      --bagel-outer: #D4A574;
+      --bagel-inner: #C49A6C;
+      --bagel-hole: var(--bg-primary);
+      --bagel-seeds: #8B5A2B;
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #1A1816;
+      --bg-secondary: #242220;
+      --bg-tertiary: #2E2B28;
+      --bg-input: #2E2B28;
+
+      --text-primary: #F5F0EB;
+      --text-secondary: #B8B0A5;
+      --text-tertiary: #8A847A;
+      --text-inverse: #1A1816;
+
+      --border-light: #3D3935;
+      --border-medium: #4A4540;
+
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+      --header-bg: linear-gradient(135deg, #3D3935 0%, #2E2B28 100%);
+      --chat-bg: #1E1C1A;
+      --user-bubble-bg: var(--brand-primary);
+      --user-bubble-text: #FFFFFF;
+      --assistant-bubble-bg: #2E2B28;
+      --assistant-bubble-border: #3D3935;
+      --assistant-bubble-text: var(--text-primary);
+
+      --input-border: #4A4540;
+      --input-focus-border: var(--brand-primary);
+      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.25);
+
+      --badge-bg: #3D3935;
+      --badge-text: #E8A87C;
+      --badge-delivery-bg: #3D3530;
+      --badge-delivery-text: #E8A87C;
+
+      --success-bg: #1B3D1E;
+      --success-text: #81C784;
+      --warning-bg: #3D3520;
+      --warning-text: #FFD54F;
+      --error-bg: #3D2020;
+      --error-text: #EF9A9A;
+
+      --bagel-outer: #C49A6C;
+      --bagel-inner: #B08860;
+      --bagel-hole: var(--bg-primary);
+      --bagel-seeds: #D4A574;
+    }
+
+    /* =====================================================
+       Base Styles
+       ===================================================== */
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.3s ease, color 0.3s ease;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
+
+    /* =====================================================
+       Header
+       ===================================================== */
     .app-header {
-      background: #1976d2;
-      color: white;
-      padding: 12px 20px;
+      background: var(--header-bg);
+      color: var(--text-inverse);
+      padding: 12px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 18px;
-      font-weight: 600;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      z-index: 50;
     }
-    .app-header span.sub {
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bagel-logo {
+      width: 36px;
+      height: 36px;
+      transition: transform 0.3s ease;
+    }
+
+    .bagel-logo:hover {
+      transform: rotate(15deg);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-subtitle {
       font-size: 13px;
       font-weight: 400;
-      opacity: 0.9;
+      opacity: 0.85;
     }
+
+    /* Theme Toggle */
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: inherit;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .theme-toggle:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .theme-toggle .icon {
+      font-size: 16px;
+      transition: transform 0.3s ease;
+    }
+
+    [data-theme="dark"] .theme-toggle .icon {
+      transform: rotate(180deg);
+    }
+
+    /* =====================================================
+       Main Layout
+       ===================================================== */
+    .main-layout {
+      display: flex;
+      max-width: 1280px;
+      margin: 24px auto;
+      gap: 24px;
+      padding: 0 24px;
+      height: calc(100vh - 100px);
+    }
+
+    /* =====================================================
+       Chat Container
+       ===================================================== */
     .chat-container {
-      max-width: 900px;
-      margin: 20px auto;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      flex: 1;
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 80px);
       overflow: hidden;
+      border: 1px solid var(--border-light);
+      transition: background-color 0.3s ease, border-color 0.3s ease;
     }
+
+    .main-layout .chat-container {
+      max-width: none;
+      margin: 0;
+    }
+
+    /* Caller ID Panel */
+    .caller-id-panel {
+      padding: 12px 20px;
+      background: var(--warning-bg);
+      border-bottom: 1px solid var(--border-light);
+      font-size: 13px;
+    }
+
+    .caller-id-panel summary {
+      cursor: pointer;
+      color: var(--warning-text);
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .caller-id-panel summary:hover {
+      text-decoration: underline;
+    }
+
+    .caller-id-content {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .caller-id-content input,
+    .caller-id-content select {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .caller-id-content input:focus,
+    .caller-id-content select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
+    }
+
+    .caller-id-content button {
+      padding: 8px 16px;
+      background: var(--brand-accent);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-inverse);
+      transition: background-color 0.2s ease, transform 0.1s ease;
+    }
+
+    .caller-id-content button:hover {
+      background: #E09520;
+    }
+
+    .caller-id-content button:active {
+      transform: scale(0.98);
+    }
+
+    .returning-customer-badge {
+      background: var(--success-bg);
+      color: var(--success-text);
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+
+    /* TTS Controls */
+    .tts-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-light);
+      font-size: 13px;
+    }
+
+    .tts-controls label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .tts-controls select {
+      padding: 6px 10px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      font-size: 12px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .tts-mute-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      background: var(--bg-input);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.2s ease;
+    }
+
+    .tts-mute-btn:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--border-medium);
+    }
+
+    .tts-mute-btn.muted {
+      background: var(--error-bg);
+      border-color: var(--error-text);
+      color: var(--error-text);
+    }
+
+    .tts-mute-btn .icon {
+      font-size: 16px;
+    }
+
+    .tts-status {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    .tts-status.speaking {
+      color: var(--success-text);
+    }
+
+    .tts-status.error {
+      color: var(--error-text);
+    }
+
+    /* Chat Header */
     .chat-header {
-      padding: 10px 16px;
+      padding: 12px 20px;
       text-align: center;
       font-size: 13px;
-      color: #666;
-      border-bottom: 1px solid #eee;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-light);
+      background: var(--bg-tertiary);
     }
+
+    /* Chat Messages */
     .chat-messages {
       flex: 1;
-      padding: 16px;
+      padding: 20px;
       overflow-y: auto;
-      background: #fafafa;
+      background: var(--chat-bg);
     }
+
     .msg-row {
       display: flex;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      animation: messageSlide 0.3s ease;
     }
+
+    @keyframes messageSlide {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     .msg-row.user {
       justify-content: flex-end;
     }
+
     .msg-row.assistant {
       justify-content: flex-start;
     }
+
     .msg-bubble {
       max-width: 70%;
-      padding: 10px 14px;
-      border-radius: 16px;
+      padding: 12px 16px;
+      border-radius: 18px;
       font-size: 14px;
-      line-height: 1.4;
+      line-height: 1.5;
+      word-wrap: break-word;
     }
+
     .msg-row.user .msg-bubble {
-      background: #1976d2;
-      color: white;
-      border-bottom-right-radius: 4px;
+      background: var(--user-bubble-bg);
+      color: var(--user-bubble-text);
+      border-bottom-right-radius: 6px;
     }
+
     .msg-row.assistant .msg-bubble {
-      background: white;
-      border: 1px solid #e0e0e0;
-      border-bottom-left-radius: 4px;
+      background: var(--assistant-bubble-bg);
+      color: var(--assistant-bubble-text);
+      border: 1px solid var(--assistant-bubble-border);
+      border-bottom-left-radius: 6px;
     }
-    .chat-footer {
-      border-top: 1px solid #eee;
-      padding: 10px;
+
+    /* Typing Indicator */
+    .typing-indicator {
       display: flex;
-      gap: 8px;
-      background: #fff;
+      align-items: center;
+      gap: 5px;
+      padding: 12px 16px;
     }
+
+    .typing-indicator .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--text-tertiary);
+      border-radius: 50%;
+      animation: typing-bounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+    .typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+
+    @keyframes typing-bounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Status Bar */
+    .status-bar {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      padding: 6px 20px 10px;
+      background: var(--chat-bg);
+    }
+
+    .mic-status {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: center;
+      min-height: 18px;
+      padding: 4px 0;
+    }
+
+    .mic-status.error {
+      color: var(--error-text);
+    }
+
+    .mic-status.listening {
+      color: var(--success-text);
+    }
+
+    /* Chat Footer / Input */
+    .chat-footer {
+      border-top: 1px solid var(--border-light);
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      background: var(--bg-secondary);
+    }
+
     .chat-footer input[type="text"] {
       flex: 1;
-      border-radius: 20px;
-      border: 1px solid #ccc;
-      padding: 8px 12px;
+      border-radius: 24px;
+      border: 2px solid var(--input-border);
+      padding: 12px 18px;
       font-size: 14px;
+      font-family: inherit;
+      background: var(--bg-input);
+      color: var(--text-primary);
       outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .chat-footer button {
-      border-radius: 20px;
+
+    .chat-footer input[type="text"]:focus {
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
+    }
+
+    .chat-footer input[type="text"]::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .chat-footer button[type="submit"] {
+      border-radius: 24px;
       border: none;
-      background: #1976d2;
-      color: white;
-      padding: 0 18px;
+      background: var(--brand-primary);
+      color: var(--text-inverse);
+      padding: 0 24px;
       font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
     }
-    .chat-footer button:disabled {
-      opacity: 0.6;
-      cursor: default;
+
+    .chat-footer button[type="submit"]:hover {
+      background: var(--brand-primary-hover);
     }
-    /* Microphone button styles */
+
+    .chat-footer button[type="submit"]:active {
+      transform: scale(0.98);
+    }
+
+    .chat-footer button[type="submit"]:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Microphone Button */
     .mic-btn {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      border: none;
-      background: #f0f0f0;
+      border: 2px solid var(--input-border);
+      background: var(--bg-input);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 18px;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
+
     .mic-btn:hover {
-      background: #e0e0e0;
+      background: var(--bg-tertiary);
+      border-color: var(--border-medium);
     }
+
     .mic-btn.listening {
-      background: #ef5350;
+      background: var(--error-bg);
+      border-color: var(--error-text);
       animation: pulse 1.5s infinite;
     }
-    .mic-btn.listening:hover {
-      background: #e53935;
-    }
+
     .mic-btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-    .mic-status {
-      font-size: 11px;
-      color: #666;
-      text-align: center;
-      min-height: 16px;
-      padding: 2px 0;
-    }
-    .mic-status.error {
-      color: #c62828;
-    }
-    .mic-status.listening {
-      color: #2e7d32;
-    }
-    .status-bar {
-      font-size: 12px;
-      color: #777;
-      padding: 4px 16px 8px;
-    }
-    /* Caller ID simulation */
-    .caller-id-panel {
-      padding: 10px 16px;
-      background: #fff3cd;
-      border-bottom: 1px solid #ffc107;
-      font-size: 13px;
-    }
-    .caller-id-panel summary {
-      cursor: pointer;
-      color: #856404;
-      font-weight: 500;
-    }
-    .caller-id-panel summary:hover {
-      text-decoration: underline;
-    }
-    .caller-id-content {
-      margin-top: 8px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .caller-id-content input {
-      flex: 1;
-      padding: 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 13px;
-    }
-    .caller-id-content button {
-      padding: 6px 12px;
-      background: #ffc107;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-    }
-    .caller-id-content button:hover {
-      background: #e0a800;
-    }
-    .returning-customer-badge {
-      background: #28a745;
-      color: white;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      margin-left: 8px;
-    }
-    /* Typing indicator styles */
-    .typing-indicator {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 10px 14px;
-    }
-    .typing-indicator .dot {
-      width: 8px;
-      height: 8px;
-      background: #999;
-      border-radius: 50%;
-      animation: typing-bounce 1.4s infinite ease-in-out both;
-    }
-    .typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
-    .typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
-    .typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
-    @keyframes typing-bounce {
-      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
-      40% { transform: scale(1); opacity: 1; }
-    }
-    /* TTS Controls */
-    .tts-controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 16px;
-      background: #f0f7ff;
-      border-bottom: 1px solid #d0e3f7;
-      font-size: 13px;
-    }
-    .tts-controls label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: #1565c0;
-    }
-    .tts-controls select {
-      padding: 4px 8px;
-      border: 1px solid #90caf9;
-      border-radius: 4px;
-      font-size: 12px;
-      background: white;
-    }
-    .tts-mute-btn {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
-      border: 1px solid #90caf9;
-      border-radius: 4px;
-      background: white;
-      cursor: pointer;
-      font-size: 12px;
-      color: #1565c0;
-      transition: all 0.2s;
-    }
-    .tts-mute-btn:hover {
-      background: #e3f2fd;
-    }
-    .tts-mute-btn.muted {
-      background: #ffebee;
-      border-color: #ef9a9a;
-      color: #c62828;
-    }
-    .tts-mute-btn .icon {
-      font-size: 16px;
-    }
-    .tts-status {
-      margin-left: auto;
-      font-size: 11px;
-      color: #666;
-    }
-    .tts-status.speaking {
-      color: #2e7d32;
-    }
-    .tts-status.error {
-      color: #c62828;
+      50% { transform: scale(1.08); }
     }
 
     /* =====================================================
-       Order Panel Styles - Desktop Side Panel + Mobile Bottom Sheet
+       Order Panel - Desktop
        ===================================================== */
-
-    /* Main layout wrapper */
-    .main-layout {
-      display: flex;
-      max-width: 1200px;
-      margin: 20px auto;
-      gap: 20px;
-      padding: 0 20px;
-      height: calc(100vh - 80px);
-    }
-
-    /* Override chat-container for new layout */
-    .main-layout .chat-container {
-      flex: 1;
-      max-width: none;
-      margin: 0;
-    }
-
-    /* Order Panel - Desktop (Side Panel) */
     .order-panel {
-      width: 320px;
-      min-width: 280px;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      width: 340px;
+      min-width: 300px;
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      border: 1px solid var(--border-light);
+      transition: background-color 0.3s ease, border-color 0.3s ease;
     }
 
     .order-panel-header {
-      padding: 14px 16px;
-      background: #f8f9fa;
-      border-bottom: 1px solid #e0e0e0;
+      padding: 16px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-light);
       font-weight: 600;
       font-size: 15px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      color: var(--text-primary);
     }
 
     .order-panel-header .icon {
@@ -333,19 +628,19 @@
     .order-panel-body {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 20px;
     }
 
     .order-panel-footer {
-      padding: 16px;
-      border-top: 1px solid #e0e0e0;
-      background: #f8f9fa;
+      padding: 20px;
+      border-top: 1px solid var(--border-light);
+      background: var(--bg-tertiary);
     }
 
     /* Order Items */
     .order-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border-light);
     }
 
     .order-item:last-child {
@@ -356,50 +651,47 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
 
     .order-item-name {
-      font-weight: 500;
+      font-weight: 600;
       font-size: 14px;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .order-item-price {
-      font-weight: 500;
+      font-weight: 600;
       font-size: 14px;
-      color: #333;
+      color: var(--brand-primary);
       white-space: nowrap;
     }
 
     .order-item-details {
       font-size: 12px;
-      color: #666;
-      line-height: 1.4;
+      color: var(--text-secondary);
+      line-height: 1.5;
       margin-top: 4px;
-    }
-
-    .order-item-detail {
-      display: block;
     }
 
     .order-item-note {
-      margin-top: 4px;
+      margin-top: 6px;
       font-style: italic;
-      color: #888;
+      color: var(--text-tertiary);
+      font-size: 12px;
     }
 
     .order-item-modifiers {
-      margin-top: 4px;
-      padding-left: 12px;
+      margin-top: 6px;
+      padding-left: 14px;
     }
 
     .order-item-modifier {
       display: flex;
       justify-content: space-between;
       font-size: 12px;
-      color: #666;
-      padding: 2px 0;
+      color: var(--text-secondary);
+      padding: 3px 0;
     }
 
     .order-item-modifier-name {
@@ -410,11 +702,11 @@
     .order-item-modifier-name::before {
       content: "+";
       margin-right: 6px;
-      color: #888;
+      color: var(--text-tertiary);
     }
 
     .order-item-modifier-price {
-      color: #888;
+      color: var(--text-tertiary);
       white-space: nowrap;
     }
 
@@ -426,47 +718,52 @@
     .order-total-row {
       display: flex;
       justify-content: space-between;
-      padding: 4px 0;
+      padding: 6px 0;
     }
 
     .order-total-row.subtotal {
-      padding-top: 8px;
-      border-top: 1px solid #e0e0e0;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-light);
     }
 
     .order-total-row.total {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 16px;
-      padding-top: 8px;
-      margin-top: 4px;
-      border-top: 2px solid #333;
+      padding-top: 10px;
+      margin-top: 6px;
+      border-top: 2px solid var(--text-primary);
+      color: var(--text-primary);
     }
 
     .order-total-label {
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .order-total-row.total .order-total-label {
-      color: #333;
+      color: var(--text-primary);
+    }
+
+    .order-total-row.total span:last-child {
+      color: var(--brand-primary);
     }
 
     /* Order Type Badge */
     .order-type-badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      background: #e3f2fd;
-      color: #1565c0;
-      border-radius: 6px;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      border-radius: 10px;
       font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 12px;
+      font-weight: 600;
+      margin-bottom: 14px;
     }
 
     .order-type-badge.delivery {
-      background: #fff3e0;
-      color: #e65100;
+      background: var(--badge-delivery-bg);
+      color: var(--badge-delivery-text);
     }
 
     .order-type-badge .icon {
@@ -476,14 +773,14 @@
     /* Empty State */
     .order-empty {
       text-align: center;
-      padding: 40px 20px;
-      color: #999;
+      padding: 48px 24px;
+      color: var(--text-tertiary);
     }
 
     .order-empty .icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-      opacity: 0.5;
+      font-size: 52px;
+      margin-bottom: 14px;
+      opacity: 0.6;
     }
 
     .order-empty p {
@@ -494,59 +791,60 @@
     /* Order Status */
     .order-status {
       text-align: center;
-      padding: 12px;
-      margin-top: 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
+      padding: 14px;
+      margin-top: 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
     }
 
     .order-status.confirmed {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
 
     .order-status.pending {
-      background: #fff8e1;
-      color: #f57f17;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
 
     /* Customer Info */
     .order-customer {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid #e0e0e0;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-light);
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .order-customer-row {
       display: flex;
-      gap: 8px;
-      margin-bottom: 4px;
+      gap: 10px;
+      margin-bottom: 6px;
     }
 
     .order-customer-row .icon {
-      width: 16px;
+      width: 18px;
       text-align: center;
     }
 
-    /* Mobile Bottom Sheet */
+    /* =====================================================
+       Mobile Styles
+       ===================================================== */
     .order-panel-mobile {
       display: none;
     }
 
-    /* Mobile Collapsed Bar */
     .order-panel-collapsed {
       display: none;
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: white;
-      border-top: 1px solid #e0e0e0;
-      padding: 12px 16px;
-      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-light);
+      padding: 14px 20px;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.1);
       z-index: 100;
       cursor: pointer;
     }
@@ -560,41 +858,42 @@
     .order-panel-collapsed-left {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .order-panel-collapsed-icon {
-      font-size: 20px;
+      font-size: 22px;
     }
 
     .order-panel-collapsed-text {
-      font-weight: 500;
+      font-weight: 600;
       font-size: 14px;
+      color: var(--text-primary);
     }
 
     .order-panel-collapsed-total {
-      font-weight: 600;
-      font-size: 16px;
-      color: #1976d2;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--brand-primary);
     }
 
     .order-panel-collapsed-chevron {
       font-size: 18px;
-      color: #999;
+      color: var(--text-tertiary);
     }
 
-    /* Mobile Expanded Panel (Bottom Sheet) */
+    /* Mobile Expanded Panel */
     .order-panel-expanded {
       display: none;
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      max-height: 70vh;
-      background: white;
-      border-top-left-radius: 16px;
-      border-top-right-radius: 16px;
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+      max-height: 75vh;
+      background: var(--bg-secondary);
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      box-shadow: 0 -8px 32px rgba(0,0,0,0.2);
       z-index: 101;
       flex-direction: column;
       overflow: hidden;
@@ -605,41 +904,42 @@
     }
 
     .order-panel-expanded-header {
-      padding: 16px;
-      border-bottom: 1px solid #e0e0e0;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border-light);
       display: flex;
       justify-content: space-between;
       align-items: center;
       cursor: pointer;
+      background: var(--bg-tertiary);
     }
 
     .order-panel-expanded-header h3 {
       margin: 0;
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 17px;
+      font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      color: var(--text-primary);
     }
 
     .order-panel-expanded-close {
-      font-size: 20px;
-      color: #666;
+      font-size: 22px;
+      color: var(--text-tertiary);
     }
 
     .order-panel-expanded-body {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 20px;
     }
 
     .order-panel-expanded-footer {
-      padding: 16px;
-      border-top: 1px solid #e0e0e0;
-      background: #f8f9fa;
+      padding: 20px;
+      border-top: 1px solid var(--border-light);
+      background: var(--bg-tertiary);
     }
 
-    /* Mobile overlay */
     .order-panel-overlay {
       display: none;
       position: fixed;
@@ -647,7 +947,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0,0,0,0.5);
       z-index: 100;
     }
 
@@ -655,27 +955,29 @@
       display: block;
     }
 
-    /* Responsive: Mobile layout */
-    @media (max-width: 900px) {
+    /* =====================================================
+       Responsive
+       ===================================================== */
+    @media (max-width: 960px) {
       .main-layout {
         flex-direction: column;
         padding: 0;
         margin: 0;
-        height: calc(100vh - 56px);
+        height: calc(100vh - 60px);
         gap: 0;
       }
 
       .main-layout .chat-container {
         border-radius: 0;
-        height: calc(100vh - 56px - 60px); /* Account for collapsed order bar */
+        height: calc(100vh - 60px - 65px);
+        border-left: none;
+        border-right: none;
       }
 
-      /* Hide desktop panel */
       .order-panel {
         display: none;
       }
 
-      /* Show mobile elements */
       .order-panel-mobile {
         display: block;
       }
@@ -683,74 +985,135 @@
       .order-panel-collapsed {
         display: block;
       }
+
+      .header-subtitle {
+        display: none;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .app-header {
+        padding: 10px 16px;
+      }
+
+      .bagel-logo {
+        width: 32px;
+        height: 32px;
+      }
+
+      .theme-toggle span:not(.icon) {
+        display: none;
+      }
+
+      .theme-toggle {
+        padding: 8px;
+        border-radius: 50%;
+      }
+
+      .chat-footer {
+        padding: 12px;
+      }
+
+      .chat-footer button[type="submit"] {
+        padding: 0 18px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="app-header">
-    <div>Order Bot</div>
-    <span class="sub">Demo web chat · Local FastAPI backend</span>
+    <div class="header-left">
+      <!-- Zucker's Bagel Logo SVG -->
+      <svg class="bagel-logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Outer bagel ring -->
+        <circle cx="24" cy="24" r="20" fill="var(--bagel-outer)" />
+        <!-- Inner shadow/depth -->
+        <circle cx="24" cy="24" r="16" fill="var(--bagel-inner)" />
+        <!-- Center hole -->
+        <circle cx="24" cy="24" r="8" fill="var(--bagel-hole)" />
+        <!-- Everything bagel seeds -->
+        <circle cx="14" cy="12" r="1.5" fill="var(--bagel-seeds)" />
+        <circle cx="19" cy="9" r="1.2" fill="var(--bagel-seeds)" />
+        <circle cx="29" cy="10" r="1.4" fill="var(--bagel-seeds)" />
+        <circle cx="34" cy="14" r="1.3" fill="var(--bagel-seeds)" />
+        <circle cx="37" cy="22" r="1.5" fill="var(--bagel-seeds)" />
+        <circle cx="36" cy="30" r="1.2" fill="var(--bagel-seeds)" />
+        <circle cx="32" cy="36" r="1.4" fill="var(--bagel-seeds)" />
+        <circle cx="24" cy="39" r="1.3" fill="var(--bagel-seeds)" />
+        <circle cx="16" cy="37" r="1.5" fill="var(--bagel-seeds)" />
+        <circle cx="11" cy="30" r="1.2" fill="var(--bagel-seeds)" />
+        <circle cx="10" cy="21" r="1.4" fill="var(--bagel-seeds)" />
+        <!-- Additional seeds for fullness -->
+        <ellipse cx="22" cy="7" rx="1" ry="1.3" fill="var(--bagel-seeds)" opacity="0.8" />
+        <ellipse cx="38" cy="26" rx="1.2" ry="1" fill="var(--bagel-seeds)" opacity="0.8" />
+        <ellipse cx="28" cy="38" rx="1" ry="1.2" fill="var(--bagel-seeds)" opacity="0.8" />
+        <ellipse cx="8" cy="26" rx="1.2" ry="1" fill="var(--bagel-seeds)" opacity="0.8" />
+      </svg>
+    </div>
+    <div class="header-right">
+      <span class="header-subtitle">Demo Web Chat</span>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon">☀️</span>
+        <span>Light</span>
+      </button>
+    </div>
   </div>
 
   <div class="main-layout">
     <div class="chat-container">
-    <!-- Caller ID Simulation Panel (Dev/Demo Mode) -->
-    <details class="caller-id-panel" id="caller-id-panel">
-      <summary>Simulate Incoming Call (Dev Mode)</summary>
-      <div class="caller-id-content">
-        <label for="store-select" style="white-space: nowrap;">Store:</label>
-        <select id="store-select" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
-          <!-- Populated dynamically from localStorage -->
-        </select>
+      <!-- Caller ID Simulation Panel -->
+      <details class="caller-id-panel" id="caller-id-panel">
+        <summary>Simulate Incoming Call (Dev Mode)</summary>
+        <div class="caller-id-content">
+          <label for="store-select" style="white-space: nowrap; font-weight: 500;">Store:</label>
+          <select id="store-select"></select>
+        </div>
+        <div class="caller-id-content" style="margin-top: 10px;">
+          <input
+            type="tel"
+            id="caller-id-input"
+            placeholder="Enter phone number (e.g., 555-123-4567)"
+          />
+          <button type="button" id="start-with-caller-id">Start Call</button>
+        </div>
+        <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 12px;">
+          Select a store and optionally enter a phone number.
+        </div>
+      </details>
+
+      <!-- TTS Voice Controls -->
+      <div class="tts-controls" id="tts-controls">
+        <label>
+          <span class="icon">🔊</span>
+          Voice:
+          <select id="tts-voice-select">
+            <option value="">Loading voices...</option>
+          </select>
+        </label>
+        <button type="button" class="tts-mute-btn" id="tts-mute-btn" title="Toggle voice on/off">
+          <span class="icon">🔊</span>
+          <span class="label">Voice On</span>
+        </button>
+        <span class="tts-status" id="tts-status"></span>
       </div>
-      <div class="caller-id-content" style="margin-top: 8px;">
+
+      <div class="chat-header" id="chat-header">Connecting...</div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="status-bar" id="status-bar">Disconnected</div>
+      <div class="mic-status" id="mic-status"></div>
+      <form class="chat-footer" id="chat-form">
         <input
-          type="tel"
-          id="caller-id-input"
-          placeholder="Enter phone number (e.g., 555-123-4567)"
+          type="text"
+          id="chat-input"
+          autocomplete="off"
+          placeholder="Type your message..."
         />
-        <button type="button" id="start-with-caller-id">Start Call</button>
-      </div>
-      <div style="margin-top: 6px; color: #666; font-size: 12px;">
-        Select a store and optionally enter a phone number. URL params: <code>?store=store_eb_001&caller_id=555-123-4567</code>
-      </div>
-    </details>
-
-    <!-- TTS Voice Controls -->
-    <div class="tts-controls" id="tts-controls">
-      <label>
-        <span class="icon">🔊</span>
-        Voice:
-        <select id="tts-voice-select">
-          <option value="">Loading voices...</option>
-        </select>
-      </label>
-      <button type="button" class="tts-mute-btn" id="tts-mute-btn" title="Toggle voice on/off">
-        <span class="icon">🔊</span>
-        <span class="label">Voice On</span>
-      </button>
-      <span class="tts-status" id="tts-status"></span>
+        <button type="button" class="mic-btn" id="mic-btn" title="Voice input">🎤</button>
+        <button type="submit">Send</button>
+      </form>
     </div>
 
-    <div class="chat-header" id="chat-header">
-      Connecting...
-    </div>
-    <div class="chat-messages" id="chat-messages"></div>
-    <div class="status-bar" id="status-bar">Disconnected</div>
-    <div class="mic-status" id="mic-status"></div>
-    <form class="chat-footer" id="chat-form">
-      <input
-        type="text"
-        id="chat-input"
-        autocomplete="off"
-        placeholder="Type your message..."
-      />
-      <button type="button" class="mic-btn" id="mic-btn" title="Voice input (click to speak)">🎤</button>
-      <button type="submit">Send</button>
-    </form>
-    </div>
-
-    <!-- Order Panel - Desktop (Side Panel) -->
+    <!-- Order Panel - Desktop -->
     <div class="order-panel" id="order-panel">
       <div class="order-panel-header">
         <span class="icon">🛒</span>
@@ -758,17 +1121,15 @@
       </div>
       <div class="order-panel-body" id="order-panel-body">
         <div class="order-empty" id="order-empty">
-          <div class="icon">🛒</div>
+          <div class="icon">🥯</div>
           <p>Your cart is empty</p>
-          <p style="font-size: 12px; margin-top: 8px;">Items will appear here as you order</p>
+          <p style="font-size: 12px; margin-top: 10px; color: var(--text-tertiary);">Items will appear here as you order</p>
         </div>
         <div id="order-items-container" style="display: none;">
-          <!-- Order type badge -->
           <div class="order-type-badge" id="order-type-badge" style="display: none;">
             <span class="icon">🏪</span>
             <span id="order-type-text">Pickup</span>
           </div>
-          <!-- Order items list -->
           <div id="order-items-list"></div>
         </div>
       </div>
@@ -795,11 +1156,7 @@
             <span id="order-total">$0.00</span>
           </div>
         </div>
-        <!-- Order status -->
-        <div class="order-status" id="order-status-badge" style="display: none;">
-          Order Confirmed!
-        </div>
-        <!-- Customer info (when available) -->
+        <div class="order-status" id="order-status-badge" style="display: none;">Order Confirmed!</div>
         <div class="order-customer" id="order-customer" style="display: none;">
           <div class="order-customer-row" id="customer-name-row">
             <span class="icon">👤</span>
@@ -820,37 +1177,62 @@
 
   <!-- Mobile Order Panel -->
   <div class="order-panel-mobile" id="order-panel-mobile">
-    <!-- Overlay for when expanded -->
     <div class="order-panel-overlay" id="order-panel-overlay"></div>
-
-    <!-- Collapsed bar (always visible on mobile) -->
     <div class="order-panel-collapsed" id="order-panel-collapsed">
       <div class="order-panel-collapsed-content">
         <div class="order-panel-collapsed-left">
-          <span class="order-panel-collapsed-icon">🛒</span>
+          <span class="order-panel-collapsed-icon">🥯</span>
           <span class="order-panel-collapsed-text" id="mobile-cart-summary">Cart empty</span>
         </div>
         <div class="order-panel-collapsed-total" id="mobile-cart-total">$0.00</div>
         <span class="order-panel-collapsed-chevron">▲</span>
       </div>
     </div>
-
-    <!-- Expanded bottom sheet -->
     <div class="order-panel-expanded" id="order-panel-expanded">
       <div class="order-panel-expanded-header" id="order-panel-expanded-header">
-        <h3><span class="icon">🛒</span> Your Order</h3>
+        <h3><span class="icon">🥯</span> Your Order</h3>
         <span class="order-panel-expanded-close">✕</span>
       </div>
-      <div class="order-panel-expanded-body" id="order-panel-expanded-body">
-        <!-- Content cloned from desktop panel -->
-      </div>
-      <div class="order-panel-expanded-footer" id="order-panel-expanded-footer">
-        <!-- Footer content cloned from desktop panel -->
-      </div>
+      <div class="order-panel-expanded-body" id="order-panel-expanded-body"></div>
+      <div class="order-panel-expanded-footer" id="order-panel-expanded-footer"></div>
     </div>
   </div>
 
   <script>
+    // =====================================================
+    // Theme Toggle
+    // =====================================================
+    const themeToggle = document.getElementById('theme-toggle');
+    const html = document.documentElement;
+
+    // Load saved theme or default to light
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    html.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      const icon = themeToggle.querySelector('.icon');
+      const text = themeToggle.querySelector('span:not(.icon)');
+      if (theme === 'dark') {
+        icon.textContent = '🌙';
+        text.textContent = 'Dark';
+      } else {
+        icon.textContent = '☀️';
+        text.textContent = 'Light';
+      }
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // =====================================================
+    // Core Chat Elements
+    // =====================================================
     const messagesEl = document.getElementById("chat-messages");
     const headerEl = document.getElementById("chat-header");
     const statusEl = document.getElementById("status-bar");
@@ -861,80 +1243,48 @@
     const storeSelect = document.getElementById("store-select");
     const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
 
-    // Store name mapping (built dynamically)
     let STORE_NAMES = {};
-
-    // Enable streaming responses for faster feedback (set to false to use original behavior)
     const USE_STREAMING = true;
 
-    // Company info (loaded from API)
     let companyInfo = {
-      name: "Sammy's Subs",
-      bot_persona_name: "Sammy",
-      primary_item_type: "Sandwich"
+      name: "Zucker's Bagels",
+      bot_persona_name: "Zack",
+      primary_item_type: "Bagel"
     };
 
-    // Load company info from API
     async function loadCompanyInfo() {
       try {
         const response = await fetch("/company");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         companyInfo = await response.json();
-        console.log("[Company] Loaded company info:", companyInfo.name);
-
-        // Update page title and header with dynamic item type (Pizza Bot, Sandwich Bot, etc.)
-        const itemType = companyInfo.primary_item_type || "Sandwich";
-        document.title = `${companyInfo.bot_persona_name} the ${itemType} Bot`;
-        document.querySelector(".app-header > div").textContent =
-          `${companyInfo.bot_persona_name} the ${itemType} Bot`;
-
+        console.log("[Company] Loaded:", companyInfo.name);
+        document.title = `${companyInfo.name} - Order Bot`;
         return companyInfo;
       } catch (error) {
-        console.error("[Company] Failed to load company info:", error);
-        // Keep defaults
+        console.error("[Company] Failed to load:", error);
         return companyInfo;
       }
     }
 
-    // Load stores from API and populate dropdown
     async function loadStoresAndPopulateDropdown() {
       let stores = [];
-
       try {
-        // Fetch available (open, non-deleted) stores from API
         const response = await fetch("/stores");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         stores = await response.json();
-        console.log("[Store Loader] Loaded stores from API:", stores.length);
+        console.log("[Stores] Loaded:", stores.length);
       } catch (error) {
-        console.error("[Store Loader] Failed to load stores from API:", error);
-        // No fallback - empty stores is better than wrong stores for multi-tenant
+        console.error("[Stores] Failed to load:", error);
         stores = [];
       }
 
-      // Map API response to available stores (already filtered by API)
-      const availableStores = stores.map(s => ({
-        id: s.store_id,
-        name: s.name
-      }));
-
-      console.log("[Store Loader] Available stores:", availableStores.length);
-
-      // Build STORE_NAMES mapping
+      const availableStores = stores.map(s => ({ id: s.store_id, name: s.name }));
       STORE_NAMES = {};
       availableStores.forEach(store => {
-        // Extract short name (e.g., "East Brunswick" from "Sammy's Subs - East Brunswick")
-        const shortName = store.name.includes(" - ")
-          ? store.name.split(" - ").pop()
-          : store.name;
+        const shortName = store.name.includes(" - ") ? store.name.split(" - ").pop() : store.name;
         STORE_NAMES[store.id] = shortName;
       });
 
-      // Populate dropdown
       storeSelect.innerHTML = "";
       if (availableStores.length === 0) {
         const opt = document.createElement("option");
@@ -949,7 +1299,6 @@
           storeSelect.appendChild(opt);
         });
       }
-
       return availableStores;
     }
 
@@ -957,45 +1306,38 @@
     let connected = false;
     let currentCallerId = null;
     let currentStoreId = null;
-
     let typingIndicatorEl = null;
 
-    // Analytics tracking
+    // Analytics
     let sessionStartTime = null;
     let messageCount = 0;
     let orderState = { status: "pending", items: [], total_price: 0 };
     let lastBotMessage = null;
     let lastUserMessage = null;
     let orderConfirmed = false;
-    let conversationHistory = [];  // Track full conversation for analytics
+    let conversationHistory = [];
 
     function addMessage(role, text) {
       const row = document.createElement("div");
       row.className = "msg-row " + role;
-
       const bubble = document.createElement("div");
       bubble.className = "msg-bubble";
       bubble.textContent = text;
-
       row.appendChild(bubble);
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     function showTypingIndicator() {
-      if (typingIndicatorEl) return; // Already showing
-
+      if (typingIndicatorEl) return;
       const row = document.createElement("div");
       row.className = "msg-row assistant";
-
       const bubble = document.createElement("div");
       bubble.className = "msg-bubble typing-indicator";
       bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
-
       row.appendChild(bubble);
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-
       typingIndicatorEl = row;
     }
 
@@ -1013,8 +1355,6 @@
     async function startSession(callerId = null, storeId = null) {
       try {
         setStatus("Starting session...");
-
-        // Build URL with optional parameters
         let url = "/chat/start";
         const params = new URLSearchParams();
         if (callerId) {
@@ -1025,54 +1365,35 @@
           params.append("store_id", storeId);
           currentStoreId = storeId;
         }
-        if (params.toString()) {
-          url += "?" + params.toString();
-        }
+        if (params.toString()) url += "?" + params.toString();
 
-        const resp = await fetch(url, {
-          method: "POST",
-        });
-        if (!resp.ok) {
-          throw new Error("HTTP " + resp.status);
-        }
+        const resp = await fetch(url, { method: "POST" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         sessionId = data.session_id;
         connected = true;
         sessionStartTime = Date.now();
 
-        // Update header with store and caller ID info
         let headerText = "Session: " + sessionId.substring(0, 8);
-        if (storeId && STORE_NAMES[storeId]) {
-          headerText += ` | ${STORE_NAMES[storeId]}`;
-        }
-        if (callerId) {
-          headerText += ` | Caller: ${callerId}`;
-        }
+        if (storeId && STORE_NAMES[storeId]) headerText += ` | ${STORE_NAMES[storeId]}`;
+        if (callerId) headerText += ` | ${callerId}`;
         if (data.returning_customer && data.returning_customer.name) {
           headerText += ` | ${data.returning_customer.name}`;
-          // Add returning customer badge
-          headerEl.innerHTML = headerText + '<span class="returning-customer-badge">Returning Customer</span>';
+          headerEl.innerHTML = headerText + '<span class="returning-customer-badge">Returning</span>';
         } else {
           headerEl.textContent = headerText;
         }
 
         setStatus("Connected");
-
-        // Collapse the caller ID panel after starting
         callerIdPanel.removeAttribute("open");
 
-        // 🔹 Show Sammy's initial greeting from backend
         if (data.message) {
           addMessage("assistant", data.message);
           lastBotMessage = data.message;
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.message });
         }
-
-        // Log returning customer info if present
-        if (data.returning_customer) {
-          console.log("Returning customer:", data.returning_customer);
-        }
+        if (data.returning_customer) console.log("Returning customer:", data.returning_customer);
       } catch (err) {
         console.error("Error starting session:", err);
         headerEl.textContent = "Error starting session";
@@ -1081,22 +1402,15 @@
     }
 
     async function sendMessage(text) {
-      if (!sessionId) {
-        console.warn("No sessionId yet");
-        return;
-      }
+      if (!sessionId) return;
       addMessage("user", text);
       lastUserMessage = text;
       messageCount++;
       conversationHistory.push({ role: "user", content: text });
       setStatus("Sending...");
       showTypingIndicator();
-
-      if (USE_STREAMING) {
-        await sendMessageStreaming(text);
-      } else {
-        await sendMessageNonStreaming(text);
-      }
+      if (USE_STREAMING) await sendMessageStreaming(text);
+      else await sendMessageNonStreaming(text);
     }
 
     async function sendMessageNonStreaming(text) {
@@ -1107,9 +1421,7 @@
           body: JSON.stringify({ session_id: sessionId, message: text }),
         });
         hideTypingIndicator();
-        if (!resp.ok) {
-          throw new Error("HTTP " + resp.status);
-        }
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         if (data.reply) {
           addMessage("assistant", data.reply);
@@ -1117,44 +1429,37 @@
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.reply });
         }
-        // Track order state for analytics
         if (data.order_state) {
           orderState = data.order_state;
-          if (orderState.status === "confirmed") {
-            orderConfirmed = true;
-          }
+          if (orderState.status === "confirmed") orderConfirmed = true;
         }
         setStatus("Connected");
       } catch (err) {
         hideTypingIndicator();
-        console.error("Error sending message:", err);
-        addMessage("assistant", "Oops, something went wrong talking to the backend.");
-        setStatus("Backend error");
+        console.error("Error:", err);
+        addMessage("assistant", "Oops, something went wrong.");
+        setStatus("Error");
       }
     }
 
     async function sendMessageStreaming(text) {
       let streamingMessageEl = null;
       let fullReply = "";
-
       try {
         const resp = await fetch("/chat/message/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId, message: text }),
         });
-
-        if (!resp.ok) {
-          throw new Error("HTTP " + resp.status);
-        }
-
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
         hideTypingIndicator();
         setStatus("Receiving...");
 
-        // Create a message element for streaming content
         streamingMessageEl = document.createElement("div");
-        streamingMessageEl.className = "message assistant";
-        streamingMessageEl.textContent = "";
+        streamingMessageEl.className = "msg-row assistant";
+        const bubble = document.createElement("div");
+        bubble.className = "msg-bubble";
+        streamingMessageEl.appendChild(bubble);
         messagesEl.appendChild(streamingMessageEl);
         messagesEl.scrollTop = messagesEl.scrollHeight;
 
@@ -1164,69 +1469,48 @@
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           const chunk = decoder.decode(value);
           const lines = chunk.split("\n");
-
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               const jsonStr = line.slice(6);
               if (!jsonStr) continue;
-
               try {
                 const event = JSON.parse(jsonStr);
-
-                if (event.token) {
-                  // Streaming token - but we're getting JSON, so we need to parse the reply
-                  // The tokens are parts of the JSON response, not the reply text directly
-                  // We'll accumulate and parse at the end
-                }
-
                 if (event.done) {
-                  // Final event with complete data
                   fullReply = event.reply || "";
-                  streamingMessageEl.textContent = fullReply;
-
+                  bubble.textContent = fullReply;
                   if (fullReply) {
                     lastBotMessage = fullReply;
                     messageCount++;
                     conversationHistory.push({ role: "assistant", content: fullReply });
-
-                    // Trigger TTS for the assistant response
-                    if (typeof speakText === "function") {
-                      speakText(fullReply);
-                    }
+                    if (typeof speakText === "function") speakText(fullReply);
                   }
-
-                  // Track order state for analytics
                   if (event.order_state) {
                     orderState = event.order_state;
-                    if (orderState.status === "confirmed") {
-                      orderConfirmed = true;
-                    }
+                    if (orderState.status === "confirmed") orderConfirmed = true;
                   }
                   setStatus("Connected");
                 }
-
                 if (event.error) {
-                  streamingMessageEl.textContent = event.error;
+                  bubble.textContent = event.error;
                   setStatus("Error");
                 }
               } catch (e) {
-                console.error("Failed to parse SSE event:", e);
+                console.error("Parse error:", e);
               }
             }
           }
         }
       } catch (err) {
         hideTypingIndicator();
-        console.error("Error sending streaming message:", err);
+        console.error("Error:", err);
         if (streamingMessageEl) {
-          streamingMessageEl.textContent = "Oops, something went wrong talking to the backend.";
+          streamingMessageEl.querySelector('.msg-bubble').textContent = "Oops, something went wrong.";
         } else {
-          addMessage("assistant", "Oops, something went wrong talking to the backend.");
+          addMessage("assistant", "Oops, something went wrong.");
         }
-        setStatus("Backend error");
+        setStatus("Error");
       }
     }
 
@@ -1238,12 +1522,9 @@
       sendMessage(text);
     });
 
-    // Handle "Start Call" button click with caller ID and store
     startWithCallerIdBtn.addEventListener("click", () => {
       const callerId = callerIdInput.value.trim();
       const storeId = storeSelect.value;
-
-      // Reset session state if we already had a session
       if (sessionId) {
         sessionId = null;
         connected = false;
@@ -1259,57 +1540,30 @@
       startSession(callerId || null, storeId);
     });
 
-    // Start session on page load - check URL params first
     window.addEventListener("load", async () => {
-      // Load company info first (updates page title/header)
       await loadCompanyInfo();
-
-      // Load TTS voices (so greeting can be spoken)
       await loadTTSVoices();
-
-      // Load stores from API and populate dropdown
       const availableStores = await loadStoresAndPopulateDropdown();
-
       const urlParams = new URLSearchParams(window.location.search);
       const storeIdParam = urlParams.get("store") || urlParams.get("store_id");
       const callerIdParam = urlParams.get("caller_id");
-
-      // Set dropdown value if store param provided and store is available
-      if (storeIdParam && STORE_NAMES[storeIdParam]) {
-        storeSelect.value = storeIdParam;
-      }
-
-      // Set caller ID input if provided
-      if (callerIdParam) {
-        callerIdInput.value = callerIdParam;
-      }
-
-      // Start session with params (store defaults to first option if not specified)
+      if (storeIdParam && STORE_NAMES[storeIdParam]) storeSelect.value = storeIdParam;
+      if (callerIdParam) callerIdInput.value = callerIdParam;
       const storeId = storeIdParam && STORE_NAMES[storeIdParam] ? storeIdParam : storeSelect.value;
-      if (storeId) {
-        startSession(callerIdParam || null, storeId);
-      } else {
+      if (storeId) startSession(callerIdParam || null, storeId);
+      else {
         headerEl.textContent = "No stores available";
-        setStatus("Please add stores in Store Management");
+        setStatus("Please add stores");
       }
     });
 
-    // Track abandoned sessions (simulates "hang up")
-    let abandonAnalyticsSent = false;  // Prevent duplicate sends
-
+    // Abandon analytics
+    let abandonAnalyticsSent = false;
     function sendAbandonAnalytics(reason) {
-      // Don't send if already sent, no session, or order was confirmed
-      if (abandonAnalyticsSent || !sessionId || orderConfirmed) {
-        return;
-      }
-
-      abandonAnalyticsSent = true;  // Mark as sent to prevent duplicates
-
+      if (abandonAnalyticsSent || !sessionId || orderConfirmed) return;
+      abandonAnalyticsSent = true;
       const items = orderState.items || [];
-      const sessionDuration = sessionStartTime
-        ? Math.floor((Date.now() - sessionStartTime) / 1000)
-        : null;
-
+      const sessionDuration = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : null;
       const payload = {
         session_id: sessionId,
         message_count: messageCount,
@@ -1321,44 +1575,29 @@
         last_user_message: lastUserMessage,
         reason: reason,
         session_duration_seconds: sessionDuration,
-        conversation_history: conversationHistory,  // Include full conversation
-        store_id: currentStoreId,  // Include store for analytics
+        conversation_history: conversationHistory,
+        store_id: currentStoreId,
       };
-
-      // Use sendBeacon for reliability during page unload
-      // It's fire-and-forget and works even when the page is closing
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       navigator.sendBeacon("/chat/abandon", blob);
-
-      console.log("Abandon analytics sent:", reason);
     }
-
-    // Detect page unload (refresh, close, or navigation)
-    // Use only beforeunload as it's most reliable and fires first
-    window.addEventListener("beforeunload", (event) => {
-      // Detect if this is a refresh vs close/navigation
-      // Note: We can't perfectly distinguish close vs navigation in beforeunload
-      sendAbandonAnalytics("browser_close");
-    });
+    window.addEventListener("beforeunload", () => sendAbandonAnalytics("browser_close"));
 
     // =====================================================
-    // TTS (Text-to-Speech) Functionality
+    // TTS
     // =====================================================
-
     const ttsVoiceSelect = document.getElementById("tts-voice-select");
     const ttsMuteBtn = document.getElementById("tts-mute-btn");
     const ttsStatus = document.getElementById("tts-status");
 
-    // TTS State
     let ttsVoices = [];
     let ttsMuted = localStorage.getItem("tts_muted") === "true";
     let ttsSelectedVoice = localStorage.getItem("tts_voice") || null;
-    let ttsAudio = null;  // Current audio element
-    let ttsQueue = [];    // Queue of texts to speak
+    let ttsAudio = null;
+    let ttsQueue = [];
     let ttsSpeaking = false;
-    let ttsReady = false; // Flag to track if TTS is initialized
+    let ttsReady = false;
 
-    // Initialize mute button state
     function updateMuteButtonUI() {
       if (ttsMuted) {
         ttsMuteBtn.classList.add("muted");
@@ -1371,59 +1610,42 @@
       }
     }
 
-    // Load available voices from API
     async function loadTTSVoices() {
       try {
         const response = await fetch("/tts/voices");
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         ttsVoices = data.voices || [];
-
-        // Populate voice dropdown
         ttsVoiceSelect.innerHTML = "";
         ttsVoices.forEach(voice => {
           const opt = document.createElement("option");
           opt.value = voice.id;
-          // Format: "Nova (Female, American) - Friendly and upbeat"
           let label = voice.name;
           if (voice.gender || voice.accent) {
-            const details = [voice.gender, voice.accent].filter(Boolean).join(", ");
-            label += ` (${details})`;
-          }
-          if (voice.description) {
-            label += ` - ${voice.description}`;
+            label += ` (${[voice.gender, voice.accent].filter(Boolean).join(", ")})`;
           }
           opt.textContent = label;
           ttsVoiceSelect.appendChild(opt);
         });
-
-        // Restore saved voice selection or use default
         if (ttsSelectedVoice && ttsVoices.some(v => v.id === ttsSelectedVoice)) {
           ttsVoiceSelect.value = ttsSelectedVoice;
         } else if (ttsVoices.length > 0) {
-          // Default to "nova" if available, otherwise first voice
           const defaultVoice = ttsVoices.find(v => v.id === "nova") || ttsVoices[0];
           ttsVoiceSelect.value = defaultVoice.id;
           ttsSelectedVoice = defaultVoice.id;
         }
-
         ttsReady = true;
-        console.log(`[TTS] Loaded ${ttsVoices.length} voices from ${data.provider}, selected: ${ttsSelectedVoice}`);
       } catch (error) {
-        console.error("[TTS] Failed to load voices:", error);
-        ttsVoiceSelect.innerHTML = '<option value="">Voice unavailable</option>';
-        setTTSStatus("Voice unavailable", "error");
+        console.error("[TTS] Failed:", error);
+        ttsVoiceSelect.innerHTML = '<option value="">Unavailable</option>';
+        setTTSStatus("Unavailable", "error");
         ttsReady = false;
       }
     }
 
-    // Set TTS status message
     function setTTSStatus(message, type = "") {
       ttsStatus.textContent = message;
       ttsStatus.className = "tts-status" + (type ? ` ${type}` : "");
-      // Auto-clear status after 3 seconds (unless it's an error)
       if (type !== "error" && message) {
         setTimeout(() => {
           if (ttsStatus.textContent === message) {
@@ -1434,22 +1656,10 @@
       }
     }
 
-    // Synthesize and play text
     async function speakText(text) {
-      if (ttsMuted || !text) return;
-
-      // Check if TTS is ready
-      if (!ttsReady || !ttsSelectedVoice) {
-        console.warn("[TTS] Not ready yet, skipping:", text.substring(0, 50) + "...");
-        return;
-      }
-
-      // Add to queue
+      if (ttsMuted || !text || !ttsReady || !ttsSelectedVoice) return;
       ttsQueue.push(text);
-
-      // If already speaking, the queue will be processed
       if (ttsSpeaking) return;
-
       await processQueue();
     }
 
@@ -1458,73 +1668,44 @@
         ttsSpeaking = false;
         return;
       }
-
       ttsSpeaking = true;
       const text = ttsQueue.shift();
-
       try {
         setTTSStatus("Speaking...", "speaking");
-
-        // Stop any currently playing audio
         if (ttsAudio) {
           ttsAudio.pause();
           ttsAudio = null;
         }
-
-        // Call TTS API
-        console.log("[TTS] Calling synthesize API with voice:", ttsSelectedVoice);
         const response = await fetch("/tts/synthesize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: text,
-            voice: ttsSelectedVoice,
-            speed: 1.0
-          })
+          body: JSON.stringify({ text, voice: ttsSelectedVoice, speed: 1.0 })
         });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("[TTS] API error:", response.status, errorText);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        // Get audio blob and play it
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
-
         ttsAudio = new Audio(audioUrl);
-
-        // Clean up URL when done
         ttsAudio.onended = () => {
           URL.revokeObjectURL(audioUrl);
           setTTSStatus("");
-          processQueue();  // Process next in queue
+          processQueue();
         };
-
-        ttsAudio.onerror = (e) => {
-          console.error("[TTS] Audio playback error:", e);
+        ttsAudio.onerror = () => {
           URL.revokeObjectURL(audioUrl);
           setTTSStatus("Playback error", "error");
-          processQueue();  // Continue with next item
+          processQueue();
         };
-
-        // Handle mute during playback
         if (ttsMuted) {
           ttsAudio = null;
           setTTSStatus("");
           processQueue();
           return;
         }
-
         try {
           await ttsAudio.play();
         } catch (playError) {
-          // Browser may block autoplay without user interaction
           if (playError.name === 'NotAllowedError') {
-            console.warn("[TTS] Autoplay blocked by browser - waiting for user interaction");
-            setTTSStatus("Click to enable voice", "error");
-            // Don't clear this error - user needs to interact
+            setTTSStatus("Click to enable", "error");
             URL.revokeObjectURL(audioUrl);
             ttsAudio = null;
             processQueue();
@@ -1532,22 +1713,19 @@
           }
           throw playError;
         }
-
       } catch (error) {
-        console.error("[TTS] Synthesis error:", error.message || error);
-        setTTSStatus("Voice error", "error");
-        // Clear error status after 5 seconds
+        console.error("[TTS] Error:", error);
+        setTTSStatus("Error", "error");
         setTimeout(() => {
-          if (ttsStatus.textContent === "Voice error") {
+          if (ttsStatus.textContent === "Error") {
             ttsStatus.textContent = "";
             ttsStatus.className = "tts-status";
           }
         }, 5000);
-        processQueue();  // Continue with next item
+        processQueue();
       }
     }
 
-    // Stop current speech
     function stopSpeaking() {
       ttsQueue = [];
       if (ttsAudio) {
@@ -1558,46 +1736,30 @@
       setTTSStatus("");
     }
 
-    // Event: Voice selection change
     ttsVoiceSelect.addEventListener("change", () => {
       ttsSelectedVoice = ttsVoiceSelect.value;
       localStorage.setItem("tts_voice", ttsSelectedVoice);
-      console.log("[TTS] Voice changed to:", ttsSelectedVoice);
     });
 
-    // Event: Mute button click
     ttsMuteBtn.addEventListener("click", () => {
       ttsMuted = !ttsMuted;
       localStorage.setItem("tts_muted", ttsMuted);
       updateMuteButtonUI();
-
-      if (ttsMuted) {
-        stopSpeaking();
-      }
-
-      console.log("[TTS] Muted:", ttsMuted);
+      if (ttsMuted) stopSpeaking();
     });
 
-    // Initialize TTS UI (voices are loaded in the window.load handler)
     updateMuteButtonUI();
 
-    // Enable audio after any user interaction (to bypass autoplay restrictions)
     let audioEnabled = false;
-    let pendingGreeting = null;  // Store greeting to play after user interaction
-
+    let pendingGreeting = null;
     async function enableAudioAndPlayGreeting() {
       if (!audioEnabled) {
         audioEnabled = true;
-        // Clear the "Click to enable voice" message if present
-        if (ttsStatus.textContent === "Click to enable voice") {
+        if (ttsStatus.textContent === "Click to enable") {
           ttsStatus.textContent = "";
           ttsStatus.className = "tts-status";
         }
-        console.log("[TTS] Audio enabled after user interaction");
-
-        // Play the pending greeting if we have one
         if (pendingGreeting && !ttsMuted) {
-          console.log("[TTS] Playing queued greeting");
           await speakText(pendingGreeting);
           pendingGreeting = null;
         }
@@ -1606,29 +1768,17 @@
     document.addEventListener("click", enableAudioAndPlayGreeting, { once: true });
     document.addEventListener("keydown", enableAudioAndPlayGreeting, { once: true });
 
-    // =====================================================
-    // Integrate TTS with chat - speak bot responses
-    // =====================================================
-
-    // Override addMessage to trigger TTS for assistant messages
     const originalAddMessage = addMessage;
     addMessage = function(role, text) {
       originalAddMessage(role, text);
-
-      // Speak assistant messages
-      if (role === "assistant" && text) {
-        speakText(text);
-      }
+      if (role === "assistant" && text) speakText(text);
     };
 
     // =====================================================
-    // Speech Recognition (Voice Input) Functionality
+    // Speech Recognition
     // =====================================================
-
     const micBtn = document.getElementById("mic-btn");
     const micStatus = document.getElementById("mic-status");
-
-    // Check for browser support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let isListening = false;
@@ -1636,7 +1786,6 @@
     function setMicStatus(message, type = "") {
       micStatus.textContent = message;
       micStatus.className = "mic-status" + (type ? ` ${type}` : "");
-      // Auto-clear non-error messages after 3 seconds
       if (type !== "error" && message) {
         setTimeout(() => {
           if (micStatus.textContent === message) {
@@ -1648,16 +1797,13 @@
     }
 
     if (!SpeechRecognition) {
-      // Browser doesn't support speech recognition
       micBtn.disabled = true;
-      micBtn.title = "Speech recognition not supported in this browser";
+      micBtn.title = "Not supported";
       setMicStatus("Voice input not supported", "error");
-      console.warn("[Speech] SpeechRecognition API not supported");
     } else {
-      // Initialize speech recognition
       recognition = new SpeechRecognition();
-      recognition.continuous = false;  // Stop after user pauses
-      recognition.interimResults = true;  // Show partial results as user speaks
+      recognition.continuous = false;
+      recognition.interimResults = true;
       recognition.lang = "en-US";
       recognition.maxAlternatives = 1;
 
@@ -1665,52 +1811,32 @@
         isListening = true;
         micBtn.classList.add("listening");
         micBtn.textContent = "🔴";
-        setMicStatus("Listening... speak now", "listening");
-        console.log("[Speech] Recognition started");
-
-        // Stop any TTS playback when user starts speaking
-        if (typeof stopSpeaking === "function") {
-          stopSpeaking();
-        }
+        setMicStatus("Listening...", "listening");
+        if (typeof stopSpeaking === "function") stopSpeaking();
       };
 
       recognition.onresult = (event) => {
         let finalTranscript = "";
         let interimTranscript = "";
-
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
+          if (event.results[i].isFinal) finalTranscript += transcript;
+          else interimTranscript += transcript;
         }
-
-        // Show interim results in the input field
         if (interimTranscript) {
           inputEl.value = interimTranscript;
           setMicStatus("Listening...", "listening");
         }
-
-        // When we have a final result, put it in the input
-        if (finalTranscript) {
-          inputEl.value = finalTranscript;
-          console.log("[Speech] Final transcript:", finalTranscript);
-        }
+        if (finalTranscript) inputEl.value = finalTranscript;
       };
 
       recognition.onend = () => {
         isListening = false;
         micBtn.classList.remove("listening");
         micBtn.textContent = "🎤";
-        console.log("[Speech] Recognition ended");
-
-        // Auto-send if we have text in the input
         const text = inputEl.value.trim();
         if (text) {
           setMicStatus("Sending...", "");
-          // Small delay to let user see what was transcribed
           setTimeout(() => {
             inputEl.value = "";
             sendMessage(text);
@@ -1725,63 +1851,39 @@
         isListening = false;
         micBtn.classList.remove("listening");
         micBtn.textContent = "🎤";
-        console.error("[Speech] Recognition error:", event.error);
-
         let errorMessage = "Voice error";
         switch (event.error) {
-          case "no-speech":
-            errorMessage = "No speech detected";
-            break;
-          case "audio-capture":
-            errorMessage = "No microphone found";
-            break;
-          case "not-allowed":
-            errorMessage = "Microphone access denied";
-            break;
-          case "network":
-            errorMessage = "Network error";
-            break;
-          case "aborted":
-            errorMessage = ""; // User cancelled, no need to show error
-            break;
+          case "no-speech": errorMessage = "No speech detected"; break;
+          case "audio-capture": errorMessage = "No microphone"; break;
+          case "not-allowed": errorMessage = "Mic access denied"; break;
+          case "network": errorMessage = "Network error"; break;
+          case "aborted": errorMessage = ""; break;
         }
-
-        if (errorMessage) {
-          setMicStatus(errorMessage, "error");
-        }
+        if (errorMessage) setMicStatus(errorMessage, "error");
       };
 
-      // Mic button click handler
       micBtn.addEventListener("click", () => {
         if (!connected || !sessionId) {
-          setMicStatus("Start a session first", "error");
+          setMicStatus("Start session first", "error");
           return;
         }
-
         if (isListening) {
-          // Stop listening
           recognition.stop();
           setMicStatus("Stopped", "");
         } else {
-          // Start listening
           try {
-            inputEl.value = "";  // Clear any existing text
+            inputEl.value = "";
             recognition.start();
           } catch (err) {
-            console.error("[Speech] Failed to start recognition:", err);
-            setMicStatus("Failed to start voice input", "error");
+            setMicStatus("Failed to start", "error");
           }
         }
       });
-
-      console.log("[Speech] Voice recognition initialized");
     }
 
     // =====================================================
-    // Order Panel - Render and Mobile Interactions
+    // Order Panel
     // =====================================================
-
-    // Order panel DOM elements
     const orderPanelBody = document.getElementById("order-panel-body");
     const orderEmpty = document.getElementById("order-empty");
     const orderItemsContainer = document.getElementById("order-items-container");
@@ -1805,7 +1907,6 @@
     const customerAddressEl = document.getElementById("customer-address");
     const customerAddressRow = document.getElementById("customer-address-row");
 
-    // Mobile elements
     const orderPanelCollapsed = document.getElementById("order-panel-collapsed");
     const orderPanelExpanded = document.getElementById("order-panel-expanded");
     const orderPanelOverlay = document.getElementById("order-panel-overlay");
@@ -1816,134 +1917,76 @@
 
     let mobileExpanded = false;
 
-    // Format currency
     function formatCurrency(amount) {
       return "$" + (amount || 0).toFixed(2);
     }
 
-    // Render a single order item
     function renderOrderItem(item) {
       const div = document.createElement("div");
       div.className = "order-item";
-
       const qty = item.quantity || 1;
       const name = item.display_name || item.menu_item_name || item.name || "Item";
-
-      // Check if item has modifiers breakdown (bagels with add-ons)
       const hasModifiers = item.modifiers && item.modifiers.length > 0;
 
       let html = "";
-
       if (hasModifiers && (item.item_type === "bagel" || item.item_type === "menu_item")) {
-        // Item with modifiers - show base price, then each modifier
-        // Works for bagels and menu items (omelettes with side bagel spreads)
         const basePrice = item.base_price || (item.unit_price - item.modifiers.reduce((sum, m) => sum + (m.price || 0), 0));
-
-        html += `
-          <div class="order-item-header">
-            <span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span>
-            <span class="order-item-price">${formatCurrency(basePrice)}</span>
-          </div>
-        `;
-
-        // Render each modifier with its price (skip $0 prices)
+        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(basePrice)}</span></div>`;
         html += `<div class="order-item-modifiers">`;
         for (const mod of item.modifiers) {
           const priceHtml = mod.price > 0 ? formatCurrency(mod.price) : '';
-          html += `
-            <div class="order-item-modifier">
-              <span class="order-item-modifier-name">${mod.name}</span>
-              <span class="order-item-modifier-price">${priceHtml}</span>
-            </div>
-          `;
+          html += `<div class="order-item-modifier"><span class="order-item-modifier-name">${mod.name}</span><span class="order-item-modifier-price">${priceHtml}</span></div>`;
         }
         html += `</div>`;
       } else {
-        // Standard item - show total price
         const price = item.line_total || item.price || 0;
-        html += `
-          <div class="order-item-header">
-            <span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span>
-            <span class="order-item-price">${formatCurrency(price)}</span>
-          </div>
-        `;
-
-        // Item details (customizations) for non-bagel items
+        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(price)}</span></div>`;
         const details = [];
         if (item.bread) details.push(item.bread);
         if (item.protein) details.push(item.protein);
         if (item.cheese) details.push(item.cheese);
-
-        // Coffee/drink details from item_config
         const config = item.item_config || {};
-        if (config.style) details.push(config.style);  // "hot" or "iced"
+        if (config.style) details.push(config.style);
         if (item.size || config.size) details.push(item.size || config.size);
-        if (config.milk && config.milk.toLowerCase() !== "none" && config.milk.toLowerCase() !== "black") {
-          details.push(config.milk + " milk");
-        } else if (config.milk && (config.milk.toLowerCase() === "none" || config.milk.toLowerCase() === "black")) {
-          details.push("black");
-        } else if (item.milk) {
-          details.push(item.milk + " milk");
-        }
+        if (config.milk && !["none", "black"].includes(config.milk.toLowerCase())) details.push(config.milk + " milk");
+        else if (config.milk && ["none", "black"].includes(config.milk.toLowerCase())) details.push("black");
+        else if (item.milk) details.push(item.milk + " milk");
         if (config.flavor_syrup) details.push(config.flavor_syrup + " syrup");
         if (config.sweetener) {
-          const qty = config.sweetener_quantity || 1;
-          if (qty > 1) {
-            details.push(`${qty} ${config.sweetener}s`);
-          } else {
-            details.push(config.sweetener);
-          }
+          const sq = config.sweetener_quantity || 1;
+          details.push(sq > 1 ? `${sq} ${config.sweetener}s` : config.sweetener);
         }
-
-        if (item.toppings && item.toppings.length > 0) {
-          details.push(item.toppings.join(", "));
-        }
-        if (item.sauces && item.sauces.length > 0) {
-          details.push(item.sauces.join(", "));
-        }
+        if (item.toppings && item.toppings.length > 0) details.push(item.toppings.join(", "));
+        if (item.sauces && item.sauces.length > 0) details.push(item.sauces.join(", "));
         if (item.toasted) details.push("Toasted");
         if (item.spread) details.push(item.spread);
-
-        if (details.length > 0) {
-          html += `<div class="order-item-details">${details.join(" · ")}</div>`;
-        }
+        if (details.length > 0) html += `<div class="order-item-details">${details.join(" · ")}</div>`;
       }
-
-      // Special instructions / notes
       if (item.notes || item.special_instructions) {
         html += `<div class="order-item-note">"${item.notes || item.special_instructions}"</div>`;
       }
-
       div.innerHTML = html;
       return div;
     }
 
-    // Render the full order panel
     function renderOrderPanel(state) {
       if (!state) return;
-
       const items = state.items || [];
       const hasItems = items.length > 0;
 
-      // Show/hide empty state vs items
       orderEmpty.style.display = hasItems ? "none" : "block";
       orderItemsContainer.style.display = hasItems ? "block" : "none";
       orderPanelFooter.style.display = hasItems ? "block" : "none";
 
       if (!hasItems) {
-        // Update mobile collapsed bar
         mobileCartSummary.textContent = "Cart empty";
         mobileCartTotal.textContent = "$0.00";
         return;
       }
 
-      // Render items list
       orderItemsList.innerHTML = "";
-      items.forEach(item => {
-        orderItemsList.appendChild(renderOrderItem(item));
-      });
+      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item)));
 
-      // Order type badge
       const orderType = state.order_type;
       if (orderType) {
         orderTypeBadge.style.display = "inline-flex";
@@ -1960,7 +2003,6 @@
         orderTypeBadge.style.display = "none";
       }
 
-      // Calculate totals from checkout_state if available
       const checkout = state.checkout_state || {};
       const subtotal = checkout.subtotal || state.total_price || items.reduce((sum, i) => sum + (i.line_total || i.price || 0), 0);
       const cityTax = checkout.city_tax || 0;
@@ -1968,35 +2010,15 @@
       const deliveryFee = checkout.delivery_fee || 0;
       const total = checkout.total || (subtotal + cityTax + stateTax + deliveryFee);
 
-      // Update totals
       orderSubtotal.textContent = formatCurrency(subtotal);
-
-      // Show city tax if > 0
-      if (cityTax > 0) {
-        orderCityTaxRow.style.display = "flex";
-        orderCityTax.textContent = formatCurrency(cityTax);
-      } else {
-        orderCityTaxRow.style.display = "none";
-      }
-
-      // Show state tax if > 0
-      if (stateTax > 0) {
-        orderStateTaxRow.style.display = "flex";
-        orderStateTax.textContent = formatCurrency(stateTax);
-      } else {
-        orderStateTaxRow.style.display = "none";
-      }
-
-      if (deliveryFee > 0) {
-        orderDeliveryRow.style.display = "flex";
-        orderDeliveryFee.textContent = formatCurrency(deliveryFee);
-      } else {
-        orderDeliveryRow.style.display = "none";
-      }
-
+      orderCityTaxRow.style.display = cityTax > 0 ? "flex" : "none";
+      orderCityTax.textContent = formatCurrency(cityTax);
+      orderStateTaxRow.style.display = stateTax > 0 ? "flex" : "none";
+      orderStateTax.textContent = formatCurrency(stateTax);
+      orderDeliveryRow.style.display = deliveryFee > 0 ? "flex" : "none";
+      orderDeliveryFee.textContent = formatCurrency(deliveryFee);
       orderTotalEl.textContent = formatCurrency(total);
 
-      // Order status
       if (state.status === "confirmed") {
         orderStatusBadge.style.display = "block";
         orderStatusBadge.className = "order-status confirmed";
@@ -2005,104 +2027,60 @@
         orderStatusBadge.style.display = "none";
       }
 
-      // Customer info
       const customer = state.customer || {};
       if (customer.name || customer.phone || state.delivery_address) {
         orderCustomer.style.display = "block";
-
-        if (customer.name) {
-          customerNameEl.textContent = customer.name;
-          document.getElementById("customer-name-row").style.display = "flex";
-        } else {
-          document.getElementById("customer-name-row").style.display = "none";
-        }
-
-        if (customer.phone) {
-          customerPhoneEl.textContent = customer.phone;
-          customerPhoneRow.style.display = "flex";
-        } else {
-          customerPhoneRow.style.display = "none";
-        }
-
-        if (state.delivery_address) {
-          customerAddressEl.textContent = state.delivery_address;
-          customerAddressRow.style.display = "flex";
-        } else {
-          customerAddressRow.style.display = "none";
-        }
+        document.getElementById("customer-name-row").style.display = customer.name ? "flex" : "none";
+        customerNameEl.textContent = customer.name || "";
+        customerPhoneRow.style.display = customer.phone ? "flex" : "none";
+        customerPhoneEl.textContent = customer.phone || "";
+        customerAddressRow.style.display = state.delivery_address ? "flex" : "none";
+        customerAddressEl.textContent = state.delivery_address || "";
       } else {
         orderCustomer.style.display = "none";
       }
 
-      // Update mobile collapsed bar
       mobileCartSummary.textContent = `${items.length} item${items.length !== 1 ? "s" : ""}`;
       mobileCartTotal.textContent = formatCurrency(total);
-
-      // Sync mobile expanded content
       syncMobileExpandedContent();
     }
 
-    // Sync mobile expanded panel with desktop content
     function syncMobileExpandedContent() {
-      // Clone items content for mobile
       orderPanelExpandedBody.innerHTML = orderItemsContainer.innerHTML;
-
-      // Clone footer content for mobile
       orderPanelExpandedFooter.innerHTML = orderPanelFooter.innerHTML;
     }
 
-    // Mobile expand/collapse handlers
     function expandMobilePanel() {
       mobileExpanded = true;
       orderPanelExpanded.classList.add("active");
       orderPanelOverlay.classList.add("active");
-      document.body.style.overflow = "hidden"; // Prevent background scroll
+      document.body.style.overflow = "hidden";
     }
 
     function collapseMobilePanel() {
       mobileExpanded = false;
       orderPanelExpanded.classList.remove("active");
       orderPanelOverlay.classList.remove("active");
-      document.body.style.overflow = ""; // Restore scrolling
+      document.body.style.overflow = "";
     }
 
-    // Mobile event listeners
-    orderPanelCollapsed.addEventListener("click", () => {
-      if (!mobileExpanded) {
-        expandMobilePanel();
-      }
-    });
-
+    orderPanelCollapsed.addEventListener("click", () => { if (!mobileExpanded) expandMobilePanel(); });
     orderPanelOverlay.addEventListener("click", collapseMobilePanel);
-
     document.getElementById("order-panel-expanded-header").addEventListener("click", collapseMobilePanel);
 
-    // Update order panel when orderState changes
-    // Hook into existing code that updates orderState
-    const originalOrderStateUpdate = function(newState) {
-      orderState = newState;
-      renderOrderPanel(orderState);
-    };
-
-    // Override places where orderState is updated
-    // Non-streaming response
     const origSendMessageNonStreaming = sendMessageNonStreaming;
     sendMessageNonStreaming = async function(text) {
       await origSendMessageNonStreaming(text);
       renderOrderPanel(orderState);
     };
 
-    // Streaming response - patch to update panel
     const origSendMessageStreaming = sendMessageStreaming;
     sendMessageStreaming = async function(text) {
       await origSendMessageStreaming(text);
       renderOrderPanel(orderState);
     };
 
-    // Initial render (empty state)
     renderOrderPanel(orderState);
-
-    console.log("[Order Panel] Initialized");
   </script>
 </body>
 </html>

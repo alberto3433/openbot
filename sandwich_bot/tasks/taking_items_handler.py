@@ -252,6 +252,25 @@ class TakingItemsHandler:
                         order=order,
                     )
 
+                # Special case: If last item is a bagel and user wants to change to a different bagel,
+                # preserve the existing modifiers (spread, toasted, protein, etc.)
+                # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
+                if (has_new_items and parsed.new_bagel and isinstance(last_item, BagelItemTask)
+                    and parsed.new_bagel_type):
+                    old_type = last_item.bagel_type or "plain"
+                    last_item.bagel_type = parsed.new_bagel_type
+                    logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
+                               old_type, parsed.new_bagel_type)
+
+                    # Recalculate price if needed
+                    self.pricing.recalculate_bagel_price(last_item)
+
+                    updated_summary = last_item.get_summary()
+                    return StateMachineResult(
+                        message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                        order=order,
+                    )
+
                 # If no new items parsed and last item is a bagel, try applying as modifiers
                 if not has_new_items and isinstance(last_item, BagelItemTask) and raw_user_input:
                     modifiers = extract_modifiers_from_input(raw_user_input)

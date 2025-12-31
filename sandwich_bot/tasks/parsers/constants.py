@@ -1092,28 +1092,67 @@ def normalize_for_match(s: str) -> str:
 # Item Type Display Names
 # =============================================================================
 
-# Map item type slugs to user-friendly display names
-# If a slug is not in this map, the default behavior is to replace underscores with spaces
+# Map item type slugs to user-friendly plural display names
+# Used when listing available menu categories
+# If a slug is not in this map, the default behavior is to pluralize automatically
 ITEM_TYPE_DISPLAY_NAMES = {
-    "by_the_lb": "food by the pound",
-    "sized_beverage": "sized beverage",
+    "by_the_lb": "food by the pound",  # Already sounds natural, no change needed
+    "cream_cheese": "cream cheeses",  # Irregular
+    "sized_beverage": "coffees and teas",  # More user-friendly than "sized beverages"
 }
+
+
+def _pluralize(word: str) -> str:
+    """
+    Pluralize a word using simple English rules.
+
+    Rules:
+    - Words ending in 'ch', 'sh', 's', 'x', 'z' get 'es'
+    - Words ending in consonant + 'y' get 'ies'
+    - Most others get 's'
+    """
+    if not word:
+        return word
+
+    # Words ending in ch, sh, s, x, z get 'es'
+    if word.endswith(('ch', 'sh', 's', 'x', 'z')):
+        return word + 'es'
+
+    # Words ending in consonant + y get 'ies'
+    if word.endswith('y') and len(word) > 1 and word[-2] not in 'aeiou':
+        return word[:-1] + 'ies'
+
+    # Default: add 's'
+    return word + 's'
 
 
 def get_item_type_display_name(slug: str) -> str:
     """
-    Convert an item type slug to a user-friendly display name.
+    Convert an item type slug to a user-friendly plural display name.
 
     Uses ITEM_TYPE_DISPLAY_NAMES for special cases, otherwise
-    falls back to replacing underscores with spaces.
+    converts underscores to spaces and pluralizes the last word.
 
     Args:
         slug: The item type slug (e.g., 'by_the_lb', 'egg_sandwich')
 
     Returns:
-        User-friendly display name (e.g., 'food by the pound', 'egg sandwich')
+        Plural display name (e.g., 'food by the pound', 'egg sandwiches')
     """
-    return ITEM_TYPE_DISPLAY_NAMES.get(slug, slug.replace("_", " "))
+    # Check for special cases first
+    if slug in ITEM_TYPE_DISPLAY_NAMES:
+        return ITEM_TYPE_DISPLAY_NAMES[slug]
+
+    # Convert underscores to spaces
+    display = slug.replace("_", " ")
+
+    # Pluralize the last word
+    words = display.split()
+    if words:
+        words[-1] = _pluralize(words[-1])
+        return " ".join(words)
+
+    return display
 
 
 # =============================================================================

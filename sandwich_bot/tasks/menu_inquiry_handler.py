@@ -256,11 +256,11 @@ class MenuInquiryHandler:
             type_display = get_item_type_display_name(menu_query_type)
             if available_types:
                 return StateMachineResult(
-                    message=f"I don't have any {type_display}s on the menu. We do have: {', '.join(available_types)}. What would you like?",
+                    message=f"I don't have any {type_display} on the menu. We do have: {', '.join(available_types)}. What would you like?",
                     order=order,
                 )
             return StateMachineResult(
-                message=f"I'm sorry, I don't have any {type_display}s on the menu. What else can I help you with?",
+                message=f"I'm sorry, I don't have any {type_display} on the menu. What else can I help you with?",
                 order=order,
             )
 

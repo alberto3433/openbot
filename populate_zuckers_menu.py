@@ -738,7 +738,7 @@ def populate_menu_items(db: Session):
         {"name": "Apple Juice", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
         {"name": "Cranberry Juice", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
         {"name": "Tropicana Orange Juice 46 oz", "category": "drink", "base_price": 7.60, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
-        {"name": "Tropicana No Pulp", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
+        {"name": "Tropicana Orange Juice No Pulp", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
         # ITO EN
         {"name": "ITO EN Green Tea", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": beverage_type.id if beverage_type else None},
         # Ronnybrook Milk

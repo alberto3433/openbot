@@ -254,12 +254,12 @@ class TestPriceRecalculationInvariants:
         # Create state machine without menu_data
         sm = OrderStateMachine(menu_data=None)
 
-        # Should use default prices
-        assert sm._lookup_modifier_price("ham") == 2.00
-        assert sm._lookup_modifier_price("egg") == 1.50
-        assert sm._lookup_modifier_price("american") == 0.75
-        assert sm._lookup_modifier_price("bacon") == 2.00
-        assert sm._lookup_modifier_price("cream cheese") == 1.50
+        # Should use default prices (pricing methods moved to PricingEngine)
+        assert sm.pricing.lookup_modifier_price("ham") == 2.00
+        assert sm.pricing.lookup_modifier_price("egg") == 1.50
+        assert sm.pricing.lookup_modifier_price("american") == 0.75
+        assert sm.pricing.lookup_modifier_price("bacon") == 2.00
+        assert sm.pricing.lookup_modifier_price("cream cheese") == 1.50
 
 
 # =============================================================================
@@ -1735,12 +1735,12 @@ class TestDrinkClarification:
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
 
         # Create menu data with multiple orange juice options
-        # Note: "Tropicana No Pulp" will also match via synonym expansion (tropicana)
+        # Note: "Tropicana Orange Juice No Pulp" will also match via synonym expansion (tropicana)
         menu_data = {
             "drinks": [
                 {"name": "Fresh Squeezed Orange Juice", "base_price": 5.00, "skip_config": True},
                 {"name": "Tropicana Orange Juice 46 oz", "base_price": 8.99, "skip_config": True},
-                {"name": "Tropicana No Pulp", "base_price": 3.50, "skip_config": True},
+                {"name": "Tropicana Orange Juice No Pulp", "base_price": 3.50, "skip_config": True},
             ],
             "items_by_type": {},
         }
@@ -1749,7 +1749,7 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # User asks for "orange juice" which matches multiple items
-        # (including "Tropicana No Pulp" via synonym expansion)
+        # (including "Tropicana Orange Juice No Pulp" via synonym expansion)
         result = sm._add_coffee(
             coffee_type="orange juice",
             size=None,
@@ -1840,7 +1840,7 @@ class TestDrinkClarification:
             "drinks": [
                 {"name": "Fresh Squeezed Orange Juice", "base_price": 5.00, "skip_config": True},
                 {"name": "Tropicana Orange Juice 46 oz", "base_price": 8.99, "skip_config": True},
-                {"name": "Tropicana No Pulp", "base_price": 3.50, "skip_config": True},
+                {"name": "Tropicana Orange Juice No Pulp", "base_price": 3.50, "skip_config": True},
             ],
             "items_by_type": {},
         }
@@ -1915,7 +1915,7 @@ class TestQuantityChange:
 
         # Add one drink to the order
         drink = CoffeeItemTask(
-            drink_type="Tropicana No Pulp",
+            drink_type="Tropicana Orange Juice No Pulp",
             unit_price=3.50,
         )
         drink.mark_complete()
@@ -1928,7 +1928,7 @@ class TestQuantityChange:
         assert result is not None
         coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
         assert len(coffees) == 2
-        assert all(c.drink_type == "Tropicana No Pulp" for c in coffees)
+        assert all(c.drink_type == "Tropicana Orange Juice No Pulp" for c in coffees)
 
     def test_can_you_make_it_two(self):
         """Test 'can you make it two' pattern."""

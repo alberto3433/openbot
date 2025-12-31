@@ -634,8 +634,8 @@ MENU_ITEM_CANONICAL_NAMES = {
     "tropicana orange juice 46 oz": "Tropicana Orange Juice 46 oz",
     "tropicana orange juice": "Tropicana Orange Juice 46 oz",
     "tropicana 46 oz": "Tropicana Orange Juice 46 oz",
-    "tropicana no pulp": "Tropicana No Pulp",
-    "tropicana": "Tropicana No Pulp",
+    "tropicana no pulp": "Tropicana Orange Juice No Pulp",
+    "tropicana": "Tropicana Orange Juice No Pulp",
     "fresh squeezed orange juice": "Fresh Squeezed Orange Juice",
     # Dr. Brown's sodas - map to database names (with period)
     "dr brown's cream soda": "Dr. Brown's Cream Soda",
@@ -725,6 +725,16 @@ MENU_CATEGORY_KEYWORDS = {
     "signature sandwiches": "signature_sandwich",
     "omelettes": "omelette",
     "sides": "side",
+    # Desserts and pastries
+    "desserts": "dessert",
+    "pastries": "dessert",
+    "sweets": "dessert",
+    "sweet stuff": "dessert",
+    "bakery": "dessert",
+    "baked goods": "dessert",
+    "treats": "dessert",
+    "cookies": "dessert",
+    "muffins": "dessert",
 }
 
 # =============================================================================
@@ -884,6 +894,31 @@ RECOMMENDATION_PATTERNS = [
     (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+lunch", re.IGNORECASE), "lunch"),
     (re.compile(r"recommend\s+(?:something\s+)?for\s+lunch", re.IGNORECASE), "lunch"),
 ]
+
+# =============================================================================
+# Item Description Inquiry Patterns
+# =============================================================================
+
+# =============================================================================
+# String Normalization Utilities
+# =============================================================================
+
+def normalize_for_match(s: str) -> str:
+    """
+    Normalize a string for fuzzy matching.
+
+    Handles variations like:
+    - "blue berry" matching "blueberry"
+    - "black and white" matching "black & white"
+
+    Args:
+        s: The string to normalize
+
+    Returns:
+        Normalized string with spaces removed and & converted to "and"
+    """
+    return s.replace("&", "and").replace(" ", "")
+
 
 # =============================================================================
 # Item Description Inquiry Patterns

@@ -5734,7 +5734,7 @@ class OrderStateMachine:
         item_name_lower = item_name.lower()
 
         # Known drink synonyms/brands - map generic terms to brand keywords
-        # This helps find "Tropicana No Pulp" when searching "orange juice"
+        # This helps find "Tropicana Orange Juice No Pulp" when searching "orange juice"
         drink_synonyms = {
             "orange juice": ["tropicana", "fresh squeezed"],
             "oj": ["orange juice", "tropicana", "fresh squeezed"],
@@ -5781,7 +5781,7 @@ class OrderStateMachine:
 
         # Pass 2: Search term (or synonyms) is contained in item name
         # e.g., "orange juice" finds "Tropicana Orange Juice", "Fresh Squeezed Orange Juice"
-        # Also "tropicana" (synonym) finds "Tropicana No Pulp"
+        # Also "tropicana" (synonym) finds "Tropicana Orange Juice No Pulp"
         matches = []
         matched_names = set()
         for item in all_items:

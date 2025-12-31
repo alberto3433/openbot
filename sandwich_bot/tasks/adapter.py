@@ -276,6 +276,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.pending_drink_options = sm_state.get("pending_drink_options", [])
         order.pending_item_options = sm_state.get("pending_item_options", [])
         order.pending_item_quantity = sm_state.get("pending_item_quantity", 1)
+        order.menu_query_pagination = sm_state.get("menu_query_pagination")
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -738,6 +739,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
         "pending_drink_options": order.pending_drink_options,  # Multiple drink options for disambiguation
         "pending_item_options": order.pending_item_options,  # Generic item options for disambiguation (cookies, etc.)
         "pending_item_quantity": order.pending_item_quantity,  # Quantity stored during item disambiguation
+        "menu_query_pagination": order.menu_query_pagination,  # Pagination state for "show more" menu listings
     }
 
     return order_dict

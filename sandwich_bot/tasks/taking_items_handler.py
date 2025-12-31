@@ -16,6 +16,7 @@ from .models import (
     BagelItemTask,
     CoffeeItemTask,
     MenuItemTask,
+    SpeedMenuBagelItemTask,
     TaskStatus,
 )
 from .schemas import (
@@ -1009,7 +1010,16 @@ class TakingItemsHandler:
 
             # Check if there's ALSO a speed menu bagel in the same message
             if parsed.new_speed_menu_bagel:
-                self.speed_menu_handler.add_speed_menu_bagel(
+                # Save whether bagel needs configuration BEFORE adding speed menu bagel
+                bagel_needs_config = order.is_configuring_item()
+                bagel_result = result  # Save bagel's configuration result
+
+                # Save pending state - add_speed_menu_bagel may change it
+                saved_pending_item_id = order.pending_item_id
+                saved_pending_field = order.pending_field
+                saved_phase = order.phase
+
+                speed_result = self.speed_menu_handler.add_speed_menu_bagel(
                     parsed.new_speed_menu_bagel_name,
                     parsed.new_speed_menu_bagel_quantity,
                     parsed.new_speed_menu_bagel_toasted,
@@ -1017,6 +1027,34 @@ class TakingItemsHandler:
                     bagel_choice=parsed.new_speed_menu_bagel_bagel_choice,
                     modifications=parsed.new_speed_menu_bagel_modifications,
                 )
+
+                # If bagel needs configuration, ask bagel questions first
+                # (speed menu bagel was still added to cart, we'll configure it after bagel)
+                if bagel_needs_config:
+                    # Queue speed menu bagel for configuration after bagel is done
+                    for item in order.items.items:
+                        if isinstance(item, SpeedMenuBagelItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "speed_menu_bagel")
+                            logger.info("Multi-item order: queued speed menu bagel %s for config after bagel", item.id[:8])
+
+                    # Restore pending state for bagel
+                    order.pending_item_id = saved_pending_item_id
+                    order.pending_field = saved_pending_field
+                    order.phase = saved_phase
+                    logger.info("Multi-item order: bagel needs config, returning bagel config question")
+                    return bagel_result
+
+                # If speed menu bagel needs configuration, ask those questions
+                if order.is_configuring_item():
+                    # Queue bagel for configuration after speed menu bagel is done
+                    for item in order.items.items:
+                        if isinstance(item, BagelItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            order.queue_item_for_config(item.id, "bagel")
+                            logger.info("Multi-item order: queued bagel %s for config after speed menu bagel", item.id[:8])
+                    logger.info("Multi-item order: speed menu bagel needs config, returning config question")
+                    return speed_result
+
+                # Neither needs config - return combined confirmation
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
                 speed_menu_name = parsed.new_speed_menu_bagel_name or "sandwich"
                 combined_items = f"{bagel_desc} and {speed_menu_name}"

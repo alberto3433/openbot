@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, BagelItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -32,6 +32,8 @@ class CheckoutUtilsHandler:
         self,
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
+        configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
+        configure_next_incomplete_speed_menu_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
         message_builder: "MessageBuilder | None" = None,
     ):
         """
@@ -40,10 +42,14 @@ class CheckoutUtilsHandler:
         Args:
             transition_to_next_slot: Callback to transition to the next slot.
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
+            configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
+            configure_next_incomplete_speed_menu_bagel: Callback to configure next incomplete speed menu bagel.
             message_builder: MessageBuilder instance for generating summaries.
         """
         self._transition_to_next_slot = transition_to_next_slot
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
+        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
+        self._configure_next_incomplete_speed_menu_bagel = configure_next_incomplete_speed_menu_bagel
         self._message_builder = message_builder
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -61,8 +67,14 @@ class CheckoutUtilsHandler:
         # Check for incomplete items that need configuration
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
+                # Handle bagels that need configuration
+                if isinstance(item, BagelItemTask):
+                    if item.bagel_type is None or item.toasted is None:
+                        logger.info("Found incomplete bagel, starting configuration")
+                        if self._configure_next_incomplete_bagel:
+                            return self._configure_next_incomplete_bagel(order)
                 # Handle speed menu bagels that need configuration
-                if isinstance(item, SpeedMenuBagelItemTask):
+                elif isinstance(item, SpeedMenuBagelItemTask):
                     if item.bagel_choice is None or item.toasted is None:
                         logger.info("Found incomplete speed menu bagel, starting configuration")
                         if self._configure_next_incomplete_speed_menu_bagel:
@@ -84,10 +96,18 @@ class CheckoutUtilsHandler:
                 item_type = next_config.get("item_type")
                 logger.info("Processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
 
-                # Find the item by ID
+                # Find the item by ID and start configuration based on type
                 for item in order.items.items:
                     if item.id == item_id:
-                        if item_type == "coffee" and isinstance(item, CoffeeItemTask):
+                        if item_type == "bagel" and isinstance(item, BagelItemTask):
+                            # Start bagel configuration
+                            if self._configure_next_incomplete_bagel:
+                                return self._configure_next_incomplete_bagel(order)
+                        elif item_type == "speed_menu_bagel" and isinstance(item, SpeedMenuBagelItemTask):
+                            # Start speed menu bagel configuration
+                            if self._configure_next_incomplete_speed_menu_bagel:
+                                return self._configure_next_incomplete_speed_menu_bagel(order)
+                        elif item_type == "coffee" and isinstance(item, CoffeeItemTask):
                             # Start coffee configuration
                             if self._configure_next_incomplete_coffee:
                                 return self._configure_next_incomplete_coffee(order)

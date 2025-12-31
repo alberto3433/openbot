@@ -335,6 +335,8 @@ class OrderStateMachine:
             configure_coffee=self.coffee_handler.configure_next_incomplete_coffee,
             check_redirect=_check_redirect_to_pending_item,
         )
+        # Now set the bagel callback on checkout_utils_handler
+        self.checkout_utils_handler._configure_next_incomplete_bagel = self.bagel_handler.configure_next_incomplete_bagel
         # Initialize speed menu bagel handler
         self.speed_menu_handler = SpeedMenuBagelHandler(
             model=self.model,

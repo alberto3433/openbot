@@ -26,6 +26,7 @@ from .models import (
     TaskStatus,
 )
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
+from .pricing import PricingEngine
 from ..address_service import complete_address, AddressCompletionResult
 
 # Import from new modular structure
@@ -102,6 +103,8 @@ from .parsers import (
     RECOMMENDATION_PATTERNS,
     # Constants - Item description patterns
     ITEM_DESCRIPTION_PATTERNS,
+    # String normalization utilities
+    normalize_for_match,
     # Deterministic parsers - Compiled patterns
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,
@@ -334,6 +337,8 @@ class OrderStateMachine:
         self._spread_types = _build_spread_types_from_menu(
             self._menu_data.get("cheese_types", [])
         )
+        # Initialize pricing engine with menu lookup callback
+        self.pricing = PricingEngine(self._menu_data, self._lookup_menu_item)
 
     @property
     def menu_data(self) -> dict:
@@ -346,6 +351,8 @@ class OrderStateMachine:
         self._spread_types = _build_spread_types_from_menu(
             self._menu_data.get("cheese_types", [])
         )
+        # Update pricing engine menu data
+        self.pricing.menu_data = self._menu_data
 
     def process(
         self,
@@ -733,7 +740,7 @@ class OrderStateMachine:
                             last_item.spread = "none"
 
                         # Recalculate price with new modifiers
-                        self.recalculate_bagel_price(last_item)
+                        self.pricing.recalculate_bagel_price(last_item)
 
                         # Return confirmation with updated item
                         updated_summary = last_item.get_summary()
@@ -1407,6 +1414,10 @@ class OrderStateMachine:
         if order.pending_field == "drink_selection":
             return self._handle_drink_selection(user_input, order)
 
+        # Handle category inquiry follow-up ("Would you like to hear what X we have?" -> "yes")
+        if order.pending_field == "category_inquiry":
+            return self._handle_category_inquiry_response(user_input, order)
+
         item = self._get_item_by_id(order, order.pending_item_id)
         if item is None:
             order.clear_pending()
@@ -1710,7 +1721,7 @@ class OrderStateMachine:
             # Apply any additional modifiers from the input
             apply_modifiers_to_bagel(item, extracted_modifiers)
 
-            self.recalculate_bagel_price(item)
+            self.pricing.recalculate_bagel_price(item)
 
             # Clear pending and configure next incomplete item
             order.clear_pending()
@@ -1739,7 +1750,7 @@ class OrderStateMachine:
                     item.spread = parsed.spread
 
                 # Add spread price to omelette (same as standalone bagel)
-                spread_price = self._lookup_spread_price(parsed.spread, parsed.spread_type)
+                spread_price = self.pricing.lookup_spread_price(parsed.spread, parsed.spread_type)
                 if spread_price > 0 and item.unit_price is not None:
                     item.spread_price = spread_price  # Store for itemized display
                     item.unit_price += spread_price
@@ -1799,7 +1810,7 @@ class OrderStateMachine:
                 )
 
         # Recalculate price to include spread modifier
-        self.recalculate_bagel_price(item)
+        self.pricing.recalculate_bagel_price(item)
 
         # This bagel is complete
         item.mark_complete()
@@ -1856,7 +1867,7 @@ class OrderStateMachine:
         # For BagelItemTask, check if spread is already set or has sandwich toppings
         if item.spread is not None:
             # Spread already specified, bagel is complete
-            self.recalculate_bagel_price(item)
+            self.pricing.recalculate_bagel_price(item)
             item.mark_complete()
             order.clear_pending()
             return self._configure_next_incomplete_bagel(order)
@@ -1867,7 +1878,7 @@ class OrderStateMachine:
             logger.info("Skipping spread question - bagel has toppings: extras=%s, protein=%s", item.extras, item.sandwich_protein)
             # If cheese clarification still needed, don't mark complete yet
             if not item.needs_cheese_clarification:
-                self.recalculate_bagel_price(item)
+                self.pricing.recalculate_bagel_price(item)
                 item.mark_complete()
             order.clear_pending()
             return self._configure_next_incomplete_bagel(order)
@@ -1930,7 +1941,7 @@ class OrderStateMachine:
             apply_modifiers_to_bagel(item, extracted_modifiers, skip_cheeses=True)
 
         # Recalculate price with the new cheese
-        self.recalculate_bagel_price(item)
+        self.pricing.recalculate_bagel_price(item)
 
         logger.info("Cheese choice '%s' applied to bagel", selected_cheese)
 
@@ -2640,11 +2651,88 @@ class OrderStateMachine:
             [i.get("name") for i in omelette_items],
         )
 
-        # If item not found in menu, provide helpful suggestions
+        # If item not found in menu, try finding partial matches for disambiguation
         if not menu_item:
-            logger.warning("Menu item not found: '%s' - suggesting alternatives", item_name)
+            logger.warning("Menu item not found: '%s' - trying partial match", item_name)
+
+            # Try to find partial matches (similar to orange juice disambiguation)
+            # First, get singular form for better matching (cookies -> cookie)
+            item_lower = item_name.lower()
+            search_terms = [item_lower]
+            if item_lower.endswith('ies'):
+                search_terms.append(item_lower[:-3] + 'y')  # cookies -> cookie
+            elif item_lower.endswith('es'):
+                search_terms.append(item_lower[:-2])  # dishes -> dish
+            elif item_lower.endswith('s') and len(item_lower) > 2:
+                search_terms.append(item_lower[:-1])  # bagels -> bagel
+
+            # First, try _lookup_menu_items for each search term
+            matching_items = []
+            for term in search_terms:
+                matching_items = self._lookup_menu_items(term)
+                if matching_items:
+                    break
+
+            # If no matches from _lookup_menu_items, try a direct search through items_by_type
+            # (same approach as _get_category_suggestions which we know finds the items)
+            if not matching_items and self.menu_data:
+                items_by_type = self.menu_data.get("items_by_type", {})
+                for type_slug, type_items in items_by_type.items():
+                    for item in type_items:
+                        item_name_db = item.get("name", "").lower()
+                        for term in search_terms:
+                            if term in item_name_db:
+                                matching_items.append(item)
+                                break
+                logger.info(
+                    "Direct items_by_type search for %s: found %d items",
+                    search_terms, len(matching_items)
+                )
+
+            if matching_items:
+                # Found partial matches - offer disambiguation
+                logger.info(
+                    "Found %d partial matches for '%s': %s",
+                    len(matching_items),
+                    item_name,
+                    [item.get("name") for item in matching_items]
+                )
+
+                if len(matching_items) == 1:
+                    # Only one match - use it directly
+                    menu_item = matching_items[0]
+                    logger.info("Single partial match found, using: %s", menu_item.get("name"))
+                else:
+                    # Multiple matches - ask user to clarify (like drinks)
+                    order.pending_drink_options = matching_items
+                    order.pending_field = "drink_selection"
+                    order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                    # Build the clarification message
+                    option_list = []
+                    for i, item in enumerate(matching_items[:6], 1):  # Limit to 6 options
+                        name = item.get("name", "Unknown")
+                        price = item.get("base_price", 0)
+                        if price > 0:
+                            option_list.append(f"{i}. {name} (${price:.2f})")
+                        else:
+                            option_list.append(f"{i}. {name}")
+
+                    options_str = "\n".join(option_list)
+                    return StateMachineResult(
+                        message=f"We have a few options for {item_name}:\n{options_str}\nWhich would you like?",
+                        order=order,
+                    )
+
+        # If still no match, provide helpful suggestions
+        if not menu_item:
+            message, category_for_followup = self._get_not_found_message(item_name)
+            if category_for_followup:
+                # Track state so "yes" response can list items in this category
+                order.pending_field = "category_inquiry"
+                order.pending_config_queue = [category_for_followup]
             return StateMachineResult(
-                message=self._get_not_found_message(item_name),
+                message=message,
                 order=order,
             )
 
@@ -2718,7 +2806,8 @@ class OrderStateMachine:
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:
-                if item.menu_item_name == canonical_name and item.status == TaskStatus.IN_PROGRESS:
+                # Use getattr since not all item types have menu_item_name (e.g., BagelItemTask)
+                if getattr(item, 'menu_item_name', None) == canonical_name and item.status == TaskStatus.IN_PROGRESS:
                     item.mark_complete()
             return self._get_next_question(order)
 
@@ -2745,7 +2834,8 @@ class OrderStateMachine:
         # If item not found, return error message
         if not menu_item:
             logger.warning("Side item not found: '%s' - rejecting", side_item_name)
-            return (None, self._get_not_found_message(side_item_name))
+            message, _ = self._get_not_found_message(side_item_name)
+            return (None, message)
 
         # Use canonical name and price from menu
         canonical_name = menu_item.get("name", side_item_name)
@@ -2808,7 +2898,7 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Add a bagel and start configuration, pre-filling any provided details."""
         # Look up base bagel price from menu
-        base_price = self._lookup_bagel_price(bagel_type)
+        base_price = self.pricing.lookup_bagel_price(bagel_type)
 
         # Build extras list from extracted modifiers
         extras: list[str] = []
@@ -2837,7 +2927,7 @@ class OrderStateMachine:
             )
 
         # Calculate total price including modifiers
-        price = self._calculate_bagel_price_with_modifiers(
+        price = self.pricing.calculate_bagel_price_with_modifiers(
             base_price, sandwich_protein, extras, spread, spread_type
         )
         logger.info(
@@ -2950,7 +3040,7 @@ class OrderStateMachine:
         )
 
         # Look up base bagel price from menu
-        base_price = self._lookup_bagel_price(bagel_type)
+        base_price = self.pricing.lookup_bagel_price(bagel_type)
 
         # Create all the bagels
         for i in range(quantity):
@@ -2996,7 +3086,7 @@ class OrderStateMachine:
                 logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
 
             # Calculate total price including modifiers (for first bagel with modifiers)
-            price = self._calculate_bagel_price_with_modifiers(
+            price = self.pricing.calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, bagel_spread, spread_type
             )
 
@@ -3086,7 +3176,7 @@ class OrderStateMachine:
                 logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
 
             # Calculate total price including modifiers
-            price = self._calculate_bagel_price_with_modifiers(
+            price = self.pricing.calculate_bagel_price_with_modifiers(
                 base_price, sandwich_protein, extras, spread, details.spread_type
             )
 
@@ -3435,7 +3525,7 @@ class OrderStateMachine:
 
         # Look up item from menu to get price and skip_config flag
         menu_item = self._lookup_menu_item(coffee_type) if coffee_type else None
-        price = menu_item.get("base_price", 2.50) if menu_item else self._lookup_coffee_price(coffee_type)
+        price = menu_item.get("base_price", 2.50) if menu_item else self.pricing.lookup_coffee_price(coffee_type)
 
         # Check if this drink should skip configuration questions
         # Check if this is a soda/bottled drink FIRST - these skip configuration
@@ -3575,7 +3665,7 @@ class OrderStateMachine:
                     )
 
             # This coffee is complete - recalculate price with modifiers
-            self.recalculate_coffee_price(coffee)
+            self.pricing.recalculate_coffee_price(coffee)
             coffee.mark_complete()
 
         # All coffees configured - no incomplete ones found
@@ -3683,31 +3773,12 @@ class OrderStateMachine:
             logger.info(f"Extracted syrup from style response: {coffee_mods.flavor_syrup}")
 
         # Coffee is now complete - recalculate price with modifiers
-        self.recalculate_coffee_price(item)
+        self.pricing.recalculate_coffee_price(item)
         item.mark_complete()
         order.clear_pending()
 
         # Check for more incomplete coffees before moving on
         return self._configure_next_incomplete_coffee(order)
-
-    def _lookup_coffee_price(self, coffee_type: str | None) -> float:
-        """Look up price for a coffee type."""
-        if not coffee_type:
-            return 2.50  # Default drip coffee price
-
-        # Look up from menu
-        menu_item = self._lookup_menu_item(coffee_type)
-        if menu_item:
-            return menu_item.get("base_price", 2.50)
-
-        # Default prices by type
-        coffee_type_lower = coffee_type.lower()
-        if "latte" in coffee_type_lower or "cappuccino" in coffee_type_lower:
-            return 4.50
-        if "espresso" in coffee_type_lower:
-            return 3.00
-
-        return 2.50  # Default
 
     # =========================================================================
     # Speed Menu Bagel Handlers
@@ -3908,6 +3979,42 @@ class OrderStateMachine:
                 order=order,
             )
 
+        # Handle "dessert", "pastry", "sweets", etc. by combining dessert and pastry types
+        dessert_queries = (
+            "dessert", "desserts", "pastry", "pastries", "sweet", "sweets",
+            "sweet stuff", "bakery", "baked goods", "treats", "treat",
+        )
+        if menu_query_type in dessert_queries:
+            # Combine dessert, pastry, and snack types
+            dessert_items = items_by_type.get("dessert", [])
+            pastry_items = items_by_type.get("pastry", [])
+            snack_items = items_by_type.get("snack", [])
+            items = dessert_items + pastry_items + snack_items
+            if items:
+                if show_prices:
+                    item_list = [
+                        f"{item.get('name', 'Unknown')} (${item.get('price') or item.get('base_price') or 0:.2f})"
+                        for item in items[:15]
+                    ]
+                else:
+                    item_list = [item.get("name", "Unknown") for item in items[:15]]
+                if len(items) > 15:
+                    item_list.append(f"...and {len(items) - 15} more")
+                if len(item_list) == 1:
+                    items_str = item_list[0]
+                elif len(item_list) == 2:
+                    items_str = f"{item_list[0]} and {item_list[1]}"
+                else:
+                    items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+                return StateMachineResult(
+                    message=f"For desserts and pastries, we have: {items_str}. Would you like any of these?",
+                    order=order,
+                )
+            return StateMachineResult(
+                message="I don't have any desserts on the menu right now. What else can I get for you?",
+                order=order,
+            )
+
         lookup_type = type_aliases.get(menu_query_type, menu_query_type)
 
         # Look up items for the specific type
@@ -3944,7 +4051,7 @@ class OrderStateMachine:
                 if lookup_type == "bagel":
                     # Extract bagel type from name (e.g., "Plain Bagel" -> "plain")
                     bagel_type = name.lower().replace(" bagel", "").strip()
-                    price = self._lookup_bagel_price(bagel_type)
+                    price = self.pricing.lookup_bagel_price(bagel_type)
                 else:
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
@@ -4063,7 +4170,7 @@ class OrderStateMachine:
 
         if query_lower in sandwich_type_map:
             item_type, display_name = sandwich_type_map[query_lower]
-            min_price = self._get_min_price_for_category(item_type)
+            min_price = self.pricing.get_min_price_for_category(item_type)
             if min_price > 0:
                 return StateMachineResult(
                     message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
@@ -4072,7 +4179,7 @@ class OrderStateMachine:
 
         if query_lower in generic_category_map:
             item_type, display_name = generic_category_map[query_lower]
-            min_price = self._get_min_price_for_category(item_type)
+            min_price = self.pricing.get_min_price_for_category(item_type)
             if min_price > 0:
                 return StateMachineResult(
                     message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
@@ -4135,7 +4242,7 @@ class OrderStateMachine:
             # Bagels use _lookup_bagel_price since they don't store price in items_by_type
             if is_bagel_query or "bagel" in name.lower():
                 bagel_type = name.lower().replace(" bagel", "").strip()
-                price = self._lookup_bagel_price(bagel_type)
+                price = self.pricing.lookup_bagel_price(bagel_type)
             else:
                 price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(
@@ -4807,6 +4914,100 @@ class OrderStateMachine:
             order=order,
         )
 
+    def _handle_category_inquiry_response(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user response to 'Would you like to hear what X we have?'
+
+        When we say we don't have an item and ask if they want to hear what
+        category items we have, this handles the yes/no response.
+        """
+        lower_input = user_input.lower().strip()
+        category = order.pending_config_queue[0] if order.pending_config_queue else None
+
+        # Check for affirmative response
+        affirmative = ("yes", "yeah", "yep", "sure", "ok", "okay", "please", "yes please", "yea", "y")
+        if lower_input in affirmative:
+            order.clear_pending()
+            if category:
+                # List items in the category
+                return self._list_category_items(category, order)
+            else:
+                return StateMachineResult(
+                    message="What would you like to order?",
+                    order=order,
+                )
+
+        # Check for negative response
+        negative = ("no", "nope", "no thanks", "nevermind", "never mind", "n")
+        if lower_input in negative:
+            order.clear_pending()
+            return StateMachineResult(
+                message="No problem! What else can I get for you?",
+                order=order,
+            )
+
+        # Otherwise, treat as a new order attempt - clear pending and process normally
+        order.clear_pending()
+        return self._process_taking_items_input(user_input, order)
+
+    def _list_category_items(
+        self,
+        category: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """List items in a menu category (drinks, desserts, sides, etc.)."""
+        category_name = {
+            "drinks": "drinks",
+            "sides": "sides",
+            "signature_bagels": "bagels",
+            "signature_omelettes": "sandwiches and omelettes",
+            "desserts": "desserts",
+        }.get(category, "items")
+
+        # Get items from menu_data
+        items = []
+        if self.menu_data:
+            # Try direct category first
+            items = self.menu_data.get(category, [])
+
+            # If no items, try items_by_type
+            if not items:
+                type_map = {
+                    "sides": ["side"],
+                    "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
+                    "desserts": ["dessert", "pastry", "snack"],  # Combine dessert, pastry, and snack types
+                    "signature_bagels": ["speed_menu_bagel"],
+                    "signature_omelettes": ["omelette"],
+                }
+                items_by_type = self.menu_data.get("items_by_type", {})
+                for type_slug in type_map.get(category, []):
+                    items.extend(items_by_type.get(type_slug, []))
+
+        if not items:
+            return StateMachineResult(
+                message=f"I don't have information on {category_name} right now. What would you like to order?",
+                order=order,
+            )
+
+        # Get item names
+        item_names = [item.get("name", "Unknown") for item in items[:10]]
+
+        # Format nicely
+        if len(item_names) == 1:
+            items_str = item_names[0]
+        elif len(item_names) == 2:
+            items_str = f"{item_names[0]} and {item_names[1]}"
+        else:
+            items_str = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+
+        return StateMachineResult(
+            message=f"For {category_name}, we have: {items_str}. Would you like any of these?",
+            order=order,
+        )
+
     def _handle_drink_selection(
         self,
         user_input: str,
@@ -4952,65 +5153,6 @@ class OrderStateMachine:
             order.items.add_item(drink)
             return self._configure_next_incomplete_coffee(order)
 
-    def _parse_quantity_to_pounds(self, quantity_str: str) -> float:
-        """Parse a quantity string to pounds.
-
-        Examples:
-            "1 lb" -> 1.0
-            "2 lbs" -> 2.0
-            "half lb" -> 0.5
-            "half pound" -> 0.5
-            "quarter lb" -> 0.25
-            "1/2 lb" -> 0.5
-            "1/4 lb" -> 0.25
-            "3/4 lb" -> 0.75
-        """
-        quantity_lower = quantity_str.lower().strip()
-
-        # Handle fractional words
-        if "half" in quantity_lower:
-            return 0.5
-        if "quarter" in quantity_lower:
-            return 0.25
-        if "three quarter" in quantity_lower or "3/4" in quantity_lower:
-            return 0.75
-        if "1/2" in quantity_lower:
-            return 0.5
-        if "1/4" in quantity_lower:
-            return 0.25
-
-        # Try to extract a number
-        match = re.search(r"(\d+(?:\.\d+)?)", quantity_lower)
-        if match:
-            return float(match.group(1))
-
-        # Default to 1 pound
-        return 1.0
-
-    def _lookup_by_pound_price(self, item_name: str) -> float:
-        """Look up the per-pound price for a by-the-pound item.
-
-        Args:
-            item_name: Name of the item (e.g., "Muenster", "Nova", "Tuna Salad")
-
-        Returns:
-            Price per pound, or 0.0 if not found
-        """
-        item_lower = item_name.lower().strip()
-
-        # Direct lookup
-        if item_lower in BY_POUND_PRICES:
-            return BY_POUND_PRICES[item_lower]
-
-        # Try partial matching for items like "Nova" -> "nova scotia salmon"
-        for price_key, price in BY_POUND_PRICES.items():
-            if item_lower in price_key or price_key in item_lower:
-                return price
-
-        # Not found
-        logger.warning(f"No price found for by-pound item: {item_name}")
-        return 0.0
-
     def _add_by_pound_items(
         self,
         by_pound_items: list[ByPoundOrderItem],
@@ -5031,8 +5173,8 @@ class OrderStateMachine:
                 item_name = f"{item.quantity} {item.item_name}"
 
             # Calculate price based on quantity and per-pound price
-            pounds = self._parse_quantity_to_pounds(item.quantity)
-            per_pound_price = self._lookup_by_pound_price(item.item_name)
+            pounds = self.pricing.parse_quantity_to_pounds(item.quantity)
+            per_pound_price = self.pricing.lookup_by_pound_price(item.item_name)
             total_price = round(pounds * per_pound_price, 2)
 
             # Create menu item task with price
@@ -5481,102 +5623,6 @@ class OrderStateMachine:
         else:
             return "Anything else?"
 
-    def _get_min_price_for_category(self, item_type: str) -> float:
-        """
-        Get the minimum (starting) price for a category of items.
-
-        Args:
-            item_type: The item type slug (e.g., 'bagel', 'sized_beverage', 'egg_sandwich')
-
-        Returns:
-            Minimum price found for the category, or 0 if not found
-        """
-        if not self.menu_data:
-            # Return sensible defaults for common categories
-            defaults = {
-                "bagel": 2.50,
-                "sized_beverage": 2.50,
-                "beverage": 2.00,
-                "egg_sandwich": 6.95,
-                "omelette": 8.95,
-                "side": 1.50,
-            }
-            return defaults.get(item_type, 0)
-
-        items_by_type = self.menu_data.get("items_by_type", {})
-
-        # Special handling for bagels - use _lookup_bagel_price
-        if item_type == "bagel":
-            return self._lookup_bagel_price(None)
-
-        # Get items for this category
-        items = items_by_type.get(item_type, [])
-        if not items:
-            return 0
-
-        # Find minimum price
-        prices = []
-        for item in items:
-            price = item.get("price") or item.get("base_price") or 0
-            if price > 0:
-                prices.append(price)
-
-        return min(prices) if prices else 0
-
-    def _lookup_bagel_price(self, bagel_type: str | None) -> float:
-        """
-        Look up price for a bagel type.
-
-        For regular bagel types (plain, everything, sesame, etc.), returns the
-        generic "Bagel" price from the menu. Only specialty bagels like
-        "Gluten Free" get their specific price.
-
-        Args:
-            bagel_type: The bagel type (e.g., "plain", "everything", "gluten free")
-
-        Returns:
-            Price for the bagel (defaults to 2.50 if not found)
-        """
-        if not bagel_type:
-            return 2.50
-
-        bagel_type_lower = bagel_type.lower()
-
-        # Specialty bagels that have their own menu items
-        specialty_bagels = ["gluten free", "gluten-free"]
-
-        if any(specialty in bagel_type_lower for specialty in specialty_bagels):
-            # Look for specific specialty bagel as menu item first
-            bagel_name = f"{bagel_type.title()} Bagel" if "bagel" not in bagel_type_lower else bagel_type
-            menu_item = self._lookup_menu_item(bagel_name)
-            if menu_item:
-                logger.info("Found specialty bagel: %s ($%.2f)", menu_item.get("name"), menu_item.get("base_price"))
-                return menu_item.get("base_price", 2.50)
-
-            # Try bread_prices from menu_data (ingredients table)
-            if self.menu_data:
-                bread_prices = self.menu_data.get("bread_prices", {})
-                # Try exact match
-                bagel_key = bagel_name.lower()
-                if bagel_key in bread_prices:
-                    price = bread_prices[bagel_key]
-                    logger.info("Found specialty bagel in bread_prices: %s ($%.2f)", bagel_name, price)
-                    return price
-                # Try partial match for specialty type (e.g., "gluten free bagel")
-                for bread_name, price in bread_prices.items():
-                    if any(specialty in bread_name for specialty in specialty_bagels):
-                        logger.info("Found specialty bagel in bread_prices (partial): %s ($%.2f)", bread_name, price)
-                        return price
-
-        # For regular bagels, look for the generic "Bagel" item
-        menu_item = self._lookup_menu_item("Bagel")
-        if menu_item:
-            logger.info("Using generic bagel price: $%.2f", menu_item.get("base_price"))
-            return menu_item.get("base_price", 2.50)
-
-        # Default fallback
-        return 2.50
-
     def _lookup_menu_item(self, item_name: str) -> dict | None:
         """
         Look up a menu item by name from the menu data.
@@ -5591,6 +5637,19 @@ class OrderStateMachine:
             return None
 
         item_name_lower = item_name.lower()
+
+        # Handle singular/plural variations
+        # e.g., "cookies" should match "cookie", "bagels" should match "bagel"
+        search_variants = [item_name_lower]
+        if item_name_lower.endswith('ies'):
+            # cookies -> cookie (y -> ies)
+            search_variants.append(item_name_lower[:-3] + 'y')
+        elif item_name_lower.endswith('es'):
+            # dishes -> dish
+            search_variants.append(item_name_lower[:-2])
+        elif item_name_lower.endswith('s') and len(item_name_lower) > 2:
+            # bagels -> bagel
+            search_variants.append(item_name_lower[:-1])
 
         # Collect all items from all categories
         all_items = []
@@ -5609,17 +5668,20 @@ class OrderStateMachine:
             all_items.extend(items)
 
         # Pass 1: Exact match (highest priority)
-        for item in all_items:
-            if item.get("name", "").lower() == item_name_lower:
-                return item
+        for variant in search_variants:
+            for item in all_items:
+                if item.get("name", "").lower() == variant:
+                    return item
 
         # Pass 2: Search term is contained in item name (e.g., searching "chipotle" finds "The Chipotle Egg Omelette")
+        # Also handles "cookies" matching "Chocolate Chip Cookie" via search_variants
         # Prefer shorter item names (more specific match)
         matches = []
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            if item_name_lower in item_name_db:
-                matches.append(item)
+        for variant in search_variants:
+            for item in all_items:
+                item_name_db = item.get("name", "").lower()
+                if variant in item_name_db:
+                    matches.append(item)
         if matches:
             # Return the shortest matching name (most specific)
             return min(matches, key=lambda x: len(x.get("name", "")))
@@ -5627,27 +5689,25 @@ class OrderStateMachine:
         # Pass 3: Item name is contained in search term (e.g., searching "The Chipotle Egg Omelette" finds item named "Chipotle Egg Omelette")
         # Prefer LONGER item names (more complete match)
         matches = []
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            if item_name_db in item_name_lower:
-                matches.append(item)
+        for variant in search_variants:
+            for item in all_items:
+                item_name_db = item.get("name", "").lower()
+                if item_name_db in variant:
+                    matches.append(item)
         if matches:
             # Return the longest matching name (most complete)
             return max(matches, key=lambda x: len(x.get("name", "")))
 
         # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
-        # Normalize: remove spaces, convert & to "and"
-        def normalize_for_match(s: str) -> str:
-            return s.replace("&", "and").replace(" ", "")
-
-        item_name_compact = normalize_for_match(item_name_lower)
         matches = []
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            item_name_db_compact = normalize_for_match(item_name_db)
-            # Check if compact search term is in compact item name or vice versa
-            if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
-                matches.append(item)
+        for variant in search_variants:
+            variant_compact = normalize_for_match(variant)
+            for item in all_items:
+                item_name_db = item.get("name", "").lower()
+                item_name_db_compact = normalize_for_match(item_name_db)
+                # Check if compact search term is in compact item name or vice versa
+                if variant_compact in item_name_db_compact or item_name_db_compact in variant_compact:
+                    matches.append(item)
         if matches:
             # Return the shortest matching name (most specific)
             return min(matches, key=lambda x: len(x.get("name", "")))
@@ -5747,9 +5807,6 @@ class OrderStateMachine:
             return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
 
         # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
-        def normalize_for_match(s: str) -> str:
-            return s.replace("&", "and").replace(" ", "")
-
         item_name_compact = normalize_for_match(item_name_lower)
         matches = []
         for item in all_items:
@@ -5840,8 +5897,8 @@ class OrderStateMachine:
             # Map category to potential item_type slugs
             type_map = {
                 "sides": ["side"],
-                "drinks": ["drink", "coffee", "soda"],
-                "desserts": ["dessert"],
+                "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
+                "desserts": ["dessert", "pastry", "snack"],  # Combine dessert, pastry, and snack types
             }
             items_by_type = self.menu_data.get("items_by_type", {})
             for type_slug in type_map.get(category, []):
@@ -5872,7 +5929,7 @@ class OrderStateMachine:
         else:
             return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
 
-    def _get_not_found_message(self, item_name: str) -> str:
+    def _get_not_found_message(self, item_name: str) -> tuple[str, str | None]:
         """
         Generate a helpful message when an item isn't found on the menu.
 
@@ -5882,7 +5939,9 @@ class OrderStateMachine:
             item_name: The name of the item the user requested
 
         Returns:
-            A helpful error message with suggestions
+            Tuple of (message, category_for_followup).
+            category_for_followup is set when the message asks "Would you like to hear what X we have?"
+            so the caller can track state for a "yes" follow-up.
         """
         category = self._infer_item_category(item_name)
 
@@ -5897,379 +5956,25 @@ class OrderStateMachine:
             }.get(category, "items")
 
             if suggestions:
+                # We already gave suggestions, no need to track follow-up
                 return (
                     f"I'm sorry, we don't have {item_name}. "
                     f"For {category_name}, we have {suggestions}. "
-                    f"Would any of those work?"
+                    f"Would any of those work?",
+                    None,
                 )
             else:
+                # Return the category so caller can track state for "yes" follow-up
                 return (
                     f"I'm sorry, we don't have {item_name}. "
-                    f"Would you like to hear what {category_name} we have?"
+                    f"Would you like to hear what {category_name} we have?",
+                    category,
                 )
         else:
             # Generic fallback
             return (
                 f"I'm sorry, I couldn't find '{item_name}' on our menu. "
-                f"Could you try again or ask what we have available?"
+                f"Could you try again or ask what we have available?",
+                None,
             )
 
-    # Default modifier prices - used as fallback when menu_data lookup fails
-    DEFAULT_MODIFIER_PRICES = {
-        # Proteins
-        "ham": 2.00,
-        "bacon": 2.00,
-        "egg": 1.50,
-        "lox": 5.00,
-        "turkey": 2.50,
-        "pastrami": 3.00,
-        "sausage": 2.00,
-        # Cheeses
-        "american": 0.75,
-        "swiss": 0.75,
-        "cheddar": 0.75,
-        "muenster": 0.75,
-        "provolone": 0.75,
-        # Spreads
-        "cream cheese": 1.50,
-        "butter": 0.50,
-        "scallion cream cheese": 1.75,
-        "vegetable cream cheese": 1.75,
-        # Extras
-        "avocado": 2.00,
-        "tomato": 0.50,
-        "onion": 0.50,
-        "capers": 0.75,
-    }
-
-    def _lookup_modifier_price(self, modifier_name: str, item_type: str = "bagel") -> float:
-        """
-        Look up price modifier for a bagel add-on (protein, cheese, topping).
-
-        Searches the item_types attribute options for matching modifier prices.
-        Falls back to DEFAULT_MODIFIER_PRICES if not found in menu_data.
-
-        Args:
-            modifier_name: Name of the modifier (e.g., "ham", "egg", "american")
-            item_type: Item type to look up (default "bagel", falls back to "sandwich")
-
-        Returns:
-            Price modifier (e.g., 2.00 for ham) or 0.0 if not found
-        """
-        modifier_lower = modifier_name.lower()
-
-        # Try menu_data first if available
-        if self.menu_data:
-            item_types = self.menu_data.get("item_types", {})
-
-            # Try the specified item type first, then fall back to sandwich
-            types_to_check = [item_type, "sandwich"] if item_type != "sandwich" else ["sandwich"]
-
-            for type_slug in types_to_check:
-                type_data = item_types.get(type_slug, {})
-                attributes = type_data.get("attributes", [])
-
-                # Search through all attributes (protein, cheese, toppings, etc.)
-                for attr in attributes:
-                    options = attr.get("options", [])
-                    for opt in options:
-                        # Match by slug or display_name
-                        if opt.get("slug", "").lower() == modifier_lower or \
-                           opt.get("display_name", "").lower() == modifier_lower:
-                            price = opt.get("price_modifier", 0.0)
-                            if price > 0:
-                                logger.debug(
-                                    "Found modifier price: %s = $%.2f (from %s.%s)",
-                                    modifier_name, price, type_slug, attr.get("slug")
-                                )
-                                return price
-
-        # Fall back to default prices
-        default_price = self.DEFAULT_MODIFIER_PRICES.get(modifier_lower, 0.0)
-        if default_price > 0:
-            logger.debug(
-                "Using default modifier price: %s = $%.2f",
-                modifier_name, default_price
-            )
-        return default_price
-
-    def _lookup_spread_price(self, spread: str, spread_type: str | None = None) -> float:
-        """
-        Look up price for a spread, considering the spread type/flavor.
-
-        First tries the full spread name (e.g., "Tofu Cream Cheese") from cheese_prices,
-        then falls back to DEFAULT_MODIFIER_PRICES for generic spread.
-
-        Args:
-            spread: Base spread name (e.g., "cream cheese")
-            spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
-
-        Returns:
-            Price for the spread
-        """
-        # Build full spread name by combining type + spread (e.g., "tofu cream cheese")
-        if spread_type:
-            full_spread_name = f"{spread_type} {spread}".lower()
-        else:
-            full_spread_name = spread.lower()
-
-        # Try cheese_prices from menu_data first
-        if self.menu_data:
-            cheese_prices = self.menu_data.get("cheese_prices", {})
-
-            # Try full name first (e.g., "tofu cream cheese")
-            if full_spread_name in cheese_prices:
-                price = cheese_prices[full_spread_name]
-                logger.debug(
-                    "Found spread price from cheese_prices: %s = $%.2f",
-                    full_spread_name, price
-                )
-                return price
-
-            # Try without type as fallback (e.g., "plain cream cheese" or just "cream cheese")
-            spread_lower = spread.lower()
-            plain_spread = f"plain {spread_lower}"
-            if plain_spread in cheese_prices:
-                price = cheese_prices[plain_spread]
-                logger.debug(
-                    "Found spread price from cheese_prices (plain): %s = $%.2f",
-                    plain_spread, price
-                )
-                return price
-
-        # Fall back to DEFAULT_MODIFIER_PRICES
-        default_price = self.DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
-        if default_price > 0:
-            logger.debug(
-                "Using default spread price: %s = $%.2f",
-                spread, default_price
-            )
-        return default_price
-
-    def _calculate_bagel_price_with_modifiers(
-        self,
-        base_price: float,
-        sandwich_protein: str | None,
-        extras: list[str] | None,
-        spread: str | None,
-        spread_type: str | None = None,
-    ) -> float:
-        """
-        Calculate total bagel price including modifiers.
-
-        Args:
-            base_price: Base bagel price
-            sandwich_protein: Primary protein (e.g., "ham")
-            extras: Additional modifiers (e.g., ["egg", "american"])
-            spread: Spread choice (e.g., "cream cheese")
-            spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
-
-        Returns:
-            Total price including all modifiers
-        """
-        total = base_price
-
-        # Add protein price
-        if sandwich_protein:
-            total += self._lookup_modifier_price(sandwich_protein)
-
-        # Add extras prices
-        if extras:
-            for extra in extras:
-                total += self._lookup_modifier_price(extra)
-
-        # Add spread price (if not "none")
-        if spread and spread.lower() != "none":
-            total += self._lookup_spread_price(spread, spread_type)
-
-        return round(total, 2)
-
-    def recalculate_bagel_price(self, item: BagelItemTask) -> float:
-        """
-        Recalculate and update a bagel item's price based on its current modifiers.
-
-        This should be called whenever a bagel's modifiers change (spread, protein, extras)
-        to ensure price is always in sync with the item's state.
-
-        Args:
-            item: The bagel item to update
-
-        Returns:
-            The new calculated price
-        """
-        # Get base price from bagel type
-        base_price = self._lookup_bagel_price(item.bagel_type)
-
-        # Calculate total with all current modifiers
-        new_price = self._calculate_bagel_price_with_modifiers(
-            base_price,
-            item.sandwich_protein,
-            item.extras,
-            item.spread,
-            item.spread_type,
-        )
-
-        # Update the item's price
-        item.unit_price = new_price
-
-        logger.debug(
-            "Recalculated bagel price: base=%.2f, protein=%s, extras=%s, spread=%s (%s) -> total=%.2f",
-            base_price, item.sandwich_protein, item.extras, item.spread, item.spread_type, new_price
-        )
-
-        return new_price
-
-    def _lookup_coffee_modifier_price(self, modifier_name: str, modifier_type: str = "syrup") -> float:
-        """
-        Look up price modifier for a coffee add-on (syrup, milk, size).
-
-        Searches the attribute_options for matching modifier prices.
-        """
-        if not modifier_name:
-            return 0.0
-
-        modifier_lower = modifier_name.lower().strip()
-
-        # Try to find in item_types attribute options
-        if self.menu_data:
-            item_types = self.menu_data.get("item_types", {})
-            # item_types is a dict with type slugs as keys
-            for type_slug, type_data in item_types.items():
-                if not isinstance(type_data, dict):
-                    continue
-                attrs = type_data.get("attributes", [])
-                for attr in attrs:
-                    if not isinstance(attr, dict):
-                        continue
-                    attr_slug = attr.get("slug", "")
-                    # Match by modifier type (syrup, milk, size)
-                    if modifier_type in attr_slug or attr_slug == modifier_type:
-                        options = attr.get("options", [])
-                        for opt in options:
-                            if not isinstance(opt, dict):
-                                continue
-                            opt_slug = opt.get("slug", "").lower()
-                            opt_name = opt.get("display_name", "").lower()
-                            if modifier_lower in opt_slug or modifier_lower in opt_name or opt_slug in modifier_lower:
-                                price = opt.get("price_modifier", 0.0)
-                                if price > 0:
-                                    logger.debug(
-                                        "Found coffee modifier price: %s = $%.2f (from %s)",
-                                        modifier_name, price, attr_slug
-                                    )
-                                    return price
-
-        # Default coffee modifier prices
-        default_prices = {
-            # Size upcharges (relative to small)
-            "medium": 0.50,
-            "large": 1.00,
-            # Milk alternatives
-            "oat": 0.50,
-            "oat milk": 0.50,
-            "almond": 0.50,
-            "almond milk": 0.50,
-            "soy": 0.50,
-            "soy milk": 0.50,
-            # Flavor syrups
-            "vanilla": 0.65,
-            "vanilla syrup": 0.65,
-            "hazelnut": 0.65,
-            "hazelnut syrup": 0.65,
-            "caramel": 0.65,
-            "caramel syrup": 0.65,
-            "peppermint": 1.00,
-            "peppermint syrup": 1.00,
-        }
-
-        return default_prices.get(modifier_lower, 0.0)
-
-    def _calculate_coffee_price_with_modifiers(
-        self,
-        base_price: float,
-        size: str | None,
-        milk: str | None,
-        flavor_syrup: str | None,
-    ) -> float:
-        """
-        Calculate total coffee price including modifiers.
-
-        Args:
-            base_price: Base coffee price (usually for small size)
-            size: Size selection (small, medium, large)
-            milk: Milk choice (regular, oat, almond, soy)
-            flavor_syrup: Flavor syrup (vanilla, hazelnut, etc.)
-
-        Returns:
-            Total price including all modifiers
-        """
-        total = base_price
-
-        # Add size upcharge (small is base price, medium/large have upcharges)
-        if size and size.lower() not in ("small", "s"):
-            size_upcharge = self._lookup_coffee_modifier_price(size, "size")
-            total += size_upcharge
-            if size_upcharge > 0:
-                logger.debug("Coffee size upcharge: %s = +$%.2f", size, size_upcharge)
-
-        # Add milk alternative upcharge (regular milk is free)
-        if milk and milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
-            milk_upcharge = self._lookup_coffee_modifier_price(milk, "milk")
-            total += milk_upcharge
-            if milk_upcharge > 0:
-                logger.debug("Coffee milk upcharge: %s = +$%.2f", milk, milk_upcharge)
-
-        # Add flavor syrup upcharge
-        if flavor_syrup:
-            syrup_upcharge = self._lookup_coffee_modifier_price(flavor_syrup, "syrup")
-            total += syrup_upcharge
-            if syrup_upcharge > 0:
-                logger.debug("Coffee syrup upcharge: %s = +$%.2f", flavor_syrup, syrup_upcharge)
-
-        return total
-
-    def recalculate_coffee_price(self, item: CoffeeItemTask) -> float:
-        """
-        Recalculate and update a coffee item's price based on its current modifiers.
-
-        Args:
-            item: The CoffeeItemTask to recalculate
-
-        Returns:
-            The new calculated price
-        """
-        # Get base price from drink type
-        base_price = self._lookup_coffee_price(item.drink_type)
-        total = base_price
-
-        # Calculate and store individual upcharges
-        # Size upcharge (small is base price)
-        size_upcharge = 0.0
-        if item.size and item.size.lower() not in ("small", "s"):
-            size_upcharge = self._lookup_coffee_modifier_price(item.size, "size")
-            total += size_upcharge
-        item.size_upcharge = size_upcharge
-
-        # Milk alternative upcharge (regular milk is free)
-        milk_upcharge = 0.0
-        if item.milk and item.milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
-            milk_upcharge = self._lookup_coffee_modifier_price(item.milk, "milk")
-            total += milk_upcharge
-        item.milk_upcharge = milk_upcharge
-
-        # Flavor syrup upcharge
-        syrup_upcharge = 0.0
-        if item.flavor_syrup:
-            syrup_upcharge = self._lookup_coffee_modifier_price(item.flavor_syrup, "syrup")
-            total += syrup_upcharge
-        item.syrup_upcharge = syrup_upcharge
-
-        # Update the item's price
-        item.unit_price = total
-
-        logger.info(
-            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f -> total=$%.2f",
-            base_price, size_upcharge, milk_upcharge, syrup_upcharge, total
-        )
-
-        return total

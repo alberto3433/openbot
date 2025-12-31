@@ -215,6 +215,10 @@ class TakingItemsHandler:
             parsed.done_ordering,
         )
 
+        # Reset menu pagination on any non-"more items" request
+        if not parsed.wants_more_menu_items:
+            order.clear_menu_pagination()
+
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)
 
@@ -1206,6 +1210,9 @@ class TakingItemsHandler:
 
         if parsed.menu_query:
             return self.menu_inquiry_handler.handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
+
+        if parsed.wants_more_menu_items:
+            return self.menu_inquiry_handler.handle_more_menu_items(order)
 
         if parsed.asking_signature_menu:
             return self.menu_inquiry_handler.handle_signature_menu_inquiry(parsed.signature_menu_type, order)

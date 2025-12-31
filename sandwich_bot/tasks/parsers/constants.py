@@ -1254,3 +1254,25 @@ MODIFIER_INQUIRY_PATTERNS = [
     # "coffee options" / "bagel toppings"
     (re.compile(r"^(.+?) (options?|choices?|add-?ons?|extras?)(?:\?|$)", re.IGNORECASE), 1, 2),
 ]
+
+# =============================================================================
+# "Show More" Menu Items Patterns
+# =============================================================================
+
+# Patterns to detect when user wants to see more items from a previous menu query
+MORE_MENU_ITEMS_PATTERNS = [
+    # "what other pastries do you have?" / "what other options?"
+    re.compile(r"what (?:other|else|more)\b", re.IGNORECASE),
+    # "any other pastries?" / "any more options?"
+    re.compile(r"any (?:other|more)\b", re.IGNORECASE),
+    # "more pastries" / "more options" / "more please"
+    re.compile(r"^more\b", re.IGNORECASE),
+    # "show me more" / "tell me more"
+    re.compile(r"(?:show|tell|give) (?:me )?more\b", re.IGNORECASE),
+    # "what else?" / "anything else?" (when asking about menu, not ordering)
+    re.compile(r"(?:what|anything) else\??\s*$", re.IGNORECASE),
+    # "keep going" / "continue"
+    re.compile(r"^(?:keep going|continue|go on)\s*\??$", re.IGNORECASE),
+    # "and?" / "and what else?"
+    re.compile(r"^and\s*\??\s*$", re.IGNORECASE),
+]

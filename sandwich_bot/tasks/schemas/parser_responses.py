@@ -341,6 +341,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="The type of item being queried: 'soda', 'juice', 'coffee', 'tea', 'drink', 'beverage', 'bagel', 'egg_sandwich', 'fish_sandwich', 'sandwich', 'spread_sandwich', 'salad_sandwich', 'omelette', 'side', 'snack', etc."
     )
+    wants_more_menu_items: bool = Field(
+        default=False,
+        description="User is asking to see more items from a previous menu query (e.g., 'what other pastries?', 'what else?', 'more options')"
+    )
     asking_signature_menu: bool = Field(
         default=False,
         description="User is asking about signature/speed menu items (e.g., 'what are your speed menu bagels?', 'what signature items do you have?')"

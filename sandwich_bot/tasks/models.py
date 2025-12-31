@@ -661,6 +661,11 @@ class OrderTask(BaseTask):
     # Dict with: new_value, possible_categories (as strings), item_id
     pending_change_clarification: dict | None = None
 
+    # Menu query pagination state for "show more" functionality
+    # Dict with: category (str), offset (int), total_items (int)
+    # Used when user asks "what other X do you have?" or "more X"
+    menu_query_pagination: dict | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -699,6 +704,22 @@ class OrderTask(BaseTask):
         """Clear pending item/field when done configuring."""
         self.pending_item_ids = []
         self.pending_field = None
+
+    def clear_menu_pagination(self):
+        """Clear menu query pagination state."""
+        self.menu_query_pagination = None
+
+    def set_menu_pagination(self, category: str, offset: int, total_items: int):
+        """Set menu query pagination state for 'show more' functionality."""
+        self.menu_query_pagination = {
+            "category": category,
+            "offset": offset,
+            "total_items": total_items,
+        }
+
+    def get_menu_pagination(self) -> dict | None:
+        """Get current menu query pagination state."""
+        return self.menu_query_pagination
 
     def queue_item_for_config(self, item_id: str, item_type: str) -> None:
         """Add an item to the configuration queue."""

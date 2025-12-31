@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Number of items to show per page when listing menu items
+MENU_BATCH_SIZE = 10
+
 
 class MenuInquiryHandler:
     """
@@ -121,6 +124,140 @@ class MenuInquiryHandler:
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
 
+    def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
+        """Get items and display name for a menu category.
+
+        Returns:
+            Tuple of (items list, category_key for pagination)
+        """
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+
+        # Map common query types to actual item_type slugs
+        type_aliases = {
+            "coffee": "sized_beverage",
+            "tea": "sized_beverage",
+            "latte": "sized_beverage",
+            "espresso": "sized_beverage",
+            "soda": "beverage",
+            "water": "beverage",
+            "juice": "beverage",
+        }
+
+        # Handle "beverage" or "drink" queries by combining both types
+        if menu_query_type in ("beverage", "drink"):
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            return sized_items + cold_items, "beverage"
+
+        # Handle dessert queries by combining dessert, pastry, and snack types
+        dessert_queries = (
+            "dessert", "desserts", "pastry", "pastries", "sweet", "sweets",
+            "sweet stuff", "bakery", "baked goods", "treats", "treat",
+        )
+        if menu_query_type in dessert_queries:
+            dessert_items = items_by_type.get("dessert", [])
+            pastry_items = items_by_type.get("pastry", [])
+            snack_items = items_by_type.get("snack", [])
+            return dessert_items + pastry_items + snack_items, "dessert"
+
+        lookup_type = type_aliases.get(menu_query_type, menu_query_type)
+        return items_by_type.get(lookup_type, []), lookup_type
+
+    def _format_items_list(
+        self,
+        items: list,
+        offset: int,
+        show_prices: bool,
+        lookup_type: str,
+    ) -> tuple[str, bool]:
+        """Format a batch of items for display.
+
+        Args:
+            items: Full list of items
+            offset: Starting index for this batch
+            show_prices: Whether to include prices
+            lookup_type: The item type (for price lookups)
+
+        Returns:
+            Tuple of (formatted string, has_more_items)
+        """
+        batch = items[offset:offset + MENU_BATCH_SIZE]
+        remaining = len(items) - (offset + len(batch))
+        has_more = remaining > 0
+
+        if show_prices:
+            item_list = []
+            for item in batch:
+                name = item.get('name', 'Unknown')
+                if lookup_type == "bagel":
+                    bagel_type = name.lower().replace(" bagel", "").strip()
+                    price = self.pricing.lookup_bagel_price(bagel_type) if self.pricing else 0
+                else:
+                    price = item.get('price') or item.get('base_price') or 0
+                item_list.append(f"{name} (${price:.2f})")
+        else:
+            item_list = [item.get("name", "Unknown") for item in batch]
+
+        if has_more:
+            item_list.append(f"...and {remaining} more")
+
+        if len(item_list) == 1:
+            return item_list[0], has_more
+        elif len(item_list) == 2:
+            return f"{item_list[0]} and {item_list[1]}", has_more
+        else:
+            return ", ".join(item_list[:-1]) + f", and {item_list[-1]}", has_more
+
+    def handle_more_menu_items(self, order: OrderTask) -> StateMachineResult:
+        """Handle 'show more' menu requests.
+
+        Continues listing items from where the previous menu query left off.
+        """
+        pagination = order.get_menu_pagination()
+
+        if not pagination:
+            # No previous menu query - ask what they want to see more of
+            return StateMachineResult(
+                message="More of what? What would you like me to list?",
+                order=order,
+            )
+
+        category = pagination.get("category")
+        offset = pagination.get("offset", 0)
+        total_items = pagination.get("total_items", 0)
+
+        # Get items for this category
+        items, lookup_type = self._get_items_for_category(category)
+
+        if not items or offset >= len(items):
+            # No more items to show
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like to order anything?",
+                order=order,
+            )
+
+        # Format the next batch
+        items_str, has_more = self._format_items_list(items, offset, False, lookup_type)
+
+        # Update pagination state
+        new_offset = offset + MENU_BATCH_SIZE
+        if has_more:
+            order.set_menu_pagination(category, new_offset, len(items))
+        else:
+            order.clear_menu_pagination()
+
+        # Build response message
+        if has_more:
+            message = f"We also have: {items_str}. Would you like any of these?"
+        else:
+            message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
+
+        return StateMachineResult(
+            message=message,
+            order=order,
+        )
+
     def handle_menu_query(
         self,
         menu_query_type: str | None,
@@ -173,26 +310,14 @@ class MenuInquiryHandler:
 
         # Handle "beverage" or "drink" queries by combining both types
         if menu_query_type in ("beverage", "drink"):
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            items = sized_items + cold_items
+            items, category_key = self._get_items_for_category("beverage")
             if items:
-                # Conditionally show prices based on show_prices flag
-                if show_prices:
-                    item_list = [
-                        f"{item.get('name', 'Unknown')} (${item.get('price') or item.get('base_price') or 0:.2f})"
-                        for item in items[:15]
-                    ]
+                items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
+                # Save pagination state if there are more items
+                if has_more:
+                    order.set_menu_pagination(category_key, MENU_BATCH_SIZE, len(items))
                 else:
-                    item_list = [item.get("name", "Unknown") for item in items[:15]]
-                if len(items) > 15:
-                    item_list.append(f"...and {len(items) - 15} more")
-                if len(item_list) == 1:
-                    items_str = item_list[0]
-                elif len(item_list) == 2:
-                    items_str = f"{item_list[0]} and {item_list[1]}"
-                else:
-                    items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+                    order.clear_menu_pagination()
                 return StateMachineResult(
                     message=f"Our beverages include: {items_str}. Would you like any of these?",
                     order=order,
@@ -215,27 +340,14 @@ class MenuInquiryHandler:
             "sweet stuff", "bakery", "baked goods", "treats", "treat",
         )
         if menu_query_type in dessert_queries:
-            # Combine dessert, pastry, and snack types
-            dessert_items = items_by_type.get("dessert", [])
-            pastry_items = items_by_type.get("pastry", [])
-            snack_items = items_by_type.get("snack", [])
-            items = dessert_items + pastry_items + snack_items
+            items, category_key = self._get_items_for_category("dessert")
             if items:
-                if show_prices:
-                    item_list = [
-                        f"{item.get('name', 'Unknown')} (${item.get('price') or item.get('base_price') or 0:.2f})"
-                        for item in items[:15]
-                    ]
+                items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
+                # Save pagination state if there are more items
+                if has_more:
+                    order.set_menu_pagination(category_key, MENU_BATCH_SIZE, len(items))
                 else:
-                    item_list = [item.get("name", "Unknown") for item in items[:15]]
-                if len(items) > 15:
-                    item_list.append(f"...and {len(items) - 15} more")
-                if len(item_list) == 1:
-                    items_str = item_list[0]
-                elif len(item_list) == 2:
-                    items_str = f"{item_list[0]} and {item_list[1]}"
-                else:
-                    items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+                    order.clear_menu_pagination()
                 return StateMachineResult(
                     message=f"For desserts and pastries, we have: {items_str}. Would you like any of these?",
                     order=order,
@@ -245,10 +357,8 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        lookup_type = type_aliases.get(menu_query_type, menu_query_type)
-
-        # Look up items for the specific type
-        items = items_by_type.get(lookup_type, [])
+        # Use helper method to get items for this category
+        items, lookup_type = self._get_items_for_category(menu_query_type)
 
         if not items:
             # Try to suggest what we do have
@@ -264,7 +374,7 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Format the items list (conditionally show prices)
+        # Format the items list using helper method
         type_name = menu_query_type.replace("_", " ")
         # Proper pluralization
         if type_name.endswith("ch") or type_name.endswith("s"):
@@ -272,32 +382,13 @@ class MenuInquiryHandler:
         else:
             type_display = type_name + "s"
 
-        # Conditionally show prices based on show_prices flag
-        if show_prices:
-            item_list = []
-            for item in items[:15]:
-                name = item.get('name', 'Unknown')
-                # Bagels use _lookup_bagel_price since they don't store price in items_by_type
-                if lookup_type == "bagel":
-                    # Extract bagel type from name (e.g., "Plain Bagel" -> "plain")
-                    bagel_type = name.lower().replace(" bagel", "").strip()
-                    price = self.pricing.lookup_bagel_price(bagel_type) if self.pricing else 0
-                else:
-                    price = item.get('price') or item.get('base_price') or 0
-                item_list.append(f"{name} (${price:.2f})")
-        else:
-            item_list = [item.get("name", "Unknown") for item in items[:15]]
+        items_str, has_more = self._format_items_list(items, 0, show_prices, lookup_type)
 
-        if len(items) > 15:
-            item_list.append(f"...and {len(items) - 15} more")
-
-        # Format the response
-        if len(item_list) == 1:
-            items_str = item_list[0]
-        elif len(item_list) == 2:
-            items_str = f"{item_list[0]} and {item_list[1]}"
+        # Save pagination state if there are more items
+        if has_more:
+            order.set_menu_pagination(menu_query_type, MENU_BATCH_SIZE, len(items))
         else:
-            items_str = ", ".join(item_list[:-1]) + f", and {item_list[-1]}"
+            order.clear_menu_pagination()
 
         return StateMachineResult(
             message=f"Our {type_display} include: {items_str}. Would you like any of these?",

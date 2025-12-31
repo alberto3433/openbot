@@ -52,6 +52,7 @@ from .constants import (
     MODIFIER_INQUIRY_PATTERNS,
     MODIFIER_CATEGORY_KEYWORDS,
     MODIFIER_ITEM_KEYWORDS,
+    MORE_MENU_ITEMS_PATTERNS,
 )
 
 logger = logging.getLogger(__name__)
@@ -1341,6 +1342,18 @@ def _parse_modifier_inquiry(text: str) -> OpenInputResponse | None:
     return None
 
 
+def _parse_more_menu_items(text: str) -> OpenInputResponse | None:
+    """Parse 'show more' menu requests like 'what other drinks do you have?'"""
+    text_lower = text.lower().strip()
+
+    for pattern in MORE_MENU_ITEMS_PATTERNS:
+        if pattern.search(text_lower):
+            logger.info("MORE MENU ITEMS: '%s'", text[:50])
+            return OpenInputResponse(wants_more_menu_items=True)
+
+    return None
+
+
 # =============================================================================
 # "Add More" Parsing (add a third, add another, etc.)
 # =============================================================================
@@ -1754,6 +1767,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     menu_query_result = _parse_menu_query_deterministic(text)
     if menu_query_result:
         return menu_query_result
+
+    # Check for "show more" menu requests ("what other drinks do you have?", "and?", etc.)
+    more_items_result = _parse_more_menu_items(text)
+    if more_items_result:
+        return more_items_result
 
     # Check for recommendation questions
     recommendation_result = _parse_recommendation_inquiry(text)

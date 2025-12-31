@@ -417,6 +417,8 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "toasted": toasted,
                     "spread": spread,
                     "modifications": getattr(item, 'modifications', []),
+                    # Include modifiers in item_config for database persistence
+                    "modifiers": modifiers,
                 },
             }
             items.append(item_dict)
@@ -495,6 +497,9 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "toasted": toasted,
                     "sandwich_protein": sandwich_protein,
                     "extras": extras,
+                    # Include modifiers and base_price for database persistence
+                    "modifiers": modifiers,
+                    "base_price": base_price,
                 },
             }
             items.append(item_dict)

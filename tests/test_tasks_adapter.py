@@ -348,3 +348,268 @@ class TestRoundTripConversion:
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
         ]
+
+
+# =============================================================================
+# Modifiers Consistency Tests
+# =============================================================================
+
+class TestModifiersConsistency:
+    """
+    Tests for consistent modifier display across chat UI, admin page, and email.
+
+    These tests ensure that modifiers (like lox, cream cheese, oat milk) are:
+    1. Included in item_config when converting OrderTask to dict
+    2. Properly preserved for database persistence
+    3. Available for display in admin UI and confirmation emails
+    """
+
+    def test_bagel_with_lox_has_modifiers_in_item_config(self):
+        """Test that bagel with lox includes modifiers in item_config."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=False,
+            extras=["nova scotia salmon"],  # lox
+            unit_price=8.75,  # $2.75 bagel + $6.00 lox
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        # Modifiers should be in both top-level AND item_config
+        assert "modifiers" in item
+        assert "modifiers" in item["item_config"]
+        # Both should be the same
+        assert item["modifiers"] == item["item_config"]["modifiers"]
+        # Check lox modifier is present
+        modifier_names = [m["name"] for m in item["modifiers"]]
+        assert "nova scotia salmon" in modifier_names
+
+    def test_bagel_modifiers_have_correct_prices(self):
+        """Test that bagel modifiers have correct prices."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="multigrain",
+            toasted=True,
+            spread="cream cheese",
+            extras=["nova scotia salmon"],
+            unit_price=11.75,  # bagel + lox + cream cheese
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        modifiers = item["item_config"]["modifiers"]
+
+        # Find lox and cream cheese modifiers
+        lox_mod = next((m for m in modifiers if "salmon" in m["name"].lower() or m["name"].lower() == "nova"), None)
+        cream_cheese_mod = next((m for m in modifiers if "cream cheese" in m["name"].lower()), None)
+
+        # Verify lox price
+        assert lox_mod is not None, f"Lox modifier not found in {modifiers}"
+        assert lox_mod["price"] == 6.00, f"Expected lox price 6.00, got {lox_mod['price']}"
+
+        # Verify cream cheese price
+        assert cream_cheese_mod is not None
+        assert cream_cheese_mod["price"] == 1.50
+
+    def test_bagel_base_price_in_item_config(self):
+        """Test that base price is stored in item_config for bagels."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=True,
+            extras=["bacon"],
+            unit_price=4.75,  # $2.75 bagel + $2.00 bacon
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        # Base price should be in item_config
+        assert "base_price" in item["item_config"]
+        # Base price should be the bagel price without modifiers
+        assert item["item_config"]["base_price"] >= 2.50  # At least default bagel price
+
+    def test_coffee_modifiers_in_item_config(self):
+        """Test that coffee modifiers with upcharges are in item_config."""
+        order = OrderTask()
+        coffee = CoffeeItemTask(
+            drink_type="latte",
+            size="large",
+            iced=True,
+            milk="oat",
+            milk_upcharge=0.70,
+            unit_price=5.70,  # $5.00 base + $0.70 oat milk
+        )
+        order.items.add_item(coffee)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        # Modifiers and free_details should be in item_config
+        assert "modifiers" in item["item_config"]
+        assert "free_details" in item["item_config"]
+
+        # Oat milk upcharge should be in modifiers
+        modifiers = item["item_config"]["modifiers"]
+        milk_mod = next((m for m in modifiers if "oat" in m["name"].lower()), None)
+        assert milk_mod is not None
+        assert milk_mod["price"] == 0.70
+
+    def test_coffee_free_details_in_item_config(self):
+        """Test that free coffee details (iced/hot, sweetener) are in item_config."""
+        order = OrderTask()
+        coffee = CoffeeItemTask(
+            drink_type="coffee",
+            size="medium",
+            iced=False,
+            sweetener="sugar",
+            unit_price=3.50,
+        )
+        order.items.add_item(coffee)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        free_details = item["item_config"]["free_details"]
+
+        # Should contain "hot" and "sugar"
+        assert any("hot" in d.lower() for d in free_details)
+        assert any("sugar" in d.lower() for d in free_details)
+
+    def test_menu_item_modifiers_in_item_config(self):
+        """Test that menu item (omelette) modifiers are in item_config."""
+        from sandwich_bot.tasks.models import MenuItemTask
+
+        order = OrderTask()
+        item = MenuItemTask(
+            menu_item_name="The Western Omelette",
+            menu_item_type="omelette",
+            side_choice="bagel",
+            bagel_choice="everything",
+            toasted=True,
+            spread="cream cheese",
+            spread_price=1.50,
+            modifications=["extra cheese"],
+            unit_price=14.99,
+        )
+        order.items.add_item(item)
+
+        result = order_task_to_dict(order)
+
+        item_dict = result["items"][0]
+        # Modifiers should be in item_config
+        assert "modifiers" in item_dict["item_config"]
+
+    def test_modifiers_preserved_through_roundtrip(self):
+        """Test that modifiers are preserved when saving to/loading from database format."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=False,
+            extras=["nova scotia salmon", "capers"],
+            unit_price=9.00,
+        )
+        order.items.add_item(bagel)
+
+        # Convert to dict (this is what gets saved to database)
+        order_dict = order_task_to_dict(order)
+        item = order_dict["items"][0]
+
+        # The item_config is what's stored in the database
+        item_config = item["item_config"]
+
+        # Verify modifiers are in item_config
+        assert "modifiers" in item_config
+        modifiers = item_config["modifiers"]
+
+        # Should have both extras as modifiers
+        modifier_names = [m["name"] for m in modifiers]
+        assert "nova scotia salmon" in modifier_names
+        assert "capers" in modifier_names
+
+    def test_multiple_items_all_have_modifiers_in_item_config(self):
+        """Test that all items in an order have modifiers in item_config."""
+        order = OrderTask()
+
+        # Add bagel with lox
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            extras=["nova scotia salmon"],
+            unit_price=8.75,
+        )
+        order.items.add_item(bagel)
+
+        # Add coffee with oat milk
+        coffee = CoffeeItemTask(
+            drink_type="latte",
+            size="large",
+            milk="oat",
+            milk_upcharge=0.70,
+            unit_price=5.70,
+        )
+        order.items.add_item(coffee)
+
+        result = order_task_to_dict(order)
+
+        # Both items should have modifiers in item_config
+        for item in result["items"]:
+            assert "item_config" in item
+            assert "modifiers" in item["item_config"]
+
+    def test_empty_modifiers_still_in_item_config(self):
+        """Test that even items without modifiers have the modifiers field in item_config."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=True,
+            unit_price=2.75,
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        # modifiers should be in item_config even if empty
+        assert "modifiers" in item["item_config"]
+        assert isinstance(item["item_config"]["modifiers"], list)
+
+    def test_item_display_matches_cart_display(self):
+        """Test that the data structure supports identical display in cart and admin."""
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="multigrain",
+            toasted=True,
+            extras=["nova scotia salmon"],
+            spread="cream cheese",
+            unit_price=11.75,
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+        item = result["items"][0]
+
+        # The cart would display:
+        # - multigrain bagel toasted: $X.XX (base_price)
+        # - nova scotia salmon: $6.00
+        # - cream cheese: $1.50
+        # Total: $11.75
+
+        # Check all necessary data is present
+        assert "display_name" in item  # For the main item line
+        assert "base_price" in item["item_config"]  # Base price before modifiers
+        assert "modifiers" in item["item_config"]  # List of modifiers with prices
+        assert item["line_total"] == 11.75  # Total for the line
+
+        # Verify we can calculate: base_price + sum(modifiers) = line_total
+        base_price = item["item_config"]["base_price"]
+        modifiers_total = sum(m["price"] for m in item["item_config"]["modifiers"])
+        calculated_total = base_price + modifiers_total
+
+        # Allow small floating point difference
+        assert abs(calculated_total - item["line_total"]) < 0.01

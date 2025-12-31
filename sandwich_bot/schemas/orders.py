@@ -68,6 +68,7 @@ class OrderItemOut(BaseModel):
     Attributes:
         id: Database primary key
         menu_item_name: Name of the menu item ordered
+        display_name: Full display name with all details (bagel type, toasted, etc.)
         item_type: Type category (sandwich, bagel, coffee, etc.)
         size: Size selection if applicable (small, medium, large)
         bread: Bread choice for sandwiches/bagels
@@ -77,6 +78,9 @@ class OrderItemOut(BaseModel):
         sauces: List of selected sauces
         toasted: Whether the item should be toasted
         item_config: Additional config for drinks (style, milk, syrup, etc.)
+        modifiers: List of price modifiers (e.g., lox, cream cheese) with name and price
+        base_price: Base price before modifiers
+        free_details: Free details like hot/iced for drinks
         notes: Special instructions (e.g., "extra hot", "no ice")
         quantity: Number of this item ordered
         unit_price: Price per item before quantity multiplication
@@ -86,6 +90,7 @@ class OrderItemOut(BaseModel):
 
     id: int
     menu_item_name: str
+    display_name: Optional[str] = None
     item_type: Optional[str] = None
     size: Optional[str] = None
     bread: Optional[str] = None
@@ -95,6 +100,9 @@ class OrderItemOut(BaseModel):
     sauces: Optional[List[str]] = None
     toasted: Optional[bool] = None
     item_config: Optional[Dict[str, Any]] = None
+    modifiers: Optional[List[Dict[str, Any]]] = None
+    base_price: Optional[float] = None
+    free_details: Optional[List[str]] = None
     notes: Optional[str] = None
     quantity: int
     unit_price: float
@@ -132,6 +140,10 @@ class OrderItemOut(BaseModel):
                 obj_dict['toppings'] = item_config.get('toppings') or item_config.get('extras')
                 obj_dict['sauces'] = item_config.get('sauces')
                 obj_dict['toasted'] = item_config.get('toasted')
+                # Extract modifiers, base_price, and free_details for itemized display
+                obj_dict['modifiers'] = item_config.get('modifiers')
+                obj_dict['base_price'] = item_config.get('base_price')
+                obj_dict['free_details'] = item_config.get('free_details')
             return obj_dict
         return data
 

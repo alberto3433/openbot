@@ -92,17 +92,17 @@ def main():
     salad_id = create_item_type("salad", "Fresh Salad", is_configurable=False, skip_config=True)
     pastry_id = create_item_type("pastry", "Pastry", is_configurable=False, skip_config=True)
     breakfast_id = create_item_type("breakfast", "Breakfast", is_configurable=False, skip_config=True)
-    smoked_fish_sandwich_id = create_item_type("smoked_fish_sandwich", "Smoked Fish Sandwich", is_configurable=True, skip_config=False)
 
     # Get existing type IDs
     bagel_id = get_item_type_id("bagel")
     egg_sandwich_id = get_item_type_id("egg_sandwich")
+    fish_sandwich_id = get_item_type_id("fish_sandwich")
     omelette_id = get_item_type_id("omelette")
     side_id = get_item_type_id("side")
     beverage_id = get_item_type_id("beverage")
     signature_sandwich_id = get_item_type_id("signature_sandwich")
 
-    print(f"\n  Using existing types: bagel={bagel_id}, egg_sandwich={egg_sandwich_id}, omelette={omelette_id}, side={side_id}")
+    print(f"\n  Using existing types: bagel={bagel_id}, egg_sandwich={egg_sandwich_id}, fish_sandwich={fish_sandwich_id}, omelette={omelette_id}, side={side_id}")
 
     # =========================================================================
     # STEP 2: Add Deli Classics (9 items)
@@ -123,10 +123,10 @@ def main():
         add_menu_item(name, "deli_classic", price, deli_classic_id)
 
     # =========================================================================
-    # STEP 3: Add Smoked Fish Sandwiches (14 items)
+    # STEP 3: Add Fish Sandwiches (14 items) - Smoked fish on bagel
     # =========================================================================
-    print("\n3. Adding Smoked Fish Sandwiches...")
-    smoked_fish = [
+    print("\n3. Adding Fish Sandwiches...")
+    fish_sandwiches = [
         ("Nova Scotia Salmon Sandwich", 18.65),
         ("Gravlax Sandwich", 18.65),
         ("Belly Lox Sandwich", 18.65),
@@ -142,8 +142,8 @@ def main():
         ("Whitefish Sandwich", 16.50),
         ("Herring Tidbits on Bagel", 12.95),
     ]
-    for name, price in smoked_fish:
-        add_menu_item(name, "smoked_fish_sandwich", price, smoked_fish_sandwich_id)
+    for name, price in fish_sandwiches:
+        add_menu_item(name, "fish_sandwich", price, fish_sandwich_id)
 
     # =========================================================================
     # STEP 4: Add Breakfast Items (4 items)

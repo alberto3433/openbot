@@ -38,7 +38,7 @@ class TestSlotComparisonLogging:
         handler = LogCapture()
         handler.setLevel(logging.DEBUG)
 
-        logger = logging.getLogger("sandwich_bot.tasks.state_machine.slot_comparison")
+        logger = logging.getLogger("sandwich_bot.slots")
         original_level = logger.level
         logger.setLevel(logging.DEBUG)
         logger.addHandler(handler)

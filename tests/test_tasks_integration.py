@@ -3847,12 +3847,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=True, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm._handle_confirmation("yes that looks good", order)
+            result = sm.confirmation_handler.handle_confirmation("yes that looks good", order)
 
             assert order.checkout.order_reviewed is True
             assert "text" in result.message.lower() or "email" in result.message.lower()
@@ -3872,18 +3872,18 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_confirm:
+        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_confirm:
             mock_confirm.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=True, asks_about_tax=False
             )
-            with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_open:
+            with patch("sandwich_bot.tasks.confirmation_handler.parse_open_input") as mock_open:
                 # No new item detected
                 mock_open.return_value = OpenInputResponse(
                     new_menu_item=None, new_bagel=False, new_coffee=False,
                     new_speed_menu_bagel=False
                 )
 
-                result = sm._handle_confirmation("no I want to change something", order)
+                result = sm.confirmation_handler.handle_confirmation("no I want to change something", order)
 
                 assert "change" in result.message.lower()
 
@@ -3905,7 +3905,7 @@ class TestConfirmationHandler:
         order.items.add_item(bagel)
 
         # TAX_QUESTION_PATTERN should match this
-        result = sm._handle_confirmation("what's my total with tax?", order)
+        result = sm.confirmation_handler.handle_confirmation("what's my total with tax?", order)
 
         assert "tax" in result.message.lower() or "$" in result.message
 
@@ -3925,7 +3925,7 @@ class TestConfirmationHandler:
         order.items.add_item(bagel)
 
         initial_count = len(order.items.items)
-        result = sm._handle_confirmation("make it 2", order)
+        result = sm.confirmation_handler.handle_confirmation("make it 2", order)
 
         # Should have doubled the items
         assert len(order.items.items) == initial_count + 1
@@ -3946,12 +3946,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm._handle_confirmation("hmm let me think", order)
+            result = sm.confirmation_handler.handle_confirmation("hmm let me think", order)
 
             assert "correct" in result.message.lower() or "look" in result.message.lower()
 
@@ -3971,7 +3971,7 @@ class TestConfirmationHandler:
         order.items.add_item(coffee)
 
         initial_count = len(order.items.items)
-        result = sm._handle_confirmation("make it three", order)
+        result = sm.confirmation_handler.handle_confirmation("make it three", order)
 
         # Should have added 2 more (total of 3)
         assert len(order.items.items) == initial_count + 2
@@ -3992,12 +3992,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm._handle_confirmation("wait a second", order)
+            result = sm.confirmation_handler.handle_confirmation("wait a second", order)
 
             assert order.checkout.order_reviewed is False
 
@@ -4019,7 +4019,7 @@ class TestGreetingHandler:
         order = OrderTask()
         order.phase = OrderPhase.GREETING.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=True, unclear=False, new_bagel=False,
                 new_coffee=False, new_speed_menu_bagel=False
@@ -4040,7 +4040,7 @@ class TestGreetingHandler:
         order = OrderTask()
         order.phase = OrderPhase.GREETING.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=False, unclear=True, new_bagel=False,
                 new_coffee=False, new_speed_menu_bagel=False
@@ -4060,7 +4060,7 @@ class TestGreetingHandler:
         order = OrderTask()
         order.phase = OrderPhase.GREETING.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=False, unclear=False,
                 new_bagel=True, new_bagel_quantity=1, new_bagel_type="plain",
@@ -4085,7 +4085,7 @@ class TestGreetingHandler:
         order = OrderTask()
         order.phase = OrderPhase.GREETING.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=False, unclear=False,
                 new_bagel=False, new_coffee=True, new_coffee_type="latte",
@@ -4117,7 +4117,7 @@ class TestTakingItemsHandler:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=True, new_bagel_quantity=1, new_bagel_type="everything",
                 new_bagel_toasted=True, new_bagel_spread="butter",
@@ -4141,7 +4141,7 @@ class TestTakingItemsHandler:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=False, new_coffee=True, new_coffee_type="cappuccino",
                 new_coffee_size="medium", new_coffee_iced=False,
@@ -4167,7 +4167,7 @@ class TestTakingItemsHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 done_ordering=True, new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4194,7 +4194,7 @@ class TestTakingItemsHandler:
 
         initial_count = len(order.items.items)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="latte", new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4231,7 +4231,7 @@ class TestTakingItemsHandler:
 
         assert len(order.items.items) == 3
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="coffees", new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4261,7 +4261,7 @@ class TestTakingItemsHandler:
 
         initial_count = len(order.items.items)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 duplicate_last_item=1, new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4282,7 +4282,7 @@ class TestTakingItemsHandler:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 order_type="pickup", new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4303,7 +4303,7 @@ class TestTakingItemsHandler:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="bagel", new_bagel=False, new_coffee=False,
                 new_speed_menu_bagel=False
@@ -4323,7 +4323,7 @@ class TestTakingItemsHandler:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=True, new_bagel_quantity=3, new_bagel_type="plain",
                 new_bagel_toasted=True, new_bagel_spread="cream cheese",

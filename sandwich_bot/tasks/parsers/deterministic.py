@@ -1763,15 +1763,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if price_result:
         return price_result
 
+    # Check for "show more" menu requests BEFORE menu queries
+    # "what other pastries do you have?" should be pagination, not a new query
+    more_items_result = _parse_more_menu_items(text)
+    if more_items_result:
+        return more_items_result
+
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
     menu_query_result = _parse_menu_query_deterministic(text)
     if menu_query_result:
         return menu_query_result
-
-    # Check for "show more" menu requests ("what other drinks do you have?", "and?", etc.)
-    more_items_result = _parse_more_menu_items(text)
-    if more_items_result:
-        return more_items_result
 
     # Check for recommendation questions
     recommendation_result = _parse_recommendation_inquiry(text)

@@ -37,11 +37,9 @@ def validate_email_address(email: str) -> tuple[str | None, str | None]:
 
     try:
         # Validate and normalize the email
-        # check_deliverability=False - only check syntax, don't do DNS/MX lookups
-        # DNS checks are overly strict: domains may be valid but have temporary DNS issues,
-        # use private mail servers, or be new TLDs not in the library's list.
-        # We should accept syntactically valid emails and handle bounces asynchronously.
-        result = validate_email(email, check_deliverability=False)
+        # check_deliverability=True - verify domain exists via DNS/MX lookup
+        # This catches common typos like gmail.con and made-up domains
+        result = validate_email(email, check_deliverability=True)
         # Return the normalized email (lowercased domain, etc.)
         return (result.normalized, None)
     except EmailNotValidError as e:

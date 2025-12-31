@@ -168,7 +168,7 @@ def chat_start(
         customer_name = returning_customer["name"]
         welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new order?"
     else:
-        welcome = f"Hi, welcome to {store_name}! Would you like to try one of our {signature_label} or build your own?"
+        welcome = f"Hi, welcome to {store_name}! Can I take your order?"
 
     # Initialize session
     session_data = {

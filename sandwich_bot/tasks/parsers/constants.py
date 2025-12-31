@@ -453,8 +453,9 @@ GREETING_PATTERNS = re.compile(
 
 # Done ordering patterns
 DONE_PATTERNS = re.compile(
-    r"^(that'?s?\s*(all|it)|no(pe|thing)?(\s*(else|more))?|i'?m\s*(good|done|all\s*set)|"
-    r"nothing(\s*(else|more))?|done|all\s*set|that\s*will\s*be\s*all|nah)[\s!.,]*$",
+    r"^(that'?s?\s*(all|it)(\s+for\s+now)?|no(pe|thing)?(\s*(else|more))?|i'?m\s*(good|done|all\s*set)|"
+    r"nothing(\s*(else|more))?|done|all\s*set|that\s*will\s*be\s*all|nah|"
+    r"just\s+the\s+\w+(\s+\w+)?|just\s+that|only\s+the\s+\w+(\s+\w+)?)[\s!.,]*$",
     re.IGNORECASE
 )
 

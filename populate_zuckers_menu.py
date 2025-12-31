@@ -130,7 +130,7 @@ def ensure_item_types(db: Session):
     if not sized_beverage_type:
         sized_beverage_type = ItemType(
             slug="sized_beverage",
-            display_name="Beverage",
+            display_name="Coffee and Tea",
             is_configurable=True,
         )
         db.add(sized_beverage_type)

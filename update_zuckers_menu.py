@@ -157,7 +157,7 @@ def create_item_types(session):
     # Create a configurable "sized_beverage" type for drinks with Small/Large options
     sized_bev = ItemType(
         slug="sized_beverage",
-        display_name="Sized Beverage",
+        display_name="Coffee and Tea",
         is_configurable=True,
     )
     session.add(sized_bev)

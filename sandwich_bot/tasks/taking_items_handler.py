@@ -26,7 +26,7 @@ from .schemas import (
     CoffeeOrderDetails,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
-from .parsers.constants import BAGEL_TYPES
+from .parsers.constants import BAGEL_TYPES, BAGEL_SPREADS, MODIFIER_NORMALIZATIONS
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -269,9 +269,35 @@ class TakingItemsHandler:
                             order=order,
                         )
                     else:
-                        # Check if user is changing the bagel type
-                        # e.g., "replace with blueberry", "can you make it everything?"
+                        # Check if user is changing the spread or bagel type
+                        # e.g., "make it blueberry cream cheese", "replace with everything"
                         input_lower = raw_user_input.lower()
+
+                        # Check for spread changes FIRST (longer matches before shorter)
+                        # e.g., "blueberry cream cheese" should match before "blueberry" (bagel type)
+                        new_spread = None
+                        for spread in sorted(BAGEL_SPREADS, key=len, reverse=True):
+                            if spread in input_lower:
+                                # Normalize the spread name
+                                new_spread = MODIFIER_NORMALIZATIONS.get(spread, spread)
+                                break
+
+                        if new_spread:
+                            old_spread = last_item.spread or "none"
+                            last_item.spread = new_spread
+                            logger.info("Replacement: changed spread from '%s' to '%s'", old_spread, new_spread)
+
+                            # Recalculate price if needed
+                            self.pricing.recalculate_bagel_price(last_item)
+
+                            updated_summary = last_item.get_summary()
+                            return StateMachineResult(
+                                message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                                order=order,
+                            )
+
+                        # Check if user is changing the bagel type
+                        # e.g., "replace with everything", "can you make it sesame?"
                         new_bagel_type = None
                         for bagel_type in BAGEL_TYPES:
                             if bagel_type in input_lower:

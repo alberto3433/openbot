@@ -649,6 +649,18 @@ class OrderTask(BaseTask):
     # Each entry is a dict with: name, base_price, id, etc.
     pending_drink_options: list[dict] = Field(default_factory=list)
 
+    # Generic menu item options for disambiguation (cookies, muffins, etc.)
+    # Used when user says "cookies" and there are multiple cookie types
+    pending_item_options: list[dict] = Field(default_factory=list)
+
+    # Quantity stored during item disambiguation
+    pending_item_quantity: int = Field(default=1)
+
+    # Pending modifier change clarification
+    # Used when user says "change it to blueberry" and we need to clarify bagel vs spread
+    # Dict with: new_value, possible_categories (as strings), item_id
+    pending_change_clarification: dict | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:

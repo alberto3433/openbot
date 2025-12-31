@@ -1531,8 +1531,8 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 )
                 if item_match:
                     full_item = item_match.group(0).strip()
-                    # Remove common non-qualifier prefixes
-                    full_item = re.sub(r'^(a|an|the|please|add|get|have|want|some)\s+', '', full_item)
+                    # Remove common non-qualifier prefixes (articles, verbs, numbers)
+                    full_item = re.sub(r'^(a|an|the|please|add|get|have|want|some|\d+|one|two|three|four|five|six)\s+', '', full_item)
                     # Clean up again in case of double articles like "a the blueberry"
                     full_item = re.sub(r'^(a|an|the)\s+', '', full_item)
                 else:

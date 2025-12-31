@@ -33,6 +33,7 @@ from .modifiers import (
     ExtractedModifiers,
     ExtractedCoffeeModifiers,
 )
+from .result import StateMachineResult
 
 __all__ = [
     # Phases
@@ -62,4 +63,6 @@ __all__ = [
     # Modifiers
     "ExtractedModifiers",
     "ExtractedCoffeeModifiers",
+    # Result
+    "StateMachineResult",
 ]

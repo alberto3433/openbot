@@ -118,7 +118,34 @@ SPREADS = {
 SPREAD_TYPES = {
     "scallion", "veggie", "vegetable", "strawberry",
     "honey walnut", "lox", "chive", "garlic herb", "jalapeno",
-    "tofu", "olive",
+    "tofu", "olive", "blueberry", "truffle", "nova", "sun-dried tomato",
+    "maple raisin walnut", "kalamata olive",
+}
+
+# =============================================================================
+# Modifier Category Classification
+# =============================================================================
+
+# Bagel types that are ONLY bagel types (not spread types)
+BAGEL_ONLY_TYPES = {
+    "plain", "everything", "sesame", "poppy", "onion",
+    "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
+    "whole wheat", "wheat", "salt", "garlic", "bialy",
+    "egg", "multigrain", "asiago", "gluten free", "gluten-free",
+}
+
+# Spread types that are ONLY spread types (not bagel types)
+SPREAD_ONLY_TYPES = {
+    "scallion", "veggie", "vegetable", "strawberry",
+    "honey walnut", "lox", "chive", "garlic herb",
+    "tofu", "olive", "truffle", "nova", "sun-dried tomato",
+    "maple raisin walnut", "kalamata olive",
+}
+
+# Modifiers that could be EITHER bagel type OR spread type (ambiguous)
+AMBIGUOUS_MODIFIERS = {
+    "blueberry",  # blueberry bagel or blueberry cream cheese
+    "jalapeno",   # jalapeno bagel or jalapeno cream cheese
 }
 
 # =============================================================================
@@ -407,6 +434,31 @@ DONE_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+# =============================================================================
+# Modifier Change Request Patterns
+# =============================================================================
+
+# Change request patterns - detect when user wants to modify an item
+# These patterns extract the target (what to change) and the new_value
+# Returns (pattern, group_indices) where group_indices is (target_group, new_value_group)
+# target_group can be None for "change it to X" patterns (refers to last item)
+CHANGE_REQUEST_PATTERNS = [
+    # "change it to X" / "make it X" - target is implicit (last item)
+    (re.compile(r"(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "change the bagel to X" / "make the spread X"
+    (re.compile(r"(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "can you change it to X" / "could you make it X"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "can you change the bagel to X"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "actually X instead" / "actually make it X"
+    (re.compile(r"actually\s+(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "I meant X" / "I want X instead"
+    (re.compile(r"(?:i\s+meant|i\s+want(?:ed)?)\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "no wait, X" / "wait, X instead"
+    (re.compile(r"(?:no\s+)?wait[,.]?\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+]
+
 # Repeat order patterns: "repeat my order", "same as last time", "my usual", etc.
 REPEAT_ORDER_PATTERNS = re.compile(
     r"^(repeat\s+(my\s+)?(last\s+)?order|same\s+(as\s+)?(last\s+time|before)|"
@@ -499,7 +551,7 @@ KNOWN_MENU_ITEMS = {
     "butter sandwich", "bagel with butter",
     "peanut butter sandwich", "peanut butter bagel",
     "nutella sandwich", "nutella bagel",
-    "hummus sandwich", "hummus bagel",
+    "hummus sandwich", "hummus bagel", "hummus",
     "avocado spread sandwich", "avocado spread",
     "tofu plain sandwich", "tofu plain", "plain tofu",
     "tofu scallion sandwich", "tofu scallion", "scallion tofu",
@@ -517,6 +569,34 @@ KNOWN_MENU_ITEMS = {
     "chicken salad sandwich", "chicken salad",
     "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
     "lemon chicken salad sandwich", "lemon chicken salad",
+    # Additional omelettes
+    "the mulberry omelette", "mulberry omelette", "the mulberry", "mulberry",
+    "the nova omelette", "nova omelette",
+    "bacon and cheddar omelette", "bacon cheddar omelette",
+    # Grilled items
+    "grilled cheese", "grilled cheese sandwich",
+    # Sides (for multi-item orders)
+    "side of bacon", "bacon", "side of sausage", "sausage",
+    "turkey bacon", "side of turkey bacon",
+    "latkes", "potato latkes",
+    "bagel chips", "chips",
+    "fruit cup", "fruit salad",
+    "cole slaw", "coleslaw",
+    "potato salad", "macaroni salad",
+    # Breakfast items
+    "oatmeal", "steel cut oatmeal", "organic steel-cut oatmeal",
+    "yogurt parfait", "yogurt", "low fat yogurt granola parfait",
+    # Nova/Lox synonyms (for natural language matching)
+    "nova lox", "nova lox sandwich", "lox sandwich", "lox",
+    # Pastries and snacks (for multi-item orders)
+    "blueberry muffin", "corn muffin", "chocolate chip muffin",
+    "banana walnut muffin", "cranberry muffin", "lemon poppy muffin",
+    "morning glory muffin", "apple cinnamon muffin", "double-chocolate muffin",
+    "muffin",  # Generic - will ask for type
+    "black and white cookie", "black & white cookie", "chocolate chip cookie",
+    "peanut butter cookie", "oatmeal raisin cookie",
+    "cookie",  # Generic - will ask for type
+    "brownie", "danish", "rugelach", "babka",
     # Specific beverage items (need to match before generic coffee parsing)
     "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
     "tropicana no pulp", "tropicana",
@@ -539,7 +619,7 @@ NO_THE_PREFIX_ITEMS = {
     "butter sandwich", "bagel with butter",
     "peanut butter sandwich", "peanut butter bagel",
     "nutella sandwich", "nutella bagel",
-    "hummus sandwich", "hummus bagel",
+    "hummus sandwich", "hummus bagel", "hummus",
     "avocado spread sandwich", "avocado spread",
     "tofu plain sandwich", "tofu plain", "plain tofu",
     "tofu scallion sandwich", "tofu scallion", "scallion tofu",
@@ -564,6 +644,23 @@ NO_THE_PREFIX_ITEMS = {
     "veggie omelette",
     "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
     "spinach & feta omelet", "spinach and feta omelet", "spinach feta omelet",
+    "mulberry omelette", "bacon and cheddar omelette", "bacon cheddar omelette",
+    "nova omelette",
+    # Grilled items (no "The" prefix)
+    "grilled cheese", "grilled cheese sandwich",
+    # Sides (no "The" prefix)
+    "side of bacon", "bacon", "side of sausage", "sausage",
+    "turkey bacon", "side of turkey bacon",
+    "latkes", "potato latkes",
+    "bagel chips", "chips",
+    "fruit cup", "fruit salad",
+    "cole slaw", "coleslaw",
+    "potato salad", "macaroni salad",
+    # Breakfast items (no "The" prefix)
+    "oatmeal", "steel cut oatmeal", "organic steel-cut oatmeal",
+    "yogurt parfait", "yogurt", "low fat yogurt granola parfait",
+    # Nova/Lox synonyms
+    "nova lox", "nova lox sandwich", "lox sandwich", "lox",
     # Specific beverage items
     "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
     "tropicana no pulp", "tropicana",
@@ -658,6 +755,47 @@ MENU_ITEM_CANONICAL_NAMES = {
     "spinach and feta omelet": "Spinach & Feta Omelette",
     "spinach feta omelet": "Spinach & Feta Omelette",
     "spinach & feta omelet": "Spinach & Feta Omelette",
+    # Additional omelettes
+    "mulberry": "The Mulberry Omelette",
+    "the mulberry": "The Mulberry Omelette",
+    "mulberry omelette": "The Mulberry Omelette",
+    "the mulberry omelette": "The Mulberry Omelette",
+    "nova omelette": "The Nova Omelette",
+    "the nova omelette": "The Nova Omelette",
+    "bacon and cheddar omelette": "Bacon and Cheddar Omelette",
+    "bacon cheddar omelette": "Bacon and Cheddar Omelette",
+    # Grilled items
+    "grilled cheese": "Grilled Cheese",
+    "grilled cheese sandwich": "Grilled Cheese",
+    # Sides
+    "side of bacon": "Bacon",
+    "bacon": "Bacon",
+    "side of sausage": "Side of Sausage",
+    "sausage": "Side of Sausage",
+    "turkey bacon": "Turkey Bacon",
+    "side of turkey bacon": "Turkey Bacon",
+    "latkes": "Latkes",
+    "potato latkes": "Latkes",
+    "bagel chips": "Bagel Chips",
+    "chips": "Bagel Chips",
+    "fruit cup": "Fruit Cup",
+    "fruit salad": "Fruit Salad",
+    "cole slaw": "Cole Slaw",
+    "coleslaw": "Cole Slaw",
+    "potato salad": "Potato Salad",
+    "macaroni salad": "Macaroni Salad",
+    # Breakfast items
+    "oatmeal": "Oatmeal",
+    "steel cut oatmeal": "Organic Steel-Cut Oatmeal",
+    "organic steel-cut oatmeal": "Organic Steel-Cut Oatmeal",
+    "yogurt parfait": "Yogurt Parfait",
+    "yogurt": "Yogurt Parfait",
+    "low fat yogurt granola parfait": "Low Fat Yogurt Granola Parfait",
+    # Nova/Lox synonyms - map to Nova Scotia Salmon Sandwich
+    "nova lox": "Nova Scotia Salmon Sandwich",
+    "nova lox sandwich": "Nova Scotia Salmon Sandwich",
+    "lox sandwich": "Nova Scotia Salmon Sandwich",
+    "lox": "Belly Lox Sandwich",  # "lox" alone defaults to Belly Lox
 }
 
 # =============================================================================
@@ -737,6 +875,9 @@ MENU_CATEGORY_KEYWORDS = {
     "treats": "dessert",
     "cookies": "dessert",
     "muffins": "dessert",
+    "brownies": "dessert",
+    "donuts": "dessert",
+    "doughnuts": "dessert",
 }
 
 # =============================================================================

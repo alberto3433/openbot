@@ -44,10 +44,10 @@ class TestStateMachineMultiBagel:
 
         # Mock parse_bagel_choice to return plain (even if user said "2 of them plain",
         # we only process the current item)
-        with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.bagel_config_handler.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
 
-            result = sm._handle_bagel_choice("plain", order.items.items[0], order)
+            result = sm.bagel_handler.handle_bagel_choice("plain", order.items.items[0], order)
 
             # Verify ONLY the first bagel has type set (one-at-a-time approach)
             bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
@@ -79,7 +79,7 @@ class TestStateMachineMultiBagel:
         sm = OrderStateMachine()
 
         # Ask for next incomplete bagel
-        result = sm._configure_next_incomplete_bagel(order)
+        result = sm.bagel_handler.configure_next_incomplete_bagel(order)
 
         # With new flow: should ask about first bagel's TOASTED (fully configure first bagel)
         assert "first" in result.message.lower()
@@ -122,10 +122,10 @@ class TestMixedItemBagelChoice:
         sm = OrderStateMachine()
 
         # Mock the parser to return "plain"
-        with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.bagel_config_handler.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
 
-            result = sm._handle_bagel_choice("plain", butter_sandwich, order)
+            result = sm.bagel_handler.handle_bagel_choice("plain", butter_sandwich, order)
 
             # Verify ONLY the Butter Sandwich has bagel_choice set (one-at-a-time)
             assert butter_sandwich.bagel_choice == "plain", \
@@ -167,9 +167,9 @@ class TestMixedItemBagelChoice:
         sm = OrderStateMachine()
 
         # Step 1: Set bagel type for Butter Sandwich
-        with patch("sandwich_bot.tasks.state_machine.parse_bagel_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.bagel_config_handler.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
-            result = sm._handle_bagel_choice("plain", butter_sandwich, order)
+            result = sm.bagel_handler.handle_bagel_choice("plain", butter_sandwich, order)
 
         assert butter_sandwich.bagel_choice == "plain"
         assert cc_bagel.bagel_type is None  # Not configured yet
@@ -198,7 +198,11 @@ class TestPriceRecalculationInvariants:
         order.pending_item_id = bagel.id
 
         sm = OrderStateMachine()
-        result = sm._handle_spread_choice("cream cheese please", bagel, order)
+        with patch("sandwich_bot.tasks.bagel_config_handler.parse_spread_choice") as mock_parse:
+            mock_parse.return_value = MagicMock(
+                spread="cream cheese", spread_type="plain", no_spread=False, notes=None
+            )
+            result = sm.bagel_handler.handle_spread_choice("cream cheese please", bagel, order)
 
         # Spread should be set and price recalculated
         assert bagel.spread == "cream cheese"
@@ -223,7 +227,7 @@ class TestPriceRecalculationInvariants:
         modifiers.proteins = ["ham", "egg"]
         modifiers.cheeses = ["american"]
 
-        result = sm._add_bagel(
+        result = sm.item_adder_handler.add_bagel(
             bagel_type="wheat",
             order=order,
             toasted=True,
@@ -529,7 +533,7 @@ class TestSpreadQuestionSkip:
         order.pending_field = "toasted"
 
         # Simulate answering "toasted" question (function takes: user_input, item, order)
-        result = sm._handle_toasted_choice("yes", bagel, order)
+        result = sm.bagel_handler.handle_toasted_choice("yes", bagel, order)
 
         # Should NOT ask about spread - should skip to "Anything else?"
         assert "cream cheese" not in result.message.lower(), f"Should skip spread question, got: {result.message}"
@@ -557,7 +561,7 @@ class TestSpreadQuestionSkip:
         order.pending_field = "toasted"
 
         # Simulate answering "toasted" question (function takes: user_input, item, order)
-        result = sm._handle_toasted_choice("yes", bagel, order)
+        result = sm.bagel_handler.handle_toasted_choice("yes", bagel, order)
 
         # SHOULD ask about spread for plain bagel
         assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Should ask about spread, got: {result.message}"
@@ -661,8 +665,8 @@ class TestOrderTypeUpfront:
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        # User says "that's it" - triggers _transition_to_checkout
-        result = sm._transition_to_checkout(order)
+        # User says "that's it" - triggers transition_to_checkout
+        result = sm.checkout_utils_handler.transition_to_checkout(order)
 
         # Should ask for name, NOT pickup/delivery
         assert "name" in result.message.lower()
@@ -695,13 +699,13 @@ class TestOrderTypeUpfront:
         order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
 
         # Mock parse_payment_method to return email choice (no email address)
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = MagicMock(
                 choice="email",
                 email_address=None,  # No email provided yet
                 phone_number=None,
             )
-            result = sm._handle_payment_method("email", order)
+            result = sm.checkout_handler.handle_payment_method("email", order)
 
         # Should ask for email
         assert "email" in result.message.lower()
@@ -732,9 +736,9 @@ class TestOrderTypeUpfront:
 
         # Mock parse_email to return the email address
         # Note: Using gmail.com because email validation checks DNS/MX records
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = MagicMock(email="joey@gmail.com")
-            result = sm._handle_email("joey@gmail.com", order)
+            result = sm.checkout_handler.handle_email("joey@gmail.com", order)
 
         # Email should be stored (normalized)
         assert order.customer_info.email == "joey@gmail.com"
@@ -772,7 +776,7 @@ class TestOrderTypeUpfront:
         order.phase = OrderPhase.CHECKOUT_EMAIL.value  # Set by previous handler
 
         # Mock parse_email to return the email address
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = MagicMock(email="alberto33@gmail.com")
             # Call process() - this should NOT overwrite the phase
             result = sm.process("alberto33@gmail.com", order)
@@ -984,7 +988,7 @@ class TestUnknownItemHandling:
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Try to add a hashbrown (not on menu)
-        canonical_name, error_message = sm._add_side_item("hashbrown", 1, order)
+        canonical_name, error_message = sm.item_adder_handler.add_side_item("hashbrown", 1, order)
 
         # Should return None for canonical_name and an error message
         assert canonical_name is None
@@ -1018,7 +1022,7 @@ class TestUnknownItemHandling:
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Try to add a milkshake (not on menu, but has drink keywords)
-        result = sm._add_menu_item("chocolate milkshake", 1, order)
+        result = sm.item_adder_handler.add_menu_item("chocolate milkshake", 1, order)
 
         # Should return a result with error message
         assert isinstance(result, StateMachineResult)
@@ -1045,7 +1049,7 @@ class TestUnknownItemHandling:
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Add a valid side
-        canonical_name, error_message = sm._add_side_item("home fries", 1, order)
+        canonical_name, error_message = sm.item_adder_handler.add_side_item("home fries", 1, order)
 
         # Should succeed
         assert canonical_name == "Home Fries"
@@ -1753,7 +1757,7 @@ class TestDrinkClarification:
 
         # User asks for "orange juice" which matches multiple items
         # (including "Tropicana Orange Juice No Pulp" via synonym expansion)
-        result = sm._add_coffee(
+        result = sm.coffee_handler.add_coffee(
             coffee_type="orange juice",
             size=None,
             iced=None,
@@ -1793,7 +1797,7 @@ class TestDrinkClarification:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         # User selects "2" (second option)
-        result = sm._handle_drink_selection("2", order)
+        result = sm.coffee_handler.handle_drink_selection("2", order)
 
         # Should have added the second drink
         coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
@@ -1826,7 +1830,7 @@ class TestDrinkClarification:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         # User selects by name
-        result = sm._handle_drink_selection("fresh squeezed", order)
+        result = sm.coffee_handler.handle_drink_selection("fresh squeezed", order)
 
         # Should have added the first drink
         coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
@@ -1881,7 +1885,7 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # User asks for specific item "fresh squeezed orange juice" - exact match
-        result = sm._add_coffee(
+        result = sm.coffee_handler.add_coffee(
             coffee_type="Fresh Squeezed Orange Juice",
             size=None,
             iced=None,
@@ -1926,7 +1930,7 @@ class TestQuantityChange:
         order.items.add_item(drink)
 
         # User says "make it two orange juices"
-        result = sm._handle_quantity_change("make it two orange juices", order)
+        result = sm.order_utils_handler.handle_quantity_change("make it two orange juices", order)
 
         # Should have added one more
         assert result is not None
@@ -1948,7 +1952,7 @@ class TestQuantityChange:
         drink.mark_complete()
         order.items.add_item(drink)
 
-        result = sm._handle_quantity_change("can you make it two coffees", order)
+        result = sm.order_utils_handler.handle_quantity_change("can you make it two coffees", order)
 
         assert result is not None
         coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
@@ -1970,7 +1974,7 @@ class TestQuantityChange:
             drink.mark_complete()
             order.items.add_item(drink)
 
-        result = sm._handle_quantity_change("make it two lattes", order)
+        result = sm.order_utils_handler.handle_quantity_change("make it two lattes", order)
 
         # Should NOT add more, just confirm
         assert result is not None
@@ -1993,7 +1997,7 @@ class TestQuantityChange:
         order.items.add_item(drink)
 
         # Ask for item not in order
-        result = sm._handle_quantity_change("make it two bagels", order)
+        result = sm.order_utils_handler.handle_quantity_change("make it two bagels", order)
 
         # Should return None (no match)
         assert result is None
@@ -2023,7 +2027,7 @@ class TestCheeseChoice:
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
 
-        result = sm._handle_cheese_choice("american please", bagel, order)
+        result = sm.bagel_handler.handle_cheese_choice("american please", bagel, order)
 
         assert "american" in bagel.extras
         assert bagel.needs_cheese_clarification is False
@@ -2043,7 +2047,7 @@ class TestCheeseChoice:
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
-        result = sm._handle_cheese_choice("cheddar", bagel, order)
+        result = sm.bagel_handler.handle_cheese_choice("cheddar", bagel, order)
 
         assert "cheddar" in bagel.extras
         assert bagel.needs_cheese_clarification is False
@@ -2061,7 +2065,7 @@ class TestCheeseChoice:
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
-        result = sm._handle_cheese_choice("swiss cheese", bagel, order)
+        result = sm.bagel_handler.handle_cheese_choice("swiss cheese", bagel, order)
 
         assert "swiss" in bagel.extras
 
@@ -2079,7 +2083,7 @@ class TestCheeseChoice:
         order.items.add_item(bagel)
 
         # Test alternate spelling "munster"
-        result = sm._handle_cheese_choice("munster", bagel, order)
+        result = sm.bagel_handler.handle_cheese_choice("munster", bagel, order)
 
         assert "muenster" in bagel.extras
 
@@ -2096,7 +2100,7 @@ class TestCheeseChoice:
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
-        result = sm._handle_cheese_choice("brie", bagel, order)
+        result = sm.bagel_handler.handle_cheese_choice("brie", bagel, order)
 
         # Should re-prompt, not add cheese
         assert len(bagel.extras) == 0
@@ -2125,7 +2129,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm._handle_menu_query(None, order)
+        result = sm.query_handler.handle_menu_query(None, order)
 
         assert "We have:" in result.message
         assert "bagel" in result.message
@@ -2144,7 +2148,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm._handle_menu_query("beverage", order)
+        result = sm.query_handler.handle_menu_query("beverage", order)
 
         assert "beverages include" in result.message.lower()
         assert "Latte" in result.message
@@ -2163,7 +2167,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm._handle_menu_query("beverage", order, show_prices=True)
+        result = sm.query_handler.handle_menu_query("beverage", order, show_prices=True)
 
         assert "$4.50" in result.message
         assert "$2.00" in result.message
@@ -2176,7 +2180,7 @@ class TestMenuQuery:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_menu_query("sandwich", order)
+        result = sm.query_handler.handle_menu_query("sandwich", order)
 
         assert "egg sandwiches" in result.message.lower() or "what kind" in result.message.lower()
 
@@ -2188,7 +2192,7 @@ class TestMenuQuery:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm._handle_menu_query(None, order)
+        result = sm.query_handler.handle_menu_query(None, order)
 
         assert "What can I get for you?" in result.message
 
@@ -2207,7 +2211,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm._handle_menu_query("coffee", order)
+        result = sm.query_handler.handle_menu_query("coffee", order)
 
         assert "Drip Coffee" in result.message or "Latte" in result.message
 
@@ -2217,7 +2221,7 @@ class TestMenuQuery:
 # =============================================================================
 
 class TestTaxAndOrderStatus:
-    """Tests for _handle_tax_question and _handle_order_status."""
+    """Tests for handle_tax_question and handle_order_status in OrderUtilsHandler."""
 
     def test_tax_question_with_tax_rates(self):
         """Test tax calculation with configured rates."""
@@ -2225,17 +2229,17 @@ class TestTaxAndOrderStatus:
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         sm = OrderStateMachine()
-        sm._store_info = {
+        sm.order_utils_handler.set_store_info({
             "city_tax_rate": 0.045,  # 4.5%
             "state_tax_rate": 0.04,  # 4%
-        }
+        })
 
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", unit_price=3.00)
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        result = sm._handle_tax_question(order)
+        result = sm.order_utils_handler.handle_tax_question(order)
 
         # Subtotal $3.00, tax 8.5% = $0.255, total = $3.255 -> $3.26
         assert "subtotal" in result.message.lower()
@@ -2248,14 +2252,14 @@ class TestTaxAndOrderStatus:
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         sm = OrderStateMachine()
-        sm._store_info = {}  # No tax rates
+        sm.order_utils_handler.set_store_info({})  # No tax rates
 
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", unit_price=5.00)
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        result = sm._handle_tax_question(order)
+        result = sm.order_utils_handler.handle_tax_question(order)
 
         # Should just show total without tax breakdown
         assert "$5.00" in result.message
@@ -2268,7 +2272,7 @@ class TestTaxAndOrderStatus:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_order_status(order)
+        result = sm.order_utils_handler.handle_order_status(order)
 
         assert "haven't ordered anything" in result.message.lower()
 
@@ -2288,7 +2292,7 @@ class TestTaxAndOrderStatus:
         coffee.mark_complete()
         order.items.add_item(coffee)
 
-        result = sm._handle_order_status(order)
+        result = sm.order_utils_handler.handle_order_status(order)
 
         assert "So far you have" in result.message
         # Should show the items
@@ -2308,7 +2312,7 @@ class TestTaxAndOrderStatus:
             bagel.mark_complete()
             order.items.add_item(bagel)
 
-        result = sm._handle_order_status(order)
+        result = sm.order_utils_handler.handle_order_status(order)
 
         # Should consolidate and show "2 ..."
         assert "2" in result.message
@@ -2333,7 +2337,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm._handle_store_hours_inquiry(order)
+        result = sm.query_handler.handle_store_hours_inquiry(order)
 
         assert "7am" in result.message or "hours" in result.message.lower()
 
@@ -2346,7 +2350,7 @@ class TestStoreInfoInquiries:
         sm._store_info = {}
 
         order = OrderTask()
-        result = sm._handle_store_hours_inquiry(order)
+        result = sm.query_handler.handle_store_hours_inquiry(order)
 
         # Should have some fallback message
         assert result.message is not None
@@ -2363,7 +2367,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm._handle_store_location_inquiry(order)
+        result = sm.query_handler.handle_store_location_inquiry(order)
 
         assert "123 Main St" in result.message or "location" in result.message.lower()
 
@@ -2378,7 +2382,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm._handle_delivery_zone_inquiry("10001", order)
+        result = sm.query_handler.handle_delivery_zone_inquiry("10001", order)
 
         # Should confirm delivery is available
         assert "deliver" in result.message.lower()
@@ -2394,7 +2398,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm._handle_delivery_zone_inquiry("90210", order)
+        result = sm.query_handler.handle_delivery_zone_inquiry("90210", order)
 
         # Should indicate delivery not available
         assert "deliver" in result.message.lower() or "pickup" in result.message.lower()
@@ -2415,7 +2419,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry("bagel", order)
+        result = sm.query_handler.handle_recommendation_inquiry("bagel", order)
 
         # Should recommend popular bagels
         assert "everything" in result.message.lower() or "plain" in result.message.lower()
@@ -2441,7 +2445,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry("sandwich", order)
+        result = sm.query_handler.handle_recommendation_inquiry("sandwich", order)
 
         # Should mention sandwiches from menu
         assert "sandwich" in result.message.lower() or "classic" in result.message.lower() or "egg" in result.message.lower()
@@ -2463,7 +2467,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry("coffee", order)
+        result = sm.query_handler.handle_recommendation_inquiry("coffee", order)
 
         # Should recommend coffee items
         assert "latte" in result.message.lower() or "coffee" in result.message.lower()
@@ -2484,7 +2488,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry(None, order)
+        result = sm.query_handler.handle_recommendation_inquiry(None, order)
 
         # Should mention the speed menu item
         assert "nova special" in result.message.lower() or "popular" in result.message.lower()
@@ -2499,7 +2503,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine(menu_data={"items_by_type": {}})
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry(None, order)
+        result = sm.query_handler.handle_recommendation_inquiry(None, order)
 
         # Should give generic recommendation
         assert "bagel" in result.message.lower() or "favorite" in result.message.lower()
@@ -2522,7 +2526,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_recommendation_inquiry("breakfast", order)
+        result = sm.query_handler.handle_recommendation_inquiry("breakfast", order)
 
         # Should recommend breakfast items
         assert "egg" in result.message.lower() or "bagel" in result.message.lower() or "breakfast" in result.message.lower()
@@ -2553,7 +2557,7 @@ class TestCoffeeSize:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
-        result = sm._handle_coffee_size("small please", coffee, order)
+        result = sm.coffee_handler.handle_coffee_size("small please", coffee, order)
 
         assert coffee.size == "small"
         assert order.pending_field == "coffee_style"
@@ -2572,7 +2576,7 @@ class TestCoffeeSize:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_size("medium", coffee, order)
+        result = sm.coffee_handler.handle_coffee_size("medium", coffee, order)
 
         assert coffee.size == "medium"
         assert order.pending_field == "coffee_style"
@@ -2590,7 +2594,7 @@ class TestCoffeeSize:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_size("I'll take a large", coffee, order)
+        result = sm.coffee_handler.handle_coffee_size("I'll take a large", coffee, order)
 
         assert coffee.size == "large"
         assert "hot or iced" in result.message.lower()
@@ -2608,7 +2612,7 @@ class TestCoffeeSize:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_size("extra large", coffee, order)
+        result = sm.coffee_handler.handle_coffee_size("extra large", coffee, order)
 
         # Size should not be set
         assert coffee.size is None
@@ -2628,7 +2632,7 @@ class TestCoffeeSize:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_size("hmm", coffee, order)
+        result = sm.coffee_handler.handle_coffee_size("hmm", coffee, order)
 
         # Should mention the drink type in reprompt
         assert "espresso" in result.message.lower() or "size" in result.message.lower()
@@ -2740,7 +2744,7 @@ class TestCoffeeStyle:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
-        result = sm._handle_coffee_style("hot please", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("hot please", coffee, order)
 
         assert coffee.iced is False
         assert coffee.status == TaskStatus.COMPLETE
@@ -2759,7 +2763,7 @@ class TestCoffeeStyle:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
-        result = sm._handle_coffee_style("iced", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("iced", coffee, order)
 
         assert coffee.iced is True
         assert coffee.status == TaskStatus.COMPLETE
@@ -2777,7 +2781,7 @@ class TestCoffeeStyle:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_style("cold", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("cold", coffee, order)
 
         assert coffee.iced is True
 
@@ -2794,7 +2798,7 @@ class TestCoffeeStyle:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_style("lukewarm", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("lukewarm", coffee, order)
 
         # Should not be set
         assert coffee.iced is None
@@ -2814,7 +2818,7 @@ class TestCoffeeStyle:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_style("hot with 2 sugars", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("hot with 2 sugars", coffee, order)
 
         assert coffee.iced is False
         assert coffee.sweetener == "sugar"
@@ -2833,7 +2837,7 @@ class TestCoffeeStyle:
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
-        result = sm._handle_coffee_style("iced with vanilla", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("iced with vanilla", coffee, order)
 
         assert coffee.iced is True
         assert coffee.flavor_syrup == "vanilla"
@@ -2852,7 +2856,7 @@ class TestCoffeeStyle:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
-        result = sm._handle_coffee_style("hot", coffee, order)
+        result = sm.coffee_handler.handle_coffee_style("hot", coffee, order)
 
         assert coffee.status == TaskStatus.COMPLETE
         assert order.pending_item_id is None
@@ -2884,7 +2888,7 @@ class TestSideChoice:
         order.items.add_item(omelette)
         order.pending_item_id = omelette.id
 
-        result = sm._handle_side_choice("fruit salad please", omelette, order)
+        result = sm.config_helper_handler.handle_side_choice("fruit salad please", omelette, order)
 
         assert omelette.side_choice == "fruit_salad"
         assert omelette.status == TaskStatus.COMPLETE
@@ -2908,7 +2912,7 @@ class TestSideChoice:
         order.pending_item_id = omelette.id
 
         # "bagel" is a valid side choice - should ask for bagel type
-        result = sm._handle_side_choice("bagel", omelette, order)
+        result = sm.config_helper_handler.handle_side_choice("bagel", omelette, order)
 
         # Should set side_choice and ask for bagel type
         assert "bagel" in result.message.lower() and "kind" in result.message.lower()
@@ -2933,7 +2937,7 @@ class TestSideChoice:
         order.items.add_item(omelette)
         order.pending_item_id = omelette.id
 
-        result = sm._handle_side_choice("plain bagel", omelette, order)
+        result = sm.config_helper_handler.handle_side_choice("plain bagel", omelette, order)
 
         assert omelette.side_choice == "bagel"
         assert omelette.bagel_choice == "plain"
@@ -2958,7 +2962,7 @@ class TestSideChoice:
         order.items.add_item(omelette)
         order.pending_item_id = omelette.id
 
-        result = sm._handle_side_choice("never mind cancel that", omelette, order)
+        result = sm.config_helper_handler.handle_side_choice("never mind cancel that", omelette, order)
 
         assert omelette.status == TaskStatus.SKIPPED
         assert order.phase == OrderPhase.TAKING_ITEMS.value
@@ -2981,7 +2985,7 @@ class TestSideChoice:
         omelette.mark_in_progress()
         order.items.add_item(omelette)
 
-        result = sm._handle_side_choice("hmm not sure", omelette, order)
+        result = sm.config_helper_handler.handle_side_choice("hmm not sure", omelette, order)
 
         assert omelette.side_choice is None
         assert "bagel" in result.message.lower() and "fruit" in result.message.lower()
@@ -3012,7 +3016,7 @@ class TestSodaClarification:
         })
         order = OrderTask()
 
-        result = sm._handle_soda_clarification(order)
+        result = sm.query_handler.handle_soda_clarification(order)
 
         assert "what kind" in result.message.lower()
         assert "coke" in result.message.lower()
@@ -3036,7 +3040,7 @@ class TestSodaClarification:
         })
         order = OrderTask()
 
-        result = sm._handle_soda_clarification(order)
+        result = sm.query_handler.handle_soda_clarification(order)
 
         assert "and others" in result.message.lower()
 
@@ -3048,7 +3052,7 @@ class TestSodaClarification:
         sm = OrderStateMachine(menu_data=None)
         order = OrderTask()
 
-        result = sm._handle_soda_clarification(order)
+        result = sm.query_handler.handle_soda_clarification(order)
 
         assert "what kind" in result.message.lower()
         assert "coke" in result.message.lower()
@@ -3066,7 +3070,7 @@ class TestSodaClarification:
         })
         order = OrderTask()
 
-        result = sm._handle_soda_clarification(order)
+        result = sm.query_handler.handle_soda_clarification(order)
 
         # Should use fallback message
         assert "coke" in result.message.lower()
@@ -3086,7 +3090,7 @@ class TestSodaClarification:
         })
         order = OrderTask()
 
-        result = sm._handle_soda_clarification(order)
+        result = sm.query_handler.handle_soda_clarification(order)
 
         # Should have "Coke, and Sprite" or similar format
         assert "coke" in result.message.lower()
@@ -3108,7 +3112,7 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data=None)
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("latte", order)
+        result = sm.query_handler.handle_price_inquiry("latte", order)
 
         assert "sorry" in result.message.lower() or "don't have" in result.message.lower()
 
@@ -3120,7 +3124,7 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={"items_by_type": {}})
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("sandwich", order)
+        result = sm.query_handler.handle_price_inquiry("sandwich", order)
 
         assert "egg sandwich" in result.message.lower()
         assert "what kind" in result.message.lower()
@@ -3140,7 +3144,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("coffee", order)
+        result = sm.query_handler.handle_price_inquiry("coffee", order)
 
         assert "start at" in result.message.lower()
         assert "$4.25" in result.message
@@ -3160,7 +3164,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("egg sandwich", order)
+        result = sm.query_handler.handle_price_inquiry("egg sandwich", order)
 
         assert "start at" in result.message.lower()
         assert "$6.99" in result.message
@@ -3181,7 +3185,7 @@ class TestPriceInquiry:
         order = OrderTask()
 
         # Use a specific menu item name that won't match generic categories
-        result = sm._handle_price_inquiry("the classic", order)
+        result = sm.query_handler.handle_price_inquiry("the classic", order)
 
         assert "classic" in result.message.lower()
         assert "$12.99" in result.message
@@ -3202,7 +3206,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("diet coke", order)
+        result = sm.query_handler.handle_price_inquiry("diet coke", order)
 
         assert "diet coke" in result.message.lower()
         assert "$2.50" in result.message
@@ -3221,7 +3225,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("an espresso", order)
+        result = sm.query_handler.handle_price_inquiry("an espresso", order)
 
         assert "espresso" in result.message.lower()
         assert "$3.00" in result.message
@@ -3241,7 +3245,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("plain bagel", order)
+        result = sm.query_handler.handle_price_inquiry("plain bagel", order)
 
         # Should return a price (uses _lookup_bagel_price)
         assert "$" in result.message
@@ -3261,7 +3265,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("flying saucer", order)
+        result = sm.query_handler.handle_price_inquiry("flying saucer", order)
 
         assert "not sure" in result.message.lower() or "help" in result.message.lower()
 
@@ -3280,7 +3284,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm._handle_price_inquiry("omelette", order)
+        result = sm.query_handler.handle_price_inquiry("omelette", order)
 
         assert "start at" in result.message.lower()
         assert "$10.99" in result.message
@@ -3301,7 +3305,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry(None, order)
+        result = sm.query_handler.handle_item_description_inquiry(None, order)
 
         assert "which item" in result.message.lower()
 
@@ -3313,7 +3317,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("the classic bec", order)
+        result = sm.query_handler.handle_item_description_inquiry("the classic bec", order)
 
         assert "eggs" in result.message.lower()
         assert "bacon" in result.message.lower()
@@ -3328,7 +3332,7 @@ class TestItemDescriptionInquiry:
         order = OrderTask()
 
         # "health nut" should match "the health nut"
-        result = sm._handle_item_description_inquiry("health nut", order)
+        result = sm.query_handler.handle_item_description_inquiry("health nut", order)
 
         assert "egg whites" in result.message.lower()
         assert "spinach" in result.message.lower()
@@ -3341,7 +3345,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("the flatiron", order)
+        result = sm.query_handler.handle_item_description_inquiry("the flatiron", order)
 
         assert "salmon" in result.message.lower()
         assert "avocado" in result.message.lower()
@@ -3354,7 +3358,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("mystery sandwich", order)
+        result = sm.query_handler.handle_item_description_inquiry("mystery sandwich", order)
 
         assert "don't have" in result.message.lower() or "not" in result.message.lower()
         assert "sandwiches" in result.message.lower() or "help" in result.message.lower()
@@ -3367,7 +3371,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("the leo", order)
+        result = sm.query_handler.handle_item_description_inquiry("the leo", order)
 
         # Should describe the item
         assert "salmon" in result.message.lower() or "eggs" in result.message.lower()
@@ -3382,7 +3386,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("THE DELANCEY", order)
+        result = sm.query_handler.handle_item_description_inquiry("THE DELANCEY", order)
 
         assert "eggs" in result.message.lower()
         assert "corned beef" in result.message.lower() or "pastrami" in result.message.lower()
@@ -3395,7 +3399,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("traditional", order)
+        result = sm.query_handler.handle_item_description_inquiry("traditional", order)
 
         assert "salmon" in result.message.lower()
         assert "cream cheese" in result.message.lower()
@@ -3408,7 +3412,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_item_description_inquiry("the mulberry", order)
+        result = sm.query_handler.handle_item_description_inquiry("the mulberry", order)
 
         # Should have title case formatting
         assert "Mulberry" in result.message or "mulberry" in result.message.lower()
@@ -3432,10 +3436,10 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="pickup", address=None)
 
-            result = sm._handle_delivery("pickup please", order)
+            result = sm.checkout_handler.handle_delivery("pickup please", order)
 
             assert result.order.delivery_method.order_type == "pickup"
             # Should ask for name next
@@ -3455,10 +3459,10 @@ class TestDeliveryHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="delivery", address=None)
 
-            result = sm._handle_delivery("delivery", order)
+            result = sm.checkout_handler.handle_delivery("delivery", order)
 
             assert result.order.delivery_method.order_type == "delivery"
             assert "address" in result.message.lower()
@@ -3474,12 +3478,12 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(
                 choice="delivery",
                 address="123 Main St, New York, NY 10001"
             )
-            with patch("sandwich_bot.tasks.state_machine.complete_address") as mock_complete:
+            with patch("sandwich_bot.tasks.checkout_handler.complete_address") as mock_complete:
                 # Mock successful address completion
                 mock_result = MagicMock()
                 mock_result.success = True
@@ -3488,7 +3492,7 @@ class TestDeliveryHandler:
                 mock_result.single_match.format_full.return_value = "123 Main St, New York, NY 10001"
                 mock_complete.return_value = mock_result
 
-                result = sm._handle_delivery("delivery to 123 Main St 10001", order)
+                result = sm.checkout_handler.handle_delivery("delivery to 123 Main St 10001", order)
 
                 assert result.order.delivery_method.order_type == "delivery"
                 # Should ask for name next
@@ -3507,7 +3511,7 @@ class TestDeliveryHandler:
         order.delivery_method.address.street = "456 Broadway, NYC 10012"
         order.pending_field = "address_confirmation"
 
-        result = sm._handle_delivery("yes", order)
+        result = sm.checkout_handler.handle_delivery("yes", order)
 
         assert order.pending_field is None
         # Should proceed to name collection
@@ -3526,7 +3530,7 @@ class TestDeliveryHandler:
         order.delivery_method.address.street = "456 Broadway, NYC 10012"
         order.pending_field = "address_confirmation"
 
-        result = sm._handle_delivery("no", order)
+        result = sm.checkout_handler.handle_delivery("no", order)
 
         assert order.pending_field is None
         assert order.delivery_method.address.street is None
@@ -3542,10 +3546,10 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
-            result = sm._handle_delivery("what?", order)
+            result = sm.checkout_handler.handle_delivery("what?", order)
 
             # Should ask pickup/delivery question
             assert "pickup" in result.message.lower() or "delivery" in result.message.lower()
@@ -3562,10 +3566,10 @@ class TestDeliveryHandler:
         order.delivery_method.order_type = "delivery"
         order.delivery_method.address.street = None  # No address yet
 
-        with patch("sandwich_bot.tasks.state_machine.parse_delivery_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
-            result = sm._handle_delivery("hmm not sure", order)
+            result = sm.checkout_handler.handle_delivery("hmm not sure", order)
 
             assert "address" in result.message.lower()
 
@@ -3588,10 +3592,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "John"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="2015551234")
 
-            result = sm._handle_phone("201-555-1234", order)
+            result = sm.checkout_handler.handle_phone("201-555-1234", order)
 
             assert result.is_complete is True
             assert order.customer_info.phone == "+12015551234"
@@ -3611,10 +3615,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Sarah"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone=None)
 
-            result = sm._handle_phone("I don't have one", order)
+            result = sm.checkout_handler.handle_phone("I don't have one", order)
 
             assert result.is_complete is False
             assert order.customer_info.phone is None
@@ -3631,10 +3635,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Mike"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="12345")  # Too short
 
-            result = sm._handle_phone("12345", order)
+            result = sm.checkout_handler.handle_phone("12345", order)
 
             assert result.is_complete is False
             assert "too short" in result.message.lower()
@@ -3650,10 +3654,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Lisa"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="123456789012345")  # Too long
 
-            result = sm._handle_phone("123456789012345", order)
+            result = sm.checkout_handler.handle_phone("123456789012345", order)
 
             assert result.is_complete is False
             assert "too long" in result.message.lower()
@@ -3669,10 +3673,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Alex"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="9085559999")
 
-            result = sm._handle_phone("908-555-9999", order)
+            result = sm.checkout_handler.handle_phone("908-555-9999", order)
 
             # Should mention order number
             assert "order number" in result.message.lower()
@@ -3696,10 +3700,10 @@ class TestPhoneHandler:
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Bob"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_phone") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="7325551234")
 
-            result = sm._handle_phone("732-555-1234", order)
+            result = sm.checkout_handler.handle_phone("732-555-1234", order)
 
             # Should be in E.164 format with +1 prefix
             assert order.customer_info.phone == "+17325551234"
@@ -3728,10 +3732,10 @@ class TestNameHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_name") as mock_parse:
             mock_parse.return_value = NameResponse(name="John")
 
-            result = sm._handle_name("John", order)
+            result = sm.checkout_handler.handle_name("John", order)
 
             assert order.customer_info.name == "John"
             assert "does that look right" in result.message.lower()
@@ -3746,10 +3750,10 @@ class TestNameHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_NAME.value
 
-        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_name") as mock_parse:
             mock_parse.return_value = NameResponse(name=None)
 
-            result = sm._handle_name("what?", order)
+            result = sm.checkout_handler.handle_name("what?", order)
 
             assert order.customer_info.name is None
             assert "name" in result.message.lower()
@@ -3768,10 +3772,10 @@ class TestNameHandler:
         coffee.mark_complete()
         order.items.add_item(coffee)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_name") as mock_parse:
             mock_parse.return_value = NameResponse(name="Sarah")
 
-            result = sm._handle_name("Sarah", order)
+            result = sm.checkout_handler.handle_name("Sarah", order)
 
             # Summary should include the item
             assert "latte" in result.message.lower()
@@ -3790,11 +3794,11 @@ class TestNameHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_name") as mock_parse:
             # The LLM parser extracts just the name
             mock_parse.return_value = NameResponse(name="Mike")
 
-            result = sm._handle_name("My name is Mike", order)
+            result = sm.checkout_handler.handle_name("My name is Mike", order)
 
             assert order.customer_info.name == "Mike"
 
@@ -3812,10 +3816,10 @@ class TestNameHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_name") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_name") as mock_parse:
             mock_parse.return_value = NameResponse(name="Lisa")
 
-            result = sm._handle_name("Lisa", order)
+            result = sm.checkout_handler.handle_name("Lisa", order)
 
             # Should transition to confirmation phase
             assert order.phase == OrderPhase.CHECKOUT_CONFIRM.value
@@ -4349,10 +4353,10 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="unclear")
 
-            result = sm._handle_payment_method("what?", order)
+            result = sm.checkout_handler.handle_payment_method("what?", order)
 
             assert "text" in result.message.lower() or "email" in result.message.lower()
 
@@ -4370,10 +4374,10 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="text")
 
-            result = sm._handle_payment_method("text me", order)
+            result = sm.checkout_handler.handle_payment_method("text me", order)
 
             assert "phone" in result.message.lower()
             assert order.payment.method == "card_link"
@@ -4392,12 +4396,12 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="text", phone_number="2015551234"
             )
 
-            result = sm._handle_payment_method("text me at 201-555-1234", order)
+            result = sm.checkout_handler.handle_payment_method("text me at 201-555-1234", order)
 
             assert result.is_complete
             assert order.checkout.confirmed
@@ -4419,10 +4423,10 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="text")
 
-            result = sm._handle_payment_method("text me", order)
+            result = sm.checkout_handler.handle_payment_method("text me", order)
 
             assert result.is_complete
             assert order.checkout.confirmed
@@ -4442,10 +4446,10 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="email")
 
-            result = sm._handle_payment_method("email me", order)
+            result = sm.checkout_handler.handle_payment_method("email me", order)
 
             assert "email" in result.message.lower()
             assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
@@ -4464,14 +4468,14 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse, \
-             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse, \
+             patch("sandwich_bot.tasks.checkout_handler.validate_email_address") as mock_validate:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="email", email_address="john@example.com"
             )
             mock_validate.return_value = ("john@example.com", None)
 
-            result = sm._handle_payment_method("email me at john@example.com", order)
+            result = sm.checkout_handler.handle_payment_method("email me at john@example.com", order)
 
             assert result.is_complete
             assert order.checkout.confirmed
@@ -4492,12 +4496,12 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_payment_method") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_payment_method") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="text", phone_number="123"  # Too short
             )
 
-            result = sm._handle_payment_method("text me at 123", order)
+            result = sm.checkout_handler.handle_payment_method("text me at 123", order)
 
             assert not result.is_complete
             assert "short" in result.message.lower() or "number" in result.message.lower()
@@ -4520,10 +4524,10 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = EmailResponse(email=None)
 
-            result = sm._handle_email("I don't know", order)
+            result = sm.checkout_handler.handle_email("I don't know", order)
 
             assert "email" in result.message.lower()
             assert not result.is_complete
@@ -4542,12 +4546,12 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse, \
-             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse, \
+             patch("sandwich_bot.tasks.checkout_handler.validate_email_address") as mock_validate:
             mock_parse.return_value = EmailResponse(email="john@example.com")
             mock_validate.return_value = ("john@example.com", None)
 
-            result = sm._handle_email("john@example.com", order)
+            result = sm.checkout_handler.handle_email("john@example.com", order)
 
             assert result.is_complete
             assert order.checkout.confirmed
@@ -4569,10 +4573,10 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = EmailResponse(email="notanemail")
 
-            result = sm._handle_email("notanemail", order)
+            result = sm.checkout_handler.handle_email("notanemail", order)
 
             assert not result.is_complete
             # Should have an error message about the email
@@ -4591,13 +4595,13 @@ class TestEmailHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.state_machine.parse_email") as mock_parse, \
-             patch("sandwich_bot.tasks.state_machine.validate_email_address") as mock_validate:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_email") as mock_parse, \
+             patch("sandwich_bot.tasks.checkout_handler.validate_email_address") as mock_validate:
             # Email with uppercase domain - validator normalizes it
             mock_parse.return_value = EmailResponse(email="John@EXAMPLE.COM")
             mock_validate.return_value = ("John@example.com", None)  # Normalized
 
-            result = sm._handle_email("John@EXAMPLE.COM", order)
+            result = sm.checkout_handler.handle_email("John@EXAMPLE.COM", order)
 
             assert result.is_complete
             # email-validator normalizes the domain to lowercase
@@ -4623,7 +4627,7 @@ class TestSpeedMenuBagelToastedHandler:
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm._handle_speed_menu_bagel_toasted("yes please", item, order)
+        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("yes please", item, order)
 
         assert item.toasted is True
         assert item.status == TaskStatus.COMPLETE
@@ -4645,7 +4649,7 @@ class TestSpeedMenuBagelToastedHandler:
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm._handle_speed_menu_bagel_toasted("no thanks", item, order)
+        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("no thanks", item, order)
 
         assert item.toasted is False
         assert item.status == TaskStatus.COMPLETE
@@ -4666,10 +4670,10 @@ class TestSpeedMenuBagelToastedHandler:
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_toasted_choice") as mock_parse:
+        with patch("sandwich_bot.tasks.bagel_config_handler.parse_toasted_choice") as mock_parse:
             mock_parse.return_value = ToastedChoiceResponse(toasted=None)
 
-            result = sm._handle_speed_menu_bagel_toasted("what?", item, order)
+            result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("what?", item, order)
 
             assert "toasted" in result.message.lower()
             assert item.toasted is None
@@ -4691,7 +4695,7 @@ class TestSpeedMenuBagelToastedHandler:
         order.pending_field = "toasted"
 
         # "toasted" should be parsed deterministically
-        result = sm._handle_speed_menu_bagel_toasted("toasted", item, order)
+        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("toasted", item, order)
 
         assert item.toasted is True
         assert item.status == TaskStatus.COMPLETE
@@ -4712,14 +4716,14 @@ class TestSpeedMenuBagelToastedHandler:
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm._handle_speed_menu_bagel_toasted("not toasted", item, order)
+        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("not toasted", item, order)
 
         assert item.toasted is False
         assert item.status == TaskStatus.COMPLETE
 
 
 class TestDrinkSelectionHandler:
-    """Tests for _handle_drink_selection."""
+    """Tests for handle_drink_selection in CoffeeConfigHandler."""
 
     def test_no_pending_options_clears_state(self):
         """Test that no pending options returns to taking items."""
@@ -4730,7 +4734,7 @@ class TestDrinkSelectionHandler:
         order = OrderTask()
         order.pending_drink_options = []
 
-        result = sm._handle_drink_selection("1", order)
+        result = sm.coffee_handler.handle_drink_selection("1", order)
 
         assert "what would you like" in result.message.lower()
 
@@ -4746,7 +4750,7 @@ class TestDrinkSelectionHandler:
             {"name": "Sprite", "base_price": 2.50},
         ]
 
-        result = sm._handle_drink_selection("1", order)
+        result = sm.coffee_handler.handle_drink_selection("1", order)
 
         assert "coke" in result.message.lower()
         assert len(order.items.items) == 1
@@ -4764,7 +4768,7 @@ class TestDrinkSelectionHandler:
             {"name": "Dr Pepper", "base_price": 2.75},
         ]
 
-        result = sm._handle_drink_selection("the second", order)
+        result = sm.coffee_handler.handle_drink_selection("the second", order)
 
         assert "dr pepper" in result.message.lower()
         assert order.items.items[0].drink_type == "Dr Pepper"
@@ -4781,7 +4785,7 @@ class TestDrinkSelectionHandler:
             {"name": "Apple Juice", "base_price": 3.00},
         ]
 
-        result = sm._handle_drink_selection("apple juice please", order)
+        result = sm.coffee_handler.handle_drink_selection("apple juice please", order)
 
         assert "apple juice" in result.message.lower()
         assert order.items.items[0].drink_type == "Apple Juice"
@@ -4798,7 +4802,7 @@ class TestDrinkSelectionHandler:
             {"name": "Sprite", "base_price": 2.50},
         ]
 
-        result = sm._handle_drink_selection("xyz", order)
+        result = sm.coffee_handler.handle_drink_selection("xyz", order)
 
         assert "choose" in result.message.lower()
         assert "1." in result.message
@@ -4817,7 +4821,7 @@ class TestDrinkSelectionHandler:
             {"name": "Sprite", "base_price": 2.50},
         ]
 
-        result = sm._handle_drink_selection("3", order)
+        result = sm.coffee_handler.handle_drink_selection("3", order)
 
         assert "only" in result.message.lower() and "2" in result.message
         assert len(order.items.items) == 0
@@ -4833,7 +4837,7 @@ class TestDrinkSelectionHandler:
             {"name": "Coke", "base_price": 2.50},
         ]
 
-        result = sm._handle_drink_selection("-1", order)
+        result = sm.coffee_handler.handle_drink_selection("-1", order)
 
         assert "choose" in result.message.lower()
         assert len(order.items.items) == 0
@@ -4849,7 +4853,7 @@ class TestDrinkSelectionHandler:
             {"name": "Coca-Cola", "base_price": 2.50},
         ]
 
-        result = sm._handle_drink_selection("1", order)
+        result = sm.coffee_handler.handle_drink_selection("1", order)
 
         assert len(order.items.items) == 1
         drink = order.items.items[0]
@@ -4869,7 +4873,7 @@ class TestByPoundHandlers:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_by_pound_inquiry(None, order)
+        result = sm.query_handler.handle_by_pound_inquiry(None, order)
 
         assert "cheeses" in result.message.lower()
         assert "spreads" in result.message.lower()
@@ -4884,7 +4888,7 @@ class TestByPoundHandlers:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_by_pound_inquiry("cheese", order)
+        result = sm.query_handler.handle_by_pound_inquiry("cheese", order)
 
         assert "muenster" in result.message.lower()
         assert "swiss" in result.message.lower()
@@ -4900,10 +4904,10 @@ class TestByPoundHandlers:
         order = OrderTask()
         order.pending_field = "by_pound_category"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+        with patch("sandwich_bot.tasks.by_pound_handler.parse_by_pound_category") as mock_parse:
             mock_parse.return_value = ByPoundCategoryResponse(category="cheese")
 
-            result = sm._handle_by_pound_category_selection("cheese please", order)
+            result = sm.by_pound_handler.handle_by_pound_category_selection("cheese please", order)
 
             assert "muenster" in result.message.lower()
             assert "cheeses" in result.message.lower()
@@ -4918,10 +4922,10 @@ class TestByPoundHandlers:
         order = OrderTask()
         order.pending_field = "by_pound_category"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+        with patch("sandwich_bot.tasks.by_pound_handler.parse_by_pound_category") as mock_parse:
             mock_parse.return_value = ByPoundCategoryResponse(category="cold_cut")
 
-            result = sm._handle_by_pound_category_selection("cold cuts", order)
+            result = sm.by_pound_handler.handle_by_pound_category_selection("cold cuts", order)
 
             assert "turkey" in result.message.lower() or "pastrami" in result.message.lower()
             assert "cold cuts" in result.message.lower()
@@ -4936,10 +4940,10 @@ class TestByPoundHandlers:
         order = OrderTask()
         order.pending_field = "by_pound_category"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+        with patch("sandwich_bot.tasks.by_pound_handler.parse_by_pound_category") as mock_parse:
             mock_parse.return_value = ByPoundCategoryResponse(unclear=True)
 
-            result = sm._handle_by_pound_category_selection("huh?", order)
+            result = sm.by_pound_handler.handle_by_pound_category_selection("huh?", order)
 
             assert "cheeses" in result.message.lower()
             assert "spreads" in result.message.lower()
@@ -4954,10 +4958,10 @@ class TestByPoundHandlers:
         order = OrderTask()
         order.pending_field = "by_pound_category"
 
-        with patch("sandwich_bot.tasks.state_machine.parse_by_pound_category") as mock_parse:
+        with patch("sandwich_bot.tasks.by_pound_handler.parse_by_pound_category") as mock_parse:
             mock_parse.return_value = ByPoundCategoryResponse(category=None, unclear=False)
 
-            result = sm._handle_by_pound_category_selection("never mind", order)
+            result = sm.by_pound_handler.handle_by_pound_category_selection("never mind", order)
 
             assert "what else" in result.message.lower()
             assert order.pending_field is None
@@ -4970,7 +4974,7 @@ class TestByPoundHandlers:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_by_pound_inquiry("fish", order)
+        result = sm.query_handler.handle_by_pound_inquiry("fish", order)
 
         # Should list fish items like nova lox, etc.
         assert "by the pound" in result.message.lower()
@@ -4983,7 +4987,7 @@ class TestByPoundHandlers:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm._handle_by_pound_inquiry("salad", order)
+        result = sm.query_handler.handle_by_pound_inquiry("salad", order)
 
         # Should list salad items
         assert "salads" in result.message.lower() or "salad" in result.message.lower()
@@ -5001,7 +5005,7 @@ class TestSignatureMenuInquiryHandler:
         sm.menu_data = {"items_by_type": {}}  # No items
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry(None, order)
+        result = sm.query_handler.handle_signature_menu_inquiry(None, order)
 
         assert "build your own" in result.message.lower()
 
@@ -5025,7 +5029,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry(None, order)
+        result = sm.query_handler.handle_signature_menu_inquiry(None, order)
 
         assert "turkey club" in result.message.lower()
         assert "italian sub" in result.message.lower()
@@ -5051,7 +5055,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry("signature_sandwich", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_sandwich", order)
 
         assert "turkey club" in result.message.lower()
         assert "the classic" not in result.message.lower()
@@ -5072,7 +5076,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry("signature_sandwich", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_sandwich", order)
 
         assert "turkey club" in result.message.lower()
         assert " and " not in result.message.lower().split("are:")[1].split("would")[0]
@@ -5093,7 +5097,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry("speed_menu_bagel", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("speed_menu_bagel", order)
 
         assert "the classic and the leo" in result.message.lower()
 
@@ -5112,6 +5116,6 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm._handle_signature_menu_inquiry("speed_menu_bagel", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("speed_menu_bagel", order)
 
         assert "speed menu bagels" in result.message.lower()

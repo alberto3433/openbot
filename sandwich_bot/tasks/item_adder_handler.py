@@ -64,11 +64,34 @@ class ItemAdderHandler:
         self._menu_data = value or {}
 
     # Generic category terms that should trigger disambiguation when multiple items match
+    # These are base terms - we check if item_name equals OR ends with these
     GENERIC_CATEGORY_TERMS = frozenset([
         "cookie", "cookies", "muffin", "muffins", "brownie", "brownies",
         "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
         "chip", "chips",
     ])
+
+    def _extract_generic_term(self, item_name: str) -> str | None:
+        """Extract a generic category term from item_name if present.
+
+        Returns the generic term for searching, or None if no generic term found.
+
+        Examples:
+        - "chips" -> "chips"
+        - "Bagel Chips" -> "chips"
+        - "Potato Chips" -> "chips"
+        - "Chocolate Chip Cookie" -> "cookie"
+        - "Turkey Club" -> None
+        """
+        item_lower = item_name.lower().strip()
+        # Exact match
+        if item_lower in self.GENERIC_CATEGORY_TERMS:
+            return item_lower
+        # Check if ends with a generic term (e.g., "Bagel Chips" ends with "chips")
+        for term in self.GENERIC_CATEGORY_TERMS:
+            if item_lower.endswith(" " + term):
+                return term
+        return None
 
     def add_menu_item(
         self,
@@ -83,17 +106,19 @@ class ItemAdderHandler:
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
-        # Check if the item_name is a generic category term (like "cookie", "muffin")
+        # Check if the item_name is or contains a generic category term (like "cookie", "muffin", "chips")
         # In this case, we should check for multiple matches and disambiguate
         item_lower = item_name.lower().strip()
-        if item_lower in self.GENERIC_CATEGORY_TERMS:
+        generic_term = self._extract_generic_term(item_name)
+        if generic_term:
             # For generic terms, check if there are multiple matching items
-            matching_items = self.menu_lookup.lookup_menu_items(item_name)
+            # Use the generic term for search (e.g., "chips" not "Bagel Chips")
+            matching_items = self.menu_lookup.lookup_menu_items(generic_term)
             if len(matching_items) > 1:
                 # Multiple matches - ask user to clarify
                 logger.info(
-                    "Generic term '%s' matched %d items - asking for disambiguation",
-                    item_name, len(matching_items)
+                    "Generic term '%s' (from '%s') matched %d items - asking for disambiguation",
+                    generic_term, item_name, len(matching_items)
                 )
                 order.pending_item_options = matching_items
                 order.pending_item_quantity = quantity
@@ -108,13 +133,13 @@ class ItemAdderHandler:
 
                 options_str = "\n".join(option_list)
                 return StateMachineResult(
-                    message=f"We have a few {item_name} options:\n{options_str}\nWhich would you like?",
+                    message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
                     order=order,
                 )
             elif len(matching_items) == 1:
                 # Single match - use it directly
                 menu_item = matching_items[0]
-                logger.info("Generic term '%s' matched single item: %s", item_name, menu_item.get("name"))
+                logger.info("Generic term '%s' matched single item: %s", generic_term, menu_item.get("name"))
             else:
                 # No matches found for generic term - let the regular flow handle the error
                 menu_item = None

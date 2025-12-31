@@ -513,8 +513,9 @@ SIDE_ITEM_MAP = {
 }
 
 # Side item types (chips, salads, etc.)
+# NOTE: generic "chips" not here - handled by GENERIC_CATEGORY_TERMS for disambiguation
 SIDE_ITEM_TYPES = {
-    "chips", "potato chips", "kettle chips",
+    "potato chips", "kettle chips", "bagel chips",
     "salad", "side salad", "green salad",
     "fruit", "fresh fruit", "fruit cup",
     "coleslaw", "cole slaw",
@@ -604,7 +605,7 @@ KNOWN_MENU_ITEMS = {
     "side of bacon", "bacon", "side of sausage", "sausage",
     "turkey bacon", "side of turkey bacon",
     "latkes", "potato latkes",
-    "bagel chips", "chips",
+    "bagel chips",  # generic "chips" uses GENERIC_CATEGORY_TERMS for disambiguation
     "fruit cup", "fruit salad",
     "cole slaw", "coleslaw",
     "potato salad", "macaroni salad",
@@ -677,7 +678,7 @@ NO_THE_PREFIX_ITEMS = {
     "side of bacon", "bacon", "side of sausage", "sausage",
     "turkey bacon", "side of turkey bacon",
     "latkes", "potato latkes",
-    "bagel chips", "chips",
+    "bagel chips",  # generic "chips" uses GENERIC_CATEGORY_TERMS
     "fruit cup", "fruit salad",
     "cole slaw", "coleslaw",
     "potato salad", "macaroni salad",
@@ -802,7 +803,7 @@ MENU_ITEM_CANONICAL_NAMES = {
     "latkes": "Latkes",
     "potato latkes": "Latkes",
     "bagel chips": "Bagel Chips",
-    "chips": "Bagel Chips",
+    # NOTE: generic "chips" not mapped here - handled by GENERIC_CATEGORY_TERMS for disambiguation
     "fruit cup": "Fruit Cup",
     "fruit salad": "Fruit Salad",
     "cole slaw": "Cole Slaw",

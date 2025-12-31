@@ -116,6 +116,46 @@ CANCEL_ITEM_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Filler words pattern - words that add no meaning and should be stripped before parsing
+# e.g., "actually, make it two" -> "make it two"
+# Note: "actually" is only stripped when followed by comma (filler), not when followed directly
+# by an item name (e.g., "actually coke" means replacement, not filler + new order)
+FILLER_WORDS_PATTERN = re.compile(
+    r"^(?:"
+    r"actually,\s*"  # "actually," with comma is filler
+    r"|oh[,\s]+"     # "oh" is always filler
+    r"|wait,\s*"     # "wait," with comma is filler
+    r"|um+[,\s]+"    # "um" is always filler
+    r"|uh+[,\s]+"    # "uh" is always filler
+    r"|hmm+[,\s]+"   # "hmm" is always filler
+    r"|well[,\s]+"   # "well" is always filler
+    r"|so[,\s]+"     # "so" is always filler
+    r"|ok(?:ay)?[,\s]+"  # "ok/okay" is always filler
+    r"|hey[,\s]+"    # "hey" is always filler
+    r"|like[,\s]+"   # "like" is always filler
+    r")",
+    re.IGNORECASE
+)
+
+
+def strip_filler_words(text: str) -> str:
+    """
+    Remove common filler words from the start of user input.
+
+    These words add no semantic meaning and can confuse parsing.
+    e.g., "actually, make it two" -> "make it two"
+    """
+    result = text
+    # Keep stripping filler words until none remain at the start
+    while True:
+        match = FILLER_WORDS_PATTERN.match(result)
+        if match:
+            result = result[match.end():].strip()
+        else:
+            break
+    return result
+
+
 # "Make it 2" pattern - user wants to change quantity of last item to N
 # e.g., "make it 2", "I'll take 2", "actually 2", "give me 2", "let's do 2", "can I get 2?"
 MAKE_IT_N_PATTERN = re.compile(
@@ -123,8 +163,11 @@ MAKE_IT_N_PATTERN = re.compile(
     # "make it 2", "make it two", "make that 2"
     r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
-    # "I'll take 2", "I'll have 2", "I want 2"
-    r"i'?ll?\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    # "I'll take 2", "I'll have 2", "I'll want 2"
+    r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "I want 2", "I want two" (without "ll")
+    r"i\s+(?:want|need)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     # "can I get 2?", "can I have 2?", "could I get 2?", "may I have 2?"
     r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
@@ -1479,6 +1522,10 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         logger.debug("Deterministic parse: repeat order detected")
         return OpenInputResponse(wants_repeat_order=True)
 
+    # Strip filler words (after greeting/done checks, before order parsing)
+    # e.g., "actually, make it two" -> "make it two"
+    text = strip_filler_words(text)
+
     # Check for price inquiries
     price_result = _parse_price_inquiry_deterministic(text)
     if price_result:
@@ -1514,7 +1561,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if make_it_n_match:
         # Find which group matched
         num_str = None
-        for i in range(1, 8):
+        for i in range(1, 9):
             if make_it_n_match.group(i):
                 num_str = make_it_n_match.group(i).lower()
                 break

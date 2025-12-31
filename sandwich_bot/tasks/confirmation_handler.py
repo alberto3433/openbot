@@ -296,7 +296,7 @@ class ConfirmationHandler:
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
         return StateMachineResult(
-            message="Would you like your order details sent by text or email?",
+            message="Can I get a phone number or email to send the order confirmation?",
             order=order,
         )
 

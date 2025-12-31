@@ -293,7 +293,7 @@ class OrderUtilsHandler:
         elif phase == OrderPhase.CHECKOUT_CONFIRM.value:
             return "Does that look right?"
         elif phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
-            return "Would you like your order details sent by text or email?"
+            return "Can I get a phone number or email to send the order confirmation?"
         elif phase == OrderPhase.CHECKOUT_PHONE.value:
             return "What's the best phone number to reach you?"
         elif phase == OrderPhase.CHECKOUT_EMAIL.value:

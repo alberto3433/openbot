@@ -636,15 +636,24 @@
             const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
 
             // Check if item has modifiers (for itemized display like omelette side bagel spreads)
-            const hasModifiers = item.modifiers && item.modifiers.length > 0;
+            // Check both top-level and item_config (for persisted orders from database)
+            const modifiers = item.modifiers || (item.item_config && item.item_config.modifiers) || [];
+            const freeDetails = item.free_details || (item.item_config && item.item_config.free_details) || [];
+            const storedBasePrice = item.base_price || (item.item_config && item.item_config.base_price);
+            const hasModifiers = modifiers.length > 0;
 
             if (hasModifiers) {
-              // Calculate base price by subtracting modifiers
-              const modifiersTotal = item.modifiers.reduce((sum, m) => sum + (m.price || 0), 0);
-              const basePrice = (item.unit_price || item.line_total || 0) - modifiersTotal;
+              // Calculate base price by subtracting modifiers (use stored if available)
+              const modifiersTotal = modifiers.reduce((sum, m) => sum + (m.price || 0), 0);
+              const basePrice = storedBasePrice || ((item.unit_price || item.line_total || 0) - modifiersTotal);
+
+              // For drinks, show free details (hot/iced, sweetener, etc.)
+              const freeDetailsHtml = freeDetails.length > 0
+                ? `<div class="muted">${freeDetails.join(" • ")}</div>`
+                : '';
 
               // Build modifiers HTML
-              const modifiersHtml = item.modifiers.map(mod => {
+              const modifiersHtml = modifiers.map(mod => {
                 const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
                 return `<div class="muted" style="display: flex; justify-content: space-between; padding-left: 16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
               }).join('');
@@ -652,6 +661,7 @@
               return `
                 <div class="item-card">
                   <div style="display: flex; justify-content: space-between;"><strong>${item.quantity}× ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
+                  ${freeDetailsHtml}
                   ${modifiersHtml}
                   ${notesDisplay}
                   <div style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>

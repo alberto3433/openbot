@@ -625,14 +625,16 @@ def parse_payment_method(user_input: str, model: str = "gpt-4o-mini") -> Payment
     """Parse user input when asking how to send order details."""
     client = get_instructor_client()
 
-    prompt = f"""We asked the user if they want their order details sent by text or email.
+    prompt = f"""We asked the user for a phone number or email to send the order confirmation.
 The user said: "{user_input}"
 
 Examples:
 - "text" / "text me" / "sms" -> choice: "text"
 - "email" / "email me" / "send me an email" -> choice: "email"
 - "text me at 555-1234" -> choice: "text", phone_number: "555-1234"
+- "555-123-4567" -> choice: "text", phone_number: "555-123-4567"
 - "email it to john@example.com" -> choice: "email", email_address: "john@example.com"
+- "john@example.com" -> choice: "email", email_address: "john@example.com"
 """
 
     return client.chat.completions.create(

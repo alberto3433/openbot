@@ -371,7 +371,7 @@ class OrderStateMachine:
         )
         self.item_adder_handler.menu_data = self._menu_data
         # Initialize modifier change handler
-        self.modifier_change_handler = ModifierChangeHandler()
+        self.modifier_change_handler = ModifierChangeHandler(pricing=self.pricing)
         # Initialize config helper handler
         self.config_helper_handler = ConfigHelperHandler(
             model=self.model,

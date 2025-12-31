@@ -359,6 +359,67 @@ class TakingItemsHandler:
                                 order=order,
                             )
 
+                # If no new items parsed and last item is a coffee, check for size/style/milk changes
+                if not has_new_items and isinstance(last_item, CoffeeItemTask) and raw_user_input:
+                    input_lower = raw_user_input.lower()
+                    made_change = False
+
+                    # Check for size changes
+                    new_size = None
+                    for size in ["small", "medium", "large"]:
+                        if size in input_lower:
+                            new_size = size
+                            break
+
+                    if new_size and new_size != last_item.size:
+                        old_size = last_item.size or "medium"
+                        last_item.size = new_size
+                        logger.info("Replacement: changed coffee size from '%s' to '%s'", old_size, new_size)
+                        made_change = True
+
+                    # Check for style changes (hot/iced)
+                    new_style = None
+                    if "iced" in input_lower:
+                        new_style = "iced"
+                        last_item.iced = True
+                    elif "hot" in input_lower:
+                        new_style = "hot"
+                        last_item.iced = False
+
+                    if new_style:
+                        logger.info("Replacement: changed coffee style to '%s'", new_style)
+                        made_change = True
+
+                    # Check for milk changes - order matters, check longer patterns first
+                    milk_options = [
+                        ("oat milk", "oat"), ("almond milk", "almond"), ("whole milk", "whole"),
+                        ("skim milk", "skim"), ("2% milk", "2%"), ("soy milk", "soy"),
+                        ("coconut milk", "coconut"), ("half and half", "half and half"),
+                        ("oat", "oat"), ("almond", "almond"), ("whole", "whole"),
+                        ("skim", "skim"), ("soy", "soy"), ("coconut", "coconut"),
+                        ("no milk", "none"), ("black", "none"),
+                    ]
+                    new_milk = None
+                    for pattern, milk_value in milk_options:
+                        if pattern in input_lower:
+                            new_milk = milk_value
+                            break
+
+                    if new_milk and new_milk != last_item.milk:
+                        old_milk = last_item.milk or "none"
+                        last_item.milk = new_milk if new_milk != "none" else None
+                        logger.info("Replacement: changed coffee milk from '%s' to '%s'", old_milk, new_milk)
+                        made_change = True
+
+                    # If any changes were made, recalculate price and return
+                    if made_change:
+                        self.pricing.recalculate_coffee_price(last_item)
+                        updated_summary = last_item.get_summary()
+                        return StateMachineResult(
+                            message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
                 # Normal replacement: remove old item, new item will be added below
                 replaced_item_name = last_item.get_summary()
                 last_item_index = order.items.items.index(last_item)
@@ -366,6 +427,70 @@ class TakingItemsHandler:
                 logger.info("Replacement: removed last item '%s' from cart", replaced_item_name)
             else:
                 logger.info("Replacement requested but no items in cart to replace")
+
+        # Handle modifier removal: "remove the bacon", "no cheese", etc.
+        # Check if cancel_item is actually a modifier on the last item
+        if parsed.cancel_item:
+            cancel_item_desc = parsed.cancel_item.lower().strip()
+            active_items = order.items.get_active_items()
+
+            # Known modifiers that can be removed from bagels
+            removable_modifiers = {
+                # Proteins
+                "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
+                "lox", "nova", "salmon", "whitefish", "tuna",
+                # Eggs
+                "egg", "eggs", "fried egg", "scrambled egg",
+                # Cheeses
+                "cheese", "american", "american cheese", "swiss", "swiss cheese",
+                "cheddar", "cheddar cheese", "muenster", "muenster cheese",
+                "provolone", "provolone cheese",
+                # Spreads
+                "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
+                # Toppings
+                "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
+                "avocado", "capers",
+            }
+
+            # Check if this is a modifier removal on a bagel
+            if active_items and cancel_item_desc in removable_modifiers:
+                last_item = active_items[-1]
+                if isinstance(last_item, BagelItemTask):
+                    modifier_removed = False
+                    removed_modifier_name = cancel_item_desc
+
+                    # Check sandwich_protein
+                    if last_item.sandwich_protein and cancel_item_desc in last_item.sandwich_protein.lower():
+                        last_item.sandwich_protein = None
+                        modifier_removed = True
+                        logger.info("Modifier removal: removed protein '%s' from bagel", cancel_item_desc)
+
+                    # Check extras list
+                    if last_item.extras:
+                        new_extras = []
+                        for extra in last_item.extras:
+                            if cancel_item_desc not in extra.lower():
+                                new_extras.append(extra)
+                            else:
+                                modifier_removed = True
+                                logger.info("Modifier removal: removed extra '%s' from bagel", extra)
+                        last_item.extras = new_extras
+
+                    # Check spread
+                    if last_item.spread and cancel_item_desc in last_item.spread.lower():
+                        last_item.spread = None
+                        last_item.spread_type = None
+                        modifier_removed = True
+                        logger.info("Modifier removal: removed spread '%s' from bagel", cancel_item_desc)
+
+                    if modifier_removed:
+                        # Recalculate price
+                        self.pricing.recalculate_bagel_price(last_item)
+                        updated_summary = last_item.get_summary()
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {removed_modifier_name}. Your order is now {updated_summary}. Anything else?",
+                            order=order,
+                        )
 
         # Handle item cancellation: "cancel the coke", "remove the bagel", etc.
         if parsed.cancel_item:

@@ -498,25 +498,90 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             items.append(item_dict)
 
         elif item.item_type == "coffee":
+            # Get coffee attributes
+            drink_type = getattr(item, 'drink_type', 'coffee')
+            size = getattr(item, 'size', None)
+            milk = getattr(item, 'milk', None)
+            flavor_syrup = getattr(item, 'flavor_syrup', None)
+            sweetener = getattr(item, 'sweetener', None)
+            sweetener_quantity = getattr(item, 'sweetener_quantity', 1)
+            iced = getattr(item, 'iced', None)
+
+            # Get upcharges
+            size_upcharge = getattr(item, 'size_upcharge', 0.0) or 0.0
+            milk_upcharge = getattr(item, 'milk_upcharge', 0.0) or 0.0
+            syrup_upcharge = getattr(item, 'syrup_upcharge', 0.0) or 0.0
+
+            # Build modifiers list for itemized display (only items with upcharges)
+            modifiers = []
+            free_details = []  # Free modifiers go on one line
+
+            # Size with upcharge
+            if size:
+                if size_upcharge > 0:
+                    modifiers.append({"name": size, "price": size_upcharge})
+                else:
+                    free_details.append(size)
+
+            # Style (hot/iced) - always free
+            if iced is True:
+                free_details.append("iced")
+            elif iced is False:
+                free_details.append("hot")
+
+            # Milk with upcharge
+            if milk and milk.lower() not in ("none", "black"):
+                if milk_upcharge > 0:
+                    modifiers.append({"name": f"{milk} milk", "price": milk_upcharge})
+                else:
+                    free_details.append(f"{milk} milk")
+            elif milk and milk.lower() in ("none", "black"):
+                free_details.append("black")
+
+            # Flavor syrup with upcharge
+            if flavor_syrup:
+                if syrup_upcharge > 0:
+                    modifiers.append({"name": f"{flavor_syrup} syrup", "price": syrup_upcharge})
+                else:
+                    free_details.append(f"{flavor_syrup} syrup")
+
+            # Sweetener - always free
+            if sweetener:
+                if sweetener_quantity > 1:
+                    free_details.append(f"{sweetener_quantity} {sweetener}s")
+                else:
+                    free_details.append(sweetener)
+
+            # Calculate base price (total - upcharges)
+            total_price = item.unit_price or 0
+            base_price = total_price - size_upcharge - milk_upcharge - syrup_upcharge
+
             item_dict = {
                 "item_type": "drink",
                 "id": item.id,  # Preserve item ID
                 "status": item.status.value,
-                "menu_item_name": getattr(item, 'drink_type', 'coffee'),
-                "size": getattr(item, 'size', None),  # Don't default to medium for skip_config drinks
+                "menu_item_name": drink_type,
+                "size": size,
+                "base_price": base_price,
+                "modifiers": modifiers,
+                "free_details": free_details,  # Free modifiers for single-line display
                 "item_config": {
-                    "size": getattr(item, 'size', None),  # Don't default to medium
-                    "milk": getattr(item, 'milk', None),
-                    "sweetener": getattr(item, 'sweetener', None),
-                    "sweetener_quantity": getattr(item, 'sweetener_quantity', 1),
-                    "flavor_syrup": getattr(item, 'flavor_syrup', None),
+                    "size": size,
+                    "milk": milk,
+                    "sweetener": sweetener,
+                    "sweetener_quantity": sweetener_quantity,
+                    "flavor_syrup": flavor_syrup,
                     # Only set style if iced is explicitly True/False (not None)
                     # skip_config drinks (sodas, bottled) don't need iced/hot labels
-                    "style": "iced" if getattr(item, 'iced', None) is True else ("hot" if getattr(item, 'iced', None) is False else None),
+                    "style": "iced" if iced is True else ("hot" if iced is False else None),
                     # Upcharge tracking for display
-                    "size_upcharge": getattr(item, 'size_upcharge', 0.0),
-                    "milk_upcharge": getattr(item, 'milk_upcharge', 0.0),
-                    "syrup_upcharge": getattr(item, 'syrup_upcharge', 0.0),
+                    "size_upcharge": size_upcharge,
+                    "milk_upcharge": milk_upcharge,
+                    "syrup_upcharge": syrup_upcharge,
+                    # Computed display fields for admin/email
+                    "modifiers": modifiers,
+                    "free_details": free_details,
+                    "base_price": base_price,
                 },
                 "quantity": 1,
                 "unit_price": item.unit_price,

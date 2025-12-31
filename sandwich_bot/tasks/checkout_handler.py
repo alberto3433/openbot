@@ -277,7 +277,7 @@ class CheckoutHandler:
 
         if parsed.choice == "unclear":
             return StateMachineResult(
-                message="Would you like your order confirmation sent by text message or email?",
+                message="Can I get a phone number or email to send the order confirmation?",
                 order=order,
             )
 
@@ -355,7 +355,7 @@ class CheckoutHandler:
                 )
 
         return StateMachineResult(
-            message="Would you like that sent by text or email?",
+            message="Can I get a phone number or email to send the order confirmation?",
             order=order,
         )
 

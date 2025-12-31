@@ -12,6 +12,9 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+from typing import TYPE_CHECKING
+
+from .models import CoffeeItemTask
 from .parsers.constants import (
     AMBIGUOUS_MODIFIERS,
     BAGEL_ONLY_TYPES,
@@ -20,6 +23,9 @@ from .parsers.constants import (
     SPREAD_ONLY_TYPES,
     SPREAD_TYPES,
 )
+
+if TYPE_CHECKING:
+    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,9 @@ class ModifierCategory(Enum):
     SPREAD_TYPE = "spread_type"
     TOASTED = "toasted"
     CHEESE = "cheese"
+    COFFEE_SIZE = "coffee_size"
+    COFFEE_MILK = "coffee_milk"
+    COFFEE_STYLE = "coffee_style"
     UNKNOWN = "unknown"
 
 
@@ -89,9 +98,13 @@ class ModifierChangeHandler:
         "cheese": ModifierCategory.CHEESE,
     }
 
-    def __init__(self):
-        """Initialize the modifier change handler."""
-        pass
+    def __init__(self, pricing: "PricingEngine | None" = None):
+        """Initialize the modifier change handler.
+
+        Args:
+            pricing: Optional pricing engine for recalculating prices after changes.
+        """
+        self.pricing = pricing
 
     def detect_change_request(self, user_input: str) -> ChangeRequest | None:
         """
@@ -194,6 +207,25 @@ class ModifierChangeHandler:
         # Check if it's a known spread type (but not in SPREAD_ONLY)
         if new_value_lower in SPREAD_TYPES:
             return False, [ModifierCategory.SPREAD_TYPE]
+
+        # Check for coffee size
+        if new_value_lower in ("small", "medium", "large"):
+            return False, [ModifierCategory.COFFEE_SIZE]
+
+        # Check for coffee milk - check longer patterns first
+        milk_patterns = [
+            "oat milk", "almond milk", "whole milk", "skim milk",
+            "2% milk", "soy milk", "coconut milk", "half and half",
+            "oat", "almond", "whole", "skim", "soy", "coconut",
+            "no milk", "black",
+        ]
+        for milk in milk_patterns:
+            if milk in new_value_lower:
+                return False, [ModifierCategory.COFFEE_MILK]
+
+        # Check for coffee style (hot/iced)
+        if new_value_lower in ("hot", "iced"):
+            return False, [ModifierCategory.COFFEE_STYLE]
 
         # Unknown modifier
         return False, [ModifierCategory.UNKNOWN]
@@ -367,6 +399,78 @@ class ModifierChangeHandler:
             return ChangeResult(
                 success=True,
                 message=message,
+                applied_category=category,
+            )
+
+        elif category == ModifierCategory.COFFEE_SIZE:
+            if not isinstance(item, CoffeeItemTask):
+                return ChangeResult(
+                    success=False,
+                    message="I can only change the size of a coffee drink.",
+                )
+
+            old_value = item.size
+            item.size = new_value_lower
+            logger.info("Changed coffee size from '%s' to '%s'", old_value, new_value_lower)
+
+            # Recalculate price with new size
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+
+            summary = item.get_summary()
+            return ChangeResult(
+                success=True,
+                message=f"Sure, I've changed that to {summary}. Anything else?",
+                applied_category=category,
+            )
+
+        elif category == ModifierCategory.COFFEE_MILK:
+            if not isinstance(item, CoffeeItemTask):
+                return ChangeResult(
+                    success=False,
+                    message="I can only change the milk for a coffee drink.",
+                )
+
+            # Normalize milk value
+            milk_value = new_value_lower
+            for suffix in [" milk"]:
+                if milk_value.endswith(suffix):
+                    milk_value = milk_value[:-len(suffix)].strip()
+                    break
+            if milk_value in ("no", "black", "none"):
+                milk_value = None
+
+            old_value = item.milk
+            item.milk = milk_value
+            logger.info("Changed coffee milk from '%s' to '%s'", old_value, milk_value)
+
+            # Recalculate price with new milk (may have upcharge)
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+
+            summary = item.get_summary()
+            return ChangeResult(
+                success=True,
+                message=f"Sure, I've changed that to {summary}. Anything else?",
+                applied_category=category,
+            )
+
+        elif category == ModifierCategory.COFFEE_STYLE:
+            if not isinstance(item, CoffeeItemTask):
+                return ChangeResult(
+                    success=False,
+                    message="I can only change hot/iced for a coffee drink.",
+                )
+
+            old_style = "iced" if item.iced else "hot"
+            item.iced = (new_value_lower == "iced")
+            new_style = "iced" if item.iced else "hot"
+            logger.info("Changed coffee style from '%s' to '%s'", old_style, new_style)
+
+            summary = item.get_summary()
+            return ChangeResult(
+                success=True,
+                message=f"Sure, I've changed that to {summary}. Anything else?",
                 applied_category=category,
             )
 

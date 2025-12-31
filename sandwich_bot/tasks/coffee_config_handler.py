@@ -344,6 +344,16 @@ class CoffeeConfigHandler:
             item.flavor_syrup = coffee_mods.flavor_syrup
             logger.info(f"Extracted syrup from size response: {coffee_mods.flavor_syrup}")
 
+        # If hot/iced was already specified (e.g., "hot latte"), skip the question
+        if item.iced is not None:
+            # Coffee is complete - recalculate price with modifiers
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+            item.mark_complete()
+            order.clear_pending()
+            # Check for more incomplete coffees before moving on
+            return self.configure_next_incomplete_coffee(order)
+
         # Move to hot/iced question with ordinal if multiple items of same drink type
         order.pending_field = "coffee_style"
 

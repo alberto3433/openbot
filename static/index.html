@@ -1929,9 +1929,17 @@
       const hasModifiers = item.modifiers && item.modifiers.length > 0;
 
       let html = "";
-      if (hasModifiers && (item.item_type === "bagel" || item.item_type === "menu_item")) {
+      // Show itemized modifiers for bagels, menu items, and drinks with upcharges
+      if (hasModifiers && (item.item_type === "bagel" || item.item_type === "menu_item" || item.item_type === "drink")) {
         const basePrice = item.base_price || (item.unit_price - item.modifiers.reduce((sum, m) => sum + (m.price || 0), 0));
         html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(basePrice)}</span></div>`;
+
+        // For drinks, show free details first (hot/iced, sweetener, etc.)
+        if (item.item_type === "drink" && item.free_details && item.free_details.length > 0) {
+          html += `<div class="order-item-details">${item.free_details.join(" · ")}</div>`;
+        }
+
+        // Show itemized modifiers with prices
         html += `<div class="order-item-modifiers">`;
         for (const mod of item.modifiers) {
           const priceHtml = mod.price > 0 ? formatCurrency(mod.price) : '';

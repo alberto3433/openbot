@@ -168,25 +168,34 @@ def send_payment_link_email(
             details_str = ", ".join(details) if details else ""
 
             # Check if item has modifiers for itemized display (e.g., omelette side bagel with spread)
-            modifiers = item.get("modifiers", [])
+            # Check both top-level and item_config (for persisted orders from database)
+            modifiers = item.get("modifiers") or (config.get("modifiers") if config else None) or []
             has_modifiers = modifiers and len(modifiers) > 0
 
             if has_modifiers:
-                # Calculate base price by subtracting modifiers
+                # Calculate base price by subtracting modifiers (use stored if available)
                 modifiers_total = sum(m.get("price", 0) for m in modifiers)
-                base_price = item.get("unit_price", line_total) - modifiers_total
+                stored_base_price = item.get("base_price") or (config.get("base_price") if config else None)
+                base_price = stored_base_price or (item.get("unit_price", line_total) - modifiers_total)
                 display_name = item.get("display_name", item_name)
 
-                # Plain text - show base item, then each modifier
+                # Get free details (for drinks: hot/iced, sweetener, etc.)
+                # Check both top-level and item_config
+                free_details = item.get("free_details") or (config.get("free_details") if config else None) or []
+                free_details_str = " • ".join(free_details) if free_details else ""
+
+                # Plain text - show base item, then free details, then modifiers
                 items_text += f"  {quantity}x {display_name} - ${base_price:.2f}\n"
+                if free_details_str:
+                    items_text += f"    {free_details_str}\n"
                 for mod in modifiers:
                     mod_price = mod.get("price", 0)
                     price_str = f"${mod_price:.2f}" if mod_price > 0 else ""
                     items_text += f"    + {mod['name']} {price_str}\n"
 
-                # HTML - show base item row, then modifier rows
+                # HTML - show base item row, free details, then modifier rows
                 items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {display_name}</td>"
-                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'></td>"
+                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{free_details_str}</td>"
                 items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
                 for mod in modifiers:
                     mod_price = mod.get("price", 0)

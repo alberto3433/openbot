@@ -26,6 +26,7 @@ from .schemas import (
     CoffeeOrderDetails,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
+from .parsers.constants import BAGEL_TYPES
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -267,6 +268,29 @@ class TakingItemsHandler:
                             message=f"Sure, I've changed that to {updated_summary}. Anything else?",
                             order=order,
                         )
+                    else:
+                        # Check if user is changing the bagel type
+                        # e.g., "replace with blueberry", "can you make it everything?"
+                        input_lower = raw_user_input.lower()
+                        new_bagel_type = None
+                        for bagel_type in BAGEL_TYPES:
+                            if bagel_type in input_lower:
+                                new_bagel_type = bagel_type
+                                break
+
+                        if new_bagel_type:
+                            old_type = last_item.bagel_type or "plain"
+                            last_item.bagel_type = new_bagel_type
+                            logger.info("Replacement: changed bagel type from '%s' to '%s'", old_type, new_bagel_type)
+
+                            # Recalculate price if needed
+                            self.pricing.recalculate_bagel_price(last_item)
+
+                            updated_summary = last_item.get_summary()
+                            return StateMachineResult(
+                                message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                                order=order,
+                            )
 
                 # Normal replacement: remove old item, new item will be added below
                 replaced_item_name = last_item.get_summary()

@@ -62,28 +62,34 @@ logger = logging.getLogger(__name__)
 REPLACE_ITEM_PATTERN = re.compile(
     r"^(?:"
     # "make it X", "make it a X" - requires "make it"
-    r"make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "can you make it X?", "could you make it X?" - requires "can/could you make it"
+    r"(?:can|could)\s+you\s+make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "change it to X", "change to X" - requires "change"
-    r"change\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"change\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "switch to X", "switch it to X" - requires "switch"
-    r"switch\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"switch\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "swap for X", "swap it for X" - requires "swap"
-    r"swap\s+(?:it\s+)?(?:for\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"swap\s+(?:it\s+)?(?:for\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "replace with X", "replace it with X" - requires "replace"
+    r"replace\s+(?:it\s+)?(?:with\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "actually X", "no X", "nope X", "wait X" - requires one of these words
-    r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "no X" but NOT "no more X" (which is cancellation)
-    r"no[,]?\s+(?!more\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"no[,]?\s+(?!more\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "i meant X" - requires "i meant"
-    r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,]*$"
+    r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "X instead" - requires "instead" at end
-    r"(?:a\s+)?(.+?)\s+instead[\s!.,]*$"
+    r"(?:a\s+)?(.+?)\s+instead[\s!.,?]*$"
     r")",
     re.IGNORECASE
 )
@@ -684,7 +690,38 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
         matched_item, quantity, toasted, bagel_choice, modifications
     )
 
-    return OpenInputResponse(
+    # Check if there's also a coffee/drink mentioned in the input
+    # Look for patterns like "and a coffee", "with a latte", "and large iced coffee"
+    coffee_type = None
+    coffee_size = None
+    coffee_iced = None
+    coffee_milk = None
+
+    # Check for coffee after "and" - this indicates a second item
+    and_coffee_match = re.search(
+        r'\band\s+(?:a\s+)?(?:(small|medium|large)\s+)?(?:(hot|iced)\s+)?'
+        r'(coffee|latte|cappuccino|espresso|americano|macchiato|mocha|tea|chai)',
+        text_lower
+    )
+    if and_coffee_match:
+        coffee_size = and_coffee_match.group(1)
+        if and_coffee_match.group(2) == 'iced':
+            coffee_iced = True
+        elif and_coffee_match.group(2) == 'hot':
+            coffee_iced = False
+        coffee_type = and_coffee_match.group(3)
+
+        # Also check for milk
+        milk_match = re.search(r'with\s+(oat|almond|soy|skim|whole|coconut)\s*milk', text_lower)
+        if milk_match:
+            coffee_milk = milk_match.group(1)
+
+        logger.info(
+            "SPEED MENU + COFFEE: also found coffee - type=%s, size=%s, iced=%s",
+            coffee_type, coffee_size, coffee_iced
+        )
+
+    response = OpenInputResponse(
         new_speed_menu_bagel=True,
         new_speed_menu_bagel_name=matched_item,
         new_speed_menu_bagel_quantity=quantity,
@@ -692,6 +729,16 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
         new_speed_menu_bagel_bagel_choice=bagel_choice,
         new_speed_menu_bagel_modifications=modifications,
     )
+
+    # Add coffee to the response if found
+    if coffee_type:
+        response.new_coffee = True
+        response.new_coffee_type = coffee_type
+        response.new_coffee_size = coffee_size
+        response.new_coffee_iced = coffee_iced
+        response.new_coffee_milk = coffee_milk
+
+    return response
 
 
 # =============================================================================
@@ -1414,7 +1461,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     replace_match = REPLACE_ITEM_PATTERN.match(text)
     if replace_match:
         replacement_item = None
-        for i in range(1, 9):
+        for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
             if replace_match.group(i):
                 replacement_item = replace_match.group(i)
                 break

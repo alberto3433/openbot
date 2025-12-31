@@ -67,6 +67,7 @@ class ItemAdderHandler:
     GENERIC_CATEGORY_TERMS = frozenset([
         "cookie", "cookies", "muffin", "muffins", "brownie", "brownies",
         "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
+        "chip", "chips",
     ])
 
     def add_menu_item(

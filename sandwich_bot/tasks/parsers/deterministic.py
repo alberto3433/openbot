@@ -900,6 +900,38 @@ def _parse_price_inquiry_deterministic(text: str) -> OpenInputResponse | None:
     return None
 
 
+def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
+    """Parse 'what X do you have?' type menu queries."""
+    text_lower = text.lower().strip()
+
+    # Patterns for menu category queries
+    # "what desserts do you have?", "what sweets do you have?", "what pastries do you have?"
+    menu_query_patterns = [
+        re.compile(r"what\s+(.+?)\s+do\s+you\s+have", re.IGNORECASE),
+        re.compile(r"what\s+(?:kind\s+of\s+)?(.+?)\s+(?:do\s+you|have\s+you)\s+got", re.IGNORECASE),
+        re.compile(r"what\s+(?:are\s+)?(?:your|the)\s+(.+?)(?:\s+options)?(?:\?|$)", re.IGNORECASE),
+        re.compile(r"do\s+you\s+have\s+(?:any\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+    ]
+
+    for pattern in menu_query_patterns:
+        match = pattern.search(text_lower)
+        if match:
+            category_text = match.group(1).strip()
+            # Remove trailing punctuation
+            category_text = re.sub(r'[.!?,]+$', '', category_text).strip()
+
+            # Check if it maps to a known category
+            if category_text in MENU_CATEGORY_KEYWORDS:
+                menu_type = MENU_CATEGORY_KEYWORDS[category_text]
+                logger.info("MENU QUERY: '%s' -> menu_query_type=%s", text[:50], menu_type)
+                return OpenInputResponse(
+                    menu_query=True,
+                    menu_query_type=menu_type,
+                )
+
+    return None
+
+
 def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
     """Parse recommendation questions."""
     text_lower = text.lower().strip()
@@ -1322,6 +1354,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     price_result = _parse_price_inquiry_deterministic(text)
     if price_result:
         return price_result
+
+    # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
+    menu_query_result = _parse_menu_query_deterministic(text)
+    if menu_query_result:
+        return menu_query_result
 
     # Check for recommendation questions
     recommendation_result = _parse_recommendation_inquiry(text)

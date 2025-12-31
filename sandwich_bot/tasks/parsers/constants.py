@@ -631,8 +631,10 @@ MENU_ITEM_CANONICAL_NAMES = {
     "natural": "The Natural",
     "the natural": "The Natural",
     # Specific beverage items
+    # Note: "tropicana orange juice" is intentionally NOT mapped here to allow
+    # lookup_menu_items to find both "Tropicana Orange Juice 46 oz" and
+    # "Tropicana Orange Juice No Pulp" and ask user for clarification
     "tropicana orange juice 46 oz": "Tropicana Orange Juice 46 oz",
-    "tropicana orange juice": "Tropicana Orange Juice 46 oz",
     "tropicana 46 oz": "Tropicana Orange Juice 46 oz",
     "tropicana no pulp": "Tropicana Orange Juice No Pulp",
     "tropicana": "Tropicana Orange Juice No Pulp",

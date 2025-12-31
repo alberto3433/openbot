@@ -1060,12 +1060,13 @@ class TestUnknownItemHandling:
 
         sm = OrderStateMachine()
 
-        assert sm._infer_item_category("orange juice") == "drinks"
-        assert sm._infer_item_category("coffee") == "drinks"
-        assert sm._infer_item_category("milkshake") == "drinks"  # Contains "milk"
-        assert sm._infer_item_category("chocolate milk") == "drinks"
-        assert sm._infer_item_category("lemonade") == "drinks"
-        assert sm._infer_item_category("pizza") is None  # Not a drink
+        # Menu lookup methods moved to MenuLookup class
+        assert sm.menu_lookup.infer_item_category("orange juice") == "drinks"
+        assert sm.menu_lookup.infer_item_category("coffee") == "drinks"
+        assert sm.menu_lookup.infer_item_category("milkshake") == "drinks"  # Contains "milk"
+        assert sm.menu_lookup.infer_item_category("chocolate milk") == "drinks"
+        assert sm.menu_lookup.infer_item_category("lemonade") == "drinks"
+        assert sm.menu_lookup.infer_item_category("pizza") is None  # Not a drink
 
     def test_infer_category_sides(self):
         """Test category inference for side items."""
@@ -1073,11 +1074,12 @@ class TestUnknownItemHandling:
 
         sm = OrderStateMachine()
 
-        assert sm._infer_item_category("hashbrown") == "sides"
-        assert sm._infer_item_category("hash browns") == "sides"
-        assert sm._infer_item_category("home fries") == "sides"
-        assert sm._infer_item_category("side of bacon") == "sides"
-        assert sm._infer_item_category("fruit salad") == "sides"
+        # Menu lookup methods moved to MenuLookup class
+        assert sm.menu_lookup.infer_item_category("hashbrown") == "sides"
+        assert sm.menu_lookup.infer_item_category("hash browns") == "sides"
+        assert sm.menu_lookup.infer_item_category("home fries") == "sides"
+        assert sm.menu_lookup.infer_item_category("side of bacon") == "sides"
+        assert sm.menu_lookup.infer_item_category("fruit salad") == "sides"
 
     def test_get_category_suggestions_formats_correctly(self):
         """Test that suggestions are formatted as natural language."""
@@ -1094,7 +1096,8 @@ class TestUnknownItemHandling:
 
         sm = OrderStateMachine(menu_data=menu_data)
 
-        suggestions = sm._get_category_suggestions("sides", limit=3)
+        # Menu lookup methods moved to MenuLookup class
+        suggestions = sm.menu_lookup.get_category_suggestions("sides", limit=3)
 
         # Should be formatted as "A, B, or C"
         assert "Home Fries" in suggestions
@@ -1848,7 +1851,8 @@ class TestDrinkClarification:
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Lookup "tropicana orange juice" - should match 2 items
-        matches = sm._lookup_menu_items("tropicana orange juice")
+        # Menu lookup methods moved to MenuLookup class
+        matches = sm.menu_lookup.lookup_menu_items("tropicana orange juice")
 
         # Should find items containing "tropicana" AND "orange juice"
         # Only "Tropicana Orange Juice 46 oz" contains both terms

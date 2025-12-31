@@ -27,6 +27,8 @@ from .models import (
 )
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
 from .pricing import PricingEngine
+from .menu_lookup import MenuLookup
+from .query_handler import QueryHandler
 from ..address_service import complete_address, AddressCompletionResult
 
 # Import from new modular structure
@@ -337,8 +339,12 @@ class OrderStateMachine:
         self._spread_types = _build_spread_types_from_menu(
             self._menu_data.get("cheese_types", [])
         )
+        # Initialize menu lookup engine
+        self.menu_lookup = MenuLookup(self._menu_data)
         # Initialize pricing engine with menu lookup callback
-        self.pricing = PricingEngine(self._menu_data, self._lookup_menu_item)
+        self.pricing = PricingEngine(self._menu_data, self.menu_lookup.lookup_menu_item)
+        # Initialize query handler (store_info set per-request in process())
+        self.query_handler = QueryHandler(self._menu_data, None, self.pricing)
 
     @property
     def menu_data(self) -> dict:
@@ -351,8 +357,12 @@ class OrderStateMachine:
         self._spread_types = _build_spread_types_from_menu(
             self._menu_data.get("cheese_types", [])
         )
+        # Update menu lookup engine menu data
+        self.menu_lookup.menu_data = self._menu_data
         # Update pricing engine menu data
         self.pricing.menu_data = self._menu_data
+        # Update query handler menu data
+        self.query_handler.menu_data = self._menu_data
 
     def process(
         self,
@@ -380,6 +390,8 @@ class OrderStateMachine:
         self._returning_customer = returning_customer
         # Store store info for delivery validation
         self._store_info = store_info or {}
+        # Update query handler with current store info
+        self.query_handler.store_info = self._store_info
 
         # Reset repeat order flag - only set when user explicitly requests repeat order
         # This prevents the flag from persisting across different sessions on the singleton
@@ -2640,7 +2652,7 @@ class OrderStateMachine:
         quantity = max(1, quantity)
 
         # Look up item in menu to get price and other details
-        menu_item = self._lookup_menu_item(item_name)
+        menu_item = self.menu_lookup.lookup_menu_item(item_name)
 
         # Log omelette items in menu for debugging
         omelette_items = self.menu_data.get("items_by_type", {}).get("omelette", [])
@@ -2660,7 +2672,9 @@ class OrderStateMachine:
             item_lower = item_name.lower()
             search_terms = [item_lower]
             if item_lower.endswith('ies'):
-                search_terms.append(item_lower[:-3] + 'y')  # cookies -> cookie
+                # Try both: "ladies" -> "lady", and "cookies" -> "cookie"
+                search_terms.append(item_lower[:-3] + 'y')  # ladies -> lady
+                search_terms.append(item_lower[:-1])  # cookies -> cookie
             elif item_lower.endswith('es'):
                 search_terms.append(item_lower[:-2])  # dishes -> dish
             elif item_lower.endswith('s') and len(item_lower) > 2:
@@ -2669,7 +2683,7 @@ class OrderStateMachine:
             # First, try _lookup_menu_items for each search term
             matching_items = []
             for term in search_terms:
-                matching_items = self._lookup_menu_items(term)
+                matching_items = self.menu_lookup.lookup_menu_items(term)
                 if matching_items:
                     break
 
@@ -2726,7 +2740,7 @@ class OrderStateMachine:
 
         # If still no match, provide helpful suggestions
         if not menu_item:
-            message, category_for_followup = self._get_not_found_message(item_name)
+            message, category_for_followup = self.menu_lookup.get_not_found_message(item_name)
             if category_for_followup:
                 # Track state so "yes" response can list items in this category
                 order.pending_field = "category_inquiry"
@@ -2829,12 +2843,12 @@ class OrderStateMachine:
         quantity = max(1, quantity)
 
         # Look up the side item in the menu
-        menu_item = self._lookup_menu_item(side_item_name)
+        menu_item = self.menu_lookup.lookup_menu_item(side_item_name)
 
         # If item not found, return error message
         if not menu_item:
             logger.warning("Side item not found: '%s' - rejecting", side_item_name)
-            message, _ = self._get_not_found_message(side_item_name)
+            message, _ = self.menu_lookup.get_not_found_message(side_item_name)
             return (None, message)
 
         # Use canonical name and price from menu
@@ -3130,7 +3144,7 @@ class OrderStateMachine:
             base_price = 2.50
             if details.bagel_type:
                 bagel_name = f"{details.bagel_type.title()} Bagel" if "bagel" not in details.bagel_type.lower() else details.bagel_type
-                menu_item = self._lookup_menu_item(bagel_name)
+                menu_item = self.menu_lookup.lookup_menu_item(bagel_name)
                 if menu_item:
                     base_price = menu_item.get("base_price", 2.50)
 
@@ -3467,7 +3481,7 @@ class OrderStateMachine:
 
         # Check for multiple matching items - ask user to clarify if ambiguous
         if coffee_type:
-            matching_items = self._lookup_menu_items(coffee_type)
+            matching_items = self.menu_lookup.lookup_menu_items(coffee_type)
             if len(matching_items) > 1:
                 # Before asking for clarification, check if user already has a matching
                 # drink in their cart - if so, add another of the same type
@@ -3524,7 +3538,7 @@ class OrderStateMachine:
                 )
 
         # Look up item from menu to get price and skip_config flag
-        menu_item = self._lookup_menu_item(coffee_type) if coffee_type else None
+        menu_item = self.menu_lookup.lookup_menu_item(coffee_type) if coffee_type else None
         price = menu_item.get("base_price", 2.50) if menu_item else self.pricing.lookup_coffee_price(coffee_type)
 
         # Check if this drink should skip configuration questions
@@ -3804,7 +3818,7 @@ class OrderStateMachine:
         quantity = max(1, quantity)
 
         # Look up item from menu to get price
-        menu_item = self._lookup_menu_item(item_name)
+        menu_item = self.menu_lookup.lookup_menu_item(item_name)
         price = menu_item.get("base_price", 10.00) if menu_item else 10.00
         menu_item_id = menu_item.get("id") if menu_item else None
 
@@ -5623,358 +5637,4 @@ class OrderStateMachine:
         else:
             return "Anything else?"
 
-    def _lookup_menu_item(self, item_name: str) -> dict | None:
-        """
-        Look up a menu item by name from the menu data.
-
-        Args:
-            item_name: Name of the item to find (case-insensitive fuzzy match)
-
-        Returns:
-            Menu item dict with id, name, base_price, etc. or None if not found
-        """
-        if not self.menu_data:
-            return None
-
-        item_name_lower = item_name.lower()
-
-        # Handle singular/plural variations
-        # e.g., "cookies" should match "cookie", "bagels" should match "bagel"
-        search_variants = [item_name_lower]
-        if item_name_lower.endswith('ies'):
-            # cookies -> cookie (y -> ies)
-            search_variants.append(item_name_lower[:-3] + 'y')
-        elif item_name_lower.endswith('es'):
-            # dishes -> dish
-            search_variants.append(item_name_lower[:-2])
-        elif item_name_lower.endswith('s') and len(item_name_lower) > 2:
-            # bagels -> bagel
-            search_variants.append(item_name_lower[:-1])
-
-        # Collect all items from all categories
-        all_items = []
-        categories_to_search = [
-            "signature_sandwiches", "signature_bagels", "signature_omelettes",
-            "sides", "drinks", "desserts", "other",
-            "custom_sandwiches", "custom_bagels",
-        ]
-
-        for category in categories_to_search:
-            all_items.extend(self.menu_data.get(category, []))
-
-        # Also include items_by_type
-        items_by_type = self.menu_data.get("items_by_type", {})
-        for type_slug, items in items_by_type.items():
-            all_items.extend(items)
-
-        # Pass 1: Exact match (highest priority)
-        for variant in search_variants:
-            for item in all_items:
-                if item.get("name", "").lower() == variant:
-                    return item
-
-        # Pass 2: Search term is contained in item name (e.g., searching "chipotle" finds "The Chipotle Egg Omelette")
-        # Also handles "cookies" matching "Chocolate Chip Cookie" via search_variants
-        # Prefer shorter item names (more specific match)
-        matches = []
-        for variant in search_variants:
-            for item in all_items:
-                item_name_db = item.get("name", "").lower()
-                if variant in item_name_db:
-                    matches.append(item)
-        if matches:
-            # Return the shortest matching name (most specific)
-            return min(matches, key=lambda x: len(x.get("name", "")))
-
-        # Pass 3: Item name is contained in search term (e.g., searching "The Chipotle Egg Omelette" finds item named "Chipotle Egg Omelette")
-        # Prefer LONGER item names (more complete match)
-        matches = []
-        for variant in search_variants:
-            for item in all_items:
-                item_name_db = item.get("name", "").lower()
-                if item_name_db in variant:
-                    matches.append(item)
-        if matches:
-            # Return the longest matching name (most complete)
-            return max(matches, key=lambda x: len(x.get("name", "")))
-
-        # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
-        matches = []
-        for variant in search_variants:
-            variant_compact = normalize_for_match(variant)
-            for item in all_items:
-                item_name_db = item.get("name", "").lower()
-                item_name_db_compact = normalize_for_match(item_name_db)
-                # Check if compact search term is in compact item name or vice versa
-                if variant_compact in item_name_db_compact or item_name_db_compact in variant_compact:
-                    matches.append(item)
-        if matches:
-            # Return the shortest matching name (most specific)
-            return min(matches, key=lambda x: len(x.get("name", "")))
-
-        return None
-
-    def _lookup_menu_items(self, item_name: str) -> list[dict]:
-        """
-        Look up ALL menu items matching a name from the menu data.
-
-        Unlike _lookup_menu_item which returns only the best match, this returns
-        ALL items that match the search term. Used for disambiguation when
-        multiple items match (e.g., "orange juice" matches 3 different OJ types).
-
-        Args:
-            item_name: Name of the item to find (case-insensitive fuzzy match)
-
-        Returns:
-            List of menu item dicts with id, name, base_price, etc.
-        """
-        if not self.menu_data:
-            return []
-
-        item_name_lower = item_name.lower()
-
-        # Known drink synonyms/brands - map generic terms to brand keywords
-        # This helps find "Tropicana Orange Juice No Pulp" when searching "orange juice"
-        drink_synonyms = {
-            "orange juice": ["tropicana", "fresh squeezed"],
-            "oj": ["orange juice", "tropicana", "fresh squeezed"],
-            "apple juice": ["martinelli"],
-            "lemonade": ["minute maid"],
-        }
-
-        # Build list of search terms (original + any synonyms)
-        search_terms = [item_name_lower]
-        for generic_term, synonyms in drink_synonyms.items():
-            if generic_term in item_name_lower:
-                search_terms.extend(synonyms)
-
-        # Collect all items from all categories
-        all_items = []
-        categories_to_search = [
-            "signature_sandwiches", "signature_bagels", "signature_omelettes",
-            "sides", "drinks", "desserts", "other",
-            "custom_sandwiches", "custom_bagels",
-        ]
-
-        for category in categories_to_search:
-            all_items.extend(self.menu_data.get(category, []))
-
-        # Also include items_by_type
-        items_by_type = self.menu_data.get("items_by_type", {})
-        for type_slug, items in items_by_type.items():
-            all_items.extend(items)
-
-        # Deduplicate by item name (some items appear in multiple categories)
-        seen_names = set()
-        unique_items = []
-        for item in all_items:
-            name = item.get("name", "").lower()
-            if name not in seen_names:
-                seen_names.add(name)
-                unique_items.append(item)
-        all_items = unique_items
-
-        # Pass 1: Exact match - if found, return only that
-        for item in all_items:
-            if item.get("name", "").lower() == item_name_lower:
-                return [item]
-
-        # Pass 2: Search term (or synonyms) is contained in item name
-        # e.g., "orange juice" finds "Tropicana Orange Juice", "Fresh Squeezed Orange Juice"
-        # Also "tropicana" (synonym) finds "Tropicana Orange Juice No Pulp"
-        matches = []
-        matched_names = set()
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            for search_term in search_terms:
-                if search_term in item_name_db and item_name_db not in matched_names:
-                    matches.append(item)
-                    matched_names.add(item_name_db)
-                    break
-        if matches:
-            # Sort by name length (shortest first = more specific)
-            return sorted(matches, key=lambda x: len(x.get("name", "")))
-
-        # Pass 3: Item name is contained in search term
-        # e.g., "tropicana orange juice" finds "Tropicana"
-        matches = []
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            if item_name_db in item_name_lower:
-                matches.append(item)
-        if matches:
-            # Sort by name length (longest first = more complete match)
-            return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
-
-        # Pass 4: Normalized matching (handles "blue berry" matching "blueberry", "black and white" matching "black & white")
-        item_name_compact = normalize_for_match(item_name_lower)
-        matches = []
-        for item in all_items:
-            item_name_db = item.get("name", "").lower()
-            item_name_db_compact = normalize_for_match(item_name_db)
-            if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
-                matches.append(item)
-        if matches:
-            return sorted(matches, key=lambda x: len(x.get("name", "")))
-
-        return []
-
-    def _infer_item_category(self, item_name: str) -> str | None:
-        """
-        Infer the likely category of an unknown item based on keywords.
-
-        Args:
-            item_name: The name of the item the user requested
-
-        Returns:
-            Category key like "drinks", "sides", "signature_bagels", or None if unclear
-        """
-        name_lower = item_name.lower()
-
-        # Drink keywords
-        drink_keywords = [
-            "juice", "coffee", "tea", "latte", "cappuccino", "espresso",
-            "soda", "coke", "pepsi", "sprite", "water", "smoothie",
-            "milk", "chocolate milk", "hot chocolate", "mocha",
-            "drink", "beverage", "lemonade", "iced", "frappe",
-        ]
-        if any(kw in name_lower for kw in drink_keywords):
-            return "drinks"
-
-        # Side keywords
-        side_keywords = [
-            "hash", "hashbrown", "fries", "tots", "bacon", "sausage",
-            "egg", "eggs", "fruit", "salad", "side", "toast",
-            "home fries", "potatoes", "pancake", "waffle",
-        ]
-        if any(kw in name_lower for kw in side_keywords):
-            return "sides"
-
-        # Bagel keywords
-        bagel_keywords = [
-            "bagel", "everything", "plain", "sesame", "poppy",
-            "cinnamon", "raisin", "onion", "pumpernickel", "whole wheat",
-        ]
-        if any(kw in name_lower for kw in bagel_keywords):
-            return "signature_bagels"
-
-        # Sandwich/omelette keywords
-        sandwich_keywords = [
-            "sandwich", "omelette", "omelet", "wrap", "panini",
-            "club", "blt", "reuben",
-        ]
-        if any(kw in name_lower for kw in sandwich_keywords):
-            return "signature_omelettes"
-
-        # Dessert keywords
-        dessert_keywords = [
-            "cookie", "brownie", "muffin", "cake", "pastry",
-            "donut", "doughnut", "dessert", "sweet",
-        ]
-        if any(kw in name_lower for kw in dessert_keywords):
-            return "desserts"
-
-        return None
-
-    def _get_category_suggestions(self, category: str, limit: int = 5) -> str:
-        """
-        Get a formatted string of menu suggestions from a category.
-
-        Args:
-            category: The menu category key (e.g., "drinks", "sides")
-            limit: Maximum number of suggestions to include
-
-        Returns:
-            Formatted string like "home fries, fruit cup, or a side of bacon"
-        """
-        if not self.menu_data:
-            return ""
-
-        items = self.menu_data.get(category, [])
-
-        # If no items in direct category, try items_by_type
-        if not items and category in ["sides", "drinks", "desserts"]:
-            # Map category to potential item_type slugs
-            type_map = {
-                "sides": ["side"],
-                "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
-                "desserts": ["dessert", "pastry", "snack"],  # Combine dessert, pastry, and snack types
-            }
-            items_by_type = self.menu_data.get("items_by_type", {})
-            for type_slug in type_map.get(category, []):
-                items.extend(items_by_type.get(type_slug, []))
-
-        if not items:
-            return ""
-
-        # Get unique item names, limited to the specified count
-        item_names = []
-        seen = set()
-        for item in items:
-            name = item.get("name", "")
-            if name and name.lower() not in seen:
-                seen.add(name.lower())
-                item_names.append(name)
-                if len(item_names) >= limit:
-                    break
-
-        if not item_names:
-            return ""
-
-        # Format as natural language list
-        if len(item_names) == 1:
-            return item_names[0]
-        elif len(item_names) == 2:
-            return f"{item_names[0]} or {item_names[1]}"
-        else:
-            return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
-
-    def _get_not_found_message(self, item_name: str) -> tuple[str, str | None]:
-        """
-        Generate a helpful message when an item isn't found on the menu.
-
-        Infers the category and suggests alternatives.
-
-        Args:
-            item_name: The name of the item the user requested
-
-        Returns:
-            Tuple of (message, category_for_followup).
-            category_for_followup is set when the message asks "Would you like to hear what X we have?"
-            so the caller can track state for a "yes" follow-up.
-        """
-        category = self._infer_item_category(item_name)
-
-        if category:
-            suggestions = self._get_category_suggestions(category, limit=4)
-            category_name = {
-                "drinks": "drinks",
-                "sides": "sides",
-                "signature_bagels": "bagels",
-                "signature_omelettes": "sandwiches and omelettes",
-                "desserts": "desserts",
-            }.get(category, "items")
-
-            if suggestions:
-                # We already gave suggestions, no need to track follow-up
-                return (
-                    f"I'm sorry, we don't have {item_name}. "
-                    f"For {category_name}, we have {suggestions}. "
-                    f"Would any of those work?",
-                    None,
-                )
-            else:
-                # Return the category so caller can track state for "yes" follow-up
-                return (
-                    f"I'm sorry, we don't have {item_name}. "
-                    f"Would you like to hear what {category_name} we have?",
-                    category,
-                )
-        else:
-            # Generic fallback
-            return (
-                f"I'm sorry, I couldn't find '{item_name}' on our menu. "
-                f"Could you try again or ask what we have available?",
-                None,
-            )
 

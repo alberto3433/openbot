@@ -1,7 +1,7 @@
 .idea/
-tests/__pycache__/*.*
-sandwich_bot/__pycache__/*.*
 __pycache__/
+*.pyc
+*.pyo
 .env
 *.db
 
@@ -12,6 +12,10 @@ build/
 
 # Test output
 test_results/
+test_results_*/
+.coverage
+.pytest_cache/
+htmlcov/
 
 # Temp files
 session.txt

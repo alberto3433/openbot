@@ -124,6 +124,8 @@ from .constants import (
     RECOMMENDATION_PATTERNS,
     # Item description patterns
     ITEM_DESCRIPTION_PATTERNS,
+    # String normalization utilities
+    normalize_for_match,
 )
 
 __all__ = [
@@ -232,4 +234,6 @@ __all__ = [
     "RECOMMENDATION_PATTERNS",
     # Constants - Item description patterns
     "ITEM_DESCRIPTION_PATTERNS",
+    # String normalization utilities
+    "normalize_for_match",
 ]

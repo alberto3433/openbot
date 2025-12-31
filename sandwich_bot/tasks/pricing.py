@@ -30,7 +30,9 @@ class PricingEngine:
         "ham": 2.00,
         "bacon": 2.00,
         "egg": 1.50,
-        "lox": 5.00,
+        "lox": 6.00,
+        "nova": 6.00,
+        "nova scotia salmon": 6.00,  # Normalized form of lox/nova
         "turkey": 2.50,
         "pastrami": 3.00,
         "sausage": 2.00,

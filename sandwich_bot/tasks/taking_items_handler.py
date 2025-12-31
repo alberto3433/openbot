@@ -1199,6 +1199,11 @@ class TakingItemsHandler:
         if parsed.asks_item_description:
             return self.menu_inquiry_handler.handle_item_description_inquiry(parsed.item_description_query, order)
 
+        if parsed.asks_modifier_options:
+            return self.store_info_handler.handle_modifier_inquiry(
+                parsed.modifier_query_item, parsed.modifier_query_category, order
+            )
+
         if parsed.menu_query:
             return self.menu_inquiry_handler.handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 

@@ -406,6 +406,20 @@ class OpenInputResponse(BaseModel):
         description="The item name the user is asking about (e.g., 'health nut', 'BLT', 'classic')"
     )
 
+    # Modifier/add-on inquiries (should NOT add to cart)
+    asks_modifier_options: bool = Field(
+        default=False,
+        description="User is asking about available modifiers/add-ons (e.g., 'what can I add to coffee?', 'what sweeteners do you have?', 'what spreads go on bagels?')"
+    )
+    modifier_query_item: str | None = Field(
+        default=None,
+        description="The item type user is asking about modifiers for: 'coffee', 'tea', 'hot chocolate', 'bagel', 'sandwich', or None for general"
+    )
+    modifier_query_category: str | None = Field(
+        default=None,
+        description="Specific modifier category asked about: 'sweeteners', 'milks', 'syrups', 'spreads', 'toppings', 'proteins', 'cheeses', or None for all options"
+    )
+
     # By-the-pound orders
     by_pound_items: list[ByPoundOrderItem] = Field(
         default_factory=list,

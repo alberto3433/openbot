@@ -22,7 +22,7 @@ from .field_config import MenuFieldConfig
 logger = logging.getLogger(__name__)
 
 # Default modifier prices for cart display breakdown
-# These should match the values in state_machine.py DEFAULT_MODIFIER_PRICES
+# These should match the values in pricing.py DEFAULT_MODIFIER_PRICES
 DEFAULT_MODIFIER_PRICES = {
     # Proteins
     "ham": 2.00,
@@ -31,8 +31,9 @@ DEFAULT_MODIFIER_PRICES = {
     "turkey": 2.50,
     "pastrami": 3.00,
     "sausage": 2.00,
-    "lox": 5.00,
-    "nova": 5.00,
+    "lox": 6.00,
+    "nova": 6.00,
+    "nova scotia salmon": 6.00,  # Normalized form of lox/nova
     # Cheeses
     "american": 0.75,
     "swiss": 0.75,

@@ -49,6 +49,9 @@ from .constants import (
     NYC_NEIGHBORHOOD_ZIPS,
     RECOMMENDATION_PATTERNS,
     ITEM_DESCRIPTION_PATTERNS,
+    MODIFIER_INQUIRY_PATTERNS,
+    MODIFIER_CATEGORY_KEYWORDS,
+    MODIFIER_ITEM_KEYWORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -1145,6 +1148,38 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
     """Parse 'what X do you have?' type menu queries."""
     text_lower = text.lower().strip()
 
+    # Generic terms that should trigger a GENERAL menu listing (all categories)
+    # These are not specific category queries - they're asking about the whole menu
+    general_menu_terms = {
+        "food", "foods", "stuff", "things", "items", "menu items",
+        "menu", "options", "choices", "eats", "grub",
+    }
+
+    # Patterns for GENERAL menu inquiries (should list all categories)
+    general_menu_patterns = [
+        # "what's on your/the menu?" / "what is on your/the menu?"
+        re.compile(r"what(?:'s|\s+is)\s+on\s+(?:your|the)\s+menu", re.IGNORECASE),
+        # "what do you have?" / "what do you have on the menu?"
+        re.compile(r"what\s+do\s+you\s+have(?:\s+on\s+(?:the|your)\s+menu)?(?:\?|$)", re.IGNORECASE),
+        # "what do you serve?" / "what do you sell?"
+        re.compile(r"what\s+do\s+you\s+(?:serve|sell|offer|make)", re.IGNORECASE),
+        # "what can I order?" / "what can I get?"
+        re.compile(r"what\s+can\s+i\s+(?:order|get|have)", re.IGNORECASE),
+        # "show me the menu" / "let me see the menu"
+        re.compile(r"(?:show|let\s+me\s+see|can\s+i\s+see)\s+(?:me\s+)?(?:the|your)\s+menu", re.IGNORECASE),
+        # "menu please" / "the menu"
+        re.compile(r"^(?:the\s+)?menu(?:\s+please)?(?:\?|!|\.)?$", re.IGNORECASE),
+    ]
+
+    # Check for general menu inquiry patterns first
+    for pattern in general_menu_patterns:
+        if pattern.search(text_lower):
+            logger.info("GENERAL MENU QUERY: '%s'", text[:50])
+            return OpenInputResponse(
+                menu_query=True,
+                menu_query_type=None,  # None means list all categories
+            )
+
     # Patterns for menu category queries
     # "what desserts do you have?", "what sweets do you have?", "what pastries do you have?"
     # "what kind of muffins do you have?"
@@ -1164,6 +1199,14 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
             category_text = match.group(1).strip()
             # Remove trailing punctuation
             category_text = re.sub(r'[.!?,]+$', '', category_text).strip()
+
+            # Check if it's a generic term that should trigger general menu listing
+            if category_text in general_menu_terms:
+                logger.info("GENERAL MENU QUERY (generic term '%s'): '%s'", category_text, text[:50])
+                return OpenInputResponse(
+                    menu_query=True,
+                    menu_query_type=None,  # None means list all categories
+                )
 
             # Check if it maps to a known category
             if category_text in MENU_CATEGORY_KEYWORDS:
@@ -1238,6 +1281,61 @@ def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
                 return OpenInputResponse(
                     asks_item_description=True,
                     item_description_query=item_name,
+                )
+
+    return None
+
+
+def _parse_modifier_inquiry(text: str) -> OpenInputResponse | None:
+    """Parse modifier/add-on inquiry questions."""
+    text_lower = text.lower().strip()
+
+    for pattern, item_group, category_group in MODIFIER_INQUIRY_PATTERNS:
+        match = pattern.search(text_lower)
+        if match:
+            item_text = None
+            category_text = None
+
+            # Extract item from match if present
+            if item_group > 0:
+                try:
+                    item_text = match.group(item_group).strip()
+                    item_text = re.sub(r'[.!?,]+$', '', item_text).strip()
+                except (IndexError, AttributeError):
+                    pass
+
+            # Extract category from match if present
+            if category_group > 0:
+                try:
+                    category_text = match.group(category_group).strip()
+                    category_text = re.sub(r'[.!?,]+$', '', category_text).strip()
+                except (IndexError, AttributeError):
+                    pass
+
+            # Normalize item type
+            item_type = None
+            if item_text:
+                item_type = MODIFIER_ITEM_KEYWORDS.get(item_text.lower())
+                # If item_text doesn't match known items, it might be a category
+                if not item_type and item_text.lower() in MODIFIER_CATEGORY_KEYWORDS:
+                    category_text = item_text
+                    item_text = None
+
+            # Normalize category
+            category = None
+            if category_text:
+                category = MODIFIER_CATEGORY_KEYWORDS.get(category_text.lower())
+
+            # Only return if we have a valid item or category
+            if item_type or category:
+                logger.info(
+                    "MODIFIER INQUIRY: '%s' -> item=%s, category=%s",
+                    text[:50], item_type, category
+                )
+                return OpenInputResponse(
+                    asks_modifier_options=True,
+                    modifier_query_item=item_type,
+                    modifier_query_category=category,
                 )
 
     return None
@@ -1671,6 +1769,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     item_desc_result = _parse_item_description_inquiry(text)
     if item_desc_result:
         return item_desc_result
+
+    # Check for modifier/add-on inquiries
+    modifier_inquiry_result = _parse_modifier_inquiry(text)
+    if modifier_inquiry_result:
+        return modifier_inquiry_result
 
     # Check for speed menu bagels
     speed_menu_result = _parse_speed_menu_bagel_deterministic(text)

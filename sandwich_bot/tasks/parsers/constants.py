@@ -1089,6 +1089,34 @@ def normalize_for_match(s: str) -> str:
 
 
 # =============================================================================
+# Item Type Display Names
+# =============================================================================
+
+# Map item type slugs to user-friendly display names
+# If a slug is not in this map, the default behavior is to replace underscores with spaces
+ITEM_TYPE_DISPLAY_NAMES = {
+    "by_the_lb": "food by the pound",
+    "sized_beverage": "sized beverage",
+}
+
+
+def get_item_type_display_name(slug: str) -> str:
+    """
+    Convert an item type slug to a user-friendly display name.
+
+    Uses ITEM_TYPE_DISPLAY_NAMES for special cases, otherwise
+    falls back to replacing underscores with spaces.
+
+    Args:
+        slug: The item type slug (e.g., 'by_the_lb', 'egg_sandwich')
+
+    Returns:
+        User-friendly display name (e.g., 'food by the pound', 'egg sandwich')
+    """
+    return ITEM_TYPE_DISPLAY_NAMES.get(slug, slug.replace("_", " "))
+
+
+# =============================================================================
 # Item Description Inquiry Patterns
 # =============================================================================
 
@@ -1106,4 +1134,84 @@ ITEM_DESCRIPTION_PATTERNS = [
     re.compile(r"describe (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
     # "ingredients in the health nut"
     re.compile(r"ingredients (?:in|of|for) (?:the |a )?(.+?)(?:\?|$)", re.IGNORECASE),
+]
+
+# =============================================================================
+# Modifier/Add-on Inquiry Patterns
+# =============================================================================
+
+# Modifier categories and their keywords
+MODIFIER_CATEGORY_KEYWORDS: dict[str, str] = {
+    "sweetener": "sweeteners",
+    "sweeteners": "sweeteners",
+    "sugar": "sweeteners",
+    "sugars": "sweeteners",
+    "milk": "milks",
+    "milks": "milks",
+    "cream": "milks",
+    "dairy": "milks",
+    "syrup": "syrups",
+    "syrups": "syrups",
+    "flavor": "syrups",
+    "flavors": "syrups",
+    "flavor syrup": "syrups",
+    "flavor syrups": "syrups",
+    "spread": "spreads",
+    "spreads": "spreads",
+    "cream cheese": "spreads",
+    "topping": "toppings",
+    "toppings": "toppings",
+    "protein": "proteins",
+    "proteins": "proteins",
+    "meat": "proteins",
+    "meats": "proteins",
+    "cheese": "cheeses",
+    "cheeses": "cheeses",
+    "condiment": "condiments",
+    "condiments": "condiments",
+    "add-on": "add-ons",
+    "add-ons": "add-ons",
+    "addon": "add-ons",
+    "addons": "add-ons",
+    "extra": "extras",
+    "extras": "extras",
+}
+
+# Item types for modifier inquiries
+MODIFIER_ITEM_KEYWORDS: dict[str, str] = {
+    "coffee": "coffee",
+    "coffees": "coffee",
+    "latte": "coffee",
+    "lattes": "coffee",
+    "cappuccino": "coffee",
+    "tea": "tea",
+    "teas": "tea",
+    "hot chocolate": "hot_chocolate",
+    "hot cocoa": "hot_chocolate",
+    "cocoa": "hot_chocolate",
+    "bagel": "bagel",
+    "bagels": "bagel",
+    "sandwich": "sandwich",
+    "sandwiches": "sandwich",
+    "egg sandwich": "sandwich",
+    "bec": "sandwich",
+}
+
+# Patterns for modifier inquiries - each returns (pattern, item_group_index, category_group_index)
+# Group indices are 1-based, or 0 if not captured
+MODIFIER_INQUIRY_PATTERNS = [
+    # "what can I add to coffee?" / "what can I add to my coffee?"
+    (re.compile(r"what (?:can|could) (?:i|you|we) (?:add|put|get) (?:to|on|in|for|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 1, 0),
+    # "what do you have for coffee?" / "what options for coffee?"
+    (re.compile(r"what (?:do you have|options?|choices?) (?:for|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 1, 0),
+    # "what goes on a bagel?" / "what goes in coffee?"
+    (re.compile(r"what (?:goes|can go) (?:on|in|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 1, 0),
+    # "what sweeteners do you have?" / "what milks do you have?"
+    (re.compile(r"what (\w+(?:\s+\w+)?) do you (?:have|offer|carry)(?:\?|$)", re.IGNORECASE), 0, 1),
+    # "do you have sweeteners?" / "do you have flavored syrups?"
+    (re.compile(r"do you (?:have|offer|carry) (?:any )?(\w+(?:\s+\w+)?)(?:\?|$)", re.IGNORECASE), 0, 1),
+    # "what sweeteners for coffee?" / "what milks for lattes?"
+    (re.compile(r"what (\w+(?:\s+\w+)?) (?:for|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 2, 1),
+    # "coffee options" / "bagel toppings"
+    (re.compile(r"^(.+?) (options?|choices?|add-?ons?|extras?)(?:\?|$)", re.IGNORECASE), 1, 2),
 ]

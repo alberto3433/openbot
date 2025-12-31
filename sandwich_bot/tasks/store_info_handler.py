@@ -423,3 +423,148 @@ class StoreInfoHandler:
             )
 
         return StateMachineResult(message=message, order=order)
+
+    # =========================================================================
+    # Modifier Inquiry Handlers
+    # =========================================================================
+
+    def handle_modifier_inquiry(
+        self,
+        item_type: str | None,
+        category: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle modifier/add-on questions like 'what can I add to coffee?' or 'what sweeteners do you have?'
+
+        IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
+
+        Args:
+            item_type: Type of item asked about - 'coffee', 'tea', 'hot_chocolate', 'bagel', 'sandwich', or None
+            category: Specific category asked about - 'sweeteners', 'milks', 'syrups', 'spreads', etc., or None
+            order: Current order state (unchanged)
+        """
+        # If specific category asked about, return just that category
+        if category:
+            return self._describe_modifier_category(category, item_type, order)
+
+        # If specific item asked about, describe all modifiers for that item
+        if item_type:
+            return self._describe_item_modifiers(item_type, order)
+
+        # Generic question - describe most common options
+        return self._describe_general_modifiers(order)
+
+    def _describe_modifier_category(
+        self,
+        category: str,
+        item_type: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Describe available options for a specific modifier category."""
+        category_info = {
+            "sweeteners": (
+                "For sweeteners, we have sugar, raw sugar, honey, Equal, Splenda, and Stevia.",
+                "Would you like any of these in your drink?"
+            ),
+            "milks": (
+                "For milk options, we have whole milk, skim, 2%, oat milk, almond milk, and soy milk.",
+                "Which would you like?"
+            ),
+            "syrups": (
+                "We have vanilla, hazelnut, and caramel flavor syrups.",
+                "Would you like to add a flavor?"
+            ),
+            "spreads": (
+                "For spreads, we have plain cream cheese, scallion cream cheese, vegetable cream cheese, "
+                "lox spread, and butter. We also have peanut butter and Nutella.",
+                "What sounds good?"
+            ),
+            "toppings": (
+                "For toppings, we have tomato, onion, lettuce, cucumber, capers, and more.",
+                "What would you like on your bagel?"
+            ),
+            "proteins": (
+                "For proteins, we have bacon, sausage, ham, turkey, lox (smoked salmon), and whitefish.",
+                "What would you like?"
+            ),
+            "cheeses": (
+                "We have American, Swiss, cheddar, muenster, and provolone cheese.",
+                "Which cheese would you like?"
+            ),
+            "condiments": (
+                "We have mayo, mustard, ketchup, hot sauce, and salt & pepper.",
+                "Would you like any of these?"
+            ),
+            "add-ons": (
+                "You can add extra proteins, cheeses, or veggies to most items.",
+                "What would you like to add?"
+            ),
+            "extras": (
+                "You can add extra proteins, cheeses, or veggies to most items.",
+                "What would you like to add?"
+            ),
+        }
+
+        info = category_info.get(category, ("We have various options available.", "What would you like?"))
+        message = f"{info[0]} {info[1]}"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _describe_item_modifiers(
+        self,
+        item_type: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Describe all available modifiers for a specific item type."""
+        item_modifiers = {
+            "coffee": (
+                "For coffee, you can add:\n"
+                "• Sweeteners: sugar, raw sugar, honey, Equal, Splenda, or Stevia\n"
+                "• Milk: whole, skim, 2%, oat, almond, or soy\n"
+                "• Flavor syrups: vanilla, hazelnut, or caramel\n"
+                "Just let me know what you'd like!"
+            ),
+            "tea": (
+                "For tea, you can add:\n"
+                "• Sweeteners: sugar, raw sugar, honey, Equal, Splenda, or Stevia\n"
+                "• Milk: whole, skim, 2%, oat, almond, or soy\n"
+                "What would you like in your tea?"
+            ),
+            "hot_chocolate": (
+                "For hot chocolate, you can add whipped cream or extra chocolate. "
+                "What would you like?"
+            ),
+            "bagel": (
+                "For bagels, you can add:\n"
+                "• Spreads: cream cheese (plain, scallion, vegetable), butter, peanut butter, or Nutella\n"
+                "• Proteins: bacon, lox, whitefish, or eggs\n"
+                "• Cheeses: American, Swiss, cheddar, muenster\n"
+                "• Veggies: tomato, onion, lettuce, cucumber, capers\n"
+                "What sounds good?"
+            ),
+            "sandwich": (
+                "For sandwiches, you can customize with:\n"
+                "• Extra proteins: bacon, ham, turkey\n"
+                "• Cheeses: American, Swiss, cheddar, muenster, provolone\n"
+                "• Veggies: lettuce, tomato, onion, pickles\n"
+                "• Sauces: mayo, mustard, hot sauce\n"
+                "What would you like to add or change?"
+            ),
+        }
+
+        message = item_modifiers.get(
+            item_type,
+            "We have various add-ons available. What would you like to add?"
+        )
+
+        return StateMachineResult(message=message, order=order)
+
+    def _describe_general_modifiers(self, order: OrderTask) -> StateMachineResult:
+        """Describe general modifier options when no specific item/category is asked."""
+        message = (
+            "We have lots of ways to customize your order! "
+            "For drinks, we have various sweeteners, milks, and flavor syrups. "
+            "For bagels, we have cream cheese, butter, and lots of toppings. "
+            "What are you curious about?"
+        )
+        return StateMachineResult(message=message, order=order)

@@ -16,6 +16,7 @@ from .parsers.constants import (
     NYC_NEIGHBORHOOD_ZIPS,
     BY_POUND_ITEMS,
     BY_POUND_CATEGORY_NAMES,
+    get_item_type_display_name,
 )
 
 if TYPE_CHECKING:
@@ -324,7 +325,7 @@ class QueryHandler:
         items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
 
         if not menu_query_type:
-            available_types = [t.replace("_", " ") for t, items in items_by_type.items() if items]
+            available_types = [get_item_type_display_name(t) for t, items in items_by_type.items() if items]
             if available_types:
                 return StateMachineResult(
                     message=f"We have: {', '.join(available_types)}. What would you like?",
@@ -416,8 +417,8 @@ class QueryHandler:
         items = items_by_type.get(lookup_type, [])
 
         if not items:
-            available_types = [t.replace("_", " ") for t, i in items_by_type.items() if i]
-            type_display = menu_query_type.replace("_", " ")
+            available_types = [get_item_type_display_name(t) for t, i in items_by_type.items() if i]
+            type_display = get_item_type_display_name(menu_query_type)
             if available_types:
                 return StateMachineResult(
                     message=f"I don't have any {type_display}s on the menu. We do have: {', '.join(available_types)}. What would you like?",
@@ -857,7 +858,7 @@ class QueryHandler:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "by_pound_category"
         return StateMachineResult(
-            message="We sell cheeses, spreads, cold cuts, fish, and salads by the pound. Which are you interested in?",
+            message="We have cheeses, spreads, cold cuts, fish, and salads as food by the pound. Which are you interested in?",
             order=order,
         )
 
@@ -894,7 +895,7 @@ class QueryHandler:
         if category == "spread":
             message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
         else:
-            message = f"Our {category_name} by the pound include: {items_list}. Would you like any of these, or something else?"
+            message = f"Our {category_name} food by the pound include: {items_list}. Would you like any of these, or something else?"
 
         return StateMachineResult(
             message=message,

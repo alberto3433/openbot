@@ -638,13 +638,25 @@ class TestDeterministicParserFallback:
 
     @pytest.mark.parametrize("text", [
         # Coffee and menu items are now handled deterministically
-        "what do you have?",  # Question
         "I'm not sure yet",  # Indecisive
     ])
     def test_llm_fallback_cases(self, text):
         """Test that complex cases fall back to LLM."""
         result = parse_open_input_deterministic(text)
         assert result is None, f"Expected LLM fallback for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        "what do you have?",
+        "what food do you have?",
+        "what's on your menu?",
+        "what can I order?",
+    ])
+    def test_general_menu_query_handled_deterministically(self, text):
+        """Test that general menu queries are handled deterministically."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected deterministic parse for: {text}"
+        assert result.menu_query is True
+        assert result.menu_query_type is None  # None means general listing
 
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),

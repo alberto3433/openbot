@@ -17,6 +17,7 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask
 from .schemas import StateMachineResult
+from .parsers.constants import get_item_type_display_name
 
 if TYPE_CHECKING:
     from .pricing_engine import PricingEngine
@@ -136,7 +137,7 @@ class MenuInquiryHandler:
 
         if not menu_query_type:
             # Generic "what do you have?" - list available types
-            available_types = [t.replace("_", " ") for t, items in items_by_type.items() if items]
+            available_types = [get_item_type_display_name(t) for t, items in items_by_type.items() if items]
             if available_types:
                 return StateMachineResult(
                     message=f"We have: {', '.join(available_types)}. What would you like?",
@@ -251,8 +252,8 @@ class MenuInquiryHandler:
 
         if not items:
             # Try to suggest what we do have
-            available_types = [t.replace("_", " ") for t, i in items_by_type.items() if i]
-            type_display = menu_query_type.replace("_", " ")
+            available_types = [get_item_type_display_name(t) for t, i in items_by_type.items() if i]
+            type_display = get_item_type_display_name(menu_query_type)
             if available_types:
                 return StateMachineResult(
                     message=f"I don't have any {type_display}s on the menu. We do have: {', '.join(available_types)}. What would you like?",

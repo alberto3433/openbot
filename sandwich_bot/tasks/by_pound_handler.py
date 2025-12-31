@@ -72,7 +72,7 @@ class ByPoundHandler:
         order.phase = OrderPhase.CONFIGURING_ITEM
         order.pending_field = "by_pound_category"
         return StateMachineResult(
-            message="We sell cheeses, spreads, cold cuts, fish, and salads by the pound. Which are you interested in?",
+            message="We have cheeses, spreads, cold cuts, fish, and salads as food by the pound. Which are you interested in?",
             order=order,
         )
 
@@ -137,11 +137,11 @@ class ByPoundHandler:
         order.clear_pending()
         # Phase derived by orchestrator
 
-        # For spreads, don't say "by the pound" since they're also used on bagels
+        # For spreads, don't say "food by the pound" since they're also used on bagels
         if category == "spread":
             message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
         else:
-            message = f"Our {category_name} by the pound include: {items_list}. Would you like any of these, or something else?"
+            message = f"Our {category_name} food by the pound include: {items_list}. Would you like any of these, or something else?"
 
         return StateMachineResult(
             message=message,

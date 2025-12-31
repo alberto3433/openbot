@@ -204,7 +204,7 @@ def create_item_types(session):
     for slug, name in [
         ('bagel', 'Bagel'),
         ('beverage', 'Beverage'),
-        ('by_the_lb', 'By the Pound'),
+        ('by_the_lb', 'Food by the Pound'),
         ('cream_cheese', 'Cream Cheese'),
         ('egg_sandwich', 'Egg Sandwich'),
         ('fish_sandwich', 'Fish Sandwich'),

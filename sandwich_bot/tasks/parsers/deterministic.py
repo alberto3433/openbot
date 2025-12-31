@@ -906,7 +906,11 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
 
     # Patterns for menu category queries
     # "what desserts do you have?", "what sweets do you have?", "what pastries do you have?"
+    # "what kind of muffins do you have?"
     menu_query_patterns = [
+        # "what kind of X do you have" - capture X
+        re.compile(r"what\s+(?:kind|type|types|kinds)\s+of\s+(.+?)\s+do\s+you\s+have", re.IGNORECASE),
+        # "what X do you have" - capture X
         re.compile(r"what\s+(.+?)\s+do\s+you\s+have", re.IGNORECASE),
         re.compile(r"what\s+(?:kind\s+of\s+)?(.+?)\s+(?:do\s+you|have\s+you)\s+got", re.IGNORECASE),
         re.compile(r"what\s+(?:are\s+)?(?:your|the)\s+(.+?)(?:\s+options)?(?:\?|$)", re.IGNORECASE),
@@ -1490,6 +1494,53 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                     qty = WORD_TO_NUM.get(qty_str, 1)
             logger.info("STANDALONE SIDE ITEM: matched '%s' -> %s (qty=%d)", text[:50], canonical_name, qty)
             return OpenInputResponse(new_side_item=canonical_name, new_side_item_quantity=qty)
+
+    # Early check for dessert/pastry items (cookies, brownies, muffins)
+    # These get passed through to menu lookup for disambiguation
+    # BUT skip if this looks like a menu query ("what X do you have?")
+    is_menu_query = any(pattern in text_lower for pattern in [
+        "what kind of", "what types of", "what do you have",
+        "what's available", "what options", "do you have any",
+        "what muffins", "what cookies", "what brownies", "what pastries", "what donuts",
+    ])
+    if not is_menu_query:
+        dessert_keywords = [
+            "cookie", "cookies",
+            "brownie", "brownies",
+            "muffin", "muffins",
+            "pastry", "pastries",
+            "donut", "donuts", "doughnut", "doughnuts",
+        ]
+        for keyword in dessert_keywords:
+            if keyword in text_lower:
+                qty = 1
+                qty_match = re.match(r'^(\d+|one|two|three|four|five|six)\s+', text_lower)
+                if qty_match:
+                    qty_str = qty_match.group(1)
+                    if qty_str.isdigit():
+                        qty = int(qty_str)
+                    else:
+                        qty = WORD_TO_NUM.get(qty_str, 1)
+
+                # Extract the full item name including any qualifier (e.g., "blueberry muffin")
+                # Look for pattern like "[qualifier] [qualifier] keyword" before the keyword
+                # Common qualifiers: blueberry, chocolate chip, corn, banana walnut, etc.
+                item_match = re.search(
+                    rf'((?:[a-z]+\s+){{0,3}}){re.escape(keyword)}',
+                    text_lower
+                )
+                if item_match:
+                    full_item = item_match.group(0).strip()
+                    # Remove common non-qualifier prefixes
+                    full_item = re.sub(r'^(a|an|the|please|add|get|have|want|some)\s+', '', full_item)
+                    # Clean up again in case of double articles like "a the blueberry"
+                    full_item = re.sub(r'^(a|an|the)\s+', '', full_item)
+                else:
+                    full_item = keyword
+
+                logger.info("DESSERT ITEM: matched '%s' -> %s (qty=%d)", text[:50], full_item, qty)
+                # Return as menu_item so it goes through disambiguation
+                return OpenInputResponse(new_menu_item=full_item, new_menu_item_quantity=qty)
 
     # Check for known menu items FIRST - BEFORE any bagel patterns
     # This ensures specific items like "whitefish salad on everything bagel" are recognized

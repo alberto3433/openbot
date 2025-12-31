@@ -465,10 +465,12 @@ class TestMenuItemToasted:
         from sandwich_bot.tasks.state_machine import parse_open_input
 
         # Test with "toasted" in the input
+        # "ham egg and cheese" is recognized as speed menu item "The Classic BEC"
         result = parse_open_input("ham egg and cheese on wheat toasted")
 
-        # Should have new_menu_item_toasted set to True
-        assert result.new_menu_item_toasted is True, f"Should extract toasted=True, got {result.new_menu_item_toasted}"
+        # Should have toasted set to True (in speed menu bagel fields since it's recognized as The Classic BEC)
+        assert result.new_speed_menu_bagel_toasted is True, f"Should extract toasted=True, got {result.new_speed_menu_bagel_toasted}"
+        assert result.new_speed_menu_bagel_name == "The Classic BEC", f"Should be The Classic BEC, got {result.new_speed_menu_bagel_name}"
 
     def test_multi_item_parser_extracts_bagel_toasted(self):
         """Test that the multi-item parser extracts toasted for bagels.

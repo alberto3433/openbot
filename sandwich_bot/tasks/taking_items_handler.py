@@ -1007,6 +1007,26 @@ class TakingItemsHandler:
                     order=order,
                 )
 
+            # Check if there's ALSO a speed menu bagel in the same message
+            if parsed.new_speed_menu_bagel:
+                self.speed_menu_handler.add_speed_menu_bagel(
+                    parsed.new_speed_menu_bagel_name,
+                    parsed.new_speed_menu_bagel_quantity,
+                    parsed.new_speed_menu_bagel_toasted,
+                    order,
+                    bagel_choice=parsed.new_speed_menu_bagel_bagel_choice,
+                    modifications=parsed.new_speed_menu_bagel_modifications,
+                )
+                bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"
+                speed_menu_name = parsed.new_speed_menu_bagel_name or "sandwich"
+                combined_items = f"{bagel_desc} and {speed_menu_name}"
+                if side_name:
+                    combined_items = f"{bagel_desc}, {side_name}, and {speed_menu_name}"
+                return StateMachineResult(
+                    message=f"Got it, {combined_items}. Anything else?",
+                    order=order,
+                )
+
             # If there's a side item but no coffee, update the result message to include it
             if side_name:
                 bagel_desc = f"{parsed.new_bagel_quantity} bagel{'s' if parsed.new_bagel_quantity > 1 else ''}"

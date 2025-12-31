@@ -1686,7 +1686,7 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_menu_item(self):
         """Test ordering a bagel and a menu item (like The Classic BEC) together."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import BagelItemTask, MenuItemTask
+        from sandwich_bot.tasks.models import BagelItemTask, SpeedMenuBagelItemTask
 
         menu_data = {
             "items_by_name": {
@@ -1718,12 +1718,12 @@ class TestBagelWithCoffeeConfig:
 
         # Should have both items in the order
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        menu_items = [i for i in order.items.items if isinstance(i, MenuItemTask)]
+        speed_menu_items = [i for i in order.items.items if isinstance(i, SpeedMenuBagelItemTask)]
         assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
-        assert len(menu_items) == 1, f"Expected 1 menu item, got: {len(menu_items)}"
+        assert len(speed_menu_items) == 1, f"Expected 1 speed menu item, got: {len(speed_menu_items)}"
 
-        # Menu item should be The Classic BEC
-        assert menu_items[0].menu_item_name == "The Classic BEC"
+        # Speed menu item should be The Classic BEC
+        assert speed_menu_items[0].menu_item_name == "The Classic BEC"
 
         # Should be asking for bagel type (bagel needs config)
         assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"

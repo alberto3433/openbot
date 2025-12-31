@@ -147,9 +147,32 @@ class SpeedMenuBagelHandler:
     ) -> StateMachineResult:
         """Handle bagel type selection for speed menu bagel."""
         from .parsers.deterministic import _extract_bagel_type as parse_bagel_type_response
+        from .parsers.deterministic import _extract_spread
+        from .models import BagelItemTask
 
         # Parse the bagel type from user input
         bagel_type = parse_bagel_type_response(user_input)
+
+        # Check if user is adding a modifier to a different item (e.g., "add cream cheese to the bagel")
+        # This applies when configuring a speed menu item but user mentions spread for plain bagel
+        if bagel_type is None:
+            spread, spread_type = _extract_spread(user_input)
+            if spread:
+                # Find a plain bagel in the order that could take this spread
+                plain_bagels = [
+                    i for i in order.items.items
+                    if isinstance(i, BagelItemTask) and i.spread is None
+                ]
+                if plain_bagels:
+                    # Apply spread to the first plain bagel without a spread
+                    plain_bagels[0].spread = spread
+                    if spread_type:
+                        plain_bagels[0].spread_type = spread_type
+                    logger.info("Applied spread '%s' to plain bagel while configuring speed menu item", spread)
+                    return StateMachineResult(
+                        message=f"Got it, I added {spread} to your bagel. Now, what type of bagel would you like for your {item.menu_item_name}?",
+                        order=order,
+                    )
 
         if bagel_type is None:
             return StateMachineResult(

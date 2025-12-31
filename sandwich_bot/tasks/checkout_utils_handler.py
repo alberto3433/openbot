@@ -15,7 +15,7 @@ from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, ItemTask,
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
-    pass
+    from .message_builder import MessageBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class CheckoutUtilsHandler:
         self,
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
+        message_builder: "MessageBuilder | None" = None,
     ):
         """
         Initialize the checkout utils handler.
@@ -39,9 +40,11 @@ class CheckoutUtilsHandler:
         Args:
             transition_to_next_slot: Callback to transition to the next slot.
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
+            message_builder: MessageBuilder instance for generating summaries.
         """
         self._transition_to_next_slot = transition_to_next_slot
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
+        self._message_builder = message_builder
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
 
@@ -174,31 +177,11 @@ class CheckoutUtilsHandler:
         return None
 
     def build_order_summary(self, order: OrderTask) -> str:
-        """Build order summary string with consolidated identical items and total."""
-        lines = ["Here's your order:"]
+        """Build order summary string with consolidated identical items and total.
 
-        # Group items by their summary string to consolidate identical items
-        from collections import defaultdict
-        item_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_price": 0.0})
-        for item in order.items.get_active_items():
-            summary = item.get_summary()
-            price = item.unit_price * getattr(item, 'quantity', 1)
-            item_data[summary]["count"] += 1
-            item_data[summary]["total_price"] += price
-
-        # Build consolidated lines (no individual prices, just total at end)
-        for summary, data in item_data.items():
-            count = data["count"]
-            if count > 1:
-                # Pluralize: "3 cokes" instead of "3× coke"
-                plural = f"{summary}s" if not summary.endswith("s") else summary
-                lines.append(f"• {count} {plural}")
-            else:
-                lines.append(f"• {summary}")
-
-        # Add "plus tax" note
-        subtotal = order.items.get_subtotal()
-        if subtotal > 0:
-            lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
-
-        return "\n".join(lines)
+        Delegates to MessageBuilder for the actual implementation.
+        """
+        if self._message_builder:
+            return self._message_builder.build_order_summary(order)
+        # Fallback if message_builder not set (shouldn't happen in practice)
+        return "Here's your order."

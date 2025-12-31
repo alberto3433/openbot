@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from .store_info_handler import StoreInfoHandler
     from .by_pound_handler import ByPoundHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
-    from .confirmation_handler import ConfirmationHandler
+    from .checkout_handler import CheckoutHandler
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class TakingItemsHandler:
         store_info_handler: "StoreInfoHandler | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
-        confirmation_handler: "ConfirmationHandler | None" = None,
+        checkout_handler: "CheckoutHandler | None" = None,
     ) -> None:
         """
         Initialize the taking items handler.
@@ -76,7 +76,7 @@ class TakingItemsHandler:
             store_info_handler: Handler for store info inquiries.
             by_pound_handler: Handler for by-pound items.
             checkout_utils_handler: Handler for checkout utilities.
-            confirmation_handler: Handler for confirmation/repeat orders.
+            checkout_handler: Handler for checkout flow including confirmation/repeat orders.
         """
         self.model = model
         self.pricing = pricing
@@ -87,7 +87,7 @@ class TakingItemsHandler:
         self.store_info_handler = store_info_handler
         self.by_pound_handler = by_pound_handler
         self.checkout_utils_handler = checkout_utils_handler
-        self.confirmation_handler = confirmation_handler
+        self.checkout_handler = checkout_handler
 
         # Context set per-request
         self._spread_types: list[str] = []
@@ -613,7 +613,7 @@ class TakingItemsHandler:
 
         # Handle repeat order request
         if parsed.wants_repeat_order:
-            return self.confirmation_handler.handle_repeat_order(
+            return self.checkout_handler.handle_repeat_order(
                 order,
                 returning_customer=self._returning_customer,
                 set_repeat_info_callback=self._set_repeat_info_callback,

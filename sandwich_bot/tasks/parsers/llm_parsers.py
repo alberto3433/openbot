@@ -350,10 +350,11 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
         "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
         "bacon and egg and cheese", "ham and egg and cheese",
         "bacon eggs and cheese", "ham eggs and cheese", "egg and cheese",
+        "egg cheese and bacon", "egg, cheese and bacon",
         # Other compound phrases
-        "ham and cheese", "ham and egg", "bacon and egg", "lox and cream cheese",
-        "salt and pepper", "cream cheese and lox", "eggs and bacon", "black and white",
-        "spinach and feta",
+        "ham and cheese", "ham and egg", "bacon and egg", "egg and bacon",
+        "lox and cream cheese", "salt and pepper", "cream cheese and lox",
+        "eggs and bacon", "black and white", "spinach and feta",
     ]:
         cleaned = cleaned.replace(phrase, "")
 

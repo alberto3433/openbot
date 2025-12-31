@@ -659,6 +659,109 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
 
 
 # =============================================================================
+# Bagel with Modifiers Parsing
+# =============================================================================
+
+def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
+    """
+    Parse bagel orders with modifiers like 'everything bagel with bacon and egg'.
+
+    This handles cases where a bagel type is specified along with protein/topping
+    modifiers that should NOT be interpreted as standalone menu items.
+
+    Examples:
+        - "everything bagel with bacon and egg"
+        - "plain bagel with egg and cheese"
+        - "sesame bagel with lox and cream cheese"
+    """
+    text_lower = text.lower().strip()
+
+    # Must have "bagel" in the text
+    if not re.search(r"\bbagels?\b", text_lower):
+        return None
+
+    # Must have "with" followed by modifiers - this indicates a customized bagel
+    # Pattern: [bagel type] bagel with [modifiers]
+    with_match = re.search(r"\bbagels?\s+with\s+(.+)", text_lower)
+    if not with_match:
+        return None
+
+    modifier_text = with_match.group(1).strip()
+
+    # Check if the modifiers contain known proteins, cheeses, or toppings
+    # If so, this is a bagel with modifiers, not a separate menu item order
+    has_protein = any(protein in modifier_text for protein in [
+        "bacon", "ham", "turkey", "sausage", "pastrami",
+        "egg", "eggs", "egg white", "egg whites",
+        "nova", "lox", "salmon",
+    ])
+    # Check for cheese - but exclude "cream cheese" which is a spread
+    modifier_text_no_cream_cheese = modifier_text.replace("cream cheese", "")
+    has_cheese = any(cheese in modifier_text_no_cream_cheese for cheese in [
+        "cheese", "american", "swiss", "cheddar", "muenster", "provolone",
+    ])
+    has_topping = any(topping in modifier_text for topping in [
+        "tomato", "onion", "lettuce", "capers", "cucumber", "avocado",
+    ])
+    has_spread = any(spread in modifier_text for spread in [
+        "cream cheese", "butter", "hummus",
+    ])
+
+    # Only proceed if we found at least one protein, cheese, or topping
+    # If ONLY a spread is specified, let it fall through to spread sandwich parsing
+    # (e.g., "plain bagel with scallion cream cheese" -> Scallion Cream Cheese Sandwich)
+    if not (has_protein or has_cheese or has_topping):
+        return None
+
+    logger.info("BAGEL WITH MODIFIERS: detected in '%s'", text[:50])
+
+    # Extract quantity
+    quantity = 1
+    qty_match = re.match(
+        r"^(\d+|one|two|three|four|five|six)\s+",
+        text_lower
+    )
+    if qty_match:
+        qty_str = qty_match.group(1)
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # Extract bagel type
+    bagel_type = _extract_bagel_type(text)
+
+    # Extract toasted preference
+    toasted = _extract_toasted(text)
+
+    # Extract modifiers using the existing function
+    modifiers = extract_modifiers_from_input(text)
+
+    logger.info(
+        "BAGEL WITH MODIFIERS PARSED: qty=%d, type=%s, toasted=%s, proteins=%s, cheeses=%s, toppings=%s, spreads=%s",
+        quantity, bagel_type, toasted,
+        modifiers.proteins, modifiers.cheeses, modifiers.toppings, modifiers.spreads
+    )
+
+    # Set legacy spread field if a spread was specified
+    spread = modifiers.spreads[0] if modifiers.spreads else None
+
+    return OpenInputResponse(
+        new_bagel=True,
+        new_bagel_quantity=quantity,
+        new_bagel_type=bagel_type,
+        new_bagel_toasted=toasted,
+        new_bagel_spread=spread,  # Legacy field for backward compatibility
+        new_bagel_proteins=modifiers.proteins,
+        new_bagel_cheeses=modifiers.cheeses,
+        new_bagel_toppings=modifiers.toppings,
+        new_bagel_spreads=modifiers.spreads,
+        new_bagel_notes=modifiers.notes,
+        new_bagel_needs_cheese_clarification=modifiers.needs_cheese_clarification,
+    )
+
+
+# =============================================================================
 # Speed Menu Bagel Parsing
 # =============================================================================
 
@@ -1619,6 +1722,13 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     add_more_result = _parse_add_more_request(text)
     if add_more_result:
         return add_more_result
+
+    # Check for bagel with modifiers FIRST (e.g., "everything bagel with bacon and egg")
+    # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
+    # interpreted as multiple items. Also prevents "bacon" from matching as a side item.
+    bagel_with_mods_result = _parse_bagel_with_modifiers(text)
+    if bagel_with_mods_result:
+        return bagel_with_mods_result
 
     # Check for multi-item orders (e.g., "one coffee and one latte", "bagel and a coffee")
     # Must be checked before single-item parsers to handle "X and Y" patterns

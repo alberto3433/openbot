@@ -9,6 +9,7 @@ Extracted from state_machine.py for better separation of concerns.
 
 from collections import defaultdict
 
+from .checkout_messages import CheckoutMessages
 from .models import OrderTask
 from .schemas import OrderPhase
 
@@ -24,33 +25,34 @@ class MessageBuilder:
     # Ordinal number mappings
     ORDINALS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
 
-    def get_ordinal(self, n: int) -> str:
+    @staticmethod
+    def get_ordinal(n: int) -> str:
         """Convert number to ordinal (1 -> 'first', 2 -> 'second', etc.)."""
-        return self.ORDINALS.get(n, f"#{n}")
+        return MessageBuilder.ORDINALS.get(n, f"#{n}")
 
     def get_phase_follow_up(self, order: OrderTask) -> str:
         """Get the appropriate follow-up question based on current order phase."""
         phase = order.phase
 
         if phase == OrderPhase.GREETING.value or phase == OrderPhase.TAKING_ITEMS.value:
-            return "Anything else?"
+            return CheckoutMessages.ANYTHING_ELSE
         elif phase == OrderPhase.CONFIGURING_ITEM.value:
             # If configuring an item, ask about the pending field
-            return "Anything else?"  # Will return to item config after this
+            return CheckoutMessages.ANYTHING_ELSE  # Will return to item config after this
         elif phase == OrderPhase.CHECKOUT_DELIVERY.value:
-            return "Is this for pickup or delivery?"
+            return CheckoutMessages.PICKUP_OR_DELIVERY
         elif phase == OrderPhase.CHECKOUT_NAME.value:
-            return "Can I get a name for the order?"
+            return CheckoutMessages.NAME
         elif phase == OrderPhase.CHECKOUT_CONFIRM.value:
-            return "Does that look right?"
+            return CheckoutMessages.CONFIRM
         elif phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
-            return "Can I get a phone number or email to send the order confirmation?"
+            return CheckoutMessages.PAYMENT_METHOD
         elif phase == OrderPhase.CHECKOUT_PHONE.value:
-            return "What's the best phone number to reach you?"
+            return CheckoutMessages.PHONE
         elif phase == OrderPhase.CHECKOUT_EMAIL.value:
-            return "What's your email address?"
+            return CheckoutMessages.EMAIL
         else:
-            return "Anything else?"
+            return CheckoutMessages.ANYTHING_ELSE
 
     def build_order_summary(self, order: OrderTask) -> str:
         """Build order summary string with consolidated identical items and total."""
@@ -100,4 +102,4 @@ class MessageBuilder:
         elif is_repeat_order and last_order_type == "delivery":
             return "Is this for delivery again, or pickup?"
         else:
-            return "Is this for pickup or delivery?"
+            return CheckoutMessages.PICKUP_OR_DELIVERY

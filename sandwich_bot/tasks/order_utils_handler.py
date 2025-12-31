@@ -18,7 +18,11 @@ from .models import (
     CoffeeItemTask,
     SpeedMenuBagelItemTask,
 )
-from .schemas import OrderPhase, StateMachineResult
+from .schemas import StateMachineResult
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .message_builder import MessageBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +37,17 @@ class OrderUtilsHandler:
     def __init__(
         self,
         build_order_summary: Callable[[OrderTask], str] | None = None,
+        message_builder: "MessageBuilder | None" = None,
     ):
         """
         Initialize the order utils handler.
 
         Args:
             build_order_summary: Callback to build order summary string.
+            message_builder: MessageBuilder instance for generating follow-up questions.
         """
         self._build_order_summary = build_order_summary
+        self._message_builder = message_builder
         self._store_info: dict = {}
 
     def set_store_info(self, store_info: dict | None) -> None:
@@ -266,8 +273,9 @@ class OrderUtilsHandler:
             lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
 
         # Add phase-appropriate follow-up question
-        follow_up = self._get_phase_follow_up(order)
-        lines.append(f"\n{follow_up}")
+        if self._message_builder:
+            follow_up = self._message_builder.get_phase_follow_up(order)
+            lines.append(f"\n{follow_up}")
 
         message = "\n".join(lines)
         logger.info("ORDER_STATUS: %d items, subtotal=%.2f, phase=%s", len(items), subtotal, order.phase)
@@ -276,27 +284,3 @@ class OrderUtilsHandler:
             message=message,
             order=order,
         )
-
-    def _get_phase_follow_up(self, order: OrderTask) -> str:
-        """Get the appropriate follow-up question based on current order phase."""
-        phase = order.phase
-
-        if phase == OrderPhase.GREETING.value or phase == OrderPhase.TAKING_ITEMS.value:
-            return "Anything else?"
-        elif phase == OrderPhase.CONFIGURING_ITEM.value:
-            # If configuring an item, ask about the pending field
-            return "Anything else?"  # Will return to item config after this
-        elif phase == OrderPhase.CHECKOUT_DELIVERY.value:
-            return "Is this for pickup or delivery?"
-        elif phase == OrderPhase.CHECKOUT_NAME.value:
-            return "Can I get a name for the order?"
-        elif phase == OrderPhase.CHECKOUT_CONFIRM.value:
-            return "Does that look right?"
-        elif phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
-            return "Can I get a phone number or email to send the order confirmation?"
-        elif phase == OrderPhase.CHECKOUT_PHONE.value:
-            return "What's the best phone number to reach you?"
-        elif phase == OrderPhase.CHECKOUT_EMAIL.value:
-            return "What's your email address?"
-        else:
-            return "Anything else?"

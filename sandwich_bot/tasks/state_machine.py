@@ -41,7 +41,6 @@ from .order_utils_handler import OrderUtilsHandler
 from .item_adder_handler import ItemAdderHandler
 from .checkout_utils_handler import CheckoutUtilsHandler
 from .config_helper_handler import ConfigHelperHandler
-from .confirmation_handler import ConfirmationHandler
 from .modifier_change_handler import ModifierChangeHandler, ModifierCategory
 from .slot_orchestration_handler import SlotOrchestrationHandler
 from .configuring_item_handler import ConfiguringItemHandler
@@ -315,6 +314,7 @@ class OrderStateMachine:
         self.checkout_utils_handler = CheckoutUtilsHandler(
             transition_to_next_slot=self._transition_to_next_slot,
             configure_next_incomplete_coffee=None,  # Set after coffee_handler init
+            message_builder=self.message_builder,
         )
         # Initialize coffee config handler
         self.coffee_handler = CoffeeConfigHandler(
@@ -361,6 +361,7 @@ class OrderStateMachine:
         # Initialize order utils handler
         self.order_utils_handler = OrderUtilsHandler(
             build_order_summary=self.checkout_utils_handler.build_order_summary,
+            message_builder=self.message_builder,
         )
         # Initialize item adder handler
         self.item_adder_handler = ItemAdderHandler(
@@ -378,14 +379,10 @@ class OrderStateMachine:
             modifier_change_handler=self.modifier_change_handler,
             get_next_question=self.checkout_utils_handler.get_next_question,
         )
-        # Initialize confirmation handler
-        self.confirmation_handler = ConfirmationHandler(
-            model=self.model,
-            order_utils_handler=self.order_utils_handler,
-            checkout_utils_handler=self.checkout_utils_handler,
-            transition_to_next_slot=self._transition_to_next_slot,
-            handle_taking_items_with_parsed=self._handle_taking_items_with_parsed,
-        )
+        # Set confirmation-related callbacks on checkout_handler (now that dependencies are ready)
+        self.checkout_handler.order_utils_handler = self.order_utils_handler
+        self.checkout_handler.checkout_utils_handler = self.checkout_utils_handler
+        self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
             by_pound_handler=self.by_pound_handler,
@@ -408,7 +405,7 @@ class OrderStateMachine:
             store_info_handler=self.store_info_handler,
             by_pound_handler=self.by_pound_handler,
             checkout_utils_handler=self.checkout_utils_handler,
-            confirmation_handler=self.confirmation_handler,
+            checkout_handler=self.checkout_handler,
         )
 
     @property
@@ -465,12 +462,13 @@ class OrderStateMachine:
         self._store_info = store_info or {}
         # Update query handler with current store info
         self.query_handler.store_info = self._store_info
-        # Update checkout handler with current context
+        # Update checkout handler with current context (including confirmation context)
         self.checkout_handler.set_context(
             store_info=self._store_info,
             returning_customer=returning_customer,
             is_repeat_order=getattr(self, '_is_repeat_order', False),
             last_order_type=getattr(self, '_last_order_type', None),
+            spread_types=self._spread_types,
         )
         # Update store info handler with current store info
         self.store_info_handler.set_store_info(self._store_info)
@@ -480,11 +478,6 @@ class OrderStateMachine:
         self.checkout_utils_handler.set_repeat_order_info(
             is_repeat=getattr(self, '_is_repeat_order', False),
             last_order_type=getattr(self, '_last_order_type', None),
-        )
-        # Update confirmation handler with context
-        self.confirmation_handler.set_context(
-            spread_types=self._spread_types,
-            returning_customer=returning_customer,
         )
         # Update taking items handler with context
         def set_repeat_info(is_repeat: bool, last_order_type: str | None) -> None:
@@ -624,7 +617,7 @@ class OrderStateMachine:
         elif order.phase == OrderPhase.CHECKOUT_NAME.value:
             result = self.checkout_handler.handle_name(user_input, order)
         elif order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
-            result = self.confirmation_handler.handle_confirmation(user_input, order)
+            result = self.checkout_handler.handle_confirmation(user_input, order)
         elif order.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
             result = self.checkout_handler.handle_payment_method(user_input, order)
         elif order.phase == OrderPhase.CHECKOUT_PHONE.value:

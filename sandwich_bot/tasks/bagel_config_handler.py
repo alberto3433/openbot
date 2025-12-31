@@ -33,6 +33,7 @@ from .parsers.llm_parsers import (
     parse_toasted_choice,
 )
 from .parsers.deterministic import extract_modifiers_from_input
+from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -96,9 +97,6 @@ class BagelConfigHandler:
     cheese clarification, and multi-bagel configuration orchestration.
     """
 
-    # Ordinal number mappings
-    ORDINALS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
-
     def __init__(
         self,
         model: str = "gpt-4o-mini",
@@ -125,10 +123,6 @@ class BagelConfigHandler:
         self._get_item_by_id = get_item_by_id
         self._configure_coffee = configure_coffee
         self._check_redirect = check_redirect
-
-    def _get_ordinal(self, n: int) -> str:
-        """Convert number to ordinal (1 -> 'first', 2 -> 'second', etc.)."""
-        return self.ORDINALS.get(n, f"#{n}")
 
     def handle_bagel_choice(
         self,
@@ -493,7 +487,7 @@ class BagelConfigHandler:
 
             # Build ordinal descriptor if multiple items
             if total_items > 1:
-                ordinal = self._get_ordinal(item_num)
+                ordinal = MessageBuilder.get_ordinal(item_num)
                 bagel_desc = f"the {ordinal} bagel"
                 your_bagel_desc = f"your {ordinal} bagel"
             else:

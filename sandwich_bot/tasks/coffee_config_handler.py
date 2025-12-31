@@ -19,6 +19,7 @@ from .parsers import (
     extract_coffee_modifiers_from_input,
 )
 from .parsers.constants import COFFEE_BEVERAGE_TYPES, is_soda_drink
+from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
     from .pricing_engine import PricingEngine
@@ -48,8 +49,6 @@ class CoffeeConfigHandler:
     Manages adding coffee items, size selection, and hot/iced preference.
     """
 
-    ORDINALS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
-
     def __init__(
         self,
         model: str = "gpt-4o-mini",
@@ -73,10 +72,6 @@ class CoffeeConfigHandler:
         self.menu_lookup = menu_lookup
         self._get_next_question = get_next_question
         self._check_redirect = check_redirect
-
-    def _get_ordinal(self, n: int) -> str:
-        """Convert number to ordinal (1 -> 'first', 2 -> 'second', etc.)."""
-        return self.ORDINALS.get(n, f"#{n}")
 
     def add_coffee(
         self,
@@ -266,7 +261,7 @@ class CoffeeConfigHandler:
             if same_type_count > 1:
                 # Find position among items of same type
                 item_num = next((i + 1 for i, c in enumerate(same_type_items) if c.id == coffee.id), 1)
-                ordinal = self._get_ordinal(item_num)
+                ordinal = MessageBuilder.get_ordinal(item_num)
                 drink_desc = f"the {ordinal} {drink_name}"
             else:
                 drink_desc = f"the {drink_name}"
@@ -369,7 +364,7 @@ class CoffeeConfigHandler:
         if same_type_count > 1:
             # Find this coffee's position among items of same type
             item_num = next((i + 1 for i, c in enumerate(same_type_items) if c.id == item.id), 1)
-            ordinal = self._get_ordinal(item_num)
+            ordinal = MessageBuilder.get_ordinal(item_num)
             return StateMachineResult(
                 message=f"Would you like the {ordinal} {drink_name} hot or iced?",
                 order=order,

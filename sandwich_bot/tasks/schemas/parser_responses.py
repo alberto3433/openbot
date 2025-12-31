@@ -224,6 +224,31 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Specific spread variety if mentioned (e.g., 'scallion', 'veggie', 'plain')"
     )
+    # Bagel modifiers for orders like "everything bagel with bacon and egg"
+    new_bagel_proteins: list[str] = Field(
+        default_factory=list,
+        description="Proteins to add to the bagel (e.g., 'bacon', 'egg', 'ham')"
+    )
+    new_bagel_cheeses: list[str] = Field(
+        default_factory=list,
+        description="Cheeses to add to the bagel (e.g., 'american', 'swiss', 'cheddar')"
+    )
+    new_bagel_toppings: list[str] = Field(
+        default_factory=list,
+        description="Toppings to add to the bagel (e.g., 'tomato', 'onion', 'lettuce')"
+    )
+    new_bagel_spreads: list[str] = Field(
+        default_factory=list,
+        description="Spreads to add to the bagel (e.g., 'cream cheese', 'butter')"
+    )
+    new_bagel_notes: list[str] = Field(
+        default_factory=list,
+        description="Special modifier notes (e.g., 'light cream cheese', 'extra bacon')"
+    )
+    new_bagel_needs_cheese_clarification: bool = Field(
+        default=False,
+        description="True if user said 'cheese' without specifying type (American, Swiss, etc.)"
+    )
     # For multiple bagels with different configs specified upfront
     bagel_details: list[BagelOrderDetails] = Field(
         default_factory=list,

@@ -3847,12 +3847,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=True, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm.confirmation_handler.handle_confirmation("yes that looks good", order)
+            result = sm.checkout_handler.handle_confirmation("yes that looks good", order)
 
             assert order.checkout.order_reviewed is True
             assert "text" in result.message.lower() or "email" in result.message.lower()
@@ -3872,18 +3872,18 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_confirm:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_confirmation") as mock_confirm:
             mock_confirm.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=True, asks_about_tax=False
             )
-            with patch("sandwich_bot.tasks.confirmation_handler.parse_open_input") as mock_open:
+            with patch("sandwich_bot.tasks.checkout_handler.parse_open_input") as mock_open:
                 # No new item detected
                 mock_open.return_value = OpenInputResponse(
                     new_menu_item=None, new_bagel=False, new_coffee=False,
                     new_speed_menu_bagel=False
                 )
 
-                result = sm.confirmation_handler.handle_confirmation("no I want to change something", order)
+                result = sm.checkout_handler.handle_confirmation("no I want to change something", order)
 
                 assert "change" in result.message.lower()
 
@@ -3905,7 +3905,7 @@ class TestConfirmationHandler:
         order.items.add_item(bagel)
 
         # TAX_QUESTION_PATTERN should match this
-        result = sm.confirmation_handler.handle_confirmation("what's my total with tax?", order)
+        result = sm.checkout_handler.handle_confirmation("what's my total with tax?", order)
 
         assert "tax" in result.message.lower() or "$" in result.message
 
@@ -3925,7 +3925,7 @@ class TestConfirmationHandler:
         order.items.add_item(bagel)
 
         initial_count = len(order.items.items)
-        result = sm.confirmation_handler.handle_confirmation("make it 2", order)
+        result = sm.checkout_handler.handle_confirmation("make it 2", order)
 
         # Should have doubled the items
         assert len(order.items.items) == initial_count + 1
@@ -3946,12 +3946,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm.confirmation_handler.handle_confirmation("hmm let me think", order)
+            result = sm.checkout_handler.handle_confirmation("hmm let me think", order)
 
             assert "correct" in result.message.lower() or "look" in result.message.lower()
 
@@ -3971,7 +3971,7 @@ class TestConfirmationHandler:
         order.items.add_item(coffee)
 
         initial_count = len(order.items.items)
-        result = sm.confirmation_handler.handle_confirmation("make it three", order)
+        result = sm.checkout_handler.handle_confirmation("make it three", order)
 
         # Should have added 2 more (total of 3)
         assert len(order.items.items) == initial_count + 2
@@ -3992,12 +3992,12 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("sandwich_bot.tasks.confirmation_handler.parse_confirmation") as mock_parse:
+        with patch("sandwich_bot.tasks.checkout_handler.parse_confirmation") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm.confirmation_handler.handle_confirmation("wait a second", order)
+            result = sm.checkout_handler.handle_confirmation("wait a second", order)
 
             assert order.checkout.order_reviewed is False
 

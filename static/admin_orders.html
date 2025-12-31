@@ -622,6 +622,10 @@
                 const cfgExtras = Array.isArray(item.item_config.extras) ? item.item_config.extras : [item.item_config.extras];
                 cfgExtras.filter(e => e).forEach(e => configParts.push(e.replace(/_/g, " ")));
               }
+              // Handle modifications (e.g., "mayo", "mustard", "ketchup" for speed menu bagels)
+              if (item.item_config.modifications && item.item_config.modifications.length > 0) {
+                configParts.push(item.item_config.modifications.join(", "));
+              }
               configStr = configParts.join(" • ");
             }
 

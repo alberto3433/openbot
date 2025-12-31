@@ -230,6 +230,28 @@ class TakingItemsHandler:
                     parsed.new_speed_menu_bagel or parsed.new_side_item or parsed.by_pound_items
                 )
 
+                # Special case: If last item is a bagel and the "menu item" is a cream cheese sandwich,
+                # treat this as a spread change, not a menu item replacement.
+                # e.g., "make it blueberry cream cheese" -> change spread, not add Blueberry Cream Cheese Sandwich
+                if (has_new_items and parsed.new_menu_item and isinstance(last_item, BagelItemTask)
+                    and "cream cheese sandwich" in parsed.new_menu_item.lower()):
+                    # Extract the spread name from the menu item name
+                    # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
+                    spread_name = parsed.new_menu_item.lower().replace(" sandwich", "")
+                    old_spread = last_item.spread or "none"
+                    last_item.spread = spread_name
+                    logger.info("Replacement: interpreted '%s' as spread change from '%s' to '%s'",
+                               parsed.new_menu_item, old_spread, spread_name)
+
+                    # Recalculate price if needed
+                    self.pricing.recalculate_bagel_price(last_item)
+
+                    updated_summary = last_item.get_summary()
+                    return StateMachineResult(
+                        message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                        order=order,
+                    )
+
                 # If no new items parsed and last item is a bagel, try applying as modifiers
                 if not has_new_items and isinstance(last_item, BagelItemTask) and raw_user_input:
                     modifiers = extract_modifiers_from_input(raw_user_input)

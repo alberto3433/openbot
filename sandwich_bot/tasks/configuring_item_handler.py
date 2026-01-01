@@ -236,18 +236,39 @@ class ConfiguringItemHandler:
 
         logger.info("ITEM SELECTION: User chose '%s', adding %d item(s)", selected_name, quantity)
 
+        # Check if it's an omelette (requires side choice configuration)
+        is_omelette = "omelette" in selected_name.lower() or "omelet" in selected_name.lower()
+
         # Directly create the MenuItemTask(s) - no need to go through add_menu_item
         # since we already have all the item details from pending_item_options
+        first_item = None
         for _ in range(quantity):
             item = MenuItemTask(
                 menu_item_name=selected_name,
                 menu_item_id=selected_id,
                 unit_price=selected_price,
+                requires_side_choice=is_omelette,
+                menu_item_type="omelette" if is_omelette else None,
             )
-            item.mark_complete()  # Desserts/simple items don't need configuration
+            if is_omelette:
+                item.mark_in_progress()  # Omelettes need side choice configuration
+            else:
+                item.mark_complete()  # Desserts/simple items don't need configuration
             order.items.add_item(item)
+            if first_item is None:
+                first_item = item
 
-        # Return to taking items phase
+        if is_omelette:
+            # Set state to wait for side choice
+            order.phase = OrderPhase.CONFIGURING_ITEM.value
+            order.pending_item_id = first_item.id
+            order.pending_field = "side_choice"
+            return StateMachineResult(
+                message=f"Would you like a bagel or fruit salad with your {selected_name}?",
+                order=order,
+            )
+
+        # Return to taking items phase for non-omelette items
         order.phase = OrderPhase.TAKING_ITEMS.value
         return StateMachineResult(
             message=f"Got it, {quantity} {selected_name}{'s' if quantity > 1 and not selected_name.endswith('s') else ''}. Anything else?",

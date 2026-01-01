@@ -144,17 +144,21 @@ class ItemAdderHandler:
             else:
                 menu_item = None
         else:
-            # Not an exact generic term - try exact menu lookup first
-            menu_item = self.menu_lookup.lookup_menu_item(item_name)
-
-            # If no exact match but item ends with a generic term (e.g., "Bagel Chips" from LLM),
-            # try disambiguation using the generic term
-            if not menu_item and generic_term:
-                matching_items = self.menu_lookup.lookup_menu_items(generic_term)
-                if len(matching_items) > 1:
+            # Not an exact generic term - but item may end with a generic term
+            # First try to find matches for the user's SPECIFIC input (e.g., "bagel chips")
+            # Only if that fails, fall back to generic term search
+            if generic_term:
+                # First, try exact match for the specific item name
+                matching_items = self.menu_lookup.lookup_menu_items(item_name)
+                if len(matching_items) == 1:
+                    # Single match - use it directly (no disambiguation needed)
+                    menu_item = matching_items[0]
+                    logger.info("Specific item '%s' matched single item: %s", item_name, menu_item.get("name"))
+                elif len(matching_items) > 1:
+                    # Multiple matches for specific input - disambiguate among these
                     logger.info(
-                        "Generic term '%s' (from '%s') matched %d items - asking for disambiguation",
-                        generic_term, item_name, len(matching_items)
+                        "Specific item '%s' matched %d items - asking for disambiguation",
+                        item_name, len(matching_items)
                     )
                     order.pending_item_options = matching_items
                     order.pending_item_quantity = quantity
@@ -168,12 +172,15 @@ class ItemAdderHandler:
 
                     options_str = "\n".join(option_list)
                     return StateMachineResult(
-                        message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
+                        message=f"We have a few {item_name} options:\n{options_str}\nWhich would you like?",
                         order=order,
                     )
-                elif len(matching_items) == 1:
-                    menu_item = matching_items[0]
-                    logger.info("Generic term '%s' matched single item: %s", generic_term, menu_item.get("name"))
+                else:
+                    # No matches for specific input - fall back to regular lookup
+                    menu_item = self.menu_lookup.lookup_menu_item(item_name)
+            else:
+                # No generic term - regular lookup
+                menu_item = self.menu_lookup.lookup_menu_item(item_name)
 
         # Log omelette items in menu for debugging
         omelette_items = self._menu_data.get("items_by_type", {}).get("omelette", [])

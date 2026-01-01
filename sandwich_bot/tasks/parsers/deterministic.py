@@ -30,6 +30,7 @@ from .constants import (
     MODIFIER_NORMALIZATIONS,
     QUALIFIER_PATTERNS,
     GREETING_PATTERNS,
+    GRATITUDE_PATTERNS,
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     SIDE_ITEM_MAP,
@@ -137,6 +138,7 @@ FILLER_WORDS_PATTERN = re.compile(
     r"|ok(?:ay)?[,\s]+"  # "ok/okay" is always filler
     r"|hey[,\s]+"    # "hey" is always filler
     r"|like[,\s]+"   # "like" is always filler
+    r"|sorry[,\s]+"  # "sorry" is filler (e.g., "sorry, I meant plain bagel")
     r")",
     re.IGNORECASE
 )
@@ -1744,6 +1746,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         logger.debug("Deterministic parse: greeting detected")
         return OpenInputResponse(is_greeting=True)
 
+    # Check for gratitude ("thank you", "thanks", etc.)
+    if GRATITUDE_PATTERNS.match(text):
+        logger.debug("Deterministic parse: gratitude detected")
+        return OpenInputResponse(is_gratitude=True)
+
     # Check for done ordering
     if DONE_PATTERNS.match(text):
         logger.debug("Deterministic parse: done ordering detected")
@@ -1902,8 +1909,8 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications)
 
     # Early check for standalone side items
+    # NOTE: "bagel chips" removed - handled by dessert_keywords for chips disambiguation
     standalone_side_items = {
-        "bagel chips": "Bagel Chips",
         "latkes": "Latkes",
         "latke": "Latkes",
         "fruit cup": "Fruit Cup",
@@ -1937,6 +1944,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             "muffin", "muffins",
             "pastry", "pastries",
             "donut", "donuts", "doughnut", "doughnuts",
+            "chips",  # For disambiguation among bagel chips, potato chips, kettle chips, etc.
         ]
         for keyword in dessert_keywords:
             if keyword in text_lower:

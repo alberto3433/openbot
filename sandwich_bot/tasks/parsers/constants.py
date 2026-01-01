@@ -29,7 +29,7 @@ SODA_DRINK_TYPES = {
     "iced tea",  # Pre-made bottled iced tea
     "bottled water", "water",
     "sparkling water", "seltzer",
-    "juice", "orange juice", "apple juice", "cranberry juice",
+    "juice", "orange juice", "oj", "apple juice", "cranberry juice",
     "snapple",
     "gatorade",
     # Dr. Brown's sodas
@@ -179,10 +179,16 @@ SPEED_MENU_BAGELS = {
     "ham egg cheese": "The Classic BEC",
     "ham and egg and cheese": "The Classic BEC",
     "ham eggs and cheese": "The Classic BEC",
+    "hec": "The Classic BEC",
+    "h.e.c.": "The Classic BEC",
+    "h.e.c": "The Classic BEC",
     "sausage egg and cheese": "The Classic BEC",
     "sausage egg cheese": "The Classic BEC",
     "sausage and egg and cheese": "The Classic BEC",
     "sausage eggs and cheese": "The Classic BEC",
+    "sec": "The Classic BEC",
+    "s.e.c.": "The Classic BEC",
+    "s.e.c": "The Classic BEC",
     # The Traditional (nova, cream cheese, capers, onion)
     "the traditional": "The Traditional",
     "traditional": "The Traditional",
@@ -910,6 +916,7 @@ MENU_CATEGORY_KEYWORDS = {
     "deli sandwiches": "deli_sandwich",
     "signature sandwiches": "signature_sandwich",
     "omelettes": "omelette",
+    "omelets": "omelette",  # Single 't' spelling variant
     "sides": "side",
     # Desserts and pastries
     "desserts": "dessert",

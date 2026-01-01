@@ -1752,6 +1752,11 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         logger.debug("Deterministic parse: gratitude detected")
         return OpenInputResponse(is_gratitude=True)
 
+    # Check for help requests ("help", "I'm confused", "what can you do")
+    if HELP_PATTERNS.match(text):
+        logger.debug("Deterministic parse: help request detected")
+        return OpenInputResponse(is_help_request=True)
+
     # Check for done ordering
     if DONE_PATTERNS.match(text):
         logger.debug("Deterministic parse: done ordering detected")

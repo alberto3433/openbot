@@ -447,6 +447,14 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="Just a greeting, no order content"
     )
+    is_gratitude: bool = Field(
+        default=False,
+        description="Just a thank you, no order content"
+    )
+    is_help_request: bool = Field(
+        default=False,
+        description="User is asking for help or is confused"
+    )
     unclear: bool = Field(
         default=False,
         description="Message couldn't be understood"

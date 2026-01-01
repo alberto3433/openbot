@@ -69,6 +69,7 @@ class ItemAdderHandler:
         "cookie", "cookies", "muffin", "muffins", "brownie", "brownies",
         "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
         "chip", "chips",
+        "juice", "soda", "coke", "sprite",  # Beverages for disambiguation
     ])
 
     def _extract_generic_term(self, item_name: str) -> str | None:

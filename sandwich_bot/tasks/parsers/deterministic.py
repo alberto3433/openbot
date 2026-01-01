@@ -1944,6 +1944,8 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         "what muffins", "what cookies", "what brownies", "what pastries", "what donuts",
     ])
     if not is_menu_query:
+        # Keywords that should trigger menu lookup for disambiguation
+        # Includes desserts, snacks, and other generic item categories
         dessert_keywords = [
             "cookie", "cookies",
             "brownie", "brownies",
@@ -1951,6 +1953,8 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             "pastry", "pastries",
             "donut", "donuts", "doughnut", "doughnuts",
             "chips",  # For disambiguation among bagel chips, potato chips, kettle chips, etc.
+            "omelette", "omelettes", "omelet", "omelets",  # For disambiguation among omelette types
+            "egg omelette", "egg omelet",  # Generic omelette requests
         ]
         for keyword in dessert_keywords:
             if keyword in text_lower:

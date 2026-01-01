@@ -70,6 +70,8 @@ class ItemAdderHandler:
         "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
         "chip", "chips",
         "juice", "soda", "coke", "sprite",  # Beverages for disambiguation
+        "omelette", "omelettes", "omelet", "omelets",  # Omelettes for disambiguation
+        "egg omelette", "egg omelet",  # "egg omelette" is generic, not specific
     ])
 
     def _extract_generic_term(self, item_name: str) -> str | None:

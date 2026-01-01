@@ -723,9 +723,9 @@ class OrderTask(BaseTask):
 
     def queue_item_for_config(self, item_id: str, item_type: str) -> None:
         """Add an item to the configuration queue."""
-        # Don't add duplicates
+        # Don't add duplicates - handle mixed types (strings from category inquiry, dicts from item config)
         for entry in self.pending_config_queue:
-            if entry.get("item_id") == item_id:
+            if isinstance(entry, dict) and entry.get("item_id") == item_id:
                 return
         self.pending_config_queue.append({
             "item_id": item_id,
@@ -733,14 +733,17 @@ class OrderTask(BaseTask):
         })
 
     def pop_next_config_item(self) -> dict | None:
-        """Pop the next item from the configuration queue."""
-        if self.pending_config_queue:
-            return self.pending_config_queue.pop(0)
+        """Pop the next config item (dict) from the queue, skipping category strings."""
+        while self.pending_config_queue:
+            entry = self.pending_config_queue.pop(0)
+            if isinstance(entry, dict) and "item_id" in entry:
+                return entry
+            # Skip non-dict entries (category strings from by_pound inquiry)
         return None
 
     def has_queued_config_items(self) -> bool:
-        """Check if there are items waiting for configuration."""
-        return len(self.pending_config_queue) > 0
+        """Check if there are item config dicts waiting in the queue."""
+        return any(isinstance(e, dict) and "item_id" in e for e in self.pending_config_queue)
 
     def add_message(self, role: str, content: str) -> None:
         """Add a message to conversation history."""

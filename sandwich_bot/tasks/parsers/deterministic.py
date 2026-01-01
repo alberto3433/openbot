@@ -32,6 +32,7 @@ from .constants import (
     GREETING_PATTERNS,
     GRATITUDE_PATTERNS,
     DONE_PATTERNS,
+    HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     SIDE_ITEM_MAP,
     SIDE_ITEM_TYPES,
@@ -1054,7 +1055,11 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
 
 def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
-    """Try to parse soda/bottled drink orders deterministically."""
+    """Try to parse soda/bottled drink orders deterministically.
+
+    Routes bottled beverages through new_menu_item for disambiguation,
+    not new_coffee (which is reserved for sized beverages like coffee/tea).
+    """
     text_lower = text.lower()
 
     drink_type = None
@@ -1088,16 +1093,12 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 
     logger.debug("Deterministic parse: soda order - type=%s, qty=%d", canonical_name, quantity)
 
+    # Route through new_menu_item for disambiguation instead of new_coffee
+    # This allows bottled drinks (juice, soda) to go through the same
+    # disambiguation flow as other menu items
     return OpenInputResponse(
-        new_coffee=True,
-        new_coffee_type=canonical_name,
-        new_coffee_quantity=quantity,
-        new_coffee_size=None,
-        new_coffee_iced=None,
-        new_coffee_milk=None,
-        new_coffee_sweetener=None,
-        new_coffee_sweetener_quantity=1,
-        new_coffee_flavor_syrup=None,
+        new_menu_item=canonical_name,
+        new_menu_item_quantity=quantity,
     )
 
 
@@ -1160,8 +1161,8 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
 
     # Patterns for GENERAL menu inquiries (should list all categories)
     general_menu_patterns = [
-        # "what's on your/the menu?" / "what is on your/the menu?"
-        re.compile(r"what(?:'s|\s+is)\s+on\s+(?:your|the)\s+menu", re.IGNORECASE),
+        # "what's on your/the menu?" / "whats on your menu?" / "what is on your/the menu?"
+        re.compile(r"what(?:'?s|\s+is)\s+on\s+(?:your|the)\s+menu", re.IGNORECASE),
         # "what do you have?" / "what do you have on the menu?"
         re.compile(r"what\s+do\s+you\s+have(?:\s+on\s+(?:the|your)\s+menu)?(?:\?|$)", re.IGNORECASE),
         # "what do you serve?" / "what do you sell?"

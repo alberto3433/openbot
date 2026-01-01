@@ -451,11 +451,31 @@ GREETING_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+# Gratitude patterns - thank you, thanks, etc.
+GRATITUDE_PATTERNS = re.compile(
+    r"^(thanks?(\s+you)?|thank\s+you(\s+(so\s+)?much)?|ty|thx|appreciated?)[\s!.,]*$",
+    re.IGNORECASE
+)
+
 # Done ordering patterns
 DONE_PATTERNS = re.compile(
     r"^(that'?s?\s*(all|it)(\s+for\s+now)?|no(pe|thing)?(\s*(else|more))?|i'?m\s*(good|done|all\s*set)|"
     r"nothing(\s*(else|more))?|done|all\s*set|that\s*will\s*be\s*all|nah|"
     r"just\s+the\s+\w+(\s+\w+)?|just\s+that|only\s+the\s+\w+(\s+\w+)?)[\s!.,]*$",
+    re.IGNORECASE
+)
+
+# Help request patterns - user needs assistance
+HELP_PATTERNS = re.compile(
+    r"^("
+    r"help(\s+me)?|"  # "help", "help me"
+    r"i('?m|\s+am)\s+(confused|lost|not\s+sure)|"  # "I'm confused", "I am lost"
+    r"what\s+can\s+you\s+do|"  # "what can you do"
+    r"how\s+do(es)?\s+(this|it)\s+work|"  # "how does this work"
+    r"i\s+don'?t\s+(understand|know)|"  # "I don't understand"
+    r"can\s+you\s+help(\s+me)?|"  # "can you help me"
+    r"i\s+need\s+help"  # "I need help"
+    r")[\s?!.,]*$",
     re.IGNORECASE
 )
 

@@ -142,7 +142,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "is_signature": bool(item.is_signature),
             "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
             "base_price": float(item.base_price),
-            "available_qty": int(item.available_qty),
             "recipe": recipe_json,
             "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")

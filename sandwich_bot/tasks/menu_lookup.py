@@ -251,12 +251,7 @@ class MenuLookup:
                 unique_items.append(item)
         all_items = unique_items
 
-        # Pass 1: Exact match - if found, return only that
-        for item in all_items:
-            if item.get("name", "").lower() == item_name_lower:
-                return [item]
-
-        # Pass 2: Search term (or synonyms) is contained in item name
+        # Pass 1: Search term (or synonyms) is contained in item name
         # e.g., "orange juice" finds "Tropicana Orange Juice", "Fresh Squeezed Orange Juice"
         # Also "tropicana" (synonym) finds "Tropicana Orange Juice No Pulp"
         matches = []
@@ -272,7 +267,7 @@ class MenuLookup:
             # Sort by name length (shortest first = more specific)
             return sorted(matches, key=lambda x: len(x.get("name", "")))
 
-        # Pass 3: Item name is contained in search term
+        # Pass 2: Item name is contained in search term
         # e.g., "tropicana orange juice" finds "Tropicana"
         matches = []
         for item in all_items:
@@ -283,7 +278,7 @@ class MenuLookup:
             # Sort by name length (longest first = more complete match)
             return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
 
-        # Pass 4: Normalized matching
+        # Pass 3: Normalized matching
         # Handles "blue berry" matching "blueberry", "black and white" matching "black & white"
         item_name_compact = normalize_for_match(item_name_lower)
         matches = []

@@ -106,28 +106,30 @@ class ItemAdderHandler:
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
-        # Check if the item_name is or contains a generic category term (like "cookie", "muffin", "chips")
-        # In this case, we should check for multiple matches and disambiguate
         item_lower = item_name.lower().strip()
+
+        # Check if the item_name is or contains a generic category term (like "cookie", "muffin", "chips")
         generic_term = self._extract_generic_term(item_name)
-        if generic_term:
-            # For generic terms, check if there are multiple matching items
-            # Use the generic term for search (e.g., "chips" not "Bagel Chips")
+
+        # Determine if this is an EXACT generic term (e.g., "chips") vs a specific item ending with
+        # a generic term (e.g., "potato chips"). Only the former should always trigger disambiguation.
+        is_exact_generic = item_lower in self.GENERIC_CATEGORY_TERMS
+
+        if is_exact_generic:
+            # User said exactly "chips", "cookies", etc. - always disambiguate if multiple matches
             matching_items = self.menu_lookup.lookup_menu_items(generic_term)
             if len(matching_items) > 1:
-                # Multiple matches - ask user to clarify
                 logger.info(
-                    "Generic term '%s' (from '%s') matched %d items - asking for disambiguation",
-                    generic_term, item_name, len(matching_items)
+                    "Exact generic term '%s' matched %d items - asking for disambiguation",
+                    generic_term, len(matching_items)
                 )
                 order.pending_item_options = matching_items
                 order.pending_item_quantity = quantity
                 order.pending_field = "item_selection"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-                # Build the clarification message (without prices for generic queries)
                 option_list = []
-                for i, item in enumerate(matching_items[:6], 1):  # Limit to 6 options
+                for i, item in enumerate(matching_items[:6], 1):
                     name = item.get("name", "Unknown")
                     option_list.append(f"{i}. {name}")
 
@@ -137,15 +139,41 @@ class ItemAdderHandler:
                     order=order,
                 )
             elif len(matching_items) == 1:
-                # Single match - use it directly
                 menu_item = matching_items[0]
                 logger.info("Generic term '%s' matched single item: %s", generic_term, menu_item.get("name"))
             else:
-                # No matches found for generic term - let the regular flow handle the error
                 menu_item = None
         else:
-            # Not a generic term - use regular lookup
+            # Not an exact generic term - try exact menu lookup first
             menu_item = self.menu_lookup.lookup_menu_item(item_name)
+
+            # If no exact match but item ends with a generic term (e.g., "Bagel Chips" from LLM),
+            # try disambiguation using the generic term
+            if not menu_item and generic_term:
+                matching_items = self.menu_lookup.lookup_menu_items(generic_term)
+                if len(matching_items) > 1:
+                    logger.info(
+                        "Generic term '%s' (from '%s') matched %d items - asking for disambiguation",
+                        generic_term, item_name, len(matching_items)
+                    )
+                    order.pending_item_options = matching_items
+                    order.pending_item_quantity = quantity
+                    order.pending_field = "item_selection"
+                    order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                    option_list = []
+                    for i, item in enumerate(matching_items[:6], 1):
+                        name = item.get("name", "Unknown")
+                        option_list.append(f"{i}. {name}")
+
+                    options_str = "\n".join(option_list)
+                    return StateMachineResult(
+                        message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
+                        order=order,
+                    )
+                elif len(matching_items) == 1:
+                    menu_item = matching_items[0]
+                    logger.info("Generic term '%s' matched single item: %s", generic_term, menu_item.get("name"))
 
         # Log omelette items in menu for debugging
         omelette_items = self._menu_data.get("items_by_type", {}).get("omelette", [])

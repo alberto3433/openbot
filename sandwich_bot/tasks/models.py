@@ -231,6 +231,7 @@ class CoffeeItemTask(ItemTask):
     sweetener: str | None = None  # sugar, splenda, stevia, etc.
     sweetener_quantity: int = 1  # number of sweetener packets (e.g., 2 splendas)
     flavor_syrup: str | None = None  # vanilla, caramel, hazelnut, etc.
+    syrup_quantity: int = 1  # number of syrup pumps (e.g., 2 hazelnut syrups)
     extra_shots: int = 0
 
     # Upcharge tracking (set by recalculate_coffee_price)
@@ -279,12 +280,13 @@ class CoffeeItemTask(ItemTask):
         else:
             parts.append("coffee")
 
-        # Add flavor syrup with upcharge
+        # Add flavor syrup with upcharge and quantity
         if self.flavor_syrup:
+            qty_prefix = f"{self.syrup_quantity} " if self.syrup_quantity > 1 else ""
             if self.syrup_upcharge > 0:
-                parts.append(f"with {self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
+                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
             else:
-                parts.append(f"with {self.flavor_syrup} syrup")
+                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup")
 
         if self.milk:
             # "none" or "black" means no milk - show as "black" for clarity
@@ -308,6 +310,97 @@ class CoffeeItemTask(ItemTask):
         # Add special instructions if present
         if self.special_instructions:
             parts.append(f"(Special Instructions: {self.special_instructions})")
+
+        return " ".join(parts)
+
+    def get_spoken_summary(self) -> str:
+        """Get a natural-sounding summary for bot responses.
+
+        Uses special instructions phrase when it describes a modifier,
+        e.g., 'with a splash of milk' instead of 'with whole milk'.
+        """
+        parts = []
+
+        # Size with upcharge
+        if self.size:
+            if self.size_upcharge > 0:
+                parts.append(f"{self.size} (+${self.size_upcharge:.2f})")
+            else:
+                parts.append(self.size)
+
+        # Hot/iced
+        if self.iced is True:
+            parts.append("iced")
+        elif self.iced is False:
+            parts.append("hot")
+
+        # Drink type
+        if self.drink_type:
+            parts.append(self.drink_type)
+        else:
+            parts.append("coffee")
+
+        # Add flavor syrup with upcharge and quantity
+        if self.flavor_syrup:
+            qty_prefix = f"{self.syrup_quantity} " if self.syrup_quantity > 1 else ""
+            if self.syrup_upcharge > 0:
+                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
+            else:
+                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup")
+
+        # Check if special instructions describe milk (e.g., "a splash of milk", "light cream")
+        special_describes_milk = False
+        special_used_for_milk = False
+        if self.special_instructions:
+            special_lower = self.special_instructions.lower()
+            # Check for "milk" keyword or if the milk type is mentioned in special instructions
+            if "milk" in special_lower or "cream" in special_lower:
+                special_describes_milk = True
+            # Also check if milk type itself is in special instructions (e.g., "light oat")
+            if self.milk and self.milk.lower() in special_lower:
+                special_describes_milk = True
+
+        if self.milk:
+            if self.milk.lower() in ("none", "black"):
+                parts.append("black")
+            elif special_describes_milk:
+                # Use natural phrase from special_instructions instead of formal milk type
+                parts.append(f"with {self.special_instructions}")
+                special_used_for_milk = True
+            elif self.milk_upcharge > 0:
+                parts.append(f"with {self.milk} milk (+${self.milk_upcharge:.2f})")
+            else:
+                parts.append(f"with {self.milk} milk")
+        elif special_describes_milk:
+            # Milk mentioned in special instructions but not set as a type
+            parts.append(f"with {self.special_instructions}")
+            special_used_for_milk = True
+
+        # Check if special instructions describe sweetener
+        special_describes_sweetener = False
+        special_used_for_sweetener = False
+        if self.special_instructions:
+            sweetener_words = ["sugar", "sweet", "splenda", "stevia", "honey"]
+            if any(word in self.special_instructions.lower() for word in sweetener_words):
+                special_describes_sweetener = True
+
+        # Add sweetener or use special instructions if they describe sweetener
+        if self.sweetener and not special_describes_sweetener:
+            if self.sweetener_quantity > 1:
+                parts.append(f"with {self.sweetener_quantity} {self.sweetener}s")
+            else:
+                parts.append(f"with {self.sweetener}")
+        elif special_describes_sweetener and not special_used_for_milk:
+            # Use special instructions for sweetener (e.g., "a little sugar")
+            parts.append(f"with {self.special_instructions}")
+            special_used_for_sweetener = True
+
+        if self.extra_shots:
+            parts.append(f"({self.extra_shots} extra shot{'s' if self.extra_shots > 1 else ''})")
+
+        # Only show special instructions if not already used for milk/sweetener description
+        if self.special_instructions and not special_used_for_milk and not special_used_for_sweetener:
+            parts.append(f"({self.special_instructions})")
 
         return " ".join(parts)
 

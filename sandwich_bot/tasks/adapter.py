@@ -212,6 +212,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 sweetener=item_config.get("sweetener"),
                 sweetener_quantity=item_config.get("sweetener_quantity", 1),
                 flavor_syrup=item_config.get("flavor_syrup"),
+                syrup_quantity=item_config.get("syrup_quantity", 1),
                 iced=iced_value,
                 decaf=item_config.get("decaf"),  # Restore decaf flag
                 # Restore upcharge tracking fields
@@ -529,6 +530,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             size = getattr(item, 'size', None)
             milk = getattr(item, 'milk', None)
             flavor_syrup = getattr(item, 'flavor_syrup', None)
+            syrup_quantity = getattr(item, 'syrup_quantity', 1) or 1
             sweetener = getattr(item, 'sweetener', None)
             sweetener_quantity = getattr(item, 'sweetener_quantity', 1)
             iced = getattr(item, 'iced', None)
@@ -573,12 +575,13 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             elif milk and milk.lower() in ("none", "black"):
                 free_details.append("black")
 
-            # Flavor syrup with upcharge
+            # Flavor syrup with upcharge (show quantity if > 1)
             if flavor_syrup:
+                syrup_name = f"{syrup_quantity} {flavor_syrup} syrups" if syrup_quantity > 1 else f"{flavor_syrup} syrup"
                 if syrup_upcharge > 0:
-                    modifiers.append({"name": f"{flavor_syrup} syrup", "price": syrup_upcharge})
+                    modifiers.append({"name": syrup_name, "price": syrup_upcharge})
                 else:
-                    free_details.append(f"{flavor_syrup} syrup")
+                    free_details.append(syrup_name)
 
             # Sweetener - always free
             if sweetener:
@@ -606,6 +609,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "sweetener": sweetener,
                     "sweetener_quantity": sweetener_quantity,
                     "flavor_syrup": flavor_syrup,
+                    "syrup_quantity": syrup_quantity,
                     "decaf": decaf,
                     # Only set style if iced is explicitly True/False (not None)
                     # skip_config drinks (sodas, bottled) don't need iced/hot labels

@@ -662,10 +662,12 @@ class PricingEngine:
             total += milk_upcharge
         item.milk_upcharge = milk_upcharge
 
-        # Flavor syrup upcharge
+        # Flavor syrup upcharge (multiplied by quantity)
         syrup_upcharge = 0.0
         if item.flavor_syrup:
-            syrup_upcharge = self.lookup_coffee_modifier_price(item.flavor_syrup, "syrup")
+            single_syrup_price = self.lookup_coffee_modifier_price(item.flavor_syrup, "syrup")
+            syrup_quantity = getattr(item, 'syrup_quantity', 1) or 1
+            syrup_upcharge = single_syrup_price * syrup_quantity
             total += syrup_upcharge
         item.syrup_upcharge = syrup_upcharge
 

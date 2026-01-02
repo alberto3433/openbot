@@ -506,18 +506,59 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
             logger.debug(f"Extracted coffee sweetener: {sweetener}")
             break
 
-    # Extract flavor syrup
+    # Extract flavor syrup with quantity
     for syrup in syrups:
         # For "almond", require "almond syrup" to avoid matching "almond milk"
         if syrup == "almond":
-            if re.search(r'\balmond\s+syrup\b', input_lower):
+            # Check for quantity + almond syrup (e.g., "2 almond syrups")
+            qty_pattern = re.compile(
+                r'(\d+|one|two|three|four|five|six|double|triple)\s+almond\s+syrups?',
+                re.IGNORECASE
+            )
+            qty_match = qty_pattern.search(input_lower)
+            if qty_match:
+                qty_str = qty_match.group(1).lower()
+                if qty_str.isdigit():
+                    result.syrup_quantity = int(qty_str)
+                elif qty_str == "double":
+                    result.syrup_quantity = 2
+                elif qty_str == "triple":
+                    result.syrup_quantity = 3
+                else:
+                    result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
                 result.flavor_syrup = syrup
+                logger.debug(f"Extracted coffee flavor syrup: {result.syrup_quantity} {syrup}")
+                break
+            elif re.search(r'\balmond\s+syrup\b', input_lower):
+                result.flavor_syrup = syrup
+                result.syrup_quantity = 1
                 logger.debug(f"Extracted coffee flavor syrup: {syrup}")
                 break
-        elif re.search(rf'\b{syrup}\b', input_lower):
-            result.flavor_syrup = syrup
-            logger.debug(f"Extracted coffee flavor syrup: {syrup}")
-            break
+        else:
+            # Check for quantity + syrup (e.g., "2 hazelnut syrups", "double vanilla")
+            qty_pattern = re.compile(
+                rf'(\d+|one|two|three|four|five|six|double|triple)\s+{re.escape(syrup)}(?:\s+syrups?)?',
+                re.IGNORECASE
+            )
+            qty_match = qty_pattern.search(input_lower)
+            if qty_match:
+                qty_str = qty_match.group(1).lower()
+                if qty_str.isdigit():
+                    result.syrup_quantity = int(qty_str)
+                elif qty_str == "double":
+                    result.syrup_quantity = 2
+                elif qty_str == "triple":
+                    result.syrup_quantity = 3
+                else:
+                    result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
+                result.flavor_syrup = syrup
+                logger.debug(f"Extracted coffee flavor syrup: {result.syrup_quantity} {syrup}")
+                break
+            elif re.search(rf'\b{syrup}\b', input_lower):
+                result.flavor_syrup = syrup
+                result.syrup_quantity = 1
+                logger.debug(f"Extracted coffee flavor syrup: {syrup}")
+                break
 
     result.special_instructions = extract_special_instructions_from_input(user_input)
 

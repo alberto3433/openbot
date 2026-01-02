@@ -875,16 +875,17 @@ class TakingItemsHandler:
                 coffee_mods = ExtractedCoffeeModifiers()
                 if raw_user_input:
                     coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
-                    logger.info("Extracted coffee modifiers from raw input: sweetener=%s (qty=%d), syrup=%s",
-                               coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup)
+                    logger.info("Extracted coffee modifiers from raw input: sweetener=%s (qty=%d), syrup=%s (qty=%d)",
+                               coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, coffee_mods.syrup_quantity)
 
                 # Use LLM-parsed values if available, otherwise use deterministically extracted values
                 sweetener = parsed.new_coffee_sweetener or coffee_mods.sweetener
                 sweetener_qty = parsed.new_coffee_sweetener_quantity if parsed.new_coffee_sweetener else coffee_mods.sweetener_quantity
                 flavor_syrup = parsed.new_coffee_flavor_syrup or coffee_mods.flavor_syrup
+                syrup_qty = getattr(parsed, 'new_coffee_syrup_quantity', 1) if parsed.new_coffee_flavor_syrup else coffee_mods.syrup_quantity
 
-                logger.info("Redirecting misparsed menu item '%s' to coffee handler (sweetener=%s, qty=%d, syrup=%s)",
-                           parsed.new_menu_item, sweetener, sweetener_qty, flavor_syrup)
+                logger.info("Redirecting misparsed menu item '%s' to coffee handler (sweetener=%s, qty=%d, syrup=%s, syrup_qty=%d)",
+                           parsed.new_menu_item, sweetener, sweetener_qty, flavor_syrup, syrup_qty)
                 last_result = self.coffee_handler.add_coffee(
                     parsed.new_menu_item,  # Use as coffee type
                     parsed.new_coffee_size,
@@ -897,6 +898,7 @@ class TakingItemsHandler:
                     order,
                     special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
+                    syrup_quantity=syrup_qty,
                 )
                 items_added.append(parsed.new_menu_item)
             else:
@@ -1060,6 +1062,7 @@ class TakingItemsHandler:
                         order,
                         special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
+                        syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
                     )
                     items_added.append(coffee_detail.drink_type)
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
@@ -1185,6 +1188,7 @@ class TakingItemsHandler:
                         order,
                         special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
+                        syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
                     )
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
 
@@ -1345,6 +1349,7 @@ class TakingItemsHandler:
                     order,
                     special_instructions=coffee_instructions,
                     decaf=coffee_decaf,
+                    syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
                 )
                 items_added.append(coffee_detail.drink_type or "drink")
 
@@ -1402,6 +1407,7 @@ class TakingItemsHandler:
                     order,
                     special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
+                    syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
                 # Let get_next_question handle the configuration flow for all items

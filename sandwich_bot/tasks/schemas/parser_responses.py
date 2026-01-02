@@ -291,6 +291,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Flavor syrup: vanilla, caramel, hazelnut, etc."
     )
+    new_coffee_syrup_quantity: int = Field(
+        default=1,
+        description="Number of syrup pumps (e.g., '2 hazelnut syrups' = 2, 'double vanilla' = 2)"
+    )
     new_coffee_special_instructions: str | None = Field(
         default=None,
         description="Special instructions for the coffee like 'a splash of milk', 'extra hot', 'light ice'"

@@ -87,11 +87,12 @@ class CoffeeConfigHandler:
         order: OrderTask,
         special_instructions: str | None = None,
         decaf: bool | None = None,
+        syrup_quantity: int = 1,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, special_instructions=%s",
-            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, special_instructions
+            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s (syrup_qty=%d), special_instructions=%s",
+            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, syrup_quantity, special_instructions
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -218,6 +219,7 @@ class CoffeeConfigHandler:
                 sweetener=sweetener,
                 sweetener_quantity=sweetener_quantity,
                 flavor_syrup=flavor_syrup,
+                syrup_quantity=syrup_quantity,
                 unit_price=price,
                 special_instructions=special_instructions,
             )
@@ -359,7 +361,8 @@ class CoffeeConfigHandler:
             logger.info(f"Extracted sweetener from size response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
         if coffee_mods.flavor_syrup and not item.flavor_syrup:
             item.flavor_syrup = coffee_mods.flavor_syrup
-            logger.info(f"Extracted syrup from size response: {coffee_mods.flavor_syrup}")
+            item.syrup_quantity = coffee_mods.syrup_quantity
+            logger.info(f"Extracted syrup from size response: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
         # Recalculate price with size upcharge (iced upcharge will be 0 if not iced yet)
         # This ensures the order display shows correct pricing even during configuration
@@ -438,7 +441,8 @@ class CoffeeConfigHandler:
             logger.info(f"Extracted sweetener from style response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
         if coffee_mods.flavor_syrup and not item.flavor_syrup:
             item.flavor_syrup = coffee_mods.flavor_syrup
-            logger.info(f"Extracted syrup from style response: {coffee_mods.flavor_syrup}")
+            item.syrup_quantity = coffee_mods.syrup_quantity
+            logger.info(f"Extracted syrup from style response: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
         # Recalculate price with iced upcharge and any modifiers extracted so far
         if self.pricing:
@@ -490,7 +494,8 @@ class CoffeeConfigHandler:
                 logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
             if coffee_mods.flavor_syrup and not item.flavor_syrup:
                 item.flavor_syrup = coffee_mods.flavor_syrup
-                logger.info(f"Set coffee syrup: {coffee_mods.flavor_syrup}")
+                item.syrup_quantity = coffee_mods.syrup_quantity
+                logger.info(f"Set coffee syrup: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
             # Apply special instructions (e.g., "splash of milk", "light sugar")
             if coffee_mods.has_special_instructions():

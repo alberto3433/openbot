@@ -137,10 +137,16 @@ class CheckoutUtilsHandler:
         if items:
             # Count consecutive identical items at the end of the list
             last_item = items[-1]
-            last_summary = last_item.get_summary()
+            # Use formal summary for counting identical items
+            last_formal_summary = last_item.get_summary()
+            # Use natural spoken summary for coffee items, formal summary for others
+            if isinstance(last_item, CoffeeItemTask) and hasattr(last_item, "get_spoken_summary"):
+                last_summary = last_item.get_spoken_summary()
+            else:
+                last_summary = last_formal_summary
             count = 0
             for item in reversed(items):
-                if item.get_summary() == last_summary:
+                if item.get_summary() == last_formal_summary:
                     count += 1
                 else:
                     break

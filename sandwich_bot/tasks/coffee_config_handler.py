@@ -85,11 +85,12 @@ class CoffeeConfigHandler:
         quantity: int,
         order: OrderTask,
         notes: str | None = None,
+        decaf: bool | None = None,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, notes=%s",
-            coffee_type, size, iced, quantity, sweetener, sweetener_quantity, flavor_syrup, notes
+            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, notes=%s",
+            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, notes
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -189,6 +190,7 @@ class CoffeeConfigHandler:
                     drink_type=coffee_type,
                     size=None,  # No size options for skip_config drinks
                     iced=None,  # No hot/iced label needed for sodas/bottled drinks
+                    decaf=decaf,
                     milk=None,
                     sweetener=None,
                     sweetener_quantity=0,
@@ -210,6 +212,7 @@ class CoffeeConfigHandler:
                 drink_type=coffee_type or "coffee",
                 size=size,
                 iced=iced,
+                decaf=decaf,
                 milk=milk,
                 sweetener=sweetener,
                 sweetener_quantity=sweetener_quantity,
@@ -271,7 +274,7 @@ class CoffeeConfigHandler:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_size"
-                message = f"What size would you like for {drink_desc}? Small, medium, or large?"
+                message = f"What size would you like for {drink_desc}? Small or large?"
                 return StateMachineResult(
                     message=message,
                     order=order,
@@ -312,7 +315,7 @@ class CoffeeConfigHandler:
         """Handle coffee size selection."""
         if self._check_redirect:
             redirect = self._check_redirect(
-                user_input, item, order, "What size would you like? Small, medium, or large?"
+                user_input, item, order, "What size would you like? Small or large?"
             )
             if redirect:
                 return redirect
@@ -322,7 +325,7 @@ class CoffeeConfigHandler:
         if not parsed.size:
             drink_name = item.drink_type or "drink"
             return StateMachineResult(
-                message=f"What size would you like for your {drink_name}? Small, medium, or large?",
+                message=f"What size would you like for your {drink_name}? Small or large?",
                 order=order,
             )
 
@@ -339,11 +342,14 @@ class CoffeeConfigHandler:
             item.flavor_syrup = coffee_mods.flavor_syrup
             logger.info(f"Extracted syrup from size response: {coffee_mods.flavor_syrup}")
 
+        # Recalculate price with size upcharge (iced upcharge will be 0 if not iced yet)
+        # This ensures the order display shows correct pricing even during configuration
+        if self.pricing:
+            self.pricing.recalculate_coffee_price(item)
+
         # If hot/iced was already specified (e.g., "hot latte"), skip the question
         if item.iced is not None:
-            # Coffee is complete - recalculate price with modifiers
-            if self.pricing:
-                self.pricing.recalculate_coffee_price(item)
+            # Coffee is complete
             item.mark_complete()
             order.clear_pending()
             # Check for more incomplete coffees before moving on

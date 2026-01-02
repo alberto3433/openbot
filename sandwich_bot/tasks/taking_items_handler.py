@@ -8,6 +8,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 import uuid
 from typing import Callable, TYPE_CHECKING
 
@@ -222,6 +223,100 @@ class TakingItemsHandler:
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)
 
+        # Handle "add [modifier]" patterns that should modify the last coffee
+        # e.g., "add vanilla syrup", "add oat milk", "with caramel"
+        if raw_user_input:
+            input_lower = raw_user_input.lower().strip()
+            active_items = order.items.get_active_items()
+
+            # Check if this looks like a modifier addition for the last coffee
+            # Patterns: "add X", "with X", "can I get X", "I'd like X added"
+            add_modifier_patterns = [
+                r"^add\s+",  # "add vanilla syrup"
+                r"^with\s+",  # "with caramel"
+                r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
+                r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
+                r"^put\s+",  # "put vanilla in it"
+            ]
+
+            is_add_modifier_request = any(
+                re.search(pattern, input_lower) for pattern in add_modifier_patterns
+            )
+
+            # Coffee modifiers that should trigger modification instead of new item
+            coffee_modifiers = {
+                # Syrups
+                "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+                "cinnamon", "lavender", "almond", "syrup",
+                # Milk alternatives (when adding to existing coffee)
+                "oat milk", "almond milk", "soy milk", "coconut milk",
+                "oat", "almond", "soy", "coconut",
+                # Sweeteners
+                "sugar", "splenda", "stevia", "honey", "sweetener",
+            }
+
+            has_coffee_modifier = any(mod in input_lower for mod in coffee_modifiers)
+
+            # If it's an "add modifier" pattern and the last item is a coffee, modify it
+            if is_add_modifier_request and has_coffee_modifier and active_items:
+                last_item = active_items[-1]
+                if isinstance(last_item, CoffeeItemTask):
+                    made_change = False
+
+                    # Check for syrup
+                    syrup_options = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+                                   "cinnamon", "lavender", "almond"]
+                    for syrup in syrup_options:
+                        if syrup in input_lower:
+                            if last_item.flavor_syrup != syrup:
+                                old_syrup = last_item.flavor_syrup or "none"
+                                last_item.flavor_syrup = syrup
+                                logger.info("Add modifier: added syrup '%s' to coffee (was '%s')", syrup, old_syrup)
+                                made_change = True
+                            break
+
+                    # Check for milk alternatives
+                    milk_options = [
+                        ("oat milk", "oat"), ("almond milk", "almond"),
+                        ("soy milk", "soy"), ("coconut milk", "coconut"),
+                        ("oat", "oat"), ("almond", "almond"),
+                        ("soy", "soy"), ("coconut", "coconut"),
+                    ]
+                    for pattern, milk_value in milk_options:
+                        if pattern in input_lower:
+                            if last_item.milk != milk_value:
+                                old_milk = last_item.milk or "none"
+                                last_item.milk = milk_value
+                                logger.info("Add modifier: added milk '%s' to coffee (was '%s')", milk_value, old_milk)
+                                made_change = True
+                            break
+
+                    # Check for sweeteners
+                    sweetener_options = ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
+                    for sweetener in sweetener_options:
+                        if sweetener in input_lower:
+                            if not last_item.sweetener:
+                                last_item.sweetener = sweetener
+                                last_item.sweetener_quantity = 1
+                                # Check for quantity: "two sugars", "2 splenda"
+                                qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener}', input_lower)
+                                if qty_match:
+                                    qty_str = qty_match.group(1)
+                                    word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+                                    last_item.sweetener_quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
+                                logger.info("Add modifier: added sweetener '%s' (qty=%d) to coffee",
+                                          sweetener, last_item.sweetener_quantity)
+                                made_change = True
+                            break
+
+                    if made_change:
+                        self.pricing.recalculate_coffee_price(last_item)
+                        updated_summary = last_item.get_summary()
+                        return StateMachineResult(
+                            message=f"Sure, I've added that to your {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
         # Handle item replacement: "make it a coke instead", "change it to X", etc.
         replaced_item_name = None
         if parsed.replace_last_item:
@@ -371,13 +466,13 @@ class TakingItemsHandler:
 
                     # Check for size changes
                     new_size = None
-                    for size in ["small", "medium", "large"]:
+                    for size in ["small", "large"]:
                         if size in input_lower:
                             new_size = size
                             break
 
                     if new_size and new_size != last_item.size:
-                        old_size = last_item.size or "medium"
+                        old_size = last_item.size or "small"
                         last_item.size = new_size
                         logger.info("Replacement: changed coffee size from '%s' to '%s'", old_size, new_size)
                         made_change = True
@@ -393,6 +488,18 @@ class TakingItemsHandler:
 
                     if new_style:
                         logger.info("Replacement: changed coffee style to '%s'", new_style)
+                        made_change = True
+
+                    # Check for decaf changes
+                    if "decaf" in input_lower:
+                        if not last_item.decaf:
+                            last_item.decaf = True
+                            logger.info("Replacement: changed coffee to decaf")
+                            made_change = True
+                    elif "regular" in input_lower and last_item.decaf:
+                        # "make it regular" means not decaf
+                        last_item.decaf = None
+                        logger.info("Replacement: changed coffee to regular (not decaf)")
                         made_change = True
 
                     # Check for milk changes - order matters, check longer patterns first
@@ -414,6 +521,31 @@ class TakingItemsHandler:
                         old_milk = last_item.milk or "none"
                         last_item.milk = new_milk if new_milk != "none" else None
                         logger.info("Replacement: changed coffee milk from '%s' to '%s'", old_milk, new_milk)
+                        made_change = True
+
+                    # Check for flavor syrup changes
+                    syrup_options = [
+                        "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+                        "cinnamon", "lavender", "almond",
+                    ]
+                    new_syrup = None
+                    for syrup in syrup_options:
+                        if syrup in input_lower:
+                            new_syrup = syrup
+                            break
+
+                    if new_syrup and new_syrup != last_item.flavor_syrup:
+                        old_syrup = last_item.flavor_syrup or "none"
+                        last_item.flavor_syrup = new_syrup
+                        logger.info("Replacement: changed coffee syrup from '%s' to '%s'", old_syrup, new_syrup)
+                        made_change = True
+
+                    # Check for syrup removal: "no syrup", "remove the syrup"
+                    if ("no syrup" in input_lower or "remove syrup" in input_lower or
+                        "without syrup" in input_lower) and last_item.flavor_syrup:
+                        old_syrup = last_item.flavor_syrup
+                        last_item.flavor_syrup = None
+                        logger.info("Replacement: removed coffee syrup '%s'", old_syrup)
                         made_change = True
 
                     # If any changes were made, recalculate price and return
@@ -685,6 +817,7 @@ class TakingItemsHandler:
                     parsed.new_menu_item_quantity,
                     order,
                     notes=parsed.new_coffee_notes,
+                    decaf=parsed.new_coffee_decaf,
                 )
                 items_added.append(parsed.new_menu_item)
             else:
@@ -827,6 +960,7 @@ class TakingItemsHandler:
                         drink_type=parsed.new_coffee_type or "coffee",
                         size=parsed.new_coffee_size,
                         iced=parsed.new_coffee_iced,
+                        decaf=parsed.new_coffee_decaf,
                         quantity=parsed.new_coffee_quantity,
                     )]
 
@@ -834,6 +968,7 @@ class TakingItemsHandler:
                     # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                     coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                    coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
@@ -845,6 +980,7 @@ class TakingItemsHandler:
                         coffee_detail.quantity,
                         order,
                         notes=coffee_notes,
+                        decaf=coffee_decaf,
                     )
                     items_added.append(coffee_detail.drink_type)
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
@@ -949,6 +1085,7 @@ class TakingItemsHandler:
                         drink_type=parsed.new_coffee_type or "coffee",
                         size=parsed.new_coffee_size,
                         iced=parsed.new_coffee_iced,
+                        decaf=parsed.new_coffee_decaf,
                         quantity=parsed.new_coffee_quantity,
                     )]
 
@@ -956,6 +1093,7 @@ class TakingItemsHandler:
                     # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                     coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                    coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
@@ -967,12 +1105,19 @@ class TakingItemsHandler:
                         coffee_detail.quantity,
                         order,
                         notes=coffee_notes,
+                        decaf=coffee_decaf,
                     )
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
 
                 # If bagel needs configuration, ask bagel questions first
                 # (coffees were still added to cart, we'll configure them after bagel)
                 if bagel_needs_config:
+                    # Check if coffee needs disambiguation (multiple matches like Coffee, Latte, etc.)
+                    # In this case, no CoffeeItemTask was created yet - we need to queue the disambiguation
+                    if order.pending_drink_options:
+                        order.queue_item_for_config(None, "coffee_disambiguation")
+                        logger.info("Multi-item order: queued coffee disambiguation for after bagel config")
+
                     # Check if coffees also need configuration (not sodas)
                     # If so, queue them for configuration after bagel is done
                     for item in order.items.items:
@@ -1093,6 +1238,7 @@ class TakingItemsHandler:
                     drink_type=parsed.new_coffee_type or "coffee",
                     size=parsed.new_coffee_size,
                     iced=parsed.new_coffee_iced,
+                    decaf=parsed.new_coffee_decaf,
                     quantity=parsed.new_coffee_quantity,
                     milk=parsed.new_coffee_milk,
                     notes=parsed.new_coffee_notes,
@@ -1107,6 +1253,7 @@ class TakingItemsHandler:
                 # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
                 coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                 coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                 coffee_result = self.coffee_handler.add_coffee(
                     coffee_detail.drink_type,
                     coffee_detail.size,
@@ -1118,6 +1265,7 @@ class TakingItemsHandler:
                     coffee_detail.quantity or 1,
                     order,
                     notes=coffee_notes,
+                    decaf=coffee_decaf,
                 )
                 items_added.append(coffee_detail.drink_type or "drink")
 
@@ -1174,6 +1322,7 @@ class TakingItemsHandler:
                     parsed.new_coffee_quantity,
                     order,
                     notes=parsed.new_coffee_notes,
+                    decaf=parsed.new_coffee_decaf,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
                 # Let get_next_question handle the configuration flow for all items
@@ -1222,6 +1371,18 @@ class TakingItemsHandler:
 
         if parsed.by_pound_items:
             return self.by_pound_handler.add_by_pound_items(parsed.by_pound_items, order)
+
+        if parsed.is_gratitude:
+            return StateMachineResult(
+                message="You're welcome! Anything else I can get for you?",
+                order=order,
+            )
+
+        if parsed.is_help_request:
+            return StateMachineResult(
+                message="I can help you order bagels, coffee, sandwiches, and more from our menu. Just tell me what you'd like! For example, you can say 'plain bagel with cream cheese' or 'large iced latte'.",
+                order=order,
+            )
 
         if parsed.unclear or parsed.is_greeting:
             return StateMachineResult(

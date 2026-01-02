@@ -444,8 +444,8 @@ class PricingEngine:
         # Default coffee modifier prices
         default_prices = {
             # Size upcharges (relative to small)
-            "medium": 0.50,
-            "large": 1.00,
+            # Note: medium removed - only small and large available
+            "large": 0.90,  # Large is $4.35 base, small is $3.45, diff = $0.90
             # Milk alternatives
             "oat": 0.50,
             "oat milk": 0.50,
@@ -465,6 +465,59 @@ class PricingEngine:
         }
 
         return default_prices.get(modifier_lower, 0.0)
+
+    def lookup_iced_upcharge_by_size(self, size: str | None) -> float:
+        """
+        Look up the iced upcharge for a given size.
+
+        The iced upcharge is stored per size in the attribute_options table
+        as iced_price_modifier. Different sizes may have different iced upcharges.
+
+        Args:
+            size: Size selection (small, large)
+
+        Returns:
+            The iced upcharge for that size, or 0.0 if not found
+        """
+        if not size:
+            return 0.0
+
+        size_lower = size.lower().strip()
+
+        # Try to find in item_types attribute options
+        if self._menu_data:
+            item_types = self._menu_data.get("item_types", {})
+            for type_slug, type_data in item_types.items():
+                if not isinstance(type_data, dict):
+                    continue
+                attrs = type_data.get("attributes", [])
+                for attr in attrs:
+                    if not isinstance(attr, dict):
+                        continue
+                    attr_slug = attr.get("slug", "")
+                    # Look for size attribute
+                    if attr_slug == "size":
+                        options = attr.get("options", [])
+                        for opt in options:
+                            if not isinstance(opt, dict):
+                                continue
+                            opt_slug = opt.get("slug", "").lower()
+                            if opt_slug == size_lower or size_lower in opt_slug:
+                                iced_price = opt.get("iced_price_modifier", 0.0)
+                                if iced_price > 0:
+                                    logger.debug(
+                                        "Found iced upcharge for size %s: $%.2f",
+                                        size, iced_price
+                                    )
+                                    return iced_price
+
+        # Default iced upcharges by size (fallback)
+        default_iced_upcharges = {
+            "small": 1.65,
+            "large": 1.10,
+        }
+
+        return default_iced_upcharges.get(size_lower, 0.0)
 
     def calculate_coffee_price_with_modifiers(
         self,
@@ -546,12 +599,19 @@ class PricingEngine:
             total += syrup_upcharge
         item.syrup_upcharge = syrup_upcharge
 
+        # Iced upcharge (varies by size)
+        iced_upcharge = 0.0
+        if item.iced is True and item.size:
+            iced_upcharge = self.lookup_iced_upcharge_by_size(item.size)
+            total += iced_upcharge
+        item.iced_upcharge = iced_upcharge
+
         # Update the item's price
         item.unit_price = total
 
         logger.info(
-            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f -> total=$%.2f",
-            base_price, size_upcharge, milk_upcharge, syrup_upcharge, total
+            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f + iced=$%.2f -> total=$%.2f",
+            base_price, size_upcharge, milk_upcharge, syrup_upcharge, iced_upcharge, total
         )
 
         return total

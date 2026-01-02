@@ -8,6 +8,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, ItemTask, MenuItemTask
@@ -24,6 +25,77 @@ if TYPE_CHECKING:
     from .item_adder_handler import ItemAdderHandler
 
 logger = logging.getLogger(__name__)
+
+
+# Patterns to detect off-topic requests during configuration
+# These are questions or requests that aren't answers to the current config question
+OFF_TOPIC_PATTERNS = [
+    # Menu inquiries: "what syrups do you have?" / "what sweeteners do you have?"
+    re.compile(r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)", re.IGNORECASE),
+    # "what options do you have?" / "what are my options?"
+    re.compile(r"what (?:are (?:my|the) )?options", re.IGNORECASE),
+    # "what can I add?" / "what can I get?"
+    re.compile(r"what (?:can|could)\s+(?:i|you)\s+(?:add|get|put)", re.IGNORECASE),
+    # "do you have vanilla?" / "do you have oat milk?"
+    re.compile(r"do you (?:have|offer|carry)\s+(?:any\s+)?(\w+)", re.IGNORECASE),
+    # "what flavors do you have?" / "what sizes are there?"
+    re.compile(r"what (\w+)\s+(?:are there|do you offer)", re.IGNORECASE),
+    # "can I get vanilla?" / "can I add sugar?"
+    re.compile(r"can\s+(?:i|you)\s+(?:get|add|have)\s+\w+\?", re.IGNORECASE),
+    # "what kinds of X do you have?"
+    re.compile(r"what (?:kind|type|kinds|types)\s+of\s+\w+", re.IGNORECASE),
+    # Modifier additions: "add vanilla syrup" / "add oat milk"
+    re.compile(r"^add\s+\w+", re.IGNORECASE),
+    # "with vanilla" / "with caramel syrup"
+    re.compile(r"^with\s+\w+", re.IGNORECASE),
+    # "put vanilla in it" / "put some sugar"
+    re.compile(r"^put\s+\w+", re.IGNORECASE),
+    # "I want vanilla" / "I'd like oat milk"
+    re.compile(r"^i(?:'?d)?\s*(?:want|like|need)\s+(?:to\s+add\s+)?\w+", re.IGNORECASE),
+    # "make it with vanilla" / "make it iced" (but not "make it small/large")
+    re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
+]
+
+# Words that are valid answers to configuration questions (should not trigger redirect)
+VALID_CONFIG_ANSWERS = {
+    # Size answers
+    "small", "large", "medium", "regular",
+    # Style answers
+    "hot", "iced", "cold",
+    # Toasted answers
+    "yes", "no", "yeah", "nope", "sure", "please", "toasted", "not toasted", "untoasted",
+    # Bagel types (common ones)
+    "plain", "everything", "sesame", "poppy", "wheat", "whole wheat", "onion",
+    "cinnamon", "cinnamon raisin", "pumpernickel", "salt", "garlic",
+    # Side choices
+    "bagel", "fruit", "fruit salad",
+}
+
+
+def _is_off_topic_request(user_input: str) -> bool:
+    """Check if user input is an off-topic request during configuration."""
+    input_lower = user_input.lower().strip()
+
+    # First check if this looks like a valid config answer
+    # Simple answers like "small", "large", "hot", "iced", etc.
+    if input_lower in VALID_CONFIG_ANSWERS:
+        return False
+
+    # Check for valid answers with minor variations
+    for answer in VALID_CONFIG_ANSWERS:
+        if input_lower == answer or input_lower == f"{answer} please":
+            return False
+
+    # Check if it matches any off-topic pattern
+    for pattern in OFF_TOPIC_PATTERNS:
+        if pattern.search(user_input):
+            # Special case: "make it small/large" is a valid size answer
+            if pattern.pattern.startswith("^make"):
+                if any(size in input_lower for size in ["small", "large", "medium"]):
+                    return False
+            return True
+
+    return False
 
 
 class ConfiguringItemHandler:
@@ -118,6 +190,19 @@ class ConfiguringItemHandler:
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
                 msg = f"{msg} {current_question}"
+            return StateMachineResult(message=msg, order=order)
+
+        # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
+        # If detected, politely redirect back to the current configuration question
+        if _is_off_topic_request(user_input):
+            logger.info("OFF-TOPIC REQUEST: Detected during config: '%s'", user_input[:50])
+            # Get a friendly description of the item being configured
+            item_name = item.get_summary() if hasattr(item, 'get_summary') else "your item"
+            current_question = self.config_helper_handler.get_current_config_question(order, item)
+            if current_question:
+                msg = f"Let's finish with your {item_name} first. {current_question}"
+            else:
+                msg = f"Let's finish with your {item_name} first."
             return StateMachineResult(message=msg, order=order)
 
         # Route to field-specific handler

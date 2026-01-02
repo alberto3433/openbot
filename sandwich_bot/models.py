@@ -233,6 +233,21 @@ class MenuItem(Base):
     # Example: "coffee cake, cake" for "Russian Coffee Cake" prevents "coffee" from matching
     required_match_phrases = Column(String, nullable=True)
 
+    # Dietary attributes (computed/cached from ingredients - NULL = not computed)
+    # For "is_X" flags: True only if ALL ingredients qualify
+    # For "contains_X" flags: True if ANY ingredient contains the allergen
+    is_vegan = Column(Boolean, nullable=True)
+    is_vegetarian = Column(Boolean, nullable=True)
+    is_gluten_free = Column(Boolean, nullable=True)
+    is_dairy_free = Column(Boolean, nullable=True)
+    is_kosher = Column(Boolean, nullable=True)
+
+    # Allergen attributes
+    contains_eggs = Column(Boolean, nullable=True)
+    contains_fish = Column(Boolean, nullable=True)
+    contains_sesame = Column(Boolean, nullable=True)
+    contains_nuts = Column(Boolean, nullable=True)
+
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
     recipe = relationship("Recipe", back_populates="menu_items")
 
@@ -276,6 +291,19 @@ class Ingredient(Base):
     track_inventory = Column(Boolean, nullable=False, default=True)
     base_price = Column(Float, nullable=False, default=0.0)  # Price for custom sandwiches (proteins mainly)
     is_available = Column(Boolean, nullable=False, default=True)  # False = "86'd" / out of stock
+
+    # Dietary attributes (source of truth - ingredients define what they are)
+    is_vegan = Column(Boolean, nullable=False, default=False)
+    is_vegetarian = Column(Boolean, nullable=False, default=False)
+    is_gluten_free = Column(Boolean, nullable=False, default=False)
+    is_dairy_free = Column(Boolean, nullable=False, default=False)
+    is_kosher = Column(Boolean, nullable=False, default=False)
+
+    # Allergen attributes (what allergens this ingredient contains)
+    contains_eggs = Column(Boolean, nullable=False, default=False)
+    contains_fish = Column(Boolean, nullable=False, default=False)
+    contains_sesame = Column(Boolean, nullable=False, default=False)
+    contains_nuts = Column(Boolean, nullable=False, default=False)
 
     # relationships
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")

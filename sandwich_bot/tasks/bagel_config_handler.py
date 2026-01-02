@@ -32,7 +32,7 @@ from .parsers.llm_parsers import (
     parse_spread_choice,
     parse_toasted_choice,
 )
-from .parsers.deterministic import extract_modifiers_from_input
+from .parsers.deterministic import extract_modifiers_from_input, _extract_spread
 from .parsers.constants import MORE_MENU_ITEMS_PATTERNS
 from .message_builder import MessageBuilder
 
@@ -395,32 +395,63 @@ class BagelConfigHandler:
 
         # For MenuItemTask (omelette side bagels), use simpler handling
         if isinstance(item, MenuItemTask):
-            parsed = parse_spread_choice(user_input, model=self.model)
-
-            if parsed.no_spread:
+            # Try deterministic spread parsing first
+            no_spread_patterns = ["nothing", "plain", "no spread", "none", "no thanks", "nope", "nah"]
+            if any(p in input_lower for p in no_spread_patterns):
                 item.spread = "none"
-            elif parsed.spread:
-                # Build spread description (e.g., "scallion cream cheese")
-                if parsed.spread_type and parsed.spread_type != "plain":
-                    item.spread = f"{parsed.spread_type} {parsed.spread}"
-                else:
-                    item.spread = parsed.spread
-
-                # Add spread price to omelette (same as standalone bagel)
-                if self.pricing:
-                    spread_price = self.pricing.lookup_spread_price(parsed.spread, parsed.spread_type)
-                    if spread_price > 0 and item.unit_price is not None:
-                        item.spread_price = spread_price  # Store for itemized display
-                        item.unit_price += spread_price
-                        logger.info(
-                            "Added spread price to omelette: %s ($%.2f) -> new total $%.2f",
-                            item.spread, spread_price, item.unit_price
-                        )
             else:
-                return StateMachineResult(
-                    message="Would you like butter or cream cheese on the bagel?",
-                    order=order,
-                )
+                det_spread, det_spread_type = _extract_spread(user_input)
+
+                if det_spread or det_spread_type:
+                    # Deterministic parsing found a spread
+                    logger.info("Deterministic spread parsing (MenuItemTask): spread=%s, spread_type=%s", det_spread, det_spread_type)
+                    spread = det_spread or "cream cheese"
+                    spread_type = det_spread_type
+
+                    # Build spread description (e.g., "scallion cream cheese")
+                    if spread_type and spread_type != "plain":
+                        item.spread = f"{spread_type} {spread}"
+                    else:
+                        item.spread = spread
+
+                    # Add spread price to omelette (same as standalone bagel)
+                    if self.pricing:
+                        spread_price = self.pricing.lookup_spread_price(spread, spread_type)
+                        if spread_price > 0 and item.unit_price is not None:
+                            item.spread_price = spread_price  # Store for itemized display
+                            item.unit_price += spread_price
+                            logger.info(
+                                "Added spread price to omelette: %s ($%.2f) -> new total $%.2f",
+                                item.spread, spread_price, item.unit_price
+                            )
+                else:
+                    # Fall back to LLM parser
+                    parsed = parse_spread_choice(user_input, model=self.model)
+
+                    if parsed.no_spread:
+                        item.spread = "none"
+                    elif parsed.spread:
+                        # Build spread description (e.g., "scallion cream cheese")
+                        if parsed.spread_type and parsed.spread_type != "plain":
+                            item.spread = f"{parsed.spread_type} {parsed.spread}"
+                        else:
+                            item.spread = parsed.spread
+
+                        # Add spread price to omelette (same as standalone bagel)
+                        if self.pricing:
+                            spread_price = self.pricing.lookup_spread_price(parsed.spread, parsed.spread_type)
+                            if spread_price > 0 and item.unit_price is not None:
+                                item.spread_price = spread_price  # Store for itemized display
+                                item.unit_price += spread_price
+                                logger.info(
+                                    "Added spread price to omelette: %s ($%.2f) -> new total $%.2f",
+                                    item.spread, spread_price, item.unit_price
+                                )
+                    else:
+                        return StateMachineResult(
+                            message="Would you like butter or cream cheese on the bagel?",
+                            order=order,
+                        )
 
             # Omelette side bagel is complete
             item.mark_complete()
@@ -445,27 +476,41 @@ class BagelConfigHandler:
             if not modifiers.spreads:
                 item.spread = "none"
         else:
-            # Standard spread choice parsing
-            parsed = parse_spread_choice(user_input, model=self.model)
-
-            if parsed.no_spread:
-                item.spread = "none"  # Mark as explicitly no spread
-            elif parsed.spread:
-                item.spread = parsed.spread
-                item.spread_type = parsed.spread_type
-                # Capture special instructions like "a little", "extra", etc.
-                if parsed.special_instructions:
-                    # Build full spread description for special_instructions
-                    spread_desc = parsed.spread
-                    if parsed.spread_type and parsed.spread_type != "plain":
-                        spread_desc = f"{parsed.spread_type} {parsed.spread}"
-                    # Combine modifier with spread (e.g., "a little cream cheese")
-                    item.special_instructions = f"{parsed.special_instructions} {spread_desc}"
+            # Try deterministic spread parsing first
+            # This handles cases like "kalamata olive" -> "kalamata olive cream cheese"
+            no_spread_patterns = ["nothing", "plain", "no spread", "none", "no thanks", "nope", "nah"]
+            if any(p in input_lower for p in no_spread_patterns):
+                item.spread = "none"
             else:
-                return StateMachineResult(
-                    message="Would you like cream cheese, butter, or nothing on that?",
-                    order=order,
-                )
+                det_spread, det_spread_type = _extract_spread(user_input)
+
+                if det_spread or det_spread_type:
+                    # Deterministic parsing found a spread
+                    logger.info("Deterministic spread parsing: spread=%s, spread_type=%s", det_spread, det_spread_type)
+                    item.spread = det_spread or "cream cheese"
+                    item.spread_type = det_spread_type
+                else:
+                    # Fall back to LLM parser
+                    parsed = parse_spread_choice(user_input, model=self.model)
+
+                    if parsed.no_spread:
+                        item.spread = "none"  # Mark as explicitly no spread
+                    elif parsed.spread:
+                        item.spread = parsed.spread
+                        item.spread_type = parsed.spread_type
+                        # Capture special instructions like "a little", "extra", etc.
+                        if parsed.special_instructions:
+                            # Build full spread description for special_instructions
+                            spread_desc = parsed.spread
+                            if parsed.spread_type and parsed.spread_type != "plain":
+                                spread_desc = f"{parsed.spread_type} {parsed.spread}"
+                            # Combine modifier with spread (e.g., "a little cream cheese")
+                            item.special_instructions = f"{parsed.special_instructions} {spread_desc}"
+                    else:
+                        return StateMachineResult(
+                            message="Would you like cream cheese, butter, or nothing on that?",
+                            order=order,
+                        )
 
         # Recalculate price to include spread modifier
         if self.pricing:

@@ -1569,3 +1569,100 @@ class TestSplitQuantityBagelParsing:
 
         result = _parse_split_quantity_bagels("two plain bagels with cream cheese")
         assert result is None  # Should not match - no split pattern
+
+
+class TestSplitQuantityDrinksParsing:
+    """Tests for split-quantity drink parsing (e.g., 'two coffees one with milk one black')."""
+
+    def test_two_coffees_one_milk_one_black(self):
+        """Test parsing 'two coffees one with milk one black'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("two coffees one with milk one black")
+        assert result is not None
+        assert result.new_coffee is True
+        assert result.new_coffee_quantity == 2
+        assert result.new_coffee_type == "coffee"
+        assert len(result.coffee_details) == 2
+        # First coffee: with milk
+        assert result.coffee_details[0].drink_type == "coffee"
+        assert result.coffee_details[0].milk == "whole"
+        # Second coffee: black
+        assert result.coffee_details[1].drink_type == "coffee"
+        assert result.coffee_details[1].milk == "none"
+
+    def test_two_lattes_one_iced_one_hot(self):
+        """Test parsing 'two lattes one iced one hot'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("two lattes one iced one hot")
+        assert result is not None
+        assert result.new_coffee_quantity == 2
+        assert result.new_coffee_type == "latte"
+        assert len(result.coffee_details) == 2
+        assert result.coffee_details[0].iced is True
+        assert result.coffee_details[1].iced is False
+
+    def test_two_teas_one_with_oat_milk_one_plain(self):
+        """Test parsing 'two teas one with oat milk one plain'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("two teas one with oat milk one plain")
+        assert result is not None
+        assert result.new_coffee_quantity == 2
+        assert result.new_coffee_type == "tea"
+        assert len(result.coffee_details) == 2
+        assert result.coffee_details[0].milk == "oat"
+        assert result.coffee_details[1].milk == "none"
+
+    def test_three_coffees_different_temps(self):
+        """Test parsing 'three coffees one iced one hot one decaf'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("three coffees one iced one hot one decaf")
+        assert result is not None
+        assert result.new_coffee_quantity == 3
+        assert len(result.coffee_details) == 3
+        assert result.coffee_details[0].iced is True
+        assert result.coffee_details[1].iced is False
+        assert result.coffee_details[2].decaf is True
+
+    def test_numeric_quantity(self):
+        """Test parsing with numeric quantity."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("2 coffees one with almond milk one black")
+        assert result is not None
+        assert result.new_coffee_quantity == 2
+        assert len(result.coffee_details) == 2
+        assert result.coffee_details[0].milk == "almond"
+        assert result.coffee_details[1].milk == "none"
+
+    def test_no_split_single_coffee(self):
+        """Test that single coffee orders are not matched by split-quantity parser."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("one large coffee with milk")
+        assert result is None  # Should not match - no split pattern
+
+    def test_no_split_same_config(self):
+        """Test that coffees with same config are not matched by split-quantity parser."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("two coffees with milk")
+        assert result is None  # Should not match - no split pattern
+
+    def test_large_iced_lattes_split(self):
+        """Test parsing 'two large lattes one iced one hot' preserves size."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("two large lattes one iced one hot")
+        assert result is not None
+        assert result.new_coffee_quantity == 2
+        assert result.new_coffee_size == "large"
+        assert len(result.coffee_details) == 2
+        # Both should have the large size
+        assert result.coffee_details[0].size == "large"
+        assert result.coffee_details[0].iced is True
+        assert result.coffee_details[1].size == "large"
+        assert result.coffee_details[1].iced is False

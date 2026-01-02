@@ -1077,6 +1077,184 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
     )
 
 
+def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
+    """
+    Parse orders with multiple drinks that have different configurations.
+
+    Detects patterns like:
+        - "two coffees one with milk one black"
+        - "2 lattes, one iced, one hot"
+        - "three teas one with sugar one with honey one plain"
+
+    Returns OpenInputResponse with coffee_details populated for each individual drink.
+    """
+    text_lower = text.lower().strip()
+
+    # Build pattern for drink types (coffee, tea, latte, etc.)
+    all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
+    drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
+
+    # Must have a drink type in the text (plural or singular)
+    drink_match = re.search(rf'\b({drink_pattern})s?\b', text_lower)
+    if not drink_match:
+        return None
+
+    base_drink_type = drink_match.group(1)
+
+    # Detect split-quantity patterns: "one with X" or "one X" repeated
+    split_indicators = [
+        r"\bone\s+(?:with|iced|hot|black|decaf|plain)\b",
+        r"\b1\s+(?:with|iced|hot|black|decaf|plain)\b",
+        r"\bfirst\s+(?:with|iced|hot|black|plain)\b",
+        r"\bsecond\s+(?:with|iced|hot|black|plain)\b",
+        r"\bthe\s+other\s+(?:with|iced|hot|black|plain)\b",
+        r"\banother\s+(?:with|iced|hot|black|plain)\b",
+    ]
+
+    # Count how many split indicators we find
+    split_count = 0
+    for pattern in split_indicators:
+        matches = re.findall(pattern, text_lower)
+        split_count += len(matches)
+
+    # Need at least 2 split indicators to be a split-quantity order
+    if split_count < 2:
+        return None
+
+    logger.info("SPLIT-QUANTITY DRINKS: detected %d split indicators in '%s'", split_count, text[:60])
+
+    # Extract the total quantity
+    total_quantity = 2  # Default
+    qty_match = re.match(
+        r"^(\d+|two|three|four|five|six)\s+",
+        text_lower
+    )
+    if qty_match:
+        qty_str = qty_match.group(1)
+        if qty_str.isdigit():
+            total_quantity = int(qty_str)
+        else:
+            total_quantity = WORD_TO_NUM.get(qty_str, 2)
+
+    # Extract base drink properties from the INITIAL part of the text
+    # (before the first "one with" or split indicator)
+    first_split = re.split(r"\b(?:one|1|first)\s+(?:with\s+|iced|hot|black|decaf)?", text_lower, maxsplit=1)[0]
+
+    # Extract base size from initial part
+    base_size = None
+    size_match = re.search(r'\b(small|large)\b', first_split)
+    if size_match:
+        base_size = size_match.group(1)
+
+    # Extract base iced/hot from initial part (only if explicitly stated)
+    base_iced = None
+    if re.search(r'\biced\b', first_split):
+        base_iced = True
+    elif re.search(r'\bhot\b', first_split):
+        base_iced = False
+
+    # Extract base decaf from initial part
+    base_decaf = None
+    if re.search(r'\bdecaf\b', first_split):
+        base_decaf = True
+
+    # Split the text into parts for each drink
+    split_pattern = re.compile(
+        r"(?:,?\s*(?:and\s+)?)"  # Optional comma/and separator
+        r"(?:one|1|first|second|third|the\s+other|another)\s+"
+        r"(with\s+.+?|iced(?:\s+with\s+.+?)?|hot(?:\s+with\s+.+?)?|black|decaf(?:\s+with\s+.+?)?|plain)"
+        r"(?=(?:,?\s*(?:and\s+)?(?:one|1|first|second|third|the\s+other|another)\s+)|$)",
+        re.IGNORECASE
+    )
+
+    # Find all split parts
+    parts = split_pattern.findall(text_lower)
+    logger.info("SPLIT-QUANTITY DRINKS: found %d parts: %s", len(parts), parts)
+
+    # If we didn't find enough parts with the regex, try a simpler split
+    if len(parts) < 2:
+        # Try splitting on "one with" or "one "
+        simple_split = re.split(r",?\s*(?:and\s+)?(?:one|1)\s+(?:with\s+)?", text_lower)
+        # Filter out empty parts and the initial drink description
+        parts = [p.strip() for p in simple_split[1:] if p.strip()]
+        logger.info("SPLIT-QUANTITY DRINKS: simple split found %d parts: %s", len(parts), parts)
+
+    if len(parts) < 2:
+        return None
+
+    # Create CoffeeOrderDetails for each part
+    coffee_details: list[CoffeeOrderDetails] = []
+
+    for i, part in enumerate(parts[:total_quantity]):  # Limit to total_quantity
+        part_lower = part.lower().strip()
+
+        # Extract iced/hot for this specific drink
+        iced = None
+        if "iced" in part_lower:
+            iced = True
+        elif "hot" in part_lower:
+            iced = False
+        elif base_iced is not None:
+            iced = base_iced
+
+        # Extract decaf for this specific drink
+        decaf = None
+        if "decaf" in part_lower:
+            decaf = True
+        elif base_decaf is not None:
+            decaf = base_decaf
+
+        # Extract milk preference for this drink
+        milk = None
+        if "black" in part_lower or "plain" in part_lower:
+            milk = "none"
+        else:
+            # Check for milk types
+            milk_match = re.search(r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', part_lower)
+            if milk_match:
+                milk = milk_match.group(1)
+            elif re.search(r'\bwith\s+milk\b', part_lower):
+                milk = "whole"
+
+        coffee_detail = CoffeeOrderDetails(
+            drink_type=base_drink_type,
+            size=base_size,
+            iced=iced,
+            decaf=decaf,
+            quantity=1,
+            milk=milk,
+        )
+        coffee_details.append(coffee_detail)
+        logger.info(
+            "SPLIT-QUANTITY DRINKS: drink %d: type=%s, size=%s, iced=%s, decaf=%s, milk=%s",
+            i + 1, base_drink_type, base_size, iced, decaf, milk
+        )
+
+    # If we have fewer details than total_quantity, fill with base drinks
+    while len(coffee_details) < total_quantity:
+        coffee_details.append(CoffeeOrderDetails(
+            drink_type=base_drink_type,
+            size=base_size,
+            iced=base_iced,
+            decaf=base_decaf,
+            quantity=1,
+        ))
+
+    # Get first coffee for the primary new_coffee fields
+    first_coffee = coffee_details[0] if coffee_details else None
+
+    return OpenInputResponse(
+        new_coffee=True,
+        new_coffee_type=base_drink_type,
+        new_coffee_quantity=total_quantity,
+        new_coffee_size=base_size,
+        new_coffee_iced=first_coffee.iced if first_coffee else base_iced,
+        new_coffee_decaf=first_coffee.decaf if first_coffee else base_decaf,
+        new_coffee_milk=first_coffee.milk if first_coffee else None,
+        coffee_details=coffee_details,
+    )
+
+
 # =============================================================================
 # Speed Menu Bagel Parsing
 # =============================================================================
@@ -2461,6 +2639,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 new_side_item=side_item,
                 new_side_item_quantity=side_qty,
             )
+
+    # Check for split-quantity drinks FIRST (e.g., "two coffees one with milk one black")
+    # This MUST run BEFORE regular coffee parsing to handle multi-drink orders with different configs
+    split_qty_drinks_result = _parse_split_quantity_drinks(text)
+    if split_qty_drinks_result:
+        logger.info(
+            "DETERMINISTIC SPLIT-QTY DRINKS: matched '%s' -> %d drinks",
+            text[:50], len(split_qty_drinks_result.coffee_details)
+        )
+        return split_qty_drinks_result
 
     # Check for coffee/beverage order
     coffee_result = _parse_coffee_deterministic(text)

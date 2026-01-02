@@ -72,8 +72,16 @@ VALID_CONFIG_ANSWERS = {
 }
 
 
-def _is_off_topic_request(user_input: str) -> bool:
-    """Check if user input is an off-topic request during configuration."""
+def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> bool:
+    """Check if user input is an off-topic request during configuration.
+
+    Args:
+        user_input: The user's input text
+        pending_field: The current configuration field being asked about
+
+    Returns:
+        True if the request is off-topic and should trigger a redirect
+    """
     input_lower = user_input.lower().strip()
 
     # First check if this looks like a valid config answer
@@ -85,6 +93,50 @@ def _is_off_topic_request(user_input: str) -> bool:
     for answer in VALID_CONFIG_ANSWERS:
         if input_lower == answer or input_lower == f"{answer} please":
             return False
+
+    # Check if the question is RELEVANT to the current config question
+    # These are valid questions to help the user answer the config question
+    if pending_field:
+        # Generic "what do you have?" / "what kind do you have?" / "what are my options?"
+        # These are always relevant when asked during configuration
+        generic_option_patterns = [
+            "what do you have",
+            "what kind do you have",
+            "what kinds do you have",
+            "what type do you have",
+            "what types do you have",
+            "what are my options",
+            "what are the options",
+            "what options do you have",
+            "what choices",
+            "what flavors",  # For spread question
+        ]
+        if any(pattern in input_lower for pattern in generic_option_patterns):
+            return False  # Let them ask about options
+
+        # Asking about cream cheese/spreads when being asked about spread → relevant
+        if pending_field == "spread":
+            spread_keywords = ["cream cheese", "spread", "butter", "schmear"]
+            if any(kw in input_lower for kw in spread_keywords):
+                return False  # Let them ask about cream cheese options
+
+        # Asking about bagel types when being asked about bagel choice → relevant
+        if pending_field == "bagel_choice":
+            bagel_keywords = ["bagel", "bagels"]
+            if any(kw in input_lower for kw in bagel_keywords):
+                return False  # Let them ask about bagel options
+
+        # Asking about sizes when being asked about size → relevant
+        if pending_field == "coffee_size":
+            size_keywords = ["size", "sizes"]
+            if any(kw in input_lower for kw in size_keywords):
+                return False  # Let them ask about size options
+
+        # Asking about hot/iced when being asked about style → relevant
+        if pending_field == "coffee_style":
+            style_keywords = ["hot", "iced", "cold", "style"]
+            if any(kw in input_lower for kw in style_keywords):
+                return False  # Let them ask about style options
 
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:
@@ -194,7 +246,8 @@ class ConfiguringItemHandler:
 
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question
-        if _is_off_topic_request(user_input):
+        # Note: Questions relevant to the current config (e.g., "what cream cheese do you have?" when asked about spread) are allowed
+        if _is_off_topic_request(user_input, order.pending_field):
             logger.info("OFF-TOPIC REQUEST: Detected during config: '%s'", user_input[:50])
             # Get a friendly description of the item being configured
             item_name = item.get_summary() if hasattr(item, 'get_summary') else "your item"
@@ -220,6 +273,8 @@ class ConfiguringItemHandler:
             return self.coffee_handler.handle_coffee_size(user_input, item, order)
         elif order.pending_field == "coffee_style":
             return self.coffee_handler.handle_coffee_style(user_input, item, order)
+        elif order.pending_field == "speed_menu_cheese_choice":
+            return self.speed_menu_handler.handle_speed_menu_cheese_choice(user_input, item, order)
         elif order.pending_field == "speed_menu_bagel_type":
             return self.speed_menu_handler.handle_speed_menu_bagel_type(user_input, item, order)
         elif order.pending_field == "speed_menu_bagel_toasted":

@@ -324,6 +324,7 @@ class SpeedMenuBagelItemTask(ItemTask):
     menu_item_id: int | None = None  # Database ID if matched
     toasted: bool | None = None  # True=toasted, False=not toasted, None=not specified
     bagel_choice: str | None = None  # Custom bagel choice (e.g., "wheat" for "Classic BEC on wheat")
+    cheese_choice: str | None = None  # Cheese type for items with cheese (e.g., "american", "swiss")
     modifications: list[str] = Field(default_factory=list)  # Extra modifiers (e.g., ["mayo", "no onions"])
 
     def get_display_name(self) -> str:
@@ -335,6 +336,10 @@ class SpeedMenuBagelItemTask(ItemTask):
         parts = []
 
         parts.append(self.menu_item_name)
+
+        # Add cheese choice if specified
+        if self.cheese_choice:
+            parts.append(f"with {self.cheese_choice} cheese")
 
         # Add bagel choice if specified
         if self.bagel_choice:

@@ -95,6 +95,20 @@ class SpeedMenuBagelHandler:
         # Need to configure bagel type and/or toasted preference
         return self.configure_next_incomplete_speed_menu_bagel(order)
 
+    def _item_has_cheese(self, item_name: str) -> bool:
+        """Check if a speed menu item contains cheese and needs cheese type selection."""
+        name_lower = item_name.lower()
+        # Items with cheese: BEC (bacon egg cheese), any "egg and cheese" variant
+        cheese_indicators = [
+            "bec",
+            "egg and cheese",
+            "egg & cheese",
+            "eggs and cheese",
+            "eggs & cheese",
+            " cheese",  # Space before to avoid matching "cream cheese"
+        ]
+        return any(indicator in name_lower for indicator in cheese_indicators)
+
     def configure_next_incomplete_speed_menu_bagel(
         self,
         order: OrderTask,
@@ -110,9 +124,19 @@ class SpeedMenuBagelHandler:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Configure items one at a time - ask bagel type first, then toasted
+        # Configure items one at a time - ask cheese first (if applicable), then bagel type, then toasted
         for item in incomplete_items:
-            # First ask for bagel type if not specified
+            # First ask for cheese type if item has cheese and cheese not specified
+            if self._item_has_cheese(item.menu_item_name) and item.cheese_choice is None:
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = item.id
+                order.pending_field = "speed_menu_cheese_choice"
+                return StateMachineResult(
+                    message="What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
+                    order=order,
+                )
+
+            # Then ask for bagel type if not specified
             if item.bagel_choice is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = item.id
@@ -219,3 +243,42 @@ class SpeedMenuBagelHandler:
         order.clear_pending()
 
         return self._get_next_question(order)
+
+    def handle_speed_menu_cheese_choice(
+        self,
+        user_input: str,
+        item: SpeedMenuBagelItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle cheese type selection for speed menu bagel with cheese."""
+        input_lower = user_input.lower().strip()
+
+        # Try to extract cheese type from input
+        cheese_types = {
+            "american": ["american", "america"],
+            "cheddar": ["cheddar", "ched"],
+            "swiss": ["swiss"],
+            "muenster": ["muenster", "munster"],
+            "provolone": ["provolone", "prov"],
+        }
+
+        selected_cheese = None
+        for cheese, patterns in cheese_types.items():
+            for pattern in patterns:
+                if pattern in input_lower:
+                    selected_cheese = cheese
+                    break
+            if selected_cheese:
+                break
+
+        if not selected_cheese:
+            return StateMachineResult(
+                message="What kind of cheese? We have American, cheddar, Swiss, and muenster.",
+                order=order,
+            )
+
+        item.cheese_choice = selected_cheese
+        logger.info("Cheese choice '%s' applied to speed menu item '%s'", selected_cheese, item.menu_item_name)
+
+        # Continue to configure bagel type and toasted
+        return self.configure_next_incomplete_speed_menu_bagel(order)

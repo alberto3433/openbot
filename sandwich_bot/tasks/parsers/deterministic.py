@@ -17,6 +17,12 @@ from ..schemas import (
     CoffeeOrderDetails,
     MenuItemOrderDetails,
     BagelOrderDetails,
+    # ParsedItem types for multi-item handling
+    ParsedMenuItemEntry,
+    ParsedBagelEntry,
+    ParsedCoffeeEntry,
+    ParsedSpeedMenuBagelEntry,
+    ParsedSideItemEntry,
 )
 from .constants import (
     WORD_TO_NUM,
@@ -2101,6 +2107,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     speed_menu_bagel_toasted = None
     speed_menu_bagel_bagel_choice = None
     speed_menu_bagel_modifications = None
+    # NEW: parsed_items list for generic multi-item handling
+    parsed_items: list = []
 
     # First pass: count how many parts have menu items
     # If only ONE part has a menu item, we should extract modifications from the ORIGINAL text
@@ -2131,6 +2139,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             speed_menu_bagel_toasted = speed_result.new_speed_menu_bagel_toasted
             speed_menu_bagel_bagel_choice = speed_result.new_speed_menu_bagel_bagel_choice
             speed_menu_bagel_modifications = speed_result.new_speed_menu_bagel_modifications
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedSpeedMenuBagelEntry(
+                speed_menu_name=speed_result.new_speed_menu_bagel_name,
+                bagel_type=speed_result.new_speed_menu_bagel_bagel_choice,
+                toasted=speed_result.new_speed_menu_bagel_toasted,
+                quantity=speed_result.new_speed_menu_bagel_quantity or 1,
+                modifiers=speed_result.new_speed_menu_bagel_modifications or [],
+            ))
             logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d) via direct parse",
                         speed_menu_bagel_name, speed_menu_bagel_qty)
             continue
@@ -2147,6 +2163,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 bagel_choice=bagel_choice,
                 toasted=toasted,
                 modifications=modifications,
+            ))
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedMenuItemEntry(
+                menu_item_name=item_name,
+                quantity=item_qty,
+                bagel_type=bagel_choice,
+                toasted=toasted,
+                modifiers=modifications,
             ))
             logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s, mods=%s)",
                         item_name, item_qty, bagel_choice, toasted, modifications)
@@ -2165,6 +2189,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 toasted=parsed.new_menu_item_toasted,
                 modifications=parsed.new_menu_item_modifications or [],
             ))
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedMenuItemEntry(
+                menu_item_name=parsed.new_menu_item,
+                quantity=parsed.new_menu_item_quantity or 1,
+                bagel_type=parsed.new_menu_item_bagel_choice,
+                toasted=parsed.new_menu_item_toasted,
+                modifiers=parsed.new_menu_item_modifications or [],
+            ))
             logger.info("Multi-item: detected menu item '%s' (qty=%d, mods=%s)",
                         parsed.new_menu_item, parsed.new_menu_item_quantity or 1, parsed.new_menu_item_modifications)
 
@@ -2178,6 +2210,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 milk=parsed.new_coffee_milk,
                 special_instructions=parsed.new_coffee_special_instructions,
             ))
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedCoffeeEntry(
+                drink_type=parsed.new_coffee_type or "coffee",
+                size=parsed.new_coffee_size,
+                temperature="iced" if parsed.new_coffee_iced else ("hot" if parsed.new_coffee_iced is False else None),
+                milk=parsed.new_coffee_milk,
+                quantity=parsed.new_coffee_quantity or 1,
+            ))
             logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
                         parsed.new_coffee_decaf, parsed.new_coffee_milk, parsed.new_coffee_special_instructions)
@@ -2189,11 +2229,29 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             bagel_toasted = parsed.new_bagel_toasted
             bagel_spread = parsed.new_bagel_spread
             bagel_spread_type = parsed.new_bagel_spread_type
+            # Add to parsed_items for generic handling
+            if bagel_type:
+                modifiers = []
+                if bagel_spread:
+                    modifiers.append(bagel_spread)
+                if bagel_spread_type:
+                    modifiers.append(bagel_spread_type)
+                parsed_items.append(ParsedBagelEntry(
+                    bagel_type=bagel_type,
+                    quantity=bagel_qty,
+                    toasted=bagel_toasted,
+                    modifiers=modifiers,
+                ))
             logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s)", bagel_type, bagel_qty, bagel_toasted)
 
         if parsed.new_side_item:
             side_item = parsed.new_side_item
             side_item_qty = parsed.new_side_item_quantity or 1
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedSideItemEntry(
+                side_name=parsed.new_side_item,
+                quantity=side_item_qty,
+            ))
             logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
 
         if parsed.new_speed_menu_bagel:
@@ -2203,6 +2261,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             speed_menu_bagel_toasted = parsed.new_speed_menu_bagel_toasted
             speed_menu_bagel_bagel_choice = parsed.new_speed_menu_bagel_bagel_choice
             speed_menu_bagel_modifications = parsed.new_speed_menu_bagel_modifications
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedSpeedMenuBagelEntry(
+                speed_menu_name=parsed.new_speed_menu_bagel_name,
+                bagel_type=parsed.new_speed_menu_bagel_bagel_choice,
+                toasted=parsed.new_speed_menu_bagel_toasted,
+                quantity=speed_menu_bagel_qty,
+                modifiers=parsed.new_speed_menu_bagel_modifications or [],
+            ))
             logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d, toasted=%s, bagel=%s)",
                         speed_menu_bagel_name, speed_menu_bagel_qty, speed_menu_bagel_toasted, speed_menu_bagel_bagel_choice)
 
@@ -2221,8 +2287,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     if items_found >= 2 or total_items >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
-        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s",
-                    len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name)
+        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s, parsed_items=%d",
+                    len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name, len(parsed_items))
         return OpenInputResponse(
             new_menu_item=first_menu_item.name if first_menu_item else None,
             new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,
@@ -2253,6 +2319,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_speed_menu_bagel_toasted=speed_menu_bagel_toasted,
             new_speed_menu_bagel_bagel_choice=speed_menu_bagel_bagel_choice,
             new_speed_menu_bagel_modifications=speed_menu_bagel_modifications or [],
+            parsed_items=parsed_items,
         )
 
     if menu_item_list:

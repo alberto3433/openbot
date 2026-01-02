@@ -6,8 +6,69 @@ in different states of the order flow. Each model constrains the possible
 interpretations of user input for a specific context.
 """
 
-from typing import Literal
+from typing import Literal, Union
 from pydantic import BaseModel, Field
+
+
+# =============================================================================
+# ParsedItem Types for Multi-Item Order Handling
+# =============================================================================
+
+class ParsedMenuItemEntry(BaseModel):
+    """A parsed menu item from multi-item detection."""
+    type: Literal["menu_item"] = "menu_item"
+    menu_item_name: str
+    quantity: int = 1
+    bagel_type: str | None = None
+    toasted: bool | None = None
+    modifiers: list[str] = Field(default_factory=list)
+
+
+class ParsedBagelEntry(BaseModel):
+    """A parsed bagel from multi-item detection."""
+    type: Literal["bagel"] = "bagel"
+    bagel_type: str
+    quantity: int = 1
+    toasted: bool | None = None
+    modifiers: list[str] = Field(default_factory=list)
+
+
+class ParsedCoffeeEntry(BaseModel):
+    """A parsed coffee from multi-item detection."""
+    type: Literal["coffee"] = "coffee"
+    drink_type: str
+    size: str | None = None
+    temperature: str | None = None
+    milk: str | None = None
+    modifiers: list[str] = Field(default_factory=list)
+    quantity: int = 1
+
+
+class ParsedSpeedMenuBagelEntry(BaseModel):
+    """A parsed speed menu bagel from multi-item detection."""
+    type: Literal["speed_menu_bagel"] = "speed_menu_bagel"
+    speed_menu_name: str
+    bagel_type: str | None = None
+    toasted: bool | None = None
+    quantity: int = 1
+    modifiers: list[str] = Field(default_factory=list)
+
+
+class ParsedSideItemEntry(BaseModel):
+    """A parsed side item from multi-item detection."""
+    type: Literal["side"] = "side"
+    side_name: str
+    quantity: int = 1
+
+
+# Union type for dispatcher
+ParsedItem = Union[
+    ParsedMenuItemEntry,
+    ParsedBagelEntry,
+    ParsedCoffeeEntry,
+    ParsedSpeedMenuBagelEntry,
+    ParsedSideItemEntry,
+]
 
 
 class SideChoiceResponse(BaseModel):
@@ -485,6 +546,12 @@ class OpenInputResponse(BaseModel):
     order_type: Literal["pickup", "delivery"] | None = Field(
         default=None,
         description="If user mentions 'pickup order' or 'delivery order' upfront, capture that here"
+    )
+
+    # Multi-item order handling - list of parsed items for generic processing
+    parsed_items: list[ParsedItem] = Field(
+        default_factory=list,
+        description="List of parsed items from multi-item order detection. Used for generic item processing in handler."
     )
 
 

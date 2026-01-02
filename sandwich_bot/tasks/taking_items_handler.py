@@ -20,12 +20,20 @@ from .models import (
     SpeedMenuBagelItemTask,
     TaskStatus,
 )
+from .schemas.phases import OrderPhase
 from .schemas import (
     StateMachineResult,
     OpenInputResponse,
     ExtractedModifiers,
     ExtractedCoffeeModifiers,
     CoffeeOrderDetails,
+    # ParsedItem types for multi-item handling
+    ParsedMenuItemEntry,
+    ParsedBagelEntry,
+    ParsedCoffeeEntry,
+    ParsedSpeedMenuBagelEntry,
+    ParsedSideItemEntry,
+    ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
 from .parsers.constants import BAGEL_TYPES, BAGEL_SPREADS, MODIFIER_NORMALIZATIONS
@@ -974,6 +982,13 @@ class TakingItemsHandler:
                 )
             # If they also ordered items, continue processing below
 
+        # NEW: Handle multi-item orders via parsed_items list (preferred path)
+        # This provides generic handling for any combination of item types
+        if parsed.parsed_items:
+            result = self._process_multi_item_order(parsed, order)
+            if result:
+                return result
+
         # Track items added for multi-item orders
         items_added = []
         last_result = None
@@ -1634,3 +1649,161 @@ class TakingItemsHandler:
             message="I didn't catch that. What would you like to order?",
             order=order,
         )
+
+    # =========================================================================
+    # Multi-Item Order Handling via ParsedItem Types
+    # =========================================================================
+
+    def _add_parsed_item(self, item: ParsedItem, order: OrderTask) -> tuple[OrderTask, str]:
+        """
+        Dispatch a parsed item to the appropriate handler.
+
+        Returns tuple of (updated_order, item_summary_string).
+        """
+        if isinstance(item, ParsedSpeedMenuBagelEntry):
+            result = self.speed_menu_handler.add_speed_menu_bagel(
+                item_name=item.speed_menu_name,
+                quantity=item.quantity,
+                toasted=item.toasted,
+                order=order,
+                bagel_choice=item.bagel_type,
+                modifications=item.modifiers,
+            )
+            order = result.order
+            # Build summary from the added item
+            summary = item.speed_menu_name
+            if item.bagel_type:
+                summary += f" on {item.bagel_type}"
+            if item.quantity > 1:
+                summary = f"{item.quantity} {summary}s"
+            return order, summary
+
+        elif isinstance(item, ParsedMenuItemEntry):
+            result = self.item_adder_handler.add_menu_item(
+                item.menu_item_name,
+                item.quantity,
+                order,
+                item.toasted,
+                item.bagel_type,
+                item.modifiers,
+            )
+            order = result.order
+            summary = item.menu_item_name
+            if item.quantity > 1:
+                summary = f"{item.quantity} {summary}s"
+            return order, summary
+
+        elif isinstance(item, ParsedBagelEntry):
+            result = self.item_adder_handler.add_bagel(
+                order,
+                bagel_type=item.bagel_type,
+                quantity=item.quantity,
+                toasted=item.toasted,
+            )
+            order = result.order
+            summary = f"{item.bagel_type} bagel"
+            if item.toasted:
+                summary += " toasted"
+            if item.quantity > 1:
+                summary = f"{item.quantity} {summary}s"
+            return order, summary
+
+        elif isinstance(item, ParsedCoffeeEntry):
+            result = self.coffee_handler.add_coffee(
+                item.drink_type,
+                item.size,
+                item.temperature == "iced" if item.temperature else None,
+                item.milk,
+                None,  # sweetener
+                1,     # sweetener_quantity
+                None,  # flavor_syrup
+                item.quantity,
+                order,
+            )
+            order = result.order
+            summary = item.drink_type
+            if item.size:
+                summary = f"{item.size} {summary}"
+            if item.temperature:
+                summary = f"{item.temperature} {summary}"
+            if item.quantity > 1:
+                summary = f"{item.quantity} {summary}s"
+            return order, summary
+
+        elif isinstance(item, ParsedSideItemEntry):
+            side_name, error = self.item_adder_handler.add_side_item(
+                item.side_name,
+                item.quantity,
+                order,
+            )
+            if side_name:
+                summary = side_name
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {summary}s"
+                return order, summary
+            else:
+                logger.warning("Failed to add side item '%s': %s", item.side_name, error)
+                return order, ""
+
+        return order, ""
+
+    def _process_multi_item_order(
+        self,
+        parsed: OpenInputResponse,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """
+        Process all items in a multi-item order using parsed_items list.
+
+        Returns StateMachineResult if items were processed, None if parsed_items is empty.
+        """
+        if not parsed.parsed_items:
+            return None
+
+        logger.info("Processing %d items via parsed_items list", len(parsed.parsed_items))
+
+        summaries = []
+        for item in parsed.parsed_items:
+            order, summary = self._add_parsed_item(item, order)
+            if summary:
+                summaries.append(summary)
+                logger.info("Added item via parsed_items: %s", summary)
+
+        if not summaries:
+            return None
+
+        # Build summary prefix
+        if len(summaries) == 1:
+            summary_prefix = f"Got it, {summaries[0]}."
+        elif len(summaries) == 2:
+            summary_prefix = f"Got it, {summaries[0]} and {summaries[1]}."
+        else:
+            items_str = ", ".join(summaries[:-1]) + f", and {summaries[-1]}"
+            summary_prefix = f"Got it, {items_str}."
+
+        # Check if any item needs configuration (e.g., toasted question for spread sandwiches)
+        # Don't rely on phase - it may have been reset by a later item that didn't need config.
+        # Instead, always try to get the next configuration question.
+        config_result = self.item_adder_handler._configure_next_incomplete_bagel(order)
+        logger.info(
+            "Multi-item order check: phase=%s, config_result.message=%s",
+            order.phase, config_result.message if config_result else None
+        )
+        if config_result and config_result.message:
+            # Find which item is being configured (the one that's IN_PROGRESS)
+            config_item_name = None
+            for item in order.items.items:
+                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                    config_item_name = item.menu_item_name
+                    break
+
+            # If we have multiple items and found the config item, clarify which one
+            if len(summaries) > 1 and config_item_name:
+                response = f"{summary_prefix} For the {config_item_name}, {config_result.message.lower()}"
+            else:
+                response = f"{summary_prefix} {config_result.message}"
+            return StateMachineResult(message=response, order=config_result.order)
+
+        # No configuration needed - ask for more items
+        response = f"{summary_prefix} Anything else?"
+        return StateMachineResult(message=response, order=order)

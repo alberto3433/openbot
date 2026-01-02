@@ -298,7 +298,7 @@ class BagelConfigHandler:
             item.bagel_choice = bagel_type
 
             # For spread/salad sandwiches, use unified config flow for toasted question
-            if item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
+            if item.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich"):
                 order.clear_pending()
                 return self.configure_next_incomplete_bagel(order)
 
@@ -615,7 +615,34 @@ class BagelConfigHandler:
             # For spread/salad sandwiches, mark complete after toasted
             item.mark_complete()
             order.clear_pending()
-            return self._get_next_question(order)
+
+            # Check if there are more items needing configuration
+            next_config = self.configure_next_incomplete_bagel(order)
+            if next_config and next_config.message and "toasted" in next_config.message.lower():
+                # More items need config - include this item's name in the response
+                item_summary = item.menu_item_name
+                if item.bagel_choice:
+                    item_summary += f" on {item.bagel_choice}"
+                if item.toasted:
+                    item_summary += " toasted"
+                return StateMachineResult(
+                    message=f"Got it, {item_summary}. {next_config.message}",
+                    order=next_config.order,
+                )
+            elif next_config and next_config.message:
+                return next_config
+
+            # No more config needed - return with this item's summary
+            item_summary = item.menu_item_name
+            if item.bagel_choice:
+                item_summary += f" on {item.bagel_choice}"
+            if item.toasted:
+                item_summary += " toasted"
+            order.phase = OrderPhase.TAKING_ITEMS.value
+            return StateMachineResult(
+                message=f"Got it, {item_summary}. Anything else?",
+                order=order,
+            )
 
         # For BagelItemTask, check if spread is already set or has sandwich toppings
         if item.spread is not None:
@@ -738,7 +765,7 @@ class BagelConfigHandler:
         for item in order.items.items:
             if isinstance(item, BagelItemTask):
                 all_bagel_items.append(item)
-            elif isinstance(item, MenuItemTask) and item.menu_item_type in ("spread_sandwich", "salad_sandwich"):
+            elif isinstance(item, MenuItemTask) and item.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich"):
                 all_bagel_items.append(item)
             elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
                 # Omelettes with bagel side need bagel configuration

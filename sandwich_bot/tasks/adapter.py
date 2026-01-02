@@ -360,7 +360,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             # Build display name with bagel choice and side choice
             # Note: toasted status is shown as a modifier line item, not in display_name
             display_name = menu_item_name
-            if menu_item_type in ("spread_sandwich", "salad_sandwich") and bagel_choice:
+            if menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich") and bagel_choice:
                 display_name = f"{menu_item_name} on {bagel_choice} bagel"
             # Add side choice for omelettes (bagel or fruit salad)
             elif side_choice == "fruit_salad":
@@ -393,7 +393,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             # Add toasted as a modifier (no price) for omelette side bagels and spread/salad sandwiches
             if toasted is True and (
                 side_choice == "bagel" or
-                menu_item_type in ("spread_sandwich", "salad_sandwich")
+                menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich")
             ):
                 modifiers.append({
                     "name": "Toasted",

@@ -1666,3 +1666,69 @@ class TestSplitQuantityDrinksParsing:
         assert result.coffee_details[0].iced is True
         assert result.coffee_details[1].size == "large"
         assert result.coffee_details[1].iced is False
+
+
+class TestParsedItemsMultiItem:
+    """Tests for parsed_items list in multi-item order parsing."""
+
+    def test_speed_menu_and_menu_item_both_in_parsed_items(self):
+        """Test that The Leo + Butter Sandwich both appear in parsed_items.
+
+        This was the original bug: 'the leo on wheat toasted and an everything bagel with butter'
+        would only add the bagel (parsed as Butter Sandwich), skipping The Leo.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("the leo on wheat toasted and an everything bagel with butter")
+        assert result is not None, "Failed to parse multi-item order"
+        assert len(result.parsed_items) == 2, f"Expected 2 parsed_items, got {len(result.parsed_items)}"
+
+        # Check the parsed_items list contains both items
+        types = [item.type for item in result.parsed_items]
+        assert "speed_menu_bagel" in types, "Speed menu bagel should be in parsed_items"
+        assert "menu_item" in types, "Menu item should be in parsed_items"
+
+        # Verify The Leo details
+        speed_items = [i for i in result.parsed_items if i.type == "speed_menu_bagel"]
+        assert len(speed_items) == 1
+        assert speed_items[0].speed_menu_name == "The Leo"
+        assert speed_items[0].bagel_type == "wheat"
+        assert speed_items[0].toasted is True
+
+    def test_bagel_and_coffee_both_in_parsed_items(self):
+        """Test that bagel + coffee both appear in parsed_items."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("a plain bagel toasted and a large iced latte")
+        assert result is not None
+        assert len(result.parsed_items) == 2
+
+        types = [item.type for item in result.parsed_items]
+        assert "bagel" in types
+        assert "coffee" in types
+
+    def test_two_menu_items_both_in_parsed_items(self):
+        """Test that two menu items both appear in parsed_items."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("the lexington and a butter sandwich")
+        assert result is not None
+        # May get 2 menu items
+        assert len(result.parsed_items) >= 2
+
+        types = [item.type for item in result.parsed_items]
+        # All should be menu_item or speed_menu_bagel
+        for t in types:
+            assert t in ["menu_item", "speed_menu_bagel"]
+
+    def test_speed_menu_and_coffee_both_in_parsed_items(self):
+        """Test that speed menu bagel + coffee both appear in parsed_items."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("the classic bec and a coffee")
+        assert result is not None
+        assert len(result.parsed_items) == 2
+
+        types = [item.type for item in result.parsed_items]
+        assert "speed_menu_bagel" in types
+        assert "coffee" in types

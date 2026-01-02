@@ -691,7 +691,7 @@ def populate_menu_items(db: Session):
         {"name": "Cappuccino", "category": "drink", "base_price": 5.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Iced Cappuccino", "category": "drink", "base_price": 5.75, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Latte", "category": "drink", "base_price": 5.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
-        {"name": "Iced Latte", "category": "drink", "base_price": 5.75, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
+        # Iced Latte removed - handled by letting user choose iced/hot when ordering a latte
         {"name": "Cafe au Lait", "category": "drink", "base_price": 4.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Espresso", "category": "drink", "base_price": 3.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Double Espresso", "category": "drink", "base_price": 4.00, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},

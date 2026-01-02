@@ -292,7 +292,7 @@ class ItemAdderHandler:
         is_omelette = "omelette" in canonical_name.lower() or "omelet" in canonical_name.lower()
 
         # Check if it's a spread or salad sandwich (requires toasted question)
-        is_spread_or_salad_sandwich = category in ("spread_sandwich", "salad_sandwich")
+        is_spread_or_salad_sandwich = category in ("spread_sandwich", "salad_sandwich", "fish_sandwich")
 
         logger.info(
             "Menu item check: canonical_name='%s', category='%s', is_omelette=%s, is_spread_salad=%s, quantity=%d",

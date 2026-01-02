@@ -517,8 +517,8 @@ class MenuItemTask(ItemTask):
 
         parts.append(self.menu_item_name)
 
-        # Add bagel choice for spread/salad sandwiches
-        if self.menu_item_type in ("spread_sandwich", "salad_sandwich") and self.bagel_choice:
+        # Add bagel choice for spread/salad/fish sandwiches
+        if self.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich") and self.bagel_choice:
             parts.append(f"on {self.bagel_choice} bagel")
             if self.toasted:
                 parts.append("toasted")

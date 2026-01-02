@@ -7,6 +7,14 @@ state machine for parsing user input and representing order phases.
 
 from .phases import OrderPhase
 from .parser_responses import (
+    # ParsedItem types for multi-item handling
+    ParsedMenuItemEntry,
+    ParsedBagelEntry,
+    ParsedCoffeeEntry,
+    ParsedSpeedMenuBagelEntry,
+    ParsedSideItemEntry,
+    ParsedItem,
+    # Parser response schemas
     SideChoiceResponse,
     BagelChoiceResponse,
     MultiBagelChoiceResponse,
@@ -38,6 +46,13 @@ from .result import StateMachineResult
 __all__ = [
     # Phases
     "OrderPhase",
+    # ParsedItem types for multi-item handling
+    "ParsedMenuItemEntry",
+    "ParsedBagelEntry",
+    "ParsedCoffeeEntry",
+    "ParsedSpeedMenuBagelEntry",
+    "ParsedSideItemEntry",
+    "ParsedItem",
     # Parser responses
     "SideChoiceResponse",
     "BagelChoiceResponse",

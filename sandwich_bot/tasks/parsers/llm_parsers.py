@@ -447,6 +447,9 @@ Examples:
 - "latte extra hot" -> new_coffee: true, new_coffee_type: "latte", new_coffee_notes: "extra hot"
 - "iced coffee light ice" -> new_coffee: true, new_coffee_iced: true, new_coffee_notes: "light ice"
 - "large coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "large", new_coffee_flavor_syrup: "vanilla"
+- "coffee with 2 hazelnut syrups" -> new_coffee: true, new_coffee_flavor_syrup: "hazelnut", new_coffee_syrup_quantity: 2
+- "large iced coffee with double vanilla" -> new_coffee: true, new_coffee_size: "large", new_coffee_iced: true, new_coffee_flavor_syrup: "vanilla", new_coffee_syrup_quantity: 2
+- "latte with triple caramel syrup" -> new_coffee: true, new_coffee_type: "latte", new_coffee_flavor_syrup: "caramel", new_coffee_syrup_quantity: 3
 - "small coffee black with two sugars and vanilla syrup" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
 - "cappuccino with 2 splenda and vanilla syrup" -> new_coffee: true, new_coffee_type: "cappuccino", new_coffee_sweetener: "splenda", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"

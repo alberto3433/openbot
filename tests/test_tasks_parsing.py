@@ -1499,3 +1499,73 @@ class TestSpeedMenuBagelParsing:
         assert result.new_bagel is True
         assert result.new_bagel_type == "wheat"
         assert result.new_speed_menu_bagel is False
+
+
+class TestSplitQuantityBagelParsing:
+    """Tests for split-quantity bagel parsing (e.g., 'two bagels one with lox one with cream cheese')."""
+
+    def test_two_bagels_one_lox_one_cream_cheese(self):
+        """Test parsing 'two plain bagels one with scallion cream cheese one with lox'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("two plain bagels one with scallion cream cheese one with lox")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_quantity == 2
+        assert result.new_bagel_type == "plain"
+        assert len(result.bagel_details) == 2
+        # First bagel: scallion cream cheese
+        assert result.bagel_details[0].bagel_type == "plain"
+        assert result.bagel_details[0].spread == "cream cheese"
+        assert result.bagel_details[0].spread_type == "scallion"
+        # Second bagel: lox
+        assert result.bagel_details[1].bagel_type == "plain"
+        assert result.bagel_details[1].spread == "nova scotia salmon"
+
+    def test_two_bagels_toasted_variants(self):
+        """Test parsing 'two everything bagels one toasted one not toasted'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("two everything bagels one toasted one not toasted")
+        assert result is not None
+        assert result.new_bagel_quantity == 2
+        assert result.new_bagel_type == "everything"
+        assert len(result.bagel_details) == 2
+        assert result.bagel_details[0].toasted is True
+        assert result.bagel_details[1].toasted is False
+
+    def test_three_bagels_different_spreads(self):
+        """Test parsing 'three bagels one with butter one plain one with cream cheese'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("three bagels one with butter one plain one with cream cheese")
+        assert result is not None
+        assert result.new_bagel_quantity == 3
+        assert result.new_bagel_type is None  # No base type specified
+        assert len(result.bagel_details) == 3
+        assert result.bagel_details[0].spread == "butter"
+        assert result.bagel_details[1].spread is None  # plain = no spread
+        assert result.bagel_details[2].spread == "cream cheese"
+
+    def test_numeric_quantity(self):
+        """Test parsing with numeric quantity."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("2 bagels one with lox one with cream cheese")
+        assert result is not None
+        assert result.new_bagel_quantity == 2
+        assert len(result.bagel_details) == 2
+
+    def test_no_split_single_bagel(self):
+        """Test that single bagel orders are not matched by split-quantity parser."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("one plain bagel with cream cheese")
+        assert result is None  # Should not match - no split pattern
+
+    def test_no_split_same_config(self):
+        """Test that bagels with same config are not matched by split-quantity parser."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("two plain bagels with cream cheese")
+        assert result is None  # Should not match - no split pattern

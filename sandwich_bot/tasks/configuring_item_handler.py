@@ -281,6 +281,8 @@ class ConfiguringItemHandler:
             return self.coffee_handler.handle_coffee_style(user_input, item, order)
         elif order.pending_field == "coffee_modifiers":
             return self.coffee_handler.handle_coffee_modifiers(user_input, item, order)
+        elif order.pending_field == "syrup_flavor":
+            return self.coffee_handler.handle_syrup_flavor(user_input, item, order)
         elif order.pending_field == "speed_menu_cheese_choice":
             return self.speed_menu_handler.handle_speed_menu_cheese_choice(user_input, item, order)
         elif order.pending_field == "speed_menu_bagel_type":

@@ -221,3 +221,25 @@ python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel
 
 - 9 resiliency tests in batches 9, 10, 11, 14, 17 fail due to using non-existent `current_item_id` field
 - These are pre-existing test issues, not code bugs
+
+## Bug Fix Protocol
+
+Before claiming any bug is fixed, you MUST:
+
+### 1. Trace First, Fix Second
+- Find the EXACT line of code that produces the observed buggy output
+- Do NOT guess which functions are involved - trace and prove it
+
+### 2. Verify Code Path
+- Prove the function you want to modify is actually called in this flow
+- If unsure, add temporary logging or search for call sites
+- Ask: "How do I know this code runs when [X happens]?"
+
+### 3. End-to-End Verification
+- After making changes, tell me how to restart/reload the server
+- Do NOT claim success based on unit tests alone
+- Only mark complete after I confirm the actual behavior changed
+
+### 4. No Premature Victory
+- Do NOT say "fixed" or "done" until I verify the change works
+- If you can't verify it yourself, explicitly say "I've made the changes but cannot verify - please test"

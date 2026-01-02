@@ -228,16 +228,17 @@ class CoffeeItemTask(ItemTask):
     iced: bool | None = None  # True=iced, False=hot, None=not specified
     decaf: bool | None = None  # True=decaf, None=regular (not specified)
     milk: str | None = None  # whole, skim, oat, almond, etc.
-    sweetener: str | None = None  # sugar, splenda, stevia, etc.
-    sweetener_quantity: int = 1  # number of sweetener packets (e.g., 2 splendas)
-    flavor_syrup: str | None = None  # vanilla, caramel, hazelnut, etc.
-    syrup_quantity: int = 1  # number of syrup pumps (e.g., 2 hazelnut syrups)
+    # Sweeteners - list of {"type": str, "quantity": int} e.g., [{"type": "sugar", "quantity": 2}]
+    sweeteners: list[dict] = Field(default_factory=list)
+    # Flavor syrups - list of {"flavor": str, "quantity": int} e.g., [{"flavor": "vanilla", "quantity": 1}]
+    flavor_syrups: list[dict] = Field(default_factory=list)
+    wants_syrup: bool = False  # True if user said "with syrup" without specifying flavor
     extra_shots: int = 0
 
     # Upcharge tracking (set by recalculate_coffee_price)
     size_upcharge: float = 0.0
     milk_upcharge: float = 0.0
-    syrup_upcharge: float = 0.0
+    syrup_upcharge: float = 0.0  # Total upcharge for all syrups
     iced_upcharge: float = 0.0
 
     def get_display_name(self) -> str:
@@ -280,13 +281,19 @@ class CoffeeItemTask(ItemTask):
         else:
             parts.append("coffee")
 
-        # Add flavor syrup with upcharge and quantity
-        if self.flavor_syrup:
-            qty_prefix = f"{self.syrup_quantity} " if self.syrup_quantity > 1 else ""
+        # Add flavor syrups with upcharges
+        if self.flavor_syrups:
+            syrup_parts = []
+            for syrup in self.flavor_syrups:
+                flavor = syrup.get("flavor", "")
+                qty = syrup.get("quantity", 1)
+                qty_prefix = f"{qty} " if qty > 1 else ""
+                syrup_parts.append(f"{qty_prefix}{flavor} syrup")
+            syrup_str = " and ".join(syrup_parts)
             if self.syrup_upcharge > 0:
-                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
+                parts.append(f"with {syrup_str} (+${self.syrup_upcharge:.2f})")
             else:
-                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup")
+                parts.append(f"with {syrup_str}")
 
         if self.milk:
             # "none" or "black" means no milk - show as "black" for clarity
@@ -297,12 +304,17 @@ class CoffeeItemTask(ItemTask):
             else:
                 parts.append(f"with {self.milk} milk")
 
-        # Add sweetener with quantity
-        if self.sweetener:
-            if self.sweetener_quantity > 1:
-                parts.append(f"with {self.sweetener_quantity} {self.sweetener}s")
-            else:
-                parts.append(f"with {self.sweetener}")
+        # Add sweeteners with quantities
+        if self.sweeteners:
+            sweetener_parts = []
+            for sweetener in self.sweeteners:
+                s_type = sweetener.get("type", "")
+                qty = sweetener.get("quantity", 1)
+                if qty > 1:
+                    sweetener_parts.append(f"{qty} {s_type}s")
+                else:
+                    sweetener_parts.append(s_type)
+            parts.append(f"with {' and '.join(sweetener_parts)}")
 
         if self.extra_shots:
             parts.append(f"({self.extra_shots} extra shot{'s' if self.extra_shots > 1 else ''})")
@@ -340,13 +352,19 @@ class CoffeeItemTask(ItemTask):
         else:
             parts.append("coffee")
 
-        # Add flavor syrup with upcharge and quantity
-        if self.flavor_syrup:
-            qty_prefix = f"{self.syrup_quantity} " if self.syrup_quantity > 1 else ""
+        # Add flavor syrups with upcharges
+        if self.flavor_syrups:
+            syrup_parts = []
+            for syrup in self.flavor_syrups:
+                flavor = syrup.get("flavor", "")
+                qty = syrup.get("quantity", 1)
+                qty_prefix = f"{qty} " if qty > 1 else ""
+                syrup_parts.append(f"{qty_prefix}{flavor} syrup")
+            syrup_str = " and ".join(syrup_parts)
             if self.syrup_upcharge > 0:
-                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup (+${self.syrup_upcharge:.2f})")
+                parts.append(f"with {syrup_str} (+${self.syrup_upcharge:.2f})")
             else:
-                parts.append(f"with {qty_prefix}{self.flavor_syrup} syrup")
+                parts.append(f"with {syrup_str}")
 
         # Check if special instructions describe milk (e.g., "a splash of milk", "light cream")
         special_describes_milk = False
@@ -384,12 +402,17 @@ class CoffeeItemTask(ItemTask):
             if any(word in self.special_instructions.lower() for word in sweetener_words):
                 special_describes_sweetener = True
 
-        # Add sweetener or use special instructions if they describe sweetener
-        if self.sweetener and not special_describes_sweetener:
-            if self.sweetener_quantity > 1:
-                parts.append(f"with {self.sweetener_quantity} {self.sweetener}s")
-            else:
-                parts.append(f"with {self.sweetener}")
+        # Add sweeteners or use special instructions if they describe sweetener
+        if self.sweeteners and not special_describes_sweetener:
+            sweetener_parts = []
+            for sweetener in self.sweeteners:
+                s_type = sweetener.get("type", "")
+                qty = sweetener.get("quantity", 1)
+                if qty > 1:
+                    sweetener_parts.append(f"{qty} {s_type}s")
+                else:
+                    sweetener_parts.append(s_type)
+            parts.append(f"with {' and '.join(sweetener_parts)}")
         elif special_describes_sweetener and not special_used_for_milk:
             # Use special instructions for sweetener (e.g., "a little sugar")
             parts.append(f"with {self.special_instructions}")

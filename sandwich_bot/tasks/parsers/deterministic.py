@@ -16,6 +16,7 @@ from ..schemas import (
     ExtractedCoffeeModifiers,
     CoffeeOrderDetails,
     MenuItemOrderDetails,
+    BagelOrderDetails,
 )
 from .constants import (
     WORD_TO_NUM,
@@ -560,6 +561,12 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
                 logger.debug(f"Extracted coffee flavor syrup: {syrup}")
                 break
 
+    # Check for generic "syrup" request without a specific flavor
+    # e.g., "with syrup", "add syrup", "and syrup"
+    if not result.flavor_syrup and re.search(r'\bsyrups?\b', input_lower):
+        result.wants_syrup = True
+        logger.debug("User requested syrup without specifying flavor")
+
     result.special_instructions = extract_special_instructions_from_input(user_input)
 
     return result
@@ -898,6 +905,179 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# Split-Quantity Bagel Parsing
+# =============================================================================
+
+def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
+    """
+    Parse orders with multiple bagels that have different configurations.
+
+    Detects patterns like:
+        - "two plain bagels one with scallion cream cheese one with lox"
+        - "2 bagels, one with lox, one with cream cheese"
+        - "three everything bagels one toasted one not toasted one with butter"
+
+    Returns OpenInputResponse with bagel_details populated for each individual bagel.
+    """
+    text_lower = text.lower().strip()
+
+    # Must have "bagel" in the text
+    if not re.search(r"\bbagels?\b", text_lower):
+        return None
+
+    # Detect split-quantity patterns: "one with X" or "one X" repeated
+    # Pattern: look for "one with", "1 with", "first with", "second with", etc.
+    split_indicators = [
+        r"\bone\s+with\b",
+        r"\b1\s+with\b",
+        r"\bfirst\s+with\b",
+        r"\bsecond\s+with\b",
+        r"\bthe\s+other\s+with\b",
+        r"\banother\s+with\b",
+        r"\bone\s+(?:plain|toasted|not\s+toasted)\b",
+    ]
+
+    # Count how many split indicators we find
+    split_count = 0
+    for pattern in split_indicators:
+        matches = re.findall(pattern, text_lower)
+        split_count += len(matches)
+
+    # Need at least 2 split indicators to be a split-quantity order
+    if split_count < 2:
+        return None
+
+    logger.info("SPLIT-QUANTITY BAGELS: detected %d split indicators in '%s'", split_count, text[:60])
+
+    # Extract the total quantity
+    total_quantity = 2  # Default
+    qty_match = re.match(
+        r"^(\d+|two|three|four|five|six)\s+",
+        text_lower
+    )
+    if qty_match:
+        qty_str = qty_match.group(1)
+        if qty_str.isdigit():
+            total_quantity = int(qty_str)
+        else:
+            total_quantity = WORD_TO_NUM.get(qty_str, 2)
+
+    # Extract the base bagel type from the INITIAL part of the text only
+    # (before the first "one with" or split indicator)
+    # This prevents "one plain" from being used as the base bagel type
+    first_split = re.split(r"\b(?:one|1|first)\s+(?:with\s+)?", text_lower, maxsplit=1)[0]
+    base_bagel_type = _extract_bagel_type(first_split)
+
+    # Extract base toasted preference from initial part only
+    base_toasted = _extract_toasted(first_split)
+
+    # Split the text into parts for each bagel
+    # Look for patterns like "one with X", "one Y", "the other with Z"
+    split_pattern = re.compile(
+        r"(?:,?\s*(?:and\s+)?)"  # Optional comma/and separator
+        r"(?:one|1|first|second|third|the\s+other|another)\s+"
+        r"(with\s+.+?|(?:not\s+)?toasted(?:\s+with\s+.+?)?|plain(?:\s+with\s+.+?)?)"
+        r"(?=(?:,?\s*(?:and\s+)?(?:one|1|first|second|third|the\s+other|another)\s+)|$)",
+        re.IGNORECASE
+    )
+
+    # Find all split parts
+    parts = split_pattern.findall(text_lower)
+    logger.info("SPLIT-QUANTITY: found %d parts: %s", len(parts), parts)
+
+    # If we didn't find enough parts with the regex, try a simpler split
+    if len(parts) < 2:
+        # Try splitting on "one with" or "one "
+        simple_split = re.split(r",?\s*(?:and\s+)?(?:one|1)\s+(?:with\s+)?", text_lower)
+        # Filter out empty parts and the initial bagel description
+        parts = [p.strip() for p in simple_split[1:] if p.strip()]
+        logger.info("SPLIT-QUANTITY: simple split found %d parts: %s", len(parts), parts)
+
+    if len(parts) < 2:
+        return None
+
+    # Create BagelOrderDetails for each part
+    bagel_details: list[BagelOrderDetails] = []
+
+    for i, part in enumerate(parts[:total_quantity]):  # Limit to total_quantity
+        part_lower = part.lower().strip()
+
+        # Extract toasted for this specific bagel
+        toasted = None
+        if "not toasted" in part_lower or "untoasted" in part_lower:
+            toasted = False
+        elif "toasted" in part_lower:
+            toasted = True
+        elif base_toasted is not None:
+            toasted = base_toasted
+
+        # Extract spread/modifier for this bagel
+        spread = None
+        spread_type = None
+
+        # Check for butter first (before cream cheese logic)
+        # Use word boundary to avoid matching "peanut butter"
+        if re.search(r"(?<!\w)butter(?!\s+cream cheese)\b", part_lower):
+            if "peanut" not in part_lower:
+                spread = "butter"
+
+        # Check for proteins as the main item (lox, nova, etc.)
+        if not spread:
+            for protein in ["nova scotia salmon", "nova", "lox", "salmon", "whitefish", "tuna"]:
+                if protein in part_lower:
+                    # This is actually a spread/fish order
+                    normalized = MODIFIER_NORMALIZATIONS.get(protein, protein)
+                    spread = normalized
+                    break
+
+        # Check for cream cheese with type (e.g., "scallion cream cheese")
+        if not spread and "cream cheese" in part_lower:
+            spread = "cream cheese"
+            # Look for spread type before "cream cheese"
+            for st in sorted(SPREAD_TYPES, key=len, reverse=True):
+                if st in part_lower:
+                    spread_type = st
+                    break
+
+        # Check for peanut butter, nutella, hummus, etc.
+        if not spread:
+            for spread_name in ["peanut butter", "nutella", "hummus", "avocado", "jelly", "jam"]:
+                if spread_name in part_lower:
+                    spread = spread_name
+                    break
+
+        # "plain" in split context means no spread - just a plain bagel
+        # Don't set spread for "plain"
+
+        bagel_detail = BagelOrderDetails(
+            bagel_type=base_bagel_type,
+            toasted=toasted,
+            spread=spread,
+            spread_type=spread_type,
+        )
+        bagel_details.append(bagel_detail)
+        logger.info(
+            "SPLIT-QUANTITY: bagel %d: type=%s, toasted=%s, spread=%s, spread_type=%s",
+            i + 1, base_bagel_type, toasted, spread, spread_type
+        )
+
+    # If we have fewer details than total_quantity, fill with base bagels
+    while len(bagel_details) < total_quantity:
+        bagel_details.append(BagelOrderDetails(
+            bagel_type=base_bagel_type,
+            toasted=base_toasted,
+        ))
+
+    return OpenInputResponse(
+        new_bagel=True,
+        new_bagel_quantity=total_quantity,
+        new_bagel_type=base_bagel_type,
+        new_bagel_toasted=base_toasted,
+        bagel_details=bagel_details,
+    )
+
+
+# =============================================================================
 # Speed Menu Bagel Parsing
 # =============================================================================
 
@@ -1047,9 +1227,11 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     coffee_decaf = None
     coffee_milk = None
 
-    # Check for coffee after "and" - this indicates a second item
+    # Check for coffee after "and" or "with" - this indicates a second item
+    # "with" is included because beverages can't be modifiers for food items
+    # e.g., "classic BEC with coffee" = BEC + coffee (separate items)
     and_coffee_match = re.search(
-        r'\band\s+(?:a\s+)?(?:(small|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
+        r'\b(?:and|with)\s+(?:a\s+)?(?:(small|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
         r'(coffee|latte|cappuccino|espresso|americano|macchiato|mocha|tea|chai)',
         text_lower
     )
@@ -1072,6 +1254,16 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
             "SPEED MENU + COFFEE: also found coffee - type=%s, size=%s, iced=%s, decaf=%s",
             coffee_type, coffee_size, coffee_iced, coffee_decaf
         )
+
+        # Remove coffee-related items from modifications since coffee is a separate item
+        beverage_words = {
+            'coffee', 'latte', 'cappuccino', 'espresso', 'americano',
+            'macchiato', 'mocha', 'tea', 'chai',
+        }
+        modifications = [
+            mod for mod in modifications
+            if mod.lower() not in beverage_words
+        ]
 
     response = OpenInputResponse(
         new_speed_menu_bagel=True,
@@ -1193,9 +1385,9 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     special_instructions = ", ".join(coffee_instructions) if coffee_instructions else None
 
     logger.debug(
-        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s, special_instructions=%s",
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s(%d), special_instructions=%s",
         coffee_type, quantity, size, iced, decaf, milk,
-        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, special_instructions
+        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, coffee_mods.syrup_quantity, special_instructions
     )
 
     response = OpenInputResponse(
@@ -1209,6 +1401,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_sweetener=coffee_mods.sweetener,
         new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
         new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
+        new_coffee_syrup_quantity=coffee_mods.syrup_quantity,
         new_coffee_special_instructions=special_instructions,
     )
 
@@ -2071,6 +2264,12 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     add_more_result = _parse_add_more_request(text)
     if add_more_result:
         return add_more_result
+
+    # Check for split-quantity bagels FIRST (e.g., "two bagels one with lox one with cream cheese")
+    # This MUST run BEFORE bagel_with_modifiers to handle multi-bagel orders with different configs
+    split_qty_result = _parse_split_quantity_bagels(text)
+    if split_qty_result:
+        return split_qty_result
 
     # Check for bagel with modifiers FIRST (e.g., "everything bagel with bacon and egg")
     # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being

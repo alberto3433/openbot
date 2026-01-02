@@ -190,6 +190,107 @@ class TakingItemsHandler:
                                 order=order,
                             )
 
+        # Check for "add [modifier]" patterns early (before LLM parsing)
+        # This allows "add vanilla syrup" to be handled without LLM
+        input_lower = user_input.lower().strip()
+        active_items = order.items.get_active_items()
+
+        add_modifier_patterns = [
+            r"^add\s+",  # "add vanilla syrup"
+            r"^with\s+",  # "with caramel"
+            r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
+            r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
+            r"^put\s+",  # "put vanilla in it"
+            r"^can\s+you\s+put\s+",  # "can you put milk in that"
+            r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
+        ]
+
+        is_add_modifier_request = any(
+            re.search(pattern, input_lower) for pattern in add_modifier_patterns
+        )
+
+        # Coffee modifiers that should trigger modification instead of new item
+        coffee_modifiers = {
+            # Syrups
+            "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+            "cinnamon", "lavender", "almond", "syrup",
+            # Milk options
+            "milk", "whole milk", "skim milk", "2% milk",
+            "oat milk", "almond milk", "soy milk", "coconut milk",
+            "oat", "soy", "coconut",
+            # Sweeteners
+            "sugar", "splenda", "stevia", "honey", "sweetener",
+        }
+
+        has_coffee_modifier = any(mod in input_lower for mod in coffee_modifiers)
+
+        # If it's an "add modifier" pattern and the last item is a coffee, modify it
+        if is_add_modifier_request and has_coffee_modifier and active_items:
+            last_item = active_items[-1]
+            if isinstance(last_item, CoffeeItemTask):
+                made_change = False
+
+                # Check for syrup - add to array if not already present
+                syrup_options = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+                               "cinnamon", "lavender", "almond"]
+                for syrup in syrup_options:
+                    if syrup in input_lower:
+                        # Check if this syrup is already in the list
+                        existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                        if syrup not in existing_syrups:
+                            last_item.flavor_syrups.append({"flavor": syrup, "quantity": 1})
+                            logger.info("Early add modifier: added syrup '%s' to coffee (now has %d syrups)",
+                                      syrup, len(last_item.flavor_syrups))
+                            made_change = True
+                        break
+
+                # Check for milk options (alternatives and regular)
+                milk_options = [
+                    ("oat milk", "oat"), ("almond milk", "almond"),
+                    ("soy milk", "soy"), ("coconut milk", "coconut"),
+                    ("whole milk", "whole"), ("skim milk", "skim"),
+                    ("2% milk", "2%"), ("half and half", "half and half"),
+                    ("oat", "oat"), ("almond", "almond"),
+                    ("soy", "soy"), ("coconut", "coconut"),
+                    ("milk", "whole"),  # Plain "milk" defaults to whole milk - must be last
+                ]
+                for pattern, milk_value in milk_options:
+                    if pattern in input_lower:
+                        if last_item.milk != milk_value:
+                            old_milk = last_item.milk or "none"
+                            last_item.milk = milk_value
+                            logger.info("Early add modifier: added milk '%s' to coffee (was '%s')", milk_value, old_milk)
+                            made_change = True
+                        break
+
+                # Check for sweeteners - add to array if not already present
+                sweetener_options = ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
+                for sweetener in sweetener_options:
+                    if sweetener in input_lower:
+                        # Check if this sweetener type is already in the list
+                        existing_sweeteners = [s.get("type") for s in last_item.sweeteners]
+                        if sweetener not in existing_sweeteners:
+                            quantity = 1
+                            # Check for quantity: "two sugars", "2 splenda"
+                            qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener}', input_lower)
+                            if qty_match:
+                                qty_str = qty_match.group(1)
+                                word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+                                quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
+                            last_item.sweeteners.append({"type": sweetener, "quantity": quantity})
+                            logger.info("Early add modifier: added sweetener '%s' (qty=%d) to coffee",
+                                      sweetener, quantity)
+                            made_change = True
+                        break
+
+                if made_change:
+                    self.pricing.recalculate_coffee_price(last_item)
+                    updated_summary = last_item.get_summary()
+                    return StateMachineResult(
+                        message=f"Sure, I've added that to your {updated_summary}. Anything else?",
+                        order=order,
+                    )
+
         parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
 
         # Extract modifiers from raw input (keyword-based, no LLM)
@@ -266,15 +367,17 @@ class TakingItemsHandler:
                 if isinstance(last_item, CoffeeItemTask):
                     made_change = False
 
-                    # Check for syrup
+                    # Check for syrup - add to array if not already present
                     syrup_options = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
                                    "cinnamon", "lavender", "almond"]
                     for syrup in syrup_options:
                         if syrup in input_lower:
-                            if last_item.flavor_syrup != syrup:
-                                old_syrup = last_item.flavor_syrup or "none"
-                                last_item.flavor_syrup = syrup
-                                logger.info("Add modifier: added syrup '%s' to coffee (was '%s')", syrup, old_syrup)
+                            # Check if this syrup is already in the list
+                            existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                            if syrup not in existing_syrups:
+                                last_item.flavor_syrups.append({"flavor": syrup, "quantity": 1})
+                                logger.info("Add modifier: added syrup '%s' to coffee (now has %d syrups)",
+                                          syrup, len(last_item.flavor_syrups))
                                 made_change = True
                             break
 
@@ -297,21 +400,23 @@ class TakingItemsHandler:
                                 made_change = True
                             break
 
-                    # Check for sweeteners
+                    # Check for sweeteners - add to array if not already present
                     sweetener_options = ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
                     for sweetener in sweetener_options:
                         if sweetener in input_lower:
-                            if not last_item.sweetener:
-                                last_item.sweetener = sweetener
-                                last_item.sweetener_quantity = 1
+                            # Check if this sweetener type is already in the list
+                            existing_sweeteners = [s.get("type") for s in last_item.sweeteners]
+                            if sweetener not in existing_sweeteners:
+                                quantity = 1
                                 # Check for quantity: "two sugars", "2 splenda"
                                 qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener}', input_lower)
                                 if qty_match:
                                     qty_str = qty_match.group(1)
                                     word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                                    last_item.sweetener_quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
+                                    quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
+                                last_item.sweeteners.append({"type": sweetener, "quantity": quantity})
                                 logger.info("Add modifier: added sweetener '%s' (qty=%d) to coffee",
-                                          sweetener, last_item.sweetener_quantity)
+                                          sweetener, quantity)
                                 made_change = True
                             break
 
@@ -538,7 +643,7 @@ class TakingItemsHandler:
                         logger.info("Replacement: removed coffee milk '%s'", old_milk)
                         made_change = True
 
-                    # Check for flavor syrup changes
+                    # Check for flavor syrup changes - add to array if not already present
                     syrup_options = [
                         "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
                         "cinnamon", "lavender", "almond",
@@ -549,29 +654,30 @@ class TakingItemsHandler:
                             new_syrup = syrup
                             break
 
-                    if new_syrup and new_syrup != last_item.flavor_syrup:
-                        old_syrup = last_item.flavor_syrup or "none"
-                        last_item.flavor_syrup = new_syrup
-                        logger.info("Replacement: changed coffee syrup from '%s' to '%s'", old_syrup, new_syrup)
-                        made_change = True
+                    if new_syrup:
+                        existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                        if new_syrup not in existing_syrups:
+                            last_item.flavor_syrups.append({"flavor": new_syrup, "quantity": 1})
+                            logger.info("Replacement: added coffee syrup '%s' (now has %d syrups)",
+                                      new_syrup, len(last_item.flavor_syrups))
+                            made_change = True
 
                     # Check for syrup removal: "no syrup", "remove the syrup"
                     if ("no syrup" in input_lower or "remove syrup" in input_lower or
-                        "without syrup" in input_lower) and last_item.flavor_syrup:
-                        old_syrup = last_item.flavor_syrup
-                        last_item.flavor_syrup = None
-                        logger.info("Replacement: removed coffee syrup '%s'", old_syrup)
+                        "without syrup" in input_lower) and last_item.flavor_syrups:
+                        old_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                        last_item.flavor_syrups = []
+                        logger.info("Replacement: removed all coffee syrups %s", old_syrups)
                         made_change = True
 
                     # Check for sweetener removal: "without sugar", "remove the sugar"
                     if (("without sugar" in input_lower or "remove sugar" in input_lower or
                          "remove the sugar" in input_lower or "no sugar" in input_lower or
                          "without sweetener" in input_lower or "remove sweetener" in input_lower or
-                         "no sweetener" in input_lower) and last_item.sweetener):
-                        old_sweetener = last_item.sweetener
-                        last_item.sweetener = None
-                        last_item.sweetener_quantity = 0
-                        logger.info("Replacement: removed coffee sweetener '%s'", old_sweetener)
+                         "no sweetener" in input_lower) and last_item.sweeteners):
+                        old_sweeteners = [s.get("type") for s in last_item.sweeteners]
+                        last_item.sweeteners = []
+                        logger.info("Replacement: removed all coffee sweeteners %s", old_sweeteners)
                         made_change = True
 
                     # If any changes were made, recalculate price and return
@@ -682,22 +788,39 @@ class TakingItemsHandler:
                         modifier_removed = True
                         logger.info("Modifier removal: removed milk '%s' from coffee", cancel_item_desc)
 
-                    # Check sweetener
-                    if last_item.sweetener and (cancel_item_desc in ("sugar", "sweetener") or
-                            cancel_item_desc == last_item.sweetener):
-                        last_item.sweetener = None
-                        last_item.sweetener_quantity = 1
-                        modifier_removed = True
-                        logger.info("Modifier removal: removed sweetener '%s' from coffee", cancel_item_desc)
+                    # Check sweeteners (array)
+                    if last_item.sweeteners:
+                        if cancel_item_desc in ("sugar", "sweetener"):
+                            # Remove all sweeteners
+                            old_sweeteners = [s.get("type") for s in last_item.sweeteners]
+                            last_item.sweeteners = []
+                            modifier_removed = True
+                            logger.info("Modifier removal: removed all sweeteners %s from coffee", old_sweeteners)
+                        else:
+                            # Try to remove specific sweetener type
+                            new_sweeteners = [s for s in last_item.sweeteners if s.get("type") != cancel_item_desc]
+                            if len(new_sweeteners) < len(last_item.sweeteners):
+                                last_item.sweeteners = new_sweeteners
+                                modifier_removed = True
+                                logger.info("Modifier removal: removed sweetener '%s' from coffee", cancel_item_desc)
 
-                    # Check flavor syrup
-                    if last_item.flavor_syrup and (cancel_item_desc == "syrup" or
-                            cancel_item_desc == last_item.flavor_syrup or
-                            cancel_item_desc == f"{last_item.flavor_syrup} syrup"):
-                        last_item.flavor_syrup = None
-                        last_item.syrup_upcharge = 0.0
-                        modifier_removed = True
-                        logger.info("Modifier removal: removed syrup '%s' from coffee", cancel_item_desc)
+                    # Check flavor syrups (array)
+                    if last_item.flavor_syrups:
+                        if cancel_item_desc == "syrup":
+                            # Remove all syrups
+                            old_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                            last_item.flavor_syrups = []
+                            modifier_removed = True
+                            logger.info("Modifier removal: removed all syrups %s from coffee", old_syrups)
+                        else:
+                            # Try to remove specific syrup flavor
+                            # Match "vanilla", "vanilla syrup", etc.
+                            flavor_to_remove = cancel_item_desc.replace(" syrup", "")
+                            new_syrups = [s for s in last_item.flavor_syrups if s.get("flavor") != flavor_to_remove]
+                            if len(new_syrups) < len(last_item.flavor_syrups):
+                                last_item.flavor_syrups = new_syrups
+                                modifier_removed = True
+                                logger.info("Modifier removal: removed syrup '%s' from coffee", flavor_to_remove)
 
                     if modifier_removed:
                         # Recalculate price
@@ -884,8 +1007,8 @@ class TakingItemsHandler:
                 flavor_syrup = parsed.new_coffee_flavor_syrup or coffee_mods.flavor_syrup
                 syrup_qty = getattr(parsed, 'new_coffee_syrup_quantity', 1) if parsed.new_coffee_flavor_syrup else coffee_mods.syrup_quantity
 
-                logger.info("Redirecting misparsed menu item '%s' to coffee handler (sweetener=%s, qty=%d, syrup=%s, syrup_qty=%d)",
-                           parsed.new_menu_item, sweetener, sweetener_qty, flavor_syrup, syrup_qty)
+                logger.info("Redirecting misparsed menu item '%s' to coffee handler (sweetener=%s, qty=%d, syrup=%s, syrup_qty=%d, wants_syrup=%s)",
+                           parsed.new_menu_item, sweetener, sweetener_qty, flavor_syrup, syrup_qty, coffee_mods.wants_syrup)
                 last_result = self.coffee_handler.add_coffee(
                     parsed.new_menu_item,  # Use as coffee type
                     parsed.new_coffee_size,
@@ -899,6 +1022,7 @@ class TakingItemsHandler:
                     special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
                     syrup_quantity=syrup_qty,
+                    wants_syrup=coffee_mods.wants_syrup and not flavor_syrup,
                 )
                 items_added.append(parsed.new_menu_item)
             else:
@@ -1022,6 +1146,11 @@ class TakingItemsHandler:
 
             # Check if there's ALSO a coffee order in the same message
             if parsed.new_coffee or parsed.coffee_details:
+                # Extract coffee modifiers to detect "with syrup" pattern
+                multi_coffee_mods = ExtractedCoffeeModifiers()
+                if raw_user_input:
+                    multi_coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
+
                 # Save whether menu item needs configuration BEFORE adding coffee
                 # (coffee might change pending_item_id)
                 menu_item_needs_config = order.is_configuring_item()
@@ -1050,6 +1179,7 @@ class TakingItemsHandler:
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                     coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                     coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
+                    flavor_syrup = parsed.new_coffee_flavor_syrup or multi_coffee_mods.flavor_syrup
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
@@ -1057,12 +1187,13 @@ class TakingItemsHandler:
                         coffee_milk,
                         parsed.new_coffee_sweetener,  # Use shared sweetener
                         parsed.new_coffee_sweetener_quantity,
-                        parsed.new_coffee_flavor_syrup,
+                        flavor_syrup,
                         coffee_detail.quantity,
                         order,
                         special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
                         syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
+                        wants_syrup=multi_coffee_mods.wants_syrup and not flavor_syrup,
                     )
                     items_added.append(coffee_detail.drink_type)
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
@@ -1114,9 +1245,10 @@ class TakingItemsHandler:
             # Check if we have multiple bagels with different configs
             if parsed.bagel_details and len(parsed.bagel_details) > 0:
                 # Multiple bagels with different configurations
-                # Pass extracted_modifiers to apply to the first bagel
+                # Don't pass extracted_modifiers - each bagel's modifiers are already in bagel_details
+                # Passing extracted_modifiers would incorrectly apply ALL modifiers to the first bagel
                 result = self.item_adder_handler.add_bagels_from_details(
-                    parsed.bagel_details, order, extracted_modifiers
+                    parsed.bagel_details, order, None
                 )
             elif parsed.new_bagel_quantity > 1:
                 # Multiple bagels with same (or no) configuration
@@ -1148,6 +1280,11 @@ class TakingItemsHandler:
 
             # Check if there's ALSO a coffee in the same message
             if parsed.new_coffee or parsed.coffee_details:
+                # Extract coffee modifiers to detect "with syrup" pattern
+                bagel_coffee_mods = ExtractedCoffeeModifiers()
+                if raw_user_input:
+                    bagel_coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
+
                 # Save whether bagel needs configuration BEFORE adding coffee
                 # (coffee might change pending_item_id)
                 bagel_needs_config = order.is_configuring_item()
@@ -1176,6 +1313,7 @@ class TakingItemsHandler:
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                     coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                     coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
+                    flavor_syrup = parsed.new_coffee_flavor_syrup or bagel_coffee_mods.flavor_syrup
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
                         coffee_detail.size,
@@ -1183,12 +1321,13 @@ class TakingItemsHandler:
                         coffee_milk,
                         parsed.new_coffee_sweetener,  # Use shared sweetener
                         parsed.new_coffee_sweetener_quantity,
-                        parsed.new_coffee_flavor_syrup,
+                        flavor_syrup,
                         coffee_detail.quantity,
                         order,
                         special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
                         syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
+                        wants_syrup=bagel_coffee_mods.wants_syrup and not flavor_syrup,
                     )
                     logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
 
@@ -1313,6 +1452,13 @@ class TakingItemsHandler:
             return result
 
         if parsed.new_coffee or parsed.coffee_details:
+            # Extract coffee modifiers from raw input to detect "with syrup" pattern
+            coffee_mods = ExtractedCoffeeModifiers()
+            if raw_user_input:
+                coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
+                if coffee_mods.wants_syrup:
+                    logger.info("Detected 'with syrup' pattern, setting wants_syrup=True")
+
             # Handle multiple coffees from coffee_details, or fall back to single coffee
             coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
             if not coffees_to_add and parsed.new_coffee:
@@ -1337,6 +1483,8 @@ class TakingItemsHandler:
                 coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
                 coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                 coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
+                # Use extracted flavor_syrup if LLM didn't parse one, and pass wants_syrup flag
+                flavor_syrup = parsed.new_coffee_flavor_syrup or coffee_mods.flavor_syrup
                 coffee_result = self.coffee_handler.add_coffee(
                     coffee_detail.drink_type,
                     coffee_detail.size,
@@ -1344,12 +1492,13 @@ class TakingItemsHandler:
                     coffee_milk,
                     parsed.new_coffee_sweetener,
                     parsed.new_coffee_sweetener_quantity,
-                    parsed.new_coffee_flavor_syrup,
+                    flavor_syrup,
                     coffee_detail.quantity or 1,
                     order,
                     special_instructions=coffee_instructions,
                     decaf=coffee_decaf,
                     syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
+                    wants_syrup=coffee_mods.wants_syrup and not flavor_syrup,
                 )
                 items_added.append(coffee_detail.drink_type or "drink")
 
@@ -1395,6 +1544,11 @@ class TakingItemsHandler:
 
             # Check if there's ALSO a coffee in the same message
             if parsed.new_coffee:
+                # Extract coffee modifiers to detect "with syrup" pattern
+                speed_coffee_mods = ExtractedCoffeeModifiers()
+                if raw_user_input:
+                    speed_coffee_mods = extract_coffee_modifiers_from_input(raw_user_input)
+                flavor_syrup = parsed.new_coffee_flavor_syrup or speed_coffee_mods.flavor_syrup
                 self.coffee_handler.add_coffee(
                     parsed.new_coffee_type,
                     parsed.new_coffee_size,
@@ -1402,12 +1556,13 @@ class TakingItemsHandler:
                     parsed.new_coffee_milk,
                     parsed.new_coffee_sweetener,
                     parsed.new_coffee_sweetener_quantity,
-                    parsed.new_coffee_flavor_syrup,
+                    flavor_syrup,
                     parsed.new_coffee_quantity,
                     order,
                     special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
                     syrup_quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1),
+                    wants_syrup=speed_coffee_mods.wants_syrup and not flavor_syrup,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")
                 # Let get_next_question handle the configuration flow for all items

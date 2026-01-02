@@ -88,11 +88,12 @@ class CoffeeConfigHandler:
         special_instructions: str | None = None,
         decaf: bool | None = None,
         syrup_quantity: int = 1,
+        wants_syrup: bool = False,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s (syrup_qty=%d), special_instructions=%s",
-            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, syrup_quantity, special_instructions
+            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s (syrup_qty=%d), wants_syrup=%s, special_instructions=%s",
+            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, syrup_quantity, wants_syrup, special_instructions
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -194,9 +195,8 @@ class CoffeeConfigHandler:
                     iced=None,  # No hot/iced label needed for sodas/bottled drinks
                     decaf=decaf,
                     milk=None,
-                    sweetener=None,
-                    sweetener_quantity=0,
-                    flavor_syrup=None,
+                    sweeteners=[],
+                    flavor_syrups=[],
                     unit_price=price,
                     special_instructions=special_instructions,
                 )
@@ -208,6 +208,16 @@ class CoffeeConfigHandler:
             return self._get_next_question(order)
 
         # Regular coffee/tea - needs configuration
+        # Build sweeteners list from parameters
+        sweeteners_list = []
+        if sweetener:
+            sweeteners_list.append({"type": sweetener, "quantity": sweetener_quantity})
+
+        # Build flavor_syrups list from parameters
+        flavor_syrups_list = []
+        if flavor_syrup:
+            flavor_syrups_list.append({"flavor": flavor_syrup, "quantity": syrup_quantity})
+
         # Create the requested quantity of drinks
         for _ in range(quantity):
             coffee = CoffeeItemTask(
@@ -216,10 +226,9 @@ class CoffeeConfigHandler:
                 iced=iced,
                 decaf=decaf,
                 milk=milk,
-                sweetener=sweetener,
-                sweetener_quantity=sweetener_quantity,
-                flavor_syrup=flavor_syrup,
-                syrup_quantity=syrup_quantity,
+                sweeteners=sweeteners_list.copy(),
+                flavor_syrups=flavor_syrups_list.copy(),
+                wants_syrup=wants_syrup,
                 unit_price=price,
                 special_instructions=special_instructions,
             )
@@ -299,9 +308,24 @@ class CoffeeConfigHandler:
                         order=order,
                     )
 
+            # Check if user requested syrup without specifying flavor
+            # If so, skip the generic modifier question and ask for syrup flavor directly
+            if coffee.wants_syrup and not coffee.flavor_syrups:
+                # Recalculate price with size/iced upcharges so cart displays correctly
+                if self.pricing:
+                    self.pricing.recalculate_coffee_price(coffee)
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = coffee.id
+                order.pending_field = "syrup_flavor"
+                logger.info("Coffee has wants_syrup flag, skipping to syrup flavor question")
+                return StateMachineResult(
+                    message="Which flavor syrup would you like? We have vanilla, caramel, and hazelnut.",
+                    order=order,
+                )
+
             # Ask about milk/sugar/syrup if none specified yet (optional question)
-            if (coffee.milk is None and coffee.sweetener is None
-                    and coffee.flavor_syrup is None):
+            if (coffee.milk is None and not coffee.sweeteners
+                    and not coffee.flavor_syrups):
                 # Recalculate price with size/iced upcharges so cart displays correctly
                 # This handles cases where user orders "large iced coffee" directly
                 if self.pricing:
@@ -355,13 +379,11 @@ class CoffeeConfigHandler:
         if coffee_mods.milk and not item.milk:
             item.milk = coffee_mods.milk
             logger.info(f"Extracted milk from size response: {coffee_mods.milk}")
-        if coffee_mods.sweetener and not item.sweetener:
-            item.sweetener = coffee_mods.sweetener
-            item.sweetener_quantity = coffee_mods.sweetener_quantity
+        if coffee_mods.sweetener and not item.sweeteners:
+            item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
             logger.info(f"Extracted sweetener from size response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
-        if coffee_mods.flavor_syrup and not item.flavor_syrup:
-            item.flavor_syrup = coffee_mods.flavor_syrup
-            item.syrup_quantity = coffee_mods.syrup_quantity
+        if coffee_mods.flavor_syrup and not item.flavor_syrups:
+            item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
             logger.info(f"Extracted syrup from size response: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
         # Recalculate price with size upcharge (iced upcharge will be 0 if not iced yet)
@@ -435,13 +457,11 @@ class CoffeeConfigHandler:
         if coffee_mods.milk and not item.milk:
             item.milk = coffee_mods.milk
             logger.info(f"Extracted milk from style response: {coffee_mods.milk}")
-        if coffee_mods.sweetener and not item.sweetener:
-            item.sweetener = coffee_mods.sweetener
-            item.sweetener_quantity = coffee_mods.sweetener_quantity
+        if coffee_mods.sweetener and not item.sweeteners:
+            item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
             logger.info(f"Extracted sweetener from style response: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
-        if coffee_mods.flavor_syrup and not item.flavor_syrup:
-            item.flavor_syrup = coffee_mods.flavor_syrup
-            item.syrup_quantity = coffee_mods.syrup_quantity
+        if coffee_mods.flavor_syrup and not item.flavor_syrups:
+            item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
             logger.info(f"Extracted syrup from style response: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
         # Recalculate price with iced upcharge and any modifiers extracted so far
@@ -480,6 +500,31 @@ class CoffeeConfigHandler:
         # Extract any modifiers mentioned
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
 
+        # Check if user said "syrup" without specifying a flavor
+        # This handles responses like "syrup", "yes syrup", "with syrup" etc.
+        syrup_requested_no_flavor = (
+            re.search(r'\bsyrups?\b', user_lower)
+            and not coffee_mods.flavor_syrup
+            and not is_negative
+        )
+
+        if syrup_requested_no_flavor:
+            # User wants syrup but didn't specify flavor - ask which one
+            logger.info("User requested syrup without specifying flavor, asking for clarification")
+            # Apply any other modifiers they mentioned (milk, sweetener)
+            if coffee_mods.milk and not item.milk:
+                item.milk = coffee_mods.milk
+                logger.info(f"Set coffee milk: {coffee_mods.milk}")
+            if coffee_mods.sweetener and not item.sweeteners:
+                item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
+                logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
+
+            order.pending_field = "syrup_flavor"
+            return StateMachineResult(
+                message="Which flavor syrup would you like? We have vanilla, caramel, and hazelnut.",
+                order=order,
+            )
+
         # If negative response and no modifiers extracted, skip
         if is_negative and not (coffee_mods.milk or coffee_mods.sweetener or coffee_mods.flavor_syrup):
             logger.info("User declined coffee modifiers")
@@ -488,13 +533,11 @@ class CoffeeConfigHandler:
             if coffee_mods.milk and not item.milk:
                 item.milk = coffee_mods.milk
                 logger.info(f"Set coffee milk: {coffee_mods.milk}")
-            if coffee_mods.sweetener and not item.sweetener:
-                item.sweetener = coffee_mods.sweetener
-                item.sweetener_quantity = coffee_mods.sweetener_quantity
+            if coffee_mods.sweetener and not item.sweeteners:
+                item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
                 logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
-            if coffee_mods.flavor_syrup and not item.flavor_syrup:
-                item.flavor_syrup = coffee_mods.flavor_syrup
-                item.syrup_quantity = coffee_mods.syrup_quantity
+            if coffee_mods.flavor_syrup and not item.flavor_syrups:
+                item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
                 logger.info(f"Set coffee syrup: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
             # Apply special instructions (e.g., "splash of milk", "light sugar")
@@ -514,6 +557,59 @@ class CoffeeConfigHandler:
 
         # Check for more incomplete coffees before moving on
         return self.configure_next_incomplete_coffee(order)
+
+    def handle_syrup_flavor(
+        self,
+        user_input: str,
+        item: CoffeeItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle syrup flavor selection after user said 'syrup' without specifying flavor."""
+        if self._check_redirect:
+            redirect = self._check_redirect(
+                user_input, item, order, "Which flavor syrup would you like?"
+            )
+            if redirect:
+                return redirect
+
+        user_lower = user_input.lower().strip()
+
+        # Check for negative/cancellation responses
+        negative_patterns = [
+            r'\bno\b', r'\bnope\b', r'\bnothing\b', r'\bnone\b',
+            r'\bnevermind\b', r'\bnever mind\b', r'\bcancel\b',
+            r'\bno thanks\b', r'\bno thank you\b', r"\bi'?m good\b",
+        ]
+        is_negative = any(re.search(p, user_lower) for p in negative_patterns)
+
+        if is_negative:
+            logger.info("User cancelled syrup selection")
+            # Continue without syrup - complete the coffee
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+            item.mark_complete()
+            order.clear_pending()
+            return self.configure_next_incomplete_coffee(order)
+
+        # Try to extract the syrup flavor from the response
+        coffee_mods = extract_coffee_modifiers_from_input(user_input)
+
+        if coffee_mods.flavor_syrup:
+            item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
+            logger.info(f"Set coffee syrup from flavor selection: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
+
+            # Complete the coffee
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+            item.mark_complete()
+            order.clear_pending()
+            return self.configure_next_incomplete_coffee(order)
+
+        # Couldn't parse a flavor - ask again
+        return StateMachineResult(
+            message="I didn't catch that. Which syrup flavor would you like - vanilla, caramel, or hazelnut?",
+            order=order,
+        )
 
     def handle_drink_selection(
         self,
@@ -632,9 +728,8 @@ class CoffeeConfigHandler:
                 size=None,
                 iced=None,
                 milk=None,
-                sweetener=None,
-                sweetener_quantity=0,
-                flavor_syrup=None,
+                sweeteners=[],
+                flavor_syrups=[],
                 unit_price=selected_price,
             )
             drink.mark_complete()
@@ -651,9 +746,8 @@ class CoffeeConfigHandler:
                 size=None,
                 iced=None,
                 milk=None,
-                sweetener=None,
-                sweetener_quantity=0,
-                flavor_syrup=None,
+                sweeteners=[],
+                flavor_syrups=[],
                 unit_price=selected_price,
             )
             drink.mark_in_progress()

@@ -205,14 +205,30 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
             else:
                 # For skip_config drinks (sodas, etc.) or unspecified, keep as None
                 iced_value = None
+            # Handle sweeteners - support both old format (single) and new format (list)
+            sweeteners = item_config.get("sweeteners", [])
+            if not sweeteners and item_config.get("sweetener"):
+                # Convert old format to new format
+                sweeteners = [{
+                    "type": item_config["sweetener"],
+                    "quantity": item_config.get("sweetener_quantity", 1)
+                }]
+
+            # Handle flavor syrups - support both old format (single) and new format (list)
+            flavor_syrups = item_config.get("flavor_syrups", [])
+            if not flavor_syrups and item_config.get("flavor_syrup"):
+                # Convert old format to new format
+                flavor_syrups = [{
+                    "flavor": item_config["flavor_syrup"],
+                    "quantity": item_config.get("syrup_quantity", 1)
+                }]
+
             coffee = CoffeeItemTask(
                 drink_type=item.get("menu_item_name") or "coffee",
                 size=item.get("size") or item_config.get("size"),  # Don't default to medium for skip_config drinks
                 milk=item_config.get("milk"),
-                sweetener=item_config.get("sweetener"),
-                sweetener_quantity=item_config.get("sweetener_quantity", 1),
-                flavor_syrup=item_config.get("flavor_syrup"),
-                syrup_quantity=item_config.get("syrup_quantity", 1),
+                sweeteners=sweeteners,
+                flavor_syrups=flavor_syrups,
                 iced=iced_value,
                 decaf=item_config.get("decaf"),  # Restore decaf flag
                 # Restore upcharge tracking fields
@@ -238,6 +254,8 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 
         elif item_type == "speed_menu_bagel":
             # Speed menu bagel (pre-configured sandwiches like "The Classic")
+            # Restore modifications from item_config (where it's serialized) or top-level
+            item_config = item.get("item_config") or {}
             speed_menu_item = SpeedMenuBagelItemTask(
                 menu_item_name=item.get("menu_item_name") or "Unknown",
                 menu_item_id=item.get("menu_item_id"),
@@ -245,6 +263,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 bagel_choice=item.get("bagel_choice"),
                 bagel_choice_upcharge=item.get("bagel_choice_upcharge", 0.0),
                 cheese_choice=item.get("cheese_choice"),
+                modifications=item_config.get("modifications") or item.get("modifications") or [],
                 quantity=item.get("quantity", 1),
                 special_instructions=item.get("special_instructions") or item.get("notes"),
             )
@@ -338,14 +357,11 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             menu_item_name = item.menu_item_name
             menu_item_type = getattr(item, 'menu_item_type', None)
 
-            # Build display name with bagel choice, side choice, and toasted status
+            # Build display name with bagel choice and side choice
+            # Note: toasted status is shown as a modifier line item, not in display_name
             display_name = menu_item_name
             if menu_item_type in ("spread_sandwich", "salad_sandwich") and bagel_choice:
                 display_name = f"{menu_item_name} on {bagel_choice} bagel"
-                if toasted is True:
-                    display_name = f"{display_name} toasted"
-                elif toasted is False:
-                    display_name = f"{display_name} not toasted"
             # Add side choice for omelettes (bagel or fruit salad)
             elif side_choice == "fruit_salad":
                 display_name = f"{display_name} with fruit salad"
@@ -374,8 +390,11 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
 
             # Build modifiers list with prices for itemized display (like standalone bagels)
             modifiers = []
-            # Add toasted as a modifier (no price) for omelette side bagels
-            if side_choice == "bagel" and toasted is True:
+            # Add toasted as a modifier (no price) for omelette side bagels and spread/salad sandwiches
+            if toasted is True and (
+                side_choice == "bagel" or
+                menu_item_type in ("spread_sandwich", "salad_sandwich")
+            ):
                 modifiers.append({
                     "name": "Toasted",
                     "price": 0,
@@ -401,7 +420,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "id": item.id,  # Preserve item ID
                 "status": item.status.value,
                 "menu_item_name": menu_item_name,  # Keep original name (no side choice)
-                "display_name": display_name,  # Full display with bagel choice and toasted
+                "display_name": display_name,  # Full display with bagel choice (toasted shown as modifier)
                 "menu_item_id": getattr(item, 'menu_item_id', None),
                 "menu_item_type": menu_item_type,
                 "modifications": getattr(item, 'modifications', []),
@@ -529,10 +548,9 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             drink_type = getattr(item, 'drink_type', 'coffee')
             size = getattr(item, 'size', None)
             milk = getattr(item, 'milk', None)
-            flavor_syrup = getattr(item, 'flavor_syrup', None)
-            syrup_quantity = getattr(item, 'syrup_quantity', 1) or 1
-            sweetener = getattr(item, 'sweetener', None)
-            sweetener_quantity = getattr(item, 'sweetener_quantity', 1)
+            # New list-based fields
+            flavor_syrups = getattr(item, 'flavor_syrups', []) or []
+            sweeteners = getattr(item, 'sweeteners', []) or []
             iced = getattr(item, 'iced', None)
             decaf = getattr(item, 'decaf', None)
 
@@ -575,20 +593,26 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             elif milk and milk.lower() in ("none", "black"):
                 free_details.append("black")
 
-            # Flavor syrup with upcharge (show quantity if > 1)
-            if flavor_syrup:
-                syrup_name = f"{syrup_quantity} {flavor_syrup} syrups" if syrup_quantity > 1 else f"{flavor_syrup} syrup"
-                if syrup_upcharge > 0:
-                    modifiers.append({"name": syrup_name, "price": syrup_upcharge})
-                else:
-                    free_details.append(syrup_name)
+            # Flavor syrups with upcharge (show quantity if > 1)
+            for syrup_entry in flavor_syrups:
+                flavor = syrup_entry.get("flavor", "")
+                qty = syrup_entry.get("quantity", 1)
+                if flavor:
+                    syrup_name = f"{qty} {flavor} syrups" if qty > 1 else f"{flavor} syrup"
+                    if syrup_upcharge > 0:
+                        modifiers.append({"name": syrup_name, "price": syrup_upcharge})
+                    else:
+                        free_details.append(syrup_name)
 
-            # Sweetener - always free
-            if sweetener:
-                if sweetener_quantity > 1:
-                    free_details.append(f"{sweetener_quantity} {sweetener}s")
-                else:
-                    free_details.append(sweetener)
+            # Sweeteners - always free
+            for sweetener_entry in sweeteners:
+                s_type = sweetener_entry.get("type", "")
+                s_qty = sweetener_entry.get("quantity", 1)
+                if s_type:
+                    if s_qty > 1:
+                        free_details.append(f"{s_qty} {s_type}s")
+                    else:
+                        free_details.append(s_type)
 
             # Calculate base price (total - upcharges)
             total_price = item.unit_price or 0
@@ -606,10 +630,8 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "item_config": {
                     "size": size,
                     "milk": milk,
-                    "sweetener": sweetener,
-                    "sweetener_quantity": sweetener_quantity,
-                    "flavor_syrup": flavor_syrup,
-                    "syrup_quantity": syrup_quantity,
+                    "sweeteners": sweeteners,
+                    "flavor_syrups": flavor_syrups,
                     "decaf": decaf,
                     # Only set style if iced is explicitly True/False (not None)
                     # skip_config drinks (sodas, bottled) don't need iced/hot labels

@@ -1,8 +1,12 @@
 import os
 import pytest
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Test admin credentials
 TEST_ADMIN_USERNAME = "testadmin"

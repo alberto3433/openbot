@@ -106,7 +106,7 @@ class TestDictToOrderTask:
                 "size": "large",
                 "item_config": {
                     "milk": "oat",
-                    "sweetener": "vanilla",
+                    "sweeteners": [{"type": "sugar", "quantity": 2}],
                     "style": "iced",
                 },
                 "unit_price": 6.50,
@@ -121,7 +121,7 @@ class TestDictToOrderTask:
         assert item.size == "large"
         assert item.iced is True  # inferred from "iced" in name
         assert item.milk == "oat"
-        assert item.sweetener == "vanilla"
+        assert item.sweeteners == [{"type": "sugar", "quantity": 2}]
 
     def test_multiple_items(self):
         """Test converting multiple items."""
@@ -227,7 +227,7 @@ class TestOrderTaskToDict:
             size="large",
             iced=True,
             milk="almond",
-            sweetener="honey",
+            sweeteners=[{"type": "honey", "quantity": 1}],
             unit_price=5.50,
         )
         order.items.add_item(coffee)
@@ -241,7 +241,7 @@ class TestOrderTaskToDict:
         assert item["size"] == "large"
         assert item["item_config"]["style"] == "iced"
         assert item["item_config"]["milk"] == "almond"
-        assert item["item_config"]["sweetener"] == "honey"
+        assert item["item_config"]["sweeteners"] == [{"type": "honey", "quantity": 1}]
 
     def test_confirmed_status(self):
         """Test confirmed order status."""
@@ -468,7 +468,7 @@ class TestModifiersConsistency:
             drink_type="coffee",
             size="medium",
             iced=False,
-            sweetener="sugar",
+            sweeteners=[{"type": "sugar", "quantity": 1}],
             unit_price=3.50,
         )
         order.items.add_item(coffee)

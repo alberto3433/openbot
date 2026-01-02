@@ -508,6 +508,9 @@ class ItemAdderHandler:
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
+        # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
+        self.pricing.recalculate_bagel_price(bagel)
+
         logger.info(
             "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, notes=%s",
             bagel_type, toasted, spread, spread_type, sandwich_protein, extras, notes
@@ -654,6 +657,9 @@ class ItemAdderHandler:
                 bagel.mark_in_progress()
             order.items.add_item(bagel)
 
+            # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
+            self.pricing.recalculate_bagel_price(bagel)
+
         # Find first incomplete bagel and start configuring it
         return self._configure_next_incomplete_bagel(order)
 
@@ -745,6 +751,9 @@ class ItemAdderHandler:
                 bagel.mark_in_progress()
 
             order.items.add_item(bagel)
+
+            # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
+            self.pricing.recalculate_bagel_price(bagel)
 
             logger.info(
                 "Bagel %d: type=%s, toasted=%s, spread=%s (status=%s)",

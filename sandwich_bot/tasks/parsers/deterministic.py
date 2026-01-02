@@ -17,6 +17,9 @@ from ..schemas import (
     CoffeeOrderDetails,
     MenuItemOrderDetails,
     BagelOrderDetails,
+    # Helper types for coffee modifiers
+    SweetenerItem,
+    SyrupItem,
     # ParsedItem types for multi-item handling
     ParsedMenuItemEntry,
     ParsedBagelEntry,
@@ -2210,6 +2213,22 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 milk=parsed.new_coffee_milk,
                 special_instructions=parsed.new_coffee_special_instructions,
             ))
+            # Build sweeteners list from parsed values
+            sweeteners = []
+            if parsed.new_coffee_sweetener:
+                sweeteners.append(SweetenerItem(
+                    type=parsed.new_coffee_sweetener,
+                    quantity=parsed.new_coffee_sweetener_quantity or 1,
+                ))
+
+            # Build syrups list from parsed values
+            syrups = []
+            if parsed.new_coffee_flavor_syrup:
+                syrups.append(SyrupItem(
+                    type=parsed.new_coffee_flavor_syrup,
+                    quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1) or 1,
+                ))
+
             # Add to parsed_items for generic handling
             parsed_items.append(ParsedCoffeeEntry(
                 drink_type=parsed.new_coffee_type or "coffee",
@@ -2218,6 +2237,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 milk=parsed.new_coffee_milk,
                 quantity=parsed.new_coffee_quantity or 1,
                 special_instructions=parsed.new_coffee_special_instructions,
+                decaf=parsed.new_coffee_decaf,
+                sweeteners=sweeteners,
+                syrups=syrups,
             ))
             logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
@@ -2230,19 +2252,35 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             bagel_toasted = parsed.new_bagel_toasted
             bagel_spread = parsed.new_bagel_spread
             bagel_spread_type = parsed.new_bagel_spread_type
+
+            # Build special instructions string from list
+            special_instructions = None
+            if parsed.new_bagel_special_instructions:
+                special_instructions = ", ".join(parsed.new_bagel_special_instructions)
+
             # Add to parsed_items for generic handling (always add, even without bagel_type)
+            # Keep modifiers for backwards compatibility
             modifiers = []
             if bagel_spread:
                 modifiers.append(bagel_spread)
             if bagel_spread_type:
                 modifiers.append(bagel_spread_type)
+
             parsed_items.append(ParsedBagelEntry(
                 bagel_type=bagel_type,  # May be None - will need config
                 quantity=bagel_qty,
                 toasted=bagel_toasted,
+                spread=bagel_spread,
+                spread_type=bagel_spread_type,
+                proteins=parsed.new_bagel_proteins or [],
+                cheeses=parsed.new_bagel_cheeses or [],
+                toppings=parsed.new_bagel_toppings or [],
+                special_instructions=special_instructions,
+                needs_cheese_clarification=parsed.new_bagel_needs_cheese_clarification,
                 modifiers=modifiers,
             ))
-            logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s)", bagel_type, bagel_qty, bagel_toasted)
+            logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s, spread=%s, proteins=%s)",
+                        bagel_type, bagel_qty, bagel_toasted, bagel_spread, parsed.new_bagel_proteins)
 
         if parsed.new_side_item:
             side_item = parsed.new_side_item

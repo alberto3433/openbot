@@ -171,6 +171,12 @@ class SpeedMenuBagelHandler:
         ["asiago", "jalapeno", "blueberry", "gluten free"],
     ]
 
+    # Paginated cheese options for "what else" responses
+    CHEESE_OPTION_PAGES = [
+        ["American", "cheddar", "Swiss", "muenster"],
+        ["provolone", "pepper jack"],
+    ]
+
     def _is_show_more_request(self, user_input: str) -> bool:
         """Check if user is asking to see more options."""
         input_lower = user_input.lower().strip()
@@ -198,6 +204,22 @@ class SpeedMenuBagelHandler:
 
         if page == 0:
             return f"What type of bagel would you like? For example, {options_str}."
+        else:
+            return f"We also have {options_str}."
+
+    def _get_cheese_options_message(self, page: int) -> str:
+        """Get the cheese options message for a given page."""
+        if page >= len(self.CHEESE_OPTION_PAGES):
+            return "Those are all the cheese types we have. Would you like one of those?"
+
+        options = self.CHEESE_OPTION_PAGES[page]
+        if len(options) == 1:
+            options_str = options[0]
+        else:
+            options_str = ", ".join(options[:-1]) + f", or {options[-1]}"
+
+        if page == 0:
+            return f"What kind of cheese would you like? We have {options_str}."
         else:
             return f"We also have {options_str}."
 
@@ -300,6 +322,15 @@ class SpeedMenuBagelHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle cheese type selection for speed menu bagel with cheese."""
+        # Check if user is asking for more cheese options
+        if self._is_show_more_request(user_input):
+            order.config_options_page += 1
+            message = self._get_cheese_options_message(order.config_options_page)
+            return StateMachineResult(
+                message=message,
+                order=order,
+            )
+
         input_lower = user_input.lower().strip()
 
         # Try to extract cheese type from input
@@ -309,6 +340,7 @@ class SpeedMenuBagelHandler:
             "swiss": ["swiss"],
             "muenster": ["muenster", "munster"],
             "provolone": ["provolone", "prov"],
+            "pepper jack": ["pepper jack", "pepperjack", "pepper-jack"],
         }
 
         selected_cheese = None
@@ -321,8 +353,10 @@ class SpeedMenuBagelHandler:
                 break
 
         if not selected_cheese:
+            # Reset options page when showing first options
+            order.config_options_page = 0
             return StateMachineResult(
-                message="What kind of cheese? We have American, cheddar, Swiss, and muenster.",
+                message=self._get_cheese_options_message(0),
                 order=order,
             )
 

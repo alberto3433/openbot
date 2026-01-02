@@ -87,9 +87,9 @@ DEFAULT_COFFEE_FIELDS: dict[str, FieldConfig] = {
     "size": FieldConfig(
         name="size",
         required=True,
-        default="medium",  # Default to medium, don't ask
-        ask_if_empty=False,
-        question="What size - small, medium, or large?",
+        default=None,  # Must ask for size
+        ask_if_empty=True,
+        question="What size - small or large?",
     ),
     "iced": FieldConfig(
         name="iced",

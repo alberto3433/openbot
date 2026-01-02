@@ -39,6 +39,7 @@ class ModifierCategory(Enum):
     COFFEE_SIZE = "coffee_size"
     COFFEE_MILK = "coffee_milk"
     COFFEE_STYLE = "coffee_style"
+    COFFEE_DECAF = "coffee_decaf"
     UNKNOWN = "unknown"
 
 
@@ -209,7 +210,7 @@ class ModifierChangeHandler:
             return False, [ModifierCategory.SPREAD_TYPE]
 
         # Check for coffee size
-        if new_value_lower in ("small", "medium", "large"):
+        if new_value_lower in ("small", "large"):
             return False, [ModifierCategory.COFFEE_SIZE]
 
         # Check for coffee milk - check longer patterns first
@@ -226,6 +227,10 @@ class ModifierChangeHandler:
         # Check for coffee style (hot/iced)
         if new_value_lower in ("hot", "iced"):
             return False, [ModifierCategory.COFFEE_STYLE]
+
+        # Check for coffee decaf
+        if new_value_lower in ("decaf", "a decaf", "regular"):
+            return False, [ModifierCategory.COFFEE_DECAF]
 
         # Unknown modifier
         return False, [ModifierCategory.UNKNOWN]
@@ -466,6 +471,25 @@ class ModifierChangeHandler:
             item.iced = (new_value_lower == "iced")
             new_style = "iced" if item.iced else "hot"
             logger.info("Changed coffee style from '%s' to '%s'", old_style, new_style)
+
+            summary = item.get_summary()
+            return ChangeResult(
+                success=True,
+                message=f"Sure, I've changed that to {summary}. Anything else?",
+                applied_category=category,
+            )
+
+        elif category == ModifierCategory.COFFEE_DECAF:
+            if not isinstance(item, CoffeeItemTask):
+                return ChangeResult(
+                    success=False,
+                    message="I can only change decaf for a coffee drink.",
+                )
+
+            # "regular" means not decaf, "decaf" or "a decaf" means decaf
+            old_decaf = item.decaf
+            item.decaf = new_value_lower in ("decaf", "a decaf")
+            logger.info("Changed coffee decaf from '%s' to '%s'", old_decaf, item.decaf)
 
             summary = item.get_summary()
             return ChangeResult(

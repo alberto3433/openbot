@@ -654,6 +654,26 @@ class BagelConfigHandler:
                     item_type = next_config.get("item_type")
                     logger.info("Bagel complete, processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
 
+                    # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
+                    if item_type == "coffee_disambiguation" and order.pending_drink_options:
+                        logger.info("Bagel complete, asking coffee disambiguation question")
+                        order.pending_field = "drink_selection"
+                        order.phase = OrderPhase.CONFIGURING_ITEM.value
+                        # Build the clarification message
+                        option_list = []
+                        for i, option_item in enumerate(order.pending_drink_options, 1):
+                            name = option_item.get("name", "Unknown")
+                            price = option_item.get("base_price", 0)
+                            if price > 0:
+                                option_list.append(f"{i}. {name} (${price:.2f})")
+                            else:
+                                option_list.append(f"{i}. {name}")
+                        options_str = "\n".join(option_list)
+                        return StateMachineResult(
+                            message=f"Got it, {summary}. Now for your coffee - we have a few options:\n{options_str}\nWhich would you like?",
+                            order=order,
+                        )
+
                     # Find the item by ID and start its configuration
                     for item in order.items.items:
                         if item.id == item_id:

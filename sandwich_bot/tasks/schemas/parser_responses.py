@@ -117,7 +117,7 @@ class CoffeeSizeResponse(BaseModel):
     """Parser output when waiting for coffee size."""
     size: str | None = Field(
         default=None,
-        description="Coffee size: small, medium, or large"
+        description="Coffee size: small or large"
     )
 
 
@@ -140,8 +140,9 @@ class BagelOrderDetails(BaseModel):
 class CoffeeOrderDetails(BaseModel):
     """Details for a single coffee/drink in an order."""
     drink_type: str = Field(description="Coffee/drink type (coffee, latte, cappuccino, etc.)")
-    size: str | None = Field(default=None, description="Size: small, medium, or large")
+    size: str | None = Field(default=None, description="Size: small or large")
     iced: bool | None = Field(default=None, description="True if iced, False if hot, None if not specified")
+    decaf: bool | None = Field(default=None, description="True if decaf, False if regular, None if not specified")
     quantity: int = Field(default=1, description="Number of this drink")
     milk: str | None = Field(default=None, description="Milk type: whole, skim, oat, almond, none/black")
     notes: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
@@ -264,11 +265,15 @@ class OpenInputResponse(BaseModel):
     )
     new_coffee_size: str | None = Field(
         default=None,
-        description="Coffee size if specified: small, medium, or large"
+        description="Coffee size if specified: small or large"
     )
     new_coffee_iced: bool | None = Field(
         default=None,
         description="True if user wants iced, False if hot, None if not specified"
+    )
+    new_coffee_decaf: bool | None = Field(
+        default=None,
+        description="True if user wants decaf, False if regular, None if not specified"
     )
     new_coffee_milk: str | None = Field(
         default=None,

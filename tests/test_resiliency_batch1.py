@@ -109,6 +109,105 @@ class TestReplacementModificationScenarios:
         assert updated_coffee.size == "medium", "Size should be preserved"
         assert updated_coffee.drink_type == "latte", "Drink type should be preserved"
 
+    def test_change_coffee_to_decaf(self):
+        """
+        Test: User has latte, wants to make it decaf.
+
+        Scenario:
+        - User has: medium latte
+        - User says: "make it a decaf"
+        - Expected: decaf changes to True, other attributes preserved
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        coffee = CoffeeItemTask(
+            drink_type="latte",
+            size="medium",
+            iced=False,  # False = hot
+        )
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        sm = OrderStateMachine()
+        result = sm.process("make it a decaf", order)
+
+        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 1, "Should still have 1 coffee"
+
+        updated_coffee = coffees[0]
+        assert updated_coffee.decaf is True, f"Decaf should be True, got: {updated_coffee.decaf}"
+        assert updated_coffee.size == "medium", "Size should be preserved"
+        assert updated_coffee.drink_type == "latte", "Drink type should be preserved"
+        assert updated_coffee.iced is False, "Iced should be preserved"
+
+    def test_order_decaf_coffee_upfront(self):
+        """
+        Test: User orders "decaf coffee" from the start (not as a modification).
+
+        Scenario:
+        - User says: "decaf coffee"
+        - System asks for size: "What size would you like?"
+        - User says: "medium"
+        - System asks for style: "Would you like that hot or iced?"
+        - User says: "hot"
+        - Expected: Coffee item has decaf=True, size=medium, iced=False
+        """
+        from unittest.mock import patch
+        from sandwich_bot.tasks.schemas import CoffeeSizeResponse, CoffeeStyleResponse
+        from sandwich_bot.tasks.adapter import order_task_to_dict
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Step 1: Order decaf coffee
+        result = sm.process("decaf coffee", order)
+
+        # Should ask for size
+        assert "size" in result.message.lower(), f"Should ask for size, got: {result.message}"
+
+        # Check that coffee was added with decaf=True even before configuration is complete
+        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 1, f"Should have 1 coffee, got {len(coffees)}"
+        assert coffees[0].decaf is True, f"Decaf should be True from initial order, got: {coffees[0].decaf}"
+
+        # Step 2: Answer size (mock the LLM parser)
+        with patch("sandwich_bot.tasks.coffee_config_handler.parse_coffee_size") as mock_size:
+            mock_size.return_value = CoffeeSizeResponse(size="medium")
+            result = sm.process("medium", result.order)
+
+        # Should ask for hot/iced
+        assert "hot" in result.message.lower() or "iced" in result.message.lower(), \
+            f"Should ask for hot/iced, got: {result.message}"
+
+        # Check decaf is still True
+        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        assert coffees[0].decaf is True, f"Decaf should still be True after size, got: {coffees[0].decaf}"
+        assert coffees[0].size == "medium", f"Size should be medium, got: {coffees[0].size}"
+
+        # Step 3: Answer hot/iced (mock the LLM parser)
+        with patch("sandwich_bot.tasks.coffee_config_handler.parse_coffee_style") as mock_style:
+            mock_style.return_value = CoffeeStyleResponse(iced=False)
+            result = sm.process("hot", result.order)
+
+        # Coffee should now be complete
+        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        assert len(coffees) == 1, "Should still have 1 coffee"
+
+        final_coffee = coffees[0]
+        assert final_coffee.decaf is True, f"Decaf should be True after config, got: {final_coffee.decaf}"
+        assert final_coffee.size == "medium", f"Size should be medium, got: {final_coffee.size}"
+        assert final_coffee.iced is False, f"Iced should be False (hot), got: {final_coffee.iced}"
+        assert final_coffee.status == TaskStatus.COMPLETE, f"Coffee should be complete, got: {final_coffee.status}"
+
+        # Also verify the adapter output includes "decaf" in free_details
+        order_dict = order_task_to_dict(result.order)
+        coffee_item = order_dict["items"][0]
+        assert "decaf" in coffee_item["free_details"], \
+            f"Expected 'decaf' in free_details, got: {coffee_item['free_details']}"
+
     def test_change_quantity_make_it_two(self):
         """
         Test: User has 1 bagel, says "actually, make that two".

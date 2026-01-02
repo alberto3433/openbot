@@ -456,7 +456,7 @@ def chat_message_stream(
 @chat_router.post("/debug/add-coffee")
 def debug_add_coffee(
     session_id: str,
-    size: str = "medium",
+    size: str = "small",
     db: Session = Depends(get_db),
 ):
     """DEBUG: Directly add a coffee to a session, bypassing the LLM."""

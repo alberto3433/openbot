@@ -482,6 +482,35 @@ class TestModifiersConsistency:
         assert any("hot" in d.lower() for d in free_details)
         assert any("sugar" in d.lower() for d in free_details)
 
+    def test_coffee_decaf_in_free_details(self):
+        """Test that decaf coffee has 'decaf' in free_details."""
+        order = OrderTask()
+        coffee = CoffeeItemTask(
+            drink_type="coffee",
+            size="medium",
+            iced=True,
+            decaf=True,  # Decaf coffee
+            unit_price=3.50,
+        )
+        order.items.add_item(coffee)
+
+        result = order_task_to_dict(order)
+
+        item = result["items"][0]
+        free_details = item["free_details"]
+        item_config_free_details = item["item_config"]["free_details"]
+
+        # Should contain "decaf" in both top-level free_details and item_config
+        assert "decaf" in free_details, f"Expected 'decaf' in free_details, got: {free_details}"
+        assert "decaf" in item_config_free_details, f"Expected 'decaf' in item_config.free_details, got: {item_config_free_details}"
+
+        # Should also contain "iced" and "medium"
+        assert "iced" in free_details
+        assert "medium" in free_details
+
+        # item_config should have decaf=True
+        assert item["item_config"]["decaf"] is True
+
     def test_menu_item_modifiers_in_item_config(self):
         """Test that menu item (omelette) modifiers are in item_config."""
         from sandwich_bot.tasks.models import MenuItemTask

@@ -213,10 +213,12 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 sweetener_quantity=item_config.get("sweetener_quantity", 1),
                 flavor_syrup=item_config.get("flavor_syrup"),
                 iced=iced_value,
+                decaf=item_config.get("decaf"),  # Restore decaf flag
                 # Restore upcharge tracking fields
                 size_upcharge=item_config.get("size_upcharge", 0.0),
                 milk_upcharge=item_config.get("milk_upcharge", 0.0),
                 syrup_upcharge=item_config.get("syrup_upcharge", 0.0),
+                iced_upcharge=item_config.get("iced_upcharge", 0.0),
                 notes=item.get("notes"),
             )
             # Preserve item ID if provided
@@ -513,11 +515,13 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             sweetener = getattr(item, 'sweetener', None)
             sweetener_quantity = getattr(item, 'sweetener_quantity', 1)
             iced = getattr(item, 'iced', None)
+            decaf = getattr(item, 'decaf', None)
 
             # Get upcharges
             size_upcharge = getattr(item, 'size_upcharge', 0.0) or 0.0
             milk_upcharge = getattr(item, 'milk_upcharge', 0.0) or 0.0
             syrup_upcharge = getattr(item, 'syrup_upcharge', 0.0) or 0.0
+            iced_upcharge = getattr(item, 'iced_upcharge', 0.0) or 0.0
 
             # Build modifiers list for itemized display (only items with upcharges)
             modifiers = []
@@ -530,11 +534,18 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 else:
                     free_details.append(size)
 
-            # Style (hot/iced) - always free
+            # Style (hot/iced) - iced has upcharge when applicable
             if iced is True:
-                free_details.append("iced")
+                if iced_upcharge > 0:
+                    modifiers.append({"name": "iced", "price": iced_upcharge})
+                else:
+                    free_details.append("iced")
             elif iced is False:
                 free_details.append("hot")
+
+            # Decaf - always free
+            if decaf is True:
+                free_details.append("decaf")
 
             # Milk with upcharge
             if milk and milk.lower() not in ("none", "black"):
@@ -561,7 +572,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
 
             # Calculate base price (total - upcharges)
             total_price = item.unit_price or 0
-            base_price = total_price - size_upcharge - milk_upcharge - syrup_upcharge
+            base_price = total_price - size_upcharge - milk_upcharge - syrup_upcharge - iced_upcharge
 
             item_dict = {
                 "item_type": "drink",
@@ -578,6 +589,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "sweetener": sweetener,
                     "sweetener_quantity": sweetener_quantity,
                     "flavor_syrup": flavor_syrup,
+                    "decaf": decaf,
                     # Only set style if iced is explicitly True/False (not None)
                     # skip_config drinks (sodas, bottled) don't need iced/hot labels
                     "style": "iced" if iced is True else ("hot" if iced is False else None),
@@ -585,6 +597,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "size_upcharge": size_upcharge,
                     "milk_upcharge": milk_upcharge,
                     "syrup_upcharge": syrup_upcharge,
+                    "iced_upcharge": iced_upcharge,
                     # Computed display fields for admin/email
                     "modifiers": modifiers,
                     "free_details": free_details,

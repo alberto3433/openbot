@@ -686,8 +686,6 @@ def populate_menu_items(db: Session):
         # SIZED BEVERAGES - Hot/Iced options (La Colombe Coffee Bar)
         # ===========================================
         {"name": "Coffee", "category": "drink", "base_price": 3.25, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
-        {"name": "Decaf Coffee", "category": "drink", "base_price": 3.25, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
-        {"name": "Iced Coffee", "category": "drink", "base_price": 4.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Cold Brew", "category": "drink", "base_price": 4.75, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Americano", "category": "drink", "base_price": 4.00, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},
         {"name": "Cappuccino", "category": "drink", "base_price": 5.50, "is_signature": False, "item_type_id": sized_beverage_type.id if sized_beverage_type else None},

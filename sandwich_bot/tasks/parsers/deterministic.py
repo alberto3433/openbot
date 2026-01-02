@@ -211,6 +211,34 @@ ONE_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Egg + cheese sandwich abbreviations (SEC, HEC, etc.)
+# These create bagels with protein modifiers, not speed menu items
+# Format: (pattern, proteins_list)
+EGG_CHEESE_SANDWICH_ABBREVS = {
+    # Sausage egg and cheese
+    "sec": ["sausage", "egg"],
+    "s.e.c.": ["sausage", "egg"],
+    "s.e.c": ["sausage", "egg"],
+    "sausage egg and cheese": ["sausage", "egg"],
+    "sausage egg cheese": ["sausage", "egg"],
+    "sausage and egg and cheese": ["sausage", "egg"],
+    "sausage eggs and cheese": ["sausage", "egg"],
+    # Ham egg and cheese
+    "hec": ["ham", "egg"],
+    "h.e.c.": ["ham", "egg"],
+    "h.e.c": ["ham", "egg"],
+    "ham egg and cheese": ["ham", "egg"],
+    "ham egg cheese": ["ham", "egg"],
+    "ham and egg and cheese": ["ham", "egg"],
+    "ham eggs and cheese": ["ham", "egg"],
+    # Turkey egg and cheese
+    "tec": ["turkey", "egg"],
+    "t.e.c.": ["turkey", "egg"],
+    "t.e.c": ["turkey", "egg"],
+    "turkey egg and cheese": ["turkey", "egg"],
+    "turkey egg cheese": ["turkey", "egg"],
+}
+
 # Tax question pattern
 TAX_QUESTION_PATTERN = re.compile(
     r"(?:"
@@ -300,8 +328,9 @@ COFFEE_ORDER_PATTERN = re.compile(
     r")?\s*"
     r"(?:an?\s+)?"
     r"(?:(\d+|two|three|four|five)\s+)?"
-    r"(?:(small|medium|large)\s+)?"
+    r"(?:(small|large)\s+)?"
     r"(?:(iced|hot)\s+)?"
+    r"(?:(decaf)\s+)?"
     r"(" + "|".join(COFFEE_BEVERAGE_TYPES) + r")"
     r"(?:\s|$|[.,!?])",
     re.IGNORECASE
@@ -789,6 +818,72 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
 # Speed Menu Bagel Parsing
 # =============================================================================
 
+def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
+    """
+    Parse egg+cheese sandwich abbreviations like SEC, HEC.
+
+    These create bagel orders with protein modifiers and cheese clarification needed.
+    Bagel type and toasted status are left as None so the system will ask.
+    """
+    text_lower = text.lower()
+
+    # Check for matches (longest first to handle "sausage egg and cheese" before "sec")
+    matched_abbrev = None
+    matched_proteins = None
+
+    for abbrev in sorted(EGG_CHEESE_SANDWICH_ABBREVS.keys(), key=len, reverse=True):
+        if abbrev in text_lower:
+            matched_abbrev = abbrev
+            matched_proteins = EGG_CHEESE_SANDWICH_ABBREVS[abbrev]
+            break
+
+    if not matched_abbrev:
+        return None
+
+    logger.info("EGG CHEESE ABBREV: found '%s' -> proteins=%s in text '%s'",
+                matched_abbrev, matched_proteins, text[:50])
+
+    # Extract quantity
+    quantity = 1
+    qty_pattern = re.compile(
+        r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+" + re.escape(matched_abbrev),
+        re.IGNORECASE
+    )
+    qty_match = qty_pattern.search(text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1).lower()
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        elif qty_str in ("a", "an"):
+            quantity = 1
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # Check for bagel type if specified (e.g., "SEC on an everything bagel")
+    bagel_type = None
+    bagel_pattern = re.compile(
+        r"\b(?:on|with)\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\s+bagels?",
+        re.IGNORECASE
+    )
+    bagel_match = bagel_pattern.search(text)
+    if bagel_match:
+        potential_type = bagel_match.group(1).lower().strip()
+        if potential_type in BAGEL_TYPES:
+            bagel_type = potential_type
+
+    # Check for toasted if specified
+    toasted = _extract_toasted(text)
+
+    return OpenInputResponse(
+        new_bagel=True,
+        new_bagel_quantity=quantity,
+        new_bagel_type=bagel_type,  # None = will ask
+        new_bagel_toasted=toasted,  # None = will ask
+        new_bagel_proteins=matched_proteins,
+        new_bagel_needs_cheese_clarification=True,  # Always ask for cheese type
+    )
+
+
 def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None:
     """Parse speed menu bagel orders like 'The Classic BEC on a wheat bagel'."""
     text_lower = text.lower()
@@ -866,11 +961,12 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     coffee_type = None
     coffee_size = None
     coffee_iced = None
+    coffee_decaf = None
     coffee_milk = None
 
     # Check for coffee after "and" - this indicates a second item
     and_coffee_match = re.search(
-        r'\band\s+(?:a\s+)?(?:(small|medium|large)\s+)?(?:(hot|iced)\s+)?'
+        r'\band\s+(?:a\s+)?(?:(small|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
         r'(coffee|latte|cappuccino|espresso|americano|macchiato|mocha|tea|chai)',
         text_lower
     )
@@ -880,7 +976,9 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
             coffee_iced = True
         elif and_coffee_match.group(2) == 'hot':
             coffee_iced = False
-        coffee_type = and_coffee_match.group(3)
+        if and_coffee_match.group(3) == 'decaf':
+            coffee_decaf = True
+        coffee_type = and_coffee_match.group(4)
 
         # Also check for milk
         milk_match = re.search(r'with\s+(oat|almond|soy|skim|whole|coconut)\s*milk', text_lower)
@@ -888,8 +986,8 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
             coffee_milk = milk_match.group(1)
 
         logger.info(
-            "SPEED MENU + COFFEE: also found coffee - type=%s, size=%s, iced=%s",
-            coffee_type, coffee_size, coffee_iced
+            "SPEED MENU + COFFEE: also found coffee - type=%s, size=%s, iced=%s, decaf=%s",
+            coffee_type, coffee_size, coffee_iced, coffee_decaf
         )
 
     response = OpenInputResponse(
@@ -907,6 +1005,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
         response.new_coffee_type = coffee_type
         response.new_coffee_size = coffee_size
         response.new_coffee_iced = coffee_iced
+        response.new_coffee_decaf = coffee_decaf
         response.new_coffee_milk = coffee_milk
 
     return response
@@ -954,7 +1053,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     quantity = 1
     # Compound expressions first, then single words
     qty_words = r'\d+|(?:a\s+)?couple(?:\s+of)?|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+few|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen'
-    size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
+    size_words = r'(?:(?:small|large|iced|hot)\s+)*'
 
     # Build pattern that matches both compound tea names and single beverage types
     all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
@@ -971,7 +1070,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     # Extract size
     size = None
-    size_match = re.search(r'\b(small|medium|large)\b', text_lower)
+    size_match = re.search(r'\b(small|large)\b', text_lower)
     if size_match:
         size = size_match.group(1)
 
@@ -981,6 +1080,11 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         iced = True
     elif re.search(r'\bhot\b', text_lower):
         iced = False
+
+    # Extract decaf
+    decaf = None
+    if re.search(r'\bdecaf\b', text_lower):
+        decaf = True
 
     # Extract milk preference
     milk = None
@@ -1006,8 +1110,8 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     notes = ", ".join(coffee_notes) if coffee_notes else None
 
     logger.debug(
-        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s, notes=%s",
-        coffee_type, quantity, size, iced, milk,
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s, notes=%s",
+        coffee_type, quantity, size, iced, decaf, milk,
         coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, notes
     )
 
@@ -1017,6 +1121,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_quantity=quantity,
         new_coffee_size=size,
         new_coffee_iced=iced,
+        new_coffee_decaf=decaf,
         new_coffee_milk=milk,
         new_coffee_sweetener=coffee_mods.sweetener,
         new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
@@ -1614,13 +1719,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 drink_type=parsed.new_coffee_type or "coffee",
                 size=parsed.new_coffee_size,
                 iced=parsed.new_coffee_iced,
+                decaf=parsed.new_coffee_decaf,
                 quantity=parsed.new_coffee_quantity or 1,
                 milk=parsed.new_coffee_milk,
                 notes=parsed.new_coffee_notes,
             ))
-            logger.info("Multi-item: detected coffee '%s' (qty=%d, milk=%s, notes=%s)",
+            logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, notes=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
-                        parsed.new_coffee_milk, parsed.new_coffee_notes)
+                        parsed.new_coffee_decaf, parsed.new_coffee_milk, parsed.new_coffee_notes)
 
         if parsed.new_bagel:
             bagel = True
@@ -1675,6 +1781,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_quantity=first_coffee.quantity if first_coffee else 1,
             new_coffee_size=first_coffee.size if first_coffee else None,
             new_coffee_iced=first_coffee.iced if first_coffee else None,
+            new_coffee_decaf=first_coffee.decaf if first_coffee else None,
             new_coffee_milk=first_coffee.milk if first_coffee else None,
             new_coffee_notes=first_coffee.notes if first_coffee else None,
             coffee_details=coffee_list,
@@ -1711,6 +1818,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_quantity=first_coffee.quantity,
             new_coffee_size=first_coffee.size,
             new_coffee_iced=first_coffee.iced,
+            new_coffee_decaf=first_coffee.decaf,
             new_coffee_milk=first_coffee.milk,
             new_coffee_notes=first_coffee.notes,
             coffee_details=coffee_list,

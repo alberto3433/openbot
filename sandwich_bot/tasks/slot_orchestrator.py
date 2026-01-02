@@ -265,7 +265,7 @@ BAGEL_SLOTS: list[ItemSlotDefinition] = [
 ]
 
 COFFEE_SLOTS: list[ItemSlotDefinition] = [
-    ItemSlotDefinition("size", "What size - small, medium, or large?", required=True),
+    ItemSlotDefinition("size", "What size - small or large?", required=True),
     ItemSlotDefinition("iced", "Hot or iced?", required=True),
     ItemSlotDefinition("milk", "Any milk?", required=False),
     ItemSlotDefinition("sweetener", "Any sweetener?", required=False),

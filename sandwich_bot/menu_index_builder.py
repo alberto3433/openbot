@@ -145,6 +145,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "recipe": recipe_json,
             "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
+            "required_match_phrases": item.required_match_phrases,  # Comma-separated phrases for match filtering
         }
 
         # Add to items_by_type grouping for type-specific queries
@@ -344,6 +345,7 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         "slug": opt.slug,
                         "display_name": opt.display_name,
                         "price_modifier": opt.price_modifier,
+                        "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
                         "is_default": opt.is_default,
                     }
                     for opt in options

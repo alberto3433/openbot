@@ -148,6 +148,43 @@ class MenuLookup:
 
         return search_variants
 
+    def _passes_match_filter(self, item: dict, user_input: str) -> bool:
+        """
+        Check if an item passes its required_match_phrases filter.
+
+        If the item has required_match_phrases set, the user's input must contain
+        at least ONE of the comma-separated phrases for the item to match.
+
+        Args:
+            item: Menu item dict (must have 'required_match_phrases' key)
+            user_input: The user's search input (lowercase)
+
+        Returns:
+            True if the item passes the filter (or has no filter), False otherwise.
+
+        Example:
+            Item: "Russian Coffee Cake" with required_match_phrases="coffee cake, cake"
+            - user_input="coffee" -> False (doesn't contain "coffee cake" OR "cake")
+            - user_input="coffee cake" -> True (contains "coffee cake")
+            - user_input="cake" -> True (contains "cake")
+        """
+        required_phrases = item.get("required_match_phrases")
+
+        # No filter set - item passes
+        if not required_phrases:
+            return True
+
+        user_input_lower = user_input.lower()
+
+        # Parse comma-separated phrases and check if user input contains at least one
+        phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+        for phrase in phrases:
+            if phrase in user_input_lower:
+                return True
+
+        # None of the required phrases found in user input
+        return False
+
     def lookup_menu_item(self, item_name: str) -> dict | None:
         """
         Look up a menu item by name from the menu data.
@@ -165,6 +202,7 @@ class MenuLookup:
         all_items = self._get_all_items()
 
         # Pass 1: Exact match (highest priority)
+        # No filter applied - if user types exact name, they want that item
         for variant in search_variants:
             for item in all_items:
                 if item.get("name", "").lower() == variant:
@@ -179,7 +217,9 @@ class MenuLookup:
             for item in all_items:
                 item_name_db = item.get("name", "").lower()
                 if variant in item_name_db:
-                    matches.append(item)
+                    # Check required_match_phrases filter
+                    if self._passes_match_filter(item, item_name):
+                        matches.append(item)
         if matches:
             # Return the shortest matching name (most specific)
             return min(matches, key=lambda x: len(x.get("name", "")))
@@ -192,7 +232,9 @@ class MenuLookup:
             for item in all_items:
                 item_name_db = item.get("name", "").lower()
                 if item_name_db in variant:
-                    matches.append(item)
+                    # Check required_match_phrases filter
+                    if self._passes_match_filter(item, item_name):
+                        matches.append(item)
         if matches:
             # Return the longest matching name (most complete)
             return max(matches, key=lambda x: len(x.get("name", "")))
@@ -207,7 +249,9 @@ class MenuLookup:
                 item_name_db_compact = normalize_for_match(item_name_db)
                 # Check if compact search term is in compact item name or vice versa
                 if variant_compact in item_name_db_compact or item_name_db_compact in variant_compact:
-                    matches.append(item)
+                    # Check required_match_phrases filter
+                    if self._passes_match_filter(item, item_name):
+                        matches.append(item)
         if matches:
             # Return the shortest matching name (most specific)
             return min(matches, key=lambda x: len(x.get("name", "")))
@@ -260,8 +304,10 @@ class MenuLookup:
             item_name_db = item.get("name", "").lower()
             for search_term in search_terms:
                 if search_term in item_name_db and item_name_db not in matched_names:
-                    matches.append(item)
-                    matched_names.add(item_name_db)
+                    # Check required_match_phrases filter
+                    if self._passes_match_filter(item, item_name):
+                        matches.append(item)
+                        matched_names.add(item_name_db)
                     break
         if matches:
             # Sort by name length (shortest first = more specific)
@@ -273,7 +319,9 @@ class MenuLookup:
         for item in all_items:
             item_name_db = item.get("name", "").lower()
             if item_name_db in item_name_lower:
-                matches.append(item)
+                # Check required_match_phrases filter
+                if self._passes_match_filter(item, item_name):
+                    matches.append(item)
         if matches:
             # Sort by name length (longest first = more complete match)
             return sorted(matches, key=lambda x: len(x.get("name", "")), reverse=True)
@@ -286,7 +334,9 @@ class MenuLookup:
             item_name_db = item.get("name", "").lower()
             item_name_db_compact = normalize_for_match(item_name_db)
             if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
-                matches.append(item)
+                # Check required_match_phrases filter
+                if self._passes_match_filter(item, item_name):
+                    matches.append(item)
         if matches:
             return sorted(matches, key=lambda x: len(x.get("name", "")))
 

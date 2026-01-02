@@ -174,21 +174,8 @@ SPEED_MENU_BAGELS = {
     "egg bacon cheese": "The Classic BEC",
     "bacon n egg n cheese": "The Classic BEC",
     "bacon n egg and cheese": "The Classic BEC",
-    # Ham and sausage variants (map to BEC as the closest item)
-    "ham egg and cheese": "The Classic BEC",
-    "ham egg cheese": "The Classic BEC",
-    "ham and egg and cheese": "The Classic BEC",
-    "ham eggs and cheese": "The Classic BEC",
-    "hec": "The Classic BEC",
-    "h.e.c.": "The Classic BEC",
-    "h.e.c": "The Classic BEC",
-    "sausage egg and cheese": "The Classic BEC",
-    "sausage egg cheese": "The Classic BEC",
-    "sausage and egg and cheese": "The Classic BEC",
-    "sausage eggs and cheese": "The Classic BEC",
-    "sec": "The Classic BEC",
-    "s.e.c.": "The Classic BEC",
-    "s.e.c": "The Classic BEC",
+    # NOTE: Ham and sausage variants are NOT mapped here - they are handled
+    # as bagel orders with modifiers in deterministic.py (SEC, HEC patterns)
     # The Traditional (nova, cream cheese, capers, onion)
     "the traditional": "The Traditional",
     "traditional": "The Traditional",

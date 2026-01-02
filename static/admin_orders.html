@@ -536,6 +536,9 @@
               parts.push(item.item_config.sweetener);
               parts.push(item.item_config.sweetener_quantity || 1);
             }
+            if (item.item_config.decaf) {
+              parts.push("decaf");
+            }
           }
 
           // Add toppings and sauces
@@ -617,6 +620,9 @@
                     configParts.push(formatted);
                   }
                 });
+              }
+              if (item.item_config.decaf) {
+                configParts.push("decaf");
               }
               if (item.item_config.extras) {
                 const cfgExtras = Array.isArray(item.item_config.extras) ? item.item_config.extras : [item.item_config.extras];

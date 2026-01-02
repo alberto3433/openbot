@@ -1964,6 +1964,7 @@
           const sq = config.sweetener_quantity || 1;
           details.push(sq > 1 ? `${sq} ${config.sweetener}s` : config.sweetener);
         }
+        if (config.decaf) details.push("decaf");
         if (item.toppings && item.toppings.length > 0) details.push(item.toppings.join(", "));
         if (item.sauces && item.sauces.length > 0) details.push(item.sauces.join(", "));
         if (item.toasted) details.push("Toasted");

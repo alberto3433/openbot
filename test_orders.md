@@ -28,7 +28,7 @@ Use these scenarios to test the bot via voice (VAPI) or web chat.
 ### 6. Complex Coffee
 > "Large dark coffee with almond milk, hazelnut syrup, and an extra shot"
 
-### 7. Iced Coffee
+### 7. Coffee with Iced Modifier
 > "I'll take an iced coffee, large"
 
 ---

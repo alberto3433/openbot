@@ -225,6 +225,7 @@ class CoffeeItemTask(ItemTask):
     drink_type: str | None = None  # drip, latte, espresso, etc.
     size: str | None = None  # small, medium, large
     iced: bool | None = None  # True=iced, False=hot, None=not specified
+    decaf: bool | None = None  # True=decaf, None=regular (not specified)
     milk: str | None = None  # whole, skim, oat, almond, etc.
     sweetener: str | None = None  # sugar, splenda, stevia, etc.
     sweetener_quantity: int = 1  # number of sweetener packets (e.g., 2 splendas)
@@ -235,6 +236,7 @@ class CoffeeItemTask(ItemTask):
     size_upcharge: float = 0.0
     milk_upcharge: float = 0.0
     syrup_upcharge: float = 0.0
+    iced_upcharge: float = 0.0
 
     def get_display_name(self) -> str:
         """Get display name for this drink."""
@@ -245,6 +247,8 @@ class CoffeeItemTask(ItemTask):
             parts.append("iced")
         elif self.iced is False:
             parts.append("hot")
+        if self.decaf is True:
+            parts.append("decaf")
         if self.drink_type:
             parts.append(self.drink_type)
         else:
@@ -259,9 +263,15 @@ class CoffeeItemTask(ItemTask):
             parts.append(self.size)
 
         if self.iced is True:
-            parts.append("iced")
+            if self.iced_upcharge > 0:
+                parts.append(f"iced (+${self.iced_upcharge:.2f})")
+            else:
+                parts.append("iced")
         elif self.iced is False:
             parts.append("hot")
+
+        if self.decaf is True:
+            parts.append("decaf")
 
         if self.drink_type:
             parts.append(self.drink_type)

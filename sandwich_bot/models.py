@@ -96,6 +96,7 @@ class AttributeOption(Base):
     display_name = Column(String, nullable=False)  # e.g., "White Bread", "Wheat Bread", "Lettuce"
 
     price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
+    iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
     is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
     is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
 
@@ -226,6 +227,11 @@ class MenuItem(Base):
     # Default configuration for this menu item (JSON)
     # e.g., {"bread": "italian", "protein": "turkey", "cheese": "provolone", "toasted": true}
     default_config = Column(JSON, nullable=True)
+
+    # Required match phrases for search filtering (comma-separated)
+    # If set, user input must contain at least ONE of these phrases for a match
+    # Example: "coffee cake, cake" for "Russian Coffee Cake" prevents "coffee" from matching
+    required_match_phrases = Column(String, nullable=True)
 
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
     recipe = relationship("Recipe", back_populates="menu_items")

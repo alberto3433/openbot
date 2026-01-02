@@ -255,7 +255,7 @@ The user said: "{user_input}"
 
 Examples:
 - "small" / "a small" -> size: "small"
-- "medium" / "regular" -> size: "medium"
+- "regular" -> size: null (ask for size - only small or large available)
 - "large" / "a large one" -> size: "large"
 - Any unclear response -> size: null
 """
@@ -396,7 +396,7 @@ Determine what they want:
   - Set new_coffee=true
   - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)
   - Set new_coffee_type if specified (e.g., "latte", "cappuccino", "drip coffee", "diet coke", "coke")
-  - Set new_coffee_size if specified ("small", "medium", "large") - note: size may not be specified initially
+  - Set new_coffee_size if specified ("small", "large") - note: size may not be specified initially
   - Set new_coffee_iced=true if they want iced, false if they want hot, null if not specified
   - Set new_coffee_milk if specified (e.g., "oat", "almond", "skim", "whole"). "black" means no milk. If they just say "with milk" without specifying type, use "whole".
   - Set new_coffee_sweetener if specified (e.g., "sugar", "splenda", "stevia", "equal")
@@ -437,7 +437,7 @@ Examples:
 - "two everything bagels with scallion cream cheese toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "everything", new_bagel_toasted: true, new_bagel_spread: "cream cheese", new_bagel_spread_type: "scallion"
 - "coffee please" -> new_coffee: true
 - "a large latte" -> new_coffee: true, new_coffee_type: "latte", new_coffee_size: "large"
-- "medium iced coffee" -> new_coffee: true, new_coffee_size: "medium", new_coffee_iced: true
+- "large iced coffee" -> new_coffee: true, new_coffee_size: "large", new_coffee_iced: true
 - "small hot latte" -> new_coffee: true, new_coffee_type: "latte", new_coffee_size: "small", new_coffee_iced: false
 - "iced cappuccino" -> new_coffee: true, new_coffee_type: "cappuccino", new_coffee_iced: true
 - "small coffee black with two sugars" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2
@@ -446,7 +446,7 @@ Examples:
 - "small coffee with a splash of milk" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "whole", new_coffee_notes: "a splash of milk"
 - "latte extra hot" -> new_coffee: true, new_coffee_type: "latte", new_coffee_notes: "extra hot"
 - "iced coffee light ice" -> new_coffee: true, new_coffee_iced: true, new_coffee_notes: "light ice"
-- "medium coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "medium", new_coffee_flavor_syrup: "vanilla"
+- "large coffee with vanilla syrup" -> new_coffee: true, new_coffee_size: "large", new_coffee_flavor_syrup: "vanilla"
 - "small coffee black with two sugars and vanilla syrup" -> new_coffee: true, new_coffee_size: "small", new_coffee_milk: "none", new_coffee_sweetener: "sugar", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"
 - "iced latte with almond milk and caramel" -> new_coffee: true, new_coffee_type: "latte", new_coffee_iced: true, new_coffee_milk: "almond", new_coffee_flavor_syrup: "caramel"
 - "cappuccino with 2 splenda and vanilla syrup" -> new_coffee: true, new_coffee_type: "cappuccino", new_coffee_sweetener: "splenda", new_coffee_sweetener_quantity: 2, new_coffee_flavor_syrup: "vanilla"

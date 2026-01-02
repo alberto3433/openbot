@@ -131,7 +131,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 spread_price=spread_price,  # For itemized display
                 requires_side_choice=item.get("requires_side_choice", False),
                 quantity=item.get("quantity", 1),
-                notes=item.get("notes"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -155,7 +155,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 spread_type=item.get("spread_type"),
                 sandwich_protein=item.get("sandwich_protein"),
                 extras=item.get("extras") or [],
-                notes=item.get("notes"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
                 needs_cheese_clarification=item.get("needs_cheese_clarification", False),
             )
             # Preserve item ID if provided
@@ -177,7 +177,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 toasted=item.get("toasted"),
                 spread=item.get("cheese"),
                 extras=item.get("toppings") or [],
-                notes=item.get("notes"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -219,7 +219,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 milk_upcharge=item_config.get("milk_upcharge", 0.0),
                 syrup_upcharge=item_config.get("syrup_upcharge", 0.0),
                 iced_upcharge=item_config.get("iced_upcharge", 0.0),
-                notes=item.get("notes"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -245,7 +245,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 bagel_choice_upcharge=item.get("bagel_choice_upcharge", 0.0),
                 cheese_choice=item.get("cheese_choice"),
                 quantity=item.get("quantity", 1),
-                notes=item.get("notes"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
             )
             # Preserve item ID if provided
             if item.get("id"):
@@ -414,7 +414,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
-                "notes": getattr(item, 'notes', None),
+                "special_instructions": getattr(item, 'special_instructions', None),
                 "item_config": {
                     "menu_item_type": menu_item_type,
                     "side_choice": side_choice,
@@ -507,7 +507,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
-                "notes": getattr(item, 'notes', None),
+                "special_instructions": getattr(item, 'special_instructions', None),
                 "item_config": {
                     "bagel_type": bagel_type,
                     "bagel_type_upcharge": bagel_type_upcharge,
@@ -623,7 +623,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "quantity": 1,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price if item.unit_price else 0,
-                "notes": getattr(item, 'notes', None),
+                "special_instructions": getattr(item, 'special_instructions', None),
             }
             items.append(item_dict)
 
@@ -692,7 +692,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
-                "notes": getattr(item, 'notes', None),
+                "special_instructions": getattr(item, 'special_instructions', None),
                 "item_config": {
                     "toasted": toasted,
                     "bagel_choice": bagel_choice,

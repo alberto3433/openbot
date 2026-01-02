@@ -164,7 +164,7 @@ class OrderUtilsHandler:
                     sweetener_quantity=template_item.sweetener_quantity,
                     flavor_syrup=template_item.flavor_syrup,
                     unit_price=template_item.unit_price,
-                    notes=template_item.notes,
+                    special_instructions=template_item.special_instructions,
                 )
                 new_item.mark_complete()
                 order.items.add_item(new_item)

@@ -206,7 +206,7 @@ The user said: "{user_input}"
 Extract their spread choice. Options: cream cheese, butter, none/nothing.
 Cream cheese varieties: plain, scallion, veggie, lox spread, etc.
 
-Also extract any special instructions about quantity or application into notes.
+Also extract any special instructions about quantity or application into special_instructions.
 These are modifiers like: "a little", "extra", "light", "heavy", "on the side", "not too much", "lots of", etc.
 
 Examples:
@@ -214,10 +214,10 @@ Examples:
 - "scallion cream cheese" -> spread: "cream cheese", spread_type: "scallion"
 - "butter" -> spread: "butter"
 - "nothing" or "plain" or "no spread" -> no_spread: true
-- "a little cream cheese" -> spread: "cream cheese", notes: "a little"
-- "extra butter" -> spread: "butter", notes: "extra"
-- "light on the scallion cream cheese" -> spread: "cream cheese", spread_type: "scallion", notes: "light"
-- "cream cheese on the side" -> spread: "cream cheese", notes: "on the side"
+- "a little cream cheese" -> spread: "cream cheese", special_instructions: "a little"
+- "extra butter" -> spread: "butter", special_instructions: "extra"
+- "light on the scallion cream cheese" -> spread: "cream cheese", spread_type: "scallion", special_instructions: "light"
+- "cream cheese on the side" -> spread: "cream cheese", special_instructions: "on the side"
 """
 
     return client.chat.completions.create(

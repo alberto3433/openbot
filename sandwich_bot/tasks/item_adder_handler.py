@@ -481,11 +481,11 @@ class ItemAdderHandler:
             base_price, price
         )
 
-        # Extract notes from modifiers
-        notes: str | None = None
-        if extracted_modifiers and extracted_modifiers.has_notes():
-            notes = extracted_modifiers.get_notes_string()
-            logger.info("Applying notes to bagel: %s", notes)
+        # Extract special instructions from modifiers
+        special_instructions: str | None = None
+        if extracted_modifiers and extracted_modifiers.has_special_instructions():
+            special_instructions = extracted_modifiers.get_special_instructions_string()
+            logger.info("Applying special instructions to bagel: %s", special_instructions)
 
         # Check if bagel needs cheese clarification
         needs_cheese = False
@@ -502,7 +502,7 @@ class ItemAdderHandler:
             sandwich_protein=sandwich_protein,
             extras=extras,
             unit_price=price,
-            notes=notes,
+            special_instructions=special_instructions,
             needs_cheese_clarification=needs_cheese,
         )
         bagel.mark_in_progress()
@@ -512,8 +512,8 @@ class ItemAdderHandler:
         self.pricing.recalculate_bagel_price(bagel)
 
         logger.info(
-            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, notes=%s",
-            bagel_type, toasted, spread, spread_type, sandwich_protein, extras, notes
+            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, special_instructions=%s",
+            bagel_type, toasted, spread, spread_type, sandwich_protein, extras, special_instructions
         )
 
         # Determine what question to ask based on what's missing
@@ -598,8 +598,8 @@ class ItemAdderHandler:
             sandwich_protein: str | None = None
             bagel_spread = spread
 
-            # Extract notes for first bagel
-            notes: str | None = None
+            # Extract special instructions for first bagel
+            special_instructions: str | None = None
 
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
                 # First protein goes to sandwich_protein field
@@ -623,10 +623,10 @@ class ItemAdderHandler:
                     sandwich_protein, extras, bagel_spread
                 )
 
-            # Apply notes to first bagel
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_notes():
-                notes = extracted_modifiers.get_notes_string()
-                logger.info("Applying notes to first bagel: %s", notes)
+            # Apply special instructions to first bagel
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_special_instructions():
+                special_instructions = extracted_modifiers.get_special_instructions_string()
+                logger.info("Applying special instructions to first bagel: %s", special_instructions)
 
             # Check if first bagel needs cheese clarification
             needs_cheese = False
@@ -647,7 +647,7 @@ class ItemAdderHandler:
                 sandwich_protein=sandwich_protein,
                 extras=extras,
                 unit_price=price,
-                notes=notes,
+                special_instructions=special_instructions,
                 needs_cheese_clarification=needs_cheese,
             )
             # Mark complete if all fields provided (and no cheese clarification needed), otherwise in_progress
@@ -691,8 +691,8 @@ class ItemAdderHandler:
             sandwich_protein: str | None = None
             spread = details.spread
 
-            # Extract notes for first bagel
-            notes: str | None = None
+            # Extract special instructions for first bagel
+            special_instructions: str | None = None
 
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
                 # First protein goes to sandwich_protein field
@@ -716,10 +716,10 @@ class ItemAdderHandler:
                     sandwich_protein, extras, spread
                 )
 
-            # Apply notes to first bagel
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_notes():
-                notes = extracted_modifiers.get_notes_string()
-                logger.info("Applying notes to first bagel: %s", notes)
+            # Apply special instructions to first bagel
+            if i == 0 and extracted_modifiers and extracted_modifiers.has_special_instructions():
+                special_instructions = extracted_modifiers.get_special_instructions_string()
+                logger.info("Applying special instructions to first bagel: %s", special_instructions)
 
             # Check if first bagel needs cheese clarification
             needs_cheese = False
@@ -740,7 +740,7 @@ class ItemAdderHandler:
                 sandwich_protein=sandwich_protein,
                 extras=extras,
                 unit_price=price,
-                notes=notes,
+                special_instructions=special_instructions,
                 needs_cheese_clarification=needs_cheese,
             )
 

@@ -99,7 +99,7 @@ class SpreadChoiceResponse(BaseModel):
         default=False,
         description="User explicitly doesn't want spread"
     )
-    notes: str | None = Field(
+    special_instructions: str | None = Field(
         default=None,
         description="Special instructions about quantity/application: 'a little', 'extra', 'light', 'on the side', etc."
     )
@@ -145,7 +145,7 @@ class CoffeeOrderDetails(BaseModel):
     decaf: bool | None = Field(default=None, description="True if decaf, False if regular, None if not specified")
     quantity: int = Field(default=1, description="Number of this drink")
     milk: str | None = Field(default=None, description="Milk type: whole, skim, oat, almond, none/black")
-    notes: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
+    special_instructions: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
 
 
 class MenuItemOrderDetails(BaseModel):
@@ -242,9 +242,9 @@ class OpenInputResponse(BaseModel):
         default_factory=list,
         description="Spreads to add to the bagel (e.g., 'cream cheese', 'butter')"
     )
-    new_bagel_notes: list[str] = Field(
+    new_bagel_special_instructions: list[str] = Field(
         default_factory=list,
-        description="Special modifier notes (e.g., 'light cream cheese', 'extra bacon')"
+        description="Special instructions (e.g., 'light cream cheese', 'extra bacon')"
     )
     new_bagel_needs_cheese_clarification: bool = Field(
         default=False,
@@ -291,7 +291,7 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Flavor syrup: vanilla, caramel, hazelnut, etc."
     )
-    new_coffee_notes: str | None = Field(
+    new_coffee_special_instructions: str | None = Field(
         default=None,
         description="Special instructions for the coffee like 'a splash of milk', 'extra hot', 'light ice'"
     )

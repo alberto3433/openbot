@@ -422,16 +422,16 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
                 result.needs_cheese_clarification = True
                 logger.debug("Generic 'cheese' detected - needs clarification")
 
-    # Extract notes (filter to only bagel-related notes)
-    notes_list = extract_notes_from_input(user_input)
+    # Extract special instructions (filter to only bagel-related ones)
+    instructions_list = extract_special_instructions_from_input(user_input)
     bagel_keywords = {
         'cream cheese', 'butter', 'cream', 'lox', 'spread',
         'bacon', 'ham', 'turkey', 'egg', 'sausage', 'meat',
         'cheese', 'american', 'cheddar', 'swiss', 'muenster',
         'tomato', 'onion', 'lettuce', 'cucumber', 'capers', 'avocado',
     }
-    bagel_notes = [n for n in notes_list if any(kw in n.lower() for kw in bagel_keywords)]
-    result.notes = bagel_notes
+    bagel_instructions = [n for n in instructions_list if any(kw in n.lower() for kw in bagel_keywords)]
+    result.special_instructions = bagel_instructions
 
     return result
 
@@ -519,22 +519,22 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
             logger.debug(f"Extracted coffee flavor syrup: {syrup}")
             break
 
-    result.notes = extract_notes_from_input(user_input)
+    result.special_instructions = extract_special_instructions_from_input(user_input)
 
     return result
 
 
-def extract_notes_from_input(user_input: str) -> list[str]:
+def extract_special_instructions_from_input(user_input: str) -> list[str]:
     """
-    Extract special instruction notes from user input.
+    Extract special instructions from user input.
 
     Args:
         user_input: The raw user input string
 
     Returns:
-        List of note strings like ["light cream cheese", "extra bacon"]
+        List of instruction strings like ["light cream cheese", "extra bacon"]
     """
-    notes = []
+    instructions = []
     input_lower = user_input.lower()
 
     for pattern, qualifier in QUALIFIER_PATTERNS:
@@ -544,14 +544,18 @@ def extract_notes_from_input(user_input: str) -> list[str]:
             if item.lower() in skip_words:
                 continue
             if qualifier == 'no':
-                note = f"no {item}"
+                instruction = f"no {item}"
             else:
-                note = f"{qualifier} {item}"
-            if note not in notes:
-                notes.append(note)
-                logger.debug(f"Extracted note: '{note}' from input")
+                instruction = f"{qualifier} {item}"
+            if instruction not in instructions:
+                instructions.append(instruction)
+                logger.debug(f"Extracted special instruction: '{instruction}' from input")
 
-    return notes
+    return instructions
+
+
+# Backwards compatibility alias
+extract_notes_from_input = extract_special_instructions_from_input
 
 
 # =============================================================================
@@ -847,7 +851,7 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
         new_bagel_cheeses=modifiers.cheeses,
         new_bagel_toppings=modifiers.toppings,
         new_bagel_spreads=modifiers.spreads,
-        new_bagel_notes=modifiers.notes,
+        new_bagel_special_instructions=modifiers.special_instructions,
         new_bagel_needs_cheese_clarification=modifiers.needs_cheese_clarification,
     )
 
@@ -1142,15 +1146,15 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     coffee_mods = extract_coffee_modifiers_from_input(text)
 
-    notes_list = extract_notes_from_input(text)
+    instructions_list = extract_special_instructions_from_input(text)
     coffee_keywords = {'milk', 'cream', 'ice', 'hot', 'shot', 'espresso', 'foam', 'whip', 'sugar', 'syrup'}
-    coffee_notes = [n for n in notes_list if any(kw in n.lower() for kw in coffee_keywords)]
-    notes = ", ".join(coffee_notes) if coffee_notes else None
+    coffee_instructions = [n for n in instructions_list if any(kw in n.lower() for kw in coffee_keywords)]
+    special_instructions = ", ".join(coffee_instructions) if coffee_instructions else None
 
     logger.debug(
-        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s, notes=%s",
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s, special_instructions=%s",
         coffee_type, quantity, size, iced, decaf, milk,
-        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, notes
+        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, special_instructions
     )
 
     response = OpenInputResponse(
@@ -1164,7 +1168,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_sweetener=coffee_mods.sweetener,
         new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
         new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
-        new_coffee_notes=notes,
+        new_coffee_special_instructions=special_instructions,
     )
 
     # Check if there's also a speed menu bagel mentioned in the input
@@ -1760,11 +1764,11 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 decaf=parsed.new_coffee_decaf,
                 quantity=parsed.new_coffee_quantity or 1,
                 milk=parsed.new_coffee_milk,
-                notes=parsed.new_coffee_notes,
+                special_instructions=parsed.new_coffee_special_instructions,
             ))
-            logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, notes=%s)",
+            logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
-                        parsed.new_coffee_decaf, parsed.new_coffee_milk, parsed.new_coffee_notes)
+                        parsed.new_coffee_decaf, parsed.new_coffee_milk, parsed.new_coffee_special_instructions)
 
         if parsed.new_bagel:
             bagel = True
@@ -1821,7 +1825,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_iced=first_coffee.iced if first_coffee else None,
             new_coffee_decaf=first_coffee.decaf if first_coffee else None,
             new_coffee_milk=first_coffee.milk if first_coffee else None,
-            new_coffee_notes=first_coffee.notes if first_coffee else None,
+            new_coffee_special_instructions=first_coffee.special_instructions if first_coffee else None,
             coffee_details=coffee_list,
             new_bagel=bagel,
             new_bagel_quantity=bagel_qty,
@@ -1858,7 +1862,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_iced=first_coffee.iced,
             new_coffee_decaf=first_coffee.decaf,
             new_coffee_milk=first_coffee.milk,
-            new_coffee_notes=first_coffee.notes,
+            new_coffee_special_instructions=first_coffee.special_instructions,
             coffee_details=coffee_list,
         )
     if bagel:

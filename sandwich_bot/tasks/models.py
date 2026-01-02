@@ -136,9 +136,9 @@ class ItemTask(BaseTask):
     quantity: int = 1
     unit_price: float = 0.0
 
-    # Free-form notes for special instructions that don't fit standard modifiers
-    # e.g., "light on the cream cheese", "extra crispy", "a splash of milk"
-    notes: str | None = None
+    # Free-form special instructions that don't fit standard modifiers
+    # e.g., "light on the cream cheese", "extra crispy", "splash of milk"
+    special_instructions: str | None = None
 
     def get_display_name(self) -> str:
         """Get display name for this item."""
@@ -210,9 +210,9 @@ class BagelItemTask(ItemTask):
             # Only say "with nothing on it" if there's truly nothing
             parts.append("with nothing on it")
 
-        # Add notes if present
-        if self.notes:
-            parts.append(f"({self.notes})")
+        # Add special instructions if present
+        if self.special_instructions:
+            parts.append(f"(Special Instructions: {self.special_instructions})")
 
         return " ".join(parts)
 
@@ -305,9 +305,9 @@ class CoffeeItemTask(ItemTask):
         if self.extra_shots:
             parts.append(f"({self.extra_shots} extra shot{'s' if self.extra_shots > 1 else ''})")
 
-        # Add notes if present
-        if self.notes:
-            parts.append(f"({self.notes})")
+        # Add special instructions if present
+        if self.special_instructions:
+            parts.append(f"(Special Instructions: {self.special_instructions})")
 
         return " ".join(parts)
 
@@ -356,9 +356,9 @@ class SpeedMenuBagelItemTask(ItemTask):
         if self.modifications:
             parts.append(f"({', '.join(self.modifications)})")
 
-        # Add notes if present
-        if self.notes:
-            parts.append(f"({self.notes})")
+        # Add special instructions if present
+        if self.special_instructions:
+            parts.append(f"(Special Instructions: {self.special_instructions})")
 
         return " ".join(parts)
 
@@ -420,9 +420,9 @@ class MenuItemTask(ItemTask):
         if self.modifications:
             parts.append(f"({', '.join(self.modifications)})")
 
-        # Add notes if present
-        if self.notes:
-            parts.append(f"({self.notes})")
+        # Add special instructions if present
+        if self.special_instructions:
+            parts.append(f"(Special Instructions: {self.special_instructions})")
 
         return " ".join(parts)
 

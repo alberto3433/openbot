@@ -105,11 +105,11 @@ def apply_modifiers_to_bagel(
     if modifiers.spreads and not item.spread:
         item.spread = modifiers.spreads[0]
 
-    # Append notes
-    if modifiers.has_notes():
-        existing_notes = item.notes or ""
-        new_notes = modifiers.get_notes_string()
-        item.notes = f"{existing_notes}, {new_notes}".strip(", ") if existing_notes else new_notes
+    # Append special instructions
+    if modifiers.has_special_instructions():
+        existing_instructions = item.special_instructions or ""
+        new_instructions = modifiers.get_special_instructions_string()
+        item.special_instructions = f"{existing_instructions}, {new_instructions}".strip(", ") if existing_instructions else new_instructions
 
     # Check if user said generic "cheese" without specifying type
     if modifiers.needs_cheese_clarification:
@@ -290,7 +290,7 @@ class BagelConfigHandler:
                 for topping in toppings_to_remove:
                     extracted_modifiers.toppings.remove(topping)
 
-        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_special_instructions():
             logger.info("Extracted additional modifiers from bagel choice: %s", extracted_modifiers)
 
         # Apply to the current pending item
@@ -454,13 +454,13 @@ class BagelConfigHandler:
                 item.spread = parsed.spread
                 item.spread_type = parsed.spread_type
                 # Capture special instructions like "a little", "extra", etc.
-                if parsed.notes:
-                    # Build full spread description for notes
+                if parsed.special_instructions:
+                    # Build full spread description for special_instructions
                     spread_desc = parsed.spread
                     if parsed.spread_type and parsed.spread_type != "plain":
                         spread_desc = f"{parsed.spread_type} {parsed.spread}"
                     # Combine modifier with spread (e.g., "a little cream cheese")
-                    item.notes = f"{parsed.notes} {spread_desc}"
+                    item.special_instructions = f"{parsed.special_instructions} {spread_desc}"
             else:
                 return StateMachineResult(
                     message="Would you like cream cheese, butter, or nothing on that?",
@@ -509,7 +509,7 @@ class BagelConfigHandler:
         # Extract any additional modifiers from the input (e.g., "yes with extra cheese")
         if isinstance(item, BagelItemTask):
             extracted_modifiers = extract_modifiers_from_input(user_input)
-            if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+            if extracted_modifiers.has_modifiers() or extracted_modifiers.has_special_instructions():
                 logger.info("Extracted additional modifiers from toasted choice: %s", extracted_modifiers)
                 apply_modifiers_to_bagel(item, extracted_modifiers)
 
@@ -598,7 +598,7 @@ class BagelConfigHandler:
 
         # Extract any additional modifiers from the input (e.g., "cheddar with extra bacon")
         extracted_modifiers = extract_modifiers_from_input(user_input)
-        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
+        if extracted_modifiers.has_modifiers() or extracted_modifiers.has_special_instructions():
             logger.info("Extracted additional modifiers from cheese choice: %s", extracted_modifiers)
             # Apply modifiers (skip cheeses since we already handled cheese above)
             apply_modifiers_to_bagel(item, extracted_modifiers, skip_cheeses=True)

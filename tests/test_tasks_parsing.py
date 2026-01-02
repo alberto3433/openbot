@@ -1161,29 +1161,29 @@ class TestNotesExtraction:
         assert "extra cream cheese" in notes
 
     def test_multi_item_modifiers_bagel_only(self):
-        """Test that extract_modifiers_from_input filters to bagel-related notes only."""
+        """Test that extract_modifiers_from_input filters to bagel-related special instructions only."""
         from sandwich_bot.tasks.state_machine import extract_modifiers_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         modifiers = extract_modifiers_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
-        # Bagel modifiers should only include bagel-related notes (cream cheese), not coffee-related (splash of milk)
-        notes_str = modifiers.get_notes_string() or ""
-        assert "cream cheese" in notes_str
-        assert "splash" not in notes_str or "milk" not in notes_str  # Coffee note should be filtered out
+        # Bagel modifiers should only include bagel-related instructions (cream cheese), not coffee-related (splash of milk)
+        instructions_str = modifiers.get_special_instructions_string() or ""
+        assert "cream cheese" in instructions_str
+        assert "splash" not in instructions_str or "milk" not in instructions_str  # Coffee instruction should be filtered out
 
-    def test_multi_item_coffee_with_milk_and_notes(self):
-        """Test that multi-item parser extracts milk and notes for coffee."""
+    def test_multi_item_coffee_with_milk_and_special_instructions(self):
+        """Test that multi-item parser extracts milk and special instructions for coffee."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         result = _parse_multi_item_order("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         assert result is not None
         assert result.new_coffee is True
         assert result.new_bagel is True
-        # Check coffee_details has milk and notes
+        # Check coffee_details has milk and special instructions
         assert len(result.coffee_details) >= 1
         coffee = result.coffee_details[0]
         assert coffee.milk == "whole"  # "with a splash of milk" should default to whole
-        assert coffee.notes is not None
-        assert "splash" in coffee.notes.lower() or "milk" in coffee.notes.lower()
+        assert coffee.special_instructions is not None
+        assert "splash" in coffee.special_instructions.lower() or "milk" in coffee.special_instructions.lower()
 
     def test_multi_item_bagel_and_speed_menu_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""

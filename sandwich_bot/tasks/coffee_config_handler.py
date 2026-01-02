@@ -85,13 +85,13 @@ class CoffeeConfigHandler:
         flavor_syrup: str | None,
         quantity: int,
         order: OrderTask,
-        notes: str | None = None,
+        special_instructions: str | None = None,
         decaf: bool | None = None,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
-            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, notes=%s",
-            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, notes
+            "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s, special_instructions=%s",
+            coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, special_instructions
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -197,7 +197,7 @@ class CoffeeConfigHandler:
                     sweetener_quantity=0,
                     flavor_syrup=None,
                     unit_price=price,
-                    notes=notes,
+                    special_instructions=special_instructions,
                 )
                 drink.mark_complete()  # No configuration needed
                 order.items.add_item(drink)
@@ -219,7 +219,7 @@ class CoffeeConfigHandler:
                 sweetener_quantity=sweetener_quantity,
                 flavor_syrup=flavor_syrup,
                 unit_price=price,
-                notes=notes,
+                special_instructions=special_instructions,
             )
             coffee.mark_in_progress()
             order.items.add_item(coffee)
@@ -300,6 +300,10 @@ class CoffeeConfigHandler:
             # Ask about milk/sugar/syrup if none specified yet (optional question)
             if (coffee.milk is None and coffee.sweetener is None
                     and coffee.flavor_syrup is None):
+                # Recalculate price with size/iced upcharges so cart displays correctly
+                # This handles cases where user orders "large iced coffee" directly
+                if self.pricing:
+                    self.pricing.recalculate_coffee_price(coffee)
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_modifiers"
@@ -487,6 +491,15 @@ class CoffeeConfigHandler:
             if coffee_mods.flavor_syrup and not item.flavor_syrup:
                 item.flavor_syrup = coffee_mods.flavor_syrup
                 logger.info(f"Set coffee syrup: {coffee_mods.flavor_syrup}")
+
+            # Apply special instructions (e.g., "splash of milk", "light sugar")
+            if coffee_mods.has_special_instructions():
+                instructions_str = coffee_mods.get_special_instructions_string()
+                if item.special_instructions:
+                    item.special_instructions = f"{item.special_instructions}, {instructions_str}"
+                else:
+                    item.special_instructions = instructions_str
+                logger.info(f"Set coffee special instructions: {instructions_str}")
 
         # Coffee is now complete - recalculate price with modifiers
         if self.pricing:

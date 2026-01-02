@@ -441,7 +441,7 @@ MODIFIER_NORMALIZATIONS = {
 # Regex Patterns
 # =============================================================================
 
-# Qualifier patterns for notes extraction
+# Qualifier patterns for special instructions extraction
 # These are phrases that modify a standard modifier in a non-standard way
 QUALIFIER_PATTERNS = [
     # "light on the X" / "light X" / "go light on X"

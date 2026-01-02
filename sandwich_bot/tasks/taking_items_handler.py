@@ -895,7 +895,7 @@ class TakingItemsHandler:
                     flavor_syrup,
                     parsed.new_menu_item_quantity,
                     order,
-                    notes=parsed.new_coffee_notes,
+                    special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
                 )
                 items_added.append(parsed.new_menu_item)
@@ -1044,9 +1044,9 @@ class TakingItemsHandler:
                     )]
 
                 for coffee_detail in coffees_to_add:
-                    # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                    # Use milk/special_instructions from coffee_detail if available, otherwise fall back to parsed values
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
-                    coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                    coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                     coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
@@ -1058,11 +1058,11 @@ class TakingItemsHandler:
                         parsed.new_coffee_flavor_syrup,
                         coffee_detail.quantity,
                         order,
-                        notes=coffee_notes,
+                        special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
                     )
                     items_added.append(coffee_detail.drink_type)
-                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
 
                 # If menu item needs configuration (e.g., spread sandwich toasted question),
                 # ask menu item questions first (coffees were still added to cart)
@@ -1169,9 +1169,9 @@ class TakingItemsHandler:
                     )]
 
                 for coffee_detail in coffees_to_add:
-                    # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                    # Use milk/special_instructions from coffee_detail if available, otherwise fall back to parsed values
                     coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
-                    coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                    coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                     coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                     coffee_result = self.coffee_handler.add_coffee(
                         coffee_detail.drink_type,
@@ -1183,10 +1183,10 @@ class TakingItemsHandler:
                         parsed.new_coffee_flavor_syrup,
                         coffee_detail.quantity,
                         order,
-                        notes=coffee_notes,
+                        special_instructions=coffee_instructions,
                         decaf=coffee_decaf,
                     )
-                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, notes=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_notes)
+                    logger.info("Multi-item order: added coffee '%s' (qty=%d, milk=%s, special_instructions=%s)", coffee_detail.drink_type, coffee_detail.quantity, coffee_milk, coffee_instructions)
 
                 # If bagel needs configuration, ask bagel questions first
                 # (coffees were still added to cart, we'll configure them after bagel)
@@ -1320,7 +1320,7 @@ class TakingItemsHandler:
                     decaf=parsed.new_coffee_decaf,
                     quantity=parsed.new_coffee_quantity,
                     milk=parsed.new_coffee_milk,
-                    notes=parsed.new_coffee_notes,
+                    special_instructions=parsed.new_coffee_special_instructions,
                 )]
 
             coffee_result = None
@@ -1329,9 +1329,9 @@ class TakingItemsHandler:
                     "PARSED COFFEE: type=%s, size=%s, QUANTITY=%d",
                     coffee_detail.drink_type, coffee_detail.size, coffee_detail.quantity or 1
                 )
-                # Use milk/notes from coffee_detail if available, otherwise fall back to parsed values
+                # Use milk/special_instructions from coffee_detail if available, otherwise fall back to parsed values
                 coffee_milk = coffee_detail.milk if coffee_detail.milk else parsed.new_coffee_milk
-                coffee_notes = coffee_detail.notes if coffee_detail.notes else parsed.new_coffee_notes
+                coffee_instructions = coffee_detail.special_instructions if coffee_detail.special_instructions else parsed.new_coffee_special_instructions
                 coffee_decaf = getattr(coffee_detail, 'decaf', None) or parsed.new_coffee_decaf
                 coffee_result = self.coffee_handler.add_coffee(
                     coffee_detail.drink_type,
@@ -1343,7 +1343,7 @@ class TakingItemsHandler:
                     parsed.new_coffee_flavor_syrup,
                     coffee_detail.quantity or 1,
                     order,
-                    notes=coffee_notes,
+                    special_instructions=coffee_instructions,
                     decaf=coffee_decaf,
                 )
                 items_added.append(coffee_detail.drink_type or "drink")
@@ -1400,7 +1400,7 @@ class TakingItemsHandler:
                     parsed.new_coffee_flavor_syrup,
                     parsed.new_coffee_quantity,
                     order,
-                    notes=parsed.new_coffee_notes,
+                    special_instructions=parsed.new_coffee_special_instructions,
                     decaf=parsed.new_coffee_decaf,
                 )
                 items_added.append(parsed.new_coffee_type or "drink")

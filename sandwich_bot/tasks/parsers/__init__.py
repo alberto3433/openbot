@@ -34,7 +34,8 @@ from .deterministic import (
     # Modifier extraction
     extract_modifiers_from_input,
     extract_coffee_modifiers_from_input,
-    extract_notes_from_input,
+    extract_special_instructions_from_input,
+    extract_notes_from_input,  # Backwards compatibility alias
     # Internal helpers (needed by state_machine)
     _extract_quantity,
     _extract_bagel_type,
@@ -149,7 +150,8 @@ __all__ = [
     # Deterministic parsers - Modifier extraction
     "extract_modifiers_from_input",
     "extract_coffee_modifiers_from_input",
-    "extract_notes_from_input",
+    "extract_special_instructions_from_input",
+    "extract_notes_from_input",  # Backwards compatibility alias
     # Deterministic parsers - Internal helpers
     "_extract_quantity",
     "_extract_bagel_type",

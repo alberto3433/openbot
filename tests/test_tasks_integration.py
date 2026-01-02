@@ -3005,7 +3005,8 @@ class TestCoffeeModifierRemoval:
     def test_without_milk_removes_milk(self):
         """Test that 'without milk' removes milk from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3026,7 +3027,8 @@ class TestCoffeeModifierRemoval:
     def test_without_sugar_removes_sweetener(self):
         """Test that 'without sugar' removes sweetener from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3047,7 +3049,8 @@ class TestCoffeeModifierRemoval:
     def test_without_syrup_removes_syrup(self):
         """Test that 'without syrup' removes syrup from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
         order = OrderTask()

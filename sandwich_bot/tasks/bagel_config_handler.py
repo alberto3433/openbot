@@ -33,7 +33,7 @@ from .parsers.llm_parsers import (
     parse_toasted_choice,
 )
 from .parsers.deterministic import extract_modifiers_from_input, _extract_spread
-from .parsers.constants import MORE_MENU_ITEMS_PATTERNS
+from .parsers.constants import MORE_MENU_ITEMS_PATTERNS, SPREAD_TYPES, SPREADS
 from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
@@ -446,6 +446,14 @@ class BagelConfigHandler:
                                 order=order,
                             )
                     elif parsed.spread:
+                        # Validate LLM response - check if spread_type is actually valid
+                        if parsed.spread_type and parsed.spread_type.lower() not in SPREAD_TYPES:
+                            # LLM hallucinated an invalid spread type - re-ask
+                            logger.info("LLM returned invalid spread_type '%s' (MenuItemTask) - re-asking", parsed.spread_type)
+                            return StateMachineResult(
+                                message="Sorry, I didn't catch that. Would you like butter or cream cheese on the bagel?",
+                                order=order,
+                            )
                         # Build spread description (e.g., "scallion cream cheese")
                         if parsed.spread_type and parsed.spread_type != "plain":
                             item.spread = f"{parsed.spread_type} {parsed.spread}"
@@ -527,6 +535,15 @@ class BagelConfigHandler:
                                 order=order,
                             )
                     elif parsed.spread:
+                        # Validate LLM response - check if spread_type is actually valid
+                        # This prevents hallucinated types like "house cream cheese"
+                        if parsed.spread_type and parsed.spread_type.lower() not in SPREAD_TYPES:
+                            # LLM hallucinated an invalid spread type - re-ask
+                            logger.info("LLM returned invalid spread_type '%s' - re-asking", parsed.spread_type)
+                            return StateMachineResult(
+                                message="Sorry, I didn't catch that. Would you like cream cheese, butter, or nothing on that?",
+                                order=order,
+                            )
                         item.spread = parsed.spread
                         item.spread_type = parsed.spread_type
                         # Capture special instructions like "a little", "extra", etc.

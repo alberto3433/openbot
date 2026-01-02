@@ -242,6 +242,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 menu_item_id=item.get("menu_item_id"),
                 toasted=item.get("toasted"),
                 bagel_choice=item.get("bagel_choice"),
+                cheese_choice=item.get("cheese_choice"),
                 quantity=item.get("quantity", 1),
                 notes=item.get("notes"),
             )
@@ -614,13 +615,16 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             # Speed menu bagel (pre-configured sandwiches)
             toasted = getattr(item, 'toasted', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
+            cheese_choice = getattr(item, 'cheese_choice', None)
             menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
             modifications = getattr(item, 'modifications', []) or []
 
-            # Build display name with bagel choice, toasted status, and modifications (for UI only)
+            # Build display name with cheese, bagel choice, toasted status, and modifications (for UI only)
             display_name = menu_item_name
+            if cheese_choice:
+                display_name = f"{display_name} with {cheese_choice} cheese"
             if bagel_choice:
-                display_name = f"{menu_item_name} on {bagel_choice} bagel"
+                display_name = f"{display_name} on {bagel_choice} bagel"
             if toasted is True:
                 display_name = f"{display_name} toasted"
             elif toasted is False:
@@ -639,6 +643,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "menu_item_id": getattr(item, 'menu_item_id', None),
                 "toasted": toasted,
                 "bagel_choice": bagel_choice,
+                "cheese_choice": cheese_choice,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
@@ -646,6 +651,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "item_config": {
                     "toasted": toasted,
                     "bagel_choice": bagel_choice,
+                    "cheese_choice": cheese_choice,
                     "modifications": modifications,  # Include modifications for database persistence
                 },
             }

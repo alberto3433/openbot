@@ -127,9 +127,9 @@ class CheckoutUtilsHandler:
                     order.phase = OrderPhase.CONFIGURING_ITEM.value
 
                     # Build abbreviated question based on the pending field
-                    if pending_field == "toasted":
+                    if pending_field in ("toasted", "speed_menu_bagel_toasted"):
                         question = f"And the {item_name}?"
-                    elif pending_field in ("bagel_choice", "bagel_type"):
+                    elif pending_field in ("bagel_choice", "bagel_type", "speed_menu_bagel_type"):
                         question = f"And what bagel for the {item_name}?"
                     else:
                         question = f"And the {item_name}?"

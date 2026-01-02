@@ -1710,11 +1710,15 @@ class TakingItemsHandler:
                     toasted=item.toasted,
                 )
             order = result.order
-            summary = f"{item.bagel_type} bagel"
+            # Build summary - handle None bagel_type
+            bagel_desc = f"{item.bagel_type} bagel" if item.bagel_type else "bagel"
+            summary = bagel_desc
             if item.toasted:
                 summary += " toasted"
             if item.quantity > 1:
-                summary = f"{item.quantity} {summary}s"
+                summary = f"{item.quantity} {bagel_desc}s"
+                if item.toasted:
+                    summary += " toasted"
             return order, summary
 
         elif isinstance(item, ParsedCoffeeEntry):
@@ -1728,6 +1732,7 @@ class TakingItemsHandler:
                 None,  # flavor_syrup
                 item.quantity,
                 order,
+                special_instructions=item.special_instructions,
             )
             order = result.order
             summary = item.drink_type
@@ -1827,9 +1832,9 @@ class TakingItemsHandler:
                         items_needing_config.append((item.id, "bagel", "bagel", "bagel_type"))
                 elif isinstance(item, SpeedMenuBagelItemTask):
                     if item.toasted is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "toasted"))
+                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
                     elif item.bagel_choice is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "bagel_choice"))
+                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
 
         logger.info("Multi-item order: %d items need config: %s",
                     len(items_needing_config),

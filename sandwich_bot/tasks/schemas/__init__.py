@@ -7,6 +7,9 @@ state machine for parsing user input and representing order phases.
 
 from .phases import OrderPhase
 from .parser_responses import (
+    # Helper types for coffee modifiers
+    SweetenerItem,
+    SyrupItem,
     # ParsedItem types for multi-item handling
     ParsedMenuItemEntry,
     ParsedBagelEntry,
@@ -46,6 +49,9 @@ from .result import StateMachineResult
 __all__ = [
     # Phases
     "OrderPhase",
+    # Helper types for coffee modifiers
+    "SweetenerItem",
+    "SyrupItem",
     # ParsedItem types for multi-item handling
     "ParsedMenuItemEntry",
     "ParsedBagelEntry",

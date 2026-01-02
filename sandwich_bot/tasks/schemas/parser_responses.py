@@ -11,6 +11,22 @@ from pydantic import BaseModel, Field
 
 
 # =============================================================================
+# Helper Types for Coffee Modifiers
+# =============================================================================
+
+class SweetenerItem(BaseModel):
+    """A sweetener with quantity for coffee orders."""
+    type: str  # "sugar", "splenda", "stevia", "equal", etc.
+    quantity: int = 1
+
+
+class SyrupItem(BaseModel):
+    """A flavor syrup with quantity for coffee orders."""
+    type: str  # "vanilla", "caramel", "hazelnut", etc.
+    quantity: int = 1
+
+
+# =============================================================================
 # ParsedItem Types for Multi-Item Order Handling
 # =============================================================================
 
@@ -25,23 +41,63 @@ class ParsedMenuItemEntry(BaseModel):
 
 
 class ParsedBagelEntry(BaseModel):
-    """A parsed bagel from multi-item detection."""
+    """A parsed bagel from multi-item detection.
+
+    This is the canonical representation for bagel orders, used by the
+    parsed_items system for unified multi-item order handling.
+    """
     type: Literal["bagel"] = "bagel"
-    bagel_type: str
+    bagel_type: str | None = None  # May be None if user just said "bagel" without type
     quantity: int = 1
     toasted: bool | None = None
+
+    # Spread configuration
+    spread: str | None = None  # "cream cheese", "butter", etc.
+    spread_type: str | None = None  # "scallion", "veggie", "plain", etc.
+
+    # Sandwich toppings
+    proteins: list[str] = Field(default_factory=list)  # "bacon", "egg", "ham", "lox", etc.
+    cheeses: list[str] = Field(default_factory=list)  # "american", "swiss", "cheddar", etc.
+    toppings: list[str] = Field(default_factory=list)  # "tomato", "onion", "lettuce", etc.
+
+    # Special instructions
+    special_instructions: str | None = None
+
+    # Flag for when user says "cheese" without specifying type
+    needs_cheese_clarification: bool = False
+
+    # Legacy modifiers list (for backwards compatibility during migration)
     modifiers: list[str] = Field(default_factory=list)
 
 
 class ParsedCoffeeEntry(BaseModel):
-    """A parsed coffee from multi-item detection."""
+    """A parsed coffee from multi-item detection.
+
+    This is the canonical representation for coffee orders, used by the
+    parsed_items system for unified multi-item order handling.
+    """
     type: Literal["coffee"] = "coffee"
     drink_type: str
     size: str | None = None
-    temperature: str | None = None
+    temperature: str | None = None  # "iced" or "hot"
     milk: str | None = None
-    modifiers: list[str] = Field(default_factory=list)
     quantity: int = 1
+    special_instructions: str | None = None
+
+    # Decaf preference
+    decaf: bool | None = None
+
+    # Sweeteners - supports multiple (e.g., "2 sugars and 1 splenda")
+    sweeteners: list[SweetenerItem] = Field(default_factory=list)
+
+    # Flavor syrups - supports multiple (e.g., "vanilla and caramel")
+    syrups: list[SyrupItem] = Field(default_factory=list)
+
+    # Flag for when user says "syrup" without specifying flavor
+    wants_syrup: bool = False
+
+    # Legacy modifiers list (for backwards compatibility during migration)
+    modifiers: list[str] = Field(default_factory=list)
 
 
 class ParsedSpeedMenuBagelEntry(BaseModel):

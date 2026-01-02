@@ -2217,6 +2217,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 temperature="iced" if parsed.new_coffee_iced else ("hot" if parsed.new_coffee_iced is False else None),
                 milk=parsed.new_coffee_milk,
                 quantity=parsed.new_coffee_quantity or 1,
+                special_instructions=parsed.new_coffee_special_instructions,
             ))
             logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
@@ -2229,19 +2230,18 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             bagel_toasted = parsed.new_bagel_toasted
             bagel_spread = parsed.new_bagel_spread
             bagel_spread_type = parsed.new_bagel_spread_type
-            # Add to parsed_items for generic handling
-            if bagel_type:
-                modifiers = []
-                if bagel_spread:
-                    modifiers.append(bagel_spread)
-                if bagel_spread_type:
-                    modifiers.append(bagel_spread_type)
-                parsed_items.append(ParsedBagelEntry(
-                    bagel_type=bagel_type,
-                    quantity=bagel_qty,
-                    toasted=bagel_toasted,
-                    modifiers=modifiers,
-                ))
+            # Add to parsed_items for generic handling (always add, even without bagel_type)
+            modifiers = []
+            if bagel_spread:
+                modifiers.append(bagel_spread)
+            if bagel_spread_type:
+                modifiers.append(bagel_spread_type)
+            parsed_items.append(ParsedBagelEntry(
+                bagel_type=bagel_type,  # May be None - will need config
+                quantity=bagel_qty,
+                toasted=bagel_toasted,
+                modifiers=modifiers,
+            ))
             logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s)", bagel_type, bagel_qty, bagel_toasted)
 
         if parsed.new_side_item:

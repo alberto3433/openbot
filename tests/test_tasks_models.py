@@ -267,11 +267,12 @@ class TestCoffeeItemTask:
         assert "vanilla" in summary
         assert "2 extra shots" in summary
 
-    def test_coffee_fields_with_size_default(self):
-        """Test that size has a default value."""
-        # Size defaults to "medium" in config
-        assert DEFAULT_COFFEE_FIELDS["size"].default == "medium"
-        assert DEFAULT_COFFEE_FIELDS["size"].ask_if_empty is False
+    def test_coffee_fields_with_size_config(self):
+        """Test that size field is configured to always ask."""
+        # Size must be explicitly asked (no default, always ask)
+        assert DEFAULT_COFFEE_FIELDS["size"].default is None
+        assert DEFAULT_COFFEE_FIELDS["size"].ask_if_empty is True
+        assert "small or large" in DEFAULT_COFFEE_FIELDS["size"].question.lower()
 
 
 # =============================================================================
@@ -538,8 +539,9 @@ class TestFieldConfigHelpers:
 
     def test_get_default_value(self):
         """Test getting default values."""
+        # Coffee size no longer has a default - must be asked explicitly
         size_default = get_default_value("coffee", "size")
-        assert size_default == "medium"
+        assert size_default is None
 
         # bagel_type now has a default of "plain bagel"
         bagel_type_default = get_default_value("bagel", "bagel_type")
@@ -556,5 +558,5 @@ class TestFieldConfigHelpers:
         # Toasted with value should not be asked
         assert should_ask_field("bagel", "toasted", True) is False
 
-        # Size with no value should not be asked (has default)
-        assert should_ask_field("coffee", "size", None) is False
+        # Size with no value SHOULD be asked (no default, ask_if_empty=True)
+        assert should_ask_field("coffee", "size", None) is True

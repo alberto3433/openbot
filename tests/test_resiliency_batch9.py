@@ -25,18 +25,20 @@ class TestAffirmativeNegativeResponses:
         order.phase = OrderPhase.TAKING_ITEMS.value
 
         bagel = BagelItemTask(bagel_type="plain", toasted=None)
+        bagel.mark_in_progress()  # Mark as current item
         order.items.add_item(bagel)
-        order.current_item_id = bagel.id
+        # Set up pending state for toasted question
+        order.pending_item_ids = [bagel.id]
+        order.pending_field = "toasted"
 
         sm = OrderStateMachine()
         result = sm.process("yes", order)
 
         assert result.message is not None
 
-        # Should set toasted or acknowledge
+        # Should set toasted to True
         bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
-        if bagels and bagels[0].toasted is not None:
-            assert bagels[0].toasted is True, "Should be toasted"
+        assert bagels[0].toasted is True, "Should be toasted"
 
     def test_yeah_sure_response(self):
         """
@@ -51,15 +53,19 @@ class TestAffirmativeNegativeResponses:
         order.phase = OrderPhase.TAKING_ITEMS.value
 
         bagel = BagelItemTask(bagel_type="everything", toasted=None)
+        bagel.mark_in_progress()  # Mark as current item
         order.items.add_item(bagel)
-        order.current_item_id = bagel.id
+        # Set up pending state for toasted question
+        order.pending_item_ids = [bagel.id]
+        order.pending_field = "toasted"
 
         sm = OrderStateMachine()
         result = sm.process("yeah sure", order)
 
         assert result.message is not None
-        # Should not error or add random items
-        assert len(result.order.items.items) >= 1
+        # Should set toasted to True and continue
+        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        assert bagels[0].toasted is True, "Should be toasted"
 
     def test_no_response_to_anything_else(self):
         """

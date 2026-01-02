@@ -444,13 +444,45 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
         user_input: The raw user input string
 
     Returns:
-        ExtractedCoffeeModifiers with sweetener and flavor_syrup if found
+        ExtractedCoffeeModifiers with sweetener, flavor_syrup, and milk if found
     """
     result = ExtractedCoffeeModifiers()
     input_lower = user_input.lower()
 
     sweeteners = ["splenda", "sugar", "stevia", "equal", "sweet n low", "sweet'n low", "honey"]
     syrups = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice", "cinnamon", "lavender", "almond"]
+    milk_types = [
+        "oat", "almond", "coconut", "soy", "whole", "skim", "nonfat",
+        "2%", "two percent", "half and half", "half & half", "cream"
+    ]
+
+    # Extract milk type
+    for milk in milk_types:
+        # Match patterns like "oat milk", "with oat", "almond milk"
+        # For "almond", skip if it's followed by "syrup" (almond syrup is a flavor, not milk)
+        if milk == "almond":
+            if re.search(r'\balmond\s+syrup\b', input_lower):
+                continue  # Skip, this is almond syrup not almond milk
+        if re.search(rf'\b{re.escape(milk)}(?:\s+milk)?\b', input_lower):
+            # Normalize milk type
+            if milk in ("2%", "two percent"):
+                result.milk = "2%"
+            elif milk in ("half and half", "half & half"):
+                result.milk = "half and half"
+            else:
+                result.milk = milk
+            logger.debug(f"Extracted coffee milk: {result.milk}")
+            break
+
+    # Check for "black" (no milk)
+    if not result.milk and re.search(r'\bblack\b', input_lower):
+        result.milk = "none"
+        logger.debug("Extracted coffee milk: none (black)")
+
+    # Check for just "milk" without a type - default to whole milk
+    if not result.milk and re.search(r'\bmilk\b', input_lower):
+        result.milk = "whole"
+        logger.debug("Extracted coffee milk: whole (default from 'milk')")
 
     # Extract sweetener with quantity
     for sweetener in sweeteners:
@@ -476,7 +508,13 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
 
     # Extract flavor syrup
     for syrup in syrups:
-        if re.search(rf'\b{syrup}\b', input_lower):
+        # For "almond", require "almond syrup" to avoid matching "almond milk"
+        if syrup == "almond":
+            if re.search(r'\balmond\s+syrup\b', input_lower):
+                result.flavor_syrup = syrup
+                logger.debug(f"Extracted coffee flavor syrup: {syrup}")
+                break
+        elif re.search(rf'\b{syrup}\b', input_lower):
             result.flavor_syrup = syrup
             logger.debug(f"Extracted coffee flavor syrup: {syrup}")
             break

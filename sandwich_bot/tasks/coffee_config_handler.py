@@ -8,6 +8,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import Callable, TYPE_CHECKING
 
 from .models import CoffeeItemTask, OrderTask, ItemTask, TaskStatus
@@ -296,6 +297,17 @@ class CoffeeConfigHandler:
                         order=order,
                     )
 
+            # Ask about milk/sugar/syrup if none specified yet (optional question)
+            if (coffee.milk is None and coffee.sweetener is None
+                    and coffee.flavor_syrup is None):
+                order.phase = OrderPhase.CONFIGURING_ITEM
+                order.pending_item_id = coffee.id
+                order.pending_field = "coffee_modifiers"
+                return StateMachineResult(
+                    message="Would you like any milk, sugar or syrup?",
+                    order=order,
+                )
+
             # This coffee is complete - recalculate price with modifiers
             if self.pricing:
                 self.pricing.recalculate_coffee_price(coffee)
@@ -331,9 +343,12 @@ class CoffeeConfigHandler:
 
         item.size = parsed.size
 
-        # Also extract any sweetener/syrup mentioned with the size response
-        # e.g., "small with two sugars" or "large with vanilla"
+        # Also extract any milk/sweetener/syrup mentioned with the size response
+        # e.g., "small with two sugars" or "large with oat milk"
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
+        if coffee_mods.milk and not item.milk:
+            item.milk = coffee_mods.milk
+            logger.info(f"Extracted milk from size response: {coffee_mods.milk}")
         if coffee_mods.sweetener and not item.sweetener:
             item.sweetener = coffee_mods.sweetener
             item.sweetener_quantity = coffee_mods.sweetener_quantity
@@ -347,12 +362,10 @@ class CoffeeConfigHandler:
         if self.pricing:
             self.pricing.recalculate_coffee_price(item)
 
-        # If hot/iced was already specified (e.g., "hot latte"), skip the question
+        # If hot/iced was already specified (e.g., "hot latte"), check for modifiers question
         if item.iced is not None:
-            # Coffee is complete
-            item.mark_complete()
             order.clear_pending()
-            # Check for more incomplete coffees before moving on
+            # Check for modifiers question or move to next incomplete coffee
             return self.configure_next_incomplete_coffee(order)
 
         # Move to hot/iced question with ordinal if multiple items of same drink type
@@ -409,9 +422,12 @@ class CoffeeConfigHandler:
 
         item.iced = iced
 
-        # Also extract any sweetener/syrup mentioned with the hot/iced response
-        # e.g., "hot with 2 splenda" or "iced with vanilla"
+        # Also extract any milk/sweetener/syrup mentioned with the hot/iced response
+        # e.g., "hot with 2 splenda" or "iced with oat milk"
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
+        if coffee_mods.milk and not item.milk:
+            item.milk = coffee_mods.milk
+            logger.info(f"Extracted milk from style response: {coffee_mods.milk}")
         if coffee_mods.sweetener and not item.sweetener:
             item.sweetener = coffee_mods.sweetener
             item.sweetener_quantity = coffee_mods.sweetener_quantity
@@ -419,6 +435,58 @@ class CoffeeConfigHandler:
         if coffee_mods.flavor_syrup and not item.flavor_syrup:
             item.flavor_syrup = coffee_mods.flavor_syrup
             logger.info(f"Extracted syrup from style response: {coffee_mods.flavor_syrup}")
+
+        # Recalculate price with iced upcharge and any modifiers extracted so far
+        if self.pricing:
+            self.pricing.recalculate_coffee_price(item)
+
+        order.clear_pending()
+
+        # Check for more questions (modifiers) or move to next incomplete coffee
+        return self.configure_next_incomplete_coffee(order)
+
+    def handle_coffee_modifiers(
+        self,
+        user_input: str,
+        item: CoffeeItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle milk/sugar/syrup preferences for coffee."""
+        if self._check_redirect:
+            redirect = self._check_redirect(
+                user_input, item, order, "Would you like any milk, sugar or syrup?"
+            )
+            if redirect:
+                return redirect
+
+        user_lower = user_input.lower().strip()
+
+        # Check for negative responses - user doesn't want any modifiers
+        negative_patterns = [
+            r'\bno\b', r'\bnope\b', r'\bnothing\b', r'\bnone\b',
+            r"\bthat'?s? it\b", r"\bi'?m good\b", r"\bi'?m fine\b",
+            r'\bjust that\b', r'\bno thanks\b', r'\bno thank you\b',
+        ]
+        is_negative = any(re.search(p, user_lower) for p in negative_patterns)
+
+        # Extract any modifiers mentioned
+        coffee_mods = extract_coffee_modifiers_from_input(user_input)
+
+        # If negative response and no modifiers extracted, skip
+        if is_negative and not (coffee_mods.milk or coffee_mods.sweetener or coffee_mods.flavor_syrup):
+            logger.info("User declined coffee modifiers")
+        else:
+            # Apply any extracted modifiers
+            if coffee_mods.milk and not item.milk:
+                item.milk = coffee_mods.milk
+                logger.info(f"Set coffee milk: {coffee_mods.milk}")
+            if coffee_mods.sweetener and not item.sweetener:
+                item.sweetener = coffee_mods.sweetener
+                item.sweetener_quantity = coffee_mods.sweetener_quantity
+                logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
+            if coffee_mods.flavor_syrup and not item.flavor_syrup:
+                item.flavor_syrup = coffee_mods.flavor_syrup
+                logger.info(f"Set coffee syrup: {coffee_mods.flavor_syrup}")
 
         # Coffee is now complete - recalculate price with modifiers
         if self.pricing:

@@ -54,6 +54,7 @@ class ExtractedCoffeeModifiers:
     sweetener: str | None = None
     sweetener_quantity: int = 1
     flavor_syrup: str | None = None
+    milk: str | None = None  # Milk type: whole, skim, oat, almond, etc.
     notes: list[str] = None  # Free-form notes for qualifiers like "light", "extra"
 
     def __post_init__(self):

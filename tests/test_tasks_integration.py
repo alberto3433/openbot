@@ -2740,7 +2740,8 @@ class TestCoffeeStyle:
         order = OrderTask()
         order.pending_field = "coffee_style"
 
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        # Pre-fill a modifier so modifiers question is skipped
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", milk="whole")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2759,7 +2760,8 @@ class TestCoffeeStyle:
         order = OrderTask()
         order.pending_field = "coffee_style"
 
-        coffee = CoffeeItemTask(drink_type="latte", size="large")
+        # Pre-fill a modifier so modifiers question is skipped
+        coffee = CoffeeItemTask(drink_type="latte", size="large", sweetener="sugar")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2795,7 +2797,8 @@ class TestCoffeeStyle:
         order = OrderTask()
         order.pending_field = "coffee_style"
 
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        # Pre-fill a modifier so modifiers question is skipped
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrup="vanilla")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
@@ -2844,7 +2847,7 @@ class TestCoffeeStyle:
         assert coffee.flavor_syrup == "vanilla"
 
     def test_completes_coffee_and_clears_pending(self):
-        """Test that coffee is marked complete and pending is cleared."""
+        """Test that coffee is marked complete and pending is cleared after full flow."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
 
@@ -2852,7 +2855,8 @@ class TestCoffeeStyle:
         order = OrderTask()
         order.pending_field = "coffee_style"
 
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        # Pre-fill a modifier so modifiers question is skipped and coffee completes
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", milk="oat")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2862,6 +2866,204 @@ class TestCoffeeStyle:
         assert coffee.status == TaskStatus.COMPLETE
         assert order.pending_item_id is None
         assert order.pending_field is None
+
+
+# =============================================================================
+# Coffee Modifiers Handler Tests
+# =============================================================================
+
+class TestCoffeeModifiers:
+    """Tests for coffee modifiers question (milk, sugar, syrup)."""
+
+    def test_modifiers_question_asked_when_no_modifiers(self):
+        """Test that modifiers question is asked when no modifiers are set."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        # Coffee with no modifiers set
+        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_style("hot", coffee, order)
+
+        # Should ask modifiers question instead of completing
+        assert coffee.status == TaskStatus.IN_PROGRESS
+        assert order.pending_field == "coffee_modifiers"
+        assert "milk" in result.message.lower() or "sugar" in result.message.lower()
+
+    def test_modifiers_question_skipped_when_milk_set(self):
+        """Test that modifiers question is skipped when milk is already set."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_style"
+
+        # Coffee with milk already set
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", milk="oat")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_style("hot", coffee, order)
+
+        # Should complete without asking modifiers question
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_handle_modifiers_with_milk(self):
+        """Test handling modifiers response with milk."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_modifiers"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=False)
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_modifiers("oat milk please", coffee, order)
+
+        assert coffee.milk == "oat"
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_handle_modifiers_with_sugar(self):
+        """Test handling modifiers response with sugar."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_modifiers"
+
+        coffee = CoffeeItemTask(drink_type="coffee", size="small", iced=False)
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_modifiers("2 sugars", coffee, order)
+
+        assert coffee.sweetener == "sugar"
+        assert coffee.sweetener_quantity == 2
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_handle_modifiers_no_thanks(self):
+        """Test handling modifiers response with 'no thanks'."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_modifiers"
+
+        coffee = CoffeeItemTask(drink_type="coffee", size="large", iced=True)
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_modifiers("no thanks", coffee, order)
+
+        # Should complete without adding modifiers
+        assert coffee.milk is None
+        assert coffee.sweetener is None
+        assert coffee.status == TaskStatus.COMPLETE
+
+    def test_handle_modifiers_with_multiple(self):
+        """Test handling modifiers response with milk and sugar."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.pending_field = "coffee_modifiers"
+
+        coffee = CoffeeItemTask(drink_type="latte", size="large", iced=True)
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.coffee_handler.handle_coffee_modifiers("almond milk and 2 sugars", coffee, order)
+
+        assert coffee.milk == "almond"
+        assert coffee.sweetener == "sugar"
+        assert coffee.sweetener_quantity == 2
+        assert coffee.status == TaskStatus.COMPLETE
+
+
+class TestCoffeeModifierRemoval:
+    """Tests for removing coffee modifiers with 'without X' patterns."""
+
+    def test_without_milk_removes_milk(self):
+        """Test that 'without milk' removes milk from coffee."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Coffee with milk
+        coffee = CoffeeItemTask(drink_type="latte", size="small", iced=True, milk="whole")
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        result = sm.process("make it without milk", order)
+
+        # Milk should be removed but coffee should still exist
+        assert len(order.items.get_active_items()) == 1
+        assert coffee.milk is None
+        assert "removed" in result.message.lower() or "changed" in result.message.lower()
+
+    def test_without_sugar_removes_sweetener(self):
+        """Test that 'without sugar' removes sweetener from coffee."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Coffee with sugar
+        coffee = CoffeeItemTask(drink_type="coffee", size="large", iced=False, sweetener="sugar", sweetener_quantity=2)
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        result = sm.process("make it without sugar", order)
+
+        # Sweetener should be removed but coffee should still exist
+        assert len(order.items.get_active_items()) == 1
+        assert coffee.sweetener is None
+        assert "removed" in result.message.lower() or "changed" in result.message.lower()
+
+    def test_without_syrup_removes_syrup(self):
+        """Test that 'without syrup' removes syrup from coffee."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus, OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Coffee with syrup
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True, flavor_syrup="vanilla")
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        result = sm.process("make it without syrup", order)
+
+        # Syrup should be removed but coffee should still exist
+        assert len(order.items.get_active_items()) == 1
+        assert coffee.flavor_syrup is None
+        assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
 
 # =============================================================================

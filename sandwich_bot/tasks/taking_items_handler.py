@@ -529,6 +529,15 @@ class TakingItemsHandler:
                         logger.info("Replacement: changed coffee milk from '%s' to '%s'", old_milk, new_milk)
                         made_change = True
 
+                    # Check for milk removal: "without milk", "remove the milk"
+                    if (("without milk" in input_lower or "remove milk" in input_lower or
+                         "remove the milk" in input_lower) and last_item.milk):
+                        old_milk = last_item.milk
+                        last_item.milk = None
+                        last_item.milk_upcharge = 0.0
+                        logger.info("Replacement: removed coffee milk '%s'", old_milk)
+                        made_change = True
+
                     # Check for flavor syrup changes
                     syrup_options = [
                         "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
@@ -552,6 +561,17 @@ class TakingItemsHandler:
                         old_syrup = last_item.flavor_syrup
                         last_item.flavor_syrup = None
                         logger.info("Replacement: removed coffee syrup '%s'", old_syrup)
+                        made_change = True
+
+                    # Check for sweetener removal: "without sugar", "remove the sugar"
+                    if (("without sugar" in input_lower or "remove sugar" in input_lower or
+                         "remove the sugar" in input_lower or "no sugar" in input_lower or
+                         "without sweetener" in input_lower or "remove sweetener" in input_lower or
+                         "no sweetener" in input_lower) and last_item.sweetener):
+                        old_sweetener = last_item.sweetener
+                        last_item.sweetener = None
+                        last_item.sweetener_quantity = 0
+                        logger.info("Replacement: removed coffee sweetener '%s'", old_sweetener)
                         made_change = True
 
                     # If any changes were made, recalculate price and return
@@ -629,6 +649,59 @@ class TakingItemsHandler:
                     if modifier_removed:
                         # Recalculate price
                         self.pricing.recalculate_bagel_price(last_item)
+                        updated_summary = last_item.get_summary()
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {removed_modifier_name}. Your order is now {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
+            # Check if this is a modifier removal on a coffee item
+            # Handle "make it without milk", "no sugar", "remove the syrup", etc.
+            coffee_removable_modifiers = {
+                # Milk
+                "milk", "whole milk", "oat milk", "almond milk", "coconut milk",
+                "soy milk", "skim milk", "2% milk", "cream", "half and half",
+                # Sweeteners
+                "sugar", "sweetener", "splenda", "stevia", "equal", "honey",
+                # Syrups
+                "syrup", "vanilla", "vanilla syrup", "caramel", "caramel syrup",
+                "hazelnut", "hazelnut syrup", "mocha", "mocha syrup",
+            }
+
+            if active_items and cancel_item_desc in coffee_removable_modifiers:
+                last_item = active_items[-1]
+                if isinstance(last_item, CoffeeItemTask):
+                    modifier_removed = False
+                    removed_modifier_name = cancel_item_desc
+
+                    # Check milk
+                    if last_item.milk and (cancel_item_desc == "milk" or
+                            "milk" in cancel_item_desc or cancel_item_desc == last_item.milk):
+                        last_item.milk = None
+                        last_item.milk_upcharge = 0.0
+                        modifier_removed = True
+                        logger.info("Modifier removal: removed milk '%s' from coffee", cancel_item_desc)
+
+                    # Check sweetener
+                    if last_item.sweetener and (cancel_item_desc in ("sugar", "sweetener") or
+                            cancel_item_desc == last_item.sweetener):
+                        last_item.sweetener = None
+                        last_item.sweetener_quantity = 1
+                        modifier_removed = True
+                        logger.info("Modifier removal: removed sweetener '%s' from coffee", cancel_item_desc)
+
+                    # Check flavor syrup
+                    if last_item.flavor_syrup and (cancel_item_desc == "syrup" or
+                            cancel_item_desc == last_item.flavor_syrup or
+                            cancel_item_desc == f"{last_item.flavor_syrup} syrup"):
+                        last_item.flavor_syrup = None
+                        last_item.syrup_upcharge = 0.0
+                        modifier_removed = True
+                        logger.info("Modifier removal: removed syrup '%s' from coffee", cancel_item_desc)
+
+                    if modifier_removed:
+                        # Recalculate price
+                        self.pricing.recalculate_coffee_price(last_item)
                         updated_summary = last_item.get_summary()
                         return StateMachineResult(
                             message=f"OK, I've removed the {removed_modifier_name}. Your order is now {updated_summary}. Anything else?",

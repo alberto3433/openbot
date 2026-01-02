@@ -1694,12 +1694,21 @@ class TakingItemsHandler:
             return order, summary
 
         elif isinstance(item, ParsedBagelEntry):
-            result = self.item_adder_handler.add_bagel(
-                order,
-                bagel_type=item.bagel_type,
-                quantity=item.quantity,
-                toasted=item.toasted,
-            )
+            if item.quantity > 1:
+                result = self.item_adder_handler.add_bagels(
+                    quantity=item.quantity,
+                    bagel_type=item.bagel_type,
+                    toasted=item.toasted,
+                    spread=None,
+                    spread_type=None,
+                    order=order,
+                )
+            else:
+                result = self.item_adder_handler.add_bagel(
+                    bagel_type=item.bagel_type,
+                    order=order,
+                    toasted=item.toasted,
+                )
             order = result.order
             summary = f"{item.bagel_type} bagel"
             if item.toasted:
@@ -1755,6 +1764,14 @@ class TakingItemsHandler:
         """
         Process all items in a multi-item order using parsed_items list.
 
+        Flow:
+        1. Add all items to the order
+        2. Find all items needing configuration (toasted questions, etc.)
+        3. Queue items 2+ for later config, each with their display name
+        4. Ask first config question: "Got it! Would you like the [Item1] toasted?"
+        5. Follow-up questions use abbreviated form: "And the [Item2]?"
+        6. Final summary after all configured: "Great, [summary]. Anything else?"
+
         Returns StateMachineResult if items were processed, None if parsed_items is empty.
         """
         if not parsed.parsed_items:
@@ -1762,48 +1779,97 @@ class TakingItemsHandler:
 
         logger.info("Processing %d items via parsed_items list", len(parsed.parsed_items))
 
+        # Track added items with their IDs and names for config queueing
+        added_items: list[tuple[str, str, str]] = []  # (item_id, item_name, item_type)
         summaries = []
-        for item in parsed.parsed_items:
-            order, summary = self._add_parsed_item(item, order)
+
+        for parsed_item in parsed.parsed_items:
+            order, summary = self._add_parsed_item(parsed_item, order)
             if summary:
                 summaries.append(summary)
-                logger.info("Added item via parsed_items: %s", summary)
+                # Find the item that was just added (last item with matching type)
+                last_item = order.items.items[-1] if order.items.items else None
+                if last_item:
+                    # Determine item type for config handler
+                    if isinstance(parsed_item, ParsedSpeedMenuBagelEntry):
+                        item_type = "speed_menu_bagel"
+                        display_name = parsed_item.speed_menu_name
+                    elif isinstance(parsed_item, ParsedMenuItemEntry):
+                        item_type = "menu_item"
+                        display_name = parsed_item.menu_item_name
+                    elif isinstance(parsed_item, ParsedBagelEntry):
+                        item_type = "bagel"
+                        display_name = f"{parsed_item.bagel_type} bagel" if parsed_item.bagel_type else "bagel"
+                    elif isinstance(parsed_item, ParsedCoffeeEntry):
+                        item_type = "coffee"
+                        display_name = parsed_item.drink_type
+                    else:
+                        item_type = "side"
+                        display_name = summary
+                    added_items.append((last_item.id, display_name, item_type))
+                logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
 
         if not summaries:
             return None
 
-        # Build summary prefix
-        if len(summaries) == 1:
-            summary_prefix = f"Got it, {summaries[0]}."
-        elif len(summaries) == 2:
-            summary_prefix = f"Got it, {summaries[0]} and {summaries[1]}."
-        else:
-            items_str = ", ".join(summaries[:-1]) + f", and {summaries[-1]}"
-            summary_prefix = f"Got it, {items_str}."
+        # Find all items that need configuration (toasted question, bagel type, etc.)
+        items_needing_config: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
+        for item in order.items.items:
+            if item.status == TaskStatus.IN_PROGRESS:
+                if isinstance(item, MenuItemTask):
+                    # Menu items may need toasted question (spread sandwiches)
+                    if item.toasted is None:
+                        items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                elif isinstance(item, BagelItemTask):
+                    if item.toasted is None:
+                        items_needing_config.append((item.id, f"{item.bagel_type or 'plain'} bagel", "bagel", "toasted"))
+                    elif item.bagel_type is None:
+                        items_needing_config.append((item.id, "bagel", "bagel", "bagel_type"))
+                elif isinstance(item, SpeedMenuBagelItemTask):
+                    if item.toasted is None:
+                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "toasted"))
+                    elif item.bagel_choice is None:
+                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "bagel_choice"))
 
-        # Check if any item needs configuration (e.g., toasted question for spread sandwiches)
-        # Don't rely on phase - it may have been reset by a later item that didn't need config.
-        # Instead, always try to get the next configuration question.
-        config_result = self.item_adder_handler._configure_next_incomplete_bagel(order)
-        logger.info(
-            "Multi-item order check: phase=%s, config_result.message=%s",
-            order.phase, config_result.message if config_result else None
-        )
-        if config_result and config_result.message:
-            # Find which item is being configured (the one that's IN_PROGRESS)
-            config_item_name = None
-            for item in order.items.items:
-                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                    config_item_name = item.menu_item_name
-                    break
+        logger.info("Multi-item order: %d items need config: %s",
+                    len(items_needing_config),
+                    [(n, f) for _, n, _, f in items_needing_config])
 
-            # If we have multiple items and found the config item, clarify which one
-            if len(summaries) > 1 and config_item_name:
-                response = f"{summary_prefix} For the {config_item_name}, {config_result.message.lower()}"
+        # If no items need configuration, return simple confirmation
+        if not items_needing_config:
+            if len(summaries) == 1:
+                response = f"Got it, {summaries[0]}. Anything else?"
+            elif len(summaries) == 2:
+                response = f"Got it, {summaries[0]} and {summaries[1]}. Anything else?"
             else:
-                response = f"{summary_prefix} {config_result.message}"
-            return StateMachineResult(message=response, order=config_result.order)
+                items_str = ", ".join(summaries[:-1]) + f", and {summaries[-1]}"
+                response = f"Got it, {items_str}. Anything else?"
+            return StateMachineResult(message=response, order=order)
 
-        # No configuration needed - ask for more items
-        response = f"{summary_prefix} Anything else?"
-        return StateMachineResult(message=response, order=order)
+        # Queue items 2+ for later configuration with their names
+        # Store the names of all items that need config for final summary
+        order.multi_item_config_names = [name for _, name, _, _ in items_needing_config]
+
+        for item_id, item_name, item_type, pending_field in items_needing_config[1:]:
+            order.queue_item_for_config(item_id, item_type, item_name=item_name, pending_field=pending_field)
+            logger.info("Queued %s (%s) for %s config after first item", item_name, item_id[:8], pending_field)
+
+        # Ask about the first item that needs config
+        first_item_id, first_item_name, first_item_type, first_field = items_needing_config[0]
+
+        # Build the question for the first item
+        if first_field == "toasted":
+            question = f"Got it! Would you like the {first_item_name} toasted?"
+        elif first_field == "bagel_choice":
+            question = f"Got it! What kind of bagel would you like for the {first_item_name}?"
+        elif first_field == "bagel_type":
+            question = f"Got it! What kind of bagel would you like?"
+        else:
+            question = f"Got it! {first_item_name} - any preferences?"
+
+        # Set up the pending state for handling the answer
+        order.pending_item_id = first_item_id
+        order.pending_field = first_field
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        return StateMachineResult(message=question, order=order)

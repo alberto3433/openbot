@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, BagelItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -94,7 +94,10 @@ class CheckoutUtilsHandler:
             if next_config:
                 item_id = next_config.get("item_id")
                 item_type = next_config.get("item_type")
-                logger.info("Processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
+                item_name = next_config.get("item_name")
+                pending_field = next_config.get("pending_field")
+                logger.info("Processing queued config item: id=%s, type=%s, name=%s, field=%s",
+                            item_id[:8] if item_id else None, item_type, item_name, pending_field)
 
                 # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
                 if item_type == "coffee_disambiguation" and order.pending_drink_options:
@@ -116,7 +119,24 @@ class CheckoutUtilsHandler:
                         order=order,
                     )
 
-                # Find the item by ID and start configuration based on type
+                # If we have item_name and pending_field from multi-item processing,
+                # use abbreviated question format: "And the [ItemName]?"
+                if item_name and pending_field:
+                    order.pending_item_id = item_id
+                    order.pending_field = pending_field
+                    order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                    # Build abbreviated question based on the pending field
+                    if pending_field == "toasted":
+                        question = f"And the {item_name}?"
+                    elif pending_field in ("bagel_choice", "bagel_type"):
+                        question = f"And what bagel for the {item_name}?"
+                    else:
+                        question = f"And the {item_name}?"
+
+                    return StateMachineResult(message=question, order=order)
+
+                # Fall back to full config handlers for legacy queued items without names
                 for item in order.items.items:
                     if item.id == item_id:
                         if item_type == "bagel" and isinstance(item, BagelItemTask):
@@ -131,6 +151,34 @@ class CheckoutUtilsHandler:
                             # Start coffee configuration
                             if self._configure_next_incomplete_coffee:
                                 return self._configure_next_incomplete_coffee(order)
+                        elif item_type == "menu_item" and isinstance(item, MenuItemTask):
+                            # Start menu item configuration (for toasted question)
+                            if self._configure_next_incomplete_bagel:
+                                return self._configure_next_incomplete_bagel(order)
+
+        # Check if we just finished configuring a multi-item order
+        # If so, give a summary like "Great, both toasted. Anything else?"
+        if order.multi_item_config_names:
+            config_names = order.multi_item_config_names
+            order.multi_item_config_names = []  # Clear for next time
+
+            # Build summary based on the number of items configured
+            num_items = len(config_names)
+            if num_items == 2:
+                summary = f"Great, {config_names[0]} and {config_names[1]} - both added."
+            elif num_items == 3:
+                summary = f"Great, {config_names[0]}, {config_names[1]}, and {config_names[2]} - all added."
+            elif num_items > 3:
+                items_str = ", ".join(config_names[:-1]) + f", and {config_names[-1]}"
+                summary = f"Great, {items_str} - all added."
+            else:
+                summary = f"Great, {config_names[0]} added."
+
+            order.phase = OrderPhase.TAKING_ITEMS.value
+            return StateMachineResult(
+                message=f"{summary} Anything else?",
+                order=order,
+            )
 
         # Ask if they want anything else
         items = order.items.get_active_items()

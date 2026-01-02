@@ -804,6 +804,10 @@ class OrderTask(BaseTask):
     # 0 = first page (default), 1 = second page, etc.
     config_options_page: int = 0
 
+    # Names of items in a multi-item order that need configuration
+    # Used to build final summary like "Great, both toasted. Anything else?"
+    multi_item_config_names: list[str] = Field(default_factory=list)
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -860,8 +864,21 @@ class OrderTask(BaseTask):
         """Get current menu query pagination state."""
         return self.menu_query_pagination
 
-    def queue_item_for_config(self, item_id: str, item_type: str) -> None:
-        """Add an item to the configuration queue."""
+    def queue_item_for_config(
+        self,
+        item_id: str,
+        item_type: str,
+        item_name: str | None = None,
+        pending_field: str | None = None,
+    ) -> None:
+        """Add an item to the configuration queue.
+
+        Args:
+            item_id: The item's unique ID
+            item_type: Type of item (bagel, coffee, speed_menu_bagel, etc.)
+            item_name: Display name for abbreviated follow-up questions
+            pending_field: The field to configure (toasted, bagel_type, etc.)
+        """
         # Don't add duplicates - handle mixed types (strings from category inquiry, dicts from item config)
         for entry in self.pending_config_queue:
             if isinstance(entry, dict) and entry.get("item_id") == item_id:
@@ -869,6 +886,8 @@ class OrderTask(BaseTask):
         self.pending_config_queue.append({
             "item_id": item_id,
             "item_type": item_type,
+            "item_name": item_name,
+            "pending_field": pending_field,
         })
 
     def pop_next_config_item(self) -> dict | None:

@@ -429,7 +429,22 @@ class BagelConfigHandler:
                     parsed = parse_spread_choice(user_input, model=self.model)
 
                     if parsed.no_spread:
-                        item.spread = "none"
+                        # Only trust no_spread if input looks like an explicit decline
+                        decline_indicators = [
+                            "no", "none", "nothing", "plain", "nah", "nope",
+                            "skip", "pass", "without", "dry", "bare", "empty",
+                            "just", "only", "that's it", "that's all", "i'm good",
+                        ]
+                        looks_like_decline = any(ind in input_lower for ind in decline_indicators)
+                        if looks_like_decline:
+                            item.spread = "none"
+                        else:
+                            # Unclear response - re-ask
+                            logger.info("Unclear spread response (MenuItemTask): '%s' - re-asking", user_input)
+                            return StateMachineResult(
+                                message="Sorry, I didn't catch that. Would you like butter or cream cheese on the bagel?",
+                                order=order,
+                            )
                     elif parsed.spread:
                         # Build spread description (e.g., "scallion cream cheese")
                         if parsed.spread_type and parsed.spread_type != "plain":
@@ -494,7 +509,23 @@ class BagelConfigHandler:
                     parsed = parse_spread_choice(user_input, model=self.model)
 
                     if parsed.no_spread:
-                        item.spread = "none"  # Mark as explicitly no spread
+                        # Only trust no_spread if input looks like an explicit decline
+                        # This prevents gibberish like "yellow" being treated as "no spread"
+                        decline_indicators = [
+                            "no", "none", "nothing", "plain", "nah", "nope",
+                            "skip", "pass", "without", "dry", "bare", "empty",
+                            "just", "only", "that's it", "that's all", "i'm good",
+                        ]
+                        looks_like_decline = any(ind in input_lower for ind in decline_indicators)
+                        if looks_like_decline:
+                            item.spread = "none"  # Mark as explicitly no spread
+                        else:
+                            # Unclear response - re-ask
+                            logger.info("Unclear spread response: '%s' - re-asking", user_input)
+                            return StateMachineResult(
+                                message="Sorry, I didn't catch that. Would you like cream cheese, butter, or nothing on that?",
+                                order=order,
+                            )
                     elif parsed.spread:
                         item.spread = parsed.spread
                         item.spread_type = parsed.spread_type

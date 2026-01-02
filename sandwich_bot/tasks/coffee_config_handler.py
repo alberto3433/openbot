@@ -232,6 +232,9 @@ class CoffeeConfigHandler:
                 unit_price=price,
                 special_instructions=special_instructions,
             )
+            # Calculate upcharges immediately so cart shows correct price
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(coffee)
             coffee.mark_in_progress()
             order.items.add_item(coffee)
 

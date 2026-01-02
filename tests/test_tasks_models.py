@@ -256,7 +256,7 @@ class TestCoffeeItemTask:
             size="medium",
             iced=True,
             milk="oat",
-            sweetener="vanilla",
+            sweeteners=[{"type": "vanilla", "quantity": 1}],
             extra_shots=2,
         )
         summary = coffee.get_summary()

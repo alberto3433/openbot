@@ -52,6 +52,13 @@ BAGEL_TYPES_LIST = [
     "asiago", "jalapeno", "blueberry", "bialy",  # Specialty
 ]
 
+# List of cream cheese flavors for listing when user asks
+CREAM_CHEESE_TYPES_LIST = [
+    "plain", "scallion", "veggie", "strawberry",  # Most common
+    "honey walnut", "lox", "chive", "blueberry",  # Popular
+    "olive", "jalapeno", "garlic herb", "sun-dried tomato",  # Less common
+]
+
 
 def _is_pagination_request(user_input: str) -> bool:
     """Check if user input is asking for more options (pagination)."""
@@ -327,6 +334,65 @@ class BagelConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle spread selection for bagel or omelette side bagel."""
+        input_lower = user_input.lower().strip()
+
+        # Check if user is asking for cream cheese options
+        # e.g., "what kind of cream cheese do you have?", "what flavors?"
+        cream_cheese_option_patterns = [
+            "what kind", "what kinds", "what type", "what types",
+            "what flavors", "what options", "what do you have",
+            "what cream cheese", "which cream cheese",
+        ]
+        is_asking_for_options = any(p in input_lower for p in cream_cheese_option_patterns)
+
+        if is_asking_for_options:
+            # Show cream cheese options with pagination
+            batch_size = 6  # Show more cream cheese types per batch
+            batch = CREAM_CHEESE_TYPES_LIST[:batch_size]
+            types_str = ", ".join(batch)
+            has_more = len(CREAM_CHEESE_TYPES_LIST) > batch_size
+            if has_more:
+                order.set_menu_pagination("cream_cheese_types", batch_size, len(CREAM_CHEESE_TYPES_LIST))
+                return StateMachineResult(
+                    message=f"We have {types_str}, and more. Which would you like?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"We have {types_str}. Which would you like?",
+                    order=order,
+                )
+
+        # Check for pagination request for cream cheese types
+        if _is_pagination_request(user_input):
+            pagination = order.get_menu_pagination()
+            if pagination and pagination.get("category") == "cream_cheese_types":
+                offset = pagination.get("offset", 0)
+                batch = CREAM_CHEESE_TYPES_LIST[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                if batch:
+                    new_offset = offset + BAGEL_TYPE_BATCH_SIZE
+                    has_more = new_offset < len(CREAM_CHEESE_TYPES_LIST)
+                    if has_more:
+                        order.set_menu_pagination("cream_cheese_types", new_offset, len(CREAM_CHEESE_TYPES_LIST))
+                        types_str = ", ".join(batch)
+                        return StateMachineResult(
+                            message=f"We also have {types_str}, and more.",
+                            order=order,
+                        )
+                    else:
+                        order.clear_menu_pagination()
+                        types_str = ", ".join(batch)
+                        return StateMachineResult(
+                            message=f"We also have {types_str}. That's all our cream cheese flavors!",
+                            order=order,
+                        )
+                else:
+                    order.clear_menu_pagination()
+                    return StateMachineResult(
+                        message="That's all our cream cheese flavors. Which would you like?",
+                        order=order,
+                    )
+
         # For MenuItemTask (omelette side bagels), use simpler handling
         if isinstance(item, MenuItemTask):
             parsed = parse_spread_choice(user_input, model=self.model)

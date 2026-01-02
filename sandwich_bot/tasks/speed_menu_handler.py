@@ -13,6 +13,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import SpeedMenuBagelItemTask, OrderTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_toasted_deterministic, parse_toasted_choice
+from .pricing import PricingEngine
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
@@ -32,6 +33,7 @@ class SpeedMenuBagelHandler:
         model: str = "gpt-4o-mini",
         menu_lookup: "MenuLookup | None" = None,
         get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
+        pricing_engine: "PricingEngine | None" = None,
     ):
         """
         Initialize the speed menu bagel handler.
@@ -40,10 +42,12 @@ class SpeedMenuBagelHandler:
             model: LLM model to use for parsing.
             menu_lookup: MenuLookup instance for menu item lookups.
             get_next_question: Callback to get the next question in the flow.
+            pricing_engine: PricingEngine instance for price calculations.
         """
         self.model = model
         self.menu_lookup = menu_lookup
         self._get_next_question = get_next_question
+        self.pricing_engine = pricing_engine
 
     def add_speed_menu_bagel(
         self,
@@ -276,6 +280,22 @@ class SpeedMenuBagelHandler:
             )
 
         item.bagel_choice = bagel_type
+
+        # Calculate and apply bagel type upcharge (e.g., gluten free +$0.80)
+        if self.pricing_engine:
+            upcharge = self.pricing_engine.get_bagel_type_upcharge(bagel_type)
+            item.bagel_choice_upcharge = upcharge
+            if upcharge > 0:
+                # Add upcharge to the item's unit price
+                item.unit_price = (item.unit_price or 0) + upcharge
+                logger.info("Applied bagel choice upcharge: %s = +$%.2f, new price: $%.2f",
+                           bagel_type, upcharge, item.unit_price)
+        else:
+            # Fallback to static lookup if pricing_engine not available
+            upcharge = PricingEngine.BAGEL_TYPE_UPCHARGES.get(bagel_type.lower() if bagel_type else "", 0.0)
+            item.bagel_choice_upcharge = upcharge
+            if upcharge > 0:
+                item.unit_price = (item.unit_price or 0) + upcharge
 
         # Continue to ask for toasted if not set
         if item.toasted is None:

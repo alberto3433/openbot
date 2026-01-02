@@ -342,6 +342,7 @@ class OrderStateMachine:
             model=self.model,
             menu_lookup=self.menu_lookup,
             get_next_question=self.checkout_utils_handler.get_next_question,
+            pricing_engine=self.pricing,
         )
         # Now set the speed menu bagel callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_speed_menu_bagel = self.speed_menu_handler.configure_next_incomplete_speed_menu_bagel

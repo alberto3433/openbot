@@ -54,6 +54,18 @@ class PricingEngine:
         "capers": 0.75,
     }
 
+    # Base bagel price (regular bagels like plain, everything, sesame)
+    DEFAULT_BAGEL_BASE_PRICE = 2.20
+
+    # Bagel type upcharges - specialty bagels cost more than the base price
+    # Regular bagels (plain, everything, sesame, etc.) have no upcharge ($0.00)
+    BAGEL_TYPE_UPCHARGES = {
+        "gluten free": 0.80,
+        "gluten-free": 0.80,
+        "gluten free everything": 0.80,
+        "gluten-free everything": 0.80,
+    }
+
     def __init__(
         self,
         menu_data: dict | None,
@@ -199,7 +211,53 @@ class PricingEngine:
             return menu_item.get("base_price", 2.50)
 
         # Default fallback
-        return 2.50
+        return self.DEFAULT_BAGEL_BASE_PRICE
+
+    def get_bagel_base_price(self) -> float:
+        """
+        Get the base price for a regular bagel (without any specialty upcharge).
+
+        Returns:
+            Base bagel price (e.g., $2.20 for regular bagels)
+        """
+        # Try to get from menu first
+        menu_item = self._lookup_menu_item("Bagel")
+        if menu_item:
+            return menu_item.get("base_price", self.DEFAULT_BAGEL_BASE_PRICE)
+        return self.DEFAULT_BAGEL_BASE_PRICE
+
+    def get_bagel_type_upcharge(self, bagel_type: str | None) -> float:
+        """
+        Get the upcharge for a specialty bagel type.
+
+        Regular bagels (plain, everything, sesame, etc.) have no upcharge.
+        Specialty bagels like gluten free have an upcharge.
+
+        Args:
+            bagel_type: The bagel type (e.g., "plain", "gluten free")
+
+        Returns:
+            Upcharge amount (e.g., $0.80 for gluten free, $0.00 for regular)
+        """
+        if not bagel_type:
+            return 0.0
+
+        bagel_type_lower = bagel_type.lower().strip()
+
+        # Check for exact match first
+        if bagel_type_lower in self.BAGEL_TYPE_UPCHARGES:
+            upcharge = self.BAGEL_TYPE_UPCHARGES[bagel_type_lower]
+            logger.debug("Bagel type upcharge: %s = +$%.2f", bagel_type, upcharge)
+            return upcharge
+
+        # Check for partial match (e.g., "gluten free" in "gluten free everything")
+        for specialty_type, upcharge in self.BAGEL_TYPE_UPCHARGES.items():
+            if specialty_type in bagel_type_lower:
+                logger.debug("Bagel type upcharge (partial match): %s = +$%.2f", bagel_type, upcharge)
+                return upcharge
+
+        # Regular bagels have no upcharge
+        return 0.0
 
     def lookup_modifier_price(self, modifier_name: str, item_type: str = "bagel") -> float:
         """
@@ -356,24 +414,36 @@ class PricingEngine:
         Returns:
             The new calculated price
         """
-        # Get base price from bagel type
-        base_price = self.lookup_bagel_price(item.bagel_type)
+        # Get base bagel price (regular bagel, not specialty)
+        base_price = self.get_bagel_base_price()
 
-        # Calculate total with all current modifiers
-        new_price = self.calculate_bagel_price_with_modifiers(
-            base_price,
-            item.sandwich_protein,
-            item.extras,
-            item.spread,
-            item.spread_type,
-        )
+        # Calculate and store bagel type upcharge (e.g., gluten free +$0.80)
+        bagel_type_upcharge = self.get_bagel_type_upcharge(item.bagel_type)
+        item.bagel_type_upcharge = bagel_type_upcharge
+
+        # Start with base + bagel type upcharge
+        total = base_price + bagel_type_upcharge
+
+        # Add protein price
+        if item.sandwich_protein:
+            total += self.lookup_modifier_price(item.sandwich_protein)
+
+        # Add extras prices
+        if item.extras:
+            for extra in item.extras:
+                total += self.lookup_modifier_price(extra)
+
+        # Add spread price (if not "none")
+        if item.spread and item.spread.lower() != "none":
+            total += self.lookup_spread_price(item.spread, item.spread_type)
 
         # Update the item's price
+        new_price = round(total, 2)
         item.unit_price = new_price
 
-        logger.debug(
-            "Recalculated bagel price: base=%.2f, protein=%s, extras=%s, spread=%s (%s) -> total=%.2f",
-            base_price, item.sandwich_protein, item.extras, item.spread, item.spread_type, new_price
+        logger.info(
+            "Recalculated bagel price: base=$%.2f + type_upcharge=$%.2f + modifiers -> total=$%.2f",
+            base_price, bagel_type_upcharge, new_price
         )
 
         return new_price

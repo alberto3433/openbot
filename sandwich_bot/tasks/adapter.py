@@ -50,8 +50,8 @@ DEFAULT_MODIFIER_PRICES = {
     "avocado": 2.00,
 }
 
-# Base bagel price
-DEFAULT_BAGEL_BASE_PRICE = 2.50
+# Base bagel price (regular bagel without specialty upcharge)
+DEFAULT_BAGEL_BASE_PRICE = 2.20
 
 
 # -----------------------------------------------------------------------------
@@ -242,6 +242,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 menu_item_id=item.get("menu_item_id"),
                 toasted=item.get("toasted"),
                 bagel_choice=item.get("bagel_choice"),
+                bagel_choice_upcharge=item.get("bagel_choice_upcharge", 0.0),
                 cheese_choice=item.get("cheese_choice"),
                 quantity=item.get("quantity", 1),
                 notes=item.get("notes"),
@@ -429,19 +430,33 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
 
         elif item.item_type == "bagel":
             bagel_type = getattr(item, 'bagel_type', None)
+            bagel_type_upcharge = getattr(item, 'bagel_type_upcharge', 0.0) or 0.0
             spread = getattr(item, 'spread', None)
             spread_type = getattr(item, 'spread_type', None)
             toasted = getattr(item, 'toasted', None)
             sandwich_protein = getattr(item, 'sandwich_protein', None)
             extras = getattr(item, 'extras', []) or []
 
-            # Build display name (just the base bagel, modifiers shown separately)
-            display_name = f"{bagel_type} bagel" if bagel_type else "bagel"
-            if toasted:
-                display_name += " toasted"
+            # Display name is just "Bagel" - bagel type shown as modifier
+            display_name = "Bagel"
 
             # Build modifiers list with prices for itemized cart display
             modifiers = []
+
+            # Add bagel type as first modifier (always shown, upcharge only for specialty)
+            if bagel_type:
+                bagel_type_modifier = {
+                    "name": bagel_type.title(),  # e.g., "Plain", "Everything", "Gluten Free"
+                    "price": bagel_type_upcharge,  # $0.00 for regular, $0.80 for gluten free
+                }
+                modifiers.append(bagel_type_modifier)
+
+            # Add toasted as a modifier (no price)
+            if toasted:
+                modifiers.append({
+                    "name": "Toasted",
+                    "price": 0,
+                })
 
             # Add protein modifier
             if sandwich_protein:
@@ -470,10 +485,8 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "price": spread_price,
                 })
 
-            # Calculate base price (total - modifiers)
-            total_price = item.unit_price or 0
-            modifiers_total = sum(m["price"] for m in modifiers)
-            base_price = max(total_price - modifiers_total, DEFAULT_BAGEL_BASE_PRICE)
+            # Base price is the regular bagel price (without specialty upcharge)
+            base_price = DEFAULT_BAGEL_BASE_PRICE
 
             item_dict = {
                 "item_type": "bagel",
@@ -482,6 +495,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "display_name": display_name,
                 "menu_item_name": display_name,  # For backwards compatibility
                 "bagel_type": bagel_type,
+                "bagel_type_upcharge": bagel_type_upcharge,
                 "spread": spread,
                 "spread_type": spread_type,
                 "toasted": toasted,
@@ -496,6 +510,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "notes": getattr(item, 'notes', None),
                 "item_config": {
                     "bagel_type": bagel_type,
+                    "bagel_type_upcharge": bagel_type_upcharge,
                     "spread": spread,
                     "spread_type": spread_type,
                     "toasted": toasted,
@@ -616,22 +631,48 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             # Speed menu bagel (pre-configured sandwiches)
             toasted = getattr(item, 'toasted', None)
             bagel_choice = getattr(item, 'bagel_choice', None)
+            bagel_choice_upcharge = getattr(item, 'bagel_choice_upcharge', 0.0) or 0.0
             cheese_choice = getattr(item, 'cheese_choice', None)
             menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
             modifications = getattr(item, 'modifications', []) or []
 
-            # Build display name with cheese, bagel choice, toasted status, and modifications (for UI only)
+            # Display name is just the menu item name - modifiers shown separately
             display_name = menu_item_name
-            if cheese_choice:
-                display_name = f"{display_name} with {cheese_choice} cheese"
+
+            # Build modifiers list for itemized display
+            modifiers = []
+
+            # Add bagel choice as modifier (with upcharge if specialty like gluten free)
             if bagel_choice:
-                display_name = f"{display_name} on {bagel_choice} bagel"
+                modifiers.append({
+                    "name": f"{bagel_choice.title()} Bagel",
+                    "price": bagel_choice_upcharge,
+                })
+
+            # Add cheese choice if specified (no extra charge typically)
+            if cheese_choice:
+                modifiers.append({
+                    "name": f"{cheese_choice.title()} Cheese",
+                    "price": 0,
+                })
+
+            # Add toasted as a modifier (no price)
             if toasted is True:
-                display_name = f"{display_name} toasted"
-            elif toasted is False:
-                display_name = f"{display_name} not toasted"
-            if modifications:
-                display_name = f"{display_name} ({', '.join(modifications)})"
+                modifiers.append({
+                    "name": "Toasted",
+                    "price": 0,
+                })
+
+            # Add user modifications as modifiers (no price)
+            for mod in modifications:
+                modifiers.append({
+                    "name": mod,
+                    "price": 0,
+                })
+
+            # Base price is total minus any upcharges (for display purposes)
+            total_price = item.unit_price or 0
+            base_price = total_price - bagel_choice_upcharge
 
             item_dict = {
                 "item_type": "speed_menu_bagel",
@@ -644,7 +685,10 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "menu_item_id": getattr(item, 'menu_item_id', None),
                 "toasted": toasted,
                 "bagel_choice": bagel_choice,
+                "bagel_choice_upcharge": bagel_choice_upcharge,
                 "cheese_choice": cheese_choice,
+                "base_price": base_price,
+                "modifiers": modifiers,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
@@ -652,8 +696,11 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "item_config": {
                     "toasted": toasted,
                     "bagel_choice": bagel_choice,
+                    "bagel_choice_upcharge": bagel_choice_upcharge,
                     "cheese_choice": cheese_choice,
-                    "modifications": modifications,  # Include modifications for database persistence
+                    "modifications": modifications,
+                    "base_price": base_price,
+                    "modifiers": modifiers,
                 },
             }
             items.append(item_dict)

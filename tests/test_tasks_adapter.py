@@ -433,7 +433,7 @@ class TestModifiersConsistency:
         # Base price should be in item_config
         assert "base_price" in item["item_config"]
         # Base price should be the bagel price without modifiers
-        assert item["item_config"]["base_price"] >= 2.50  # At least default bagel price
+        assert item["item_config"]["base_price"] >= 2.20  # At least default bagel price
 
     def test_coffee_modifiers_in_item_config(self):
         """Test that coffee modifiers with upcharges are in item_config."""
@@ -611,12 +611,19 @@ class TestModifiersConsistency:
     def test_item_display_matches_cart_display(self):
         """Test that the data structure supports identical display in cart and admin."""
         order = OrderTask()
+        # Price breakdown:
+        # - base_price: $2.20
+        # - multigrain bagel type: $0.00 (no upcharge)
+        # - toasted: $0.00
+        # - nova scotia salmon: $6.00
+        # - cream cheese: $1.50
+        # - Total: $9.70
         bagel = BagelItemTask(
             bagel_type="multigrain",
             toasted=True,
             extras=["nova scotia salmon"],
             spread="cream cheese",
-            unit_price=11.75,
+            unit_price=9.70,
         )
         order.items.add_item(bagel)
 
@@ -624,16 +631,18 @@ class TestModifiersConsistency:
         item = result["items"][0]
 
         # The cart would display:
-        # - multigrain bagel toasted: $X.XX (base_price)
+        # - Bagel: $2.20 (base_price)
+        # - Multigrain: $0.00 (bagel type modifier)
+        # - Toasted: $0.00
         # - nova scotia salmon: $6.00
         # - cream cheese: $1.50
-        # Total: $11.75
+        # Total: $9.70
 
         # Check all necessary data is present
         assert "display_name" in item  # For the main item line
         assert "base_price" in item["item_config"]  # Base price before modifiers
         assert "modifiers" in item["item_config"]  # List of modifiers with prices
-        assert item["line_total"] == 11.75  # Total for the line
+        assert item["line_total"] == 9.70  # Total for the line
 
         # Verify we can calculate: base_price + sum(modifiers) = line_total
         base_price = item["item_config"]["base_price"]
@@ -642,3 +651,61 @@ class TestModifiersConsistency:
 
         # Allow small floating point difference
         assert abs(calculated_total - item["line_total"]) < 0.01
+
+    def test_gluten_free_bagel_upcharge_shown_as_modifier(self):
+        """Test that gluten free bagel upcharge is shown as a separate modifier."""
+        order = OrderTask()
+        # Gluten free bagel: $2.20 base + $0.80 upcharge = $3.00
+        bagel = BagelItemTask(
+            bagel_type="gluten free",
+            bagel_type_upcharge=0.80,  # Gluten free upcharge
+            toasted=True,
+            spread="cream cheese",
+            unit_price=4.50,  # $2.20 base + $0.80 gluten free + $1.50 cream cheese
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+        item = result["items"][0]
+
+        # Check that bagel type is shown as a modifier with upcharge
+        modifiers = item["item_config"]["modifiers"]
+        bagel_type_modifier = next(
+            (m for m in modifiers if "gluten" in m["name"].lower()),
+            None
+        )
+        assert bagel_type_modifier is not None, "Gluten free should be in modifiers"
+        assert bagel_type_modifier["price"] == 0.80, "Gluten free upcharge should be $0.80"
+
+        # Verify base_price + modifiers = line_total
+        base_price = item["item_config"]["base_price"]
+        modifiers_total = sum(m["price"] for m in modifiers)
+        calculated_total = base_price + modifiers_total
+        assert abs(calculated_total - item["line_total"]) < 0.01
+
+    def test_regular_bagel_type_shown_as_modifier_without_upcharge(self):
+        """Test that regular bagel types are shown as modifiers with $0 upcharge."""
+        order = OrderTask()
+        # Plain bagel: $2.20 base + $0.00 upcharge
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            bagel_type_upcharge=0.0,  # No upcharge for plain bagel
+            toasted=False,
+            unit_price=2.20,  # Just the base price
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order)
+        item = result["items"][0]
+
+        # Check that bagel type is shown as a modifier
+        modifiers = item["item_config"]["modifiers"]
+        bagel_type_modifier = next(
+            (m for m in modifiers if m["name"].lower() == "plain"),
+            None
+        )
+        assert bagel_type_modifier is not None, "Plain should be in modifiers"
+        assert bagel_type_modifier["price"] == 0.0, "Plain bagel should have $0 upcharge"
+
+        # Display name should be "Bagel" (not "plain bagel")
+        assert item["display_name"] == "Bagel"

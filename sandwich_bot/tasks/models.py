@@ -156,6 +156,7 @@ class BagelItemTask(ItemTask):
 
     # Bagel-specific fields
     bagel_type: str | None = None  # plain, everything, sesame, etc.
+    bagel_type_upcharge: float = 0.0  # Upcharge for specialty bagels (e.g., gluten free +$0.80)
     toasted: bool | None = None
     spread: str | None = None  # cream cheese, butter, etc.
     spread_type: str | None = None  # plain, scallion, veggie, etc.
@@ -324,6 +325,7 @@ class SpeedMenuBagelItemTask(ItemTask):
     menu_item_id: int | None = None  # Database ID if matched
     toasted: bool | None = None  # True=toasted, False=not toasted, None=not specified
     bagel_choice: str | None = None  # Custom bagel choice (e.g., "wheat" for "Classic BEC on wheat")
+    bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
     cheese_choice: str | None = None  # Cheese type for items with cheese (e.g., "american", "swiss")
     modifications: list[str] = Field(default_factory=list)  # Extra modifiers (e.g., ["mayo", "no onions"])
 

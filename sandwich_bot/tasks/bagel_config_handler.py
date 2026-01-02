@@ -174,6 +174,42 @@ class BagelConfigHandler:
 
         # Extract any additional modifiers from the input (e.g., "plain with salt pepper and ketchup")
         extracted_modifiers = extract_modifiers_from_input(user_input)
+
+        # IMPORTANT: Remove the bagel type from extracted modifiers to avoid ambiguity
+        # e.g., "blueberry" is both a bagel type AND a cream cheese flavor
+        # e.g., "onion" is both a bagel type AND a topping
+        # If user said the bagel type, don't also add it as a spread/topping
+        if bagel_type:
+            input_lower = user_input.lower()
+
+            # Filter spreads: only if user didn't explicitly say "cream cheese"
+            if extracted_modifiers.spreads:
+                user_explicitly_said_cream_cheese = "cream cheese" in input_lower
+
+                if not user_explicitly_said_cream_cheese:
+                    spreads_to_remove = []
+                    for spread in extracted_modifiers.spreads:
+                        spread_lower = spread.lower()
+                        # Remove if spread matches bagel type or is "[bagel_type] cream cheese"
+                        if spread_lower == bagel_type or spread_lower == f"{bagel_type} cream cheese":
+                            spreads_to_remove.append(spread)
+                            logger.info("Removing ambiguous spread '%s' (matches bagel type '%s')", spread, bagel_type)
+                    for spread in spreads_to_remove:
+                        extracted_modifiers.spreads.remove(spread)
+
+            # Filter toppings: remove if topping matches the bagel type
+            # e.g., "onion" bagel shouldn't also add "onion" as a topping
+            if extracted_modifiers.toppings:
+                toppings_to_remove = []
+                for topping in extracted_modifiers.toppings:
+                    topping_lower = topping.lower()
+                    # Remove if topping matches bagel type (including plural forms)
+                    if topping_lower == bagel_type or topping_lower == f"{bagel_type}s":
+                        toppings_to_remove.append(topping)
+                        logger.info("Removing ambiguous topping '%s' (matches bagel type '%s')", topping, bagel_type)
+                for topping in toppings_to_remove:
+                    extracted_modifiers.toppings.remove(topping)
+
         if extracted_modifiers.has_modifiers() or extracted_modifiers.has_notes():
             logger.info("Extracted additional modifiers from bagel choice: %s", extracted_modifiers)
 

@@ -163,6 +163,44 @@ class SpeedMenuBagelHandler:
         order.clear_pending()
         return self._get_next_question(order)
 
+    # Paginated bagel options for "what else" responses
+    BAGEL_OPTION_PAGES = [
+        ["plain", "everything", "sesame", "whole wheat"],
+        ["poppy", "onion", "cinnamon raisin", "pumpernickel"],
+        ["salt", "garlic", "bialy", "egg", "multigrain"],
+        ["asiago", "jalapeno", "blueberry", "gluten free"],
+    ]
+
+    def _is_show_more_request(self, user_input: str) -> bool:
+        """Check if user is asking to see more options."""
+        input_lower = user_input.lower().strip()
+        show_more_phrases = [
+            "what else",
+            "any other",
+            "more options",
+            "other options",
+            "what other",
+            "anything else",
+            "show more",
+            "more bagels",
+            "other bagels",
+            "different",
+        ]
+        return any(phrase in input_lower for phrase in show_more_phrases)
+
+    def _get_bagel_options_message(self, page: int) -> str:
+        """Get the bagel options message for a given page."""
+        if page >= len(self.BAGEL_OPTION_PAGES):
+            return "Those are all the bagel types we have. Would you like one of those?"
+
+        options = self.BAGEL_OPTION_PAGES[page]
+        options_str = ", ".join(options[:-1]) + f", or {options[-1]}"
+
+        if page == 0:
+            return f"What type of bagel would you like? For example, {options_str}."
+        else:
+            return f"We also have {options_str}."
+
     def handle_speed_menu_bagel_type(
         self,
         user_input: str,
@@ -173,6 +211,15 @@ class SpeedMenuBagelHandler:
         from .parsers.deterministic import _extract_bagel_type as parse_bagel_type_response
         from .parsers.deterministic import _extract_spread
         from .models import BagelItemTask
+
+        # Check if user is asking for more bagel options
+        if self._is_show_more_request(user_input):
+            order.config_options_page += 1
+            message = self._get_bagel_options_message(order.config_options_page)
+            return StateMachineResult(
+                message=message,
+                order=order,
+            )
 
         # Parse the bagel type from user input
         bagel_type = parse_bagel_type_response(user_input)
@@ -199,8 +246,10 @@ class SpeedMenuBagelHandler:
                     )
 
         if bagel_type is None:
+            # Reset options page when showing first options
+            order.config_options_page = 0
             return StateMachineResult(
-                message="What type of bagel would you like? For example, plain, everything, sesame, or whole wheat.",
+                message=self._get_bagel_options_message(0),
                 order=order,
             )
 

@@ -681,6 +681,11 @@ class OrderTask(BaseTask):
     # Used when user asks "what other X do you have?" or "more X"
     menu_query_pagination: dict | None = None
 
+    # Configuration options page for "what else" during field configuration
+    # Tracks which page of options (e.g., bagel types) we're showing
+    # 0 = first page (default), 1 = second page, etc.
+    config_options_page: int = 0
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -719,6 +724,7 @@ class OrderTask(BaseTask):
         """Clear pending item/field when done configuring."""
         self.pending_item_ids = []
         self.pending_field = None
+        self.config_options_page = 0
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

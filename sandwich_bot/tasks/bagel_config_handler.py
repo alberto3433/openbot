@@ -33,12 +33,32 @@ from .parsers.llm_parsers import (
     parse_toasted_choice,
 )
 from .parsers.deterministic import extract_modifiers_from_input
+from .parsers.constants import MORE_MENU_ITEMS_PATTERNS
 from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
+
+# Batch size for paginating bagel types
+BAGEL_TYPE_BATCH_SIZE = 4
+
+# List of bagel types for pagination (ordered by popularity, not alphabetical)
+BAGEL_TYPES_LIST = [
+    "plain", "everything", "sesame", "poppy",  # Most common
+    "onion", "cinnamon raisin", "whole wheat", "pumpernickel",  # Popular
+    "salt", "garlic", "egg", "multigrain",  # Less common
+    "asiago", "jalapeno", "blueberry", "bialy",  # Specialty
+]
+
+
+def _is_pagination_request(user_input: str) -> bool:
+    """Check if user input is asking for more options (pagination)."""
+    for pattern in MORE_MENU_ITEMS_PATTERNS:
+        if pattern.search(user_input):
+            return True
+    return False
 
 
 def apply_modifiers_to_bagel(
@@ -135,9 +155,50 @@ class BagelConfigHandler:
         This handles one item at a time. After configuring this item,
         configure_next_incomplete_bagel will move to the next item.
         """
+        input_lower = user_input.lower().strip()
+
+        # Check for pagination request ("what else", "more", etc.)
+        if _is_pagination_request(user_input):
+            pagination = order.get_menu_pagination()
+            if pagination and pagination.get("category") == "bagel_types":
+                offset = pagination.get("offset", 0)
+                # Get next batch of bagel types
+                batch = BAGEL_TYPES_LIST[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                if batch:
+                    new_offset = offset + BAGEL_TYPE_BATCH_SIZE
+                    has_more = new_offset < len(BAGEL_TYPES_LIST)
+                    if has_more:
+                        order.set_menu_pagination("bagel_types", new_offset, len(BAGEL_TYPES_LIST))
+                        types_str = ", ".join(batch)
+                        return StateMachineResult(
+                            message=f"We also have {types_str}, and more.",
+                            order=order,
+                        )
+                    else:
+                        order.clear_menu_pagination()
+                        types_str = ", ".join(batch)
+                        return StateMachineResult(
+                            message=f"We also have {types_str}. That's all our bagel types!",
+                            order=order,
+                        )
+                else:
+                    order.clear_menu_pagination()
+                    return StateMachineResult(
+                        message="That's all our bagel types. Which would you like?",
+                        order=order,
+                    )
+            # No pagination state - show first batch
+            else:
+                batch = BAGEL_TYPES_LIST[:BAGEL_TYPE_BATCH_SIZE]
+                types_str = ", ".join(batch)
+                order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(BAGEL_TYPES_LIST))
+                return StateMachineResult(
+                    message=f"We have {types_str}, and more.",
+                    order=order,
+                )
+
         # Try deterministic parsing first - check if input matches a known bagel type
         # Do this BEFORE redirect check so "do you have everything bagel" works
-        input_lower = user_input.lower().strip()
         bagel_type = None
 
         # Check for exact match or "[type] bagel" pattern
@@ -159,14 +220,26 @@ class BagelConfigHandler:
                 return redirect
 
         # Fall back to LLM parser only if deterministic parsing failed
-        if not bagel_type:
+        # BUT skip LLM if user is asking for options (e.g., "what kind do you have?")
+        option_request_patterns = [
+            "what do you have", "what kind do you have", "what kinds do you have",
+            "what type do you have", "what types do you have", "what are my options",
+            "what are the options", "what options", "what flavors",
+        ]
+        is_option_request = any(p in input_lower for p in option_request_patterns)
+
+        if not bagel_type and not is_option_request:
             parsed = parse_bagel_choice(user_input, num_pending_bagels=1, model=self.model)
             if not parsed.unclear and parsed.bagel_type:
                 bagel_type = parsed.bagel_type
 
         if not bagel_type:
+            # Show first batch of bagel types and set up pagination
+            batch = BAGEL_TYPES_LIST[:BAGEL_TYPE_BATCH_SIZE]
+            types_str = ", ".join(batch)
+            order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(BAGEL_TYPES_LIST))
             return StateMachineResult(
-                message="What kind of bagel? We have plain, everything, sesame, and more.",
+                message=f"What kind of bagel? We have {types_str}, and more.",
                 order=order,
             )
 

@@ -2543,21 +2543,23 @@ class TestRecommendationInquiry:
 class TestCoffeeSize:
     """Tests for _handle_coffee_size."""
 
-    def test_small_size_selected(self):
+    @patch('sandwich_bot.tasks.coffee_config_handler.parse_coffee_size')
+    def test_small_size_selected(self, mock_parse):
         """Test selecting small size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
-        from sandwich_bot.tasks.schemas import OrderPhase
+        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
+
+        # Mock the parser to return small size
+        mock_parse.return_value = CoffeeSizeResponse(size="small")
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "coffee_size"
 
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
 
         result = sm.coffee_handler.handle_coffee_size("small please", coffee, order)
 
@@ -2565,28 +2567,15 @@ class TestCoffeeSize:
         assert order.pending_field == "coffee_style"
         assert "hot or iced" in result.message.lower()
 
-    def test_medium_size_selected(self):
-        """Test selecting medium size."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "coffee_size"
-
-        coffee = CoffeeItemTask(drink_type="cappuccino")
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-
-        result = sm.coffee_handler.handle_coffee_size("medium", coffee, order)
-
-        assert coffee.size == "medium"
-        assert order.pending_field == "coffee_style"
-
-    def test_large_size_selected(self):
+    @patch('sandwich_bot.tasks.coffee_config_handler.parse_coffee_size')
+    def test_large_size_selected(self, mock_parse):
         """Test selecting large size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
+
+        # Mock the parser to return large size
+        mock_parse.return_value = CoffeeSizeResponse(size="large")
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2601,10 +2590,15 @@ class TestCoffeeSize:
         assert coffee.size == "large"
         assert "hot or iced" in result.message.lower()
 
-    def test_invalid_size_reprompts(self):
+    @patch('sandwich_bot.tasks.coffee_config_handler.parse_coffee_size')
+    def test_invalid_size_reprompts(self, mock_parse):
         """Test that invalid size re-prompts user."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
+
+        # Mock the parser to return no size (invalid)
+        mock_parse.return_value = CoffeeSizeResponse(size=None)
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2618,13 +2612,18 @@ class TestCoffeeSize:
 
         # Size should not be set
         assert coffee.size is None
-        # Should re-prompt
-        assert "small" in result.message.lower() and "medium" in result.message.lower()
+        # Should re-prompt with valid sizes (small/large only now)
+        assert "small" in result.message.lower() and "large" in result.message.lower()
 
-    def test_size_with_drink_name_in_prompt(self):
+    @patch('sandwich_bot.tasks.coffee_config_handler.parse_coffee_size')
+    def test_size_with_drink_name_in_prompt(self, mock_parse):
         """Test that reprompt includes drink name."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
+
+        # Mock the parser to return no size (unclear)
+        mock_parse.return_value = CoffeeSizeResponse(size=None)
 
         sm = OrderStateMachine()
         order = OrderTask()

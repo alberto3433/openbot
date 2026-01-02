@@ -120,8 +120,14 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             if any(kw in input_lower for kw in spread_keywords):
                 return False  # Let them ask about cream cheese options
 
+        # Asking about cheese types when being asked about cheese choice → relevant
+        if pending_field in ("cheese_choice", "speed_menu_cheese_choice"):
+            cheese_keywords = ["cheese", "cheeses"]
+            if any(kw in input_lower for kw in cheese_keywords):
+                return False  # Let them ask about cheese options
+
         # Asking about bagel types when being asked about bagel choice → relevant
-        if pending_field == "bagel_choice":
+        if pending_field in ("bagel_choice", "speed_menu_bagel_type"):
             bagel_keywords = ["bagel", "bagels"]
             if any(kw in input_lower for kw in bagel_keywords):
                 return False  # Let them ask about bagel options

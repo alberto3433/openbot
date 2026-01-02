@@ -1694,20 +1694,34 @@ class TakingItemsHandler:
             return order, summary
 
         elif isinstance(item, ParsedBagelEntry):
+            # Build ExtractedModifiers from parsed entry fields
+            extracted_mods = ExtractedModifiers()
+            extracted_mods.proteins = list(item.proteins) if item.proteins else []
+            extracted_mods.cheeses = list(item.cheeses) if item.cheeses else []
+            extracted_mods.toppings = list(item.toppings) if item.toppings else []
+            extracted_mods.needs_cheese_clarification = item.needs_cheese_clarification
+            # Convert special_instructions string to list for ExtractedModifiers
+            if item.special_instructions:
+                extracted_mods.special_instructions = [item.special_instructions]
+
             if item.quantity > 1:
                 result = self.item_adder_handler.add_bagels(
                     quantity=item.quantity,
                     bagel_type=item.bagel_type,
                     toasted=item.toasted,
-                    spread=None,
-                    spread_type=None,
+                    spread=item.spread,
+                    spread_type=item.spread_type,
                     order=order,
+                    extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
                 )
             else:
                 result = self.item_adder_handler.add_bagel(
                     bagel_type=item.bagel_type,
                     order=order,
                     toasted=item.toasted,
+                    spread=item.spread,
+                    spread_type=item.spread_type,
+                    extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
                 )
             order = result.order
             # Build summary - handle None bagel_type
@@ -1722,17 +1736,28 @@ class TakingItemsHandler:
             return order, summary
 
         elif isinstance(item, ParsedCoffeeEntry):
+            # Extract first sweetener if present
+            sweetener = item.sweeteners[0].type if item.sweeteners else None
+            sweetener_qty = item.sweeteners[0].quantity if item.sweeteners else 1
+
+            # Extract first syrup if present
+            flavor_syrup = item.syrups[0].type if item.syrups else None
+            syrup_qty = item.syrups[0].quantity if item.syrups else 1
+
             result = self.coffee_handler.add_coffee(
                 item.drink_type,
                 item.size,
                 item.temperature == "iced" if item.temperature else None,
                 item.milk,
-                None,  # sweetener
-                1,     # sweetener_quantity
-                None,  # flavor_syrup
+                sweetener,
+                sweetener_qty,
+                flavor_syrup,
                 item.quantity,
                 order,
                 special_instructions=item.special_instructions,
+                decaf=item.decaf,
+                syrup_quantity=syrup_qty,
+                wants_syrup=item.wants_syrup,
             )
             order = result.order
             summary = item.drink_type

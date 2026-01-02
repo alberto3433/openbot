@@ -237,6 +237,8 @@ class TakingItemsHandler:
                 r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
                 r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
                 r"^put\s+",  # "put vanilla in it"
+                r"^can\s+you\s+put\s+",  # "can you put milk in that"
+                r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
             ]
 
             is_add_modifier_request = any(
@@ -248,9 +250,10 @@ class TakingItemsHandler:
                 # Syrups
                 "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
                 "cinnamon", "lavender", "almond", "syrup",
-                # Milk alternatives (when adding to existing coffee)
+                # Milk options (when adding to existing coffee)
+                "milk", "whole milk", "skim milk", "2% milk",
                 "oat milk", "almond milk", "soy milk", "coconut milk",
-                "oat", "almond", "soy", "coconut",
+                "oat", "soy", "coconut",
                 # Sweeteners
                 "sugar", "splenda", "stevia", "honey", "sweetener",
             }
@@ -275,12 +278,15 @@ class TakingItemsHandler:
                                 made_change = True
                             break
 
-                    # Check for milk alternatives
+                    # Check for milk options (alternatives and regular)
                     milk_options = [
                         ("oat milk", "oat"), ("almond milk", "almond"),
                         ("soy milk", "soy"), ("coconut milk", "coconut"),
+                        ("whole milk", "whole"), ("skim milk", "skim"),
+                        ("2% milk", "2%"), ("half and half", "half and half"),
                         ("oat", "oat"), ("almond", "almond"),
                         ("soy", "soy"), ("coconut", "coconut"),
+                        ("milk", "whole"),  # Plain "milk" defaults to whole milk - must be last
                     ]
                     for pattern, milk_value in milk_options:
                         if pattern in input_lower:

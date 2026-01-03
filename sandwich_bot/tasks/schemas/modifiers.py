@@ -56,6 +56,7 @@ class ExtractedCoffeeModifiers:
     flavor_syrup: str | None = None
     syrup_quantity: int = 1  # Number of syrup pumps (e.g., 2 hazelnut syrups)
     milk: str | None = None  # Milk type: whole, skim, oat, almond, etc.
+    cream_level: str | None = None  # dark, light, regular - amount of cream/milk
     wants_syrup: bool = False  # True if user said "with syrup" without specifying flavor
     special_instructions: list[str] = None  # Qualifiers like "splash of milk", "light sugar"
 

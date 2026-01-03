@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .modifier_change_handler import ModifierChangeHandler
     from .item_adder_handler import ItemAdderHandler
+    from .taking_items_handler import TakingItemsHandler
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,8 @@ class ConfiguringItemHandler:
         self.checkout_utils_handler = checkout_utils_handler
         self.modifier_change_handler = modifier_change_handler
         self.item_adder_handler = item_adder_handler
+        # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
+        self.taking_items_handler: "TakingItemsHandler | None" = None
 
     def handle_configuring_item(
         self,
@@ -223,6 +226,10 @@ class ConfiguringItemHandler:
         # Handle category inquiry follow-up ("Would you like to hear what X we have?" -> "yes")
         if order.pending_field == "category_inquiry":
             return self.by_pound_handler.handle_category_inquiry_response(user_input, order)
+
+        # Handle duplicate selection when user said "another one" with multiple items in cart
+        if order.pending_field == "duplicate_selection":
+            return self.taking_items_handler.handle_duplicate_selection(user_input, order)
 
         item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
         if item is None:

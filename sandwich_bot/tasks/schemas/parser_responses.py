@@ -50,6 +50,7 @@ class ParsedBagelEntry(BaseModel):
     bagel_type: str | None = None  # May be None if user just said "bagel" without type
     quantity: int = 1
     toasted: bool | None = None
+    scooped: bool | None = None  # True if bagel should be scooped out
 
     # Spread configuration
     spread: str | None = None  # "cream cheese", "butter", etc.
@@ -86,6 +87,9 @@ class ParsedCoffeeEntry(BaseModel):
 
     # Decaf preference
     decaf: bool | None = None
+
+    # Cream level preference (dark = less cream, light = more cream)
+    cream_level: str | None = None
 
     # Sweeteners - supports multiple (e.g., "2 sugars and 1 splenda")
     sweeteners: list[SweetenerItem] = Field(default_factory=list)
@@ -365,6 +369,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Whether the bagel should be toasted (True if 'toasted' mentioned, False if 'not toasted', None if not specified)"
     )
+    new_bagel_scooped: bool | None = Field(
+        default=None,
+        description="Whether the bagel should be scooped out (True if 'scooped' mentioned, None if not specified)"
+    )
     new_bagel_spread: str | None = Field(
         default=None,
         description="Spread for the bagel if specified (e.g., 'cream cheese', 'butter')"
@@ -429,6 +437,10 @@ class OpenInputResponse(BaseModel):
     new_coffee_milk: str | None = Field(
         default=None,
         description="Milk preference: whole, skim, oat, almond, none/black. 'black' means no milk."
+    )
+    new_coffee_cream_level: str | None = Field(
+        default=None,
+        description="Cream level preference: dark (less cream), light (more cream), regular"
     )
     new_coffee_sweetener: str | None = Field(
         default=None,
@@ -633,6 +645,14 @@ class OpenInputResponse(BaseModel):
     duplicate_last_item: int = Field(
         default=0,
         description="User wants to add more of the last item (e.g., 'make it 2' -> 1, 'I'll take 3' -> 2). Value is how many MORE to add."
+    )
+    duplicate_new_item_type: str | None = Field(
+        default=None,
+        description="User wants another item of a specific type (e.g., 'another bagel' -> 'bagel', 'one more coffee' -> 'coffee'). Treat as new item and run config flow."
+    )
+    wants_duplicate_all: bool = Field(
+        default=False,
+        description="User wants to duplicate all items in the cart (e.g., 'all the items', 'everything again')."
     )
 
     # Order type preference (pickup/delivery mentioned upfront)

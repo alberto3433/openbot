@@ -1734,3 +1734,82 @@ class TestParsedItemsMultiItem:
         types = [item.type for item in result.parsed_items]
         assert "speed_menu_bagel" in types
         assert "coffee" in types
+
+
+class TestDuplicatePatterns:
+    """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""
+
+    @pytest.mark.parametrize("text,expected_type", [
+        ("another bagel", "bagel"),
+        ("another bagels", "bagel"),
+        ("one more bagel", "bagel"),
+        ("another coffee", "coffee"),
+        ("one more coffee", "coffee"),
+        ("another latte", "coffee"),
+        ("one more latte", "coffee"),
+        ("another cappuccino", "coffee"),
+        ("another espresso", "coffee"),
+        ("another americano", "coffee"),
+        ("another mocha", "coffee"),
+        ("another tea", "coffee"),  # Tea treated as coffee for ordering flow
+        ("another sandwich", "sandwich"),
+        ("one more sandwich", "sandwich"),
+    ])
+    def test_another_item_type_detected(self, text, expected_type):
+        """Test that 'another <item>' patterns are detected with correct item type."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_new_item_type == expected_type, f"Expected type '{expected_type}' for: {text}"
+        assert result.duplicate_last_item == 0, f"duplicate_last_item should be 0 for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        "another one",
+        "one more",
+        "and another",
+        "another",
+        "add one more",
+        "add another",
+        "one more of those",
+    ])
+    def test_one_more_without_type_detected(self, text):
+        """Test that 'one more' / 'another' without item type sets duplicate_last_item."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_last_item == 1, f"Expected duplicate_last_item=1 for: {text}"
+        assert result.duplicate_new_item_type is None, f"Expected no item type for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        "all the items",
+        "all of them",
+        "all items",
+        "everything",
+        "everything in the cart",
+        "the whole order",
+        "the entire order",
+    ])
+    def test_duplicate_all_patterns(self, text):
+        """Test that 'all items' / 'everything' patterns are recognized."""
+        from sandwich_bot.tasks.parsers.deterministic import DUPLICATE_ALL_PATTERN
+        assert DUPLICATE_ALL_PATTERN.match(text) is not None, f"Expected match for: {text}"
+
+    def test_another_bagel_not_duplicate_last(self):
+        """Test that 'another bagel' is NOT treated as duplicate_last_item."""
+        result = parse_open_input_deterministic("another bagel")
+        assert result is not None
+        # Should be new item type, not duplicate last
+        assert result.duplicate_new_item_type == "bagel"
+        assert result.duplicate_last_item == 0
+
+    def test_make_it_2_still_works(self):
+        """Test that 'make it 2' still sets duplicate_last_item correctly."""
+        result = parse_open_input_deterministic("make it 2")
+        assert result is not None
+        assert result.duplicate_last_item == 1  # Add 1 more to reach 2 total
+        assert result.duplicate_new_item_type is None
+
+    def test_ill_take_3_still_works(self):
+        """Test that 'I'll take 3' still sets duplicate_last_item correctly."""
+        result = parse_open_input_deterministic("I'll take 3")
+        assert result is not None
+        assert result.duplicate_last_item == 2  # Add 2 more to reach 3 total
+        assert result.duplicate_new_item_type is None

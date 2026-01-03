@@ -12,6 +12,7 @@ from .models import (
     Recipe,
     RecipeIngredient,
     RecipeChoiceGroup,
+    RecipeChoiceItem,
     IngredientStoreAvailability,
     MenuItemStoreAvailability,
     ItemType,
@@ -283,6 +284,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Add generic item type data for configurable items
     index["item_types"] = _build_item_types_data(db, store_id)
 
+    # Add list of menu items that contain bagels (for bagel configuration questions)
+    index["bagel_menu_items"] = _build_bagel_menu_items(db)
+
     return index
 
 
@@ -366,6 +370,86 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
         }
 
     return result
+
+
+def _build_bagel_menu_items(db: Session) -> List[Dict[str, Any]]:
+    """
+    Find all menu items that contain a bagel as an ingredient.
+
+    These items need bagel configuration questions (bagel type, toasted).
+
+    Checks for:
+    1. Base ingredients with category='bread' and name containing 'bagel'
+    2. Choice groups named 'Bagel' or similar
+    3. Choice group options that are bagel ingredients
+
+    Returns:
+        List of dicts with: id, name, default_bagel_type (from recipe default or None)
+    """
+    bagel_menu_items: List[Dict[str, Any]] = []
+    seen_item_ids: set = set()
+
+    # Get all menu items with recipes
+    items_with_recipes = (
+        db.query(MenuItem)
+        .filter(MenuItem.recipe_id.isnot(None))
+        .all()
+    )
+
+    for item in items_with_recipes:
+        if item.id in seen_item_ids:
+            continue
+
+        recipe = item.recipe
+        if not recipe:
+            continue
+
+        has_bagel = False
+        default_bagel_type = None
+
+        # Check 1: Base ingredients with category='bread' and name contains 'bagel'
+        for ri in recipe.ingredients:
+            ing = ri.ingredient
+            if ing.category and ing.category.lower() == "bread":
+                if "bagel" in ing.name.lower():
+                    has_bagel = True
+                    # Use this as default bagel type
+                    default_bagel_type = ing.name
+                    break
+
+        # Check 2 & 3: Choice groups named 'Bagel' or with bagel options
+        if not has_bagel:
+            for cg in recipe.choice_groups:
+                # Check if group name suggests bagel (e.g., "Bagel", "Bagel Type", "Bread")
+                group_name_lower = cg.name.lower() if cg.name else ""
+                is_bagel_group = "bagel" in group_name_lower
+
+                for ci in cg.choices:
+                    ing = ci.ingredient
+                    # Check if ingredient is a bagel
+                    is_bagel_ingredient = (
+                        ing.category and ing.category.lower() == "bread" and
+                        "bagel" in ing.name.lower()
+                    )
+                    # Also check group name for "bread" groups with bagel options
+                    if is_bagel_ingredient or (is_bagel_group and ing.category and ing.category.lower() == "bread"):
+                        has_bagel = True
+                        # Use default choice as default bagel type
+                        if ci.is_default:
+                            default_bagel_type = ing.name
+                        break
+                if has_bagel:
+                    break
+
+        if has_bagel:
+            seen_item_ids.add(item.id)
+            bagel_menu_items.append({
+                "id": item.id,
+                "name": item.name,
+                "default_bagel_type": default_bagel_type,
+            })
+
+    return bagel_menu_items
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

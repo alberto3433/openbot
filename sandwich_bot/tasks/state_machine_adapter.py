@@ -126,7 +126,8 @@ def process_message_with_state_machine(
 
     # Convert state back to dict (phase and pending fields are stored in OrderTask)
     # Pass store_info to calculate taxes for real-time display in order panel
-    updated_dict = order_task_to_dict(result.order, store_info=store_info)
+    # Pass pricing engine for consistent modifier price lookups
+    updated_dict = order_task_to_dict(result.order, store_info=store_info, pricing=sm.pricing)
 
     # Build actions list for compatibility
     actions = _infer_actions_from_result(order_state_dict, updated_dict, result)

@@ -438,6 +438,7 @@ class ItemAdderHandler:
         bagel_type: str | None,
         order: OrderTask,
         toasted: bool | None = None,
+        scooped: bool | None = None,
         spread: str | None = None,
         spread_type: str | None = None,
         extracted_modifiers: ExtractedModifiers | None = None,
@@ -497,6 +498,7 @@ class ItemAdderHandler:
         bagel = BagelItemTask(
             bagel_type=bagel_type,
             toasted=toasted,
+            scooped=scooped,
             spread=spread,
             spread_type=spread_type,
             sandwich_protein=sandwich_protein,
@@ -572,6 +574,7 @@ class ItemAdderHandler:
         quantity: int,
         bagel_type: str | None,
         toasted: bool | None,
+        scooped: bool | None,
         spread: str | None,
         spread_type: str | None,
         order: OrderTask,
@@ -642,6 +645,7 @@ class ItemAdderHandler:
             bagel = BagelItemTask(
                 bagel_type=bagel_type,
                 toasted=toasted,
+                scooped=scooped,
                 spread=bagel_spread,
                 spread_type=spread_type,
                 sandwich_protein=sandwich_protein,

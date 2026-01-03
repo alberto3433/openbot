@@ -410,6 +410,9 @@ class OrderStateMachine:
             checkout_utils_handler=self.checkout_utils_handler,
             checkout_handler=self.checkout_handler,
         )
+        self.taking_items_handler.menu_data = self._menu_data
+        # Set taking_items_handler on configuring_item_handler (after both are created)
+        self.configuring_item_handler.taking_items_handler = self.taking_items_handler
 
     @property
     def menu_data(self) -> dict:
@@ -436,6 +439,8 @@ class OrderStateMachine:
         self.menu_inquiry_handler.menu_data = self._menu_data
         # Update item adder handler menu data
         self.item_adder_handler.menu_data = self._menu_data
+        # Update taking items handler menu data
+        self.taking_items_handler.menu_data = self._menu_data
 
     def process(
         self,

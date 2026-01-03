@@ -19,6 +19,7 @@ from .models import (
     SpeedMenuBagelItemTask,
 )
 from .schemas import StateMachineResult
+from ..services.tax_utils import calculate_taxes, round_money
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -215,25 +216,19 @@ class OrderUtilsHandler:
         """Handle user asking about total with tax."""
         subtotal = order.items.get_subtotal()
 
-        # Get tax rates from store_info
-        city_tax_rate = self._store_info.get('city_tax_rate', 0.0) or 0.0
-        state_tax_rate = self._store_info.get('state_tax_rate', 0.0) or 0.0
-
-        # Calculate taxes
-        city_tax = subtotal * city_tax_rate
-        state_tax = subtotal * state_tax_rate
-        total_tax = city_tax + state_tax
-        total_with_tax = subtotal + total_tax
+        # Calculate taxes using centralized utility
+        taxes = calculate_taxes(subtotal, self._store_info)
+        total_with_tax = round_money(subtotal + taxes.total)
 
         # Format response
-        if total_tax > 0:
+        if taxes.total > 0:
             message = f"Your subtotal is ${subtotal:.2f}. With tax, that comes to ${total_with_tax:.2f}. Does that look right?"
         else:
             # No tax configured - just show the subtotal
             message = f"Your total is ${subtotal:.2f}. Does that look right?"
 
         logger.info("TAX_QUESTION: subtotal=%.2f, city_tax=%.2f, state_tax=%.2f, total=%.2f",
-                   subtotal, city_tax, state_tax, total_with_tax)
+                   subtotal, taxes.city_tax, taxes.state_tax, total_with_tax)
 
         return StateMachineResult(
             message=message,

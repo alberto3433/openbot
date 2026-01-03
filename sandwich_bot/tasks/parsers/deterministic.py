@@ -439,7 +439,7 @@ COFFEE_ORDER_PATTERN = re.compile(
     r")?\s*"
     r"(?:an?\s+)?"
     r"(?:(\d+|two|three|four|five)\s+)?"
-    r"(?:(small|large)\s+)?"
+    r"(?:(small|medium|large)\s+)?"
     r"(?:(iced|hot)\s+)?"
     r"(?:(decaf)\s+)?"
     r"(" + "|".join(COFFEE_BEVERAGE_TYPES) + r")"
@@ -1269,7 +1269,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
 
     # Extract base size from initial part
     base_size = None
-    size_match = re.search(r'\b(small|large)\b', first_split)
+    size_match = re.search(r'\b(small|medium|large)\b', first_split)
     if size_match:
         base_size = size_match.group(1)
 
@@ -1552,7 +1552,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     # "with" is included because beverages can't be modifiers for food items
     # e.g., "classic BEC with coffee" = BEC + coffee (separate items)
     and_coffee_match = re.search(
-        r'\b(?:and|with)\s+(?:a\s+)?(?:(small|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
+        r'\b(?:and|with)\s+(?:a\s+)?(?:(small|medium|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
         r'(coffee|latte|cappuccino|espresso|americano|macchiato|mocha|tea|chai)',
         text_lower
     )
@@ -1673,7 +1673,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     quantity = 1
     # Compound expressions first, then single words
     qty_words = r'\d+|(?:a\s+)?couple(?:\s+of)?|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+few|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen'
-    size_words = r'(?:(?:small|large|iced|hot)\s+)*'
+    size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
 
     # Build pattern that matches both compound tea names and single beverage types
     all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
@@ -1690,7 +1690,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     # Extract size
     size = None
-    size_match = re.search(r'\b(small|large)\b', text_lower)
+    size_match = re.search(r'\b(small|medium|large)\b', text_lower)
     if size_match:
         size = size_match.group(1)
 

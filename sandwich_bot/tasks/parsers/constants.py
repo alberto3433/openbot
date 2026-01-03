@@ -300,51 +300,9 @@ BY_POUND_CATEGORY_NAMES = {
     "salad": "salads",
 }
 
-BY_POUND_PRICES = {
-    # Cheeses (per pound)
-    "muenster": 12.99,
-    "swiss": 14.99,
-    "american": 10.99,
-    "cheddar": 12.99,
-    "provolone": 13.99,
-    "gouda": 15.99,
-    # Spreads (per pound)
-    "plain cream cheese": 14.99,
-    "scallion cream cheese": 16.99,
-    "vegetable cream cheese": 16.99,
-    "lox spread": 24.99,
-    "jalapeño cream cheese": 16.99,
-    "honey walnut cream cheese": 18.99,
-    "strawberry cream cheese": 16.99,
-    "olive cream cheese": 16.99,
-    "tofu cream cheese": 16.99,
-    # Cold cuts (per pound)
-    "turkey breast": 15.99,
-    "turkey": 15.99,
-    "roast beef": 18.99,
-    "pastrami": 22.99,
-    "corned beef": 22.99,
-    "ham": 14.99,
-    "salami": 16.99,
-    "bologna": 12.99,
-    # Fish (per pound)
-    "nova scotia salmon (lox)": 44.99,
-    "nova scotia salmon": 44.99,
-    "nova": 44.99,
-    "lox": 44.99,
-    "baked salmon": 34.99,
-    "sable": 54.99,
-    "whitefish": 32.99,
-    "kippered salmon": 38.99,
-    "smoked sturgeon": 64.99,
-    "sturgeon": 64.99,
-    # Salads (per pound)
-    "tuna salad": 18.99,
-    "egg salad": 14.99,
-    "chicken salad": 16.99,
-    "whitefish salad": 28.99,
-    "baked salmon salad": 26.99,
-}
+# Note: BY_POUND_PRICES has been moved to the database.
+# Prices are now loaded via menu_index_builder._build_by_pound_prices()
+# and accessed via PricingEngine.lookup_by_pound_price()
 
 # =============================================================================
 # Bagel Modifiers

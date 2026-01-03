@@ -89,10 +89,9 @@ from .constants import (
     SPREAD_TYPES,
     # Speed menu items
     SPEED_MENU_BAGELS,
-    # By-the-pound items and prices
+    # By-the-pound items and categories
     BY_POUND_ITEMS,
     BY_POUND_CATEGORY_NAMES,
-    BY_POUND_PRICES,
     # Bagel modifiers
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
@@ -200,10 +199,9 @@ __all__ = [
     "SPREAD_TYPES",
     # Constants - Speed menu items
     "SPEED_MENU_BAGELS",
-    # Constants - By-the-pound items and prices
+    # Constants - By-the-pound items and categories
     "BY_POUND_ITEMS",
     "BY_POUND_CATEGORY_NAMES",
-    "BY_POUND_PRICES",
     # Constants - Bagel modifiers
     "BAGEL_PROTEINS",
     "BAGEL_CHEESES",

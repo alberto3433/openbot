@@ -287,6 +287,10 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Add list of menu items that contain bagels (for bagel configuration questions)
     index["bagel_menu_items"] = _build_bagel_menu_items(db)
 
+    # Build by-pound prices from menu_items with category "by_the_lb" or "cream_cheese"
+    # These are items like "Nova Scotia Salmon (1 lb)" -> $44.00
+    index["by_pound_prices"] = _build_by_pound_prices(db)
+
     return index
 
 
@@ -450,6 +454,86 @@ def _build_bagel_menu_items(db: Session) -> List[Dict[str, Any]]:
             })
 
     return bagel_menu_items
+
+
+def _build_by_pound_prices(db: Session) -> Dict[str, float]:
+    """
+    Build a dictionary of by-pound prices from menu items.
+
+    Queries menu items with category "by_the_lb" or "cream_cheese" and extracts
+    per-pound prices. Creates aliases for common variations.
+
+    Returns:
+        Dict mapping normalized item names (lowercase) to per-pound prices.
+        Example: {"nova scotia salmon": 44.0, "nova": 44.0, "lox": 44.0}
+    """
+    import re
+
+    prices: Dict[str, float] = {}
+
+    # Query all by-pound items from database
+    by_pound_items = (
+        db.query(MenuItem)
+        .filter(MenuItem.category.in_(["by_the_lb", "cream_cheese"]))
+        .all()
+    )
+
+    # Parse item names and calculate per-pound prices
+    # Items are stored as "Name (1 lb)" or "Name (1/4 lb)"
+    for item in by_pound_items:
+        name = item.name
+        price = float(item.base_price or 0)
+
+        # Extract weight from name: "(1 lb)", "(1/4 lb)", "(Whole)"
+        weight_match = re.search(r'\(([\d/]+)\s*lb\)', name, re.IGNORECASE)
+        whole_match = re.search(r'\(Whole\)', name, re.IGNORECASE)
+
+        if weight_match:
+            weight_str = weight_match.group(1)
+            # Calculate weight as float
+            if '/' in weight_str:
+                num, denom = weight_str.split('/')
+                weight = float(num) / float(denom)
+            else:
+                weight = float(weight_str)
+
+            # Calculate per-pound price
+            per_pound = price / weight if weight > 0 else price
+
+            # Extract base name (without weight)
+            base_name = re.sub(r'\s*\([\d/]+\s*lb\)', '', name, flags=re.IGNORECASE).strip()
+            base_name_lower = base_name.lower()
+
+            # Only store if this is better precision (1 lb over 1/4 lb)
+            # or if we don't have this item yet
+            if base_name_lower not in prices or weight >= 1:
+                prices[base_name_lower] = round(per_pound, 2)
+
+        elif whole_match:
+            # Items like "Whitefish (Whole)" - store as-is without calculating per-pound
+            base_name = re.sub(r'\s*\(Whole\)', '', name, flags=re.IGNORECASE).strip()
+            base_name_lower = base_name.lower()
+            # For whole items, we store the whole price (used differently)
+            # Only add if not already present from a per-pound entry
+            if base_name_lower not in prices:
+                prices[base_name_lower] = round(price, 2)
+
+    # Add common aliases for fish items
+    aliases = {
+        "nova scotia salmon": ["nova", "lox", "nova scotia salmon (lox)"],
+        "whitefish salad": ["whitefish"],  # Common shorthand
+        "lake sturgeon": ["sturgeon", "smoked sturgeon"],
+        "smoked trout": ["trout"],
+        "plain cream cheese": ["cream cheese"],
+    }
+
+    for base_name, alias_list in aliases.items():
+        if base_name in prices:
+            for alias in alias_list:
+                if alias not in prices:
+                    prices[alias] = prices[base_name]
+
+    return prices
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

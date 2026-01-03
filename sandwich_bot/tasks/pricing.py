@@ -11,8 +11,6 @@ import logging
 import re
 from typing import Callable
 
-from .parsers.constants import BY_POUND_PRICES
-
 logger = logging.getLogger(__name__)
 
 
@@ -138,22 +136,37 @@ class PricingEngine:
             item_name: Name of the item (e.g., "Muenster", "Nova", "Tuna Salad")
 
         Returns:
-            Price per pound, or 0.0 if not found
+            Price per pound
+
+        Raises:
+            ValueError: If price not found for the item
         """
         item_lower = item_name.lower().strip()
 
+        # Get by-pound prices from menu_data
+        by_pound_prices = self._menu_data.get("by_pound_prices", {}) if self._menu_data else {}
+
+        if not by_pound_prices:
+            raise ValueError(
+                f"No by_pound_prices in menu_data. Cannot look up price for '{item_name}'. "
+                "Ensure menu is populated with by-the-pound items."
+            )
+
         # Direct lookup
-        if item_lower in BY_POUND_PRICES:
-            return BY_POUND_PRICES[item_lower]
+        if item_lower in by_pound_prices:
+            return by_pound_prices[item_lower]
 
         # Try partial matching for items like "Nova" -> "nova scotia salmon"
-        for price_key, price in BY_POUND_PRICES.items():
+        for price_key, price in by_pound_prices.items():
             if item_lower in price_key or price_key in item_lower:
                 return price
 
-        # Not found
-        logger.warning(f"No price found for by-pound item: {item_name}")
-        return 0.0
+        # Not found - raise error
+        available_items = list(by_pound_prices.keys())[:10]  # Show first 10 for debugging
+        raise ValueError(
+            f"No price found for by-pound item: '{item_name}'. "
+            f"Available items include: {available_items}"
+        )
 
     # =========================================================================
     # Bagel Pricing

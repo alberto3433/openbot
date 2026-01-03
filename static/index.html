@@ -972,7 +972,7 @@
         height: calc(100vh - 60px);
         border-left: none;
         border-right: none;
-        padding-bottom: 100px; /* Space for collapsed order panel - extra room for Android browser chrome */
+        padding-bottom: 70px; /* Space for collapsed order panel */
       }
 
       .chat-footer {
@@ -1085,6 +1085,31 @@
         </div>
         <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 12px;">
           Select a store and optionally enter a phone number.
+        </div>
+      </details>
+
+      <!-- Test Orders Panel (Dev Mode) -->
+      <details class="caller-id-panel" id="test-orders-panel" style="background: var(--success-bg);">
+        <summary style="color: var(--success-text);">Test Orders - By-Pound Pricing (Dev Mode)</summary>
+        <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
+          <button type="button" class="test-order-btn" data-order="I'd like a quarter pound of nova" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
+            1/4 lb Nova
+          </button>
+          <button type="button" class="test-order-btn" data-order="Can I get a pound of sable please" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
+            1 lb Sable
+          </button>
+          <button type="button" class="test-order-btn" data-order="I'll have half a pound of whitefish salad" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
+            1/2 lb Whitefish Salad
+          </button>
+          <button type="button" class="test-order-btn" data-order="Give me a quarter pound of plain cream cheese and a quarter pound of scallion cream cheese" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
+            Cream Cheese (2 types)
+          </button>
+          <button type="button" class="test-order-btn" data-order="I need half pound of lox, quarter pound sturgeon, and a pound of whitefish salad for pickup" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
+            Multi By-Pound Order
+          </button>
+        </div>
+        <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 11px;">
+          Click a button to send a test order for by-pound items. Prices should come from database.
         </div>
       </details>
 

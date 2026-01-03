@@ -84,81 +84,115 @@ class CheckoutUtilsHandler:
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
+                # Handle menu items with bagel sides that need toasted question
+                elif isinstance(item, MenuItemTask):
+                    if item.side_choice == "bagel" and item.toasted is None:
+                        logger.info("Found menu item with bagel side needing toasted question")
+                        order.pending_item_id = item.id
+                        order.pending_field = "menu_item_bagel_toasted"
+                        order.phase = OrderPhase.CONFIGURING_ITEM.value
+                        bagel_type = item.bagel_choice or "bagel"
+                        return StateMachineResult(
+                            message=f"Would you like the {bagel_type} bagel toasted?",
+                            order=order,
+                        )
+                    else:
+                        # Menu item doesn't need bagel config - log and continue
+                        logger.info(f"Menu item in progress but no bagel config needed: {item.menu_item_name}")
                 else:
                     # Other in-progress items - log warning
                     logger.warning(f"Found in-progress item without handler: {item}")
 
         # Check if there are items queued for configuration
-        if order.has_queued_config_items():
+        # Loop until we find an incomplete item or queue is empty (defensive safeguard)
+        while order.has_queued_config_items():
             next_config = order.pop_next_config_item()
-            if next_config:
-                item_id = next_config.get("item_id")
-                item_type = next_config.get("item_type")
-                item_name = next_config.get("item_name")
-                pending_field = next_config.get("pending_field")
-                logger.info("Processing queued config item: id=%s, type=%s, name=%s, field=%s",
-                            item_id[:8] if item_id else None, item_type, item_name, pending_field)
+            if not next_config:
+                break
 
-                # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
-                if item_type == "coffee_disambiguation" and order.pending_drink_options:
-                    logger.info("Processing queued coffee disambiguation")
-                    order.pending_field = "drink_selection"
-                    order.phase = OrderPhase.CONFIGURING_ITEM.value
-                    # Build the clarification message
-                    option_list = []
-                    for i, option_item in enumerate(order.pending_drink_options, 1):
-                        name = option_item.get("name", "Unknown")
-                        price = option_item.get("base_price", 0)
-                        if price > 0:
-                            option_list.append(f"{i}. {name} (${price:.2f})")
-                        else:
-                            option_list.append(f"{i}. {name}")
-                    options_str = "\n".join(option_list)
-                    return StateMachineResult(
-                        message=f"For your coffee - we have a few options:\n{options_str}\nWhich would you like?",
-                        order=order,
-                    )
+            item_id = next_config.get("item_id")
+            item_type = next_config.get("item_type")
+            item_name = next_config.get("item_name")
+            pending_field = next_config.get("pending_field")
+            logger.info("Processing queued config item: id=%s, type=%s, name=%s, field=%s",
+                        item_id[:8] if item_id else None, item_type, item_name, pending_field)
 
-                # If we have item_name and pending_field from multi-item processing,
-                # use abbreviated question format: "And the [ItemName]?"
-                if item_name and pending_field:
-                    order.pending_item_id = item_id
-                    order.pending_field = pending_field
-                    order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-                    # Build abbreviated question based on the pending field
-                    if pending_field in ("toasted", "speed_menu_bagel_toasted"):
-                        question = f"And the {item_name}?"
-                    elif pending_field in ("bagel_choice", "bagel_type", "speed_menu_bagel_type"):
-                        question = f"And what bagel for the {item_name}?"
-                    elif pending_field == "coffee_size":
-                        question = f"And what size for the {item_name}? Small or Large?"
-                    elif pending_field == "coffee_style":
-                        question = f"Would you like the {item_name} hot or iced?"
+            # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
+            if item_type == "coffee_disambiguation" and order.pending_drink_options:
+                logger.info("Processing queued coffee disambiguation")
+                order.pending_field = "drink_selection"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                # Build the clarification message
+                option_list = []
+                for i, option_item in enumerate(order.pending_drink_options, 1):
+                    name = option_item.get("name", "Unknown")
+                    price = option_item.get("base_price", 0)
+                    if price > 0:
+                        option_list.append(f"{i}. {name} (${price:.2f})")
                     else:
-                        question = f"And the {item_name}?"
+                        option_list.append(f"{i}. {name}")
+                options_str = "\n".join(option_list)
+                return StateMachineResult(
+                    message=f"For your coffee - we have a few options:\n{options_str}\nWhich would you like?",
+                    order=order,
+                )
 
-                    return StateMachineResult(message=question, order=order)
+            # Find the target item and check if it still needs configuration
+            target_item = None
+            for item in order.items.items:
+                if item.id == item_id:
+                    target_item = item
+                    break
 
-                # Fall back to full config handlers for legacy queued items without names
-                for item in order.items.items:
-                    if item.id == item_id:
-                        if item_type == "bagel" and isinstance(item, BagelItemTask):
-                            # Start bagel configuration
-                            if self._configure_next_incomplete_bagel:
-                                return self._configure_next_incomplete_bagel(order)
-                        elif item_type == "speed_menu_bagel" and isinstance(item, SpeedMenuBagelItemTask):
-                            # Start speed menu bagel configuration
-                            if self._configure_next_incomplete_speed_menu_bagel:
-                                return self._configure_next_incomplete_speed_menu_bagel(order)
-                        elif item_type == "coffee" and isinstance(item, CoffeeItemTask):
-                            # Start coffee configuration
-                            if self._configure_next_incomplete_coffee:
-                                return self._configure_next_incomplete_coffee(order)
-                        elif item_type == "menu_item" and isinstance(item, MenuItemTask):
-                            # Start menu item configuration (for toasted question)
-                            if self._configure_next_incomplete_bagel:
-                                return self._configure_next_incomplete_bagel(order)
+            # Defensive check: skip if item is already complete
+            if target_item and target_item.status == TaskStatus.COMPLETE:
+                logger.info("Skipping already-complete item in queue: id=%s, type=%s",
+                           item_id[:8] if item_id else None, item_type)
+                continue  # Pop next item from queue
+
+            # If we have item_name and pending_field from multi-item processing,
+            # use abbreviated question format: "And the [ItemName]?"
+            if item_name and pending_field:
+                order.pending_item_id = item_id
+                order.pending_field = pending_field
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+                # Build abbreviated question based on the pending field
+                if pending_field in ("toasted", "speed_menu_bagel_toasted", "menu_item_bagel_toasted"):
+                    question = f"And the {item_name}?"
+                elif pending_field in ("bagel_choice", "bagel_type", "speed_menu_bagel_type"):
+                    question = f"And what bagel for the {item_name}?"
+                elif pending_field == "coffee_size":
+                    question = f"And what size for the {item_name}? Small or Large?"
+                elif pending_field == "coffee_style":
+                    question = f"Would you like the {item_name} hot or iced?"
+                else:
+                    question = f"And the {item_name}?"
+
+                return StateMachineResult(message=question, order=order)
+
+            # Fall back to full config handlers for legacy queued items without names
+            if target_item:
+                if item_type == "bagel" and isinstance(target_item, BagelItemTask):
+                    # Start bagel configuration
+                    if self._configure_next_incomplete_bagel:
+                        return self._configure_next_incomplete_bagel(order)
+                elif item_type == "speed_menu_bagel" and isinstance(target_item, SpeedMenuBagelItemTask):
+                    # Start speed menu bagel configuration
+                    if self._configure_next_incomplete_speed_menu_bagel:
+                        return self._configure_next_incomplete_speed_menu_bagel(order)
+                elif item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
+                    # Start coffee configuration
+                    if self._configure_next_incomplete_coffee:
+                        return self._configure_next_incomplete_coffee(order)
+                elif item_type == "menu_item" and isinstance(target_item, MenuItemTask):
+                    # Start menu item configuration (for toasted question)
+                    if self._configure_next_incomplete_bagel:
+                        return self._configure_next_incomplete_bagel(order)
+
+            # If we get here, item wasn't handled - log and continue to next
+            logger.warning("Queued config item not handled: id=%s, type=%s",
+                          item_id[:8] if item_id else None, item_type)
 
         # Check if we just finished configuring a multi-item order
         # If so, give a summary like "Great, both toasted. Anything else?"

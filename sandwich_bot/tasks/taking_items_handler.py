@@ -1348,21 +1348,36 @@ class TakingItemsHandler:
             return None
 
         # Find all items that need configuration (toasted question, bagel type, etc.)
-        items_needing_config: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
+        # Group by handler type since handlers like configure_next_incomplete_bagel and
+        # configure_next_incomplete_coffee have internal loops that find ALL items of their type.
+        # We only need to queue ONE item per handler group - the handler will find the rest.
+        #
+        # Handler groups:
+        # - "bagel_handler": BagelItemTask, MenuItemTask with bagel config (sandwiches, omelette sides)
+        # - "coffee_handler": CoffeeItemTask
+        # - "speed_menu_handler": SpeedMenuBagelItemTask
+        # - Individual items: MenuItemTask needing side_choice (no internal loop)
+
+        bagel_handler_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
+        coffee_handler_items: list[tuple[str, str, str, str]] = []
+        speed_menu_handler_items: list[tuple[str, str, str, str]] = []
+        individual_items: list[tuple[str, str, str, str]] = []  # Items that don't share a handler loop
+
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
                 if isinstance(item, MenuItemTask):
                     # Omelettes need side choice first (bagel or fruit salad)
+                    # These don't share a handler loop - each must be queued individually
                     if item.requires_side_choice and item.side_choice is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "menu_item", "side_choice"))
+                        individual_items.append((item.id, item.menu_item_name, "menu_item", "side_choice"))
                     # If omelette chose bagel, need bagel questions (handled by bagel config handler)
                     elif item.side_choice == "bagel":
                         if not item.bagel_choice:
-                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
                         elif item.toasted is None:
-                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                         elif item.spread is None:
-                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "spread"))
+                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
                     # Check if this menu item contains a bagel (e.g., Classic BEC)
                     elif not item.requires_side_choice:
                         bagel_item_info = self._get_bagel_menu_item_info(item.menu_item_name)
@@ -1375,35 +1390,67 @@ class TakingItemsHandler:
                                            item.bagel_choice, item.menu_item_name)
                             # If no default and bagel_choice not set, ask for bagel type
                             if not item.bagel_choice:
-                                items_needing_config.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                                bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
                             # Then ask for toasted if not set
                             elif item.toasted is None:
-                                items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                                bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                         # Non-bagel menu items (spread/salad sandwiches) need toasted question
+                        # These are also handled by bagel config handler
                         elif item.toasted is None:
-                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 elif isinstance(item, BagelItemTask):
                     # Check bagel_type first, then toasted, then spread
                     if item.bagel_type is None:
-                        items_needing_config.append((item.id, "bagel", "bagel", "bagel_choice"))
+                        bagel_handler_items.append((item.id, "bagel", "bagel", "bagel_choice"))
                     elif item.toasted is None:
-                        items_needing_config.append((item.id, f"{item.bagel_type} bagel", "bagel", "toasted"))
+                        bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "toasted"))
                     elif item.spread is None and not item.extras and not item.sandwich_protein:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
-                        items_needing_config.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
+                        bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
                 elif isinstance(item, SpeedMenuBagelItemTask):
                     if item.toasted is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
+                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
                     elif item.bagel_choice is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
+                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
                 elif isinstance(item, CoffeeItemTask):
                     # Coffee items: check size first, then hot/iced
                     if item.size is None:
-                        items_needing_config.append((item.id, item.drink_type or "coffee", "coffee", "coffee_size"))
+                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_size"))
                     elif item.iced is None:
-                        items_needing_config.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
+                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
 
-        logger.info("Multi-item order: %d items need config: %s",
+        # Build final list: only FIRST item from each handler group + all individual items
+        # Handlers with internal loops will find subsequent items of their type automatically
+        items_needing_config: list[tuple[str, str, str, str]] = []
+
+        # Add first bagel-handler item (if any) - configure_next_incomplete_bagel will find the rest
+        if bagel_handler_items:
+            items_needing_config.append(bagel_handler_items[0])
+            if len(bagel_handler_items) > 1:
+                logger.info("Bagel handler will process %d items via internal loop (not queued): %s",
+                           len(bagel_handler_items) - 1,
+                           [(n, f) for _, n, _, f in bagel_handler_items[1:]])
+
+        # Add first coffee-handler item (if any) - configure_next_incomplete_coffee will find the rest
+        if coffee_handler_items:
+            items_needing_config.append(coffee_handler_items[0])
+            if len(coffee_handler_items) > 1:
+                logger.info("Coffee handler will process %d items via internal loop (not queued): %s",
+                           len(coffee_handler_items) - 1,
+                           [(n, f) for _, n, _, f in coffee_handler_items[1:]])
+
+        # Add first speed-menu-handler item (if any)
+        if speed_menu_handler_items:
+            items_needing_config.append(speed_menu_handler_items[0])
+            if len(speed_menu_handler_items) > 1:
+                logger.info("Speed menu handler will process %d items via internal loop (not queued): %s",
+                           len(speed_menu_handler_items) - 1,
+                           [(n, f) for _, n, _, f in speed_menu_handler_items[1:]])
+
+        # Add all individual items (no internal loops for these)
+        items_needing_config.extend(individual_items)
+
+        logger.info("Multi-item order: %d items to configure (grouped by handler): %s",
                     len(items_needing_config),
                     [(n, f) for _, n, _, f in items_needing_config])
 

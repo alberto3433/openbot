@@ -962,39 +962,60 @@ class BagelConfigHandler:
             order.clear_pending()
 
             # Check if there are items queued for configuration (e.g., coffee after bagel)
-            if order.has_queued_config_items():
+            # Loop until we find an incomplete item or queue is empty (defensive safeguard)
+            while order.has_queued_config_items():
                 next_config = order.pop_next_config_item()
-                if next_config:
-                    item_id = next_config.get("item_id")
-                    item_type = next_config.get("item_type")
-                    logger.info("Bagel complete, processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
+                if not next_config:
+                    break
 
-                    # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
-                    if item_type == "coffee_disambiguation" and order.pending_drink_options:
-                        logger.info("Bagel complete, asking coffee disambiguation question")
-                        order.pending_field = "drink_selection"
-                        order.phase = OrderPhase.CONFIGURING_ITEM.value
-                        # Build the clarification message
-                        option_list = []
-                        for i, option_item in enumerate(order.pending_drink_options, 1):
-                            name = option_item.get("name", "Unknown")
-                            price = option_item.get("base_price", 0)
-                            if price > 0:
-                                option_list.append(f"{i}. {name} (${price:.2f})")
-                            else:
-                                option_list.append(f"{i}. {name}")
-                        options_str = "\n".join(option_list)
-                        return StateMachineResult(
-                            message=f"Got it, {summary}. Now for your coffee - we have a few options:\n{options_str}\nWhich would you like?",
-                            order=order,
-                        )
+                item_id = next_config.get("item_id")
+                item_type = next_config.get("item_type")
+                logger.info("Bagel complete, processing queued config item: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
 
-                    # Find the item by ID and start its configuration
-                    for item in order.items.items:
-                        if item.id == item_id:
-                            if item_type == "coffee" and isinstance(item, CoffeeItemTask):
-                                if self._configure_coffee:
-                                    return self._configure_coffee(order)
+                # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
+                if item_type == "coffee_disambiguation" and order.pending_drink_options:
+                    logger.info("Bagel complete, asking coffee disambiguation question")
+                    order.pending_field = "drink_selection"
+                    order.phase = OrderPhase.CONFIGURING_ITEM.value
+                    # Build the clarification message
+                    option_list = []
+                    for i, option_item in enumerate(order.pending_drink_options, 1):
+                        name = option_item.get("name", "Unknown")
+                        price = option_item.get("base_price", 0)
+                        if price > 0:
+                            option_list.append(f"{i}. {name} (${price:.2f})")
+                        else:
+                            option_list.append(f"{i}. {name}")
+                    options_str = "\n".join(option_list)
+                    return StateMachineResult(
+                        message=f"Got it, {summary}. Now for your coffee - we have a few options:\n{options_str}\nWhich would you like?",
+                        order=order,
+                    )
+
+                # Find the item by ID and check if it still needs configuration
+                target_item = None
+                for item in order.items.items:
+                    if item.id == item_id:
+                        target_item = item
+                        break
+
+                if target_item:
+                    # Defensive check: skip if item is already complete
+                    if target_item.status == TaskStatus.COMPLETE:
+                        logger.info("Skipping already-complete item in queue: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
+                        continue  # Pop next item from queue
+
+                    # Handle coffee items
+                    if item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
+                        if self._configure_coffee:
+                            return self._configure_coffee(order)
+
+                    # Handle bagel items (shouldn't normally be in queue due to grouping fix, but defensive)
+                    if item_type == "bagel" and isinstance(target_item, BagelItemTask):
+                        return self.configure_next_incomplete_bagel(order)
+
+                # If we get here, item wasn't handled - log and continue to next
+                logger.warning("Queued config item not handled: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
 
             # Explicitly set to TAKING_ITEMS - we're asking for more items
             order.phase = OrderPhase.TAKING_ITEMS.value

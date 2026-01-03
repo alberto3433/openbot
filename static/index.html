@@ -2122,6 +2122,20 @@
     };
 
     renderOrderPanel(orderState);
+
+    // =====================================================
+    // Test Orders (Dev Mode)
+    // =====================================================
+    document.querySelectorAll('.test-order-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const orderText = btn.getAttribute('data-order');
+        if (!connected || !sessionId) {
+          alert('Please start a session first (click "Start Call" above)');
+          return;
+        }
+        sendMessage(orderText);
+      });
+    });
   </script>
 </body>
 </html>

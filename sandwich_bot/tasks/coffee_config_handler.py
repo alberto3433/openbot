@@ -103,9 +103,17 @@ class CoffeeConfigHandler:
         if coffee_type and self.menu_lookup:
             matching_items = self.menu_lookup.lookup_menu_items(coffee_type)
             if len(matching_items) > 1:
+                # First check for an exact match among the results - if found, use it directly
+                coffee_type_lower = coffee_type.lower()
+                for match_item in matching_items:
+                    if match_item.get("name", "").lower() == coffee_type_lower:
+                        logger.info("ADD COFFEE: Exact match found for '%s', using directly", coffee_type)
+                        matching_items = [match_item]  # Use only the exact match
+                        break
+
+            if len(matching_items) > 1:
                 # Before asking for clarification, check if user already has a matching
                 # drink in their cart - if so, add another of the same type
-                coffee_type_lower = coffee_type.lower()
                 for cart_item in order.items.items:
                     # Use drink_type for CoffeeItemTask, get_display_name() for others
                     if hasattr(cart_item, 'drink_type') and cart_item.drink_type:

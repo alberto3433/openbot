@@ -298,6 +298,8 @@ class ConfiguringItemHandler:
             return self.speed_menu_handler.handle_speed_menu_bagel_toasted(user_input, item, order)
         elif order.pending_field == "spread_sandwich_toasted":
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
+        elif order.pending_field == "menu_item_bagel_toasted":
+            return self.bagel_handler.handle_toasted_choice(user_input, item, order)
         else:
             order.clear_pending()
             return self.checkout_utils_handler.get_next_question(order)

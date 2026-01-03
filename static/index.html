@@ -400,6 +400,7 @@
     .chat-messages {
       flex: 1;
       padding: 20px;
+      padding-top: 50px;
       overflow-y: auto;
       background: var(--chat-bg);
     }
@@ -969,9 +970,16 @@
 
       .main-layout .chat-container {
         border-radius: 0;
-        height: calc(100vh - 60px - 65px);
+        height: calc(100vh - 60px);
         border-left: none;
         border-right: none;
+        padding-bottom: 100px; /* Space for collapsed order panel - extra room for Android browser chrome */
+      }
+
+      .chat-footer {
+        position: relative;
+        z-index: 99; /* Above collapsed panel background but below expanded */
+        margin-bottom: 70px; /* Space for the collapsed cart panel */
       }
 
       .order-panel {

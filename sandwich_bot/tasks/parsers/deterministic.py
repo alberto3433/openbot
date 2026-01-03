@@ -2657,7 +2657,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     ])
     total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if speed_menu_bagel else 0)
 
-    if items_found >= 2 or total_items >= 2:
+    # Use parsed_items count as source of truth - it correctly tracks all items including
+    # multiple bagels of different types (e.g., "plain bagel and sesame bagel")
+    if items_found >= 2 or total_items >= 2 or len(parsed_items) >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
         logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s, parsed_items=%d",
                     len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name, len(parsed_items))
@@ -2965,7 +2967,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications, parsed_items=early_parsed_items)
 
     # Early check for standalone side items
-    # NOTE: "bagel chips" removed - handled by dessert_keywords for chips disambiguation
+    # NOTE: "bagel chips" goes through menu lookup for disambiguation (multiple flavors exist)
     standalone_side_items = {
         "latkes": "Latkes",
         "latke": "Latkes",

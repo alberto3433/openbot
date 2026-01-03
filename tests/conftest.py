@@ -152,12 +152,5 @@ def disable_state_machine(monkeypatch):
     The state machine bypasses call_sandwich_bot entirely, so tests that
     rely on mocking call_sandwich_bot need to disable it to use the LLM path.
     """
-    # Disable state machine at its source and in integration.py
-    monkeypatch.setattr(
-        "sandwich_bot.tasks.state_machine_adapter.is_state_machine_enabled",
-        lambda: False
-    )
-    monkeypatch.setattr(
-        "sandwich_bot.chains.integration.is_state_machine_enabled",
-        lambda: False
-    )
+    # Set the environment variable that controls the state machine
+    monkeypatch.setenv("STATE_MACHINE_ENABLED", "false")

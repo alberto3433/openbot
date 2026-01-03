@@ -312,53 +312,39 @@ class PricingEngine:
 
     def lookup_spread_price(self, spread: str, spread_type: str | None = None) -> float:
         """
-        Look up price for a spread, considering the spread type/flavor.
+        Look up upcharge price for adding a spread to a bagel.
 
-        First tries the full spread name (e.g., "Tofu Cream Cheese") from cheese_prices,
-        then falls back to DEFAULT_MODIFIER_PRICES for generic spread.
+        NOTE: This returns the UPCHARGE for adding spread to a bagel, not the per-pound
+        retail price. The cheese_prices in menu_data contains per-pound prices (e.g., $3.00
+        for plain cream cheese), which are for by-the-pound purchases, not bagel upcharges.
+        Bagel spread upcharges are defined in DEFAULT_MODIFIER_PRICES (e.g., $1.50 for cream cheese).
 
         Args:
             spread: Base spread name (e.g., "cream cheese")
             spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
 
         Returns:
-            Price for the spread
+            Upcharge price for the spread (e.g., $1.50 for cream cheese, $1.75 for scallion)
         """
-        # Build full spread name by combining type + spread (e.g., "tofu cream cheese")
-        if spread_type:
+        # Build full spread name for specialty spreads (e.g., "scallion cream cheese")
+        if spread_type and spread_type.lower() not in ("plain", "regular"):
             full_spread_name = f"{spread_type} {spread}".lower()
-        else:
-            full_spread_name = spread.lower()
-
-        # Try cheese_prices from menu_data first
-        if self._menu_data:
-            cheese_prices = self._menu_data.get("cheese_prices", {})
-
-            # Try full name first (e.g., "tofu cream cheese")
-            if full_spread_name in cheese_prices:
-                price = cheese_prices[full_spread_name]
+            # Check if we have a specific price for this specialty spread
+            specialty_price = self.DEFAULT_MODIFIER_PRICES.get(full_spread_name, 0.0)
+            if specialty_price > 0:
                 logger.debug(
-                    "Found spread price from cheese_prices: %s = $%.2f",
-                    full_spread_name, price
+                    "Found specialty spread upcharge: %s = $%.2f",
+                    full_spread_name, specialty_price
                 )
-                return price
+                return specialty_price
 
-            # Try without type as fallback (e.g., "plain cream cheese" or just "cream cheese")
-            spread_lower = spread.lower()
-            plain_spread = f"plain {spread_lower}"
-            if plain_spread in cheese_prices:
-                price = cheese_prices[plain_spread]
-                logger.debug(
-                    "Found spread price from cheese_prices (plain): %s = $%.2f",
-                    plain_spread, price
-                )
-                return price
-
-        # Fall back to DEFAULT_MODIFIER_PRICES
-        default_price = self.DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
+        # Use the base spread price from DEFAULT_MODIFIER_PRICES
+        # (e.g., "cream cheese" -> $1.50, "butter" -> $0.50)
+        spread_lower = spread.lower()
+        default_price = self.DEFAULT_MODIFIER_PRICES.get(spread_lower, 0.0)
         if default_price > 0:
             logger.debug(
-                "Using default spread price: %s = $%.2f",
+                "Using spread upcharge: %s = $%.2f",
                 spread, default_price
             )
         return default_price

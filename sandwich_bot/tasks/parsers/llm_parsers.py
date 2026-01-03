@@ -56,15 +56,20 @@ We asked: "Would you like a bagel or fruit salad with your {item_name}?"
 
 The user said: "{user_input}"
 
-Determine their choice. If they mention a specific bagel type (like "plain bagel", "everything"),
-capture that too - it means they chose bagel AND specified the type.
+Determine their choice. Also capture any additional details they provide:
+- bagel_type: specific bagel type (plain, everything, sesame, etc.)
+- toasted: whether they want it toasted (true) or not toasted (false)
+- spread: if they specify a spread (cream cheese, butter)
 
 Examples:
 - "bagel" -> choice: "bagel"
 - "plain bagel" -> choice: "bagel", bagel_type: "plain"
+- "plain bagel toasted" -> choice: "bagel", bagel_type: "plain", toasted: true
+- "everything bagel not toasted" -> choice: "bagel", bagel_type: "everything", toasted: false
+- "plain bagel toasted with cream cheese" -> choice: "bagel", bagel_type: "plain", toasted: true, spread: "cream cheese"
+- "everything bagel with butter" -> choice: "bagel", bagel_type: "everything", spread: "butter"
 - "fruit salad" -> choice: "fruit_salad"
 - "the fruit" -> choice: "fruit_salad"
-- "everything bagel please" -> choice: "bagel", bagel_type: "everything"
 """
 
     return client.chat.completions.create(

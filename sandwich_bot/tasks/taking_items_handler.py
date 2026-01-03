@@ -1253,15 +1253,29 @@ class TakingItemsHandler:
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
                 if isinstance(item, MenuItemTask):
-                    # Menu items may need toasted question (spread sandwiches)
-                    if item.toasted is None:
+                    # Omelettes need side choice first (bagel or fruit salad)
+                    if item.requires_side_choice and item.side_choice is None:
+                        items_needing_config.append((item.id, item.menu_item_name, "menu_item", "side_choice"))
+                    # If omelette chose bagel, need bagel questions (handled by bagel config handler)
+                    elif item.side_choice == "bagel":
+                        if not item.bagel_choice:
+                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                        elif item.toasted is None:
+                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                        elif item.spread is None:
+                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "spread"))
+                    # Non-omelette menu items (spread/salad sandwiches) need toasted question
+                    elif not item.requires_side_choice and item.toasted is None:
                         items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 elif isinstance(item, BagelItemTask):
-                    # Check bagel_type first (more fundamental), then toasted
+                    # Check bagel_type first, then toasted, then spread
                     if item.bagel_type is None:
                         items_needing_config.append((item.id, "bagel", "bagel", "bagel_choice"))
                     elif item.toasted is None:
                         items_needing_config.append((item.id, f"{item.bagel_type} bagel", "bagel", "toasted"))
+                    elif item.spread is None and not item.extras and not item.sandwich_protein:
+                        # Need spread if bagel has no toppings (plain bagel needs spread question)
+                        items_needing_config.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
                 elif isinstance(item, SpeedMenuBagelItemTask):
                     if item.toasted is None:
                         items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
@@ -1301,12 +1315,34 @@ class TakingItemsHandler:
         first_item_id, first_item_name, first_item_type, first_field = items_needing_config[0]
 
         # Build the question for the first item
-        if first_field == "toasted":
-            question = f"Got it! Would you like the {first_item_name} toasted?"
+        if first_field == "side_choice":
+            question = f"Would you like a bagel or fruit salad with your {first_item_name}?"
+        elif first_field == "toasted":
+            # Check if this is an omelette bagel side vs a spread sandwich
+            menu_item = next((i for i in order.items.items if i.id == first_item_id), None)
+            if isinstance(menu_item, MenuItemTask) and menu_item.side_choice == "bagel":
+                # Omelette with bagel side - ask about bagel being toasted
+                bagel_desc = f"{menu_item.bagel_choice} bagel" if menu_item.bagel_choice else "bagel"
+                question = f"Got it, {bagel_desc}! Would you like that toasted?"
+            else:
+                question = f"Got it! Would you like the {first_item_name} toasted?"
         elif first_field == "bagel_choice":
             question = f"Got it! What kind of bagel would you like for the {first_item_name}?"
         elif first_field == "bagel_type":
             question = f"Got it! What kind of bagel would you like?"
+        elif first_field == "spread":
+            # Find the item to check if it's toasted
+            item = next((i for i in order.items.items if i.id == first_item_id), None)
+            if isinstance(item, BagelItemTask):
+                toasted_desc = " toasted" if item.toasted else ""
+                question = f"Got it, {first_item_name}{toasted_desc}! Would you like cream cheese or butter on that?"
+            elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
+                # Omelette with bagel side
+                bagel_desc = f"{item.bagel_choice} bagel" if item.bagel_choice else "bagel"
+                toasted_desc = " toasted" if item.toasted else ""
+                question = f"Got it, {bagel_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
+            else:
+                question = f"Got it! Would you like cream cheese or butter on that?"
         elif first_field == "coffee_size":
             question = f"Got it! What size {first_item_name} would you like?"
         elif first_field == "coffee_style":

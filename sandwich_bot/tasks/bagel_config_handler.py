@@ -848,6 +848,19 @@ class BagelConfigHandler:
                         order=order,
                     )
 
+                # If spread is set but price hasn't been calculated yet (from one-shot answer),
+                # calculate and add the spread price now
+                if is_omelette_side and item.spread and item.spread != "none" and not item.spread_price:
+                    if self.pricing and item.unit_price is not None:
+                        spread_price = self.pricing.lookup_spread_price(item.spread)
+                        if spread_price > 0:
+                            item.spread_price = spread_price
+                            item.unit_price += spread_price
+                            logger.info(
+                                "Added spread price (one-shot): %s ($%.2f) -> new total $%.2f",
+                                item.spread, spread_price, item.unit_price
+                            )
+
                 # MenuItemTask is complete
                 item.mark_complete()
                 continue

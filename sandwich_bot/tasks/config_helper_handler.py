@@ -401,15 +401,44 @@ class ConfigHelperHandler:
         if parsed.choice == "bagel":
             if parsed.bagel_type:
                 # User specified bagel type upfront (e.g., "plain bagel")
+                # Set bagel_choice but don't mark complete - still need toasted/spread questions
                 item.bagel_choice = parsed.bagel_type
+
+                # Also apply toasted if specified (e.g., "plain bagel toasted")
+                if parsed.toasted is not None:
+                    item.toasted = parsed.toasted
+
+                # Also apply spread if specified (e.g., "with cream cheese")
+                # Note: spread price will be calculated by bagel_config_handler when spread is set
+                if parsed.spread:
+                    item.spread = parsed.spread
+
                 order.clear_pending()
-                item.mark_complete()
+                # Continue to ask remaining questions via configure_next_incomplete_bagel
+                # This will handle toasted, spread, and pricing
                 if self._get_next_question:
                     return self._get_next_question(order)
-                return StateMachineResult(
-                    message="Got it. Anything else?",
-                    order=order,
-                )
+                # Fallback: ask about toasted if not specified, otherwise spread
+                if item.toasted is None:
+                    order.pending_field = "toasted"
+                    return StateMachineResult(
+                        message=f"Ok, {parsed.bagel_type} bagel. Would you like that toasted?",
+                        order=order,
+                    )
+                elif item.spread is None:
+                    order.pending_field = "spread"
+                    toasted_desc = " toasted" if item.toasted else ""
+                    return StateMachineResult(
+                        message=f"Ok, {parsed.bagel_type} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
+                        order=order,
+                    )
+                else:
+                    # All fields filled - mark complete
+                    item.mark_complete()
+                    return StateMachineResult(
+                        message="Got it. Anything else?",
+                        order=order,
+                    )
             else:
                 # Need to ask for bagel type
                 order.pending_field = "bagel_choice"

@@ -136,6 +136,14 @@ class SideChoiceResponse(BaseModel):
         default=None,
         description="If user specified a bagel type (e.g., 'plain bagel' -> 'plain'), capture it here"
     )
+    toasted: bool | None = Field(
+        default=None,
+        description="If user specified toasted preference (e.g., 'plain bagel toasted' -> True, 'not toasted' -> False)"
+    )
+    spread: str | None = Field(
+        default=None,
+        description="If user specified spread (e.g., 'with cream cheese' -> 'cream cheese', 'with butter' -> 'butter')"
+    )
     wants_cancel: bool = Field(
         default=False,
         description="User wants to cancel this item or the order"

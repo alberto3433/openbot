@@ -160,9 +160,8 @@ class OrderUtilsHandler:
                     size=template_item.size,
                     iced=template_item.iced,
                     milk=template_item.milk,
-                    sweetener=template_item.sweetener,
-                    sweetener_quantity=template_item.sweetener_quantity,
-                    flavor_syrup=template_item.flavor_syrup,
+                    sweeteners=list(template_item.sweeteners) if template_item.sweeteners else [],
+                    flavor_syrups=list(template_item.flavor_syrups) if template_item.flavor_syrups else [],
                     unit_price=template_item.unit_price,
                     special_instructions=template_item.special_instructions,
                 )

@@ -2761,7 +2761,7 @@ class TestCoffeeStyle:
         order.pending_field = "coffee_style"
 
         # Pre-fill a modifier so modifiers question is skipped
-        coffee = CoffeeItemTask(drink_type="latte", size="large", sweetener="sugar")
+        coffee = CoffeeItemTask(drink_type="latte", size="large", sweeteners=[{"type": "sugar", "quantity": 1}])
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2798,7 +2798,7 @@ class TestCoffeeStyle:
         order.pending_field = "coffee_style"
 
         # Pre-fill a modifier so modifiers question is skipped
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrup="vanilla")
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrups=[{"flavor": "vanilla", "quantity": 1}])
         coffee.mark_in_progress()
         order.items.add_item(coffee)
 
@@ -2825,8 +2825,9 @@ class TestCoffeeStyle:
         result = sm.coffee_handler.handle_coffee_style("hot with 2 sugars", coffee, order)
 
         assert coffee.iced is False
-        assert coffee.sweetener == "sugar"
-        assert coffee.sweetener_quantity == 2
+        assert len(coffee.sweeteners) == 1
+        assert coffee.sweeteners[0]["type"] == "sugar"
+        assert coffee.sweeteners[0]["quantity"] == 2
 
     def test_style_with_syrup_extracts_both(self):
         """Test that syrup mentioned with style is extracted."""
@@ -2844,7 +2845,8 @@ class TestCoffeeStyle:
         result = sm.coffee_handler.handle_coffee_style("iced with vanilla", coffee, order)
 
         assert coffee.iced is True
-        assert coffee.flavor_syrup == "vanilla"
+        assert len(coffee.flavor_syrups) == 1
+        assert coffee.flavor_syrups[0]["flavor"] == "vanilla"
 
     def test_completes_coffee_and_clears_pending(self):
         """Test that coffee is marked complete and pending is cleared after full flow."""
@@ -2952,8 +2954,9 @@ class TestCoffeeModifiers:
 
         result = sm.coffee_handler.handle_coffee_modifiers("2 sugars", coffee, order)
 
-        assert coffee.sweetener == "sugar"
-        assert coffee.sweetener_quantity == 2
+        assert len(coffee.sweeteners) == 1
+        assert coffee.sweeteners[0]["type"] == "sugar"
+        assert coffee.sweeteners[0]["quantity"] == 2
         assert coffee.status == TaskStatus.COMPLETE
 
     def test_handle_modifiers_no_thanks(self):
@@ -2974,7 +2977,7 @@ class TestCoffeeModifiers:
 
         # Should complete without adding modifiers
         assert coffee.milk is None
-        assert coffee.sweetener is None
+        assert coffee.sweeteners == []
         assert coffee.status == TaskStatus.COMPLETE
 
     def test_handle_modifiers_with_multiple(self):
@@ -2994,8 +2997,9 @@ class TestCoffeeModifiers:
         result = sm.coffee_handler.handle_coffee_modifiers("almond milk and 2 sugars", coffee, order)
 
         assert coffee.milk == "almond"
-        assert coffee.sweetener == "sugar"
-        assert coffee.sweetener_quantity == 2
+        assert len(coffee.sweeteners) == 1
+        assert coffee.sweeteners[0]["type"] == "sugar"
+        assert coffee.sweeteners[0]["quantity"] == 2
         assert coffee.status == TaskStatus.COMPLETE
 
 
@@ -3035,7 +3039,7 @@ class TestCoffeeModifierRemoval:
         order.phase = OrderPhase.TAKING_ITEMS
 
         # Coffee with sugar
-        coffee = CoffeeItemTask(drink_type="coffee", size="large", iced=False, sweetener="sugar", sweetener_quantity=2)
+        coffee = CoffeeItemTask(drink_type="coffee", size="large", iced=False, sweeteners=[{"type": "sugar", "quantity": 2}])
         coffee.mark_complete()
         order.items.add_item(coffee)
 
@@ -3043,7 +3047,7 @@ class TestCoffeeModifierRemoval:
 
         # Sweetener should be removed but coffee should still exist
         assert len(order.items.get_active_items()) == 1
-        assert coffee.sweetener is None
+        assert coffee.sweeteners == []
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
     def test_without_syrup_removes_syrup(self):
@@ -3057,7 +3061,7 @@ class TestCoffeeModifierRemoval:
         order.phase = OrderPhase.TAKING_ITEMS
 
         # Coffee with syrup
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True, flavor_syrup="vanilla")
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True, flavor_syrups=[{"flavor": "vanilla", "quantity": 1}])
         coffee.mark_complete()
         order.items.add_item(coffee)
 
@@ -3065,7 +3069,7 @@ class TestCoffeeModifierRemoval:
 
         # Syrup should be removed but coffee should still exist
         assert len(order.items.get_active_items()) == 1
-        assert coffee.flavor_syrup is None
+        assert coffee.flavor_syrups == []
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
 

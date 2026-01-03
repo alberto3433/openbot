@@ -581,7 +581,7 @@ class TestCriticalOrderScenarios:
         if coffees:
             coffee = coffees[0]
             print(f"Coffee: type={coffee.drink_type}, size={coffee.size}, iced={coffee.iced}")
-            print(f"Milk: {coffee.milk}, Syrup: {coffee.flavor_syrup}")
+            print(f"Milk: {coffee.milk}, Syrups: {coffee.flavor_syrups}")
 
             # Check configuration
             assert coffee.size == "large", f"Should be large, got {coffee.size}"

@@ -616,15 +616,27 @@ class BagelConfigHandler:
             item.mark_complete()
             order.clear_pending()
 
-            # Check if there are more items needing configuration
+            # Build summary for this completed item
+            item_summary = item.menu_item_name
+            if item.bagel_choice:
+                item_summary += f" on {item.bagel_choice}"
+            if item.toasted:
+                item_summary += " toasted"
+
+            # Check if we're in a multi-item flow (items queued for config)
+            # If so, use the abbreviated question format from get_next_question
+            if order.has_queued_config_items() and self._get_next_question:
+                next_result = self._get_next_question(order)
+                if next_result and next_result.message:
+                    return StateMachineResult(
+                        message=f"Got it, {item_summary}. {next_result.message}",
+                        order=next_result.order,
+                    )
+
+            # Fall back to old behavior for non-multi-item flows
             next_config = self.configure_next_incomplete_bagel(order)
             if next_config and next_config.message and "toasted" in next_config.message.lower():
                 # More items need config - include this item's name in the response
-                item_summary = item.menu_item_name
-                if item.bagel_choice:
-                    item_summary += f" on {item.bagel_choice}"
-                if item.toasted:
-                    item_summary += " toasted"
                 return StateMachineResult(
                     message=f"Got it, {item_summary}. {next_config.message}",
                     order=next_config.order,
@@ -633,11 +645,6 @@ class BagelConfigHandler:
                 return next_config
 
             # No more config needed - return with this item's summary
-            item_summary = item.menu_item_name
-            if item.bagel_choice:
-                item_summary += f" on {item.bagel_choice}"
-            if item.toasted:
-                item_summary += " toasted"
             order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
                 message=f"Got it, {item_summary}. Anything else?",

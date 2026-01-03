@@ -151,6 +151,8 @@ class TestReplacementModificationScenarios:
         - User says: "medium"
         - System asks for style: "Would you like that hot or iced?"
         - User says: "hot"
+        - System asks for modifiers: "Would you like any milk, sugar or syrup?"
+        - User says: "no"
         - Expected: Coffee item has decaf=True, size=medium, iced=False
         """
         from unittest.mock import patch
@@ -191,6 +193,13 @@ class TestReplacementModificationScenarios:
         with patch("sandwich_bot.tasks.coffee_config_handler.parse_coffee_style") as mock_style:
             mock_style.return_value = CoffeeStyleResponse(iced=False)
             result = sm.process("hot", result.order)
+
+        # Should ask for modifiers (milk/sugar/syrup)
+        assert "milk" in result.message.lower() or "sugar" in result.message.lower(), \
+            f"Should ask for modifiers, got: {result.message}"
+
+        # Step 4: Answer modifiers question (decline)
+        result = sm.process("no", result.order)
 
         # Coffee should now be complete
         coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]

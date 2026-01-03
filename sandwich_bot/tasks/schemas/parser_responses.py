@@ -6,8 +6,8 @@ in different states of the order flow. Each model constrains the possible
 interpretations of user input for a specific context.
 """
 
-from typing import Literal, Union
-from pydantic import BaseModel, Field
+from typing import Literal, Union, Self
+from pydantic import BaseModel, Field, model_validator
 
 
 # =============================================================================
@@ -290,12 +290,23 @@ class ByPoundOrderItem(BaseModel):
 
 
 class OpenInputResponse(BaseModel):
-    """Parser output when open for new items (not configuring a specific item)."""
+    """Parser output when open for new items (not configuring a specific item).
 
-    # New item orders
+    MIGRATION NOTE (Phase 10):
+    The boolean flag fields (new_bagel, new_coffee, new_speed_menu_bagel, new_menu_item,
+    new_side_item and their associated fields) are DEPRECATED. Use the `parsed_items`
+    field instead, which provides a unified list of ParsedBagelEntry, ParsedCoffeeEntry,
+    ParsedSpeedMenuBagelEntry, ParsedMenuItemEntry, and ParsedSideItemEntry objects.
+
+    The model_validator auto-populates parsed_items from boolean flags for backward
+    compatibility, but new code should use parsed_items directly.
+    """
+
+    # DEPRECATED: Use parsed_items with ParsedMenuItemEntry instead.
+    # These menu item fields are auto-converted to parsed_items by model_validator.
     new_menu_item: str | None = Field(
         default=None,
-        description="Name of a menu item ordered (e.g., 'The Chipotle Egg Omelette', 'Tuna Salad Sandwich')"
+        description="DEPRECATED: Use parsed_items. Name of a menu item ordered"
     )
     new_menu_item_quantity: int = Field(
         default=1,
@@ -318,17 +329,21 @@ class OpenInputResponse(BaseModel):
         default_factory=list,
         description="Additional menu items when ordering multiple in one request. The first item uses new_menu_item fields."
     )
+    # DEPRECATED: Use parsed_items with ParsedSideItemEntry instead.
+    # These side item fields are auto-converted to parsed_items by model_validator.
     new_side_item: str | None = Field(
         default=None,
-        description="Side item ordered (e.g., 'Side of Sausage', 'Side of Bacon', 'Side of Turkey Bacon'). Use when user says 'with a side of X' or 'side of X'"
+        description="DEPRECATED: Use parsed_items. Side item ordered"
     )
     new_side_item_quantity: int = Field(
         default=1,
-        description="Number of side items ordered"
+        description="DEPRECATED: Use parsed_items. Number of side items ordered"
     )
+    # DEPRECATED: Use parsed_items with ParsedBagelEntry instead.
+    # These bagel fields are auto-converted to parsed_items by model_validator.
     new_bagel: bool = Field(
         default=False,
-        description="User wants to order a bagel"
+        description="DEPRECATED: Use parsed_items. User wants to order a bagel"
     )
     new_bagel_quantity: int = Field(
         default=1,
@@ -381,9 +396,11 @@ class OpenInputResponse(BaseModel):
         default_factory=list,
         description="DEPRECATED: Use parsed_items instead. When ordering multiple bagels with different configs, list each one separately"
     )
+    # DEPRECATED: Use parsed_items with ParsedCoffeeEntry instead.
+    # These coffee fields are auto-converted to parsed_items by model_validator.
     new_coffee: bool = Field(
         default=False,
-        description="User wants to order coffee/drink"
+        description="DEPRECATED: Use parsed_items. User wants to order coffee/drink"
     )
     new_coffee_type: str | None = Field(
         default=None,
@@ -436,10 +453,12 @@ class OpenInputResponse(BaseModel):
         description="DEPRECATED: Use parsed_items instead. When ordering multiple different coffees, list each one separately"
     )
 
+    # DEPRECATED: Use parsed_items with ParsedSpeedMenuBagelEntry instead.
     # Speed menu bagel orders (pre-configured sandwiches like "The Classic", "The Leo")
+    # These fields are auto-converted to parsed_items by model_validator.
     new_speed_menu_bagel: bool = Field(
         default=False,
-        description="User wants to order a speed menu bagel (e.g., 'The Classic', 'The Leo', 'The Traditional')"
+        description="DEPRECATED: Use parsed_items. User wants to order a speed menu bagel"
     )
     new_speed_menu_bagel_name: str | None = Field(
         default=None,
@@ -619,6 +638,110 @@ class OpenInputResponse(BaseModel):
         default_factory=list,
         description="List of parsed items from multi-item order detection. Used for generic item processing in handler."
     )
+
+    @model_validator(mode='after')
+    def populate_parsed_items_from_boolean_flags(self) -> Self:
+        """Auto-populate parsed_items from boolean flags for unified handler path.
+
+        This validator ensures that even LLM responses that only use boolean flags
+        (new_bagel, new_coffee, etc.) will have parsed_items populated so the
+        unified _process_multi_item_order() path can handle all orders.
+
+        Phase 9 migration: This enables removal of boolean flag handling code.
+        """
+        # Skip if parsed_items already populated (deterministic parser dual-write)
+        if self.parsed_items:
+            return self
+
+        items: list[ParsedItem] = []
+
+        # Add bagels from boolean flags
+        if self.new_bagel:
+            for _ in range(self.new_bagel_quantity):
+                items.append(ParsedBagelEntry(
+                    bagel_type=self.new_bagel_type,
+                    quantity=1,  # Individual entries, quantity already expanded
+                    toasted=self.new_bagel_toasted,
+                    spread=self.new_bagel_spread,
+                    spread_type=self.new_bagel_spread_type,
+                    proteins=list(self.new_bagel_proteins) if self.new_bagel_proteins else [],
+                    cheeses=list(self.new_bagel_cheeses) if self.new_bagel_cheeses else [],
+                    toppings=list(self.new_bagel_toppings) if self.new_bagel_toppings else [],
+                    needs_cheese_clarification=self.new_bagel_needs_cheese_clarification,
+                    modifiers=list(self.new_bagel_special_instructions) if self.new_bagel_special_instructions else [],
+                ))
+
+        # Add coffee from boolean flags
+        if self.new_coffee:
+            # Build sweeteners list
+            sweeteners = []
+            if self.new_coffee_sweetener:
+                sweeteners.append({
+                    "type": self.new_coffee_sweetener,
+                    "quantity": self.new_coffee_sweetener_quantity,
+                })
+            # Build syrups list
+            syrups = []
+            if self.new_coffee_flavor_syrup:
+                syrups.append({
+                    "type": self.new_coffee_flavor_syrup,
+                    "quantity": self.new_coffee_syrup_quantity,
+                })
+            for _ in range(self.new_coffee_quantity):
+                items.append(ParsedCoffeeEntry(
+                    drink_type=self.new_coffee_type or "coffee",
+                    size=self.new_coffee_size,
+                    temperature="iced" if self.new_coffee_iced else ("hot" if self.new_coffee_iced is False else None),
+                    quantity=1,
+                    milk=self.new_coffee_milk,
+                    decaf=self.new_coffee_decaf,
+                    special_instructions=self.new_coffee_special_instructions,
+                    sweeteners=sweeteners.copy() if sweeteners else [],
+                    syrups=syrups.copy() if syrups else [],
+                ))
+
+        # Add speed menu bagel from boolean flags
+        if self.new_speed_menu_bagel:
+            for _ in range(self.new_speed_menu_bagel_quantity):
+                items.append(ParsedSpeedMenuBagelEntry(
+                    speed_menu_name=self.new_speed_menu_bagel_name or "",
+                    bagel_type=self.new_speed_menu_bagel_bagel_choice,
+                    toasted=self.new_speed_menu_bagel_toasted,
+                    quantity=1,
+                    modifiers=list(self.new_speed_menu_bagel_modifications) if self.new_speed_menu_bagel_modifications else [],
+                ))
+
+        # Add menu item from boolean flags
+        if self.new_menu_item:
+            for _ in range(self.new_menu_item_quantity):
+                items.append(ParsedMenuItemEntry(
+                    menu_item_name=self.new_menu_item,
+                    quantity=1,
+                    bagel_type=self.new_menu_item_bagel_choice,
+                    toasted=self.new_menu_item_toasted,
+                    modifiers=list(self.new_menu_item_modifications) if self.new_menu_item_modifications else [],
+                ))
+            # Also add additional menu items if present
+            for extra in self.additional_menu_items:
+                for _ in range(extra.quantity):
+                    items.append(ParsedMenuItemEntry(
+                        menu_item_name=extra.name,
+                        quantity=1,
+                        bagel_type=extra.bagel_choice,
+                        toasted=extra.toasted,
+                        modifiers=list(extra.modifications) if extra.modifications else [],
+                    ))
+
+        # Add side item from boolean flags
+        if self.new_side_item:
+            for _ in range(self.new_side_item_quantity):
+                items.append(ParsedSideItemEntry(
+                    side_name=self.new_side_item,
+                    quantity=1,
+                ))
+
+        self.parsed_items = items
+        return self
 
 
 class ByPoundCategoryResponse(BaseModel):

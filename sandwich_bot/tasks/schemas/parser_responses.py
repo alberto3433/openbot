@@ -247,7 +247,11 @@ class CoffeeStyleResponse(BaseModel):
 
 
 class BagelOrderDetails(BaseModel):
-    """Details for a single bagel in an order."""
+    """DEPRECATED: Use ParsedBagelEntry instead.
+
+    Details for a single bagel in an order. This class is maintained for
+    backward compatibility with the deprecated bagel_details field.
+    """
     bagel_type: str | None = Field(default=None, description="Bagel type (plain, everything, cinnamon raisin, etc.)")
     toasted: bool | None = Field(default=None, description="Whether toasted")
     spread: str | None = Field(default=None, description="Spread (cream cheese, butter, etc.)")
@@ -255,7 +259,11 @@ class BagelOrderDetails(BaseModel):
 
 
 class CoffeeOrderDetails(BaseModel):
-    """Details for a single coffee/drink in an order."""
+    """DEPRECATED: Use ParsedCoffeeEntry instead.
+
+    Details for a single coffee/drink in an order. This class is maintained for
+    backward compatibility with the deprecated coffee_details field.
+    """
     drink_type: str = Field(description="Coffee/drink type (coffee, latte, cappuccino, etc.)")
     size: str | None = Field(default=None, description="Size: small or large")
     iced: bool | None = Field(default=None, description="True if iced, False if hot, None if not specified")
@@ -367,10 +375,11 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="True if user said 'cheese' without specifying type (American, Swiss, etc.)"
     )
-    # For multiple bagels with different configs specified upfront
+    # DEPRECATED: Use parsed_items with ParsedBagelEntry objects instead.
+    # This field is maintained for backward compatibility only.
     bagel_details: list[BagelOrderDetails] = Field(
         default_factory=list,
-        description="When ordering multiple bagels with different configs, list each one separately"
+        description="DEPRECATED: Use parsed_items instead. When ordering multiple bagels with different configs, list each one separately"
     )
     new_coffee: bool = Field(
         default=False,
@@ -420,10 +429,11 @@ class OpenInputResponse(BaseModel):
         default=1,
         description="Number of drinks ordered (e.g., '3 diet cokes' -> 3, 'two coffees' -> 2)"
     )
-    # For multiple coffees with different types specified upfront
+    # DEPRECATED: Use parsed_items with ParsedCoffeeEntry objects instead.
+    # This field is maintained for backward compatibility only.
     coffee_details: list[CoffeeOrderDetails] = Field(
         default_factory=list,
-        description="When ordering multiple different coffees, list each one separately"
+        description="DEPRECATED: Use parsed_items instead. When ordering multiple different coffees, list each one separately"
     )
 
     # Speed menu bagel orders (pre-configured sandwiches like "The Classic", "The Leo")

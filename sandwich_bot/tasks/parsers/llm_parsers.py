@@ -391,7 +391,7 @@ Determine what they want:
   - Set new_bagel=true
   - Set new_bagel_quantity to the number of bagels (default 1)
   - If ALL bagels are the same, use new_bagel_type, new_bagel_toasted, new_bagel_spread, new_bagel_spread_type
-  - If bagels have DIFFERENT configurations, populate bagel_details list with each bagel's config
+  - If bagels have DIFFERENT configurations, populate parsed_items list with ParsedBagelEntry objects: {{"type": "bagel", "bagel_type": "...", "toasted": true/false/null, "spread": "...", "spread_type": "..."}}
 - If ordering coffee/drink (IMPORTANT: latte, cappuccino, espresso, americano, macchiato, mocha, drip coffee, cold brew, tea, and similar beverages are ALWAYS coffee orders - use new_coffee fields, NOT new_menu_item):
   - Set new_coffee=true
   - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)
@@ -432,8 +432,8 @@ Examples:
 - "four bagels" -> new_bagel: true, new_bagel_quantity: 4
 - "I'd like 5 bagels" -> new_bagel: true, new_bagel_quantity: 5
 - "two plain bagels toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "plain", new_bagel_toasted: true
-- "one plain bagel and one everything bagel" -> new_bagel: true, new_bagel_quantity: 2, bagel_details: [{{"bagel_type": "plain"}}, {{"bagel_type": "everything"}}]
-- "plain bagel with butter and cinnamon raisin with cream cheese" -> new_bagel: true, new_bagel_quantity: 2, bagel_details: [{{"bagel_type": "plain", "spread": "butter"}}, {{"bagel_type": "cinnamon raisin", "spread": "cream cheese"}}]
+- "one plain bagel and one everything bagel" -> new_bagel: true, new_bagel_quantity: 2, parsed_items: [{{"type": "bagel", "bagel_type": "plain"}}, {{"type": "bagel", "bagel_type": "everything"}}]
+- "plain bagel with butter and cinnamon raisin with cream cheese" -> new_bagel: true, new_bagel_quantity: 2, parsed_items: [{{"type": "bagel", "bagel_type": "plain", "spread": "butter"}}, {{"type": "bagel", "bagel_type": "cinnamon raisin", "spread": "cream cheese"}}]
 - "two everything bagels with scallion cream cheese toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "everything", new_bagel_toasted: true, new_bagel_spread: "cream cheese", new_bagel_spread_type: "scallion"
 - "coffee please" -> new_coffee: true
 - "a large latte" -> new_coffee: true, new_coffee_type: "latte", new_coffee_size: "large"

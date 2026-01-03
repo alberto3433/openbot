@@ -10,6 +10,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 import re
 import uuid
+import warnings
 from typing import Callable, TYPE_CHECKING
 
 from .models import (
@@ -1179,6 +1180,13 @@ class TakingItemsHandler:
                 # Add all coffees from coffee_details (or just the single one)
                 coffee_result = None
                 coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+                if parsed.coffee_details:
+                    # DEPRECATED: coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead
+                    warnings.warn(
+                        "coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead",
+                        DeprecationWarning,
+                        stacklevel=2
+                    )
                 if not coffees_to_add and parsed.new_coffee:
                     # Fallback to single coffee if no coffee_details
                     coffees_to_add = [CoffeeOrderDetails(
@@ -1259,6 +1267,12 @@ class TakingItemsHandler:
         if parsed.new_bagel:
             # Check if we have multiple bagels with different configs
             if parsed.bagel_details and len(parsed.bagel_details) > 0:
+                # DEPRECATED: bagel_details is deprecated, use parsed_items with ParsedBagelEntry instead
+                warnings.warn(
+                    "bagel_details is deprecated, use parsed_items with ParsedBagelEntry instead",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
                 # Multiple bagels with different configurations
                 # Don't pass extracted_modifiers - each bagel's modifiers are already in bagel_details
                 # Passing extracted_modifiers would incorrectly apply ALL modifiers to the first bagel
@@ -1313,6 +1327,13 @@ class TakingItemsHandler:
                 # Add all coffees from coffee_details (or just the single one)
                 coffee_result = None
                 coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+                if parsed.coffee_details:
+                    # DEPRECATED: coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead
+                    warnings.warn(
+                        "coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead",
+                        DeprecationWarning,
+                        stacklevel=2
+                    )
                 if not coffees_to_add and parsed.new_coffee:
                     # Fallback to single coffee if no coffee_details
                     coffees_to_add = [CoffeeOrderDetails(
@@ -1476,6 +1497,13 @@ class TakingItemsHandler:
 
             # Handle multiple coffees from coffee_details, or fall back to single coffee
             coffees_to_add = parsed.coffee_details if parsed.coffee_details else []
+            if parsed.coffee_details:
+                # DEPRECATED: coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead
+                warnings.warn(
+                    "coffee_details is deprecated, use parsed_items with ParsedCoffeeEntry instead",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
             if not coffees_to_add and parsed.new_coffee:
                 # Fallback to single coffee if no coffee_details
                 coffees_to_add = [CoffeeOrderDetails(
@@ -1851,15 +1879,20 @@ class TakingItemsHandler:
                     if item.toasted is None:
                         items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 elif isinstance(item, BagelItemTask):
-                    if item.toasted is None:
-                        items_needing_config.append((item.id, f"{item.bagel_type or 'plain'} bagel", "bagel", "toasted"))
-                    elif item.bagel_type is None:
-                        items_needing_config.append((item.id, "bagel", "bagel", "bagel_type"))
+                    # Check bagel_type first (more fundamental), then toasted
+                    if item.bagel_type is None:
+                        items_needing_config.append((item.id, "bagel", "bagel", "bagel_choice"))
+                    elif item.toasted is None:
+                        items_needing_config.append((item.id, f"{item.bagel_type} bagel", "bagel", "toasted"))
                 elif isinstance(item, SpeedMenuBagelItemTask):
                     if item.toasted is None:
                         items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
                     elif item.bagel_choice is None:
                         items_needing_config.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
+                elif isinstance(item, CoffeeItemTask):
+                    # Coffee items need hot/iced question if not specified
+                    if item.iced is None:
+                        items_needing_config.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
 
         logger.info("Multi-item order: %d items need config: %s",
                     len(items_needing_config),

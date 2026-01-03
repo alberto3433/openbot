@@ -926,7 +926,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         - "2 bagels, one with lox, one with cream cheese"
         - "three everything bagels one toasted one not toasted one with butter"
 
-    Returns OpenInputResponse with bagel_details populated for each individual bagel.
+    Returns OpenInputResponse with parsed_items populated with ParsedBagelEntry objects.
     """
     text_lower = text.lower().strip()
 
@@ -1005,8 +1005,8 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
     if len(parts) < 2:
         return None
 
-    # Create BagelOrderDetails for each part
-    bagel_details: list[BagelOrderDetails] = []
+    # Create ParsedBagelEntry for each part (new unified system)
+    parsed_items: list[ParsedBagelEntry] = []
 
     for i, part in enumerate(parts[:total_quantity]):  # Limit to total_quantity
         part_lower = part.lower().strip()
@@ -1058,22 +1058,23 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         # "plain" in split context means no spread - just a plain bagel
         # Don't set spread for "plain"
 
-        bagel_detail = BagelOrderDetails(
+        parsed_items.append(ParsedBagelEntry(
             bagel_type=base_bagel_type,
+            quantity=1,
             toasted=toasted,
             spread=spread,
             spread_type=spread_type,
-        )
-        bagel_details.append(bagel_detail)
+        ))
         logger.info(
             "SPLIT-QUANTITY: bagel %d: type=%s, toasted=%s, spread=%s, spread_type=%s",
             i + 1, base_bagel_type, toasted, spread, spread_type
         )
 
-    # If we have fewer details than total_quantity, fill with base bagels
-    while len(bagel_details) < total_quantity:
-        bagel_details.append(BagelOrderDetails(
+    # If we have fewer entries than total_quantity, fill with base bagels
+    while len(parsed_items) < total_quantity:
+        parsed_items.append(ParsedBagelEntry(
             bagel_type=base_bagel_type,
+            quantity=1,
             toasted=base_toasted,
         ))
 
@@ -1082,7 +1083,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         new_bagel_quantity=total_quantity,
         new_bagel_type=base_bagel_type,
         new_bagel_toasted=base_toasted,
-        bagel_details=bagel_details,
+        parsed_items=parsed_items,  # Use new unified system
     )
 
 
@@ -1095,7 +1096,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
         - "2 lattes, one iced, one hot"
         - "three teas one with sugar one with honey one plain"
 
-    Returns OpenInputResponse with coffee_details populated for each individual drink.
+    Returns OpenInputResponse with parsed_items populated with ParsedCoffeeEntry objects.
     """
     text_lower = text.lower().strip()
 
@@ -1191,20 +1192,24 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
     if len(parts) < 2:
         return None
 
-    # Create CoffeeOrderDetails for each part
-    coffee_details: list[CoffeeOrderDetails] = []
+    # Create ParsedCoffeeEntry for each part (new unified system)
+    parsed_items: list[ParsedCoffeeEntry] = []
 
     for i, part in enumerate(parts[:total_quantity]):  # Limit to total_quantity
         part_lower = part.lower().strip()
 
         # Extract iced/hot for this specific drink
         iced = None
+        temperature = None
         if "iced" in part_lower:
             iced = True
+            temperature = "iced"
         elif "hot" in part_lower:
             iced = False
+            temperature = "hot"
         elif base_iced is not None:
             iced = base_iced
+            temperature = "iced" if base_iced else "hot"
 
         # Extract decaf for this specific drink
         decaf = None
@@ -1225,42 +1230,41 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
             elif re.search(r'\bwith\s+milk\b', part_lower):
                 milk = "whole"
 
-        coffee_detail = CoffeeOrderDetails(
+        parsed_items.append(ParsedCoffeeEntry(
             drink_type=base_drink_type,
             size=base_size,
-            iced=iced,
-            decaf=decaf,
+            temperature=temperature,
             quantity=1,
             milk=milk,
-        )
-        coffee_details.append(coffee_detail)
+            decaf=decaf,
+        ))
         logger.info(
             "SPLIT-QUANTITY DRINKS: drink %d: type=%s, size=%s, iced=%s, decaf=%s, milk=%s",
             i + 1, base_drink_type, base_size, iced, decaf, milk
         )
 
-    # If we have fewer details than total_quantity, fill with base drinks
-    while len(coffee_details) < total_quantity:
-        coffee_details.append(CoffeeOrderDetails(
+    # If we have fewer entries than total_quantity, fill with base drinks
+    while len(parsed_items) < total_quantity:
+        parsed_items.append(ParsedCoffeeEntry(
             drink_type=base_drink_type,
             size=base_size,
-            iced=base_iced,
-            decaf=base_decaf,
+            temperature="iced" if base_iced else ("hot" if base_iced is False else None),
             quantity=1,
+            decaf=base_decaf,
         ))
 
     # Get first coffee for the primary new_coffee fields
-    first_coffee = coffee_details[0] if coffee_details else None
+    first_coffee = parsed_items[0] if parsed_items else None
 
     return OpenInputResponse(
         new_coffee=True,
         new_coffee_type=base_drink_type,
         new_coffee_quantity=total_quantity,
         new_coffee_size=base_size,
-        new_coffee_iced=first_coffee.iced if first_coffee else base_iced,
+        new_coffee_iced=first_coffee.temperature == "iced" if first_coffee and first_coffee.temperature else base_iced,
         new_coffee_decaf=first_coffee.decaf if first_coffee else base_decaf,
         new_coffee_milk=first_coffee.milk if first_coffee else None,
-        coffee_details=coffee_details,
+        parsed_items=parsed_items,  # Use new unified system
     )
 
 
@@ -2204,15 +2208,18 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                         parsed.new_menu_item, parsed.new_menu_item_quantity or 1, parsed.new_menu_item_modifications)
 
         if parsed.new_coffee:
-            coffee_list.append(CoffeeOrderDetails(
-                drink_type=parsed.new_coffee_type or "coffee",
-                size=parsed.new_coffee_size,
-                iced=parsed.new_coffee_iced,
-                decaf=parsed.new_coffee_decaf,
-                quantity=parsed.new_coffee_quantity or 1,
-                milk=parsed.new_coffee_milk,
-                special_instructions=parsed.new_coffee_special_instructions,
-            ))
+            # Track coffee for new_coffee_* fields in return (backwards compat)
+            if not coffee_list:
+                # Only need first coffee for primary fields
+                coffee_list.append(CoffeeOrderDetails(
+                    drink_type=parsed.new_coffee_type or "coffee",
+                    size=parsed.new_coffee_size,
+                    iced=parsed.new_coffee_iced,
+                    decaf=parsed.new_coffee_decaf,
+                    quantity=parsed.new_coffee_quantity or 1,
+                    milk=parsed.new_coffee_milk,
+                    special_instructions=parsed.new_coffee_special_instructions,
+                ))
             # Build sweeteners list from parsed values
             sweeteners = []
             if parsed.new_coffee_sweetener:
@@ -2342,7 +2349,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_decaf=first_coffee.decaf if first_coffee else None,
             new_coffee_milk=first_coffee.milk if first_coffee else None,
             new_coffee_special_instructions=first_coffee.special_instructions if first_coffee else None,
-            coffee_details=coffee_list,
+            # coffee_details removed - use parsed_items instead
             new_bagel=bagel,
             new_bagel_quantity=bagel_qty,
             new_bagel_type=bagel_type,
@@ -2380,7 +2387,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_coffee_decaf=first_coffee.decaf,
             new_coffee_milk=first_coffee.milk,
             new_coffee_special_instructions=first_coffee.special_instructions,
-            coffee_details=coffee_list,
+            parsed_items=parsed_items,  # Use parsed_items instead of coffee_details
         )
     if bagel:
         return OpenInputResponse(

@@ -1173,14 +1173,16 @@ class TestNotesExtraction:
     def test_multi_item_coffee_with_milk_and_special_instructions(self):
         """Test that multi-item parser extracts milk and special instructions for coffee."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from sandwich_bot.tasks.schemas import ParsedCoffeeEntry
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         result = _parse_multi_item_order("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         assert result is not None
         assert result.new_coffee is True
         assert result.new_bagel is True
-        # Check coffee_details has milk and special instructions
-        assert len(result.coffee_details) >= 1
-        coffee = result.coffee_details[0]
+        # Check parsed_items has a coffee with milk and special instructions
+        coffee_items = [item for item in result.parsed_items if isinstance(item, ParsedCoffeeEntry)]
+        assert len(coffee_items) >= 1
+        coffee = coffee_items[0]
         assert coffee.milk == "whole"  # "with a splash of milk" should default to whole
         assert coffee.special_instructions is not None
         assert "splash" in coffee.special_instructions.lower() or "milk" in coffee.special_instructions.lower()
@@ -1513,14 +1515,14 @@ class TestSplitQuantityBagelParsing:
         assert result.new_bagel is True
         assert result.new_bagel_quantity == 2
         assert result.new_bagel_type == "plain"
-        assert len(result.bagel_details) == 2
+        assert len(result.parsed_items) == 2
         # First bagel: scallion cream cheese
-        assert result.bagel_details[0].bagel_type == "plain"
-        assert result.bagel_details[0].spread == "cream cheese"
-        assert result.bagel_details[0].spread_type == "scallion"
+        assert result.parsed_items[0].bagel_type == "plain"
+        assert result.parsed_items[0].spread == "cream cheese"
+        assert result.parsed_items[0].spread_type == "scallion"
         # Second bagel: lox
-        assert result.bagel_details[1].bagel_type == "plain"
-        assert result.bagel_details[1].spread == "nova scotia salmon"
+        assert result.parsed_items[1].bagel_type == "plain"
+        assert result.parsed_items[1].spread == "nova scotia salmon"
 
     def test_two_bagels_toasted_variants(self):
         """Test parsing 'two everything bagels one toasted one not toasted'."""
@@ -1530,9 +1532,9 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         assert result.new_bagel_quantity == 2
         assert result.new_bagel_type == "everything"
-        assert len(result.bagel_details) == 2
-        assert result.bagel_details[0].toasted is True
-        assert result.bagel_details[1].toasted is False
+        assert len(result.parsed_items) == 2
+        assert result.parsed_items[0].toasted is True
+        assert result.parsed_items[1].toasted is False
 
     def test_three_bagels_different_spreads(self):
         """Test parsing 'three bagels one with butter one plain one with cream cheese'."""
@@ -1542,10 +1544,10 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         assert result.new_bagel_quantity == 3
         assert result.new_bagel_type is None  # No base type specified
-        assert len(result.bagel_details) == 3
-        assert result.bagel_details[0].spread == "butter"
-        assert result.bagel_details[1].spread is None  # plain = no spread
-        assert result.bagel_details[2].spread == "cream cheese"
+        assert len(result.parsed_items) == 3
+        assert result.parsed_items[0].spread == "butter"
+        assert result.parsed_items[1].spread is None  # plain = no spread
+        assert result.parsed_items[2].spread == "cream cheese"
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
@@ -1554,7 +1556,7 @@ class TestSplitQuantityBagelParsing:
         result = _parse_split_quantity_bagels("2 bagels one with lox one with cream cheese")
         assert result is not None
         assert result.new_bagel_quantity == 2
-        assert len(result.bagel_details) == 2
+        assert len(result.parsed_items) == 2
 
     def test_no_split_single_bagel(self):
         """Test that single bagel orders are not matched by split-quantity parser."""
@@ -1583,13 +1585,13 @@ class TestSplitQuantityDrinksParsing:
         assert result.new_coffee is True
         assert result.new_coffee_quantity == 2
         assert result.new_coffee_type == "coffee"
-        assert len(result.coffee_details) == 2
+        assert len(result.parsed_items) == 2
         # First coffee: with milk
-        assert result.coffee_details[0].drink_type == "coffee"
-        assert result.coffee_details[0].milk == "whole"
+        assert result.parsed_items[0].drink_type == "coffee"
+        assert result.parsed_items[0].milk == "whole"
         # Second coffee: black
-        assert result.coffee_details[1].drink_type == "coffee"
-        assert result.coffee_details[1].milk == "none"
+        assert result.parsed_items[1].drink_type == "coffee"
+        assert result.parsed_items[1].milk == "none"
 
     def test_two_lattes_one_iced_one_hot(self):
         """Test parsing 'two lattes one iced one hot'."""
@@ -1599,9 +1601,9 @@ class TestSplitQuantityDrinksParsing:
         assert result is not None
         assert result.new_coffee_quantity == 2
         assert result.new_coffee_type == "latte"
-        assert len(result.coffee_details) == 2
-        assert result.coffee_details[0].iced is True
-        assert result.coffee_details[1].iced is False
+        assert len(result.parsed_items) == 2
+        assert result.parsed_items[0].temperature == "iced"
+        assert result.parsed_items[1].temperature == "hot"
 
     def test_two_teas_one_with_oat_milk_one_plain(self):
         """Test parsing 'two teas one with oat milk one plain'."""
@@ -1611,9 +1613,9 @@ class TestSplitQuantityDrinksParsing:
         assert result is not None
         assert result.new_coffee_quantity == 2
         assert result.new_coffee_type == "tea"
-        assert len(result.coffee_details) == 2
-        assert result.coffee_details[0].milk == "oat"
-        assert result.coffee_details[1].milk == "none"
+        assert len(result.parsed_items) == 2
+        assert result.parsed_items[0].milk == "oat"
+        assert result.parsed_items[1].milk == "none"
 
     def test_three_coffees_different_temps(self):
         """Test parsing 'three coffees one iced one hot one decaf'."""
@@ -1622,10 +1624,10 @@ class TestSplitQuantityDrinksParsing:
         result = _parse_split_quantity_drinks("three coffees one iced one hot one decaf")
         assert result is not None
         assert result.new_coffee_quantity == 3
-        assert len(result.coffee_details) == 3
-        assert result.coffee_details[0].iced is True
-        assert result.coffee_details[1].iced is False
-        assert result.coffee_details[2].decaf is True
+        assert len(result.parsed_items) == 3
+        assert result.parsed_items[0].temperature == "iced"
+        assert result.parsed_items[1].temperature == "hot"
+        assert result.parsed_items[2].decaf is True
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
@@ -1634,9 +1636,9 @@ class TestSplitQuantityDrinksParsing:
         result = _parse_split_quantity_drinks("2 coffees one with almond milk one black")
         assert result is not None
         assert result.new_coffee_quantity == 2
-        assert len(result.coffee_details) == 2
-        assert result.coffee_details[0].milk == "almond"
-        assert result.coffee_details[1].milk == "none"
+        assert len(result.parsed_items) == 2
+        assert result.parsed_items[0].milk == "almond"
+        assert result.parsed_items[1].milk == "none"
 
     def test_no_split_single_coffee(self):
         """Test that single coffee orders are not matched by split-quantity parser."""
@@ -1660,12 +1662,12 @@ class TestSplitQuantityDrinksParsing:
         assert result is not None
         assert result.new_coffee_quantity == 2
         assert result.new_coffee_size == "large"
-        assert len(result.coffee_details) == 2
+        assert len(result.parsed_items) == 2
         # Both should have the large size
-        assert result.coffee_details[0].size == "large"
-        assert result.coffee_details[0].iced is True
-        assert result.coffee_details[1].size == "large"
-        assert result.coffee_details[1].iced is False
+        assert result.parsed_items[0].size == "large"
+        assert result.parsed_items[0].temperature == "iced"
+        assert result.parsed_items[1].size == "large"
+        assert result.parsed_items[1].temperature == "hot"
 
 
 class TestParsedItemsMultiItem:

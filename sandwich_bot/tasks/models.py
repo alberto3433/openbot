@@ -158,6 +158,7 @@ class BagelItemTask(ItemTask):
     bagel_type: str | None = None  # plain, everything, sesame, etc.
     bagel_type_upcharge: float = 0.0  # Upcharge for specialty bagels (e.g., gluten free +$0.80)
     toasted: bool | None = None
+    scooped: bool | None = None  # True if bagel should be scooped out
     spread: str | None = None  # cream cheese, butter, etc.
     spread_type: str | None = None  # plain, scallion, veggie, etc.
     extras: list[str] = Field(default_factory=list)
@@ -228,11 +229,13 @@ class CoffeeItemTask(ItemTask):
     iced: bool | None = None  # True=iced, False=hot, None=not specified
     decaf: bool | None = None  # True=decaf, None=regular (not specified)
     milk: str | None = None  # whole, skim, oat, almond, etc.
+    cream_level: str | None = None  # dark, light, regular - refers to amount of cream/milk
     # Sweeteners - list of {"type": str, "quantity": int} e.g., [{"type": "sugar", "quantity": 2}]
     sweeteners: list[dict] = Field(default_factory=list)
     # Flavor syrups - list of {"flavor": str, "quantity": int} e.g., [{"flavor": "vanilla", "quantity": 1}]
     flavor_syrups: list[dict] = Field(default_factory=list)
     wants_syrup: bool = False  # True if user said "with syrup" without specifying flavor
+    pending_syrup_quantity: int = 1  # Quantity from "2 syrups" before flavor is specified
     extra_shots: int = 0
 
     # Upcharge tracking (set by recalculate_coffee_price)
@@ -794,6 +797,11 @@ class OrderTask(BaseTask):
     # Dict with: new_value, possible_categories (as strings), item_id
     pending_change_clarification: dict | None = None
 
+    # Pending duplicate selection
+    # Used when user says "another one" with multiple items in cart
+    # Dict with: count (int - how many to duplicate), items (list of item summaries for question)
+    pending_duplicate_selection: dict | None = None
+
     # Menu query pagination state for "show more" functionality
     # Dict with: category (str), offset (int), total_items (int)
     # Used when user asks "what other X do you have?" or "more X"
@@ -835,6 +843,9 @@ class OrderTask(BaseTask):
             return True
         # Handle category inquiry follow-up
         if self.pending_field == "category_inquiry":
+            return True
+        # Handle duplicate item selection when multiple items in cart
+        if self.pending_field == "duplicate_selection":
             return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 

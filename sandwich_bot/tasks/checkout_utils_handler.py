@@ -132,7 +132,7 @@ class CheckoutUtilsHandler:
                     elif pending_field in ("bagel_choice", "bagel_type", "speed_menu_bagel_type"):
                         question = f"And what bagel for the {item_name}?"
                     elif pending_field == "coffee_size":
-                        question = f"And what size for the {item_name}?"
+                        question = f"And what size for the {item_name}? Small or Large?"
                     elif pending_field == "coffee_style":
                         question = f"Would you like the {item_name} hot or iced?"
                     else:

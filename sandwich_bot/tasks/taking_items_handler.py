@@ -104,6 +104,41 @@ class TakingItemsHandler:
         self._spread_types: list[str] = []
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
+        self._menu_data: dict = {}
+
+    @property
+    def menu_data(self) -> dict:
+        """Get menu data for configuration checks."""
+        return self._menu_data
+
+    @menu_data.setter
+    def menu_data(self, value: dict) -> None:
+        """Set menu data for configuration checks."""
+        self._menu_data = value or {}
+
+    def _get_bagel_menu_item_info(self, menu_item_name: str) -> dict | None:
+        """
+        Check if a menu item contains a bagel and get its configuration info.
+
+        Args:
+            menu_item_name: The name of the menu item to check.
+
+        Returns:
+            Dict with {id, name, default_bagel_type} if item contains bagel,
+            None otherwise.
+        """
+        if not menu_item_name:
+            return None
+
+        bagel_menu_items = self._menu_data.get("bagel_menu_items", [])
+        menu_item_lower = menu_item_name.lower().strip()
+
+        for item in bagel_menu_items:
+            item_name = item.get("name", "")
+            if item_name.lower().strip() == menu_item_lower:
+                return item
+
+        return None
 
     def set_context(
         self,
@@ -923,19 +958,46 @@ class TakingItemsHandler:
                     order=order,
                 )
 
-        # Handle "make it 2" - add more of the last item
+        # Handle "another bagel" / "one more coffee" - treat as new item of that type
+        if parsed.duplicate_new_item_type:
+            item_type = parsed.duplicate_new_item_type
+            logger.info("Adding new %s (from 'another %s' pattern)", item_type, item_type)
+            if item_type == "bagel":
+                # Add a new bagel and start config flow
+                return self.item_adder_handler.add_bagel(order, quantity=1)
+            elif item_type == "coffee":
+                # Add a new coffee and start config flow
+                return self.coffee_handler.add_coffee(order)
+            elif item_type == "sandwich":
+                # Treat sandwich as bagel with potential proteins
+                return self.item_adder_handler.add_bagel(order, quantity=1)
+            else:
+                # Generic drink or unknown type - ask what they'd like
+                return StateMachineResult(
+                    message=f"Sure, what kind of {item_type} would you like?",
+                    order=order,
+                )
+
+        # Handle "make it 2" / "another one" / "one more" - add more of existing item(s)
         if parsed.duplicate_last_item > 0:
             active_items = order.items.get_active_items()
-            if active_items:
+            if not active_items:
+                logger.info("'Make it N' / 'another one' requested but no items in cart")
+                return StateMachineResult(
+                    message="There's nothing in your order yet. What can I get for you?",
+                    order=order,
+                )
+
+            added_count = parsed.duplicate_last_item
+
+            # Single item in cart - duplicate silently
+            if len(active_items) == 1:
                 last_item = active_items[-1]
                 last_item_name = last_item.get_summary()
-                added_count = parsed.duplicate_last_item
 
                 # Add copies of the last item
                 for _ in range(added_count):
-                    # Create a copy of the item
                     new_item = last_item.model_copy(deep=True)
-                    # Generate a new ID for the copy
                     new_item.id = str(uuid.uuid4())
                     new_item.mark_complete()
                     order.items.add_item(new_item)
@@ -952,12 +1014,46 @@ class TakingItemsHandler:
                         message=f"I've added {added_count} more {last_item_name}. Anything else?",
                         order=order,
                     )
+
+            # Multiple items in cart - ask which one to duplicate
             else:
-                logger.info("'Make it N' requested but no items in cart")
+                # Build the clarifying question: "Another [last], another [second-to-last], ... or all items?"
+                item_options = []
+                for item in reversed(active_items):
+                    item_options.append({
+                        "id": item.id,
+                        "summary": item.get_summary(),
+                        "quantity": item.quantity,
+                    })
+
+                # Store pending state
+                order.pending_duplicate_selection = {
+                    "count": added_count,
+                    "items": item_options,
+                }
+                order.pending_field = "duplicate_selection"
+
+                # Build the question text
+                question_parts = [f"another {opt['summary']}" for opt in item_options]
+                question = ", ".join(question_parts) + ", or all the items in your order?"
+                # Capitalize first letter
+                question = question[0].upper() + question[1:]
+
+                logger.info("Asking for duplicate clarification with %d items", len(active_items))
+                return StateMachineResult(
+                    message=question,
+                    order=order,
+                )
+
+        # Handle "all items" duplicate request
+        if parsed.wants_duplicate_all:
+            active_items = order.items.get_active_items()
+            if not active_items:
                 return StateMachineResult(
                     message="There's nothing in your order yet. What can I get for you?",
                     order=order,
                 )
+            return self._duplicate_all_items(order, active_items)
 
         # Handle repeat order request
         if parsed.wants_repeat_order:
@@ -1115,6 +1211,7 @@ class TakingItemsHandler:
                     quantity=item.quantity,
                     bagel_type=item.bagel_type,
                     toasted=item.toasted,
+                    scooped=item.scooped,
                     spread=item.spread,
                     spread_type=item.spread_type,
                     order=order,
@@ -1125,6 +1222,7 @@ class TakingItemsHandler:
                     bagel_type=item.bagel_type,
                     order=order,
                     toasted=item.toasted,
+                    scooped=item.scooped,
                     spread=item.spread,
                     spread_type=item.spread_type,
                     extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
@@ -1164,6 +1262,7 @@ class TakingItemsHandler:
                 decaf=item.decaf,
                 syrup_quantity=syrup_qty,
                 wants_syrup=item.wants_syrup,
+                cream_level=item.cream_level,
             )
             order = result.order
             summary = item.drink_type
@@ -1264,9 +1363,25 @@ class TakingItemsHandler:
                             items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                         elif item.spread is None:
                             items_needing_config.append((item.id, item.menu_item_name, "menu_item", "spread"))
-                    # Non-omelette menu items (spread/salad sandwiches) need toasted question
-                    elif not item.requires_side_choice and item.toasted is None:
-                        items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                    # Check if this menu item contains a bagel (e.g., Classic BEC)
+                    elif not item.requires_side_choice:
+                        bagel_item_info = self._get_bagel_menu_item_info(item.menu_item_name)
+                        if bagel_item_info:
+                            # This is a bagel-containing menu item
+                            # Apply default bagel type if available and not already set
+                            if bagel_item_info.get("default_bagel_type") and not item.bagel_choice:
+                                item.bagel_choice = bagel_item_info["default_bagel_type"]
+                                logger.info("Applied default bagel type '%s' to %s",
+                                           item.bagel_choice, item.menu_item_name)
+                            # If no default and bagel_choice not set, ask for bagel type
+                            if not item.bagel_choice:
+                                items_needing_config.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                            # Then ask for toasted if not set
+                            elif item.toasted is None:
+                                items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                        # Non-bagel menu items (spread/salad sandwiches) need toasted question
+                        elif item.toasted is None:
+                            items_needing_config.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 elif isinstance(item, BagelItemTask):
                     # Check bagel_type first, then toasted, then spread
                     if item.bagel_type is None:
@@ -1360,7 +1475,7 @@ class TakingItemsHandler:
             else:
                 question = f"Got it! Would you like cream cheese or butter on that?"
         elif first_field == "coffee_size":
-            question = f"Got it! What size {first_item_name} would you like?"
+            question = f"Got it! What size {first_item_name} would you like? Small or Large?"
         elif first_field == "coffee_style":
             question = f"Got it! Would you like the {first_item_name} hot or iced?"
         else:
@@ -1372,3 +1487,148 @@ class TakingItemsHandler:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         return StateMachineResult(message=question, order=order)
+
+    def handle_duplicate_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to duplicate clarification question.
+
+        Called when user said "another one" with multiple items in cart,
+        and we asked which item to duplicate.
+        """
+        from .parsers.deterministic import DUPLICATE_ALL_PATTERN
+
+        pending_info = order.pending_duplicate_selection
+        if not pending_info:
+            order.pending_field = None
+            return StateMachineResult(
+                message="Something went wrong. What can I get for you?",
+                order=order,
+            )
+
+        items = pending_info.get("items", [])
+        count = pending_info.get("count", 1)
+        text = user_input.strip().lower()
+
+        # Check for "all items" / "everything" response
+        if DUPLICATE_ALL_PATTERN.match(text):
+            order.pending_duplicate_selection = None
+            order.pending_field = None
+            active_items = order.items.get_active_items()
+            return self._duplicate_all_items(order, active_items)
+
+        # Try to match user's response to one of the item options
+        matched_item = None
+        for item_info in items:
+            summary_lower = item_info["summary"].lower()
+            # Check if user's response matches the item summary or is a substring
+            if text in summary_lower or summary_lower in text:
+                matched_item = item_info
+                break
+            # Check for partial matches (e.g., "bagel" matches "plain bagel toasted")
+            words = text.split()
+            if any(word in summary_lower for word in words if len(word) > 2):
+                matched_item = item_info
+                break
+
+        # Also check for ordinal responses: "the first one", "the second", "1", "2", etc.
+        if not matched_item:
+            ordinal_map = {
+                "1": 0, "first": 0, "the first": 0, "the first one": 0,
+                "2": 1, "second": 1, "the second": 1, "the second one": 1,
+                "3": 2, "third": 2, "the third": 2, "the third one": 2,
+                "4": 3, "fourth": 3, "the fourth": 3, "the fourth one": 3,
+                "5": 4, "fifth": 4, "the fifth": 4, "the fifth one": 4,
+            }
+            for key, idx in ordinal_map.items():
+                if text == key or text.startswith(key + " "):
+                    if idx < len(items):
+                        matched_item = items[idx]
+                        break
+
+        if not matched_item:
+            # Didn't understand - repeat the question
+            question_parts = [f"another {opt['summary']}" for opt in items]
+            question = ", ".join(question_parts) + ", or all the items in your order?"
+            question = "I didn't catch that. " + question[0].upper() + question[1:]
+            return StateMachineResult(
+                message=question,
+                order=order,
+            )
+
+        # Found the item to duplicate - find it in the order and duplicate it
+        order.pending_duplicate_selection = None
+        order.pending_field = None
+
+        # Find the actual item by ID
+        item_to_duplicate = None
+        for item in order.items.get_active_items():
+            if item.id == matched_item["id"]:
+                item_to_duplicate = item
+                break
+
+        if not item_to_duplicate:
+            return StateMachineResult(
+                message="I couldn't find that item. What else can I get you?",
+                order=order,
+            )
+
+        # Duplicate the item
+        item_name = item_to_duplicate.get_summary()
+        for _ in range(count):
+            new_item = item_to_duplicate.model_copy(deep=True)
+            new_item.id = str(uuid.uuid4())
+            new_item.mark_complete()
+            order.items.add_item(new_item)
+
+        if count == 1:
+            logger.info("Added 1 more of '%s' to order (from clarification)", item_name)
+            return StateMachineResult(
+                message=f"I've added another {item_name}. Anything else?",
+                order=order,
+            )
+        else:
+            logger.info("Added %d more of '%s' to order (from clarification)", count, item_name)
+            return StateMachineResult(
+                message=f"I've added {count} more {item_name}. Anything else?",
+                order=order,
+            )
+
+    def _duplicate_all_items(
+        self,
+        order: OrderTask,
+        active_items: list,
+    ) -> StateMachineResult:
+        """Duplicate all items in the cart, matching original quantities."""
+        if not active_items:
+            return StateMachineResult(
+                message="There's nothing in your order yet. What can I get for you?",
+                order=order,
+            )
+
+        # Duplicate each item, respecting its quantity
+        total_added = 0
+        for item in active_items:
+            qty = item.quantity
+            for _ in range(qty):
+                new_item = item.model_copy(deep=True)
+                new_item.id = str(uuid.uuid4())
+                new_item.mark_complete()
+                order.items.add_item(new_item)
+                total_added += 1
+
+        logger.info("Duplicated all items in cart, added %d items total", total_added)
+
+        if len(active_items) == 1:
+            item_name = active_items[0].get_summary()
+            return StateMachineResult(
+                message=f"I've added another {item_name}. Anything else?",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message=f"I've duplicated everything in your order. Anything else?",
+                order=order,
+            )

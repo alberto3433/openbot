@@ -18,40 +18,14 @@ from .models import (
     SpeedMenuBagelItemTask,
 )
 from .field_config import MenuFieldConfig
+from .pricing import PricingEngine
+from ..services.tax_utils import calculate_order_total
 
 logger = logging.getLogger(__name__)
 
-# Default modifier prices for cart display breakdown
-# These should match the values in pricing.py DEFAULT_MODIFIER_PRICES
-DEFAULT_MODIFIER_PRICES = {
-    # Proteins
-    "ham": 2.00,
-    "bacon": 2.00,
-    "egg": 1.50,
-    "turkey": 2.50,
-    "pastrami": 3.00,
-    "sausage": 2.00,
-    "lox": 6.00,
-    "nova": 6.00,
-    "nova scotia salmon": 6.00,  # Normalized form of lox/nova
-    # Cheeses
-    "american": 0.75,
-    "swiss": 0.75,
-    "cheddar": 0.75,
-    "muenster": 0.75,
-    "provolone": 0.75,
-    # Spreads
-    "cream cheese": 1.50,
-    "butter": 0.50,
-    # Toppings
-    "tomato": 0.50,
-    "onion": 0.50,
-    "lettuce": 0.50,
-    "avocado": 2.00,
-}
-
-# Base bagel price (regular bagel without specialty upcharge)
-DEFAULT_BAGEL_BASE_PRICE = 2.20
+# Import modifier prices from PricingEngine to avoid duplication
+DEFAULT_MODIFIER_PRICES = PricingEngine.DEFAULT_MODIFIER_PRICES
+DEFAULT_BAGEL_BASE_PRICE = PricingEngine.DEFAULT_BAGEL_BASE_PRICE
 
 
 # -----------------------------------------------------------------------------
@@ -151,6 +125,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 bagel_type=item.get("bagel_type"),  # Allow None for incomplete bagels
                 quantity=item.get("quantity", 1),
                 toasted=item.get("toasted"),
+                scooped=item.get("scooped"),
                 spread=item.get("spread"),
                 spread_type=item.get("spread_type"),
                 sandwich_protein=item.get("sandwich_protein"),
@@ -227,6 +202,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 drink_type=item.get("menu_item_name") or "coffee",
                 size=item.get("size") or item_config.get("size"),  # Don't default to medium for skip_config drinks
                 milk=item_config.get("milk"),
+                cream_level=item_config.get("cream_level"),  # Restore cream level (dark, light, regular)
                 sweeteners=sweeteners,
                 flavor_syrups=flavor_syrups,
                 iced=iced_value,
@@ -236,6 +212,9 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
                 milk_upcharge=item_config.get("milk_upcharge", 0.0),
                 syrup_upcharge=item_config.get("syrup_upcharge", 0.0),
                 iced_upcharge=item_config.get("iced_upcharge", 0.0),
+                # Restore pending syrup state for multi-turn syrup ordering
+                wants_syrup=item_config.get("wants_syrup", False),
+                pending_syrup_quantity=item_config.get("pending_syrup_quantity", 1),
                 special_instructions=item.get("special_instructions") or item.get("notes"),
             )
             # Preserve item ID if provided
@@ -328,13 +307,18 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 # State Conversion: OrderTask -> Dict
 # -----------------------------------------------------------------------------
 
-def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, Any]:
+def order_task_to_dict(
+    order: OrderTask,
+    store_info: Dict = None,
+    pricing: PricingEngine = None,
+) -> Dict[str, Any]:
     """
     Convert an OrderTask back to dict format for compatibility.
 
     Args:
         order: The OrderTask instance
         store_info: Optional store info for tax calculation
+        pricing: Optional PricingEngine for modifier price lookups
 
     Returns:
         Dict in the legacy format expected by existing code
@@ -455,6 +439,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             spread = getattr(item, 'spread', None)
             spread_type = getattr(item, 'spread_type', None)
             toasted = getattr(item, 'toasted', None)
+            scooped = getattr(item, 'scooped', None)
             sandwich_protein = getattr(item, 'sandwich_protein', None)
             extras = getattr(item, 'extras', []) or []
 
@@ -479,9 +464,20 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "price": 0,
                 })
 
+            # Add scooped as a modifier (no price)
+            if scooped:
+                modifiers.append({
+                    "name": "Scooped",
+                    "price": 0,
+                })
+
             # Add protein modifier
             if sandwich_protein:
-                protein_price = DEFAULT_MODIFIER_PRICES.get(sandwich_protein.lower(), 0.0)
+                protein_price = (
+                    pricing.lookup_modifier_price(sandwich_protein)
+                    if pricing
+                    else DEFAULT_MODIFIER_PRICES.get(sandwich_protein.lower(), 0.0)
+                )
                 modifiers.append({
                     "name": sandwich_protein,
                     "price": protein_price,
@@ -489,7 +485,11 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
 
             # Add extras (additional proteins, cheeses, toppings)
             for extra in extras:
-                extra_price = DEFAULT_MODIFIER_PRICES.get(extra.lower(), 0.0)
+                extra_price = (
+                    pricing.lookup_modifier_price(extra)
+                    if pricing
+                    else DEFAULT_MODIFIER_PRICES.get(extra.lower(), 0.0)
+                )
                 modifiers.append({
                     "name": extra,
                     "price": extra_price,
@@ -500,7 +500,11 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 spread_name = spread
                 if spread_type and spread_type != "plain":
                     spread_name = f"{spread_type} {spread}"
-                spread_price = DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
+                spread_price = (
+                    pricing.lookup_spread_price(spread, spread_type)
+                    if pricing
+                    else DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
+                )
                 modifiers.append({
                     "name": spread_name,
                     "price": spread_price,
@@ -520,6 +524,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "spread": spread,
                 "spread_type": spread_type,
                 "toasted": toasted,
+                "scooped": scooped,
                 "sandwich_protein": getattr(item, 'sandwich_protein', None),
                 "extras": getattr(item, 'extras', []),
                 "needs_cheese_clarification": getattr(item, 'needs_cheese_clarification', False),
@@ -535,6 +540,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "spread": spread,
                     "spread_type": spread_type,
                     "toasted": toasted,
+                    "scooped": scooped,
                     "sandwich_protein": sandwich_protein,
                     "extras": extras,
                     # Include modifiers and base_price for database persistence
@@ -554,6 +560,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
             sweeteners = getattr(item, 'sweeteners', []) or []
             iced = getattr(item, 'iced', None)
             decaf = getattr(item, 'decaf', None)
+            cream_level = getattr(item, 'cream_level', None)
 
             # Get upcharges
             size_upcharge = getattr(item, 'size_upcharge', 0.0) or 0.0
@@ -615,6 +622,10 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     else:
                         free_details.append(s_type)
 
+            # Cream level (dark, light, regular) - always free
+            if cream_level:
+                free_details.append(cream_level)
+
             # Calculate base price (total - upcharges)
             total_price = item.unit_price or 0
             base_price = total_price - size_upcharge - milk_upcharge - syrup_upcharge - iced_upcharge
@@ -631,6 +642,7 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                 "item_config": {
                     "size": size,
                     "milk": milk,
+                    "cream_level": cream_level,
                     "sweeteners": sweeteners,
                     "flavor_syrups": flavor_syrups,
                     "decaf": decaf,
@@ -642,6 +654,9 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
                     "milk_upcharge": milk_upcharge,
                     "syrup_upcharge": syrup_upcharge,
                     "iced_upcharge": iced_upcharge,
+                    # Pending syrup state for multi-turn syrup ordering (e.g., "2 syrups" -> "caramel")
+                    "wants_syrup": getattr(item, 'wants_syrup', False),
+                    "pending_syrup_quantity": getattr(item, 'pending_syrup_quantity', 1),
                     # Computed display fields for admin/email
                     "modifiers": modifiers,
                     "free_details": free_details,
@@ -794,19 +809,14 @@ def order_task_to_dict(order: OrderTask, store_info: Dict = None) -> Dict[str, A
     total = order.checkout.total
 
     if store_info and subtotal > 0:
-        # Calculate taxes using store's tax rates
-        city_tax_rate = store_info.get("city_tax_rate", 0.0)
-        state_tax_rate = store_info.get("state_tax_rate", 0.0)
-        city_tax = round(subtotal * city_tax_rate, 2)
-        state_tax = round(subtotal * state_tax_rate, 2)
-        tax = city_tax + state_tax
-
-        # Calculate delivery fee if applicable
+        # Calculate taxes using centralized utility
         is_delivery = order.delivery_method.order_type == "delivery"
-        delivery_fee = store_info.get("delivery_fee", 2.99) if is_delivery else 0.0
-
-        # Calculate total
-        total = round(subtotal + tax + delivery_fee, 2)
+        totals = calculate_order_total(subtotal, store_info, is_delivery)
+        city_tax = totals["city_tax"]
+        state_tax = totals["state_tax"]
+        tax = totals["tax"]
+        delivery_fee = totals["delivery_fee"]
+        total = totals["total"]
 
     # Checkout state for compatibility (include tax breakdown)
     order_dict["checkout_state"] = {

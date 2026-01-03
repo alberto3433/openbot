@@ -89,6 +89,7 @@ class CoffeeConfigHandler:
         decaf: bool | None = None,
         syrup_quantity: int = 1,
         wants_syrup: bool = False,
+        cream_level: str | None = None,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
@@ -195,6 +196,7 @@ class CoffeeConfigHandler:
                     iced=None,  # No hot/iced label needed for sodas/bottled drinks
                     decaf=decaf,
                     milk=None,
+                    cream_level=cream_level,
                     sweeteners=[],
                     flavor_syrups=[],
                     unit_price=price,
@@ -226,9 +228,11 @@ class CoffeeConfigHandler:
                 iced=iced,
                 decaf=decaf,
                 milk=milk,
+                cream_level=cream_level,
                 sweeteners=sweeteners_list.copy(),
                 flavor_syrups=flavor_syrups_list.copy(),
                 wants_syrup=wants_syrup,
+                pending_syrup_quantity=syrup_quantity,  # Store quantity from "2 syrups" for later
                 unit_price=price,
                 special_instructions=special_instructions,
             )
@@ -522,6 +526,10 @@ class CoffeeConfigHandler:
                 item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
                 logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
 
+            # Store the pending syrup quantity for when flavor is specified (e.g., "2 syrups")
+            item.pending_syrup_quantity = coffee_mods.syrup_quantity
+            logger.info(f"Set pending syrup quantity: {coffee_mods.syrup_quantity}")
+
             order.pending_field = "syrup_flavor"
             return StateMachineResult(
                 message="Which flavor syrup would you like? We have vanilla, caramel, and hazelnut.",
@@ -598,8 +606,12 @@ class CoffeeConfigHandler:
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
 
         if coffee_mods.flavor_syrup:
-            item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
-            logger.info(f"Set coffee syrup from flavor selection: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
+            # Use the maximum of: pending quantity (from "2 syrups") and flavor response quantity (from "3 caramel")
+            # This handles cases like: user says "2 syrups" then just "caramel" -> should be 2 caramel syrups
+            # Also handles: user says "2 syrups" then "3 caramel" -> should be 3 caramel syrups
+            syrup_quantity = max(item.pending_syrup_quantity, coffee_mods.syrup_quantity)
+            item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": syrup_quantity})
+            logger.info(f"Set coffee syrup from flavor selection: {syrup_quantity} {coffee_mods.flavor_syrup} (pending_qty={item.pending_syrup_quantity}, response_qty={coffee_mods.syrup_quantity})")
 
             # Complete the coffee
             if self.pricing:

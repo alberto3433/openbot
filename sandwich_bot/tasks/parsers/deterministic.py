@@ -78,6 +78,7 @@ def _build_bagel_parsed_item(
     bagel_type: str | None = None,
     quantity: int = 1,
     toasted: bool | None = None,
+    scooped: bool | None = None,
     spread: str | None = None,
     spread_type: str | None = None,
     proteins: list[str] | None = None,
@@ -91,6 +92,7 @@ def _build_bagel_parsed_item(
         bagel_type=bagel_type,
         quantity=quantity,
         toasted=toasted,
+        scooped=scooped,
         spread=spread,
         spread_type=spread_type,
         proteins=proteins or [],
@@ -108,6 +110,7 @@ def _build_coffee_parsed_item(
     quantity: int = 1,
     milk: str | None = None,
     decaf: bool | None = None,
+    cream_level: str | None = None,  # dark, light, regular
     special_instructions: str | None = None,
     sweeteners: list | None = None,
     syrups: list | None = None,
@@ -120,6 +123,7 @@ def _build_coffee_parsed_item(
         quantity=quantity,
         milk=milk,
         decaf=decaf,
+        cream_level=cream_level,
         special_instructions=special_instructions,
         sweeteners=sweeteners or [],
         syrups=syrups or [],
@@ -317,6 +321,53 @@ ONE_MORE_PATTERN = re.compile(
     r"add\s+(?:one\s+more|another)"  # "add one more", "add another"
     r"|"
     r"(?:one|1)\s+more\s+(?:of\s+)?(?:those|them|that)"  # "one more of those"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "another bagel" / "one more coffee" pattern - adds a new item of specified type (runs config flow)
+# Item type keywords to match after "another" or "one more"
+ANOTHER_ITEM_TYPE_KEYWORDS = {
+    "bagel": "bagel",
+    "bagels": "bagel",
+    "coffee": "coffee",
+    "coffees": "coffee",
+    "latte": "coffee",
+    "lattes": "coffee",
+    "cappuccino": "coffee",
+    "cappuccinos": "coffee",
+    "espresso": "coffee",
+    "espressos": "coffee",
+    "americano": "coffee",
+    "americanos": "coffee",
+    "macchiato": "coffee",
+    "macchiatos": "coffee",
+    "mocha": "coffee",
+    "mochas": "coffee",
+    "tea": "coffee",  # Treat tea like coffee for ordering flow
+    "teas": "coffee",
+    "drink": "drink",
+    "drinks": "drink",
+    "sandwich": "sandwich",
+    "sandwiches": "sandwich",
+}
+
+ANOTHER_ITEM_TYPE_PATTERN = re.compile(
+    r"^(?:and\s+)?(?:one\s+more|another)\s+"
+    r"(bagels?|coffees?|lattes?|cappuccinos?|espressos?|americanos?|macchiatos?|mochas?|teas?|drinks?|sandwich(?:es)?)"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "all items" / "everything" pattern for duplicating entire cart
+DUPLICATE_ALL_PATTERN = re.compile(
+    r"^(?:"
+    r"all\s+(?:the\s+)?(?:items?|of\s+(?:them|those)|things?)"  # "all the items", "all of them"
+    r"|"
+    r"everything(?:\s+(?:in\s+(?:the\s+)?(?:cart|order)|again))?"  # "everything", "everything in the cart"
+    r"|"
+    r"(?:the\s+)?(?:whole|entire)\s+(?:order|cart)"  # "the whole order"
     r")"
     r"[\s!.,?]*$",
     re.IGNORECASE
@@ -590,6 +641,21 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
         result.milk = "none"
         logger.debug("Extracted coffee milk: none (black)")
 
+    # Check for cream level (dark, light, regular)
+    # "dark" = less cream/milk, "light" = more cream/milk
+    # Note: "light" for cream level is different from "light roast" - context is cream preference
+    if re.search(r'\bdark\b', input_lower):
+        result.cream_level = "dark"
+        logger.debug("Extracted coffee cream_level: dark")
+    elif re.search(r'\blight\b', input_lower):
+        # Only match "light" if it's not followed by "roast" (to avoid "light roast" confusion)
+        if not re.search(r'\blight\s+roast\b', input_lower):
+            result.cream_level = "light"
+            logger.debug("Extracted coffee cream_level: light")
+    elif re.search(r'\bregular\b', input_lower):
+        result.cream_level = "regular"
+        logger.debug("Extracted coffee cream_level: regular")
+
     # Check for just "milk" without a type - default to whole milk
     if not result.milk and re.search(r'\bmilk\b', input_lower):
         result.milk = "whole"
@@ -672,10 +738,28 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
                 break
 
     # Check for generic "syrup" request without a specific flavor
-    # e.g., "with syrup", "add syrup", "and syrup"
+    # e.g., "with syrup", "add syrup", "2 syrups"
     if not result.flavor_syrup and re.search(r'\bsyrups?\b', input_lower):
         result.wants_syrup = True
-        logger.debug("User requested syrup without specifying flavor")
+        # Extract quantity from "2 syrups", "two syrups", "double syrup", etc.
+        qty_pattern = re.compile(
+            r'(\d+|one|two|three|four|five|six|double|triple)\s+syrups?\b',
+            re.IGNORECASE
+        )
+        qty_match = qty_pattern.search(input_lower)
+        if qty_match:
+            qty_str = qty_match.group(1).lower()
+            if qty_str.isdigit():
+                result.syrup_quantity = int(qty_str)
+            elif qty_str == "double":
+                result.syrup_quantity = 2
+            elif qty_str == "triple":
+                result.syrup_quantity = 3
+            else:
+                result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
+            logger.debug("User requested %d syrups without specifying flavor", result.syrup_quantity)
+        else:
+            logger.debug("User requested syrup without specifying flavor")
 
     result.special_instructions = extract_special_instructions_from_input(user_input)
 
@@ -753,6 +837,20 @@ def _extract_toasted(text: str) -> bool | None:
         return False
     # Check for "toasted" and common typos
     if re.search(r"\b(?:toasted|tosted|tostd)\b", text_lower):
+        return True
+
+    return None
+
+
+def _extract_scooped(text: str) -> bool | None:
+    """Extract scooped preference from text (bagel with inside bread removed)."""
+    text_lower = text.lower()
+
+    # Check for "not scooped" first
+    if re.search(r"\bnot\s+scooped\b", text_lower):
+        return False
+    # Check for "scooped"
+    if re.search(r"\bscooped\b", text_lower):
         return True
 
     return None
@@ -987,12 +1085,15 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
     # Extract toasted preference
     toasted = _extract_toasted(text)
 
+    # Extract scooped preference
+    scooped = _extract_scooped(text)
+
     # Extract modifiers using the existing function
     modifiers = extract_modifiers_from_input(text)
 
     logger.info(
-        "BAGEL WITH MODIFIERS PARSED: qty=%d, type=%s, toasted=%s, proteins=%s, cheeses=%s, toppings=%s, spreads=%s",
-        quantity, bagel_type, toasted,
+        "BAGEL WITH MODIFIERS PARSED: qty=%d, type=%s, toasted=%s, scooped=%s, proteins=%s, cheeses=%s, toppings=%s, spreads=%s",
+        quantity, bagel_type, toasted, scooped,
         modifiers.proteins, modifiers.cheeses, modifiers.toppings, modifiers.spreads
     )
 
@@ -1005,6 +1106,7 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
             bagel_type=bagel_type,
             quantity=1,
             toasted=toasted,
+            scooped=scooped,
             spread=spread,
             proteins=modifiers.proteins,
             cheeses=modifiers.cheeses,
@@ -1019,6 +1121,7 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
         new_bagel_quantity=quantity,
         new_bagel_type=bagel_type,
         new_bagel_toasted=toasted,
+        new_bagel_scooped=scooped,
         new_bagel_spread=spread,  # Legacy field for backward compatibility
         new_bagel_proteins=modifiers.proteins,
         new_bagel_cheeses=modifiers.cheeses,
@@ -1444,6 +1547,7 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
 
     # Check for toasted if specified
     toasted = _extract_toasted(text)
+    scooped = _extract_scooped(text)
 
     # Build parsed_items for unified handler (Phase 8 dual-write)
     parsed_items = [
@@ -1451,6 +1555,7 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
             bagel_type=bagel_type,
             quantity=1,
             toasted=toasted,
+            scooped=scooped,
             proteins=matched_proteins,
             needs_cheese_clarification=True,
         )
@@ -1462,6 +1567,7 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
         new_bagel_quantity=quantity,
         new_bagel_type=bagel_type,  # None = will ask
         new_bagel_toasted=toasted,  # None = will ask
+        new_bagel_scooped=scooped,
         new_bagel_proteins=matched_proteins,
         new_bagel_needs_cheese_clarification=True,  # Always ask for cheese type
         parsed_items=parsed_items,  # Dual-write for Phase 8
@@ -1764,6 +1870,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             quantity=1,
             milk=milk,
             decaf=decaf,
+            cream_level=coffee_mods.cream_level,
             special_instructions=special_instructions,
             sweeteners=sweeteners,
             syrups=syrups,
@@ -1779,6 +1886,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         new_coffee_iced=iced,
         new_coffee_decaf=decaf,
         new_coffee_milk=milk,
+        new_coffee_cream_level=coffee_mods.cream_level,
         new_coffee_sweetener=coffee_mods.sweetener,
         new_coffee_sweetener_quantity=coffee_mods.sweetener_quantity,
         new_coffee_flavor_syrup=coffee_mods.flavor_syrup,
@@ -2209,6 +2317,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     if re.search(r'\bbagels?\b', item_text, re.IGNORECASE):
         bagel_type = _extract_bagel_type(item_text)
         toasted = _extract_toasted(item_text)
+        scooped = _extract_scooped(item_text)
         spread, spread_type = _extract_spread(item_text)
         logger.info("ADD MORE: parsed as bagel type='%s' (qty=1)", bagel_type)
         return OpenInputResponse(
@@ -2216,9 +2325,10 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
             new_bagel_quantity=1,
             new_bagel_type=bagel_type,
             new_bagel_toasted=toasted,
+            new_bagel_scooped=scooped,
             new_bagel_spread=spread,
             new_bagel_spread_type=spread_type,
-            parsed_items=[_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, spread=spread, spread_type=spread_type)],  # Dual-write for Phase 8
+            parsed_items=[_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)],  # Dual-write for Phase 8
         )
 
     # Check for common drink shorthand like "orange juice", "OJ", etc.
@@ -2472,6 +2582,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             bagel_qty = parsed.new_bagel_quantity or 1
             bagel_type = parsed.new_bagel_type
             bagel_toasted = parsed.new_bagel_toasted
+            bagel_scooped = parsed.new_bagel_scooped
             bagel_spread = parsed.new_bagel_spread
             bagel_spread_type = parsed.new_bagel_spread_type
 
@@ -2492,6 +2603,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 bagel_type=bagel_type,  # May be None - will need config
                 quantity=bagel_qty,
                 toasted=bagel_toasted,
+                scooped=bagel_scooped,
                 spread=bagel_spread,
                 spread_type=bagel_spread_type,
                 proteins=parsed.new_bagel_proteins or [],
@@ -2623,6 +2735,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 bagel_type=bagel_type,
                 quantity=1,
                 toasted=bagel_toasted,
+                scooped=bagel_scooped,
                 spread=bagel_spread,
                 spread_type=bagel_spread_type,
             )
@@ -2633,6 +2746,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_bagel_quantity=bagel_qty,
             new_bagel_type=bagel_type,
             new_bagel_toasted=bagel_toasted,
+            new_bagel_scooped=bagel_scooped,
             new_bagel_spread=bagel_spread,
             new_bagel_spread_type=bagel_spread_type,
             parsed_items=bagel_parsed_items,  # Dual-write for Phase 8
@@ -2757,7 +2871,16 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 logger.info("Deterministic parse: 'make it N' detected, target=%d, adding %d more", target_qty, additional)
                 return OpenInputResponse(duplicate_last_item=additional)
 
-    # Check for "one more" / "another" patterns
+    # Check for "another bagel" / "one more coffee" patterns (with item type specified)
+    # This must be checked BEFORE ONE_MORE_PATTERN since it's more specific
+    another_item_match = ANOTHER_ITEM_TYPE_PATTERN.match(text)
+    if another_item_match:
+        item_keyword = another_item_match.group(1).lower()
+        item_type = ANOTHER_ITEM_TYPE_KEYWORDS.get(item_keyword, item_keyword)
+        logger.info("Deterministic parse: 'another %s' detected, treating as new %s", item_keyword, item_type)
+        return OpenInputResponse(duplicate_new_item_type=item_type)
+
+    # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)
     if ONE_MORE_PATTERN.match(text):
         logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
         return OpenInputResponse(duplicate_last_item=1)
@@ -2940,17 +3063,18 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         if quantity:
             bagel_type = _extract_bagel_type(text)
             toasted = _extract_toasted(text)
+            scooped = _extract_scooped(text)
             spread, spread_type = _extract_spread(text, spread_types)
             side_item, side_qty = _extract_side_item(text)
 
             logger.debug(
-                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, spread=%s/%s, side=%s",
-                quantity, bagel_type, toasted, spread, spread_type, side_item
+                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
+                quantity, bagel_type, toasted, scooped, spread, spread_type, side_item
             )
 
             # Build parsed_items for unified handler (Phase 8 dual-write)
             bagel_qty_parsed_items = [
-                _build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, spread=spread, spread_type=spread_type)
+                _build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)
                 for _ in range(quantity)
             ]
             if side_item:
@@ -2961,6 +3085,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 new_bagel_quantity=quantity,
                 new_bagel_type=bagel_type,
                 new_bagel_toasted=toasted,
+                new_bagel_scooped=scooped,
                 new_bagel_spread=spread,
                 new_bagel_spread_type=spread_type,
                 new_side_item=side_item,
@@ -2972,16 +3097,17 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if SIMPLE_BAGEL_PATTERN.search(text):
         bagel_type = _extract_bagel_type(text)
         toasted = _extract_toasted(text)
+        scooped = _extract_scooped(text)
         spread, spread_type = _extract_spread(text, spread_types)
         side_item, side_qty = _extract_side_item(text)
 
         logger.debug(
-            "Deterministic parse: single bagel - type=%s, toasted=%s, spread=%s/%s, side=%s",
-            bagel_type, toasted, spread, spread_type, side_item
+            "Deterministic parse: single bagel - type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
+            bagel_type, toasted, scooped, spread, spread_type, side_item
         )
 
         # Build parsed_items for unified handler (Phase 8 dual-write)
-        simple_bagel_parsed_items = [_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, spread=spread, spread_type=spread_type)]
+        simple_bagel_parsed_items = [_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)]
         if side_item:
             simple_bagel_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
 
@@ -2990,6 +3116,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
             new_bagel_quantity=1,
             new_bagel_type=bagel_type,
             new_bagel_toasted=toasted,
+            new_bagel_scooped=scooped,
             new_bagel_spread=spread,
             new_bagel_spread_type=spread_type,
             new_side_item=side_item,
@@ -3001,16 +3128,17 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if re.search(r"\bbagels?\b", text, re.IGNORECASE):
         bagel_type = _extract_bagel_type(text)
         toasted = _extract_toasted(text)
+        scooped = _extract_scooped(text)
         spread, spread_type = _extract_spread(text, spread_types)
         side_item, side_qty = _extract_side_item(text)
 
-        if bagel_type or toasted is not None or spread or side_item:
+        if bagel_type or toasted is not None or scooped is not None or spread or side_item:
             logger.debug(
-                "Deterministic parse: bagel mention - type=%s, toasted=%s, spread=%s/%s, side=%s",
-                bagel_type, toasted, spread, spread_type, side_item
+                "Deterministic parse: bagel mention - type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
+                bagel_type, toasted, scooped, spread, spread_type, side_item
             )
             # Build parsed_items for unified handler (Phase 8 dual-write)
-            bagel_mention_parsed_items = [_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, spread=spread, spread_type=spread_type)]
+            bagel_mention_parsed_items = [_build_bagel_parsed_item(bagel_type=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)]
             if side_item:
                 bagel_mention_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
 
@@ -3019,6 +3147,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
                 new_bagel_quantity=1,
                 new_bagel_type=bagel_type,
                 new_bagel_toasted=toasted,
+                new_bagel_scooped=scooped,
                 new_bagel_spread=spread,
                 new_bagel_spread_type=spread_type,
                 new_side_item=side_item,

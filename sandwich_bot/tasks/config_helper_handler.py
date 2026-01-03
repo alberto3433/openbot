@@ -236,7 +236,7 @@ class ConfigHelperHandler:
         elif field == "bagel_choice":
             return "What kind of bagel would you like?"
         elif field == "coffee_size":
-            return "What size would you like?"
+            return "What size would you like? Small or Large?"
         elif field == "coffee_style":
             return "Would you like that hot or iced?"
         elif field == "cheese_choice":

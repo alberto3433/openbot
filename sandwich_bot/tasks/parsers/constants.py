@@ -32,6 +32,8 @@ SODA_DRINK_TYPES = {
     "juice", "orange juice", "oj", "apple juice", "cranberry juice",
     "snapple",
     "gatorade",
+    # Milk beverages (but NOT plain "milk" - that's a coffee modifier)
+    "chocolate milk", "chocolate milks",
     # Dr. Brown's sodas
     "dr brown's", "dr browns", "dr. brown's", "dr. browns",
     "dr brown's cream soda", "dr browns cream soda",
@@ -799,6 +801,14 @@ MENU_ITEM_CANONICAL_NAMES = {
     "tropicana no pulp": "Tropicana Orange Juice No Pulp",
     "tropicana": "Tropicana Orange Juice No Pulp",
     "fresh squeezed orange juice": "Fresh Squeezed Orange Juice",
+    # Coca Cola products - "coke" should map to regular Coca-Cola, not Diet Coke
+    "coke": "Coca-Cola",
+    "coca cola": "Coca-Cola",
+    "coca-cola": "Coca-Cola",
+    "diet coke": "Diet Coke",
+    "diet coca cola": "Diet Coke",
+    "coke zero": "Coke Zero",
+    "coca cola zero": "Coke Zero",
     # Dr. Brown's sodas - map to database names (with period)
     "dr brown's cream soda": "Dr. Brown's Cream Soda",
     "dr browns cream soda": "Dr. Brown's Cream Soda",
@@ -811,6 +821,9 @@ MENU_ITEM_CANONICAL_NAMES = {
     "dr browns": "Dr. Brown's Cream Soda",
     "dr. brown's": "Dr. Brown's Cream Soda",
     "dr. browns": "Dr. Brown's Cream Soda",
+    # Milk beverages (plain "milk" is a coffee modifier, not a standalone drink)
+    "chocolate milk": "Chocolate Milk",
+    "chocolate milks": "Chocolate Milk",
     # Omelettes - map "and" to "&" for database match
     "spinach and feta omelette": "Spinach & Feta Omelette",
     "spinach feta omelette": "Spinach & Feta Omelette",

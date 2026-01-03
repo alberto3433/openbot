@@ -1484,6 +1484,12 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     if not matched_item:
         return None
 
+    # If user says "omelette" but matched item isn't an omelette, skip this match
+    # Let the menu item parser handle omelettes properly (e.g., "truffled egg omelette")
+    if re.search(r'\bomelet(?:te)?s?\b', text_lower) and 'omelette' not in matched_item.lower():
+        logger.info("SPEED MENU SKIP: text contains 'omelette' but matched '%s' is not an omelette", matched_item)
+        return None
+
     logger.info("SPEED MENU MATCH: found '%s' -> %s in text '%s'", matched_key, matched_item, text[:50])
 
     # Extract quantity
@@ -1638,6 +1644,11 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
 def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     """Try to parse coffee/beverage orders deterministically."""
     text_lower = text.lower()
+
+    # Exclude "coffee cake" - it's a pastry, not a coffee order
+    # This must be checked early before we match "coffee" as a beverage
+    if re.search(r'\bcoffee\s+cake\b', text_lower):
+        return None
 
     coffee_type = None
 

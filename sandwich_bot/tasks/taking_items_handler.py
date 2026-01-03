@@ -1292,6 +1292,22 @@ class TakingItemsHandler:
                     len(items_needing_config),
                     [(n, f) for _, n, _, f in items_needing_config])
 
+        # Check if there's pending item disambiguation (e.g., "chips" matches multiple items)
+        # This happens when add_menu_item found multiple matches and set up disambiguation
+        if order.pending_field == "item_selection" and order.pending_item_options:
+            logger.info("Pending item disambiguation: %d options", len(order.pending_item_options))
+            # Build the disambiguation question
+            generic_term = summaries[0] if summaries else "item"
+            option_list = []
+            for i, item in enumerate(order.pending_item_options[:6], 1):
+                name = item.get("name", "Unknown")
+                option_list.append(f"{i}. {name}")
+            options_str = "\n".join(option_list)
+            return StateMachineResult(
+                message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
+                order=order,
+            )
+
         # If no items need configuration, return simple confirmation
         if not items_needing_config:
             if len(summaries) == 1:

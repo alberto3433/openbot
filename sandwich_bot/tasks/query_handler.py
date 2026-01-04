@@ -340,9 +340,9 @@ class QueryHandler:
         if menu_query_type in ("spread", "cream_cheese", "cream cheese"):
             return self.list_by_pound_category("spread", order)
 
-        # Map common query types to actual item_type slugs
-        # These are EXACT category mappings (e.g., "coffee" -> all sized beverages)
-        type_aliases = {
+        # TRUE category terms - these return the full category, not filtered results
+        # When a user asks for "coffee", they want ALL coffee drinks (lattes, etc.)
+        category_terms = {
             "coffee": "sized_beverage",
             "tea": "sized_beverage",
             "latte": "sized_beverage",
@@ -351,11 +351,9 @@ class QueryHandler:
             "water": "beverage",
         }
 
-        # Partial term filters - these should filter items by name, not return whole category
-        partial_term_filters = {"juice", "snapple", "pellegrino", "dr. brown"}
-
-        # Handle partial term filters - search within beverage categories
-        if menu_query_type.lower() in partial_term_filters:
+        # HYBRID APPROACH: For terms not in category_terms, try partial string matching
+        # This handles "juice", "snapple", "mocha", "chai", "iced", etc.
+        if menu_query_type.lower() not in category_terms:
             sized_items = items_by_type.get("sized_beverage", [])
             cold_items = items_by_type.get("beverage", [])
             all_drinks = sized_items + cold_items
@@ -445,7 +443,7 @@ class QueryHandler:
                 order=order,
             )
 
-        lookup_type = type_aliases.get(menu_query_type, menu_query_type)
+        lookup_type = category_terms.get(menu_query_type, menu_query_type)
         items = items_by_type.get(lookup_type, [])
 
         if not items:

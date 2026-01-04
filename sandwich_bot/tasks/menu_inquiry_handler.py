@@ -127,14 +127,19 @@ class MenuInquiryHandler:
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
 
+        Uses hybrid approach:
+        1. Category terms (coffee, tea, soda, water) return full categories
+        2. Everything else uses partial string matching on all drinks
+        3. If no matches found, returns empty list (caller handles error message)
+
         Returns:
             Tuple of (items list, category_key for pagination)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        # Map common query types to actual item_type slugs
-        # These are EXACT category mappings (e.g., "coffee" -> all sized beverages)
-        type_aliases = {
+        # TRUE category terms - these return the full category, not filtered results
+        # When a user asks for "coffee", they want ALL coffee drinks (lattes, etc.)
+        category_terms = {
             "coffee": "sized_beverage",
             "tea": "sized_beverage",
             "latte": "sized_beverage",
@@ -143,28 +148,11 @@ class MenuInquiryHandler:
             "water": "beverage",
         }
 
-        # Partial term filters - these should filter items by name, not return whole category
-        # e.g., "juice" should only show items with "juice" in the name
-        partial_term_filters = {"juice", "snapple", "pellegrino", "dr. brown"}
-
         # Handle "beverage" or "drink" queries by combining both types
         if menu_query_type in ("beverage", "drink"):
             sized_items = items_by_type.get("sized_beverage", [])
             cold_items = items_by_type.get("beverage", [])
             return sized_items + cold_items, "beverage"
-
-        # Handle partial term filters - search within beverage categories
-        if menu_query_type.lower() in partial_term_filters:
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            all_drinks = sized_items + cold_items
-            # Filter to items containing the search term
-            search_term = menu_query_type.lower()
-            filtered = [
-                item for item in all_drinks
-                if search_term in item.get("name", "").lower()
-            ]
-            return filtered, menu_query_type
 
         # Handle dessert queries by combining dessert, pastry, and snack types
         dessert_queries = (
@@ -177,8 +165,26 @@ class MenuInquiryHandler:
             snack_items = items_by_type.get("snack", [])
             return dessert_items + pastry_items + snack_items, "dessert"
 
-        lookup_type = type_aliases.get(menu_query_type, menu_query_type)
-        return items_by_type.get(lookup_type, []), lookup_type
+        # If it's a known category term, return the full category
+        if menu_query_type in category_terms:
+            lookup_type = category_terms[menu_query_type]
+            return items_by_type.get(lookup_type, []), lookup_type
+
+        # HYBRID APPROACH: For any other term, try partial string matching on all drinks
+        # This handles "juice", "snapple", "mocha", "chai", "iced", etc.
+        sized_items = items_by_type.get("sized_beverage", [])
+        cold_items = items_by_type.get("beverage", [])
+        all_drinks = sized_items + cold_items
+        search_term = menu_query_type.lower()
+        filtered = [
+            item for item in all_drinks
+            if search_term in item.get("name", "").lower()
+        ]
+        if filtered:
+            return filtered, menu_query_type
+
+        # No drink matches - fall back to checking other item types (bagels, etc.)
+        return items_by_type.get(menu_query_type, []), menu_query_type
 
     def _format_items_list(
         self,
@@ -310,20 +316,6 @@ class MenuInquiryHandler:
                 message="We have various cream cheeses and spreads. Would you like to hear about them?",
                 order=order,
             )
-
-        # Map common query types to actual item_type slugs
-        # - "soda", "water", "juice" -> "beverage" (cold-only drinks)
-        # - "coffee", "tea", "latte" -> "sized_beverage" (hot/iced drinks)
-        # - "beverage", "drink" -> combine both types
-        type_aliases = {
-            "coffee": "sized_beverage",
-            "tea": "sized_beverage",
-            "latte": "sized_beverage",
-            "espresso": "sized_beverage",
-            "soda": "beverage",
-            "water": "beverage",
-            "juice": "beverage",
-        }
 
         # Handle "beverage" or "drink" queries by combining both types
         if menu_query_type in ("beverage", "drink"):

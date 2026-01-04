@@ -420,6 +420,12 @@
         </div>
 
         <div class="field">
+          <label for="itemAliases">Aliases (synonyms for matching)</label>
+          <input id="itemAliases" type="text" placeholder="e.g., coke, coca cola, cola" />
+          <small style="color: #666; font-size: 0.8em;">Comma-separated alternative names that customers might use</small>
+        </div>
+
+        <div class="field">
           <label>Default Configuration</label>
           <div class="config-toggle">
             <button type="button" id="visualModeBtn" class="active">Visual Builder</button>
@@ -525,6 +531,7 @@
     const itemCategoryEl = document.getElementById("itemCategory");
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
+    const itemAliasesEl = document.getElementById("itemAliases");
     const itemMetadataEl = document.getElementById("itemMetadata");
 
     // Config builder elements
@@ -882,6 +889,7 @@
       itemCategoryEl.value = "";
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
+      itemAliasesEl.value = "";
       itemMetadataEl.value = "";
       ingredientsViewEl.textContent = "No configuration yet.";
 
@@ -932,6 +940,7 @@
       itemCategoryEl.value = item.item_type_id || "";
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
+      itemAliasesEl.value = item.aliases || "";
       itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
 
       // Populate visual config builder from metadata
@@ -1025,6 +1034,7 @@
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
+        aliases: itemAliasesEl.value.trim() || null,
         metadata: null
       };
 

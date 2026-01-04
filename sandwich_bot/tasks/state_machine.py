@@ -78,10 +78,10 @@ from .parsers import (
     is_soda_drink,
     # Constants - Number mapping
     WORD_TO_NUM,
-    # Constants - Bagel and spread types (get_bagel_types loaded from database)
+    # Constants - Bagel and spread types (loaded from database via dynamic functions)
     get_bagel_types,
-    SPREADS,
-    SPREAD_TYPES,
+    get_spreads,
+    get_spread_types,
     # Constants - Speed menu items
     SPEED_MENU_BAGELS,
     # Constants - By-the-pound items and categories
@@ -91,7 +91,7 @@ from .parsers import (
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
     BAGEL_TOPPINGS,
-    BAGEL_SPREADS,
+    get_bagel_spreads,
     MODIFIER_NORMALIZATIONS,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,

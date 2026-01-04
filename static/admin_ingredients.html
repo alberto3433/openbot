@@ -192,6 +192,132 @@
       letter-spacing: 0.5px;
       border-bottom: 1px solid #e0e0e0;
     }
+    /* Edit button styles */
+    .edit-btn {
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: 1px solid #1976d2;
+      background: #fff;
+      color: #1976d2;
+      font-size: 12px;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .edit-btn:hover {
+      background: #e3f2fd;
+    }
+    .ingredient-actions {
+      display: flex;
+      align-items: center;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group small {
+      display: block;
+      color: #666;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #1976d2;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #1565c0;
+    }
+    .btn-secondary {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #d0d0d0;
+    }
   </style>
 </head>
 <body>
@@ -279,6 +405,48 @@
     </div>
   </div>
 
+  <!-- Edit Ingredient Modal -->
+  <div class="modal-overlay" id="editIngredientModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Edit Ingredient</span>
+        <button class="modal-close" id="closeModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editIngredientId" />
+        <div class="form-group">
+          <label for="editIngredientName">Name</label>
+          <input type="text" id="editIngredientName" placeholder="e.g., Swiss Cheese" />
+        </div>
+        <div class="form-group">
+          <label for="editIngredientCategory">Category</label>
+          <select id="editIngredientCategory">
+            <option value="bread">Bread</option>
+            <option value="protein">Protein</option>
+            <option value="cheese">Cheese</option>
+            <option value="topping">Topping</option>
+            <option value="sauce">Sauce</option>
+            <option value="spread">Spread</option>
+            <option value="bagel">Bagel</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="editIngredientUnit">Unit</label>
+          <input type="text" id="editIngredientUnit" placeholder="e.g., piece, slice, oz" />
+        </div>
+        <div class="form-group">
+          <label for="editIngredientAliases">Aliases (synonyms for matching)</label>
+          <input type="text" id="editIngredientAliases" placeholder="e.g., swiss, swisscheese" />
+          <small>Comma-separated alternative names that customers might use when ordering</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveIngredientBtn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_BASE = "";
     let allIngredients = [];
@@ -300,6 +468,14 @@
     const menuItemSearchInput = document.getElementById("menuItemSearchInput");
     const menuItemCategoryFilter = document.getElementById("menuItemCategoryFilter");
     const storeSelector = document.getElementById("storeSelector");
+
+    // Modal elements
+    const editModal = document.getElementById("editIngredientModal");
+    const editIdEl = document.getElementById("editIngredientId");
+    const editNameEl = document.getElementById("editIngredientName");
+    const editCategoryEl = document.getElementById("editIngredientCategory");
+    const editUnitEl = document.getElementById("editIngredientUnit");
+    const editAliasesEl = document.getElementById("editIngredientAliases");
 
     // Store name mapping - loaded dynamically from API
     let STORE_NAMES = {};
@@ -432,22 +608,30 @@
               <li class="ingredient-item">
                 <div class="ingredient-info">
                   <span class="ingredient-name">${ing.name}</span>
-                  <span class="ingredient-meta">Unit: ${ing.unit}</span>
+                  <span class="ingredient-meta">Unit: ${ing.unit}${ing.aliases ? ' | Aliases: ' + ing.aliases : ''}</span>
                 </div>
-                <button class="toggle-btn ${ing.is_available ? 'available' : 'unavailable'}"
-                        data-id="${ing.id}"
-                        data-available="${ing.is_available}">
-                  ${ing.is_available ? 'Available' : "86'd"}
-                </button>
+                <div class="ingredient-actions">
+                  <button class="edit-btn" data-id="${ing.id}">Edit</button>
+                  <button class="toggle-btn ${ing.is_available ? 'available' : 'unavailable'}"
+                          data-id="${ing.id}"
+                          data-available="${ing.is_available}">
+                    ${ing.is_available ? 'Available' : "86'd"}
+                  </button>
+                </div>
               </li>
             `).join("")}
           </ul>
         </div>
       `).join("");
 
-      // Add click handlers
+      // Add click handlers for toggle buttons
       ingredientsList.querySelectorAll(".toggle-btn").forEach(btn => {
         btn.addEventListener("click", () => toggleAvailability(btn));
+      });
+
+      // Add click handlers for edit buttons
+      ingredientsList.querySelectorAll(".edit-btn").forEach(btn => {
+        btn.addEventListener("click", () => openEditModal(parseInt(btn.dataset.id)));
       });
     }
 
@@ -486,6 +670,80 @@
         showStatus("Error updating ingredient. See console.", "error");
         btn.disabled = false;
         btn.textContent = currentlyAvailable ? 'Available' : "86'd";
+      }
+    }
+
+    // ========== INGREDIENT EDIT MODAL FUNCTIONS ==========
+
+    function openEditModal(ingredientId) {
+      const ingredient = allIngredients.find(i => i.id === ingredientId);
+      if (!ingredient) {
+        showStatus("Ingredient not found", "error");
+        return;
+      }
+
+      editIdEl.value = ingredient.id;
+      editNameEl.value = ingredient.name;
+      editCategoryEl.value = ingredient.category;
+      editUnitEl.value = ingredient.unit;
+      editAliasesEl.value = ingredient.aliases || "";
+
+      editModal.classList.add("active");
+    }
+
+    function closeEditModal() {
+      editModal.classList.remove("active");
+      editIdEl.value = "";
+      editNameEl.value = "";
+      editCategoryEl.value = "bread";
+      editUnitEl.value = "";
+      editAliasesEl.value = "";
+    }
+
+    async function saveIngredient() {
+      const id = editIdEl.value;
+      if (!id) {
+        showStatus("No ingredient selected", "error");
+        return;
+      }
+
+      const payload = {
+        name: editNameEl.value.trim(),
+        category: editCategoryEl.value,
+        unit: editUnitEl.value.trim(),
+        aliases: editAliasesEl.value.trim() || null
+      };
+
+      if (!payload.name || !payload.unit) {
+        showStatus("Name and unit are required", "error");
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          credentials: 'include'
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        const updated = await resp.json();
+        showStatus(`${updated.name} updated successfully`, "success");
+
+        // Update local data
+        const idx = allIngredients.findIndex(i => i.id === updated.id);
+        if (idx !== -1) {
+          allIngredients[idx] = updated;
+        }
+
+        closeEditModal();
+        applyFilters();
+
+      } catch (err) {
+        console.error("Error updating ingredient:", err);
+        showStatus("Error updating ingredient. See console.", "error");
       }
     }
 
@@ -659,6 +917,14 @@
     // Event listeners - Common
     document.getElementById("refreshBtn").addEventListener("click", loadAll);
     storeSelector.addEventListener("change", loadAll);
+
+    // Event listeners - Modal
+    document.getElementById("closeModal").addEventListener("click", closeEditModal);
+    document.getElementById("cancelEditBtn").addEventListener("click", closeEditModal);
+    document.getElementById("saveIngredientBtn").addEventListener("click", saveIngredient);
+    editModal.addEventListener("click", (e) => {
+      if (e.target === editModal) closeEditModal();
+    });
 
     // Initial load - load stores first so dropdown is populated
     async function init() {

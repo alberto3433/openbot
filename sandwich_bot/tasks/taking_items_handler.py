@@ -37,7 +37,7 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
-from .parsers.constants import get_bagel_types, BAGEL_SPREADS, MODIFIER_NORMALIZATIONS
+from .parsers.constants import get_bagel_types, get_bagel_spreads, MODIFIER_NORMALIZATIONS
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -472,6 +472,76 @@ class TakingItemsHandler:
                             order=order,
                         )
 
+        # Handle modification to an existing item in the cart
+        # e.g., "can I have scallion cream cheese on the cinnamon raisin bagel"
+        # or "make the bagel with scallion cream cheese" (implicit target)
+        if parsed.modify_existing_item:
+            target_desc = (parsed.modify_target_description or "").lower()
+            active_items = order.items.get_active_items()
+
+            # Find the bagel that matches the target description
+            target_item = None
+            bagels_in_cart = [i for i in active_items if isinstance(i, BagelItemTask)]
+
+            if target_desc:
+                # Explicit target - find matching bagel by type
+                for item in bagels_in_cart:
+                    item_bagel_type = (item.bagel_type or "").lower()
+                    # Match if the target description contains the bagel type
+                    # e.g., "cinnamon raisin" matches a cinnamon raisin bagel
+                    if item_bagel_type and item_bagel_type in target_desc:
+                        target_item = item
+                        break
+                    # Also match if target is just "bagel" and there's only one bagel
+                    if target_desc == "bagel" and len(bagels_in_cart) == 1:
+                        target_item = item
+                        break
+            else:
+                # Implicit target ("make it with X", "make the bagel with X")
+                # Use the last bagel in the cart, or the only bagel
+                if len(bagels_in_cart) == 1:
+                    target_item = bagels_in_cart[0]
+                elif len(bagels_in_cart) > 1:
+                    # Multiple bagels - use the last one
+                    target_item = bagels_in_cart[-1]
+
+            if target_item:
+                # Apply the spread modification
+                if parsed.modify_new_spread:
+                    target_item.spread = parsed.modify_new_spread
+                if parsed.modify_new_spread_type:
+                    target_item.spread_type = parsed.modify_new_spread_type
+
+                # Recalculate price
+                self.pricing.recalculate_bagel_price(target_item)
+
+                updated_summary = target_item.get_summary()
+                logger.info(
+                    "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s",
+                    target_item.bagel_type, parsed.modify_new_spread, parsed.modify_new_spread_type
+                )
+                return StateMachineResult(
+                    message=f"Sure, I've updated your {updated_summary}. Anything else?",
+                    order=order,
+                )
+            else:
+                # Couldn't find matching item - inform user
+                if target_desc:
+                    logger.warning(
+                        "MODIFY EXISTING: Could not find bagel matching '%s' in cart",
+                        target_desc
+                    )
+                    return StateMachineResult(
+                        message=f"I couldn't find a {target_desc} bagel in your order. Would you like to add one?",
+                        order=order,
+                    )
+                else:
+                    logger.warning("MODIFY EXISTING: No bagels in cart to modify")
+                    return StateMachineResult(
+                        message="I don't see any bagels in your order to modify. Would you like to add one?",
+                        order=order,
+                    )
+
         # Handle item replacement: "make it a coke instead", "change it to X", etc.
         replaced_item_name = None
         if parsed.replace_last_item:
@@ -572,7 +642,7 @@ class TakingItemsHandler:
                         # Check for spread changes FIRST (longer matches before shorter)
                         # e.g., "blueberry cream cheese" should match before "blueberry" (bagel type)
                         new_spread = None
-                        for spread in sorted(BAGEL_SPREADS, key=len, reverse=True):
+                        for spread in sorted(get_bagel_spreads(), key=len, reverse=True):
                             if spread in input_lower:
                                 # Normalize the spread name
                                 new_spread = MODIFIER_NORMALIZATIONS.get(spread, spread)
@@ -1344,16 +1414,23 @@ class TakingItemsHandler:
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
 
-        # Check if we're waiting for drink type selection (user said "drink" generically)
+        # Check if we're waiting for drink type selection (user said "drink" or partial term like "juice")
         # This must be checked BEFORE checking summaries because add_coffee sets pending_field
-        # but _add_parsed_item still adds the generic "drink" to summaries
+        # but _add_parsed_item still adds the generic term to summaries
         if order.pending_field == "drink_type" and self.coffee_handler.menu_lookup:
             logger.info("Pending drink type selection - presenting drink options")
-            # Get drink items from menu
-            items_by_type = self.coffee_handler.menu_lookup.menu_data.get("items_by_type", {})
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            all_drinks = sized_items + cold_items
+
+            # Check if we have filtered options (partial term like "juice") or need full menu
+            if order.pending_drink_options:
+                # Use pre-filtered options from add_coffee
+                all_drinks = order.pending_drink_options
+                logger.info("Using %d pre-filtered drink options", len(all_drinks))
+            else:
+                # Get full drink menu for generic "drink" request
+                items_by_type = self.coffee_handler.menu_lookup.menu_data.get("items_by_type", {})
+                sized_items = items_by_type.get("sized_beverage", [])
+                cold_items = items_by_type.get("beverage", [])
+                all_drinks = sized_items + cold_items
 
             if all_drinks:
                 # Show first batch of drinks with pagination
@@ -1377,10 +1454,10 @@ class TakingItemsHandler:
                     if len(drink_names) == 1:
                         drinks_str = drink_names[0]
                     elif len(drink_names) == 2:
-                        drinks_str = f"{drink_names[0]} and {drink_names[1]}"
+                        drinks_str = f"{drink_names[0]} or {drink_names[1]}"
                     else:
-                        drinks_str = ", ".join(drink_names[:-1]) + f", and {drink_names[-1]}"
-                    message = f"We have {drinks_str}. What type of drink would you like?"
+                        drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
+                    message = f"We have {drinks_str}. Which would you like?"
 
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 return StateMachineResult(message=message, order=order)

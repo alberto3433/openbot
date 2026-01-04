@@ -61,6 +61,7 @@ class MenuDataCache:
         # Core data sets
         self._spreads: set[str] = set()
         self._spread_types: set[str] = set()
+        self._bagel_spreads: set[str] = set()  # Combined patterns for matching
         self._bagel_types: set[str] = set()
         self._bagel_types_list: list[str] = []  # Ordered list for display/pagination
         self._proteins: set[str] = set()
@@ -153,11 +154,17 @@ class MenuDataCache:
                 # Keep existing cache if available
 
     def _load_spread_types(self, db: Session) -> None:
-        """Load spread types from cream cheese menu items."""
+        """Load spread types from cream cheese menu items and base spreads from ingredients.
+
+        Also builds the _bagel_spreads set which combines base spreads with their
+        variety types for pattern matching (e.g., "scallion cream cheese", "scallion").
+        """
+        import re
         from .models import MenuItem, Ingredient
 
         spread_types = set()
         spreads = set()
+        bagel_spreads = set()
 
         # Load from cream cheese menu items
         # Items like "Honey Walnut Cream Cheese (1/4 lb)" -> extract "honey walnut"
@@ -170,7 +177,6 @@ class MenuDataCache:
         for item in cream_cheese_items:
             name = item.name.lower()
             # Remove weight suffix like "(1/4 lb)", "(1 lb)"
-            import re
             name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
 
             # Extract spread type from name
@@ -198,7 +204,7 @@ class MenuDataCache:
                 if spread_type and spread_type not in ("plain", "regular"):
                     spread_types.add(spread_type)
 
-        # Load base spreads from ingredients
+        # Load base spreads from ingredients with category='spread'
         spread_ingredients = (
             db.query(Ingredient)
             .filter(Ingredient.category == "spread")
@@ -206,14 +212,32 @@ class MenuDataCache:
         )
         for ing in spread_ingredients:
             spreads.add(ing.name.lower())
+            # Also add aliases
+            if ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        spreads.add(alias)
 
-        # Add common spreads if not found
-        common_spreads = {"cream cheese", "butter", "peanut butter", "jelly",
-                         "jam", "nutella", "hummus", "avocado"}
-        spreads.update(common_spreads)
+        # Build bagel_spreads - all patterns for matching spreads in user input
+        # This combines base spreads with spread types
+        for spread in spreads:
+            bagel_spreads.add(spread)
+            # Add "plain X" variation for cream cheese
+            if spread == "cream cheese":
+                bagel_spreads.add("plain cream cheese")
+
+        # Add spread type variations (e.g., "scallion cream cheese", "scallion")
+        for spread_type in spread_types:
+            bagel_spreads.add(spread_type)
+            bagel_spreads.add(f"{spread_type} cream cheese")
+
+        # Add specific known patterns
+        bagel_spreads.add("lox spread")
 
         self._spreads = spreads
         self._spread_types = spread_types
+        self._bagel_spreads = bagel_spreads
 
     def _load_bagel_types(self, db: Session) -> None:
         """Load bagel types from ingredients table.
@@ -505,6 +529,16 @@ class MenuDataCache:
         """Get cream cheese variety types (scallion, honey walnut, etc.)."""
         return self._spread_types.copy() if self._is_loaded else set()
 
+    def get_bagel_spreads(self) -> set[str]:
+        """Get all spread patterns for matching in user input.
+
+        Returns combined set of:
+        - Base spreads (cream cheese, butter, etc.)
+        - Spread types (scallion, honey walnut, etc.)
+        - Combined patterns (scallion cream cheese, etc.)
+        """
+        return self._bagel_spreads.copy() if self._is_loaded else set()
+
     def get_bagel_types(self) -> set[str]:
         """Get bagel types (plain, everything, etc.) including aliases."""
         return self._bagel_types.copy() if self._is_loaded else set()
@@ -700,6 +734,7 @@ class MenuDataCache:
             "counts": {
                 "spreads": len(self._spreads),
                 "spread_types": len(self._spread_types),
+                "bagel_spreads": len(self._bagel_spreads),
                 "bagel_types": len(self._bagel_types),
                 "proteins": len(self._proteins),
                 "toppings": len(self._toppings),

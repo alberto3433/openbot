@@ -20,7 +20,7 @@ from .parsers.constants import (
     BAGEL_ONLY_TYPES,
     CHANGE_REQUEST_PATTERNS,
     SPREAD_ONLY_TYPES,
-    SPREAD_TYPES,
+    get_spread_types,
     get_bagel_types,
 )
 
@@ -200,13 +200,13 @@ class ModifierChangeHandler:
         # Check if it's a known bagel type (but not in BAGEL_ONLY)
         if new_value_lower in get_bagel_types():
             # Could be bagel type
-            if new_value_lower in SPREAD_TYPES:
+            if new_value_lower in get_spread_types():
                 # Also a spread type - ambiguous
                 return True, [ModifierCategory.BAGEL_TYPE, ModifierCategory.SPREAD_TYPE]
             return False, [ModifierCategory.BAGEL_TYPE]
 
         # Check if it's a known spread type (but not in SPREAD_ONLY)
-        if new_value_lower in SPREAD_TYPES:
+        if new_value_lower in get_spread_types():
             return False, [ModifierCategory.SPREAD_TYPE]
 
         # Check for coffee size

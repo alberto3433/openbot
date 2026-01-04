@@ -156,18 +156,18 @@ def disable_state_machine(monkeypatch):
     monkeypatch.setenv("STATE_MACHINE_ENABLED", "false")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def menu_cache_loaded():
-    """Load the menu cache from the database for tests that need it.
+    """Load the menu cache from the database for all tests.
 
-    This is a session-scoped fixture so the cache is only loaded once.
-    Tests that need the menu cache should use this fixture.
+    This is a session-scoped autouse fixture so the cache is loaded once at the
+    start of the test session. This is required because spread/bagel types are
+    loaded from the database - there are no hardcoded fallbacks.
     """
     if not TEST_DATABASE_URL:
-        pytest.skip("DATABASE_URL environment variable required for menu cache tests")
+        pytest.skip("DATABASE_URL environment variable required - spread/bagel types are loaded from database")
 
     from sandwich_bot.menu_data_cache import menu_cache
-    from sqlalchemy.orm import Session
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

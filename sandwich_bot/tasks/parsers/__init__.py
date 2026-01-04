@@ -83,10 +83,11 @@ from .constants import (
     get_soda_types,
     # Number mapping
     WORD_TO_NUM,
-    # Bagel and spread types (get_bagel_types loaded from database)
+    # Bagel and spread types (loaded from database via dynamic functions)
     get_bagel_types,
-    SPREADS,
-    SPREAD_TYPES,
+    get_spreads,
+    get_spread_types,
+    get_bagel_spreads,
     # Speed menu items
     SPEED_MENU_BAGELS,
     # By-the-pound items and categories
@@ -96,7 +97,6 @@ from .constants import (
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
     BAGEL_TOPPINGS,
-    BAGEL_SPREADS,
     MODIFIER_NORMALIZATIONS,
     # Regex patterns - basic
     QUALIFIER_PATTERNS,
@@ -193,10 +193,11 @@ __all__ = [
     "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",
-    # Constants - Bagel and spread types (get_bagel_types loaded from database)
+    # Constants - Bagel and spread types (loaded from database via dynamic functions)
     "get_bagel_types",
-    "SPREADS",
-    "SPREAD_TYPES",
+    "get_spreads",
+    "get_spread_types",
+    "get_bagel_spreads",
     # Constants - Speed menu items
     "SPEED_MENU_BAGELS",
     # Constants - By-the-pound items and categories
@@ -206,7 +207,6 @@ __all__ = [
     "BAGEL_PROTEINS",
     "BAGEL_CHEESES",
     "BAGEL_TOPPINGS",
-    "BAGEL_SPREADS",
     "MODIFIER_NORMALIZATIONS",
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",

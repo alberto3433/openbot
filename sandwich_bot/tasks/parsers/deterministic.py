@@ -32,14 +32,15 @@ from ..schemas import (
 )
 from .constants import (
     WORD_TO_NUM,
-    SPREADS,
-    SPREAD_TYPES,
     SPEED_MENU_BAGELS,
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
     BAGEL_TOPPINGS,
-    BAGEL_SPREADS,
     MODIFIER_NORMALIZATIONS,
+    # Dynamic spread functions (loaded from database)
+    get_spreads,
+    get_spread_types,
+    get_bagel_spreads,
     QUALIFIER_PATTERNS,
     GREETING_PATTERNS,
     GRATITUDE_PATTERNS,
@@ -596,7 +597,7 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
                 start = pos + 1
 
     # Extract in order of specificity
-    find_and_add(BAGEL_SPREADS, result.spreads, "spread")
+    find_and_add(get_bagel_spreads(), result.spreads, "spread")
     find_and_add(BAGEL_PROTEINS, result.proteins, "protein")
     find_and_add(BAGEL_CHEESES, result.cheeses, "cheese")
     find_and_add(BAGEL_TOPPINGS, result.toppings, "topping")
@@ -903,14 +904,14 @@ def _extract_spread(text: str, extra_spread_types: set[str] | None = None) -> tu
     spread = None
     spread_type = None
 
-    for s in sorted(SPREADS, key=len, reverse=True):
+    for s in sorted(get_spreads(), key=len, reverse=True):
         if s in text_lower:
             spread = s
             break
 
-    all_spread_types = SPREAD_TYPES.copy()
+    all_spread_types = get_spread_types()
     if extra_spread_types:
-        all_spread_types.update(extra_spread_types)
+        all_spread_types = all_spread_types | extra_spread_types
 
     for st in sorted(all_spread_types, key=len, reverse=True):
         if st in text_lower:
@@ -1108,6 +1109,127 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
 
     logger.debug("Extracted modifications from '%s': %s", text[:50], modifications)
     return modifications
+
+
+def _parse_modify_existing_item(text: str, spread_types: set[str]) -> OpenInputResponse | None:
+    """Detect requests to modify an existing cart item with a spread.
+
+    Catches patterns like:
+    - "can I have scallion cream cheese on the cinnamon raisin bagel"
+    - "put butter on the plain bagel"
+    - "add cream cheese to the everything bagel"
+    - "make the bagel with scallion cream cheese"
+    - "make it with butter"
+
+    This must be called BEFORE menu item matching to prevent "scallion cream cheese"
+    from being matched to "Scallion Cream Cheese Sandwich".
+
+    Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    spread_part = None
+    target_bagel = None
+
+    # === Pattern Group 1: SPREAD preposition TARGET bagel ===
+    # These patterns have spread BEFORE the target bagel
+    # Group 1: spread, Group 2: bagel type
+    spread_before_target_patterns = [
+        # "can I have X on the Y bagel"
+        r"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel",
+        # "put X on the Y bagel"
+        r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*bagel",
+        # "X on the Y bagel" (simple form)
+        r"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel$",
+        # "i want X on the Y bagel"
+        r"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel",
+    ]
+
+    for pattern in spread_before_target_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            spread_part = match.group(1).strip()
+            target_bagel = match.group(2).strip()
+            break
+
+    # === Pattern Group 2: TARGET bagel with SPREAD ===
+    # These patterns have target BEFORE the spread (reversed order)
+    # "make the plain bagel with X" - Group 1: bagel type, Group 2: spread
+    if not spread_part:
+        match = re.search(
+            r"make\s+(?:the|my)\s+(.+?)\s+bagel\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+            text_lower
+        )
+        if match:
+            target_bagel = match.group(1).strip()
+            spread_part = match.group(2).strip()
+
+    # === Pattern Group 3: Implicit target (IT or THE BAGEL) ===
+    # "make it with X", "make the bagel with X", "put X on it"
+    # target_bagel stays None to indicate "find any/last bagel"
+    if not spread_part:
+        implicit_target_patterns = [
+            # "make the bagel with X" - no specific bagel type
+            r"make\s+(?:the|my)\s+bagel\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+            # "make it with X"
+            r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+            # "put X on it"
+            r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
+            # "i want X on it"
+            r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
+            # "can I have X on it"
+            r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
+        ]
+        for pattern in implicit_target_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                spread_part = match.group(1).strip()
+                target_bagel = None  # Implicit - find last/only bagel
+                break
+
+    # No pattern matched
+    if not spread_part:
+        return None
+
+    # === Extract spread and spread_type from spread_part ===
+    spread = None
+    spread_type = None
+
+    # Extract spread (cream cheese, butter, etc.)
+    for s in sorted(get_spreads(), key=len, reverse=True):
+        if s in spread_part:
+            spread = s
+            break
+
+    # Extract spread type (scallion, veggie, etc.)
+    all_spread_types = get_spread_types()
+    if spread_types:
+        all_spread_types = all_spread_types | spread_types
+
+    for st in sorted(all_spread_types, key=len, reverse=True):
+        if st in spread_part:
+            spread_type = st
+            break
+
+    # If we found either a spread or spread_type, this is a modification
+    if spread or spread_type:
+        # Default spread to cream cheese if only type is mentioned
+        if spread_type and not spread:
+            spread = "cream cheese"
+
+        logger.info(
+            "MODIFY EXISTING ITEM: '%s' -> spread=%s, spread_type=%s, target=%s",
+            text[:50], spread, spread_type, target_bagel
+        )
+
+        return OpenInputResponse(
+            modify_existing_item=True,
+            modify_target_description=target_bagel,
+            modify_new_spread=spread,
+            modify_new_spread_type=spread_type,
+        )
+
+    return None
 
 
 def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
@@ -1396,7 +1518,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         if not spread and "cream cheese" in part_lower:
             spread = "cream cheese"
             # Look for spread type before "cream cheese"
-            for st in sorted(SPREAD_TYPES, key=len, reverse=True):
+            for st in sorted(get_spread_types(), key=len, reverse=True):
                 if st in part_lower:
                     spread_type = st
                     break
@@ -3198,6 +3320,13 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     if ONE_MORE_PATTERN.match(text):
         logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
         return OpenInputResponse(duplicate_last_item=1)
+
+    # Check for modification to existing item BEFORE replacement patterns
+    # This catches patterns like "make the bagel with scallion cream cheese"
+    # which should modify an existing bagel, not trigger replace_last_item
+    modify_existing_result = _parse_modify_existing_item(text, spread_types)
+    if modify_existing_result:
+        return modify_existing_result
 
     # Check for replacement phrases
     replace_match = REPLACE_ITEM_PATTERN.match(text)

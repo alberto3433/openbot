@@ -60,23 +60,14 @@ WORD_TO_NUM = {
 # Bagel Types and Spreads
 # =============================================================================
 
-# NOTE: Bagel types are now loaded from the database via menu_data_cache.py.
+# NOTE: Bagel types and spreads are now loaded from the database via menu_data_cache.py.
 # Use get_bagel_types() for the set (includes aliases) or get_bagel_types_list()
 # for an ordered list (display/pagination). Both support aliases via the
 # 'aliases' column on ingredients where category='bread'.
-
-SPREADS = {
-    "cream cheese", "butter", "peanut butter", "jelly",
-    "jam", "nutella", "hummus", "avocado",
-}
-
-# Spread types/varieties (exclude "plain" - too ambiguous with bagel type)
-SPREAD_TYPES = {
-    "scallion", "veggie", "vegetable", "strawberry",
-    "honey walnut", "lox", "chive", "garlic herb", "jalapeno",
-    "tofu", "olive", "blueberry", "truffle", "nova", "sun-dried tomato",
-    "maple raisin walnut", "kalamata olive",
-}
+#
+# Spreads are loaded from ingredients where category='spread'.
+# Spread types/varieties are loaded from cream cheese menu items.
+# Use get_spreads(), get_spread_types(), and get_bagel_spreads() to access these.
 
 # =============================================================================
 # Modifier Category Classification
@@ -300,20 +291,9 @@ BAGEL_TOPPINGS = {
     "salt", "pepper", "salt and pepper",
 }
 
-# Valid spreads (cream cheese varieties, butter)
-BAGEL_SPREADS = {
-    "cream cheese", "plain cream cheese",
-    "scallion cream cheese", "scallion",
-    "veggie cream cheese", "vegetable cream cheese", "veggie",
-    "lox spread",
-    "jalapeño cream cheese", "jalapeno cream cheese",
-    "honey walnut cream cheese", "honey walnut",
-    "strawberry cream cheese", "strawberry",
-    "blueberry cream cheese", "blueberry",
-    "olive cream cheese", "olive",
-    "tofu cream cheese", "tofu",
-    "butter",
-}
+# NOTE: BAGEL_SPREADS has been moved to the database.
+# Use get_bagel_spreads() to access spread patterns for matching.
+# Data is loaded from ingredients (category='spread') and cream cheese menu items.
 
 # Map short names to full names for normalization
 MODIFIER_NORMALIZATIONS = {
@@ -1266,28 +1246,51 @@ def get_spread_types() -> set[str]:
     """
     Get cream cheese variety types (scallion, honey walnut, etc.).
 
-    Returns data from cache if loaded, otherwise returns hardcoded SPREAD_TYPES.
+    Returns data from cache. Raises RuntimeError if cache not loaded.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_spread_types()
         if cached:
             return cached
-    return SPREAD_TYPES
+    raise RuntimeError(
+        "Spread types not available. Ensure menu_data_cache is loaded with spread data from the database."
+    )
 
 
 def get_spreads() -> set[str]:
     """
     Get base spread types (cream cheese, butter, etc.).
 
-    Returns data from cache if loaded, otherwise returns hardcoded SPREADS.
+    Returns data from cache. Raises RuntimeError if cache not loaded.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_spreads()
         if cached:
             return cached
-    return SPREADS
+    raise RuntimeError(
+        "Spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
+    )
+
+
+def get_bagel_spreads() -> set[str]:
+    """
+    Get all spread patterns for matching in user input.
+
+    Returns combined set of base spreads, spread types, and combined patterns
+    (e.g., "cream cheese", "scallion", "scallion cream cheese").
+
+    Returns data from cache. Raises RuntimeError if cache not loaded.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_bagel_spreads()
+        if cached:
+            return cached
+    raise RuntimeError(
+        "Bagel spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
+    )
 
 
 def get_bagel_types() -> set[str]:
@@ -1483,24 +1486,9 @@ def find_spread_matches(query: str) -> list[str]:
     if cache:
         return cache.find_spread_matches(query)
 
-    # Fallback: simple substring matching against hardcoded values
-    query_lower = query.lower().strip()
-    query_lower = query_lower.replace("cream cheese", "").strip()
-
-    if not query_lower:
-        return []
-
-    # Exact match
-    if query_lower in SPREAD_TYPES:
-        return [query_lower]
-
-    # Substring matching
-    matches = []
-    for spread_type in SPREAD_TYPES:
-        if query_lower in spread_type or spread_type in query_lower:
-            matches.append(spread_type)
-
-    return sorted(matches)
+    raise RuntimeError(
+        "Spread matching not available. Ensure menu_data_cache is loaded with spread data from the database."
+    )
 
 
 def find_bagel_matches(query: str) -> list[str]:

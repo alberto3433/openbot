@@ -38,9 +38,8 @@ from .parsers.deterministic import (
 )
 from .parsers.constants import (
     MORE_MENU_ITEMS_PATTERNS,
-    SPREAD_TYPES,
-    SPREADS,
     get_spread_types,
+    get_spreads,
     get_bagel_types,
     get_bagel_types_list,
 )
@@ -541,7 +540,7 @@ class BagelConfigHandler:
                             )
                     elif parsed.spread:
                         # Validate LLM response - check if spread_type is actually valid
-                        if parsed.spread_type and parsed.spread_type.lower() not in SPREAD_TYPES:
+                        if parsed.spread_type and parsed.spread_type.lower() not in get_spread_types():
                             # LLM hallucinated an invalid spread type - re-ask
                             logger.info("LLM returned invalid spread_type '%s' (MenuItemTask) - re-asking", parsed.spread_type)
                             return StateMachineResult(

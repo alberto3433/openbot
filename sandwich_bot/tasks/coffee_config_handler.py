@@ -150,6 +150,59 @@ class CoffeeConfigHandler:
                     order=order,
                 )
 
+        # Check if this is a partial drink category (juice, soda, tea, etc.)
+        # Filter drinks to only show matching items instead of full menu
+        if coffee_type_lower and self.menu_lookup:
+            items_by_type = self.menu_lookup.menu_data.get("items_by_type", {})
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            all_drinks = sized_items + cold_items
+
+            # Filter drinks that contain the search term
+            matching_drinks = [
+                item for item in all_drinks
+                if coffee_type_lower in item.get("name", "").lower()
+            ]
+
+            if len(matching_drinks) == 1:
+                # Single match - add it directly
+                matched_drink = matching_drinks[0]
+                coffee_type = matched_drink.get("name")
+                logger.info("ADD COFFEE: Single match for '%s' -> '%s', adding directly", coffee_type_lower, coffee_type)
+                # Fall through to normal add logic below
+
+            elif len(matching_drinks) > 1:
+                # Multiple matches - show only the filtered options
+                logger.info("ADD COFFEE: Partial term '%s' matched %d drinks", coffee_type_lower, len(matching_drinks))
+                drink_names = [item.get("name", "Unknown") for item in matching_drinks]
+
+                if len(drink_names) <= 5:
+                    # Show all matches
+                    if len(drink_names) == 2:
+                        drinks_str = f"{drink_names[0]} or {drink_names[1]}"
+                    else:
+                        drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
+                    message = f"We have {drinks_str}. Which would you like?"
+                else:
+                    # Show first batch with pagination
+                    batch_size = 5
+                    batch = matching_drinks[:batch_size]
+                    remaining = len(matching_drinks) - batch_size
+                    batch_names = [item.get("name", "Unknown") for item in batch]
+                    drinks_str = ", ".join(batch_names[:-1]) + f", {batch_names[-1]}"
+                    message = f"We have {drinks_str}, and {remaining} more. Which would you like?"
+                    order.set_menu_pagination(coffee_type_lower, batch_size, len(matching_drinks))
+
+                # Store filtered options for selection handling
+                order.pending_drink_options = matching_drinks
+                order.pending_field = "drink_type"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                return StateMachineResult(
+                    message=message,
+                    order=order,
+                )
+            # If no matches, fall through to normal processing
+
         # Check for multiple matching items - ask user to clarify if ambiguous
         if coffee_type and self.menu_lookup:
             matching_items = self.menu_lookup.lookup_menu_items(coffee_type)

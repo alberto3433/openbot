@@ -670,6 +670,24 @@ class OpenInputResponse(BaseModel):
         description="If user mentions 'pickup order' or 'delivery order' upfront, capture that here"
     )
 
+    # Modify existing item in cart (e.g., "can I have scallion cream cheese on the cinnamon raisin bagel")
+    modify_existing_item: bool = Field(
+        default=False,
+        description="User wants to modify an existing item in the cart, not order a new item"
+    )
+    modify_target_description: str | None = Field(
+        default=None,
+        description="Description of the item to modify (e.g., 'cinnamon raisin bagel', 'plain bagel')"
+    )
+    modify_new_spread: str | None = Field(
+        default=None,
+        description="New spread to apply to the existing item (e.g., 'cream cheese', 'butter')"
+    )
+    modify_new_spread_type: str | None = Field(
+        default=None,
+        description="Type of spread (e.g., 'scallion', 'veggie', 'plain')"
+    )
+
     # Multi-item order handling - list of parsed items for generic processing
     parsed_items: list[ParsedItem] = Field(
         default_factory=list,

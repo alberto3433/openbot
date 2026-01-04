@@ -78,6 +78,7 @@ class IngredientOut(BaseModel):
         unit: Unit of measurement (piece, oz, slice, etc.)
         track_inventory: Whether to track counts (legacy, usually False)
         is_available: Global availability (False = 86'd everywhere)
+        aliases: Comma-separated synonyms for matching (e.g., "wheat" for "Whole Wheat Bagel")
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +88,7 @@ class IngredientOut(BaseModel):
     unit: str
     track_inventory: bool
     is_available: bool
+    aliases: Optional[str] = None
 
 
 class IngredientCreate(BaseModel):
@@ -99,13 +101,15 @@ class IngredientCreate(BaseModel):
         unit: Unit of measurement (default: "piece")
         track_inventory: Enable inventory counting (default: False)
         is_available: Initial availability (default: True)
+        aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
             "name": "Provolone",
             "category": "cheese",
             "unit": "slice",
-            "is_available": true
+            "is_available": true,
+            "aliases": "prov, provolone cheese"
         }
     """
     name: str
@@ -113,6 +117,7 @@ class IngredientCreate(BaseModel):
     unit: str = "piece"
     track_inventory: bool = False
     is_available: bool = True
+    aliases: Optional[str] = None
 
 
 class IngredientUpdate(BaseModel):
@@ -127,12 +132,14 @@ class IngredientUpdate(BaseModel):
         unit: New unit of measurement
         track_inventory: Update inventory tracking
         is_available: Update global availability (to 86 or un-86)
+        aliases: Comma-separated synonyms for matching
     """
     name: Optional[str] = None
     category: Optional[str] = None
     unit: Optional[str] = None
     track_inventory: Optional[bool] = None
     is_available: Optional[bool] = None
+    aliases: Optional[str] = None
 
 
 class IngredientAvailabilityUpdate(BaseModel):

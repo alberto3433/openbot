@@ -75,6 +75,7 @@ class MenuItemOut(BaseModel):
         available_qty: Legacy inventory count (use 86 system instead)
         metadata: Additional item data (description, defaults, etc.)
         item_type_id: Foreign key to ItemType for configuration options
+        aliases: Comma-separated synonyms for matching (e.g., "coke, coca cola")
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,6 +87,7 @@ class MenuItemOut(BaseModel):
     available_qty: int
     metadata: Dict[str, Any]
     item_type_id: Optional[int] = None
+    aliases: Optional[str] = None
 
 
 class MenuItemCreate(BaseModel):
@@ -102,6 +104,7 @@ class MenuItemCreate(BaseModel):
         available_qty: Legacy inventory count (default: 0)
         metadata: Additional item data (default: empty dict)
         item_type_id: Link to ItemType for configuration (optional)
+        aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
@@ -122,6 +125,7 @@ class MenuItemCreate(BaseModel):
     available_qty: int = 0
     metadata: Dict[str, Any] = {}
     item_type_id: Optional[int] = None
+    aliases: Optional[str] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -139,6 +143,7 @@ class MenuItemUpdate(BaseModel):
         available_qty: Update inventory count (optional)
         metadata: Replace metadata dict (optional, replaces entire dict)
         item_type_id: Change linked ItemType (optional)
+        aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         # Update only the price
@@ -146,6 +151,9 @@ class MenuItemUpdate(BaseModel):
 
         # Update multiple fields
         {"name": "Super Veggie Delight", "base_price": 12.99}
+
+        # Add aliases for matching
+        {"aliases": "veggie, veg delight"}
     """
     name: Optional[str] = None
     category: Optional[str] = None
@@ -154,3 +162,4 @@ class MenuItemUpdate(BaseModel):
     available_qty: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
     item_type_id: Optional[int] = None
+    aliases: Optional[str] = None

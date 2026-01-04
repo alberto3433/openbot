@@ -341,6 +341,7 @@ class QueryHandler:
             return self.list_by_pound_category("spread", order)
 
         # Map common query types to actual item_type slugs
+        # These are EXACT category mappings (e.g., "coffee" -> all sized beverages)
         type_aliases = {
             "coffee": "sized_beverage",
             "tea": "sized_beverage",
@@ -348,8 +349,39 @@ class QueryHandler:
             "espresso": "sized_beverage",
             "soda": "beverage",
             "water": "beverage",
-            "juice": "beverage",
         }
+
+        # Partial term filters - these should filter items by name, not return whole category
+        partial_term_filters = {"juice", "snapple", "pellegrino", "dr. brown"}
+
+        # Handle partial term filters - search within beverage categories
+        if menu_query_type.lower() in partial_term_filters:
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            all_drinks = sized_items + cold_items
+            search_term = menu_query_type.lower()
+            items = [
+                item for item in all_drinks
+                if search_term in item.get("name", "").lower()
+            ]
+            if items:
+                if show_prices:
+                    item_list = [
+                        f"{item.get('name', 'Unknown')} (${item.get('price') or item.get('base_price') or 0:.2f})"
+                        for item in items[:15]
+                    ]
+                else:
+                    item_list = [item.get("name", "Unknown") for item in items[:15]]
+                if len(items) > 15:
+                    item_list.append(f"...and {len(items) - 15} more")
+                items_str = self._format_item_list(item_list)
+                # Pluralize the search term
+                type_display = menu_query_type + "s" if not menu_query_type.endswith("s") else menu_query_type
+                return StateMachineResult(
+                    message=f"Our {type_display} include: {items_str}. Would you like any of these?",
+                    order=order,
+                )
+            # No matches found - fall through to general handling
 
         # Handle "beverage" or "drink" queries
         if menu_query_type in ("beverage", "drink"):

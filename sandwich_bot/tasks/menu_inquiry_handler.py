@@ -133,6 +133,7 @@ class MenuInquiryHandler:
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
         # Map common query types to actual item_type slugs
+        # These are EXACT category mappings (e.g., "coffee" -> all sized beverages)
         type_aliases = {
             "coffee": "sized_beverage",
             "tea": "sized_beverage",
@@ -140,14 +141,30 @@ class MenuInquiryHandler:
             "espresso": "sized_beverage",
             "soda": "beverage",
             "water": "beverage",
-            "juice": "beverage",
         }
+
+        # Partial term filters - these should filter items by name, not return whole category
+        # e.g., "juice" should only show items with "juice" in the name
+        partial_term_filters = {"juice", "snapple", "pellegrino", "dr. brown"}
 
         # Handle "beverage" or "drink" queries by combining both types
         if menu_query_type in ("beverage", "drink"):
             sized_items = items_by_type.get("sized_beverage", [])
             cold_items = items_by_type.get("beverage", [])
             return sized_items + cold_items, "beverage"
+
+        # Handle partial term filters - search within beverage categories
+        if menu_query_type.lower() in partial_term_filters:
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            all_drinks = sized_items + cold_items
+            # Filter to items containing the search term
+            search_term = menu_query_type.lower()
+            filtered = [
+                item for item in all_drinks
+                if search_term in item.get("name", "").lower()
+            ]
+            return filtered, menu_query_type
 
         # Handle dessert queries by combining dessert, pastry, and snack types
         dessert_queries = (

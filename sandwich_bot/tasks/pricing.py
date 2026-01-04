@@ -52,9 +52,6 @@ class PricingEngine:
         "capers": 0.75,
     }
 
-    # Base bagel price (regular bagels like plain, everything, sesame)
-    DEFAULT_BAGEL_BASE_PRICE = 2.20
-
     # Bagel type upcharges - specialty bagels cost more than the base price
     # Regular bagels (plain, everything, sesame, etc.) have no upcharge ($0.00)
     BAGEL_TYPE_UPCHARGES = {
@@ -184,10 +181,19 @@ class PricingEngine:
             bagel_type: The bagel type (e.g., "plain", "everything", "gluten free")
 
         Returns:
-            Price for the bagel (defaults to 2.50 if not found)
+            Price for the bagel
+
+        Raises:
+            ValueError: If bagel price is not found in the database
         """
         if not bagel_type:
-            return 2.50
+            # Look up generic bagel price
+            menu_item = self._lookup_menu_item("Bagel")
+            if menu_item and menu_item.get("base_price"):
+                return menu_item["base_price"]
+            raise ValueError(
+                "No price found for bagels. Ensure 'Bagel' menu item exists in database with a base_price."
+            )
 
         bagel_type_lower = bagel_type.lower()
 
@@ -198,9 +204,9 @@ class PricingEngine:
             # Look for specific specialty bagel as menu item first
             bagel_name = f"{bagel_type.title()} Bagel" if "bagel" not in bagel_type_lower else bagel_type
             menu_item = self._lookup_menu_item(bagel_name)
-            if menu_item:
-                logger.info("Found specialty bagel: %s ($%.2f)", menu_item.get("name"), menu_item.get("base_price"))
-                return menu_item.get("base_price", 2.50)
+            if menu_item and menu_item.get("base_price"):
+                logger.info("Found specialty bagel: %s ($%.2f)", menu_item.get("name"), menu_item["base_price"])
+                return menu_item["base_price"]
 
             # Try bread_prices from menu_data (ingredients table)
             if self._menu_data:
@@ -219,25 +225,32 @@ class PricingEngine:
 
         # For regular bagels, look for the generic "Bagel" item
         menu_item = self._lookup_menu_item("Bagel")
-        if menu_item:
-            logger.info("Using generic bagel price: $%.2f", menu_item.get("base_price"))
-            return menu_item.get("base_price", 2.50)
+        if menu_item and menu_item.get("base_price"):
+            logger.info("Using generic bagel price: $%.2f", menu_item["base_price"])
+            return menu_item["base_price"]
 
-        # Default fallback
-        return self.DEFAULT_BAGEL_BASE_PRICE
+        # No price found - raise error
+        raise ValueError(
+            f"No price found for bagel type '{bagel_type}'. "
+            "Ensure bagel menu items exist in database with base_price."
+        )
 
     def get_bagel_base_price(self) -> float:
         """
         Get the base price for a regular bagel (without any specialty upcharge).
 
         Returns:
-            Base bagel price (e.g., $2.20 for regular bagels)
+            Base bagel price from the database
+
+        Raises:
+            ValueError: If bagel price is not found in the database
         """
-        # Try to get from menu first
         menu_item = self._lookup_menu_item("Bagel")
-        if menu_item:
-            return menu_item.get("base_price", self.DEFAULT_BAGEL_BASE_PRICE)
-        return self.DEFAULT_BAGEL_BASE_PRICE
+        if menu_item and menu_item.get("base_price"):
+            return menu_item["base_price"]
+        raise ValueError(
+            "No base price found for bagels. Ensure 'Bagel' menu item exists in database with a base_price."
+        )
 
     def get_bagel_type_upcharge(self, bagel_type: str | None) -> float:
         """

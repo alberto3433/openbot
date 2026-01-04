@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Import modifier prices from PricingEngine to avoid duplication
 DEFAULT_MODIFIER_PRICES = PricingEngine.DEFAULT_MODIFIER_PRICES
-DEFAULT_BAGEL_BASE_PRICE = PricingEngine.DEFAULT_BAGEL_BASE_PRICE
 
 
 # -----------------------------------------------------------------------------
@@ -511,7 +510,14 @@ def order_task_to_dict(
                 })
 
             # Base price is the regular bagel price (without specialty upcharge)
-            base_price = DEFAULT_BAGEL_BASE_PRICE
+            # Must come from database via pricing engine
+            if pricing:
+                base_price = pricing.get_bagel_base_price()
+            else:
+                raise ValueError(
+                    "Pricing engine required to get bagel base price. "
+                    "Ensure pricing parameter is passed to order_task_to_dict."
+                )
 
             item_dict = {
                 "item_type": "bagel",

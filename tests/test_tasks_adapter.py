@@ -16,6 +16,34 @@ from sandwich_bot.tasks.models import (
     BagelItemTask,
     CoffeeItemTask,
 )
+from sandwich_bot.tasks.pricing import PricingEngine
+
+
+def create_test_menu_data():
+    """Create minimal menu data for adapter tests."""
+    return {
+        "all_items": [
+            {"id": 1, "name": "Bagel", "base_price": 2.20, "category": "custom_bagels"},
+            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00, "category": "custom_bagels"},
+            {"id": 3, "name": "Coffee", "base_price": 2.50, "category": "drinks"},
+        ],
+        "custom_bagels": [
+            {"id": 1, "name": "Bagel", "base_price": 2.20},
+        ],
+    }
+
+
+def create_test_pricing():
+    """Create a pricing engine with test menu data."""
+    menu_data = create_test_menu_data()
+
+    def menu_lookup(name: str):
+        for item in menu_data["all_items"]:
+            if item["name"].lower() == name.lower():
+                return item
+        return None
+
+    return PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
 
 
 # =============================================================================
@@ -155,7 +183,7 @@ class TestOrderTaskToDict:
     def test_empty_order(self):
         """Test converting empty order."""
         order = OrderTask()
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["status"] == "pending"
         assert result["items"] == []
@@ -168,7 +196,7 @@ class TestOrderTaskToDict:
         order.customer_info.phone = "555-5678"
         order.customer_info.email = "jane@example.com"
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["customer"]["name"] == "Jane Doe"
         assert result["customer"]["phone"] == "555-5678"
@@ -179,7 +207,7 @@ class TestOrderTaskToDict:
         order = OrderTask()
         order.delivery_method.order_type = "pickup"
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["order_type"] == "pickup"
 
@@ -189,13 +217,14 @@ class TestOrderTaskToDict:
         order.delivery_method.order_type = "delivery"
         order.delivery_method.address.street = "456 Oak Ave"
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["order_type"] == "delivery"
         assert result["delivery_address"] == "456 Oak Ave"
 
     def test_bagel_item_conversion(self):
         """Test converting bagel item to dict."""
+        pricing = create_test_pricing()
         order = OrderTask()
         bagel = BagelItemTask(
             bagel_type="sesame",
@@ -207,7 +236,7 @@ class TestOrderTaskToDict:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=pricing)
 
         assert len(result["items"]) == 1
         item = result["items"][0]
@@ -232,7 +261,7 @@ class TestOrderTaskToDict:
         )
         order.items.add_item(coffee)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert len(result["items"]) == 1
         item = result["items"][0]
@@ -248,7 +277,7 @@ class TestOrderTaskToDict:
         order = OrderTask()
         order.checkout.confirmed = True
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["status"] == "confirmed"
 
@@ -257,7 +286,7 @@ class TestOrderTaskToDict:
         order = OrderTask()
         order.items.add_item(BagelItemTask(bagel_type="plain"))
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["status"] == "collecting_items"
 
@@ -267,7 +296,7 @@ class TestOrderTaskToDict:
         order.items.add_item(BagelItemTask(bagel_type="plain", unit_price=3.99, quantity=2))
         order.items.add_item(CoffeeItemTask(drink_type="coffee", unit_price=2.50))
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         expected_total = (3.99 * 2) + 2.50  # 10.48
         assert result["total_price"] == expected_total
@@ -281,7 +310,7 @@ class TestOrderTaskToDict:
         order.items.add_item(coffee)
         order.items.skip_item(0)  # Skip the bagel
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         # Only the coffee should be in the output
         assert len(result["items"]) == 1
@@ -319,7 +348,7 @@ class TestRoundTripConversion:
 
         # Convert to OrderTask and back
         order = dict_to_order_task(original)
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         # Check key fields survived
         assert result["order_type"] == "pickup"
@@ -342,7 +371,7 @@ class TestRoundTripConversion:
         }
 
         order = dict_to_order_task(original)
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         assert result["task_orchestrator_state"]["conversation_history"] == [
             {"role": "user", "content": "Hello"},
@@ -375,7 +404,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         # Modifiers should be in both top-level AND item_config
@@ -399,7 +428,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         modifiers = item["item_config"]["modifiers"]
@@ -427,7 +456,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         # Base price should be in item_config
@@ -448,7 +477,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(coffee)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         # Modifiers and free_details should be in item_config
@@ -473,7 +502,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(coffee)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         free_details = item["item_config"]["free_details"]
@@ -494,7 +523,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(coffee)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         free_details = item["free_details"]
@@ -529,7 +558,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(item)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item_dict = result["items"][0]
         # Modifiers should be in item_config
@@ -547,7 +576,7 @@ class TestModifiersConsistency:
         order.items.add_item(bagel)
 
         # Convert to dict (this is what gets saved to database)
-        order_dict = order_task_to_dict(order)
+        order_dict = order_task_to_dict(order, pricing=create_test_pricing())
         item = order_dict["items"][0]
 
         # The item_config is what's stored in the database
@@ -584,7 +613,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(coffee)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         # Both items should have modifiers in item_config
         for item in result["items"]:
@@ -601,7 +630,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
         # modifiers should be in item_config even if empty
@@ -627,7 +656,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
         item = result["items"][0]
 
         # The cart would display:
@@ -665,7 +694,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
         item = result["items"][0]
 
         # Check that bagel type is shown as a modifier with upcharge
@@ -695,7 +724,7 @@ class TestModifiersConsistency:
         )
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=create_test_pricing())
         item = result["items"][0]
 
         # Check that bagel type is shown as a modifier

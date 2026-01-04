@@ -12,6 +12,33 @@ from sandwich_bot.tasks.adapter import order_task_to_dict
 from sandwich_bot.tasks.pricing import PricingEngine
 
 
+def create_test_menu_data():
+    """Create minimal menu data for gluten free bagel tests."""
+    return {
+        "all_items": [
+            {"id": 1, "name": "Bagel", "base_price": 2.20, "category": "custom_bagels"},
+            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00, "category": "custom_bagels"},
+            {"id": 3, "name": "Plain Bagel", "base_price": 2.20, "category": "custom_bagels"},
+            {"id": 4, "name": "Everything Bagel", "base_price": 2.20, "category": "custom_bagels"},
+            {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "category": "signature_sandwiches"},
+        ],
+        "custom_bagels": [
+            {"id": 1, "name": "Bagel", "base_price": 2.20},
+            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00},
+            {"id": 3, "name": "Plain Bagel", "base_price": 2.20},
+            {"id": 4, "name": "Everything Bagel", "base_price": 2.20},
+        ],
+        "signature_sandwiches": [
+            {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "requires_bagel_choice": True},
+        ],
+        "bagels": {
+            "plain": {"id": 3, "name": "Plain Bagel", "base_price": 2.20},
+            "everything": {"id": 4, "name": "Everything Bagel", "base_price": 2.20},
+            "gluten free": {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00},
+        },
+    }
+
+
 class TestGlutenFreeBagelE2E:
     """End-to-end tests for gluten free bagel ordering."""
 
@@ -25,8 +52,9 @@ class TestGlutenFreeBagelE2E:
         - User says: "yes please"
         - Expected: Bagel has gluten free type with $0.80 upcharge
         """
+        menu_data = create_test_menu_data()
         order = OrderTask()
-        sm = OrderStateMachine()
+        sm = OrderStateMachine(menu_data=menu_data)
 
         # User orders gluten free bagel
         result = sm.process("I'd like a gluten free bagel", order)
@@ -57,8 +85,9 @@ class TestGlutenFreeBagelE2E:
         - User says: "one gluten free bagel with cream cheese toasted"
         - Expected: $2.20 base + $0.80 gluten free + $1.50 cream cheese = $4.50
         """
+        menu_data = create_test_menu_data()
         order = OrderTask()
-        sm = OrderStateMachine()
+        sm = OrderStateMachine(menu_data=menu_data)
 
         # User orders gluten free bagel with spread and toasted (explicit "one" to avoid quantity parsing)
         result = sm.process("one gluten free bagel with cream cheese toasted", order)
@@ -84,6 +113,16 @@ class TestGlutenFreeBagelE2E:
         - display_name: "Bagel"
         - modifiers: [{"name": "Gluten Free", "price": 0.80}, ...]
         """
+        menu_data = create_test_menu_data()
+
+        def menu_lookup(name: str):
+            for item in menu_data["all_items"]:
+                if item["name"].lower() == name.lower():
+                    return item
+            return None
+
+        pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
+
         order = OrderTask()
         bagel = BagelItemTask(
             bagel_type="gluten free",
@@ -95,7 +134,7 @@ class TestGlutenFreeBagelE2E:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=pricing)
         item = result["items"][0]
 
         # Display name should be "Bagel" (not "gluten free bagel")
@@ -122,8 +161,9 @@ class TestGlutenFreeBagelE2E:
         - User orders: "plain bagel toasted"
         - Expected: No upcharge, base price only
         """
+        menu_data = create_test_menu_data()
         order = OrderTask()
-        sm = OrderStateMachine()
+        sm = OrderStateMachine(menu_data=menu_data)
 
         result = sm.process("plain bagel toasted", order)
 
@@ -141,6 +181,16 @@ class TestGlutenFreeBagelE2E:
         """
         Test: Regular bagel type should still show as modifier (with $0 price).
         """
+        menu_data = create_test_menu_data()
+
+        def menu_lookup(name: str):
+            for item in menu_data["all_items"]:
+                if item["name"].lower() == name.lower():
+                    return item
+            return None
+
+        pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
+
         order = OrderTask()
         bagel = BagelItemTask(
             bagel_type="everything",
@@ -151,7 +201,7 @@ class TestGlutenFreeBagelE2E:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        result = order_task_to_dict(order)
+        result = order_task_to_dict(order, pricing=pricing)
         item = result["items"][0]
 
         # Display name should be "Bagel"
@@ -177,8 +227,9 @@ class TestGlutenFreeSpeedMenuE2E:
         - User picks gluten free
         - Expected: BEC price + $0.80 upcharge
         """
+        menu_data = create_test_menu_data()
         order = OrderTask()
-        sm = OrderStateMachine()
+        sm = OrderStateMachine(menu_data=menu_data)
 
         # User orders BEC
         result = sm.process("I want a classic BEC", order)
@@ -211,8 +262,9 @@ class TestGlutenFreeSpeedMenuE2E:
         """
         Test: Speed menu item with regular bagel has no upcharge.
         """
+        menu_data = create_test_menu_data()
         order = OrderTask()
-        sm = OrderStateMachine()
+        sm = OrderStateMachine(menu_data=menu_data)
 
         # User orders BEC
         result = sm.process("I want a classic BEC", order)
@@ -281,7 +333,3 @@ class TestPricingEngineGlutenFreeConstants:
         assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("plain") is None
         assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("everything") is None
         assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("sesame") is None
-
-    def test_default_bagel_base_price(self):
-        """Test that base bagel price constant is $2.20."""
-        assert PricingEngine.DEFAULT_BAGEL_BASE_PRICE == 2.20

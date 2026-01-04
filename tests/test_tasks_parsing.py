@@ -661,7 +661,7 @@ class TestDeterministicParserFallback:
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),
         ("The Leo", "speed_menu_bagel"),
-        ("the chipotle egg omelette", "menu_item"),
+        ("the chipotle egg omelette", "speed_menu_bagel"),  # Signature item
     ])
     def test_deterministic_handles_coffee_and_menu_items(self, text, expected_type):
         """Test that coffee and menu items are now handled deterministically."""
@@ -1403,12 +1403,14 @@ class TestSpeedMenuBagelParsing:
         ("classic bec", "The Classic BEC"),
         ("The Leo", "The Leo"),
         ("leo", "The Leo"),
-        ("The Traditional", "The Traditional"),
-        ("traditional", "The Traditional"),
+        # Note: "The Traditional" maps to "The Zucker's Traditional" in the database
+        ("The Traditional", "The Zucker's Traditional"),
+        ("traditional", "The Zucker's Traditional"),
         ("The Max Zucker", "The Max Zucker"),
         ("max zucker", "The Max Zucker"),
-        ("The Classic", "The Classic"),
-        ("classic", "The Classic"),
+        # Note: "The Classic" maps to "The Classic BEC" (no standalone "The Classic" item)
+        ("The Classic", "The Classic BEC"),
+        ("classic", "The Classic BEC"),
         ("The Lexington", "The Lexington"),
         ("lexington", "The Lexington"),
         ("The Avocado Toast", "The Avocado Toast"),

@@ -81,94 +81,9 @@ WORD_TO_NUM = {
 # =============================================================================
 # Speed Menu Bagels
 # =============================================================================
-
-# Speed menu bagels - pre-configured signature items
-# Maps variations to canonical names
-SPEED_MENU_BAGELS = {
-    # The Classic (nova, cream cheese, capers, onion, tomato)
-    "the classic": "The Classic",
-    "classic": "The Classic",
-    # The Classic BEC (eggs, bacon, cheddar)
-    "the classic bec": "The Classic BEC",
-    "classic bec": "The Classic BEC",
-    "bec": "The Classic BEC",
-    "b.e.c.": "The Classic BEC",
-    "b.e.c": "The Classic BEC",
-    "bacon egg and cheese": "The Classic BEC",
-    "bacon egg cheese": "The Classic BEC",
-    "bacon and egg and cheese": "The Classic BEC",
-    "bacon eggs and cheese": "The Classic BEC",
-    "bacon eggs cheese": "The Classic BEC",
-    "egg bacon and cheese": "The Classic BEC",
-    "egg and bacon and cheese": "The Classic BEC",
-    "egg bacon cheese": "The Classic BEC",
-    "bacon n egg n cheese": "The Classic BEC",
-    "bacon n egg and cheese": "The Classic BEC",
-    # Sausage Egg and Cheese Bagel (SEC)
-    "sausage egg and cheese bagel": "Sausage Egg and Cheese Bagel",
-    "sausage egg and cheese": "Sausage Egg and Cheese Bagel",
-    "sausage egg cheese": "Sausage Egg and Cheese Bagel",
-    "sausage eggs and cheese": "Sausage Egg and Cheese Bagel",
-    "sausage eggs cheese": "Sausage Egg and Cheese Bagel",
-    "sausage and egg and cheese": "Sausage Egg and Cheese Bagel",
-    "egg sausage and cheese": "Sausage Egg and Cheese Bagel",
-    "egg and sausage and cheese": "Sausage Egg and Cheese Bagel",
-    "egg sausage cheese": "Sausage Egg and Cheese Bagel",
-    "sec": "Sausage Egg and Cheese Bagel",
-    "s.e.c.": "Sausage Egg and Cheese Bagel",
-    "s.e.c": "Sausage Egg and Cheese Bagel",
-    # Ham Egg and Cheese Bagel (HEC)
-    "ham egg and cheese bagel": "Ham Egg and Cheese Bagel",
-    "ham egg and cheese": "Ham Egg and Cheese Bagel",
-    "ham egg cheese": "Ham Egg and Cheese Bagel",
-    "ham eggs and cheese": "Ham Egg and Cheese Bagel",
-    "ham eggs cheese": "Ham Egg and Cheese Bagel",
-    "ham and egg and cheese": "Ham Egg and Cheese Bagel",
-    "egg ham and cheese": "Ham Egg and Cheese Bagel",
-    "egg and ham and cheese": "Ham Egg and Cheese Bagel",
-    "egg ham cheese": "Ham Egg and Cheese Bagel",
-    "hec": "Ham Egg and Cheese Bagel",
-    "h.e.c.": "Ham Egg and Cheese Bagel",
-    "h.e.c": "Ham Egg and Cheese Bagel",
-    # The Traditional (nova, cream cheese, capers, onion)
-    "the traditional": "The Traditional",
-    "traditional": "The Traditional",
-    "the zucker's traditional": "The Traditional",
-    "zucker's traditional": "The Traditional",
-    # The Leo (nova, cream cheese, tomato, onion, capers, scrambled eggs)
-    "the leo": "The Leo",
-    "leo": "The Leo",
-    # The Max Zucker (eggs, pastrami, swiss, mustard)
-    "the max zucker": "The Max Zucker",
-    "max zucker": "The Max Zucker",
-    # The Avocado Toast
-    "the avocado toast": "The Avocado Toast",
-    "avocado toast": "The Avocado Toast",
-    # The Chelsea Club
-    "the chelsea club": "The Chelsea Club",
-    "chelsea club": "The Chelsea Club",
-    # The Flatiron Traditional (sturgeon version)
-    "the flatiron traditional": "The Flatiron Traditional",
-    "flatiron traditional": "The Flatiron Traditional",
-    # The Old School Tuna Sandwich
-    "the old school tuna sandwich": "The Old School Tuna Sandwich",
-    "the old school tuna": "The Old School Tuna Sandwich",
-    "old school tuna sandwich": "The Old School Tuna Sandwich",
-    "old school tuna": "The Old School Tuna Sandwich",
-    # The Lexington (egg whites, swiss, spinach)
-    "the lexington": "The Lexington",
-    "lexington": "The Lexington",
-    # Latke BEC
-    "latke bec": "Latke BEC",
-    "the latke bec": "Latke BEC",
-    # The Mulberry
-    "the mulberry": "The Mulberry",
-    "mulberry": "The Mulberry",
-    # Truffled Egg Sandwich
-    "the truffled egg": "Truffled Egg Sandwich",
-    "truffled egg": "Truffled Egg Sandwich",
-    "truffled egg sandwich": "Truffled Egg Sandwich",
-}
+# NOTE: Speed menu bagels are now loaded from the database via menu_data_cache.py.
+# Use get_speed_menu_bagels() to get the mapping from aliases to menu item names.
+# The aliases are stored in the `aliases` column of menu_items table.
 
 # =============================================================================
 # By-the-Pound Items and Prices
@@ -1465,6 +1380,31 @@ def get_known_menu_items() -> set[str]:
         if cached:
             return cached
     return KNOWN_MENU_ITEMS
+
+
+def get_speed_menu_bagels() -> dict[str, str]:
+    """
+    Get speed menu bagel alias mapping from database.
+
+    Returns a dict mapping user input variations (aliases) to the actual
+    menu item names in the database. This is used for recognizing orders
+    like "bec", "bacon egg and cheese", "the classic", etc.
+
+    Returns:
+        Dict mapping lowercase alias -> menu item name (with original casing).
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_speed_menu_bagels()
+        if cached is not None:
+            return cached
+    raise RuntimeError(
+        "Speed menu bagels not available. Ensure menu_data_cache is loaded from the database."
+    )
 
 
 def resolve_coffee_alias(name: str) -> str:

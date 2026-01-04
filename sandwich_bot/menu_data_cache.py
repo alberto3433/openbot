@@ -74,6 +74,7 @@ class MenuDataCache:
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
         self._coffee_alias_to_canonical: dict[str, str] = {}
         self._soda_alias_to_canonical: dict[str, str] = {}
+        self._speed_menu_bagels: dict[str, str] = {}  # alias -> menu item name
 
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
@@ -126,6 +127,7 @@ class MenuDataCache:
                 self._load_coffee_types(db)
                 self._load_soda_types(db)
                 self._load_known_menu_items(db)
+                self._load_speed_menu_bagels(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -136,7 +138,7 @@ class MenuDataCache:
                 logger.info(
                     "Menu data cache loaded: %d spread_types, %d bagel_types, "
                     "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
-                    "%d soda_types, %d menu_items",
+                    "%d soda_types, %d menu_items, %d speed_menu_aliases",
                     len(self._spread_types),
                     len(self._bagel_types),
                     len(self._proteins),
@@ -145,6 +147,7 @@ class MenuDataCache:
                     len(self._coffee_types),
                     len(self._soda_types),
                     len(self._known_menu_items),
+                    len(self._speed_menu_bagels),
                 )
 
             except Exception as e:
@@ -480,6 +483,56 @@ class MenuDataCache:
 
         self._known_menu_items = menu_items
 
+    def _load_speed_menu_bagels(self, db: Session) -> None:
+        """Load speed menu bagel aliases from signature items.
+
+        Builds a mapping from user input variations (aliases) to the actual
+        menu item names in the database. This replaces the hardcoded
+        SPEED_MENU_BAGELS constant.
+
+        The mapping is used for recognizing orders like "bec", "bacon egg and cheese",
+        "the classic", etc. and resolving them to actual menu items.
+        """
+        from .models import MenuItem
+
+        speed_menu_bagels: dict[str, str] = {}
+
+        # Query signature items with aliases
+        # Only signature items should be in the speed menu mapping
+        # (non-signature items like "Coffee" have their own parsing flow)
+        items_with_aliases = (
+            db.query(MenuItem)
+            .filter(MenuItem.is_signature == True)  # noqa: E712
+            .filter(MenuItem.aliases.isnot(None))
+            .filter(MenuItem.aliases != "")
+            .all()
+        )
+
+        for item in items_with_aliases:
+            canonical_name = item.name  # Keep original casing
+
+            # Parse comma-separated aliases
+            for alias in item.aliases.split(","):
+                alias = alias.strip().lower()
+                if alias:
+                    speed_menu_bagels[alias] = canonical_name
+
+            # Also add variations of the item name itself
+            name_lower = item.name.lower()
+            speed_menu_bagels[name_lower] = canonical_name
+
+            # Add without "The " prefix if present
+            if name_lower.startswith("the "):
+                speed_menu_bagels[name_lower[4:]] = canonical_name
+
+        self._speed_menu_bagels = speed_menu_bagels
+
+        logger.debug(
+            "Loaded %d speed menu bagel aliases from %d items",
+            len(speed_menu_bagels),
+            len(items_with_aliases),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -570,6 +623,19 @@ class MenuDataCache:
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
+
+    def get_speed_menu_bagels(self) -> dict[str, str]:
+        """Get speed menu bagel alias mapping.
+
+        Returns a dict mapping user input variations (aliases) to the actual
+        menu item names in the database. This is used for recognizing orders
+        like "bec", "bacon egg and cheese", "the classic", etc.
+
+        Returns:
+            Dict mapping lowercase alias -> menu item name (with original casing).
+            Returns empty dict if cache not loaded.
+        """
+        return self._speed_menu_bagels.copy() if self._is_loaded else {}
 
     def get_bagel_only_types(self) -> set[str]:
         """Get bagel types that are NOT also spread types.

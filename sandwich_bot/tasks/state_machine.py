@@ -82,8 +82,6 @@ from .parsers import (
     get_bagel_types,
     get_spreads,
     get_spread_types,
-    # Constants - Speed menu items
-    SPEED_MENU_BAGELS,
     # Constants - By-the-pound items and categories
     BY_POUND_ITEMS,
     BY_POUND_CATEGORY_NAMES,

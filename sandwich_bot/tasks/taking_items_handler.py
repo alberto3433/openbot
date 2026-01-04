@@ -1517,11 +1517,14 @@ class TakingItemsHandler:
                         elif item.toasted is None:
                             bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 elif isinstance(item, BagelItemTask):
-                    # Check bagel_type first, then toasted, then spread
+                    # Check bagel_type first, then toasted, then cheese clarification, then spread
                     if item.bagel_type is None:
                         bagel_handler_items.append((item.id, "bagel", "bagel", "bagel_choice"))
                     elif item.toasted is None:
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "toasted"))
+                    elif item.needs_cheese_clarification:
+                        # User said "cheese" without specifying type - need cheese clarification
+                        bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "cheese_choice"))
                     elif item.spread is None and not item.extras and not item.sandwich_protein:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))

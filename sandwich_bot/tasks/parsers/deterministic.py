@@ -32,7 +32,7 @@ from ..schemas import (
 )
 from .constants import (
     WORD_TO_NUM,
-    SPEED_MENU_BAGELS,
+    get_speed_menu_bagels,
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
     BAGEL_TOPPINGS,
@@ -1842,12 +1842,15 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     """Parse speed menu bagel orders like 'The Classic BEC on a wheat bagel'."""
     text_lower = text.lower()
 
+    # Get speed menu bagels mapping from database
+    speed_menu_bagels = get_speed_menu_bagels()
+
     matched_item = None
     matched_key = None
 
-    for key in sorted(SPEED_MENU_BAGELS.keys(), key=len, reverse=True):
+    for key in sorted(speed_menu_bagels.keys(), key=len, reverse=True):
         if key in text_lower:
-            matched_item = SPEED_MENU_BAGELS[key]
+            matched_item = speed_menu_bagels[key]
             matched_key = key
             break
 
@@ -2156,11 +2159,12 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     # Check if there's also a speed menu bagel mentioned in the input
     # Look for patterns like "and a bec", "and a classic", "and the leo"
-    for key in sorted(SPEED_MENU_BAGELS.keys(), key=len, reverse=True):
+    speed_menu_bagels = get_speed_menu_bagels()
+    for key in sorted(speed_menu_bagels.keys(), key=len, reverse=True):
         # Check for speed menu item after "and"
         and_pattern = rf'\band\s+(?:a\s+|an\s+|the\s+)?{re.escape(key)}\b'
         if re.search(and_pattern, text_lower):
-            matched_item = SPEED_MENU_BAGELS[key]
+            matched_item = speed_menu_bagels[key]
             logger.info(
                 "COFFEE + SPEED MENU: also found speed menu item '%s' -> %s",
                 key, matched_item

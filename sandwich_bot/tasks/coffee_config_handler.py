@@ -201,7 +201,30 @@ class CoffeeConfigHandler:
                     message=message,
                     order=order,
                 )
-            # If no matches, fall through to normal processing
+
+            # No partial matches found - check if it's a known coffee type before proceeding
+            # Standard coffee types that don't need menu lookup (latte, cappuccino, etc.)
+            standard_coffee_types = get_coffee_types()
+            if coffee_type_lower not in standard_coffee_types:
+                # Unknown drink - suggest available options
+                logger.info("ADD COFFEE: Unknown drink '%s', no matches found", coffee_type_lower)
+                # Get all drinks to suggest
+                drink_names = [item.get("name", "Unknown") for item in all_drinks[:8]]
+                if len(drink_names) > 5:
+                    drinks_str = ", ".join(drink_names[:5]) + ", and more"
+                elif len(drink_names) == 2:
+                    drinks_str = f"{drink_names[0]} or {drink_names[1]}"
+                elif drink_names:
+                    drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
+                else:
+                    drinks_str = "various drinks"
+
+                order.pending_field = "drink_type"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                return StateMachineResult(
+                    message=f"I couldn't find '{coffee_type}' on our menu. We have {drinks_str}. What would you like?",
+                    order=order,
+                )
 
         # Check for multiple matching items - ask user to clarify if ambiguous
         if coffee_type and self.menu_lookup:

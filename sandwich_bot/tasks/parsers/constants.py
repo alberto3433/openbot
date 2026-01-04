@@ -94,13 +94,9 @@ WORD_TO_NUM = {
 # Use get_by_pound_items() to get the category -> item names mapping.
 # Use find_by_pound_item() to look up an item by name or alias.
 
-BY_POUND_CATEGORY_NAMES = {
-    "cheese": "cheeses",
-    "spread": "spreads",
-    "cold_cut": "cold cuts",
-    "fish": "smoked fish",
-    "salad": "salads",
-}
+# Note: BY_POUND_CATEGORY_NAMES has been moved to the database.
+# Category display names are loaded from the by_pound_categories table.
+# Use get_by_pound_category_names() to get the slug -> display_name mapping.
 
 # Note: BY_POUND_PRICES has been moved to the database.
 # Prices are now loaded via menu_index_builder._build_by_pound_prices()
@@ -1413,6 +1409,30 @@ def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
     if cache:
         return cache.find_by_pound_item(item_name)
     return None
+
+
+def get_by_pound_category_names() -> dict[str, str]:
+    """
+    Get by-the-pound category display names from database.
+
+    Returns a dict mapping category slugs (cheese, cold_cut, fish, salad, spread)
+    to human-readable display names (cheeses, cold cuts, smoked fish, salads, spreads).
+
+    Returns:
+        Dict mapping category slug -> display name.
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_by_pound_category_names()
+        if cached:  # Empty dict means cache not loaded
+            return cached
+    raise RuntimeError(
+        "By-pound category names not available. Ensure menu_data_cache is loaded from the database."
+    )
 
 
 def resolve_coffee_alias(name: str) -> str:

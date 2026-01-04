@@ -79,6 +79,7 @@ class MenuDataCache:
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
         self._by_pound_aliases: dict[str, tuple[str, str]] = {}  # alias -> (canonical_name, category)
+        self._by_pound_category_names: dict[str, str] = {}  # slug -> display_name
 
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
@@ -133,6 +134,7 @@ class MenuDataCache:
                 self._load_known_menu_items(db)
                 self._load_speed_menu_bagels(db)
                 self._load_by_pound_items(db)
+                self._load_by_pound_category_names(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -608,6 +610,33 @@ class MenuDataCache:
             len(by_pound_aliases),
         )
 
+    def _load_by_pound_category_names(self, db: Session) -> None:
+        """Load by-the-pound category display names from database.
+
+        Loads the mapping from category slugs (cheese, cold_cut, fish, etc.)
+        to human-readable display names (cheeses, cold cuts, smoked fish, etc.).
+
+        This replaces the hardcoded BY_POUND_CATEGORY_NAMES constant.
+        """
+        category_names: dict[str, str] = {}
+
+        # Query the by_pound_categories table
+        result = db.execute(
+            __import__("sqlalchemy").text(
+                "SELECT slug, display_name FROM by_pound_categories"
+            )
+        )
+
+        for row in result:
+            category_names[row.slug] = row.display_name
+
+        self._by_pound_category_names = category_names
+
+        logger.debug(
+            "Loaded %d by-pound category names",
+            len(category_names),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -751,6 +780,26 @@ class MenuDataCache:
             }
         """
         return self._by_pound_aliases.copy() if self._is_loaded else {}
+
+    def get_by_pound_category_names(self) -> dict[str, str]:
+        """Get by-the-pound category display names.
+
+        Returns a dict mapping category slugs to human-readable display names.
+
+        Returns:
+            Dict mapping category slug -> display name.
+            Returns empty dict if cache not loaded.
+
+        Example:
+            {
+                "cheese": "cheeses",
+                "cold_cut": "cold cuts",
+                "fish": "smoked fish",
+                "salad": "salads",
+                "spread": "spreads",
+            }
+        """
+        return self._by_pound_category_names.copy() if self._is_loaded else {}
 
     def find_by_pound_item(self, item_name: str) -> tuple[str, str] | None:
         """Find a by-pound item and its category by name or alias.

@@ -97,7 +97,7 @@ from .constants import (
     # By-the-pound items and categories (loaded from database via dynamic functions)
     get_by_pound_items,
     find_by_pound_item,
-    BY_POUND_CATEGORY_NAMES,
+    get_by_pound_category_names,
     # Bagel modifiers
     BAGEL_PROTEINS,
     BAGEL_CHEESES,
@@ -212,7 +212,7 @@ __all__ = [
     # Constants - By-the-pound items and categories (loaded from database via dynamic functions)
     "get_by_pound_items",
     "find_by_pound_item",
-    "BY_POUND_CATEGORY_NAMES",
+    "get_by_pound_category_names",
     # Constants - Bagel modifiers
     "BAGEL_PROTEINS",
     "BAGEL_CHEESES",

@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 from .schemas import OrderPhase
 from .parsers.constants import (
     NYC_NEIGHBORHOOD_ZIPS,
-    BY_POUND_CATEGORY_NAMES,
     get_by_pound_items,
+    get_by_pound_category_names,
     get_item_type_display_name,
 )
 
@@ -907,7 +907,7 @@ class QueryHandler:
         else:
             by_pound_items = get_by_pound_items()
             items = by_pound_items.get(category, [])
-        category_name = BY_POUND_CATEGORY_NAMES.get(category, category)
+        category_name = get_by_pound_category_names().get(category, category)
 
         if not items:
             order.clear_pending()

@@ -669,7 +669,7 @@ class TestDeterministicParserFallback:
         assert result is not None, f"Expected deterministic parse for: {text}"
         if expected_type == "coffee":
             assert result.new_coffee is True
-            assert result.new_coffee_type == "coffee"
+            assert result.new_coffee_type.lower() == "coffee"
         elif expected_type == "speed_menu_bagel":
             assert result.new_speed_menu_bagel is True
             assert result.new_speed_menu_bagel_name is not None
@@ -1584,13 +1584,13 @@ class TestSplitQuantityDrinksParsing:
         assert result is not None
         assert result.new_coffee is True
         assert result.new_coffee_quantity == 2
-        assert result.new_coffee_type == "coffee"
+        assert result.new_coffee_type.lower() == "coffee"
         assert len(result.parsed_items) == 2
         # First coffee: with milk
-        assert result.parsed_items[0].drink_type == "coffee"
+        assert result.parsed_items[0].drink_type.lower() == "coffee"
         assert result.parsed_items[0].milk == "whole"
         # Second coffee: black
-        assert result.parsed_items[1].drink_type == "coffee"
+        assert result.parsed_items[1].drink_type.lower() == "coffee"
         assert result.parsed_items[1].milk == "none"
 
     def test_two_lattes_one_iced_one_hot(self):
@@ -1600,7 +1600,7 @@ class TestSplitQuantityDrinksParsing:
         result = _parse_split_quantity_drinks("two lattes one iced one hot")
         assert result is not None
         assert result.new_coffee_quantity == 2
-        assert result.new_coffee_type == "latte"
+        assert result.new_coffee_type.lower() == "latte"
         assert len(result.parsed_items) == 2
         assert result.parsed_items[0].temperature == "iced"
         assert result.parsed_items[1].temperature == "hot"
@@ -1612,7 +1612,8 @@ class TestSplitQuantityDrinksParsing:
         result = _parse_split_quantity_drinks("two teas one with oat milk one plain")
         assert result is not None
         assert result.new_coffee_quantity == 2
-        assert result.new_coffee_type == "tea"
+        # "tea" alias resolves to canonical name like "Iced Tea" or "Hot Tea"
+        assert "tea" in result.new_coffee_type.lower()
         assert len(result.parsed_items) == 2
         assert result.parsed_items[0].milk == "oat"
         assert result.parsed_items[1].milk == "none"

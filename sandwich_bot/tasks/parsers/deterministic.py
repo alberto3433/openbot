@@ -1287,8 +1287,12 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
         return None
 
     # Must have "with" followed by modifiers - this indicates a customized bagel
-    # Pattern: [bagel type] bagel with [modifiers]
-    with_match = re.search(r"\bbagels?\s+with\s+(.+)", text_lower)
+    # Pattern: [bagel type] bagel [0-2 optional words like "toasted"] with [modifiers]
+    # Allow 0-2 words between "bagel" and "with" for patterns like:
+    #   - "plain bagel with egg" (0 words)
+    #   - "plain bagel toasted with egg" (1 word)
+    #   - "plain bagel not toasted with egg" (2 words)
+    with_match = re.search(r"\bbagels?(?:\s+\w+){0,2}\s+with\s+(.+)", text_lower)
     if not with_match:
         return None
 

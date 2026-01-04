@@ -88,6 +88,10 @@ from .constants import (
     get_spreads,
     get_spread_types,
     get_bagel_spreads,
+    # Modifier classification (computed from bagel/spread types)
+    get_bagel_only_types,
+    get_spread_only_types,
+    get_ambiguous_modifiers,
     # Speed menu items
     SPEED_MENU_BAGELS,
     # By-the-pound items and categories
@@ -198,6 +202,10 @@ __all__ = [
     "get_spreads",
     "get_spread_types",
     "get_bagel_spreads",
+    # Modifier classification (computed from bagel/spread types)
+    "get_bagel_only_types",
+    "get_spread_only_types",
+    "get_ambiguous_modifiers",
     # Constants - Speed menu items
     "SPEED_MENU_BAGELS",
     # Constants - By-the-pound items and categories

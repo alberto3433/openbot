@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 
 from .models import CoffeeItemTask
 from .parsers.constants import (
-    AMBIGUOUS_MODIFIERS,
-    BAGEL_ONLY_TYPES,
     CHANGE_REQUEST_PATTERNS,
-    SPREAD_ONLY_TYPES,
     get_spread_types,
     get_bagel_types,
+    get_bagel_only_types,
+    get_spread_only_types,
+    get_ambiguous_modifiers,
 )
 
 if TYPE_CHECKING:
@@ -185,15 +185,15 @@ class ModifierChangeHandler:
             return False, [ModifierCategory.BAGEL_TYPE]
 
         # Check for unambiguous bagel-only types
-        if new_value_lower in BAGEL_ONLY_TYPES:
+        if new_value_lower in get_bagel_only_types():
             return False, [ModifierCategory.BAGEL_TYPE]
 
         # Check for unambiguous spread-only types
-        if new_value_lower in SPREAD_ONLY_TYPES:
+        if new_value_lower in get_spread_only_types():
             return False, [ModifierCategory.SPREAD_TYPE]
 
         # Check for ambiguous modifiers
-        if new_value_lower in AMBIGUOUS_MODIFIERS:
+        if new_value_lower in get_ambiguous_modifiers():
             # This could be either - needs clarification
             return True, [ModifierCategory.BAGEL_TYPE, ModifierCategory.SPREAD_TYPE]
 

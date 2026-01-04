@@ -72,28 +72,11 @@ WORD_TO_NUM = {
 # =============================================================================
 # Modifier Category Classification
 # =============================================================================
-
-# Bagel types that are ONLY bagel types (not spread types)
-BAGEL_ONLY_TYPES = {
-    "plain", "everything", "sesame", "poppy", "onion",
-    "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
-    "whole wheat", "wheat", "salt", "garlic", "bialy",
-    "egg", "multigrain", "asiago", "gluten free", "gluten-free",
-}
-
-# Spread types that are ONLY spread types (not bagel types)
-SPREAD_ONLY_TYPES = {
-    "scallion", "veggie", "vegetable", "strawberry",
-    "honey walnut", "lox", "chive", "garlic herb",
-    "tofu", "olive", "truffle", "nova", "sun-dried tomato",
-    "maple raisin walnut", "kalamata olive",
-}
-
-# Modifiers that could be EITHER bagel type OR spread type (ambiguous)
-AMBIGUOUS_MODIFIERS = {
-    "blueberry",  # blueberry bagel or blueberry cream cheese
-    "jalapeno",   # jalapeno bagel or jalapeno cream cheese
-}
+# NOTE: BAGEL_ONLY_TYPES, SPREAD_ONLY_TYPES, and AMBIGUOUS_MODIFIERS are now
+# computed dynamically from the database. Use:
+# - get_bagel_only_types() - bagel types that are NOT also spread types
+# - get_spread_only_types() - spread types that are NOT also bagel types
+# - get_ambiguous_modifiers() - types that are BOTH (need disambiguation)
 
 # =============================================================================
 # Speed Menu Bagels
@@ -263,6 +246,7 @@ BAGEL_PROTEINS = {
 
 # Valid cheeses
 BAGEL_CHEESES = {
+    "cheese",  # Generic cheese - triggers clarification for specific type
     "american", "american cheese",
     "swiss", "swiss cheese",
     "cheddar", "cheddar cheese",
@@ -1290,6 +1274,63 @@ def get_bagel_spreads() -> set[str]:
             return cached
     raise RuntimeError(
         "Bagel spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
+    )
+
+
+def get_bagel_only_types() -> set[str]:
+    """
+    Get bagel types that are NOT also spread types (unambiguous bagel types).
+
+    These are types where disambiguation is not needed - e.g., "plain" is only
+    a bagel type, never a cream cheese flavor.
+
+    Returns data from cache. Raises RuntimeError if cache not loaded.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_bagel_only_types()
+        if cached is not None:
+            return cached
+    raise RuntimeError(
+        "Bagel-only types not available. Ensure menu_data_cache is loaded from the database."
+    )
+
+
+def get_spread_only_types() -> set[str]:
+    """
+    Get spread types that are NOT also bagel types (unambiguous spread types).
+
+    These are types where disambiguation is not needed - e.g., "scallion" is only
+    a cream cheese flavor, never a bagel type.
+
+    Returns data from cache. Raises RuntimeError if cache not loaded.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_spread_only_types()
+        if cached is not None:
+            return cached
+    raise RuntimeError(
+        "Spread-only types not available. Ensure menu_data_cache is loaded from the database."
+    )
+
+
+def get_ambiguous_modifiers() -> set[str]:
+    """
+    Get types that are BOTH bagel types AND spread types (need disambiguation).
+
+    These are types like "blueberry" and "jalapeno" that exist as both bagel
+    flavors and cream cheese flavors, requiring clarification from the user.
+
+    Returns data from cache. Raises RuntimeError if cache not loaded.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_ambiguous_modifiers()
+        if cached is not None:
+            return cached
+    raise RuntimeError(
+        "Ambiguous modifiers not available. Ensure menu_data_cache is loaded from the database."
     )
 
 

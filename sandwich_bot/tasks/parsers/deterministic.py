@@ -603,13 +603,15 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     find_and_add(BAGEL_TOPPINGS, result.toppings, "topping")
 
     # Special case: if user just says "cheese" without a specific type, mark for clarification
-    if "cheese" in input_lower and not result.cheeses:
-        cheese_match = re.search(r'\bcheese\b', input_lower)
-        if cheese_match:
-            pos = cheese_match.start()
-            if "cream cheese" not in input_lower[max(0, pos-6):pos+7]:
-                result.needs_cheese_clarification = True
-                logger.debug("Generic 'cheese' detected - needs clarification")
+    # Check if only generic "cheese" was extracted (not a specific type like "american")
+    if "cheese" in result.cheeses and not any(
+        c in result.cheeses for c in [
+            "american", "swiss", "cheddar", "muenster", "provolone",
+            "gouda", "mozzarella", "pepper jack"
+        ]
+    ):
+        result.needs_cheese_clarification = True
+        logger.debug("Generic 'cheese' detected - needs clarification")
 
     # Extract special instructions (filter to only bagel-related ones)
     instructions_list = extract_special_instructions_from_input(user_input)

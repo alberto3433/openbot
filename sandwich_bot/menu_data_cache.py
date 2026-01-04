@@ -571,6 +571,45 @@ class MenuDataCache:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
 
+    def get_bagel_only_types(self) -> set[str]:
+        """Get bagel types that are NOT also spread types.
+
+        These are unambiguous bagel types - when a user says "change it to plain",
+        we know they mean the bagel type, not a spread type.
+
+        Returns:
+            Set of bagel types that don't exist as spread types.
+        """
+        if not self._is_loaded:
+            return set()
+        return self._bagel_types - self._spread_types
+
+    def get_spread_only_types(self) -> set[str]:
+        """Get spread types that are NOT also bagel types.
+
+        These are unambiguous spread types - when a user says "change it to scallion",
+        we know they mean the spread type, not a bagel type.
+
+        Returns:
+            Set of spread types that don't exist as bagel types.
+        """
+        if not self._is_loaded:
+            return set()
+        return self._spread_types - self._bagel_types
+
+    def get_ambiguous_modifiers(self) -> set[str]:
+        """Get types that are BOTH bagel types AND spread types.
+
+        These are ambiguous - when a user says "change it to blueberry",
+        we need to ask for clarification (blueberry bagel vs blueberry cream cheese).
+
+        Returns:
+            Set of types that exist as both bagel and spread types.
+        """
+        if not self._is_loaded:
+            return set()
+        return self._bagel_types & self._spread_types
+
     def resolve_coffee_alias(self, name: str) -> str:
         """
         Resolve a coffee/tea name or alias to its canonical menu item name.

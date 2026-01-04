@@ -26,6 +26,8 @@ from ..schemas import (
     ParsedCoffeeEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
+    # By-the-pound orders
+    ByPoundOrderItem,
 )
 from .constants import (
     WORD_TO_NUM,
@@ -65,6 +67,7 @@ from .constants import (
     MODIFIER_CATEGORY_KEYWORDS,
     MODIFIER_ITEM_KEYWORDS,
     MORE_MENU_ITEMS_PATTERNS,
+    BY_POUND_ITEMS,
 )
 
 logger = logging.getLogger(__name__)
@@ -895,6 +898,100 @@ def _extract_spread(text: str, extra_spread_types: set[str] | None = None) -> tu
         spread = "cream cheese"
 
     return spread, spread_type
+
+
+def extract_spread_with_disambiguation(
+    text: str,
+    extra_spread_types: set[str] | None = None
+) -> tuple[str | None, str | None, list[str]]:
+    """
+    Extract spread and spread type from text with disambiguation support.
+
+    This function extends _extract_spread by using partial matching to find
+    potential spread type matches. When the user says something like "walnut
+    cream cheese", it will find all spread types containing "walnut" and
+    return them for disambiguation if there are multiple matches.
+
+    Args:
+        text: User input text
+        extra_spread_types: Additional spread types to check (from DB)
+
+    Returns:
+        Tuple of (spread, spread_type, disambiguation_options):
+        - spread: Base spread type (e.g., "cream cheese", "butter")
+        - spread_type: Specific variety (e.g., "scallion", "honey walnut")
+        - disambiguation_options: List of matching spread types if ambiguous,
+          empty list if exact match or no partial matches found
+
+    Examples:
+        >>> extract_spread_with_disambiguation("scallion cream cheese")
+        ("cream cheese", "scallion", [])
+
+        >>> extract_spread_with_disambiguation("walnut cream cheese")
+        ("cream cheese", None, ["honey walnut", "maple raisin walnut"])
+
+        >>> extract_spread_with_disambiguation("butter")
+        ("butter", None, [])
+    """
+    from .constants import find_spread_matches, get_spread_types, get_spreads
+
+    text_lower = text.lower()
+    spread = None
+    spread_type = None
+    disambiguation_options: list[str] = []
+
+    # First, find the base spread (cream cheese, butter, etc.)
+    spreads = get_spreads()
+    for s in sorted(spreads, key=len, reverse=True):
+        if s in text_lower:
+            spread = s
+            break
+
+    # Get all available spread types
+    all_spread_types = get_spread_types()
+    if extra_spread_types:
+        all_spread_types = all_spread_types | extra_spread_types
+
+    # Try exact match first (longest match wins)
+    for st in sorted(all_spread_types, key=len, reverse=True):
+        if st in text_lower:
+            spread_type = st
+            break
+
+    # If no exact match, try partial matching for disambiguation
+    if not spread_type:
+        # Extract potential spread type words from input
+        # Remove common words and the base spread
+        words_to_check = text_lower
+        for remove in ["cream cheese", "butter", "spread", "please", "thanks", "with", "on", "the", "a"]:
+            words_to_check = words_to_check.replace(remove, " ")
+
+        # Look for words that could be partial spread types
+        words = [w.strip() for w in words_to_check.split() if w.strip() and len(w.strip()) > 2]
+
+        for word in words:
+            matches = find_spread_matches(word)
+            if matches:
+                if len(matches) == 1:
+                    # Single match - use it
+                    spread_type = matches[0]
+                    disambiguation_options = []
+                    break
+                else:
+                    # Multiple matches - need disambiguation
+                    disambiguation_options = matches
+                    # Don't set spread_type - let caller handle disambiguation
+                    break
+
+    # If we found a spread type but no base spread, default to cream cheese
+    if spread_type and not spread:
+        spread = "cream cheese"
+
+    # If we have disambiguation options but no spread, default to cream cheese
+    if disambiguation_options and not spread:
+        spread = "cream cheese"
+
+    return spread, spread_type, disambiguation_options
 
 
 def _extract_side_item(text: str) -> tuple[str | None, int]:
@@ -1995,6 +2092,153 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# By-the-Pound Order Parsing
+# =============================================================================
+
+# Pattern to match by-weight orders like "half a pound of whitefish salad"
+# Captures: quantity phrase + item name
+BY_POUND_PATTERN = re.compile(
+    r"""
+    (?:i(?:'ll|\ will)?\ (?:have|take|get)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like)?
+    \s*
+    (?:
+        (half\s+(?:a\s+)?(?:pound|lb))           # half a pound / half pound / half lb
+        |(\d+(?:\s*/\s*\d+)?)\s*(?:pound|lb)s?   # 1/4 pound, 2 pounds, 1 lb
+        |(a\s+(?:pound|lb))                      # a pound / a lb
+        |(quarter\s+(?:pound|lb))                # quarter pound / quarter lb
+    )
+    \s+(?:of\s+)?
+    (.+?)                                        # item name
+    (?:\s+please)?
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+
+def _find_by_pound_item_category(item_name: str) -> tuple[str, str] | None:
+    """
+    Find the category for a by-pound item.
+
+    Args:
+        item_name: The item name to look up (e.g., "whitefish salad", "muenster")
+
+    Returns:
+        Tuple of (canonical_name, category) or None if not found.
+    """
+    item_lower = item_name.lower().strip()
+
+    # First pass: look for exact matches
+    for category, items in BY_POUND_ITEMS.items():
+        for item in items:
+            item_check = item.lower()
+            if item_lower == item_check:
+                return (item, category)
+
+    # Second pass: look for best partial match (prefer longer/more specific matches)
+    best_match: tuple[str, str, int] | None = None  # (canonical_name, category, match_length)
+
+    for category, items in BY_POUND_ITEMS.items():
+        for item in items:
+            item_check = item.lower()
+
+            # Check if input contains the item name or vice versa
+            if item_lower in item_check:
+                # Input is substring of item (e.g., "whitefish" in "Whitefish Salad")
+                # Only match if item_check is longer - we want the specific item
+                match_len = len(item_check)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (item, category, match_len)
+            elif item_check in item_lower:
+                # Item is substring of input (e.g., "whitefish salad" contains "whitefish")
+                # Prefer matches where more of the input is covered
+                match_len = len(item_check)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (item, category, match_len)
+
+    if best_match:
+        return (best_match[0], best_match[1])
+
+    # Third pass: handle aliases like "lox" -> "Nova Scotia Salmon (Lox)"
+    alias_map = {
+        "lox": ("Nova Scotia Salmon (Lox)", "fish"),
+        "nova": ("Nova Scotia Salmon (Lox)", "fish"),
+        "salmon": ("Nova Scotia Salmon (Lox)", "fish"),
+        "sturgeon": ("Smoked Sturgeon", "fish"),
+    }
+    if item_lower in alias_map:
+        return alias_map[item_lower]
+
+    return None
+
+
+def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
+    """
+    Parse by-the-pound orders like "half a pound of whitefish salad".
+
+    This MUST be called BEFORE menu item parsing to prevent items like
+    "whitefish salad" from being matched to "Whitefish Salad Sandwich".
+
+    Returns:
+        OpenInputResponse with by_pound_items if matched, None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    match = BY_POUND_PATTERN.match(text_lower)
+    if not match:
+        return None
+
+    # Extract quantity
+    half_lb = match.group(1)
+    numeric_lb = match.group(2)
+    a_lb = match.group(3)
+    quarter_lb = match.group(4)
+    item_name = match.group(5).strip()
+
+    if half_lb:
+        quantity = "half lb"
+    elif numeric_lb:
+        # Handle fractions like "1/4"
+        if "/" in numeric_lb:
+            num, denom = numeric_lb.replace(" ", "").split("/")
+            fraction = float(num) / float(denom)
+            if fraction == 0.25:
+                quantity = "quarter lb"
+            elif fraction == 0.5:
+                quantity = "half lb"
+            else:
+                quantity = f"{numeric_lb} lb"
+        else:
+            num = int(numeric_lb)
+            quantity = f"{num} lb" if num == 1 else f"{num} lbs"
+    elif a_lb:
+        quantity = "1 lb"
+    elif quarter_lb:
+        quantity = "quarter lb"
+    else:
+        quantity = "1 lb"
+
+    # Look up the item in BY_POUND_ITEMS
+    result = _find_by_pound_item_category(item_name)
+    if not result:
+        logger.debug("By-pound pattern matched but item not found: '%s'", item_name)
+        return None
+
+    canonical_name, category = result
+    logger.info("BY-POUND ORDER: '%s' -> %s %s (category=%s)", text[:50], quantity, canonical_name, category)
+
+    return OpenInputResponse(
+        by_pound_items=[
+            ByPoundOrderItem(
+                item_name=canonical_name,
+                quantity=quantity,
+                category=category,
+            )
+        ]
+    )
+
+
+# =============================================================================
 # Inquiry Parsing (Price, Recommendations, Store Info, Item Description)
 # =============================================================================
 
@@ -2841,6 +3085,13 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     modifier_inquiry_result = _parse_modifier_inquiry(text)
     if modifier_inquiry_result:
         return modifier_inquiry_result
+
+    # Check for by-the-pound orders EARLY
+    # Must be checked BEFORE spread/salad sandwich matching to prevent
+    # "half a pound of whitefish salad" from matching "Whitefish Salad Sandwich"
+    by_pound_result = _parse_by_pound_order(text)
+    if by_pound_result:
+        return by_pound_result
 
     # Check for speed menu bagels
     speed_menu_result = _parse_speed_menu_bagel_deterministic(text)

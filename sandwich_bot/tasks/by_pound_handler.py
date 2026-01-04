@@ -255,14 +255,8 @@ class ByPoundHandler:
         """Add by-the-pound items to the order."""
         added_items = []
         for item in by_pound_items:
-            # Format the item name with quantity (e.g., "1 lb Muenster Cheese")
-            category_name = BY_POUND_CATEGORY_NAMES.get(item.category, "")
-            if category_name:
-                # Use singular form for category (remove trailing 's' if present)
-                category_singular = category_name.rstrip("s") if category_name.endswith("s") else category_name
-                item_name = f"{item.quantity} {item.item_name} {category_singular}"
-            else:
-                item_name = f"{item.quantity} {item.item_name}"
+            # Format the item name with quantity (e.g., "half lb Whitefish Salad")
+            item_name = f"{item.quantity} {item.item_name}"
 
             # Calculate price based on quantity and per-pound price
             if self.pricing:

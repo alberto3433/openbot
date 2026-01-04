@@ -864,7 +864,11 @@ class BagelConfigHandler:
                 order=order,
             )
 
-        # Add the cheese to extras
+        # Remove generic "cheese" from extras (we're replacing it with the specific type)
+        if "cheese" in item.extras:
+            item.extras.remove("cheese")
+
+        # Add the specific cheese type to extras
         item.extras.append(selected_cheese)
         item.needs_cheese_clarification = False
 

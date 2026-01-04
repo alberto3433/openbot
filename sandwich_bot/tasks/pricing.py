@@ -314,8 +314,12 @@ class PricingEngine:
             type_data = item_types.get(type_slug, {})
             attributes = type_data.get("attributes", [])
 
-            # Search through all attributes (protein, cheese, toppings, spread, etc.)
+            # Search through modifier attributes (protein, cheese, toppings, spread, etc.)
+            # Skip bagel_type attribute - it's for bagel variety upcharges, not add-on modifiers
+            # (e.g., "egg bagel" is a bagel type, "egg" protein is a modifier)
             for attr in attributes:
+                if attr.get("slug") == "bagel_type":
+                    continue  # Skip - bagel types are handled by get_bagel_type_upcharge()
                 options = attr.get("options", [])
                 for opt in options:
                     opt_slug = opt.get("slug", "").lower().replace("-", "_")

@@ -1653,6 +1653,14 @@ class TakingItemsHandler:
             question = f"Got it! What size {first_item_name} would you like? Small or Large?"
         elif first_field == "coffee_style":
             question = f"Got it! Would you like the {first_item_name} hot or iced?"
+        elif first_field == "cheese_choice":
+            # Regular bagel with generic "cheese" - ask for type
+            item = next((i for i in order.items.items if i.id == first_item_id), None)
+            if isinstance(item, BagelItemTask):
+                toasted_desc = " toasted" if item.toasted else ""
+                question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
+            else:
+                question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
         elif first_field == "speed_menu_cheese_choice":
             question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
         elif first_field == "speed_menu_bagel_type":

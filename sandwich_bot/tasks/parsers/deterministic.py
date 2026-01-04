@@ -32,7 +32,6 @@ from ..schemas import (
 )
 from .constants import (
     WORD_TO_NUM,
-    BAGEL_TYPES,
     SPREADS,
     SPREAD_TYPES,
     SPEED_MENU_BAGELS,
@@ -53,6 +52,7 @@ from .constants import (
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,
     COFFEE_TYPO_MAP,
+    get_bagel_types,
     get_soda_types,
     get_coffee_types,
     resolve_coffee_alias,
@@ -554,7 +554,7 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
 
     # Pre-mark bagel type patterns to exclude them from topping extraction
     bagel_type_spans: list[tuple[int, int]] = []
-    for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+    for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
         pattern = re.compile(rf'\b{re.escape(bagel_type)}\s+bagels?\b', re.IGNORECASE)
         for match in pattern.finditer(input_lower):
             type_end = match.start() + len(bagel_type)
@@ -847,7 +847,7 @@ def _extract_bagel_type(text: str) -> str | None:
     """Extract bagel type from text."""
     text_lower = text.lower()
 
-    for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+    for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
         if bagel_type in text_lower:
             return bagel_type
 
@@ -1678,7 +1678,7 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
     bagel_match = bagel_pattern.search(text)
     if bagel_match:
         potential_type = bagel_match.group(1).lower().strip()
-        if potential_type in BAGEL_TYPES:
+        if potential_type in get_bagel_types():
             bagel_type = potential_type
 
     # Check for toasted if specified
@@ -1762,16 +1762,16 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     bagel_match = bagel_choice_pattern.search(text)
     if bagel_match:
         potential_type = bagel_match.group(1).lower().strip()
-        if potential_type in BAGEL_TYPES:
+        if potential_type in get_bagel_types():
             bagel_choice = potential_type
         else:
-            for bagel_type in BAGEL_TYPES:
+            for bagel_type in get_bagel_types():
                 if potential_type == bagel_type or bagel_type.startswith(potential_type):
                     bagel_choice = bagel_type
                     break
 
     if not bagel_choice:
-        for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+        for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
             pattern = re.compile(
                 r"\b(?:on|with)\s+(?:(?:a|an)\s+)?" + re.escape(bagel_type) + r"(?:\s|$|[,.])",
                 re.IGNORECASE
@@ -2049,7 +2049,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
                 speed_menu_toasted = _extract_toasted(remainder)
                 response.new_speed_menu_bagel_toasted = speed_menu_toasted
                 # Check for bagel choice (use \b word boundary to prevent "bacon" matching "bac-ON")
-                for bagel_type in sorted(BAGEL_TYPES, key=len, reverse=True):
+                for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
                     bagel_pattern = rf'\b(?:on|with)\s+(?:a\s+|an\s+)?{re.escape(bagel_type)}'
                     if re.search(bagel_pattern, remainder):
                         speed_menu_bagel_choice = bagel_type

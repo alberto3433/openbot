@@ -62,6 +62,7 @@ class MenuDataCache:
         self._spreads: set[str] = set()
         self._spread_types: set[str] = set()
         self._bagel_types: set[str] = set()
+        self._bagel_types_list: list[str] = []  # Ordered list for display/pagination
         self._proteins: set[str] = set()
         self._toppings: set[str] = set()
         self._cheeses: set[str] = set()
@@ -215,27 +216,52 @@ class MenuDataCache:
         self._spread_types = spread_types
 
     def _load_bagel_types(self, db: Session) -> None:
-        """Load bagel types from ingredients table."""
+        """Load bagel types from ingredients table.
+
+        Parses bagel names and includes aliases for matching.
+        Also builds an ordered list for display/pagination.
+        """
         from .models import Ingredient
 
         bagel_types = set()
+        bagel_types_list = []
 
-        # Query ingredients that are bagel types
+        # Query ingredients that are bagel types (category='bread')
         bagel_ingredients = (
             db.query(Ingredient)
             .filter(Ingredient.category == "bread")
+            .filter(Ingredient.is_available == True)  # noqa: E712
+            .order_by(Ingredient.name)
             .all()
         )
 
         for ing in bagel_ingredients:
             name = ing.name.lower()
+
+            # Parse bagel type from name
             # "Plain Bagel" -> "plain", "Everything Bagel" -> "everything"
+            # "Bialy" -> "bialy" (no "bagel" suffix)
             if "bagel" in name:
                 bagel_type = name.replace("bagel", "").strip()
-                if bagel_type:
-                    bagel_types.add(bagel_type)
+            else:
+                # Handle items without "bagel" in name (e.g., "Bialy")
+                bagel_type = name.strip()
 
-        # Add common bagel types if DB is empty
+            if bagel_type:
+                bagel_types.add(bagel_type)
+                # Add to ordered list (display name without "Bagel" suffix)
+                display_name = bagel_type.title() if bagel_type != "gluten free" else "Gluten Free"
+                if bagel_type not in [bt.lower() for bt in bagel_types_list]:
+                    bagel_types_list.append(bagel_type)
+
+            # Add aliases if present
+            if hasattr(ing, 'aliases') and ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        bagel_types.add(alias)
+
+        # Fallback if DB is empty
         if not bagel_types:
             bagel_types = {
                 "plain", "everything", "sesame", "poppy", "onion",
@@ -244,8 +270,15 @@ class MenuDataCache:
                 "egg", "multigrain", "asiago", "jalapeno", "blueberry",
                 "gluten free", "gluten-free",
             }
+            bagel_types_list = [
+                "plain", "everything", "sesame", "poppy",
+                "onion", "cinnamon raisin", "whole wheat", "pumpernickel",
+                "salt", "garlic", "egg", "multigrain",
+                "asiago", "jalapeno", "blueberry", "bialy",
+            ]
 
         self._bagel_types = bagel_types
+        self._bagel_types_list = bagel_types_list
 
     def _load_proteins(self, db: Session) -> None:
         """Load protein types from ingredients table."""
@@ -473,8 +506,12 @@ class MenuDataCache:
         return self._spread_types.copy() if self._is_loaded else set()
 
     def get_bagel_types(self) -> set[str]:
-        """Get bagel types (plain, everything, etc.)."""
+        """Get bagel types (plain, everything, etc.) including aliases."""
         return self._bagel_types.copy() if self._is_loaded else set()
+
+    def get_bagel_types_list(self) -> list[str]:
+        """Get ordered list of bagel types for display/pagination."""
+        return self._bagel_types_list.copy() if self._is_loaded else []
 
     def get_proteins(self) -> set[str]:
         """Get protein types (bacon, ham, etc.)."""

@@ -60,13 +60,10 @@ WORD_TO_NUM = {
 # Bagel Types and Spreads
 # =============================================================================
 
-BAGEL_TYPES = {
-    "plain", "everything", "sesame", "poppy", "onion",
-    "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
-    "whole wheat", "wheat", "salt", "garlic", "bialy",
-    "egg", "multigrain", "asiago", "jalapeno", "blueberry",
-    "gluten free", "gluten-free",
-}
+# NOTE: Bagel types are now loaded from the database via menu_data_cache.py.
+# Use get_bagel_types() for the set (includes aliases) or get_bagel_types_list()
+# for an ordered list (display/pagination). Both support aliases via the
+# 'aliases' column on ingredients where category='bread'.
 
 SPREADS = {
     "cream cheese", "butter", "peanut butter", "jelly",
@@ -1295,16 +1292,31 @@ def get_spreads() -> set[str]:
 
 def get_bagel_types() -> set[str]:
     """
-    Get bagel types (plain, everything, etc.).
+    Get bagel types (plain, everything, etc.) from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_TYPES.
+    Returns data from cache if loaded (includes item names and aliases).
+    Falls back to common bagel types if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_bagel_types()
         if cached:
             return cached
-    return BAGEL_TYPES
+    return _FALLBACK_BAGEL_TYPES
+
+
+def get_bagel_types_list() -> list[str]:
+    """
+    Get ordered list of bagel types for display/pagination.
+
+    Returns data from cache if loaded, otherwise returns empty list.
+    Unlike get_bagel_types() which returns a set with aliases,
+    this returns an ordered list without aliases for display purposes.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.get_bagel_types_list()
+    return []
 
 
 def get_proteins() -> set[str]:
@@ -1348,6 +1360,16 @@ def get_cheeses() -> set[str]:
             return cached
     return BAGEL_CHEESES
 
+
+# Fallback bagel types when database cache isn't loaded
+# These are the most common bagel types for pattern matching
+_FALLBACK_BAGEL_TYPES = {
+    "plain", "everything", "sesame", "poppy", "onion",
+    "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
+    "whole wheat", "wheat", "salt", "garlic", "bialy",
+    "egg", "multigrain", "asiago", "jalapeno", "blueberry",
+    "gluten free", "gluten-free",
+}
 
 # Fallback coffee types when database cache isn't loaded
 # These are the most common coffee/tea drink keywords for pattern matching
@@ -1502,11 +1524,11 @@ def find_bagel_matches(query: str) -> list[str]:
     if not query_lower:
         return []
 
-    if query_lower in BAGEL_TYPES:
+    if query_lower in _FALLBACK_BAGEL_TYPES:
         return [query_lower]
 
     matches = []
-    for bagel_type in BAGEL_TYPES:
+    for bagel_type in _FALLBACK_BAGEL_TYPES:
         if query_lower in bagel_type or bagel_type in query_lower:
             matches.append(bagel_type)
 

@@ -18,10 +18,10 @@ from .models import CoffeeItemTask
 from .parsers.constants import (
     AMBIGUOUS_MODIFIERS,
     BAGEL_ONLY_TYPES,
-    BAGEL_TYPES,
     CHANGE_REQUEST_PATTERNS,
     SPREAD_ONLY_TYPES,
     SPREAD_TYPES,
+    get_bagel_types,
 )
 
 if TYPE_CHECKING:
@@ -198,7 +198,7 @@ class ModifierChangeHandler:
             return True, [ModifierCategory.BAGEL_TYPE, ModifierCategory.SPREAD_TYPE]
 
         # Check if it's a known bagel type (but not in BAGEL_ONLY)
-        if new_value_lower in BAGEL_TYPES:
+        if new_value_lower in get_bagel_types():
             # Could be bagel type
             if new_value_lower in SPREAD_TYPES:
                 # Also a spread type - ambiguous

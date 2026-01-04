@@ -309,6 +309,9 @@ class Ingredient(Base):
     contains_sesame = Column(Boolean, nullable=False, default=False)
     contains_nuts = Column(Boolean, nullable=False, default=False)
 
+    # Aliases for matching (comma-separated, e.g., "wheat" for "Whole Wheat Bagel")
+    aliases = Column(Text, nullable=True)
+
     # relationships
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     choice_for = relationship("RecipeChoiceItem", back_populates="ingredient", cascade="all, delete-orphan")

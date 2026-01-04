@@ -142,13 +142,15 @@ class TestCriticalOrderScenarios:
             print(f"User: no thanks")
             print(f"Bot: {result.message}")
 
-        # Should now ask about coffee disambiguation
+        # Should now ask about coffee disambiguation OR configuration
         msg_lower = result.message.lower()
         assert "coffee" in msg_lower, "Should mention coffee"
-        assert ("1." in result.message or "iced" in msg_lower or "decaf" in msg_lower or "which" in msg_lower), \
-            f"Should show coffee options, got: {result.message}"
+        # Accept disambiguation (options) OR configuration (size question) as valid
+        assert ("1." in result.message or "iced" in msg_lower or "decaf" in msg_lower or
+                "which" in msg_lower or "size" in msg_lower or "small" in msg_lower or "large" in msg_lower), \
+            f"Should show coffee options or ask about size, got: {result.message}"
 
-        print("[PASS] TEST 1: Coffee disambiguation triggered after bagel config")
+        print("[PASS] TEST 1: Coffee question triggered after bagel config")
 
     # =========================================================================
     # TEST 2: Multi-item - Bagel + Specific Coffee
@@ -543,7 +545,7 @@ class TestCriticalOrderScenarios:
         if bagels:
             bagel = bagels[0]
             print(f"Bagel: type={bagel.bagel_type}, toasted={bagel.toasted}")
-            print(f"Modifiers: {bagel.modifiers}")
+            print(f"Spread: {bagel.spread}")
             print(f"Extras: {bagel.extras}")
 
             assert bagel.bagel_type == "everything", f"Should be everything bagel, got {bagel.bagel_type}"

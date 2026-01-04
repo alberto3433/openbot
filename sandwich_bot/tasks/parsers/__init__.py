@@ -83,8 +83,8 @@ from .constants import (
     get_soda_types,
     # Number mapping
     WORD_TO_NUM,
-    # Bagel and spread types
-    BAGEL_TYPES,
+    # Bagel and spread types (get_bagel_types loaded from database)
+    get_bagel_types,
     SPREADS,
     SPREAD_TYPES,
     # Speed menu items
@@ -193,8 +193,8 @@ __all__ = [
     "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",
-    # Constants - Bagel and spread types
-    "BAGEL_TYPES",
+    # Constants - Bagel and spread types (get_bagel_types loaded from database)
+    "get_bagel_types",
     "SPREADS",
     "SPREAD_TYPES",
     # Constants - Speed menu items

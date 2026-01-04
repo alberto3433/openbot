@@ -78,8 +78,8 @@ from .parsers import (
     is_soda_drink,
     # Constants - Number mapping
     WORD_TO_NUM,
-    # Constants - Bagel and spread types
-    BAGEL_TYPES,
+    # Constants - Bagel and spread types (get_bagel_types loaded from database)
+    get_bagel_types,
     SPREADS,
     SPREAD_TYPES,
     # Constants - Speed menu items
@@ -185,7 +185,7 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
     # First, check if this looks like a simple answer rather than a new order
     # "[type] bagel" or just "[type]" are valid answers, not new orders
     # e.g., "plain bagel", "everything", "sesame bagel"
-    bagel_type_pattern = r'^(' + '|'.join(re.escape(bt) for bt in BAGEL_TYPES) + r')(?:\s+bagel)?s?(?:\s+please)?$'
+    bagel_type_pattern = r'^(' + '|'.join(re.escape(bt) for bt in get_bagel_types()) + r')(?:\s+bagel)?s?(?:\s+please)?$'
     if re.search(bagel_type_pattern, text):
         return False
 

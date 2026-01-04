@@ -24,7 +24,6 @@ from .models import (
 )
 from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers
 from .parsers import (
-    BAGEL_TYPES,
     parse_toasted_deterministic,
 )
 from .parsers.llm_parsers import (
@@ -37,7 +36,14 @@ from .parsers.deterministic import (
     _extract_spread,
     extract_spread_with_disambiguation,
 )
-from .parsers.constants import MORE_MENU_ITEMS_PATTERNS, SPREAD_TYPES, SPREADS, get_spread_types
+from .parsers.constants import (
+    MORE_MENU_ITEMS_PATTERNS,
+    SPREAD_TYPES,
+    SPREADS,
+    get_spread_types,
+    get_bagel_types,
+    get_bagel_types_list,
+)
 from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
@@ -48,13 +54,8 @@ logger = logging.getLogger(__name__)
 # Batch size for paginating bagel types
 BAGEL_TYPE_BATCH_SIZE = 4
 
-# List of bagel types for pagination (ordered by popularity, not alphabetical)
-BAGEL_TYPES_LIST = [
-    "plain", "everything", "sesame", "poppy",  # Most common
-    "onion", "cinnamon raisin", "whole wheat", "pumpernickel",  # Popular
-    "salt", "garlic", "egg", "multigrain",  # Less common
-    "asiago", "jalapeno", "blueberry", "bialy",  # Specialty
-]
+# NOTE: get_bagel_types_list() is now loaded from the database via get_bagel_types_list()
+# from parsers.constants, which delegates to menu_data_cache.
 
 # List of cream cheese flavors for listing when user asks
 CREAM_CHEESE_TYPES_LIST = [
@@ -230,12 +231,12 @@ class BagelConfigHandler:
             if pagination and pagination.get("category") == "bagel_types":
                 offset = pagination.get("offset", 0)
                 # Get next batch of bagel types
-                batch = BAGEL_TYPES_LIST[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                batch = get_bagel_types_list()[offset:offset + BAGEL_TYPE_BATCH_SIZE]
                 if batch:
                     new_offset = offset + BAGEL_TYPE_BATCH_SIZE
-                    has_more = new_offset < len(BAGEL_TYPES_LIST)
+                    has_more = new_offset < len(get_bagel_types_list())
                     if has_more:
-                        order.set_menu_pagination("bagel_types", new_offset, len(BAGEL_TYPES_LIST))
+                        order.set_menu_pagination("bagel_types", new_offset, len(get_bagel_types_list()))
                         types_str = ", ".join(batch)
                         return StateMachineResult(
                             message=f"We also have {types_str}, and more.",
@@ -256,9 +257,9 @@ class BagelConfigHandler:
                     )
             # No pagination state - show first batch
             else:
-                batch = BAGEL_TYPES_LIST[:BAGEL_TYPE_BATCH_SIZE]
+                batch = get_bagel_types_list()[:BAGEL_TYPE_BATCH_SIZE]
                 types_str = ", ".join(batch)
-                order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(BAGEL_TYPES_LIST))
+                order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(get_bagel_types_list()))
                 return StateMachineResult(
                     message=f"We have {types_str}, and more.",
                     order=order,
@@ -269,7 +270,7 @@ class BagelConfigHandler:
         bagel_type = None
 
         # Check for exact match or "[type] bagel" pattern
-        for bt in BAGEL_TYPES:
+        for bt in get_bagel_types():
             if input_lower == bt or input_lower == f"{bt} bagel":
                 bagel_type = bt
                 break
@@ -302,9 +303,9 @@ class BagelConfigHandler:
 
         if not bagel_type:
             # Show first batch of bagel types and set up pagination
-            batch = BAGEL_TYPES_LIST[:BAGEL_TYPE_BATCH_SIZE]
+            batch = get_bagel_types_list()[:BAGEL_TYPE_BATCH_SIZE]
             types_str = ", ".join(batch)
-            order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(BAGEL_TYPES_LIST))
+            order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(get_bagel_types_list()))
             return StateMachineResult(
                 message=f"What kind of bagel? We have {types_str}, and more.",
                 order=order,

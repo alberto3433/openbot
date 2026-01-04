@@ -37,7 +37,7 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
-from .parsers.constants import BAGEL_TYPES, BAGEL_SPREADS, MODIFIER_NORMALIZATIONS
+from .parsers.constants import get_bagel_types, BAGEL_SPREADS, MODIFIER_NORMALIZATIONS
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -595,7 +595,7 @@ class TakingItemsHandler:
                         # Check if user is changing the bagel type
                         # e.g., "replace with everything", "can you make it sesame?"
                         new_bagel_type = None
-                        for bagel_type in BAGEL_TYPES:
+                        for bagel_type in get_bagel_types():
                             if bagel_type in input_lower:
                                 new_bagel_type = bagel_type
                                 break

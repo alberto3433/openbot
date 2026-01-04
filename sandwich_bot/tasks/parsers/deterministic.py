@@ -55,6 +55,8 @@ from .constants import (
     COFFEE_TYPO_MAP,
     get_soda_types,
     get_coffee_types,
+    resolve_coffee_alias,
+    resolve_soda_alias,
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,
     STORE_HOURS_PATTERNS,
@@ -1462,6 +1464,8 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
         return None
 
     base_drink_type = drink_match.group(1)
+    # Resolve alias to canonical menu item name
+    base_drink_type = resolve_coffee_alias(base_drink_type)
 
     # Detect split-quantity patterns: "one with X" or "one X" repeated
     split_indicators = [
@@ -1907,7 +1911,10 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     if not coffee_type:
         return None
 
-    logger.debug("Deterministic parse: detected coffee type '%s'", coffee_type)
+    # Resolve alias to canonical menu item name (e.g., "matcha" -> "Seasonal Latte Matcha")
+    canonical_coffee_type = resolve_coffee_alias(coffee_type)
+    logger.debug("Deterministic parse: detected coffee type '%s' -> canonical '%s'", coffee_type, canonical_coffee_type)
+    coffee_type = canonical_coffee_type
 
     # Extract quantity - allow optional size/temperature words between qty and coffee type
     # e.g., "three medium coffees", "2 large iced lattes", "dozen hot coffees"
@@ -2088,8 +2095,12 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     if not drink_type:
         return None
 
-    # Normalize to canonical name if available (e.g., "dr brown's cream soda" -> "Dr. Brown's Cream Soda")
-    canonical_name = MENU_ITEM_CANONICAL_NAMES.get(drink_type, drink_type)
+    # Resolve alias to canonical menu item name from database (e.g., "coke" -> "Coca-Cola")
+    # Falls back to MENU_ITEM_CANONICAL_NAMES if database mapping not found
+    canonical_name = resolve_soda_alias(drink_type)
+    if canonical_name == drink_type:
+        # Database didn't have a mapping, try hardcoded fallback
+        canonical_name = MENU_ITEM_CANONICAL_NAMES.get(drink_type, drink_type)
     logger.debug("Deterministic parse: detected soda type '%s' -> canonical '%s'", drink_type, canonical_name)
 
     quantity = 1

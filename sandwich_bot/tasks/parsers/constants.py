@@ -1401,6 +1401,40 @@ def get_known_menu_items() -> set[str]:
     return KNOWN_MENU_ITEMS
 
 
+def resolve_coffee_alias(name: str) -> str:
+    """
+    Resolve a coffee/tea name or alias to its canonical menu item name.
+
+    Args:
+        name: User input like "matcha" or "latte"
+
+    Returns:
+        Canonical menu item name (e.g., "Seasonal Latte Matcha" for "matcha")
+        or the original name if no mapping found.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.resolve_coffee_alias(name)
+    return name
+
+
+def resolve_soda_alias(name: str) -> str:
+    """
+    Resolve a soda/beverage name or alias to its canonical menu item name.
+
+    Args:
+        name: User input like "coke" or "sprite"
+
+    Returns:
+        Canonical menu item name (e.g., "Coca-Cola" for "coke")
+        or the original name if no mapping found.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.resolve_soda_alias(name)
+    return name
+
+
 def find_spread_matches(query: str) -> list[str]:
     """
     Find spread types that match a partial query.

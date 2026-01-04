@@ -69,6 +69,10 @@ class MenuDataCache:
         self._soda_types: set[str] = set()
         self._known_menu_items: set[str] = set()
 
+        # Alias-to-canonical name mappings (for resolving user input to menu item names)
+        self._coffee_alias_to_canonical: dict[str, str] = {}
+        self._soda_alias_to_canonical: dict[str, str] = {}
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
@@ -327,10 +331,12 @@ class MenuDataCache:
         configuration (size, hot/iced).
 
         Includes both item names and their aliases for matching user input.
+        Also builds a mapping from aliases to canonical names.
         """
         from .models import MenuItem, ItemType
 
         coffee_types = set()
+        alias_to_canonical = {}
 
         # Query sized_beverage items (coffee/tea that need configuration)
         coffee_items = (
@@ -341,8 +347,11 @@ class MenuDataCache:
         )
 
         for item in coffee_items:
+            canonical_name = item.name.lower()
             # Add the item name (lowercase)
-            coffee_types.add(item.name.lower())
+            coffee_types.add(canonical_name)
+            # Map canonical name to itself
+            alias_to_canonical[canonical_name] = item.name  # Preserve original casing
 
             # Add all aliases if present
             if item.aliases:
@@ -350,8 +359,11 @@ class MenuDataCache:
                     alias = alias.strip().lower()
                     if alias:
                         coffee_types.add(alias)
+                        # Map alias to canonical name (preserve original casing)
+                        alias_to_canonical[alias] = item.name
 
         self._coffee_types = coffee_types
+        self._coffee_alias_to_canonical = alias_to_canonical
 
     def _load_soda_types(self, db: Session) -> None:
         """Load soda/bottled beverage types from menu items.
@@ -360,10 +372,12 @@ class MenuDataCache:
         need configuration (as opposed to 'sized_beverage' for coffee/tea).
 
         Includes both item names and their aliases for matching user input.
+        Also builds a mapping from aliases to canonical names.
         """
         from .models import MenuItem, ItemType
 
         soda_types = set()
+        alias_to_canonical = {}
 
         # Query beverage items (item_type.slug = 'beverage')
         # These are sodas/bottled drinks that don't need size configuration
@@ -375,8 +389,11 @@ class MenuDataCache:
         )
 
         for item in beverage_items:
+            canonical_name = item.name.lower()
             # Add the item name (lowercase)
-            soda_types.add(item.name.lower())
+            soda_types.add(canonical_name)
+            # Map canonical name to itself
+            alias_to_canonical[canonical_name] = item.name  # Preserve original casing
 
             # Add all aliases if present
             if item.aliases:
@@ -384,8 +401,11 @@ class MenuDataCache:
                     alias = alias.strip().lower()
                     if alias:
                         soda_types.add(alias)
+                        # Map alias to canonical name (preserve original casing)
+                        alias_to_canonical[alias] = item.name
 
         self._soda_types = soda_types
+        self._soda_alias_to_canonical = alias_to_canonical
 
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names for recognition."""
@@ -479,6 +499,38 @@ class MenuDataCache:
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
+
+    def resolve_coffee_alias(self, name: str) -> str:
+        """
+        Resolve a coffee/tea name or alias to its canonical menu item name.
+
+        Args:
+            name: User input like "matcha" or "latte"
+
+        Returns:
+            Canonical menu item name (e.g., "Seasonal Latte Matcha" for "matcha")
+            or the original name if no mapping found.
+        """
+        if not self._is_loaded:
+            return name
+        name_lower = name.lower().strip()
+        return self._coffee_alias_to_canonical.get(name_lower, name)
+
+    def resolve_soda_alias(self, name: str) -> str:
+        """
+        Resolve a soda/beverage name or alias to its canonical menu item name.
+
+        Args:
+            name: User input like "coke" or "sprite"
+
+        Returns:
+            Canonical menu item name (e.g., "Coca-Cola" for "coke")
+            or the original name if no mapping found.
+        """
+        if not self._is_loaded:
+            return name
+        name_lower = name.lower().strip()
+        return self._soda_alias_to_canonical.get(name_lower, name)
 
     # =========================================================================
     # Partial Matching Methods

@@ -726,7 +726,7 @@ class OpenInputResponse(BaseModel):
                 })
             for _ in range(self.new_coffee_quantity):
                 items.append(ParsedCoffeeEntry(
-                    drink_type=self.new_coffee_type or "coffee",
+                    drink_type=self.new_coffee_type,  # Preserve None for generic drink requests
                     size=self.new_coffee_size,
                     temperature="iced" if self.new_coffee_iced else ("hot" if self.new_coffee_iced is False else None),
                     quantity=1,

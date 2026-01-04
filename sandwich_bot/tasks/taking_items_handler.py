@@ -1344,6 +1344,47 @@ class TakingItemsHandler:
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
 
+        # Check if we're waiting for drink type selection (user said "drink" generically)
+        # This must be checked BEFORE checking summaries because add_coffee sets pending_field
+        # but _add_parsed_item still adds the generic "drink" to summaries
+        if order.pending_field == "drink_type" and self.coffee_handler.menu_lookup:
+            logger.info("Pending drink type selection - presenting drink options")
+            # Get drink items from menu
+            items_by_type = self.coffee_handler.menu_lookup.menu_data.get("items_by_type", {})
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            all_drinks = sized_items + cold_items
+
+            if all_drinks:
+                # Show first batch of drinks with pagination
+                batch_size = 5
+                batch = all_drinks[:batch_size]
+                remaining = len(all_drinks) - batch_size
+
+                drink_names = [item.get("name", "Unknown") for item in batch]
+
+                if remaining > 0:
+                    # Format with "and more"
+                    if len(drink_names) == 1:
+                        drinks_str = drink_names[0]
+                    else:
+                        drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
+                    message = f"We have {drinks_str}, and more. What type of drink would you like?"
+                    # Set pagination for "what else" follow-up
+                    order.set_menu_pagination("drink", batch_size, len(all_drinks))
+                else:
+                    # All drinks fit in one batch
+                    if len(drink_names) == 1:
+                        drinks_str = drink_names[0]
+                    elif len(drink_names) == 2:
+                        drinks_str = f"{drink_names[0]} and {drink_names[1]}"
+                    else:
+                        drinks_str = ", ".join(drink_names[:-1]) + f", and {drink_names[-1]}"
+                    message = f"We have {drinks_str}. What type of drink would you like?"
+
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                return StateMachineResult(message=message, order=order)
+
         if not summaries:
             return None
 

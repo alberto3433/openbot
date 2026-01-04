@@ -53,7 +53,6 @@ from .constants import (
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,
     COFFEE_TYPO_MAP,
-    COMPOUND_TEA_NAMES,
     get_soda_types,
     get_coffee_types,
     PRICE_INQUIRY_PATTERNS,
@@ -1453,7 +1452,8 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
     text_lower = text.lower().strip()
 
     # Build pattern for drink types (coffee, tea, latte, etc.)
-    all_drink_types = list(COMPOUND_TEA_NAMES) + list(get_coffee_types())
+    # get_coffee_types() includes both item names and aliases from database
+    all_drink_types = list(get_coffee_types())
     drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
 
     # Must have a drink type in the text (plural or singular)
@@ -1890,20 +1890,12 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     coffee_type = None
 
-    # First, check for compound tea names (longest first for specificity)
-    # e.g., "chai tea", "iced chai tea", "green tea", "snapple iced tea"
-    for compound_tea in COMPOUND_TEA_NAMES:
-        if compound_tea in text_lower:
-            coffee_type = compound_tea
-            logger.debug("Deterministic parse: matched compound tea name '%s'", compound_tea)
+    # Check for beverage keywords from database (sorted by length for specificity)
+    # This matches compound names like "chai tea" before simpler ones like "tea"
+    for bev in sorted(get_coffee_types(), key=len, reverse=True):
+        if re.search(rf'\b{re.escape(bev)}s?\b', text_lower):
+            coffee_type = bev
             break
-
-    # If no compound match, check for single beverage keywords
-    if not coffee_type:
-        for bev in sorted(get_coffee_types(), key=len, reverse=True):
-            if re.search(rf'\b{re.escape(bev)}s?\b', text_lower):
-                coffee_type = bev
-                break
 
     if not coffee_type:
         for typo, correct in COFFEE_TYPO_MAP.items():
@@ -1924,8 +1916,8 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     qty_words = r'\d+|(?:a\s+)?couple(?:\s+of)?|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+few|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen'
     size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
 
-    # Build pattern that matches both compound tea names and single beverage types
-    all_drink_types = list(COMPOUND_TEA_NAMES) + list(get_coffee_types())
+    # Build pattern that matches beverage types from database
+    all_drink_types = list(get_coffee_types())
     # Escape special regex chars and sort by length (longest first)
     drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
 
@@ -2566,18 +2558,19 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         return None
 
     # Try to parse the item text as a specific item type
-    # First, try coffee/soda
-    coffee_result = _parse_coffee_deterministic(item_text)
-    if coffee_result and coffee_result.new_coffee:
-        coffee_result.new_coffee_quantity = 1  # Always 1 for "add another"
-        logger.info("ADD MORE: parsed as coffee '%s' (qty=1)", coffee_result.new_coffee_type)
-        return coffee_result
-
+    # Soda/bottled drinks first (more specific names like "Snapple Iced Tea")
+    # then coffee/sized beverages (more generic names like "iced tea")
     soda_result = _parse_soda_deterministic(item_text)
     if soda_result and soda_result.new_coffee:
         soda_result.new_coffee_quantity = 1  # Always 1 for "add another"
         logger.info("ADD MORE: parsed as soda '%s' (qty=1)", soda_result.new_coffee_type)
         return soda_result
+
+    coffee_result = _parse_coffee_deterministic(item_text)
+    if coffee_result and coffee_result.new_coffee:
+        coffee_result.new_coffee_quantity = 1  # Always 1 for "add another"
+        logger.info("ADD MORE: parsed as coffee '%s' (qty=1)", coffee_result.new_coffee_type)
+        return coffee_result
 
     # Try speed menu bagel
     speed_result = _parse_speed_menu_bagel_deterministic(item_text)
@@ -3475,16 +3468,17 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         )
         return split_qty_drinks_result
 
-    # Check for coffee/beverage order
+    # Check for soda/bottled drink order FIRST (more specific names like "Snapple Iced Tea")
+    soda_result = _parse_soda_deterministic(text)
+    if soda_result:
+        logger.info("DETERMINISTIC SODA: matched '%s'", text[:50])
+        return soda_result
+
+    # Check for coffee/sized beverage order (more generic names like "iced tea")
     coffee_result = _parse_coffee_deterministic(text)
     if coffee_result:
         logger.info("DETERMINISTIC COFFEE: matched '%s' -> type=%s", text[:50], coffee_result.new_coffee_type)
         return coffee_result
-
-    # Check for soda/bottled drink order
-    soda_result = _parse_soda_deterministic(text)
-    if soda_result:
-        return soda_result
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])

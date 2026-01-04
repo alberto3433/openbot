@@ -74,7 +74,7 @@ from .parsers import (
     parse_toasted_deterministic,
     parse_hot_iced_deterministic,
     # Constants - Drink categories
-    COFFEE_BEVERAGE_TYPES,
+    get_coffee_types,
     is_soda_drink,
     # Constants - Number mapping
     WORD_TO_NUM,
@@ -128,7 +128,7 @@ from .parsers import (
     ORDER_STATUS_PATTERN,
     BAGEL_QUANTITY_PATTERN,
     SIMPLE_BAGEL_PATTERN,
-    COFFEE_ORDER_PATTERN,
+    _get_coffee_order_pattern,
     # Deterministic parsers - Modifier extraction
     extract_modifiers_from_input,
     extract_coffee_modifiers_from_input,
@@ -202,7 +202,7 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
         return True
 
     # Pattern: coffee ordering
-    if COFFEE_ORDER_PATTERN.search(text):
+    if _get_coffee_order_pattern().search(text):
         return True
 
     # Pattern: explicit ordering language ("I'd like", "can I get", "I want")

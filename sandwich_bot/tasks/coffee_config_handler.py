@@ -19,7 +19,7 @@ from .parsers import (
     parse_hot_iced_deterministic,
     extract_coffee_modifiers_from_input,
 )
-from .parsers.constants import COFFEE_BEVERAGE_TYPES, is_soda_drink
+from .parsers.constants import get_coffee_types, is_soda_drink
 from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
@@ -98,6 +98,57 @@ class CoffeeConfigHandler:
         )
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
+
+        # Check if this is a generic drink request (no specific type)
+        # If so, present drink options instead of defaulting to coffee
+        generic_drink_terms = {"drink", "drinks", "beverage", "beverages", "something to drink"}
+        coffee_type_lower = (coffee_type or "").lower().strip()
+        is_generic_drink_request = (
+            coffee_type is None or
+            coffee_type_lower in generic_drink_terms
+        )
+
+        if is_generic_drink_request and self.menu_lookup:
+            # Get drink items from menu
+            items_by_type = self.menu_lookup.menu_data.get("items_by_type", {})
+            sized_items = items_by_type.get("sized_beverage", [])
+            cold_items = items_by_type.get("beverage", [])
+            all_drinks = sized_items + cold_items
+
+            if all_drinks:
+                # Show first batch of drinks with pagination
+                batch_size = 5
+                batch = all_drinks[:batch_size]
+                remaining = len(all_drinks) - batch_size
+
+                drink_names = [item.get("name", "Unknown") for item in batch]
+
+                if remaining > 0:
+                    # Format with "and more"
+                    if len(drink_names) == 1:
+                        drinks_str = drink_names[0]
+                    else:
+                        drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
+                    message = f"We have {drinks_str}, and more. What type of drink would you like?"
+                    # Set pagination for "what else" follow-up
+                    order.set_menu_pagination("drink", batch_size, len(all_drinks))
+                else:
+                    # All drinks fit in one batch
+                    if len(drink_names) == 1:
+                        drinks_str = drink_names[0]
+                    elif len(drink_names) == 2:
+                        drinks_str = f"{drink_names[0]} and {drink_names[1]}"
+                    else:
+                        drinks_str = ", ".join(drink_names[:-1]) + f", and {drink_names[-1]}"
+                    message = f"We have {drinks_str}. What type of drink would you like?"
+
+                order.pending_field = "drink_type"
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                logger.info("ADD COFFEE: Generic drink request, presenting %d options", len(drink_names))
+                return StateMachineResult(
+                    message=message,
+                    order=order,
+                )
 
         # Check for multiple matching items - ask user to clarify if ambiguous
         if coffee_type and self.menu_lookup:
@@ -185,8 +236,9 @@ class CoffeeConfigHandler:
         else:
             # Coffee beverages (cappuccino, latte, etc.) need configuration
             # Also regular tea drinks need configuration (hot/iced, size)
-            is_configurable_coffee = coffee_type_lower in COFFEE_BEVERAGE_TYPES or any(
-                bev in coffee_type_lower for bev in COFFEE_BEVERAGE_TYPES
+            coffee_types = get_coffee_types()
+            is_configurable_coffee = coffee_type_lower in coffee_types or any(
+                bev in coffee_type_lower for bev in coffee_types
             )
             if is_configurable_coffee:
                 logger.info("ADD COFFEE: skip_config=False (configurable coffee beverage: %s)", coffee_type)
@@ -740,7 +792,7 @@ class CoffeeConfigHandler:
 
         # Check if this drink should skip configuration
         is_configurable_coffee = any(
-            bev in selected_name.lower() for bev in COFFEE_BEVERAGE_TYPES
+            bev in selected_name.lower() for bev in get_coffee_types()
         )
         should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
 
@@ -776,3 +828,139 @@ class CoffeeConfigHandler:
             drink.mark_in_progress()
             order.items.add_item(drink)
             return self.configure_next_incomplete_coffee(order)
+
+    def handle_drink_type_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user specifying a drink type after asking for a generic 'drink'.
+
+        This is called when the user said something like "drink" and we asked
+        "What type of drink would you like?" and now they're responding.
+        """
+        user_lower = user_input.lower().strip()
+
+        # Check for "what else" / "more options" pagination requests
+        show_more_phrases = [
+            "what else", "any other", "more options", "other options",
+            "what other", "anything else", "show more", "more drinks",
+            "other drinks", "different",
+        ]
+        if any(phrase in user_lower for phrase in show_more_phrases):
+            pagination = order.get_menu_pagination()
+            if pagination and pagination.get("category") == "drink":
+                offset = pagination.get("offset", 0)
+                # Get drink items again
+                items_by_type = self.menu_lookup.menu_data.get("items_by_type", {}) if self.menu_lookup else {}
+                sized_items = items_by_type.get("sized_beverage", [])
+                cold_items = items_by_type.get("beverage", [])
+                all_drinks = sized_items + cold_items
+
+                if offset < len(all_drinks):
+                    batch_size = 5
+                    batch = all_drinks[offset:offset + batch_size]
+                    remaining = len(all_drinks) - (offset + len(batch))
+
+                    drink_names = [item.get("name", "Unknown") for item in batch]
+
+                    if remaining > 0:
+                        if len(drink_names) == 1:
+                            drinks_str = drink_names[0]
+                        else:
+                            drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
+                        message = f"We also have {drinks_str}, and more."
+                        order.set_menu_pagination("drink", offset + batch_size, len(all_drinks))
+                    else:
+                        if len(drink_names) == 1:
+                            drinks_str = drink_names[0]
+                        elif len(drink_names) == 2:
+                            drinks_str = f"{drink_names[0]} and {drink_names[1]}"
+                        else:
+                            drinks_str = ", ".join(drink_names[:-1]) + f", and {drink_names[-1]}"
+                        message = f"We also have {drinks_str}. That's all our drinks."
+                        order.clear_menu_pagination()
+
+                    return StateMachineResult(message=message, order=order)
+                else:
+                    order.clear_menu_pagination()
+                    return StateMachineResult(
+                        message="That's all our drinks. Which would you like?",
+                        order=order,
+                    )
+            # No pagination state - just re-ask
+            return StateMachineResult(
+                message="Which drink would you like?",
+                order=order,
+            )
+
+        # Clear pending state and pagination
+        order.clear_pending()
+        order.clear_menu_pagination()
+
+        # Try to parse the drink type from the user's input
+        # Use the deterministic parser to extract coffee type
+        from .parsers.deterministic import parse_open_input
+        parsed = parse_open_input(user_input)
+
+        # Check if they specified a coffee/drink
+        if parsed and (parsed.new_coffee or parsed.new_coffee_type):
+            coffee_type = parsed.new_coffee_type
+            # Call add_coffee with the parsed values
+            return self.add_coffee(
+                coffee_type=coffee_type,
+                size=parsed.new_coffee_size,
+                iced=parsed.new_coffee_iced,
+                milk=parsed.new_coffee_milk,
+                sweetener=parsed.new_coffee_sweetener,
+                sweetener_quantity=parsed.new_coffee_sweetener_quantity or 1,
+                flavor_syrup=parsed.new_coffee_flavor_syrup,
+                quantity=parsed.new_coffee_quantity or 1,
+                order=order,
+                special_instructions=parsed.new_coffee_special_instructions,
+                decaf=parsed.new_coffee_decaf,
+                syrup_quantity=parsed.new_coffee_syrup_quantity or 1,
+                cream_level=parsed.new_coffee_cream_level,
+            )
+
+        # Try direct matching with known drink types
+        for bev_type in get_coffee_types():
+            if bev_type in user_lower:
+                return self.add_coffee(
+                    coffee_type=bev_type,
+                    size=None,
+                    iced=None,
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=1,
+                    flavor_syrup=None,
+                    quantity=1,
+                    order=order,
+                )
+
+        # Try to look up in menu
+        if self.menu_lookup:
+            matching_items = self.menu_lookup.lookup_menu_items(user_input)
+            if matching_items:
+                # Use the first match
+                item_name = matching_items[0].get("name", user_input)
+                return self.add_coffee(
+                    coffee_type=item_name,
+                    size=None,
+                    iced=None,
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=1,
+                    flavor_syrup=None,
+                    quantity=1,
+                    order=order,
+                )
+
+        # Couldn't parse - ask again
+        logger.info("DRINK TYPE SELECTION: Couldn't parse '%s', asking again", user_input[:50])
+        order.pending_field = "drink_type"
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        return StateMachineResult(
+            message="I didn't catch that. What type of drink would you like - coffee, latte, tea, or something else?",
+            order=order,
+        )

@@ -12,16 +12,10 @@ import re
 # Drink Type Categories
 # =============================================================================
 
-# NOTE: Soda/bottled beverage types are now loaded from the database via
-# menu_data_cache.py. The database stores beverages with item_type='beverage'
-# and supports aliases via the 'aliases' column on menu_items.
-# Use get_soda_types() to get the current set of soda types.
-
-# Coffee/tea beverages that need hot/iced and size configuration
-COFFEE_BEVERAGE_TYPES = {
-    "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
-    "mocha", "cold brew", "tea", "chai", "matcha", "hot chocolate",
-}
+# NOTE: Beverage types are now loaded from the database via menu_data_cache.py.
+# - Soda/bottled beverages: item_type='beverage' (use get_soda_types())
+# - Coffee/tea beverages: item_type='sized_beverage' (use get_coffee_types())
+# Both support aliases via the 'aliases' column on menu_items.
 
 # Compound tea names - these are full menu item names that should be matched exactly
 # Sorted by length (longest first) to ensure more specific matches take priority
@@ -1373,18 +1367,27 @@ def get_cheeses() -> set[str]:
     return BAGEL_CHEESES
 
 
+# Fallback coffee types when database cache isn't loaded
+# These are the most common coffee/tea drink keywords for pattern matching
+_FALLBACK_COFFEE_TYPES = {
+    "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
+    "cold brew", "tea", "chai", "matcha", "hot chocolate",
+}
+
+
 def get_coffee_types() -> set[str]:
     """
-    Get coffee/tea beverage types.
+    Get coffee/tea beverage types from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded COFFEE_BEVERAGE_TYPES.
+    Returns data from cache if loaded (includes item names and aliases).
+    Falls back to common coffee types if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_coffee_types()
         if cached:
             return cached
-    return COFFEE_BEVERAGE_TYPES
+    return _FALLBACK_COFFEE_TYPES
 
 
 def get_soda_types() -> set[str]:

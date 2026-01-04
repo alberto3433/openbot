@@ -30,7 +30,7 @@ from .deterministic import (
     ORDER_STATUS_PATTERN,
     BAGEL_QUANTITY_PATTERN,
     SIMPLE_BAGEL_PATTERN,
-    COFFEE_ORDER_PATTERN,
+    _get_coffee_order_pattern,
     # Modifier extraction
     extract_modifiers_from_input,
     extract_coffee_modifiers_from_input,
@@ -78,7 +78,7 @@ from .llm_parsers import (
 
 from .constants import (
     # Drink categories
-    COFFEE_BEVERAGE_TYPES,
+    get_coffee_types,
     is_soda_drink,
     get_soda_types,
     # Number mapping
@@ -145,7 +145,7 @@ __all__ = [
     "ORDER_STATUS_PATTERN",
     "BAGEL_QUANTITY_PATTERN",
     "SIMPLE_BAGEL_PATTERN",
-    "COFFEE_ORDER_PATTERN",
+    "_get_coffee_order_pattern",
     # Deterministic parsers - Modifier extraction
     "extract_modifiers_from_input",
     "extract_coffee_modifiers_from_input",
@@ -188,7 +188,7 @@ __all__ = [
     "parse_email",
     "parse_phone",
     # Constants - Drink categories
-    "COFFEE_BEVERAGE_TYPES",
+    "get_coffee_types",
     "is_soda_drink",
     "get_soda_types",
     # Constants - Number mapping

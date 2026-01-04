@@ -321,34 +321,35 @@ class MenuDataCache:
         self._cheeses = cheeses
 
     def _load_coffee_types(self, db: Session) -> None:
-        """Load coffee/tea beverage types from menu items."""
+        """Load coffee/tea beverage types from menu items.
+
+        Uses item_type='sized_beverage' to identify coffee/tea drinks that need
+        configuration (size, hot/iced).
+
+        Includes both item names and their aliases for matching user input.
+        """
         from .models import MenuItem, ItemType
 
         coffee_types = set()
 
-        # Look for sized_beverage item type
-        sized_bev_type = (
-            db.query(ItemType)
+        # Query sized_beverage items (coffee/tea that need configuration)
+        coffee_items = (
+            db.query(MenuItem)
+            .join(ItemType, MenuItem.item_type_id == ItemType.id)
             .filter(ItemType.slug == "sized_beverage")
-            .first()
+            .all()
         )
 
-        if sized_bev_type:
-            coffee_items = (
-                db.query(MenuItem)
-                .filter(MenuItem.item_type_id == sized_bev_type.id)
-                .all()
-            )
-            for item in coffee_items:
-                coffee_types.add(item.name.lower())
+        for item in coffee_items:
+            # Add the item name (lowercase)
+            coffee_types.add(item.name.lower())
 
-        # Add common coffee types if DB is empty
-        if not coffee_types:
-            coffee_types = {
-                "coffee", "latte", "cappuccino", "espresso", "americano",
-                "macchiato", "mocha", "cold brew", "tea", "chai", "matcha",
-                "hot chocolate",
-            }
+            # Add all aliases if present
+            if item.aliases:
+                for alias in item.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        coffee_types.add(alias)
 
         self._coffee_types = coffee_types
 

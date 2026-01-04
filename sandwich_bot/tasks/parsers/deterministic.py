@@ -53,9 +53,9 @@ from .constants import (
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,
     COFFEE_TYPO_MAP,
-    COFFEE_BEVERAGE_TYPES,
     COMPOUND_TEA_NAMES,
     get_soda_types,
+    get_coffee_types,
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,
     STORE_HOURS_PATTERNS,
@@ -485,22 +485,43 @@ SIMPLE_BAGEL_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Coffee order pattern
-COFFEE_ORDER_PATTERN = re.compile(
-    r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
-    r"(?:can|could|may)\s+i\s+(?:get|have)|"
-    r"give\s+me|"
-    r"let\s*(?:me|'s)\s*(?:get|have)|"
-    r")?\s*"
-    r"(?:an?\s+)?"
-    r"(?:(\d+|two|three|four|five)\s+)?"
-    r"(?:(small|medium|large)\s+)?"
-    r"(?:(iced|hot)\s+)?"
-    r"(?:(decaf)\s+)?"
-    r"(" + "|".join(COFFEE_BEVERAGE_TYPES) + r")"
-    r"(?:\s|$|[.,!?])",
-    re.IGNORECASE
-)
+# Coffee order pattern - lazily built to use database-driven coffee types
+_COFFEE_ORDER_PATTERN_CACHE: re.Pattern | None = None
+
+
+def _get_coffee_order_pattern() -> re.Pattern:
+    """Get the coffee order regex pattern, building it lazily on first use.
+
+    Uses get_coffee_types() to get coffee/tea types from the database cache,
+    falling back to hardcoded defaults if cache isn't loaded.
+    """
+    global _COFFEE_ORDER_PATTERN_CACHE
+    if _COFFEE_ORDER_PATTERN_CACHE is None:
+        coffee_types = get_coffee_types()
+        # Sort by length (longest first) to match longer names first
+        sorted_types = sorted(coffee_types, key=len, reverse=True)
+        types_pattern = "|".join(re.escape(t) for t in sorted_types)
+        _COFFEE_ORDER_PATTERN_CACHE = re.compile(
+            r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
+            r"(?:can|could|may)\s+i\s+(?:get|have)|"
+            r"give\s+me|"
+            r"let\s*(?:me|'s)\s*(?:get|have)|"
+            r")?\s*"
+            r"(?:an?\s+)?"
+            r"(?:(\d+|two|three|four|five)\s+)?"
+            r"(?:(small|medium|large)\s+)?"
+            r"(?:(iced|hot)\s+)?"
+            r"(?:(decaf)\s+)?"
+            rf"({types_pattern})"
+            r"(?:\s|$|[.,!?])",
+            re.IGNORECASE
+        )
+    return _COFFEE_ORDER_PATTERN_CACHE
+
+
+# Keep COFFEE_ORDER_PATTERN as a property-like accessor for backwards compatibility
+# Code should use _get_coffee_order_pattern() but this allows gradual migration
+COFFEE_ORDER_PATTERN = None  # Will be set lazily; use _get_coffee_order_pattern()
 
 
 # =============================================================================
@@ -1432,7 +1453,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
     text_lower = text.lower().strip()
 
     # Build pattern for drink types (coffee, tea, latte, etc.)
-    all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
+    all_drink_types = list(COMPOUND_TEA_NAMES) + list(get_coffee_types())
     drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
 
     # Must have a drink type in the text (plural or singular)
@@ -1879,8 +1900,8 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
 
     # If no compound match, check for single beverage keywords
     if not coffee_type:
-        for bev in sorted(COFFEE_BEVERAGE_TYPES, key=len, reverse=True):
-            if re.search(rf'\b{bev}s?\b', text_lower):
+        for bev in sorted(get_coffee_types(), key=len, reverse=True):
+            if re.search(rf'\b{re.escape(bev)}s?\b', text_lower):
                 coffee_type = bev
                 break
 
@@ -1904,7 +1925,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     size_words = r'(?:(?:small|medium|large|iced|hot)\s+)*'
 
     # Build pattern that matches both compound tea names and single beverage types
-    all_drink_types = list(COMPOUND_TEA_NAMES) + list(COFFEE_BEVERAGE_TYPES)
+    all_drink_types = list(COMPOUND_TEA_NAMES) + list(get_coffee_types())
     # Escape special regex chars and sort by length (longest first)
     drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
 

@@ -219,6 +219,10 @@ class ConfiguringItemHandler:
         if order.pending_field == "drink_selection":
             return self.coffee_handler.handle_drink_selection(user_input, order)
 
+        # Handle drink type selection when user asked for a generic "drink"
+        if order.pending_field == "drink_type":
+            return self.coffee_handler.handle_drink_type_selection(user_input, order)
+
         # Handle generic item selection when multiple options were presented (cookies, muffins, etc.)
         if order.pending_field == "item_selection":
             return self._handle_item_selection(user_input, order)

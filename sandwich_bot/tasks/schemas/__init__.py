@@ -16,6 +16,7 @@ from .parser_responses import (
     ParsedCoffeeEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
+    ParsedByPoundEntry,
     ParsedItem,
     # Parser response schemas
     SideChoiceResponse,
@@ -58,6 +59,7 @@ __all__ = [
     "ParsedCoffeeEntry",
     "ParsedSpeedMenuBagelEntry",
     "ParsedSideItemEntry",
+    "ParsedByPoundEntry",
     "ParsedItem",
     # Parser responses
     "SideChoiceResponse",

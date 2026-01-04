@@ -78,9 +78,9 @@ from .llm_parsers import (
 
 from .constants import (
     # Drink categories
-    SODA_DRINK_TYPES,
     COFFEE_BEVERAGE_TYPES,
     is_soda_drink,
+    get_soda_types,
     # Number mapping
     WORD_TO_NUM,
     # Bagel and spread types
@@ -188,9 +188,9 @@ __all__ = [
     "parse_email",
     "parse_phone",
     # Constants - Drink categories
-    "SODA_DRINK_TYPES",
     "COFFEE_BEVERAGE_TYPES",
     "is_soda_drink",
+    "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",
     # Constants - Bagel and spread types

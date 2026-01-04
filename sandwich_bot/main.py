@@ -138,9 +138,42 @@ async def lifespan(app: FastAPI):
     """Application lifespan events for startup and shutdown."""
     # Startup
     logger.info("Sandwich Bot API starting up")
+
+    # Initialize menu data cache from database
+    from .menu_data_cache import menu_cache
+    from .db import get_db, SessionLocal
+
+    logger.info("Initializing menu data cache...")
+    try:
+        db = SessionLocal()
+        try:
+            menu_cache.load_from_db(db, fail_on_error=True)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Failed to initialize menu data cache: %s", e)
+        raise RuntimeError(f"Server startup failed: Could not load menu data cache: {e}") from e
+
+    # Start background refresh task (runs daily at 3 AM)
+    def get_db_session():
+        """Context manager for database sessions."""
+        from contextlib import contextmanager
+        @contextmanager
+        def _session():
+            db = SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+        return _session()
+
+    await menu_cache.start_background_refresh(get_db_session)
+
     yield
+
     # Shutdown
     logger.info("Sandwich Bot API shutting down")
+    await menu_cache.stop_background_refresh()
 
 
 # =============================================================================

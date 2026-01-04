@@ -1,0 +1,683 @@
+"""
+Menu Data Cache - Dynamic Loading of Menu Constants from Database.
+
+This module provides a centralized cache for menu-driven constants that were
+previously hardcoded in constants.py. Data is loaded from the database at
+server startup and can be refreshed on-demand or on a schedule.
+
+Features:
+- Lazy loading with singleton pattern
+- Partial string matching for disambiguation
+- Background refresh at configurable intervals (default: 3 AM daily)
+- Admin endpoint for manual refresh
+- Fallback to hardcoded values if DB unavailable
+
+Usage:
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    # Get spread types (returns set)
+    spread_types = menu_cache.get_spread_types()
+
+    # Find partial matches for disambiguation
+    matches = menu_cache.find_spread_matches("walnut")
+    # Returns: ["honey walnut", "maple raisin walnut"]
+"""
+
+import asyncio
+import logging
+import threading
+from collections import defaultdict
+from datetime import datetime, time
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+
+class MenuDataCache:
+    """
+    Singleton cache for menu data loaded from the database.
+
+    Replaces hardcoded constants with database-driven values while
+    maintaining backward compatibility through fallback values.
+    """
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        # Core data sets
+        self._spreads: set[str] = set()
+        self._spread_types: set[str] = set()
+        self._bagel_types: set[str] = set()
+        self._proteins: set[str] = set()
+        self._toppings: set[str] = set()
+        self._cheeses: set[str] = set()
+        self._coffee_types: set[str] = set()
+        self._soda_types: set[str] = set()
+        self._known_menu_items: set[str] = set()
+
+        # Keyword indices for partial matching
+        self._spread_keyword_index: dict[str, list[str]] = {}
+        self._bagel_keyword_index: dict[str, list[str]] = {}
+        self._menu_item_keyword_index: dict[str, list[str]] = {}
+
+        # Metadata
+        self._last_refresh: datetime | None = None
+        self._is_loaded: bool = False
+        self._refresh_lock = threading.Lock()
+
+        # Background refresh settings
+        self._refresh_hour: int = 3  # 3 AM local time
+        self._refresh_task: asyncio.Task | None = None
+
+        self._initialized = True
+
+    @property
+    def is_loaded(self) -> bool:
+        """Check if cache has been loaded from database."""
+        return self._is_loaded
+
+    @property
+    def last_refresh(self) -> datetime | None:
+        """Get timestamp of last cache refresh."""
+        return self._last_refresh
+
+    def load_from_db(self, db: Session, fail_on_error: bool = True) -> None:
+        """
+        Load all menu data from the database.
+
+        Args:
+            db: SQLAlchemy database session
+            fail_on_error: If True, raise exception on DB errors (for startup)
+                          If False, log warning and keep existing cache
+
+        Raises:
+            RuntimeError: If fail_on_error=True and DB load fails
+        """
+        with self._refresh_lock:
+            try:
+                logger.info("Loading menu data cache from database...")
+
+                # Load each category
+                self._load_spread_types(db)
+                self._load_bagel_types(db)
+                self._load_proteins(db)
+                self._load_toppings(db)
+                self._load_cheeses(db)
+                self._load_coffee_types(db)
+                self._load_soda_types(db)
+                self._load_known_menu_items(db)
+
+                # Build keyword indices for partial matching
+                self._build_keyword_indices()
+
+                self._last_refresh = datetime.now()
+                self._is_loaded = True
+
+                logger.info(
+                    "Menu data cache loaded: %d spread_types, %d bagel_types, "
+                    "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
+                    "%d soda_types, %d menu_items",
+                    len(self._spread_types),
+                    len(self._bagel_types),
+                    len(self._proteins),
+                    len(self._toppings),
+                    len(self._cheeses),
+                    len(self._coffee_types),
+                    len(self._soda_types),
+                    len(self._known_menu_items),
+                )
+
+            except Exception as e:
+                logger.error("Failed to load menu data cache: %s", e)
+                if fail_on_error:
+                    raise RuntimeError(f"Failed to load menu data cache: {e}") from e
+                # Keep existing cache if available
+
+    def _load_spread_types(self, db: Session) -> None:
+        """Load spread types from cream cheese menu items."""
+        from .models import MenuItem, Ingredient
+
+        spread_types = set()
+        spreads = set()
+
+        # Load from cream cheese menu items
+        # Items like "Honey Walnut Cream Cheese (1/4 lb)" -> extract "honey walnut"
+        cream_cheese_items = (
+            db.query(MenuItem)
+            .filter(MenuItem.category == "cream_cheese")
+            .all()
+        )
+
+        for item in cream_cheese_items:
+            name = item.name.lower()
+            # Remove weight suffix like "(1/4 lb)", "(1 lb)"
+            import re
+            name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+
+            # Extract spread type from name
+            # "honey walnut cream cheese" -> "honey walnut"
+            # "plain cream cheese" -> "plain"
+            if "cream cheese" in name:
+                spread_type = name.replace("cream cheese", "").strip()
+                if spread_type and spread_type != "plain":
+                    spread_types.add(spread_type)
+                spreads.add("cream cheese")
+
+        # Also check spread_sandwich menu items
+        spread_sandwiches = (
+            db.query(MenuItem)
+            .filter(MenuItem.category == "spread_sandwich")
+            .all()
+        )
+
+        for item in spread_sandwiches:
+            name = item.name.lower()
+            # "Scallion Cream Cheese Sandwich" -> "scallion"
+            name = name.replace("sandwich", "").strip()
+            if "cream cheese" in name:
+                spread_type = name.replace("cream cheese", "").strip()
+                if spread_type and spread_type not in ("plain", "regular"):
+                    spread_types.add(spread_type)
+
+        # Load base spreads from ingredients
+        spread_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "spread")
+            .all()
+        )
+        for ing in spread_ingredients:
+            spreads.add(ing.name.lower())
+
+        # Add common spreads if not found
+        common_spreads = {"cream cheese", "butter", "peanut butter", "jelly",
+                         "jam", "nutella", "hummus", "avocado"}
+        spreads.update(common_spreads)
+
+        self._spreads = spreads
+        self._spread_types = spread_types
+
+    def _load_bagel_types(self, db: Session) -> None:
+        """Load bagel types from ingredients table."""
+        from .models import Ingredient
+
+        bagel_types = set()
+
+        # Query ingredients that are bagel types
+        bagel_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "bread")
+            .all()
+        )
+
+        for ing in bagel_ingredients:
+            name = ing.name.lower()
+            # "Plain Bagel" -> "plain", "Everything Bagel" -> "everything"
+            if "bagel" in name:
+                bagel_type = name.replace("bagel", "").strip()
+                if bagel_type:
+                    bagel_types.add(bagel_type)
+
+        # Add common bagel types if DB is empty
+        if not bagel_types:
+            bagel_types = {
+                "plain", "everything", "sesame", "poppy", "onion",
+                "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
+                "whole wheat", "wheat", "salt", "garlic", "bialy",
+                "egg", "multigrain", "asiago", "jalapeno", "blueberry",
+                "gluten free", "gluten-free",
+            }
+
+        self._bagel_types = bagel_types
+
+    def _load_proteins(self, db: Session) -> None:
+        """Load protein types from ingredients table."""
+        from .models import Ingredient
+
+        proteins = set()
+
+        protein_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "protein")
+            .all()
+        )
+
+        for ing in protein_ingredients:
+            proteins.add(ing.name.lower())
+
+        # Add common proteins if DB is empty
+        if not proteins:
+            proteins = {
+                "bacon", "ham", "turkey", "pastrami", "corned beef",
+                "nova", "lox", "nova scotia salmon", "baked salmon",
+                "egg", "eggs", "egg white", "egg whites", "scrambled egg",
+                "sausage", "avocado",
+            }
+
+        self._proteins = proteins
+
+    def _load_toppings(self, db: Session) -> None:
+        """Load topping types from ingredients table."""
+        from .models import Ingredient
+
+        toppings = set()
+
+        topping_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "topping")
+            .all()
+        )
+
+        for ing in topping_ingredients:
+            toppings.add(ing.name.lower())
+
+        # Add common toppings if DB is empty
+        if not toppings:
+            toppings = {
+                "tomato", "tomatoes", "onion", "onions", "red onion",
+                "lettuce", "capers", "cucumber", "cucumbers",
+                "pickles", "pickle", "sauerkraut", "sprouts",
+                "everything seeds", "mayo", "mayonnaise", "mustard",
+                "ketchup", "hot sauce", "salt", "pepper",
+            }
+
+        self._toppings = toppings
+
+    def _load_cheeses(self, db: Session) -> None:
+        """Load cheese types from ingredients table."""
+        from .models import Ingredient
+
+        cheeses = set()
+
+        cheese_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "cheese")
+            .all()
+        )
+
+        for ing in cheese_ingredients:
+            cheeses.add(ing.name.lower())
+
+        # Add common cheeses if DB is empty
+        if not cheeses:
+            cheeses = {
+                "american", "swiss", "cheddar", "muenster",
+                "provolone", "gouda", "mozzarella", "pepper jack",
+            }
+
+        self._cheeses = cheeses
+
+    def _load_coffee_types(self, db: Session) -> None:
+        """Load coffee/tea beverage types from menu items."""
+        from .models import MenuItem, ItemType
+
+        coffee_types = set()
+
+        # Look for sized_beverage item type
+        sized_bev_type = (
+            db.query(ItemType)
+            .filter(ItemType.slug == "sized_beverage")
+            .first()
+        )
+
+        if sized_bev_type:
+            coffee_items = (
+                db.query(MenuItem)
+                .filter(MenuItem.item_type_id == sized_bev_type.id)
+                .all()
+            )
+            for item in coffee_items:
+                coffee_types.add(item.name.lower())
+
+        # Add common coffee types if DB is empty
+        if not coffee_types:
+            coffee_types = {
+                "coffee", "latte", "cappuccino", "espresso", "americano",
+                "macchiato", "mocha", "cold brew", "tea", "chai", "matcha",
+                "hot chocolate",
+            }
+
+        self._coffee_types = coffee_types
+
+    def _load_soda_types(self, db: Session) -> None:
+        """Load soda/bottled beverage types from menu items.
+
+        Uses item_type='beverage' to identify sodas/bottled drinks that don't
+        need configuration (as opposed to 'sized_beverage' for coffee/tea).
+
+        Includes both item names and their aliases for matching user input.
+        """
+        from .models import MenuItem, ItemType
+
+        soda_types = set()
+
+        # Query beverage items (item_type.slug = 'beverage')
+        # These are sodas/bottled drinks that don't need size configuration
+        beverage_items = (
+            db.query(MenuItem)
+            .join(ItemType, MenuItem.item_type_id == ItemType.id)
+            .filter(ItemType.slug == "beverage")
+            .all()
+        )
+
+        for item in beverage_items:
+            # Add the item name (lowercase)
+            soda_types.add(item.name.lower())
+
+            # Add all aliases if present
+            if item.aliases:
+                for alias in item.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        soda_types.add(alias)
+
+        self._soda_types = soda_types
+
+    def _load_known_menu_items(self, db: Session) -> None:
+        """Load all menu item names for recognition."""
+        from .models import MenuItem
+
+        menu_items = set()
+
+        all_items = db.query(MenuItem).all()
+        for item in all_items:
+            menu_items.add(item.name.lower())
+            # Also add without "The " prefix for matching
+            name_lower = item.name.lower()
+            if name_lower.startswith("the "):
+                menu_items.add(name_lower[4:])
+
+        self._known_menu_items = menu_items
+
+    def _build_keyword_indices(self) -> None:
+        """Build keyword-to-item indices for partial matching."""
+        # Words to skip in keyword indexing
+        skip_words = {
+            "cream", "cheese", "bagel", "sandwich", "the", "a", "an",
+            "with", "and", "or", "on", "in",
+        }
+
+        # Build spread type keyword index
+        self._spread_keyword_index = self._build_index(self._spread_types, skip_words)
+
+        # Build bagel type keyword index
+        self._bagel_keyword_index = self._build_index(self._bagel_types, skip_words)
+
+        # Build menu item keyword index
+        self._menu_item_keyword_index = self._build_index(self._known_menu_items, skip_words)
+
+        logger.debug(
+            "Built keyword indices: %d spread keywords, %d bagel keywords, %d menu keywords",
+            len(self._spread_keyword_index),
+            len(self._bagel_keyword_index),
+            len(self._menu_item_keyword_index),
+        )
+
+    def _build_index(self, items: set[str], skip_words: set[str]) -> dict[str, list[str]]:
+        """Build a keyword-to-items index for a set of items."""
+        index: dict[str, list[str]] = defaultdict(list)
+
+        for item in items:
+            words = item.lower().split()
+            for word in words:
+                if word not in skip_words and len(word) > 2:
+                    if item not in index[word]:
+                        index[word].append(item)
+
+        return dict(index)
+
+    # =========================================================================
+    # Getter Methods
+    # =========================================================================
+
+    def get_spreads(self) -> set[str]:
+        """Get base spread types (cream cheese, butter, etc.)."""
+        return self._spreads.copy() if self._is_loaded else set()
+
+    def get_spread_types(self) -> set[str]:
+        """Get cream cheese variety types (scallion, honey walnut, etc.)."""
+        return self._spread_types.copy() if self._is_loaded else set()
+
+    def get_bagel_types(self) -> set[str]:
+        """Get bagel types (plain, everything, etc.)."""
+        return self._bagel_types.copy() if self._is_loaded else set()
+
+    def get_proteins(self) -> set[str]:
+        """Get protein types (bacon, ham, etc.)."""
+        return self._proteins.copy() if self._is_loaded else set()
+
+    def get_toppings(self) -> set[str]:
+        """Get topping types (tomato, onion, etc.)."""
+        return self._toppings.copy() if self._is_loaded else set()
+
+    def get_cheeses(self) -> set[str]:
+        """Get cheese types (american, swiss, etc.)."""
+        return self._cheeses.copy() if self._is_loaded else set()
+
+    def get_coffee_types(self) -> set[str]:
+        """Get coffee/tea beverage types."""
+        return self._coffee_types.copy() if self._is_loaded else set()
+
+    def get_soda_types(self) -> set[str]:
+        """Get soda/bottled beverage types."""
+        return self._soda_types.copy() if self._is_loaded else set()
+
+    def get_known_menu_items(self) -> set[str]:
+        """Get all known menu item names."""
+        return self._known_menu_items.copy() if self._is_loaded else set()
+
+    # =========================================================================
+    # Partial Matching Methods
+    # =========================================================================
+
+    def find_spread_matches(self, query: str) -> list[str]:
+        """
+        Find spread types that match a partial query.
+
+        Args:
+            query: User input like "walnut" or "honey walnut"
+
+        Returns:
+            List of matching spread types. Empty if no matches.
+            Single item if exact match.
+            Multiple items if disambiguation needed.
+
+        Examples:
+            >>> cache.find_spread_matches("walnut")
+            ["honey walnut", "maple raisin walnut"]
+            >>> cache.find_spread_matches("honey walnut")
+            ["honey walnut"]
+            >>> cache.find_spread_matches("scallion")
+            ["scallion"]
+        """
+        query_lower = query.lower().strip()
+
+        # Remove "cream cheese" from query if present
+        query_lower = query_lower.replace("cream cheese", "").strip()
+
+        if not query_lower:
+            return []
+
+        # Check for exact match first
+        if query_lower in self._spread_types:
+            return [query_lower]
+
+        # Check keyword index for partial matches
+        matches = set()
+        for word in query_lower.split():
+            if word in self._spread_keyword_index:
+                matches.update(self._spread_keyword_index[word])
+
+        # If no keyword matches, try substring matching
+        if not matches:
+            for spread_type in self._spread_types:
+                if query_lower in spread_type or spread_type in query_lower:
+                    matches.add(spread_type)
+
+        return sorted(matches)
+
+    def find_bagel_matches(self, query: str) -> list[str]:
+        """
+        Find bagel types that match a partial query.
+
+        Args:
+            query: User input like "cinnamon" or "whole wheat"
+
+        Returns:
+            List of matching bagel types.
+        """
+        query_lower = query.lower().strip()
+
+        # Remove "bagel" from query if present
+        query_lower = query_lower.replace("bagel", "").strip()
+
+        if not query_lower:
+            return []
+
+        # Check for exact match first
+        if query_lower in self._bagel_types:
+            return [query_lower]
+
+        # Check keyword index
+        matches = set()
+        for word in query_lower.split():
+            if word in self._bagel_keyword_index:
+                matches.update(self._bagel_keyword_index[word])
+
+        # Substring matching
+        if not matches:
+            for bagel_type in self._bagel_types:
+                if query_lower in bagel_type or bagel_type in query_lower:
+                    matches.add(bagel_type)
+
+        return sorted(matches)
+
+    def find_menu_item_matches(self, query: str) -> list[str]:
+        """
+        Find menu items that match a partial query.
+
+        Args:
+            query: User input like "classic" or "blt"
+
+        Returns:
+            List of matching menu item names.
+        """
+        query_lower = query.lower().strip()
+
+        if not query_lower:
+            return []
+
+        # Check for exact match
+        if query_lower in self._known_menu_items:
+            return [query_lower]
+
+        # Check keyword index
+        matches = set()
+        for word in query_lower.split():
+            if word in self._menu_item_keyword_index:
+                matches.update(self._menu_item_keyword_index[word])
+
+        # Substring matching for short queries
+        if not matches and len(query_lower) >= 3:
+            for item in self._known_menu_items:
+                if query_lower in item:
+                    matches.add(item)
+
+        return sorted(matches)
+
+    # =========================================================================
+    # Cache Status and Refresh
+    # =========================================================================
+
+    def get_status(self) -> dict[str, Any]:
+        """Get cache status information."""
+        return {
+            "is_loaded": self._is_loaded,
+            "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,
+            "counts": {
+                "spreads": len(self._spreads),
+                "spread_types": len(self._spread_types),
+                "bagel_types": len(self._bagel_types),
+                "proteins": len(self._proteins),
+                "toppings": len(self._toppings),
+                "cheeses": len(self._cheeses),
+                "coffee_types": len(self._coffee_types),
+                "soda_types": len(self._soda_types),
+                "known_menu_items": len(self._known_menu_items),
+            },
+            "keyword_indices": {
+                "spread_keywords": len(self._spread_keyword_index),
+                "bagel_keywords": len(self._bagel_keyword_index),
+                "menu_item_keywords": len(self._menu_item_keyword_index),
+            },
+        }
+
+    async def start_background_refresh(self, get_db_session) -> None:
+        """
+        Start the background refresh task that runs daily at configured hour.
+
+        Args:
+            get_db_session: Callable that returns a database session context manager
+        """
+        self._refresh_task = asyncio.create_task(
+            self._background_refresh_loop(get_db_session)
+        )
+        logger.info("Started background menu cache refresh task (runs daily at %d:00)", self._refresh_hour)
+
+    async def stop_background_refresh(self) -> None:
+        """Stop the background refresh task."""
+        if self._refresh_task:
+            self._refresh_task.cancel()
+            try:
+                await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+            self._refresh_task = None
+            logger.info("Stopped background menu cache refresh task")
+
+    async def _background_refresh_loop(self, get_db_session) -> None:
+        """Background loop that refreshes cache daily at configured hour."""
+        while True:
+            try:
+                # Calculate seconds until next refresh time
+                now = datetime.now()
+                target_time = now.replace(hour=self._refresh_hour, minute=0, second=0, microsecond=0)
+
+                # If target time has passed today, schedule for tomorrow
+                if now >= target_time:
+                    from datetime import timedelta
+                    target_time += timedelta(days=1)
+
+                seconds_until_refresh = (target_time - now).total_seconds()
+                logger.debug("Next cache refresh in %.0f seconds (at %s)", seconds_until_refresh, target_time)
+
+                await asyncio.sleep(seconds_until_refresh)
+
+                # Perform refresh
+                logger.info("Running scheduled menu cache refresh...")
+                with get_db_session() as db:
+                    self.load_from_db(db, fail_on_error=False)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Error in background cache refresh: %s", e)
+                # Wait an hour before retrying on error
+                await asyncio.sleep(3600)
+
+
+# Global singleton instance
+menu_cache = MenuDataCache()

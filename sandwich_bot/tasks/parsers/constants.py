@@ -12,34 +12,10 @@ import re
 # Drink Type Categories
 # =============================================================================
 
-# Sodas and cold beverages that don't need hot/iced or size configuration
-# These are added directly without asking configuration questions
-SODA_DRINK_TYPES = {
-    "coke", "coca cola", "coca-cola",
-    "diet coke", "diet coca cola",
-    "coke zero", "coca cola zero",
-    "sprite", "diet sprite",
-    "fanta", "orange fanta",
-    "dr pepper", "dr. pepper",
-    "pepsi", "diet pepsi",
-    "mountain dew", "mtn dew",
-    "ginger ale",
-    "root beer",
-    "lemonade",
-    "iced tea",  # Pre-made bottled iced tea
-    "bottled water", "water",
-    "sparkling water", "seltzer",
-    "juice", "orange juice", "oj", "apple juice", "cranberry juice",
-    "snapple",
-    "gatorade",
-    # Milk beverages (but NOT plain "milk" - that's a coffee modifier)
-    "chocolate milk", "chocolate milks",
-    # Dr. Brown's sodas
-    "dr brown's", "dr browns", "dr. brown's", "dr. browns",
-    "dr brown's cream soda", "dr browns cream soda",
-    "dr brown's black cherry", "dr browns black cherry",
-    "dr brown's cel-ray", "dr browns cel-ray", "cel-ray",
-}
+# NOTE: Soda/bottled beverage types are now loaded from the database via
+# menu_data_cache.py. The database stores beverages with item_type='beverage'
+# and supports aliases via the 'aliases' column on menu_items.
+# Use get_soda_types() to get the current set of soda types.
 
 # Coffee/tea beverages that need hot/iced and size configuration
 COFFEE_BEVERAGE_TYPES = {
@@ -66,15 +42,20 @@ COMPOUND_TEA_NAMES = [
 
 
 def is_soda_drink(drink_type: str | None) -> bool:
-    """Check if a drink type is a soda/cold beverage that doesn't need configuration."""
+    """Check if a drink type is a soda/cold beverage that doesn't need configuration.
+
+    Uses database-loaded soda types (via get_soda_types()) which includes
+    both item names and their aliases from the menu_items.aliases column.
+    """
     if not drink_type:
         return False
     drink_lower = drink_type.lower().strip()
+    soda_types = get_soda_types()
     # Check exact match first
-    if drink_lower in SODA_DRINK_TYPES:
+    if drink_lower in soda_types:
         return True
     # Check if any soda type is contained in the drink name
-    for soda in SODA_DRINK_TYPES:
+    for soda in soda_types:
         if soda in drink_lower or drink_lower in soda:
             return True
     return False
@@ -1286,3 +1267,228 @@ MORE_MENU_ITEMS_PATTERNS = [
     # "and?" / "and what else?"
     re.compile(r"^and\s*\??\s*$", re.IGNORECASE),
 ]
+
+
+# =============================================================================
+# Dynamic Menu Data Cache Getters
+# =============================================================================
+#
+# These functions delegate to the MenuDataCache if loaded, otherwise return
+# the hardcoded fallback values defined above. This allows the parsing logic
+# to work even before the cache is initialized (e.g., during tests).
+
+
+def _get_menu_cache():
+    """Get the menu cache singleton, returns None if not available."""
+    try:
+        from sandwich_bot.menu_data_cache import menu_cache
+        if menu_cache.is_loaded:
+            return menu_cache
+    except ImportError:
+        pass
+    return None
+
+
+def get_spread_types() -> set[str]:
+    """
+    Get cream cheese variety types (scallion, honey walnut, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded SPREAD_TYPES.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_spread_types()
+        if cached:
+            return cached
+    return SPREAD_TYPES
+
+
+def get_spreads() -> set[str]:
+    """
+    Get base spread types (cream cheese, butter, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded SPREADS.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_spreads()
+        if cached:
+            return cached
+    return SPREADS
+
+
+def get_bagel_types() -> set[str]:
+    """
+    Get bagel types (plain, everything, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_TYPES.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_bagel_types()
+        if cached:
+            return cached
+    return BAGEL_TYPES
+
+
+def get_proteins() -> set[str]:
+    """
+    Get protein types (bacon, ham, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_PROTEINS.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_proteins()
+        if cached:
+            return cached
+    return BAGEL_PROTEINS
+
+
+def get_toppings() -> set[str]:
+    """
+    Get topping types (tomato, onion, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_TOPPINGS.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_toppings()
+        if cached:
+            return cached
+    return BAGEL_TOPPINGS
+
+
+def get_cheeses() -> set[str]:
+    """
+    Get cheese types (american, swiss, etc.).
+
+    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_CHEESES.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_cheeses()
+        if cached:
+            return cached
+    return BAGEL_CHEESES
+
+
+def get_coffee_types() -> set[str]:
+    """
+    Get coffee/tea beverage types.
+
+    Returns data from cache if loaded, otherwise returns hardcoded COFFEE_BEVERAGE_TYPES.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_coffee_types()
+        if cached:
+            return cached
+    return COFFEE_BEVERAGE_TYPES
+
+
+def get_soda_types() -> set[str]:
+    """
+    Get soda/bottled beverage types from the database.
+
+    Returns data from cache if loaded (includes item names and aliases).
+    Returns empty set if cache not available.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_soda_types()
+        if cached:
+            return cached
+    return set()
+
+
+def get_known_menu_items() -> set[str]:
+    """
+    Get all known menu item names.
+
+    Returns data from cache if loaded, otherwise returns hardcoded KNOWN_MENU_ITEMS.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_known_menu_items()
+        if cached:
+            return cached
+    return KNOWN_MENU_ITEMS
+
+
+def find_spread_matches(query: str) -> list[str]:
+    """
+    Find spread types that match a partial query.
+
+    Uses the cache's keyword index for efficient partial matching.
+    Falls back to simple substring matching if cache not available.
+
+    Args:
+        query: User input like "walnut" or "honey walnut"
+
+    Returns:
+        List of matching spread types.
+        Empty list if no matches.
+        Single item if exact match.
+        Multiple items if disambiguation needed.
+
+    Examples:
+        >>> find_spread_matches("walnut")
+        ["honey walnut", "maple raisin walnut"]
+        >>> find_spread_matches("scallion")
+        ["scallion"]
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.find_spread_matches(query)
+
+    # Fallback: simple substring matching against hardcoded values
+    query_lower = query.lower().strip()
+    query_lower = query_lower.replace("cream cheese", "").strip()
+
+    if not query_lower:
+        return []
+
+    # Exact match
+    if query_lower in SPREAD_TYPES:
+        return [query_lower]
+
+    # Substring matching
+    matches = []
+    for spread_type in SPREAD_TYPES:
+        if query_lower in spread_type or spread_type in query_lower:
+            matches.append(spread_type)
+
+    return sorted(matches)
+
+
+def find_bagel_matches(query: str) -> list[str]:
+    """
+    Find bagel types that match a partial query.
+
+    Args:
+        query: User input like "cinnamon" or "whole wheat"
+
+    Returns:
+        List of matching bagel types.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.find_bagel_matches(query)
+
+    # Fallback: simple substring matching
+    query_lower = query.lower().strip()
+    query_lower = query_lower.replace("bagel", "").strip()
+
+    if not query_lower:
+        return []
+
+    if query_lower in BAGEL_TYPES:
+        return [query_lower]
+
+    matches = []
+    for bagel_type in BAGEL_TYPES:
+        if query_lower in bagel_type or bagel_type in query_lower:
+            matches.append(bagel_type)
+
+    return sorted(matches)

@@ -191,3 +191,60 @@ def delete_menu_item(
     db.delete(item)
     db.commit()
     return None
+
+
+# =============================================================================
+# Cache Management Endpoints
+# =============================================================================
+
+@admin_menu_router.get("/cache/status", response_model=Dict[str, Any])
+def get_cache_status(
+    _admin: str = Depends(verify_admin_credentials),
+) -> Dict[str, Any]:
+    """
+    Get menu data cache status.
+
+    Returns information about the cache including:
+    - Whether it's loaded
+    - Last refresh timestamp
+    - Item counts by category
+    - Keyword index sizes
+
+    Requires admin authentication.
+    """
+    from ..menu_data_cache import menu_cache
+    return menu_cache.get_status()
+
+
+@admin_menu_router.post("/cache/refresh", response_model=Dict[str, Any])
+def refresh_cache(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> Dict[str, Any]:
+    """
+    Manually refresh the menu data cache.
+
+    Reloads all menu data from the database including:
+    - Spread types and varieties
+    - Bagel types
+    - Proteins, toppings, and cheeses
+    - Coffee and soda types
+    - Known menu items
+
+    This is useful after making menu changes that should take effect
+    immediately without waiting for the scheduled 3 AM refresh.
+
+    Requires admin authentication.
+
+    Returns:
+        Cache status after refresh
+    """
+    from ..menu_data_cache import menu_cache
+
+    logger.info("Manual cache refresh triggered by admin")
+    menu_cache.load_from_db(db, fail_on_error=False)
+
+    return {
+        "message": "Cache refreshed successfully",
+        "status": menu_cache.get_status(),
+    }

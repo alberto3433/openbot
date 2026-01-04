@@ -154,3 +154,28 @@ def disable_state_machine(monkeypatch):
     """
     # Set the environment variable that controls the state machine
     monkeypatch.setenv("STATE_MACHINE_ENABLED", "false")
+
+
+@pytest.fixture(scope="session")
+def menu_cache_loaded():
+    """Load the menu cache from the database for tests that need it.
+
+    This is a session-scoped fixture so the cache is only loaded once.
+    Tests that need the menu cache should use this fixture.
+    """
+    if not TEST_DATABASE_URL:
+        pytest.skip("DATABASE_URL environment variable required for menu cache tests")
+
+    from sandwich_bot.menu_data_cache import menu_cache
+    from sqlalchemy.orm import Session
+
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        menu_cache.load_from_db(db, fail_on_error=True)
+    finally:
+        db.close()
+
+    return menu_cache

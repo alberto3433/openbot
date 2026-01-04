@@ -115,10 +115,15 @@ See `sandwich_bot/tasks/parsers/constants.py` for `MODIFIER_NORMALIZATIONS`.
 
 ### Pricing System
 
-Prices are calculated in `pricing.py` using `DEFAULT_MODIFIER_PRICES`:
-- Base item prices from menu
-- Modifier upcharges (lox: $6.00, bacon: $2.00, etc.)
+Prices are calculated in `pricing.py` using database lookups:
+- Base item prices from `menu_items` table
+- Modifier upcharges from `attribute_options` table (`price_modifier` column)
+- Bagel type upcharges (e.g., gluten free) from `bagel_type` attribute options
+- Coffee modifiers (size, milk, syrup) from `sized_beverage` attribute options
+- Iced upcharges from `iced_price_modifier` column on size options
 - Modifiers stored in `item_config` for database persistence
+
+See migration `m7n8o9p0q1r2_populate_modifier_prices.py` for initial price data.
 
 ## Key Patterns
 
@@ -149,10 +154,12 @@ Items store all details in `item_config` JSON column:
 - **Adapter tests**: `test_tasks_adapter.py` - validates data conversion
 - **Resiliency tests**: `test_resiliency_batch*.py` - end-to-end conversation flows
 
-## Database
+## Database Policy
 
-- SQLite for development (`app.db`)
-- PostgreSQL for production
+- **Single source of truth**: The Neon/Postgres database specified by DATABASE_URL
+- **Never** create or use local SQLite databases (app.db) for testing, debugging, or development
+- **Never** assume an empty or different database state than production
+- All database queries, tests, and verifications must run against the Neon/Postgres database
 - Alembic for migrations in `alembic/versions/`
 
 Key tables:
@@ -165,7 +172,7 @@ Key tables:
 ## Environment Variables
 
 ```
-DATABASE_URL=postgresql://...  # or sqlite:///app.db
+DATABASE_URL=postgresql://...  # Neon/Postgres connection string (required)
 OPENAI_API_KEY=...             # For LLM parsing fallback
 ANTHROPIC_API_KEY=...          # For Claude-based parsing
 ```
@@ -207,14 +214,12 @@ LOG_LEVEL=DEBUG uvicorn sandwich_bot.main:app --reload
 # Test state machine in isolation with output
 python -m pytest tests/test_tasks_parsing.py -v -s
 
-# Check session state in SQLite
-sqlite3 app.db "SELECT session_id, order_state FROM chat_sessions LIMIT 5"
-
-# Check order items
-sqlite3 app.db "SELECT id, menu_item_name, item_config FROM order_items LIMIT 5"
-
 # Run single test with debugging
 python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel -v -s --tb=long
+
+# Query database (use psql or a Postgres client with DATABASE_URL)
+# Example: Check session state
+psql $DATABASE_URL -c "SELECT session_id, order_state FROM chat_sessions LIMIT 5"
 ```
 
 ## Known Issues

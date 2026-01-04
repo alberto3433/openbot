@@ -233,6 +233,10 @@ class MenuItem(Base):
     # Example: "coffee cake, cake" for "Russian Coffee Cake" prevents "coffee" from matching
     required_match_phrases = Column(String, nullable=True)
 
+    # Aliases for matching user input to this item (comma-separated)
+    # Example: "coke, coca cola" for "Coca-Cola" allows "coke" to match
+    aliases = Column(String, nullable=True)
+
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify
     # For "contains_X" flags: True if ANY ingredient contains the allergen

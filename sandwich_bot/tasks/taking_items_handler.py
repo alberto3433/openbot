@@ -1408,10 +1408,17 @@ class TakingItemsHandler:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
                 elif isinstance(item, SpeedMenuBagelItemTask):
-                    if item.toasted is None:
-                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
+                    # Check in same order as speed_menu_handler: cheese → bagel type → toasted
+                    # Check if item has cheese (BEC, egg and cheese, etc.)
+                    item_name_lower = item.menu_item_name.lower()
+                    has_cheese = any(ind in item_name_lower for ind in ["bec", "egg and cheese", "egg & cheese", " cheese"])
+
+                    if has_cheese and item.cheese_choice is None:
+                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_cheese_choice"))
                     elif item.bagel_choice is None:
                         speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
+                    elif item.toasted is None:
+                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
                 elif isinstance(item, CoffeeItemTask):
                     # Coffee items: check size first, then hot/iced
                     if item.size is None:
@@ -1525,6 +1532,12 @@ class TakingItemsHandler:
             question = f"Got it! What size {first_item_name} would you like? Small or Large?"
         elif first_field == "coffee_style":
             question = f"Got it! Would you like the {first_item_name} hot or iced?"
+        elif first_field == "speed_menu_cheese_choice":
+            question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
+        elif first_field == "speed_menu_bagel_type":
+            question = f"Got it, {first_item_name}! What type of bagel would you like?"
+        elif first_field == "speed_menu_bagel_toasted":
+            question = f"Got it, {first_item_name}! Would you like that toasted?"
         else:
             question = f"Got it! {first_item_name} - any preferences?"
 

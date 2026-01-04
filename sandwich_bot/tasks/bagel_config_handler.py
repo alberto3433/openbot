@@ -32,8 +32,12 @@ from .parsers.llm_parsers import (
     parse_spread_choice,
     parse_toasted_choice,
 )
-from .parsers.deterministic import extract_modifiers_from_input, _extract_spread
-from .parsers.constants import MORE_MENU_ITEMS_PATTERNS, SPREAD_TYPES, SPREADS
+from .parsers.deterministic import (
+    extract_modifiers_from_input,
+    _extract_spread,
+    extract_spread_with_disambiguation,
+)
+from .parsers.constants import MORE_MENU_ITEMS_PATTERNS, SPREAD_TYPES, SPREADS, get_spread_types
 from .message_builder import MessageBuilder
 
 if TYPE_CHECKING:
@@ -150,6 +154,62 @@ class BagelConfigHandler:
         self._get_item_by_id = get_item_by_id
         self._configure_coffee = configure_coffee
         self._check_redirect = check_redirect
+
+    def _resolve_spread_disambiguation(
+        self,
+        user_input: str,
+        options: list[str],
+    ) -> str | None:
+        """
+        Resolve user's selection from disambiguation options.
+
+        Args:
+            user_input: User's response (e.g., "honey walnut", "the first one", "maple")
+            options: List of spread type options (e.g., ["honey walnut", "maple raisin walnut"])
+
+        Returns:
+            Selected spread type if matched, None if no match found.
+        """
+        input_lower = user_input.lower().strip()
+
+        # Remove common filler words
+        input_lower = input_lower.replace("cream cheese", "").strip()
+        input_lower = input_lower.replace("the ", "").strip()
+        input_lower = input_lower.replace("please", "").strip()
+
+        # Try exact match first
+        for option in options:
+            if option == input_lower:
+                return option
+
+        # Try if user said just the first word (e.g., "honey" for "honey walnut")
+        for option in options:
+            first_word = option.split()[0] if option else ""
+            if first_word and first_word == input_lower:
+                return option
+
+        # Try substring match (e.g., "maple" matches "maple raisin walnut")
+        for option in options:
+            if input_lower in option:
+                return option
+
+        # Try if option is a substring of input (e.g., "honey walnut please")
+        for option in options:
+            if option in input_lower:
+                return option
+
+        # Handle ordinal selections ("first one", "second one", "1", "2")
+        ordinal_map = {
+            "first": 0, "1": 0, "one": 0,
+            "second": 1, "2": 1, "two": 1,
+            "third": 2, "3": 2, "three": 2,
+            "fourth": 3, "4": 3, "four": 3,
+        }
+        for word, index in ordinal_map.items():
+            if word in input_lower and index < len(options):
+                return options[index]
+
+        return None
 
     def handle_bagel_choice(
         self,
@@ -393,6 +453,39 @@ class BagelConfigHandler:
                         order=order,
                     )
 
+        # Check if we're handling a disambiguation response
+        if order.pending_spread_options:
+            # User is responding to "We have honey walnut cream cheese or maple raisin walnut cream cheese"
+            selected_spread_type = self._resolve_spread_disambiguation(
+                user_input, order.pending_spread_options
+            )
+            if selected_spread_type:
+                logger.info("Spread disambiguation resolved: '%s' -> '%s'", user_input, selected_spread_type)
+                item.spread = "cream cheese"
+                item.spread_type = selected_spread_type
+                order.pending_spread_options = []  # Clear pending options
+
+                # Recalculate price with spread
+                if self.pricing:
+                    self.pricing.recalculate_bagel_price(item)
+
+                # Complete the bagel
+                item.mark_complete()
+                order.clear_pending()
+                return self.configure_next_incomplete_bagel(order)
+            else:
+                # User's response didn't match any option - re-ask
+                logger.info("Spread disambiguation failed: '%s' not in options", user_input)
+                options_display = [f"{opt} cream cheese" for opt in order.pending_spread_options]
+                if len(options_display) == 2:
+                    options_str = f"{options_display[0]} or {options_display[1]}"
+                else:
+                    options_str = ", ".join(options_display[:-1]) + f", or {options_display[-1]}"
+                return StateMachineResult(
+                    message=f"Sorry, I didn't catch that. We have {options_str}. Which would you like?",
+                    order=order,
+                )
+
         # For MenuItemTask (omelette side bagels), use simpler handling
         if isinstance(item, MenuItemTask):
             # Try deterministic spread parsing first
@@ -505,7 +598,29 @@ class BagelConfigHandler:
             if any(p in input_lower for p in no_spread_patterns):
                 item.spread = "none"
             else:
-                det_spread, det_spread_type = _extract_spread(user_input)
+                # Use disambiguation-aware spread extraction
+                det_spread, det_spread_type, disambiguation_options = extract_spread_with_disambiguation(user_input)
+
+                if disambiguation_options and len(disambiguation_options) > 1:
+                    # Multiple potential matches - ask user to clarify
+                    logger.info(
+                        "Spread disambiguation needed: input='%s', options=%s",
+                        user_input, disambiguation_options
+                    )
+                    # Store disambiguation options on the order for handling the response
+                    order.pending_spread_options = disambiguation_options
+
+                    # Build a friendly disambiguation message
+                    options_display = [f"{opt} cream cheese" for opt in disambiguation_options]
+                    if len(options_display) == 2:
+                        options_str = f"{options_display[0]} or {options_display[1]}"
+                    else:
+                        options_str = ", ".join(options_display[:-1]) + f", or {options_display[-1]}"
+
+                    return StateMachineResult(
+                        message=f"We have {options_str}. Which would you like?",
+                        order=order,
+                    )
 
                 if det_spread or det_spread_type:
                     # Deterministic parsing found a spread
@@ -537,7 +652,8 @@ class BagelConfigHandler:
                     elif parsed.spread:
                         # Validate LLM response - check if spread_type is actually valid
                         # This prevents hallucinated types like "house cream cheese"
-                        if parsed.spread_type and parsed.spread_type.lower() not in SPREAD_TYPES:
+                        valid_spread_types = get_spread_types()
+                        if parsed.spread_type and parsed.spread_type.lower() not in valid_spread_types:
                             # LLM hallucinated an invalid spread type - re-ask
                             logger.info("LLM returned invalid spread_type '%s' - re-asking", parsed.spread_type)
                             return StateMachineResult(
@@ -605,6 +721,35 @@ class BagelConfigHandler:
             if extracted_modifiers.has_modifiers() or extracted_modifiers.has_special_instructions():
                 logger.info("Extracted additional modifiers from toasted choice: %s", extracted_modifiers)
                 apply_modifiers_to_bagel(item, extracted_modifiers)
+
+            # If a spread was detected, use disambiguation-aware extraction
+            # to properly handle spread types like "walnut cream cheese"
+            if extracted_modifiers.spreads:
+                det_spread, det_spread_type, disambiguation_options = extract_spread_with_disambiguation(user_input)
+
+                if disambiguation_options and len(disambiguation_options) > 1:
+                    # Multiple potential matches - need to ask for clarification
+                    logger.info(
+                        "Spread disambiguation needed in toasted handler: input='%s', options=%s",
+                        user_input, disambiguation_options
+                    )
+                    order.pending_spread_options = disambiguation_options
+                    options_display = [f"{opt} cream cheese" for opt in disambiguation_options]
+                    if len(options_display) == 2:
+                        options_str = f"{options_display[0]} or {options_display[1]}"
+                    else:
+                        options_str = ", ".join(options_display[:-1]) + f", or {options_display[-1]}"
+
+                    order.pending_field = "spread"
+                    return StateMachineResult(
+                        message=f"Got it, toasted. We have {options_str}. Which would you like?",
+                        order=order,
+                    )
+
+                # Apply the spread type if detected
+                if det_spread_type:
+                    item.spread_type = det_spread_type
+                    logger.info("Set spread_type from toasted handler: %s", det_spread_type)
 
         # For MenuItemTask, handle based on type
         if isinstance(item, MenuItemTask):

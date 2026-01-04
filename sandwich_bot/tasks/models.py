@@ -792,6 +792,11 @@ class OrderTask(BaseTask):
     # Quantity stored during item disambiguation
     pending_item_quantity: int = Field(default=1)
 
+    # Spread type options for disambiguation (e.g., "walnut" matches multiple types)
+    # Used when user says "walnut cream cheese" and there are honey walnut, maple raisin walnut
+    # Each entry is a spread type string like "honey walnut"
+    pending_spread_options: list[str] = Field(default_factory=list)
+
     # Pending modifier change clarification
     # Used when user says "change it to blueberry" and we need to clarify bagel vs spread
     # Dict with: new_value, possible_categories (as strings), item_id

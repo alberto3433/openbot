@@ -20,7 +20,7 @@ from sandwich_bot.tasks.pricing import PricingEngine
 
 
 def create_test_menu_data():
-    """Create minimal menu data for adapter tests."""
+    """Create menu data for adapter tests with full item_types for pricing lookups."""
     return {
         "all_items": [
             {"id": 1, "name": "Bagel", "base_price": 2.20, "category": "custom_bagels"},
@@ -30,6 +30,81 @@ def create_test_menu_data():
         "custom_bagels": [
             {"id": 1, "name": "Bagel", "base_price": 2.20},
         ],
+        # Item types with attribute options for pricing lookups
+        "item_types": {
+            "bagel": {
+                "attributes": [
+                    {
+                        "slug": "bagel_type",
+                        "options": [
+                            {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
+                            {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
+                            {"slug": "sesame", "display_name": "Sesame", "price_modifier": 0.0},
+                            {"slug": "gluten_free", "display_name": "Gluten Free", "price_modifier": 0.80},
+                        ]
+                    },
+                    {
+                        "slug": "spread",
+                        "options": [
+                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
+                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
+                            {"slug": "scallion_cream_cheese", "display_name": "Scallion Cream Cheese", "price_modifier": 1.75},
+                        ]
+                    },
+                    {
+                        "slug": "protein",
+                        "options": [
+                            {"slug": "ham", "display_name": "Ham", "price_modifier": 2.00},
+                            {"slug": "bacon", "display_name": "Bacon", "price_modifier": 2.00},
+                            {"slug": "egg", "display_name": "Egg", "price_modifier": 1.50},
+                            {"slug": "nova_scotia_salmon", "display_name": "Nova Scotia Salmon", "price_modifier": 6.00},
+                            {"slug": "turkey", "display_name": "Turkey", "price_modifier": 2.50},
+                        ]
+                    },
+                    {
+                        "slug": "cheese",
+                        "options": [
+                            {"slug": "american", "display_name": "American", "price_modifier": 0.75},
+                            {"slug": "swiss", "display_name": "Swiss", "price_modifier": 0.75},
+                        ]
+                    },
+                    {
+                        "slug": "topping",
+                        "options": [
+                            {"slug": "tomato", "display_name": "Tomato", "price_modifier": 0.50},
+                            {"slug": "onion", "display_name": "Onion", "price_modifier": 0.50},
+                            {"slug": "capers", "display_name": "Capers", "price_modifier": 0.75},
+                        ]
+                    },
+                ]
+            },
+            "sized_beverage": {
+                "attributes": [
+                    {
+                        "slug": "size",
+                        "options": [
+                            {"slug": "small", "display_name": "Small", "price_modifier": 0.0, "iced_price_modifier": 1.65},
+                            {"slug": "large", "display_name": "Large", "price_modifier": 0.90, "iced_price_modifier": 1.10},
+                        ]
+                    },
+                    {
+                        "slug": "milk",
+                        "options": [
+                            {"slug": "whole", "display_name": "Whole Milk", "price_modifier": 0.0},
+                            {"slug": "oat", "display_name": "Oat Milk", "price_modifier": 0.50},
+                            {"slug": "almond", "display_name": "Almond Milk", "price_modifier": 0.50},
+                        ]
+                    },
+                    {
+                        "slug": "syrup",
+                        "options": [
+                            {"slug": "vanilla", "display_name": "Vanilla", "price_modifier": 0.65},
+                            {"slug": "hazelnut", "display_name": "Hazelnut", "price_modifier": 0.65},
+                        ]
+                    },
+                ]
+            },
+        },
     }
 
 

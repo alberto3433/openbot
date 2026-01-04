@@ -23,8 +23,8 @@ from ..services.tax_utils import calculate_order_total
 
 logger = logging.getLogger(__name__)
 
-# Import modifier prices from PricingEngine to avoid duplication
-DEFAULT_MODIFIER_PRICES = PricingEngine.DEFAULT_MODIFIER_PRICES
+# Modifier prices are now stored in the database and accessed via PricingEngine.
+# See migration m7n8o9p0q1r2_populate_modifier_prices.py for initial data.
 
 
 # -----------------------------------------------------------------------------
@@ -470,13 +470,14 @@ def order_task_to_dict(
                     "price": 0,
                 })
 
-            # Add protein modifier
+            # Add protein modifier (requires pricing engine)
             if sandwich_protein:
-                protein_price = (
-                    pricing.lookup_modifier_price(sandwich_protein)
-                    if pricing
-                    else DEFAULT_MODIFIER_PRICES.get(sandwich_protein.lower(), 0.0)
-                )
+                if not pricing:
+                    raise ValueError(
+                        "Pricing engine required for protein modifier price. "
+                        "Ensure pricing parameter is passed to order_task_to_dict."
+                    )
+                protein_price = pricing.lookup_modifier_price(sandwich_protein)
                 modifiers.append({
                     "name": sandwich_protein,
                     "price": protein_price,
@@ -484,11 +485,12 @@ def order_task_to_dict(
 
             # Add extras (additional proteins, cheeses, toppings)
             for extra in extras:
-                extra_price = (
-                    pricing.lookup_modifier_price(extra)
-                    if pricing
-                    else DEFAULT_MODIFIER_PRICES.get(extra.lower(), 0.0)
-                )
+                if not pricing:
+                    raise ValueError(
+                        "Pricing engine required for modifier prices. "
+                        "Ensure pricing parameter is passed to order_task_to_dict."
+                    )
+                extra_price = pricing.lookup_modifier_price(extra)
                 modifiers.append({
                     "name": extra,
                     "price": extra_price,
@@ -499,11 +501,12 @@ def order_task_to_dict(
                 spread_name = spread
                 if spread_type and spread_type != "plain":
                     spread_name = f"{spread_type} {spread}"
-                spread_price = (
-                    pricing.lookup_spread_price(spread, spread_type)
-                    if pricing
-                    else DEFAULT_MODIFIER_PRICES.get(spread.lower(), 0.0)
-                )
+                if not pricing:
+                    raise ValueError(
+                        "Pricing engine required for spread price. "
+                        "Ensure pricing parameter is passed to order_task_to_dict."
+                    )
+                spread_price = pricing.lookup_spread_price(spread, spread_type)
                 modifiers.append({
                     "name": spread_name,
                     "price": spread_price,

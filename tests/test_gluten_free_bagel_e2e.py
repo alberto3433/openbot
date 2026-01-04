@@ -36,6 +36,29 @@ def create_test_menu_data():
             "everything": {"id": 4, "name": "Everything Bagel", "base_price": 2.20},
             "gluten free": {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00},
         },
+        # Item types with attribute options for pricing lookups
+        "item_types": {
+            "bagel": {
+                "attributes": [
+                    {
+                        "slug": "bagel_type",
+                        "options": [
+                            {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
+                            {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
+                            {"slug": "sesame", "display_name": "Sesame", "price_modifier": 0.0},
+                            {"slug": "gluten_free", "display_name": "Gluten Free", "price_modifier": 0.80},
+                        ]
+                    },
+                    {
+                        "slug": "spread",
+                        "options": [
+                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
+                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
+                        ]
+                    },
+                ]
+            },
+        },
     }
 
 
@@ -318,18 +341,59 @@ class TestGlutenFreeSpeedMenuE2E:
         assert bagel_mod["price"] == 0.80, f"Gluten free upcharge should be $0.80, got: {bagel_mod['price']}"
 
 
-class TestPricingEngineGlutenFreeConstants:
-    """Test PricingEngine gluten free constants directly (without instantiating)."""
+class TestPricingEngineGlutenFreeFromDatabase:
+    """Test PricingEngine gluten free lookups from database (menu_data)."""
+
+    def create_menu_data_with_bagel_types(self):
+        """Create menu_data with bagel type attribute options."""
+        return {
+            "item_types": {
+                "bagel": {
+                    "attributes": [
+                        {
+                            "slug": "bagel_type",
+                            "options": [
+                                {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
+                                {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
+                                {"slug": "sesame", "display_name": "Sesame", "price_modifier": 0.0},
+                                {"slug": "gluten_free", "display_name": "Gluten Free", "price_modifier": 0.80},
+                            ]
+                        }
+                    ]
+                }
+            },
+            "all_items": [{"name": "Bagel", "base_price": 2.20}],
+        }
 
     def test_bagel_type_upcharges_gluten_free(self):
-        """Test that gluten free upcharge constant is $0.80."""
-        # Test various gluten free variations in the constants
-        assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("gluten free") == 0.80
-        assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("gluten-free") == 0.80
+        """Test that gluten free upcharge is $0.80 from database."""
+        menu_data = self.create_menu_data_with_bagel_types()
+
+        def menu_lookup(name: str):
+            for item in menu_data["all_items"]:
+                if item["name"].lower() == name.lower():
+                    return item
+            return None
+
+        pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
+
+        # Test gluten free variations
+        assert pricing.get_bagel_type_upcharge("gluten free") == 0.80
+        assert pricing.get_bagel_type_upcharge("gluten-free") == 0.80
 
     def test_bagel_type_upcharges_regular(self):
-        """Test that regular bagels have no upcharge in constants."""
-        # Regular bagels are not in the upcharges dict, so they return None/0
-        assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("plain") is None
-        assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("everything") is None
-        assert PricingEngine.BAGEL_TYPE_UPCHARGES.get("sesame") is None
+        """Test that regular bagels have no upcharge from database."""
+        menu_data = self.create_menu_data_with_bagel_types()
+
+        def menu_lookup(name: str):
+            for item in menu_data["all_items"]:
+                if item["name"].lower() == name.lower():
+                    return item
+            return None
+
+        pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
+
+        # Regular bagels should have $0 upcharge
+        assert pricing.get_bagel_type_upcharge("plain") == 0.0
+        assert pricing.get_bagel_type_upcharge("everything") == 0.0
+        assert pricing.get_bagel_type_upcharge("sesame") == 0.0

@@ -74,7 +74,6 @@ from .parsers import (
     parse_toasted_deterministic,
     parse_hot_iced_deterministic,
     # Constants - Drink categories
-    SODA_DRINK_TYPES,
     COFFEE_BEVERAGE_TYPES,
     is_soda_drink,
     # Constants - Number mapping

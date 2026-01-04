@@ -26,6 +26,7 @@ from ..schemas import (
     ParsedCoffeeEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
+    ParsedByPoundEntry,
     # By-the-pound orders
     ByPoundOrderItem,
 )
@@ -54,7 +55,7 @@ from .constants import (
     COFFEE_TYPO_MAP,
     COFFEE_BEVERAGE_TYPES,
     COMPOUND_TEA_NAMES,
-    SODA_DRINK_TYPES,
+    get_soda_types,
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,
     STORE_HOURS_PATTERNS,
@@ -1028,6 +1029,16 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
         "avocado", "bacon", "extra cheese",
     }
 
+    # Coffee-specific modifiers that should NOT be applied to menu items
+    coffee_modifiers = {
+        "oat milk", "almond milk", "soy milk", "coconut milk", "skim milk", "whole milk",
+        "oat", "almond", "soy", "coconut", "skim", "nonfat", "2%",
+        "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice", "cinnamon", "lavender",
+        "splenda", "stevia", "equal", "sweet n low", "honey",
+        "iced", "hot", "decaf", "black",
+        "small", "medium", "large",
+    }
+
     # Pattern for "with X and Y" or "with X, Y, and Z"
     with_pattern = re.search(
         r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted|on\s+\w+\s+bagel)|\s*$)',
@@ -1051,6 +1062,9 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
             parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
             for part in parts:
                 part = part.strip()
+                # Skip coffee-specific modifiers (oat milk, vanilla, etc.)
+                if part in coffee_modifiers:
+                    continue
                 # Check if it's a known addition or starts with "extra"
                 if part in known_additions or part.startswith('extra '):
                     modifications.append(part)
@@ -1058,7 +1072,7 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
                 elif part and len(part.split()) <= 2 and not re.search(r'\bbagel\b', part):
                     # Exclude common non-modifier words
                     skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
-                    if part not in skip_words:
+                    if part not in skip_words and part not in coffee_modifiers:
                         modifications.append(part)
 
     # Pattern for "no X" modifications
@@ -2038,11 +2052,15 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 
     Routes bottled beverages through new_menu_item for disambiguation,
     not new_coffee (which is reserved for sized beverages like coffee/tea).
+
+    Uses database-loaded soda types (via get_soda_types()) which includes
+    both item names and their aliases.
     """
     text_lower = text.lower()
+    soda_types = get_soda_types()
 
     drink_type = None
-    for soda in sorted(SODA_DRINK_TYPES, key=len, reverse=True):
+    for soda in sorted(soda_types, key=len, reverse=True):
         if re.search(rf'\b{re.escape(soda)}\b', text_lower):
             drink_type = soda
             break
@@ -2099,16 +2117,16 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 # Captures: quantity phrase + item name
 BY_POUND_PATTERN = re.compile(
     r"""
-    (?:i(?:'ll|\ will)?\ (?:have|take|get)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like)?
+    (?:i(?:'ll|\ will)?\ (?:have|take|get)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like|i\ need)?
     \s*
     (?:
-        (half\s+(?:a\s+)?(?:pound|lb))           # half a pound / half pound / half lb
-        |(\d+(?:\s*/\s*\d+)?)\s*(?:pound|lb)s?   # 1/4 pound, 2 pounds, 1 lb
-        |(a\s+(?:pound|lb))                      # a pound / a lb
-        |(quarter\s+(?:pound|lb))                # quarter pound / quarter lb
+        ((?:a\s+)?half\s+(?:a\s+)?(?:pound|lb))    # a half pound / half a pound / half pound / half lb
+        |(\d+(?:\s*/\s*\d+)?)\s*(?:pound|lb)s?     # 1/4 pound, 2 pounds, 1 lb
+        |(a\s+(?:pound|lb))                        # a pound / a lb
+        |((?:a\s+)?quarter\s+(?:pound|lb))         # a quarter pound / quarter pound / quarter lb
     )
     \s+(?:of\s+)?
-    (.+?)                                        # item name
+    (.+?)                                          # item name
     (?:\s+please)?
     \s*$
     """,
@@ -2685,6 +2703,8 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     speed_menu_bagel_modifications = None
     # NEW: parsed_items list for generic multi-item handling
     parsed_items: list = []
+    # By-the-pound items collection
+    by_pound_items: list[ByPoundOrderItem] = []
 
     # First pass: count how many parts have menu items
     # If only ONE part has a menu item, we should extract modifications from the ORIGINAL text
@@ -2725,6 +2745,20 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             ))
             logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d) via direct parse",
                         speed_menu_bagel_name, speed_menu_bagel_qty)
+            continue
+
+        # Try by-pound order BEFORE menu item extraction
+        # This prevents "quarter pound of plain cream cheese" from matching "Plain Cream Cheese Sandwich"
+        by_pound_result = _parse_by_pound_order(part)
+        if by_pound_result and by_pound_result.by_pound_items:
+            for bp_item in by_pound_result.by_pound_items:
+                by_pound_items.append(bp_item)
+                parsed_items.append(ParsedByPoundEntry(
+                    item_name=bp_item.item_name,
+                    quantity=bp_item.quantity,
+                    category=bp_item.category,
+                ))
+            logger.info("Multi-item: detected by-pound items: %s", by_pound_result.by_pound_items)
             continue
 
         item_name, item_qty = _extract_menu_item_from_text(part)
@@ -2898,8 +2932,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         bagel,
         side_item is not None,
         speed_menu_bagel,
+        len(by_pound_items) > 0,
     ])
-    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if speed_menu_bagel else 0)
+    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if speed_menu_bagel else 0) + len(by_pound_items)
 
     # Use parsed_items count as source of truth - it correctly tracks all items including
     # multiple bagels of different types (e.g., "plain bagel and sesame bagel")
@@ -2938,6 +2973,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_speed_menu_bagel_bagel_choice=speed_menu_bagel_bagel_choice,
             new_speed_menu_bagel_modifications=speed_menu_bagel_modifications or [],
             parsed_items=parsed_items,
+            by_pound_items=by_pound_items,
         )
 
     if menu_item_list:

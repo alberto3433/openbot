@@ -282,6 +282,7 @@ class SpeedMenuBagelHandler:
         item.bagel_choice = bagel_type
 
         # Calculate and apply bagel type upcharge (e.g., gluten free +$0.80)
+        # Bagel type upcharges are stored in the database (bagel_type attribute options)
         if self.pricing_engine:
             upcharge = self.pricing_engine.get_bagel_type_upcharge(bagel_type)
             item.bagel_choice_upcharge = upcharge
@@ -291,11 +292,12 @@ class SpeedMenuBagelHandler:
                 logger.info("Applied bagel choice upcharge: %s = +$%.2f, new price: $%.2f",
                            bagel_type, upcharge, item.unit_price)
         else:
-            # Fallback to static lookup if pricing_engine not available
-            upcharge = PricingEngine.BAGEL_TYPE_UPCHARGES.get(bagel_type.lower() if bagel_type else "", 0.0)
-            item.bagel_choice_upcharge = upcharge
-            if upcharge > 0:
-                item.unit_price = (item.unit_price or 0) + upcharge
+            # Pricing engine required for bagel type upcharges
+            logger.warning(
+                "Pricing engine not available for bagel type upcharge lookup. "
+                "Bagel choice '%s' will have no upcharge applied.", bagel_type
+            )
+            item.bagel_choice_upcharge = 0.0
 
         # Continue to ask for toasted if not set
         if item.toasted is None:

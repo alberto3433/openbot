@@ -121,6 +121,14 @@ class ParsedSideItemEntry(BaseModel):
     quantity: int = 1
 
 
+class ParsedByPoundEntry(BaseModel):
+    """A parsed by-the-pound item from multi-item detection."""
+    type: Literal["by_pound"] = "by_pound"
+    item_name: str  # Canonical name (e.g., "Plain Cream Cheese", "Nova Scotia Salmon (Lox)")
+    quantity: str  # e.g., "quarter lb", "half lb", "1 lb"
+    category: str | None = None  # e.g., "spread", "fish", "cheese"
+
+
 # Union type for dispatcher
 ParsedItem = Union[
     ParsedMenuItemEntry,
@@ -128,6 +136,7 @@ ParsedItem = Union[
     ParsedCoffeeEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
+    ParsedByPoundEntry,
 ]
 
 

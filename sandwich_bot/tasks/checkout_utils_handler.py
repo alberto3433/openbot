@@ -285,6 +285,22 @@ class CheckoutUtilsHandler:
                 message=f"{summary}\n\nDoes that look right?",
                 order=order,
             )
+        elif order.phase == OrderPhase.CHECKOUT_DELIVERY.value:
+            # Handle CHECKOUT_DELIVERY phase - could be asking for order type OR address
+            if order.delivery_method.order_type == "delivery":
+                # Order type already set to delivery, need address
+                logger.info("CHECKOUT: Asking for delivery address (order_type already set)")
+                return StateMachineResult(
+                    message="What's the delivery address?",
+                    order=order,
+                )
+            else:
+                # Order type not set yet, ask pickup/delivery
+                logger.info("CHECKOUT: Asking for pickup/delivery")
+                return StateMachineResult(
+                    message=self.get_delivery_question(),
+                    order=order,
+                )
         else:
             # Default: ask for delivery method
             return StateMachineResult(

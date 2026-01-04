@@ -237,6 +237,10 @@ class MenuItem(Base):
     # Example: "coke, coca cola" for "Coca-Cola" allows "coke" to match
     aliases = Column(String, nullable=True)
 
+    # By-the-pound category for items sold by weight
+    # Values: 'fish', 'spread', 'cheese', 'cold_cut', 'salad'
+    by_pound_category = Column(String, nullable=True)
+
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify
     # For "contains_X" flags: True if ANY ingredient contains the allergen

@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 from .schemas import OrderPhase
 from .parsers.constants import (
     NYC_NEIGHBORHOOD_ZIPS,
-    BY_POUND_ITEMS,
     BY_POUND_CATEGORY_NAMES,
+    get_by_pound_items,
     get_item_type_display_name,
 )
 
@@ -907,7 +907,8 @@ class QueryHandler:
                 if any(kw in name.lower() for kw in ["cream cheese", "spread", "butter"])
             ]
         else:
-            items = BY_POUND_ITEMS.get(category, [])
+            by_pound_items = get_by_pound_items()
+            items = by_pound_items.get(category, [])
         category_name = BY_POUND_CATEGORY_NAMES.get(category, category)
 
         if not items:

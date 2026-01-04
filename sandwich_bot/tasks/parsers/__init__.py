@@ -94,8 +94,9 @@ from .constants import (
     get_ambiguous_modifiers,
     # Speed menu items (loaded from database via dynamic function)
     get_speed_menu_bagels,
-    # By-the-pound items and categories
-    BY_POUND_ITEMS,
+    # By-the-pound items and categories (loaded from database via dynamic functions)
+    get_by_pound_items,
+    find_by_pound_item,
     BY_POUND_CATEGORY_NAMES,
     # Bagel modifiers
     BAGEL_PROTEINS,
@@ -208,8 +209,9 @@ __all__ = [
     "get_ambiguous_modifiers",
     # Constants - Speed menu items (loaded from database via dynamic function)
     "get_speed_menu_bagels",
-    # Constants - By-the-pound items and categories
-    "BY_POUND_ITEMS",
+    # Constants - By-the-pound items and categories (loaded from database via dynamic functions)
+    "get_by_pound_items",
+    "find_by_pound_item",
     "BY_POUND_CATEGORY_NAMES",
     # Constants - Bagel modifiers
     "BAGEL_PROTEINS",

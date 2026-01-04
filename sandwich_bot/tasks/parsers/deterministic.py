@@ -70,7 +70,8 @@ from .constants import (
     MODIFIER_CATEGORY_KEYWORDS,
     MODIFIER_ITEM_KEYWORDS,
     MORE_MENU_ITEMS_PATTERNS,
-    BY_POUND_ITEMS,
+    get_by_pound_items,
+    find_by_pound_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -2294,56 +2295,16 @@ def _find_by_pound_item_category(item_name: str) -> tuple[str, str] | None:
     """
     Find the category for a by-pound item.
 
+    Uses the menu cache to look up items by name or alias. The cache handles
+    exact matches, partial matches, and aliases (e.g., "lox" -> "Nova Scotia Salmon").
+
     Args:
-        item_name: The item name to look up (e.g., "whitefish salad", "muenster")
+        item_name: The item name to look up (e.g., "whitefish salad", "muenster", "lox")
 
     Returns:
         Tuple of (canonical_name, category) or None if not found.
     """
-    item_lower = item_name.lower().strip()
-
-    # First pass: look for exact matches
-    for category, items in BY_POUND_ITEMS.items():
-        for item in items:
-            item_check = item.lower()
-            if item_lower == item_check:
-                return (item, category)
-
-    # Second pass: look for best partial match (prefer longer/more specific matches)
-    best_match: tuple[str, str, int] | None = None  # (canonical_name, category, match_length)
-
-    for category, items in BY_POUND_ITEMS.items():
-        for item in items:
-            item_check = item.lower()
-
-            # Check if input contains the item name or vice versa
-            if item_lower in item_check:
-                # Input is substring of item (e.g., "whitefish" in "Whitefish Salad")
-                # Only match if item_check is longer - we want the specific item
-                match_len = len(item_check)
-                if best_match is None or match_len > best_match[2]:
-                    best_match = (item, category, match_len)
-            elif item_check in item_lower:
-                # Item is substring of input (e.g., "whitefish salad" contains "whitefish")
-                # Prefer matches where more of the input is covered
-                match_len = len(item_check)
-                if best_match is None or match_len > best_match[2]:
-                    best_match = (item, category, match_len)
-
-    if best_match:
-        return (best_match[0], best_match[1])
-
-    # Third pass: handle aliases like "lox" -> "Nova Scotia Salmon (Lox)"
-    alias_map = {
-        "lox": ("Nova Scotia Salmon (Lox)", "fish"),
-        "nova": ("Nova Scotia Salmon (Lox)", "fish"),
-        "salmon": ("Nova Scotia Salmon (Lox)", "fish"),
-        "sturgeon": ("Smoked Sturgeon", "fish"),
-    }
-    if item_lower in alias_map:
-        return alias_map[item_lower]
-
-    return None
+    return find_by_pound_item(item_name)
 
 
 def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
@@ -2392,7 +2353,7 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
     else:
         quantity = "1 lb"
 
-    # Look up the item in BY_POUND_ITEMS
+    # Look up the item in database via find_by_pound_item
     result = _find_by_pound_item_category(item_name)
     if not result:
         logger.debug("By-pound pattern matched but item not found: '%s'", item_name)

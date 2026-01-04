@@ -83,7 +83,6 @@ from .parsers import (
     get_spreads,
     get_spread_types,
     # Constants - By-the-pound items and categories
-    BY_POUND_ITEMS,
     BY_POUND_CATEGORY_NAMES,
     # Constants - Bagel modifiers
     BAGEL_PROTEINS,
@@ -274,6 +273,25 @@ def _check_redirect_to_pending_item(
     return None
 
 
+# Global menu data for tests - set by conftest.py fixture
+_global_menu_data: dict | None = None
+
+
+def set_global_menu_data(menu_data: dict | None) -> None:
+    """Set global menu data for use when OrderStateMachine is created without menu_data.
+
+    This is primarily used by test fixtures to provide menu data without
+    requiring each test to explicitly pass it.
+    """
+    global _global_menu_data
+    _global_menu_data = menu_data
+
+
+def get_global_menu_data() -> dict | None:
+    """Get global menu data if set."""
+    return _global_menu_data
+
+
 class OrderStateMachine:
     """
     State machine for order capture.
@@ -284,7 +302,8 @@ class OrderStateMachine:
     """
 
     def __init__(self, menu_data: dict | None = None, model: str = "gpt-4o-mini"):
-        self._menu_data = menu_data or {}
+        # Use provided menu_data, fall back to global, then empty dict
+        self._menu_data = menu_data if menu_data is not None else (_global_menu_data or {})
         self.model = model
         # Build spread types from database cheese_types
         self._spread_types = _build_spread_types_from_menu(

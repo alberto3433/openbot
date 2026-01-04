@@ -13,7 +13,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult, ByPoundOrderItem
 from .parsers import parse_by_pound_category
-from .parsers.constants import BY_POUND_ITEMS, BY_POUND_CATEGORY_NAMES
+from .parsers.constants import get_by_pound_items, BY_POUND_CATEGORY_NAMES
 
 if TYPE_CHECKING:
     from .pricing_engine import PricingEngine
@@ -117,7 +117,8 @@ class ByPoundHandler:
                 if any(kw in name.lower() for kw in ["cream cheese", "spread", "butter"])
             ]
         else:
-            items = BY_POUND_ITEMS.get(category, [])
+            by_pound_items = get_by_pound_items()
+            items = by_pound_items.get(category, [])
         category_name = BY_POUND_CATEGORY_NAMES.get(category, category)
 
         if not items:

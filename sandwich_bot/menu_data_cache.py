@@ -76,6 +76,10 @@ class MenuDataCache:
         self._soda_alias_to_canonical: dict[str, str] = {}
         self._speed_menu_bagels: dict[str, str] = {}  # alias -> menu item name
 
+        # By-the-pound items
+        self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
+        self._by_pound_aliases: dict[str, tuple[str, str]] = {}  # alias -> (canonical_name, category)
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
@@ -128,6 +132,7 @@ class MenuDataCache:
                 self._load_soda_types(db)
                 self._load_known_menu_items(db)
                 self._load_speed_menu_bagels(db)
+                self._load_by_pound_items(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -138,7 +143,8 @@ class MenuDataCache:
                 logger.info(
                     "Menu data cache loaded: %d spread_types, %d bagel_types, "
                     "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
-                    "%d soda_types, %d menu_items, %d speed_menu_aliases",
+                    "%d soda_types, %d menu_items, %d speed_menu_aliases, "
+                    "%d by_pound_categories",
                     len(self._spread_types),
                     len(self._bagel_types),
                     len(self._proteins),
@@ -148,6 +154,7 @@ class MenuDataCache:
                     len(self._soda_types),
                     len(self._known_menu_items),
                     len(self._speed_menu_bagels),
+                    len(self._by_pound_items),
                 )
 
             except Exception as e:
@@ -354,6 +361,9 @@ class MenuDataCache:
                 "tomato", "tomatoes", "onion", "onions", "red onion",
                 "lettuce", "capers", "cucumber", "cucumbers",
                 "pickles", "pickle", "sauerkraut", "sprouts",
+                "spinach", "mushroom", "mushrooms",
+                "green pepper", "green peppers", "red pepper", "red peppers",
+                "bell pepper", "bell peppers",
                 "everything seeds", "mayo", "mayonnaise", "mustard",
                 "ketchup", "hot sauce", "salt", "pepper",
             }
@@ -533,6 +543,71 @@ class MenuDataCache:
             len(items_with_aliases),
         )
 
+    def _load_by_pound_items(self, db: Session) -> None:
+        """Load by-the-pound items organized by category.
+
+        Builds two data structures:
+        1. _by_pound_items: dict mapping category (fish, spread, etc.) to list of item names
+        2. _by_pound_aliases: dict mapping aliases to (canonical_name, category) tuples
+
+        This replaces the hardcoded BY_POUND_ITEMS constant.
+        """
+        import re
+        from .models import MenuItem
+
+        by_pound_items: dict[str, list[str]] = {}
+        by_pound_aliases: dict[str, tuple[str, str]] = {}
+
+        # Query items with by_pound_category set
+        items = (
+            db.query(MenuItem)
+            .filter(MenuItem.by_pound_category.isnot(None))
+            .order_by(MenuItem.by_pound_category, MenuItem.name)
+            .all()
+        )
+
+        # Group items by category and extract base names (without weight suffix)
+        seen_base_names: dict[str, str] = {}  # Track which base names we've seen per category
+
+        for item in items:
+            category = item.by_pound_category
+            name = item.name
+
+            # Extract base name without weight suffix: "Nova Scotia Salmon (1 lb)" -> "Nova Scotia Salmon"
+            base_name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+
+            # Skip if we've already processed this base name for this category
+            category_key = f"{category}:{base_name}"
+            if category_key in seen_base_names:
+                continue
+            seen_base_names[category_key] = base_name
+
+            # Add to category list
+            if category not in by_pound_items:
+                by_pound_items[category] = []
+            by_pound_items[category].append(base_name)
+
+            # Add base name as alias
+            base_name_lower = base_name.lower()
+            by_pound_aliases[base_name_lower] = (base_name, category)
+
+            # Add aliases if present
+            if item.aliases:
+                for alias in item.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        by_pound_aliases[alias] = (base_name, category)
+
+        self._by_pound_items = by_pound_items
+        self._by_pound_aliases = by_pound_aliases
+
+        logger.debug(
+            "Loaded %d by-pound categories with %d total items and %d aliases",
+            len(by_pound_items),
+            sum(len(items) for items in by_pound_items.values()),
+            len(by_pound_aliases),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -636,6 +711,83 @@ class MenuDataCache:
             Returns empty dict if cache not loaded.
         """
         return self._speed_menu_bagels.copy() if self._is_loaded else {}
+
+    def get_by_pound_items(self) -> dict[str, list[str]]:
+        """Get by-the-pound items organized by category.
+
+        Returns a dict mapping category names (fish, spread, cheese, cold_cut, salad)
+        to lists of item names available in that category.
+
+        Returns:
+            Dict mapping category -> list of item names.
+            Returns empty dict if cache not loaded.
+
+        Example:
+            {
+                "fish": ["Nova Scotia Salmon", "Whitefish Salad", "Sable", ...],
+                "spread": ["Plain Cream Cheese", "Scallion Cream Cheese", ...],
+            }
+        """
+        # Return deep copy to prevent mutation
+        if not self._is_loaded:
+            return {}
+        return {k: list(v) for k, v in self._by_pound_items.items()}
+
+    def get_by_pound_aliases(self) -> dict[str, tuple[str, str]]:
+        """Get by-the-pound item alias mapping.
+
+        Returns a dict mapping user input aliases to (canonical_name, category) tuples.
+        This is used for recognizing by-pound orders like "lox", "nova", "whitefish".
+
+        Returns:
+            Dict mapping lowercase alias -> (canonical_name, category).
+            Returns empty dict if cache not loaded.
+
+        Example:
+            {
+                "lox": ("Nova Scotia Salmon", "fish"),
+                "nova": ("Nova Scotia Salmon", "fish"),
+                "scallion": ("Scallion Cream Cheese", "spread"),
+            }
+        """
+        return self._by_pound_aliases.copy() if self._is_loaded else {}
+
+    def find_by_pound_item(self, item_name: str) -> tuple[str, str] | None:
+        """Find a by-pound item and its category by name or alias.
+
+        Args:
+            item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
+
+        Returns:
+            Tuple of (canonical_name, category) if found, None otherwise.
+        """
+        if not self._is_loaded:
+            return None
+
+        item_lower = item_name.lower().strip()
+
+        # Check direct alias match
+        if item_lower in self._by_pound_aliases:
+            return self._by_pound_aliases[item_lower]
+
+        # Try partial matching
+        best_match: tuple[str, str, int] | None = None  # (canonical_name, category, match_length)
+
+        for alias, (canonical_name, category) in self._by_pound_aliases.items():
+            # Check if input contains the alias or vice versa
+            if item_lower in alias:
+                match_len = len(alias)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (canonical_name, category, match_len)
+            elif alias in item_lower:
+                match_len = len(alias)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (canonical_name, category, match_len)
+
+        if best_match:
+            return (best_match[0], best_match[1])
+
+        return None
 
     def get_bagel_only_types(self) -> set[str]:
         """Get bagel types that are NOT also spread types.
@@ -847,6 +999,8 @@ class MenuDataCache:
                 "coffee_types": len(self._coffee_types),
                 "soda_types": len(self._soda_types),
                 "known_menu_items": len(self._known_menu_items),
+                "by_pound_categories": len(self._by_pound_items),
+                "by_pound_aliases": len(self._by_pound_aliases),
             },
             "keyword_indices": {
                 "spread_keywords": len(self._spread_keyword_index),

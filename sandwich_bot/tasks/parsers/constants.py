@@ -86,54 +86,13 @@ WORD_TO_NUM = {
 # The aliases are stored in the `aliases` column of menu_items table.
 
 # =============================================================================
-# By-the-Pound Items and Prices
+# By-the-Pound Items and Categories
 # =============================================================================
 
-BY_POUND_ITEMS = {
-    "cheese": [
-        "Muenster",
-        "Swiss",
-        "American",
-        "Cheddar",
-        "Provolone",
-        "Gouda",
-    ],
-    "spread": [
-        "Plain Cream Cheese",
-        "Scallion Cream Cheese",
-        "Vegetable Cream Cheese",
-        "Lox Spread",
-        "Jalapeño Cream Cheese",
-        "Honey Walnut Cream Cheese",
-        "Strawberry Cream Cheese",
-        "Olive Cream Cheese",
-        "Tofu Cream Cheese",
-    ],
-    "cold_cut": [
-        "Turkey Breast",
-        "Roast Beef",
-        "Pastrami",
-        "Corned Beef",
-        "Ham",
-        "Salami",
-        "Bologna",
-    ],
-    "fish": [
-        "Nova Scotia Salmon (Lox)",
-        "Baked Salmon",
-        "Sable",
-        "Whitefish",
-        "Kippered Salmon",
-        "Smoked Sturgeon",
-    ],
-    "salad": [
-        "Tuna Salad",
-        "Egg Salad",
-        "Chicken Salad",
-        "Whitefish Salad",
-        "Baked Salmon Salad",
-    ],
-}
+# Note: BY_POUND_ITEMS has been moved to the database.
+# Items are loaded from menu_items with by_pound_category column set.
+# Use get_by_pound_items() to get the category -> item names mapping.
+# Use find_by_pound_item() to look up an item by name or alias.
 
 BY_POUND_CATEGORY_NAMES = {
     "cheese": "cheeses",
@@ -182,6 +141,11 @@ BAGEL_TOPPINGS = {
     "pickles", "pickle",
     "sauerkraut",
     "sprouts",
+    "spinach",
+    "mushroom", "mushrooms",
+    "green pepper", "green peppers",
+    "red pepper", "red peppers",
+    "bell pepper", "bell peppers",
     "everything seeds",
     "mayo", "mayonnaise",
     "mustard",
@@ -217,6 +181,10 @@ MODIFIER_NORMALIZATIONS = {
     "red onions": "red onion",
     "cucumbers": "cucumber",
     "pickles": "pickle",
+    "mushrooms": "mushroom",
+    "green peppers": "green pepper",
+    "red peppers": "red pepper",
+    "bell peppers": "bell pepper",
     # Spreads
     "plain cream cheese": "cream cheese",
     "veggie cream cheese": "vegetable cream cheese",
@@ -1405,6 +1373,46 @@ def get_speed_menu_bagels() -> dict[str, str]:
     raise RuntimeError(
         "Speed menu bagels not available. Ensure menu_data_cache is loaded from the database."
     )
+
+
+def get_by_pound_items() -> dict[str, list[str]]:
+    """
+    Get by-the-pound items organized by category from database.
+
+    Returns a dict mapping category names (fish, spread, cheese, cold_cut, salad)
+    to lists of item names available in that category.
+
+    Returns:
+        Dict mapping category -> list of item names.
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        cached = cache.get_by_pound_items()
+        if cached:  # Empty dict means cache not loaded
+            return cached
+    raise RuntimeError(
+        "By-pound items not available. Ensure menu_data_cache is loaded from the database."
+    )
+
+
+def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
+    """
+    Find a by-pound item and its category by name or alias.
+
+    Args:
+        item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
+
+    Returns:
+        Tuple of (canonical_name, category) if found, None otherwise.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.find_by_pound_item(item_name)
+    return None
 
 
 def resolve_coffee_alias(name: str) -> str:

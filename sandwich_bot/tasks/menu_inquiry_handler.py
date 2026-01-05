@@ -437,7 +437,8 @@ class MenuInquiryHandler:
 
         if not menu_query_type:
             # Generic "what do you have?" - list available types
-            available_types = [get_item_type_display_name(t) for t, items in items_by_type.items() if items]
+            display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
+            available_types = [get_item_type_display_name(t, display_names) for t, items in items_by_type.items() if items]
             if available_types:
                 return StateMachineResult(
                     message=f"We have: {', '.join(available_types)}. What would you like?",
@@ -508,8 +509,9 @@ class MenuInquiryHandler:
 
         if not items:
             # Try to suggest what we do have
-            available_types = [get_item_type_display_name(t) for t, i in items_by_type.items() if i]
-            type_display = get_item_type_display_name(menu_query_type)
+            display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
+            available_types = [get_item_type_display_name(t, display_names) for t, i in items_by_type.items() if i]
+            type_display = get_item_type_display_name(menu_query_type, display_names)
             if available_types:
                 return StateMachineResult(
                     message=f"We have {', '.join(available_types)}. What would you like?",

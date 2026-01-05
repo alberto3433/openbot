@@ -62,7 +62,6 @@ from .constants import (
     RECOMMENDATION_PATTERNS,
     ITEM_DESCRIPTION_PATTERNS,
     MODIFIER_INQUIRY_PATTERNS,
-    MODIFIER_CATEGORY_KEYWORDS,
     MODIFIER_ITEM_KEYWORDS,
     MORE_MENU_ITEMS_PATTERNS,
     get_by_pound_items,
@@ -2663,9 +2662,20 @@ def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
     return None
 
 
-def _parse_modifier_inquiry(text: str) -> OpenInputResponse | None:
-    """Parse modifier/add-on inquiry questions."""
+def _parse_modifier_inquiry(
+    text: str,
+    modifier_category_keywords: dict[str, str] | None = None,
+) -> OpenInputResponse | None:
+    """Parse modifier/add-on inquiry questions.
+
+    Args:
+        text: User input text to parse
+        modifier_category_keywords: Mapping of keywords to category slugs
+            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
+            If None, modifier category detection is skipped but item detection still works.
+    """
     text_lower = text.lower().strip()
+    keywords = modifier_category_keywords or {}
 
     for pattern, item_group, category_group in MODIFIER_INQUIRY_PATTERNS:
         match = pattern.search(text_lower)
@@ -2694,14 +2704,14 @@ def _parse_modifier_inquiry(text: str) -> OpenInputResponse | None:
             if item_text:
                 item_type = MODIFIER_ITEM_KEYWORDS.get(item_text.lower())
                 # If item_text doesn't match known items, it might be a category
-                if not item_type and item_text.lower() in MODIFIER_CATEGORY_KEYWORDS:
+                if not item_type and item_text.lower() in keywords:
                     category_text = item_text
                     item_text = None
 
             # Normalize category
             category = None
             if category_text:
-                category = MODIFIER_CATEGORY_KEYWORDS.get(category_text.lower())
+                category = keywords.get(category_text.lower())
 
             # Only return if we have a valid item or category
             if item_type or category:
@@ -2981,6 +2991,52 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             logger.info("Multi-item: detected by-pound items: %s", by_pound_result.by_pound_items)
             continue
 
+        # Try coffee detection BEFORE menu item extraction
+        # This prevents "latte" from being matched as a menu item instead of coffee
+        coffee_result = _parse_coffee_deterministic(part)
+        if coffee_result and coffee_result.new_coffee:
+            # Track coffee for new_coffee_* fields in return (backwards compat)
+            if not coffee_list:
+                coffee_list.append(CoffeeOrderDetails(
+                    drink_type=coffee_result.new_coffee_type or "coffee",
+                    size=coffee_result.new_coffee_size,
+                    iced=coffee_result.new_coffee_iced,
+                    decaf=coffee_result.new_coffee_decaf,
+                    quantity=coffee_result.new_coffee_quantity or 1,
+                    milk=coffee_result.new_coffee_milk,
+                    special_instructions=coffee_result.new_coffee_special_instructions,
+                ))
+            # Build sweeteners list from parsed values
+            sweeteners = []
+            if coffee_result.new_coffee_sweetener:
+                sweeteners.append(SweetenerItem(
+                    type=coffee_result.new_coffee_sweetener,
+                    quantity=coffee_result.new_coffee_sweetener_quantity or 1,
+                ))
+            # Build syrups list from parsed values
+            syrups = []
+            if coffee_result.new_coffee_flavor_syrup:
+                syrups.append(SyrupItem(
+                    type=coffee_result.new_coffee_flavor_syrup,
+                    quantity=getattr(coffee_result, 'new_coffee_syrup_quantity', 1) or 1,
+                ))
+            # Add to parsed_items for generic handling
+            parsed_items.append(ParsedCoffeeEntry(
+                drink_type=coffee_result.new_coffee_type or "coffee",
+                size=coffee_result.new_coffee_size,
+                temperature="iced" if coffee_result.new_coffee_iced else ("hot" if coffee_result.new_coffee_iced is False else None),
+                milk=coffee_result.new_coffee_milk,
+                quantity=coffee_result.new_coffee_quantity or 1,
+                special_instructions=coffee_result.new_coffee_special_instructions,
+                decaf=coffee_result.new_coffee_decaf,
+                sweeteners=sweeteners,
+                syrups=syrups,
+            ))
+            logger.info("Multi-item: detected coffee '%s' (qty=%d, size=%s, iced=%s, milk=%s) via direct parse",
+                        coffee_result.new_coffee_type, coffee_result.new_coffee_quantity or 1,
+                        coffee_result.new_coffee_size, coffee_result.new_coffee_iced, coffee_result.new_coffee_milk)
+            continue
+
         item_name, item_qty = _extract_menu_item_from_text(part)
         if item_name:
             bagel_choice = _extract_bagel_type(part)
@@ -3162,6 +3218,9 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         first_coffee = coffee_list[0] if coffee_list else None
         logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s, parsed_items=%d",
                     len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name, len(parsed_items))
+        # DIAGNOSTIC: Log each parsed item type and key details
+        for idx, pitem in enumerate(parsed_items):
+            logger.info("DIAG: parsed_items[%d] = type=%s, details=%s", idx, type(pitem).__name__, pitem)
         return OpenInputResponse(
             new_menu_item=first_menu_item.name if first_menu_item else None,
             new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,
@@ -3269,9 +3328,19 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 # Main Deterministic Parser
 # =============================================================================
 
-def parse_open_input_deterministic(user_input: str, spread_types: set[str] | None = None) -> OpenInputResponse | None:
+def parse_open_input_deterministic(
+    user_input: str,
+    spread_types: set[str] | None = None,
+    modifier_category_keywords: dict[str, str] | None = None,
+) -> OpenInputResponse | None:
     """
     Try to parse user input deterministically without LLM.
+
+    Args:
+        user_input: The user's input string
+        spread_types: Optional set of spread type keywords from database
+        modifier_category_keywords: Mapping of keywords to category slugs
+            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
 
     Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
     """
@@ -3338,7 +3407,7 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
         return item_desc_result
 
     # Check for modifier/add-on inquiries
-    modifier_inquiry_result = _parse_modifier_inquiry(text)
+    modifier_inquiry_result = _parse_modifier_inquiry(text, modifier_category_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
 
@@ -3563,13 +3632,19 @@ def parse_open_input_deterministic(user_input: str, spread_types: set[str] | Non
     # as menu items rather than just "everything bagel"
     menu_item, qty = _extract_menu_item_from_text(text)
     if menu_item:
-        toasted = _extract_toasted(text)
-        bagel_choice = _extract_bagel_type(text)
-        modifications = _extract_menu_item_modifications(text)
-        logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
-        # Build parsed_items for unified handler (Phase 8 dual-write)
-        menu_item_parsed_items = [_build_menu_item_parsed_item(menu_item_name=menu_item, quantity=1, bagel_type=bagel_choice, toasted=toasted, modifiers=modifications) for _ in range(qty)]
-        return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications, parsed_items=menu_item_parsed_items)
+        # Skip if this is a coffee type - let coffee parser handle it instead
+        # This ensures espresso, latte, etc. are processed as coffee items with proper config
+        coffee_types = get_coffee_types()
+        if menu_item.lower() not in coffee_types:
+            toasted = _extract_toasted(text)
+            bagel_choice = _extract_bagel_type(text)
+            modifications = _extract_menu_item_modifications(text)
+            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
+            # Build parsed_items for unified handler (Phase 8 dual-write)
+            menu_item_parsed_items = [_build_menu_item_parsed_item(menu_item_name=menu_item, quantity=1, bagel_type=bagel_choice, toasted=toasted, modifiers=modifications) for _ in range(qty)]
+            return OpenInputResponse(new_menu_item=menu_item, new_menu_item_quantity=qty, new_menu_item_toasted=toasted, new_menu_item_bagel_choice=bagel_choice, new_menu_item_modifications=modifications, parsed_items=menu_item_parsed_items)
+        else:
+            logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s' - is a coffee type, letting coffee parser handle it", menu_item)
 
     # Check for bagel order with quantity
     quantity_match = BAGEL_QUANTITY_PATTERN.search(text)

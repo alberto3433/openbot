@@ -14,6 +14,7 @@ from .models import (
     OrderTask,
     BagelItemTask,
     CoffeeItemTask,
+    EspressoItemTask,
     MenuItemTask,
     SpeedMenuBagelItemTask,
 )
@@ -228,6 +229,29 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
             if coffee.drink_type and coffee.iced is not None:
                 coffee.mark_complete()
             order.items.add_item(coffee)
+
+        elif item_type == "espresso":
+            # Espresso drinks (single, double, triple espresso)
+            item_config = item.get("item_config") or {}
+            espresso = EspressoItemTask(
+                shots=item_config.get("shots", 1),
+                decaf=item_config.get("decaf"),
+                special_instructions=item.get("special_instructions") or item.get("notes"),
+            )
+            # Preserve item ID if provided
+            if item.get("id"):
+                espresso.id = item["id"]
+            # Restore status
+            if item.get("status"):
+                espresso.status = TaskStatus(item["status"])
+            # Set price if available
+            if item.get("unit_price"):
+                espresso.unit_price = item["unit_price"]
+            # Restore upcharge
+            espresso.extra_shots_upcharge = item_config.get("extra_shots_upcharge", 0.0)
+            # Espresso is always complete (no configuration needed)
+            espresso.mark_complete()
+            order.items.add_item(espresso)
 
         elif item_type == "speed_menu_bagel":
             # Speed menu bagel (pre-configured sandwiches like "The Classic")
@@ -673,6 +697,63 @@ def order_task_to_dict(
                     "modifiers": modifiers,
                     "free_details": free_details,
                     "base_price": base_price,
+                },
+                "quantity": 1,
+                "unit_price": item.unit_price,
+                "line_total": item.unit_price if item.unit_price else 0,
+                "special_instructions": getattr(item, 'special_instructions', None),
+            }
+            items.append(item_dict)
+
+        elif item.item_type == "espresso":
+            # Espresso drinks (single, double, triple espresso)
+            shots = getattr(item, 'shots', 1)
+            decaf = getattr(item, 'decaf', None)
+            extra_shots_upcharge = getattr(item, 'extra_shots_upcharge', 0.0) or 0.0
+
+            # Build display name
+            display_parts = []
+            if decaf is True:
+                display_parts.append("decaf")
+            if shots == 2:
+                display_parts.append("double")
+            elif shots >= 3:
+                display_parts.append("triple")
+            display_parts.append("espresso")
+            display_name = " ".join(display_parts)
+
+            # Build modifiers list
+            modifiers = []
+            free_details = []
+
+            # Extra shots with upcharge
+            if shots > 1 and extra_shots_upcharge > 0:
+                shot_name = "double shot" if shots == 2 else "triple shot"
+                modifiers.append({"name": shot_name, "price": extra_shots_upcharge})
+            elif shots > 1:
+                shot_name = "double shot" if shots == 2 else "triple shot"
+                free_details.append(shot_name)
+
+            # Decaf - always free
+            if decaf is True:
+                free_details.append("decaf")
+
+            # Calculate base price (total - upcharges)
+            total_price = item.unit_price or 0
+            base_price = total_price - extra_shots_upcharge
+
+            item_dict = {
+                "item_type": "espresso",
+                "id": item.id,
+                "status": item.status.value,
+                "menu_item_name": display_name,
+                "base_price": base_price,
+                "modifiers": modifiers,
+                "free_details": free_details,
+                "item_config": {
+                    "shots": shots,
+                    "decaf": decaf,
+                    "extra_shots_upcharge": extra_shots_upcharge,
                 },
                 "quantity": 1,
                 "unit_price": item.unit_price,

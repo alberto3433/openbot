@@ -485,14 +485,8 @@ def normalize_for_match(s: str) -> str:
 # Item Type Display Names
 # =============================================================================
 
-# Map item type slugs to user-friendly plural display names
-# Used when listing available menu categories
-# If a slug is not in this map, the default behavior is to pluralize automatically
-ITEM_TYPE_DISPLAY_NAMES = {
-    "by_the_lb": "food by the pound",  # Already sounds natural, no change needed
-    "cream_cheese": "cream cheeses",  # Irregular
-    "sized_beverage": "coffees and teas",  # More user-friendly than "sized beverages"
-}
+# Display name pluralization is now stored in the database (item_types.display_name_plural)
+# and loaded into menu_data["item_type_display_names"] by menu_index_builder.py
 
 
 def _pluralize(word: str) -> str:
@@ -519,22 +513,24 @@ def _pluralize(word: str) -> str:
     return word + 's'
 
 
-def get_item_type_display_name(slug: str) -> str:
+def get_item_type_display_name(slug: str, display_names: dict = None) -> str:
     """
     Convert an item type slug to a user-friendly plural display name.
 
-    Uses ITEM_TYPE_DISPLAY_NAMES for special cases, otherwise
+    Uses the display_names mapping (from menu data) for special cases, otherwise
     converts underscores to spaces and pluralizes the last word.
 
     Args:
         slug: The item type slug (e.g., 'by_the_lb', 'egg_sandwich')
+        display_names: Optional mapping from slug to custom display name
+                       (typically from menu_data["item_type_display_names"])
 
     Returns:
         Plural display name (e.g., 'food by the pound', 'egg sandwiches')
     """
-    # Check for special cases first
-    if slug in ITEM_TYPE_DISPLAY_NAMES:
-        return ITEM_TYPE_DISPLAY_NAMES[slug]
+    # Check for custom display name from database
+    if display_names and slug in display_names:
+        return display_names[slug]
 
     # Convert underscores to spaces
     display = slug.replace("_", " ")
@@ -572,44 +568,9 @@ ITEM_DESCRIPTION_PATTERNS = [
 # Modifier/Add-on Inquiry Patterns
 # =============================================================================
 
-# Modifier categories and their keywords
-MODIFIER_CATEGORY_KEYWORDS: dict[str, str] = {
-    "sweetener": "sweeteners",
-    "sweeteners": "sweeteners",
-    "sugar": "sweeteners",
-    "sugars": "sweeteners",
-    "milk": "milks",
-    "milks": "milks",
-    "cream": "milks",
-    "dairy": "milks",
-    "syrup": "syrups",
-    "syrups": "syrups",
-    "flavor": "syrups",
-    "flavors": "syrups",
-    "flavor syrup": "syrups",
-    "flavor syrups": "syrups",
-    "spread": "spreads",
-    "spreads": "spreads",
-    "cream cheese": "spreads",
-    "topping": "toppings",
-    "toppings": "toppings",
-    "bagel topping": "toppings",  # Added to handle "what kind of bagel toppings"
-    "bagel toppings": "toppings",  # Added to handle "what kind of bagel toppings"
-    "protein": "proteins",
-    "proteins": "proteins",
-    "meat": "proteins",
-    "meats": "proteins",
-    "cheese": "cheeses",
-    "cheeses": "cheeses",
-    "condiment": "condiments",
-    "condiments": "condiments",
-    "add-on": "add-ons",
-    "add-ons": "add-ons",
-    "addon": "add-ons",
-    "addons": "add-ons",
-    "extra": "extras",
-    "extras": "extras",
-}
+# Note: MODIFIER_CATEGORY_KEYWORDS was moved to the database (modifier_categories table)
+# - use menu_data["modifier_categories"]["keyword_to_category"] instead
+# - see migration j0k1l2m3n4o5_add_modifier_categories_table.py
 
 # Item types for modifier inquiries
 MODIFIER_ITEM_KEYWORDS: dict[str, str] = {

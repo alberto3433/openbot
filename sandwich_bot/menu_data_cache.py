@@ -451,8 +451,8 @@ class MenuDataCache:
     def _load_coffee_types(self, db: Session) -> None:
         """Load coffee/tea beverage types from menu items.
 
-        Uses item_type='sized_beverage' to identify coffee/tea drinks that need
-        configuration (size, hot/iced).
+        Uses item_type='sized_beverage' or 'espresso' to identify coffee/tea drinks
+        that need configuration.
 
         Includes both item names and their aliases for matching user input.
         Also builds a mapping from aliases to canonical names.
@@ -462,11 +462,12 @@ class MenuDataCache:
         coffee_types = set()
         alias_to_canonical = {}
 
-        # Query sized_beverage items (coffee/tea that need configuration)
+        # Query sized_beverage and espresso items (coffee/tea that need configuration)
+        # Espresso is a separate item type but should be recognized as a coffee for parsing
         coffee_items = (
             db.query(MenuItem)
             .join(ItemType, MenuItem.item_type_id == ItemType.id)
-            .filter(ItemType.slug == "sized_beverage")
+            .filter(ItemType.slug.in_(["sized_beverage", "espresso"]))
             .all()
         )
 

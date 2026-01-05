@@ -18,6 +18,7 @@ from .models import (
     MenuItemTask,
     BagelItemTask,
     CoffeeItemTask,
+    EspressoItemTask,
     SpeedMenuBagelItemTask,
     ItemTask,
 )
@@ -209,6 +210,8 @@ def _get_pending_item_description(item: "ItemTask") -> str:
         return item.menu_item_name or "item"
     elif isinstance(item, CoffeeItemTask):
         return item.drink_type or "coffee"
+    elif isinstance(item, EspressoItemTask):
+        return item.get_display_name()
     elif isinstance(item, SpeedMenuBagelItemTask):
         return item.speed_menu_name or "bagel"
     return "item"
@@ -476,6 +479,7 @@ class OrderStateMachine:
             is_repeat_order=getattr(self, '_is_repeat_order', False),
             last_order_type=getattr(self, '_last_order_type', None),
             spread_types=self._spread_types,
+            menu_data=self._menu_data,
         )
         # Update store info handler with current store info
         self.store_info_handler.set_store_info(self._store_info)

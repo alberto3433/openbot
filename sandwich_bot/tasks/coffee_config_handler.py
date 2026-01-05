@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
-from .models import CoffeeItemTask, OrderTask, ItemTask, TaskStatus
+from .models import CoffeeItemTask, EspressoItemTask, OrderTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import (
     parse_coffee_size,
@@ -318,6 +318,27 @@ class CoffeeConfigHandler:
                 order.pending_field = "drink_selection"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
+                # Store original modifiers so they can be applied when user clarifies drink type
+                # This preserves "large iced oat milk vanilla" when user clarifies "latte" vs "matcha latte"
+                order.pending_coffee_modifiers = {
+                    "size": size,
+                    "iced": iced,
+                    "milk": milk,
+                    "sweetener": sweetener,
+                    "sweetener_quantity": sweetener_quantity,
+                    "flavor_syrup": flavor_syrup,
+                    "syrup_quantity": syrup_quantity,
+                    "decaf": decaf,
+                    "cream_level": cream_level,
+                    "extra_shots": extra_shots,
+                    "special_instructions": special_instructions,
+                    "quantity": quantity,
+                }
+                logger.info(
+                    "ADD COFFEE: Stored modifiers for drink_selection disambiguation: size=%s, iced=%s, milk=%s, syrup=%s",
+                    size, iced, milk, flavor_syrup
+                )
+
                 # Build the clarification message
                 option_list = []
                 for i, item in enumerate(matching_items, 1):
@@ -383,6 +404,36 @@ class CoffeeConfigHandler:
                 )
                 drink.mark_complete()  # No configuration needed
                 order.items.add_item(drink)
+
+            # Return to taking items
+            order.clear_pending()
+            return self._get_next_question(order)
+
+        # Check if this is an espresso drink - use EspressoItemTask instead
+        is_espresso = coffee_type_lower == "espresso"
+        if is_espresso:
+            # Espresso drinks don't need size or hot/iced configuration
+            # Calculate shots: 1 = single (default), 2 = double, 3 = triple
+            shots = 1 + extra_shots  # extra_shots: 0=single, 1=double, 2=triple
+
+            for _ in range(quantity):
+                espresso = EspressoItemTask(
+                    shots=shots,
+                    decaf=decaf,
+                    unit_price=price,
+                    special_instructions=special_instructions,
+                )
+                # Calculate upcharges for extra shots if pricing is available
+                if self.pricing and shots > 1:
+                    # Use the same pricing logic as recalculate_coffee_price
+                    if shots == 2:
+                        extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("double_shot", "extras")
+                    else:  # shots >= 3
+                        extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("triple_shot", "extras")
+                    espresso.extra_shots_upcharge = extra_shots_upcharge
+                    espresso.unit_price += extra_shots_upcharge
+                espresso.mark_complete()  # No configuration needed
+                order.items.add_item(espresso)
 
             # Return to taking items
             order.clear_pending()
@@ -468,8 +519,8 @@ class CoffeeConfigHandler:
             else:
                 drink_desc = f"the {drink_name}"
 
-            # Ask about size first
-            if not coffee.size:
+            # Ask about size first (skip for espresso - no size options)
+            if not coffee.size and not coffee.is_espresso:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_size"
@@ -479,8 +530,8 @@ class CoffeeConfigHandler:
                     order=order,
                 )
 
-            # Then ask about hot/iced
-            if coffee.iced is None:
+            # Then ask about hot/iced (skip for espresso - always hot)
+            if coffee.iced is None and not coffee.is_espresso:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_style"
@@ -902,13 +953,32 @@ class CoffeeConfigHandler:
                 order=order,
             )
 
-        # Found the selection - clear pending state and add the drink
+        # Found the selection - retrieve stored modifiers BEFORE clearing pending state
         selected_name = selected_item.get("name", "drink")
         selected_price = selected_item.get("base_price", 2.50)
+
+        # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
+        stored_mods = order.pending_coffee_modifiers or {}
+        stored_size = stored_mods.get("size")
+        stored_iced = stored_mods.get("iced")
+        stored_milk = stored_mods.get("milk")
+        stored_sweetener = stored_mods.get("sweetener")
+        stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
+        stored_syrup = stored_mods.get("flavor_syrup")
+        stored_syrup_qty = stored_mods.get("syrup_quantity", 1)
+        stored_decaf = stored_mods.get("decaf")
+        stored_cream = stored_mods.get("cream_level")
+        stored_shots = stored_mods.get("extra_shots", 0)
+        stored_instructions = stored_mods.get("special_instructions")
+        stored_quantity = stored_mods.get("quantity", 1)
+
         order.pending_drink_options = []
         order.clear_pending()
 
-        logger.info("DRINK SELECTION: User chose '%s' (price: $%.2f)", selected_name, selected_price)
+        logger.info(
+            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, iced=%s, milk=%s, syrup=%s",
+            selected_name, selected_price, stored_size, stored_iced, stored_milk, stored_syrup
+        )
 
         # Check if this drink should skip configuration
         is_configurable_coffee = any(
@@ -935,19 +1005,61 @@ class CoffeeConfigHandler:
                 order=order,
             )
         else:
-            # Needs configuration - add as in_progress
-            drink = CoffeeItemTask(
-                drink_type=selected_name,
-                size=None,
-                iced=None,
-                milk=None,
-                sweeteners=[],
-                flavor_syrups=[],
-                unit_price=selected_price,
-            )
-            drink.mark_in_progress()
-            order.items.add_item(drink)
-            return self.configure_next_incomplete_coffee(order)
+            # Needs configuration - apply stored modifiers from original order
+            # Build sweeteners list from stored modifier
+            sweeteners_list = []
+            if stored_sweetener:
+                sweeteners_list.append({
+                    "type": stored_sweetener,
+                    "quantity": stored_sweetener_qty or 1,
+                })
+
+            # Build flavor syrups list from stored modifier
+            syrups_list = []
+            if stored_syrup:
+                syrups_list.append({
+                    "flavor": stored_syrup,
+                    "quantity": stored_syrup_qty or 1,
+                })
+
+            # Create drinks with stored modifiers
+            for _ in range(stored_quantity):
+                drink = CoffeeItemTask(
+                    drink_type=selected_name,
+                    size=stored_size,
+                    iced=stored_iced,
+                    decaf=stored_decaf,
+                    milk=stored_milk,
+                    cream_level=stored_cream,
+                    sweeteners=sweeteners_list.copy(),
+                    flavor_syrups=syrups_list.copy(),
+                    extra_shots=stored_shots,
+                    unit_price=selected_price,
+                    special_instructions=stored_instructions,
+                )
+
+                # Calculate price with modifiers
+                if self.pricing:
+                    self.pricing.recalculate_coffee_price(drink)
+
+                # Check if fully configured (size and hot/iced specified)
+                if drink.size is not None and drink.iced is not None:
+                    drink.mark_complete()
+                else:
+                    drink.mark_in_progress()
+
+                order.items.add_item(drink)
+
+            # If still needs configuration, ask the next question
+            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if isinstance(d, CoffeeItemTask)):
+                return self.configure_next_incomplete_coffee(order)
+            else:
+                # Build summary for confirmation
+                summary = drink.get_summary() if stored_quantity == 1 else f"{stored_quantity} {selected_name}s"
+                return StateMachineResult(
+                    message=f"Got it, {summary}. Anything else?",
+                    order=order,
+                )
 
     def handle_drink_type_selection(
         self,

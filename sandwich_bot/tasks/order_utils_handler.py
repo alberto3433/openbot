@@ -16,6 +16,7 @@ from .models import (
     MenuItemTask,
     BagelItemTask,
     CoffeeItemTask,
+    EspressoItemTask,
     SpeedMenuBagelItemTask,
 )
 from .schemas import StateMachineResult
@@ -169,6 +170,17 @@ class OrderUtilsHandler:
                 new_item.mark_complete()
                 order.items.add_item(new_item)
                 logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.drink_type)
+            elif isinstance(template_item, EspressoItemTask):
+                new_item = EspressoItemTask(
+                    shots=template_item.shots,
+                    decaf=template_item.decaf,
+                    unit_price=template_item.unit_price,
+                    extra_shots_upcharge=template_item.extra_shots_upcharge,
+                    special_instructions=template_item.special_instructions,
+                )
+                new_item.mark_complete()
+                order.items.add_item(new_item)
+                logger.info("QUANTITY_CHANGE: Added copy of espresso (%d shots)", template_item.shots)
             elif isinstance(template_item, BagelItemTask):
                 new_item = BagelItemTask(
                     bagel_type=template_item.bagel_type,
@@ -206,7 +218,12 @@ class OrderUtilsHandler:
 
         # Build updated summary
         summary = self._build_order_summary(order) if self._build_order_summary else ""
-        item_display = template_item.drink_type if isinstance(template_item, CoffeeItemTask) else template_item.get_summary()
+        if isinstance(template_item, CoffeeItemTask):
+            item_display = template_item.drink_type
+        elif isinstance(template_item, EspressoItemTask):
+            item_display = template_item.get_display_name()
+        else:
+            item_display = template_item.get_summary()
         return StateMachineResult(
             message=f"Got it, {target_quantity} {item_display}.\n\n{summary}\n\nDoes that look right?",
             order=order,

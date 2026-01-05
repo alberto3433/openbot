@@ -1844,6 +1844,34 @@ class TestParsedItemsMultiItem:
         assert "bagel" in types
         assert "coffee" in types
 
+    def test_latte_with_modifiers_and_bagel_with_modifiers(self):
+        """Test that latte (with milk/syrup) + bagel (with spread) both appear in parsed_items.
+
+        This tests the specific scenario where "latte" could be matched as a menu item
+        instead of a coffee if parsing order is wrong.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        # The exact problematic scenario
+        result = _parse_multi_item_order(
+            "large iced oat milk latte with vanilla and a gluten free everything bagel with veggie cc toasted"
+        )
+        assert result is not None
+        assert len(result.parsed_items) == 2
+
+        types = [item.type for item in result.parsed_items]
+        assert "coffee" in types, f"Expected coffee in parsed_items, got: {types}"
+        assert "bagel" in types or "menu_item" in types, f"Expected bagel/menu_item in parsed_items, got: {types}"
+
+        # Verify coffee details
+        coffee_items = [item for item in result.parsed_items if item.type == "coffee"]
+        assert len(coffee_items) == 1
+        coffee = coffee_items[0]
+        assert coffee.drink_type.lower() == "latte"
+        assert coffee.size == "large"
+        assert coffee.temperature == "iced"
+        assert coffee.milk == "oat"
+
     def test_two_menu_items_both_in_parsed_items(self):
         """Test that two menu items both appear in parsed_items."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order

@@ -245,17 +245,31 @@ class CoffeeItemTask(ItemTask):
     extra_shots_upcharge: float = 0.0  # Upcharge for double/triple espresso
     iced_upcharge: float = 0.0
 
+    @property
+    def is_espresso(self) -> bool:
+        """Check if this is an espresso drink (no size, always hot)."""
+        if not self.drink_type:
+            return False
+        return self.drink_type.lower() == "espresso"
+
     def get_display_name(self) -> str:
         """Get display name for this drink."""
         parts = []
         if self.size:
             parts.append(self.size)
-        if self.iced is True:
-            parts.append("iced")
-        elif self.iced is False:
-            parts.append("hot")
+        # Don't show hot/iced for espresso (always hot)
+        if not self.is_espresso:
+            if self.iced is True:
+                parts.append("iced")
+            elif self.iced is False:
+                parts.append("hot")
         if self.decaf is True:
             parts.append("decaf")
+        # Show double/triple for espresso drinks
+        if self.extra_shots == 1:
+            parts.append("double")
+        elif self.extra_shots >= 2:
+            parts.append("triple")
         if self.drink_type:
             parts.append(self.drink_type)
         else:
@@ -273,13 +287,21 @@ class CoffeeItemTask(ItemTask):
         if self.size:
             parts.append(self.size)
 
-        if self.iced is True:
-            parts.append("iced")
-        elif self.iced is False:
-            parts.append("hot")
+        # Don't show hot/iced for espresso (always hot)
+        if not self.is_espresso:
+            if self.iced is True:
+                parts.append("iced")
+            elif self.iced is False:
+                parts.append("hot")
 
         if self.decaf is True:
             parts.append("decaf")
+
+        # Show double/triple for espresso drinks
+        if self.extra_shots == 1:
+            parts.append("double")
+        elif self.extra_shots >= 2:
+            parts.append("triple")
 
         if self.drink_type:
             parts.append(self.drink_type)
@@ -316,9 +338,6 @@ class CoffeeItemTask(ItemTask):
                     sweetener_parts.append(s_type)
             parts.append(f"with {' and '.join(sweetener_parts)}")
 
-        if self.extra_shots:
-            parts.append(f"({self.extra_shots} extra shot{'s' if self.extra_shots > 1 else ''})")
-
         # Add special instructions if present
         if self.special_instructions:
             parts.append(f"(Special Instructions: {self.special_instructions})")
@@ -340,11 +359,18 @@ class CoffeeItemTask(ItemTask):
         if self.size:
             parts.append(self.size)
 
-        # Hot/iced
-        if self.iced is True:
-            parts.append("iced")
-        elif self.iced is False:
-            parts.append("hot")
+        # Hot/iced (skip for espresso, always hot)
+        if not self.is_espresso:
+            if self.iced is True:
+                parts.append("iced")
+            elif self.iced is False:
+                parts.append("hot")
+
+        # Show double/triple for espresso drinks
+        if self.extra_shots == 1:
+            parts.append("double")
+        elif self.extra_shots >= 2:
+            parts.append("triple")
 
         # Drink type
         if self.drink_type:
@@ -413,14 +439,64 @@ class CoffeeItemTask(ItemTask):
             parts.append(f"with {self.special_instructions}")
             special_used_for_sweetener = True
 
-        if self.extra_shots:
-            parts.append(f"({self.extra_shots} extra shot{'s' if self.extra_shots > 1 else ''})")
-
         # Only show special instructions if not already used for milk/sweetener description
         if self.special_instructions and not special_used_for_milk and not special_used_for_sweetener:
             parts.append(f"({self.special_instructions})")
 
         return " ".join(parts)
+
+
+class EspressoItemTask(ItemTask):
+    """Task for capturing an espresso order.
+
+    Espresso drinks are simpler than regular coffee:
+    - No size options (espresso is a fixed size)
+    - Always hot (no iced option)
+    - Main configuration is number of shots (single, double, triple)
+    """
+
+    item_type: Literal["espresso"] = "espresso"
+
+    # Espresso-specific fields
+    drink_type: str = "Espresso"  # Always "Espresso" for display
+    shots: int = 1  # 1=single, 2=double, 3=triple
+    decaf: bool | None = None  # True=decaf, None=regular
+
+    # Upcharge tracking (set by pricing engine)
+    extra_shots_upcharge: float = 0.0  # Upcharge for double/triple
+
+    def get_display_name(self) -> str:
+        """Get display name for this espresso."""
+        parts = []
+        if self.decaf is True:
+            parts.append("decaf")
+        if self.shots == 2:
+            parts.append("double")
+        elif self.shots >= 3:
+            parts.append("triple")
+        parts.append("espresso")
+        return " ".join(parts)
+
+    def get_summary(self) -> str:
+        """Get a summary description of this espresso for bot responses."""
+        parts = []
+        if self.decaf is True:
+            parts.append("decaf")
+        if self.shots == 2:
+            parts.append("double")
+        elif self.shots >= 3:
+            parts.append("triple")
+        parts.append("espresso")
+
+        # Add special instructions if present
+        if self.special_instructions:
+            parts.append(f"(Special Instructions: {self.special_instructions})")
+
+        return " ".join(parts)
+
+    def get_spoken_summary(self) -> str:
+        """Get a natural-sounding summary for bot responses."""
+        return self.get_summary()
 
 
 class SpeedMenuBagelItemTask(ItemTask):

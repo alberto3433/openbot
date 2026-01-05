@@ -15,6 +15,7 @@ from .models import (
     ItemType,
     AttributeDefinition,
     AttributeOption,
+    ModifierCategory,
 )
 
 
@@ -113,6 +114,14 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     all_item_types = db.query(ItemType).all()
     for it in all_item_types:
         index["items_by_type"][it.slug] = []
+
+    # Build display name mapping for item types (for custom plural forms)
+    # Only include types that have a custom display_name_plural set
+    index["item_type_display_names"] = {
+        it.slug: it.display_name_plural
+        for it in all_item_types
+        if it.display_name_plural
+    }
 
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
@@ -287,6 +296,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Build by-pound prices from menu_items with category "by_the_lb" or "cream_cheese"
     # These are items like "Nova Scotia Salmon (1 lb)" -> $44.00
     index["by_pound_prices"] = _build_by_pound_prices(db)
+
+    # Build modifier categories for answering questions like "what sweeteners do you have?"
+    index["modifier_categories"] = _build_modifier_categories(db)
 
     return index
 
@@ -531,6 +543,78 @@ def _build_by_pound_prices(db: Session) -> Dict[str, float]:
                     prices[alias] = prices[base_name]
 
     return prices
+
+
+def _build_modifier_categories(db: Session) -> Dict[str, Any]:
+    """
+    Build modifier category data for answering questions like "what sweeteners do you have?"
+
+    Returns a dictionary that maps user input keywords to category information.
+    For database-backed categories, loads the actual options from the Ingredient table.
+
+    Returns:
+        Dict with structure:
+        {
+            "keyword_to_category": {
+                "sweetener": "sweeteners",
+                "sugar": "sweeteners",
+                ...
+            },
+            "categories": {
+                "sweeteners": {
+                    "display_name": "Sweeteners",
+                    "description": "For sweeteners, we have sugar, raw sugar...",
+                    "prompt_suffix": "Would you like any of these in your drink?",
+                    "options": ["sugar", "raw sugar", "honey", ...]  # Only for db-backed
+                },
+                ...
+            }
+        }
+    """
+    categories = db.query(ModifierCategory).all()
+
+    keyword_to_category: Dict[str, str] = {}
+    category_data: Dict[str, Dict[str, Any]] = {}
+
+    for cat in categories:
+        # Build keyword mappings from aliases
+        if cat.aliases:
+            for alias in cat.aliases.split(","):
+                alias = alias.strip().lower()
+                if alias:
+                    keyword_to_category[alias] = cat.slug
+
+        # Build category data
+        cat_info: Dict[str, Any] = {
+            "display_name": cat.display_name,
+            "description": cat.description,
+            "prompt_suffix": cat.prompt_suffix,
+        }
+
+        # For database-backed categories, load options from Ingredient table
+        if cat.loads_from_ingredients and cat.ingredient_category:
+            ingredients = (
+                db.query(Ingredient)
+                .filter(
+                    Ingredient.category == cat.ingredient_category,
+                    Ingredient.is_available == True
+                )
+                .order_by(Ingredient.name)
+                .all()
+            )
+            cat_info["options"] = [ing.name for ing in ingredients]
+
+            # Build description dynamically if not set
+            if not cat.description and cat_info["options"]:
+                options_list = ", ".join(cat_info["options"])
+                cat_info["description"] = f"For {cat.display_name.lower()}, we have {options_list}."
+
+        category_data[cat.slug] = cat_info
+
+    return {
+        "keyword_to_category": keyword_to_category,
+        "categories": category_data,
+    }
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

@@ -334,7 +334,13 @@ Examples:
     )
 
 
-def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mini", spread_types: set[str] | None = None) -> OpenInputResponse:
+def parse_open_input(
+    user_input: str,
+    context: str = "",
+    model: str = "gpt-4o-mini",
+    spread_types: set[str] | None = None,
+    modifier_category_keywords: dict[str, str] | None = None,
+) -> OpenInputResponse:
     """Parse user input when open for new orders.
 
     Tries deterministic parsing first for speed and consistency.
@@ -345,6 +351,8 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
         context: Optional context string for LLM fallback
         model: Model to use for LLM fallback
         spread_types: Optional set of spread type keywords from database
+        modifier_category_keywords: Mapping of keywords to category slugs
+            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
     """
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
@@ -367,9 +375,42 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
     # If "and" or comma still appears, it might be multi-item OR a single bagel with multiple modifiers
     # Pattern: "bagel with X, Y, and Z" is a single bagel with modifiers, NOT multi-item
     if " and " in cleaned or ", " in cleaned:
+        # Check if this looks like a multi-item order with a coffee/drink BEFORE the bagel
+        # e.g., "large iced oat milk latte with vanilla and a gluten free everything bagel"
+        # In this case, the " with " comes from "latte with vanilla", not "bagel with modifiers"
+        coffee_keywords = [
+            "latte", "cappuccino", "espresso", "americano", "macchiato", "mocha",
+            "coffee", "cold brew", "iced coffee", "drip", "tea", "chai",
+            "coke", "coca-cola", "diet coke", "sprite", "soda", "juice",
+            "chocolate milk", "milk", "water", "lemonade",
+        ]
+
+        # Check if there's a coffee keyword before " and a " or " and an " that precedes "bagel"
+        is_multi_item_with_drink_first = False
+        bagel_pos = input_lower.find("bagel")
+        if bagel_pos > 0:
+            # Look for " and a " or " and an " before the bagel
+            text_before_bagel = input_lower[:bagel_pos]
+            for separator in [" and a ", " and an ", " plus a ", " plus an ", ", a ", ", an "]:
+                sep_pos = text_before_bagel.find(separator)
+                if sep_pos > 0:
+                    # Check if there's a coffee keyword before this separator
+                    text_before_sep = text_before_bagel[:sep_pos]
+                    for keyword in coffee_keywords:
+                        if keyword in text_before_sep:
+                            is_multi_item_with_drink_first = True
+                            logger.info(
+                                "Detected multi-item with drink ('%s') before bagel: %s",
+                                keyword, user_input[:50]
+                            )
+                            break
+                    if is_multi_item_with_drink_first:
+                        break
+
         # Check for single bagel with modifiers pattern first
         # e.g., "plain bagel with Egg Whites, Swiss, and Spinach"
-        if "bagel" in input_lower and " with " in input_lower:
+        # But SKIP this if we detected a drink keyword before the bagel (multi-item order)
+        if "bagel" in input_lower and " with " in input_lower and not is_multi_item_with_drink_first:
             logger.info("Bagel with modifiers pattern detected: %s", user_input[:50])
             result = _parse_bagel_with_modifiers(user_input)
             if result is not None:
@@ -384,7 +425,11 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
             return result
 
     # Try deterministic parsing for single-item orders
-    result = parse_open_input_deterministic(user_input, spread_types=spread_types)
+    result = parse_open_input_deterministic(
+        user_input,
+        spread_types=spread_types,
+        modifier_category_keywords=modifier_category_keywords,
+    )
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])
         return result

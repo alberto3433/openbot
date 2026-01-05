@@ -95,6 +95,13 @@ class CheckoutHandler:
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
         self._spread_types: list[str] = []
+        self._menu_data: dict = {}
+
+    @property
+    def _modifier_category_keywords(self) -> dict[str, str]:
+        """Get modifier category keyword mapping from menu data."""
+        modifier_cats = self._menu_data.get("modifier_categories", {})
+        return modifier_cats.get("keyword_to_category", {})
 
     def set_context(
         self,
@@ -103,6 +110,7 @@ class CheckoutHandler:
         is_repeat_order: bool = False,
         last_order_type: str | None = None,
         spread_types: list[str] | None = None,
+        menu_data: dict | None = None,
     ) -> None:
         """Set per-request context for checkout handling."""
         self._store_info = store_info
@@ -110,6 +118,7 @@ class CheckoutHandler:
         self._is_repeat_order = is_repeat_order
         self._last_order_type = last_order_type
         self._spread_types = spread_types or []
+        self._menu_data = menu_data or {}
 
     def handle_delivery(
         self,
@@ -592,7 +601,12 @@ class CheckoutHandler:
         order.checkout.order_reviewed = False
 
         # Try to parse the input for new items
-        item_parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
+        item_parsed = parse_open_input(
+            user_input,
+            model=self.model,
+            spread_types=self._spread_types,
+            modifier_category_keywords=self._modifier_category_keywords,
+        )
         logger.info("CONFIRMATION: parse_open_input result - new_menu_item=%s, new_bagel=%s, new_coffee=%s, new_coffee_type=%s, new_speed_menu_bagel=%s",
                    item_parsed.new_menu_item, item_parsed.new_bagel, item_parsed.new_coffee, item_parsed.new_coffee_type, item_parsed.new_speed_menu_bagel)
 

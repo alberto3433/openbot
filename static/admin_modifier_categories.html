@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Modifier Categories Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .item-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .item-row:last-child {
+      border-bottom: none;
+    }
+    .item-row:hover {
+      background: #fafafa;
+    }
+    .item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+    .item-name {
+      font-weight: 600;
+      font-size: 16px;
+      color: #1976d2;
+    }
+    .item-slug {
+      font-size: 13px;
+      color: #666;
+      font-family: monospace;
+    }
+    .item-description {
+      font-size: 13px;
+      color: #444;
+      margin-top: 4px;
+      max-width: 600px;
+    }
+    .item-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .item-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .item-badge.static {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .item-badge.dynamic {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .item-badge.aliases {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .item-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      min-width: 60px;
+      transition: all 0.2s;
+    }
+    .action-btn:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+    .action-btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .action-btn.primary:hover {
+      background: #1565c0;
+    }
+    .action-btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .action-btn.danger:hover {
+      background: #ffebee;
+    }
+    .status-bar {
+      padding: 10px 16px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+      border-radius: 4px;
+    }
+    .status-bar.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-bar.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .add-btn {
+      padding: 10px 20px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .add-btn:hover {
+      background: #43a047;
+    }
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: #666;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .checkbox-row label {
+      margin: 0;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .conditional-field {
+      margin-left: 26px;
+      padding-left: 12px;
+      border-left: 2px solid #e0e0e0;
+      margin-top: 8px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #c62828;
+      color: #fff;
+      border-color: #c62828;
+    }
+    .btn.danger:hover {
+      background: #b71c1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div>Modifier Categories Management</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
+      <a href="/static/admin_modifier_categories.html"><strong>Categories</strong></a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="statusBar" class="status-bar" style="display: none;"></div>
+
+    <button class="add-btn" id="addCategoryBtn">+ Add New Category</button>
+
+    <div class="section">
+      <div class="section-header">
+        <span>Modifier Categories</span>
+        <span class="count" id="categoryCount">0</span>
+      </div>
+      <ul class="item-list" id="categoryList">
+        <li class="empty-state">Loading categories...</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <span>About Modifier Categories</span>
+      </div>
+      <div style="padding: 16px; font-size: 14px; color: #666; line-height: 1.6;">
+        <p><strong>Modifier Categories</strong> define groups of add-ons that customers can ask about, like "what sweeteners do you have?" or "what toppings are available?"</p>
+        <p><strong>Static Categories</strong> have a fixed description (e.g., sweeteners list). <strong>Dynamic Categories</strong> load options from the Ingredients table.</p>
+        <p><strong>Aliases</strong> are keywords that trigger this category. For example, "sweetener, sugar, sugars" all map to the "sweeteners" category.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Category Modal -->
+  <div class="modal-overlay" id="categoryModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add New Category</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="categoryForm">
+          <input type="hidden" id="categoryId" />
+
+          <div class="form-group">
+            <label for="displayName">Display Name *</label>
+            <input type="text" id="displayName" required placeholder="e.g., Sweeteners, Toppings" />
+            <div class="hint">Human-readable name shown to customers</div>
+          </div>
+
+          <div class="form-group">
+            <label for="slug">Slug *</label>
+            <input type="text" id="slug" required placeholder="e.g., sweeteners, toppings" pattern="[a-z0-9_-]+" />
+            <div class="hint">Unique identifier (lowercase, hyphens/underscores only)</div>
+          </div>
+
+          <div class="form-group">
+            <label for="aliases">Aliases</label>
+            <input type="text" id="aliases" placeholder="e.g., sweetener, sugar, sugars" />
+            <div class="hint">Comma-separated keywords that trigger this category</div>
+          </div>
+
+          <div class="form-group">
+            <label for="promptSuffix">Prompt Suffix</label>
+            <input type="text" id="promptSuffix" placeholder="e.g., Would you like any in your drink?" />
+            <div class="hint">Question asked after listing options</div>
+          </div>
+
+          <div class="form-group">
+            <div class="checkbox-row">
+              <input type="checkbox" id="loadsFromIngredients" />
+              <label for="loadsFromIngredients">Load from Ingredients Table</label>
+            </div>
+            <div class="hint">Check this for categories like toppings, proteins, cheeses that load dynamically from the Ingredients table</div>
+
+            <div class="conditional-field" id="ingredientCategoryField" style="display: none;">
+              <label for="ingredientCategory">Ingredient Category</label>
+              <input type="text" id="ingredientCategory" placeholder="e.g., topping, protein, cheese" />
+              <div class="hint">Value in Ingredient.category column to filter by</div>
+            </div>
+          </div>
+
+          <div class="form-group" id="descriptionField">
+            <label for="description">Static Description</label>
+            <textarea id="description" placeholder="e.g., For sweeteners, we have sugar, raw sugar, honey, Equal, Splenda, and Stevia."></textarea>
+            <div class="hint">Fixed response text for small categories (not needed for database-backed categories)</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="cancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Category</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteCategoryName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API base URL
+    const API_BASE = "/admin/modifier-categories";
+
+    // Auth credentials storage
+    let authCredentials = null;
+
+    // Authenticated fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+      }
+
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
+    // DOM elements
+    const statusBar = document.getElementById("statusBar");
+    const categoryList = document.getElementById("categoryList");
+    const categoryCount = document.getElementById("categoryCount");
+    const categoryModal = document.getElementById("categoryModal");
+    const deleteModal = document.getElementById("deleteModal");
+    const modalTitle = document.getElementById("modalTitle");
+    const categoryForm = document.getElementById("categoryForm");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const loadsFromIngredients = document.getElementById("loadsFromIngredients");
+    const ingredientCategoryField = document.getElementById("ingredientCategoryField");
+    const descriptionField = document.getElementById("descriptionField");
+
+    // Current state
+    let categories = [];
+    let editingCategoryId = null;
+    let deletingCategoryId = null;
+
+    // Toggle conditional fields based on "Load from Ingredients" checkbox
+    loadsFromIngredients.addEventListener("change", function() {
+      if (this.checked) {
+        ingredientCategoryField.style.display = "block";
+        descriptionField.style.display = "none";
+      } else {
+        ingredientCategoryField.style.display = "none";
+        descriptionField.style.display = "block";
+      }
+    });
+
+    // Load categories from API
+    async function loadCategories() {
+      try {
+        const response = await authFetch(API_BASE);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        categories = await response.json();
+        renderCategories();
+      } catch (error) {
+        console.error("Failed to load categories:", error);
+        showStatus("Failed to load categories from server", "error");
+        categoryList.innerHTML = '<li class="empty-state">Failed to load categories. Please refresh the page.</li>';
+      }
+    }
+
+    // Show status message
+    function showStatus(message, type = "info") {
+      statusBar.textContent = message;
+      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
+      statusBar.style.display = "block";
+      if (type !== "error") {
+        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+      }
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Render the category list
+    function renderCategories() {
+      categoryCount.textContent = categories.length;
+
+      if (categories.length === 0) {
+        categoryList.innerHTML = '<li class="empty-state">No categories found. Click "Add New Category" to create one.</li>';
+        return;
+      }
+
+      categoryList.innerHTML = categories.map(cat => `
+        <li class="item-row" data-id="${cat.id}">
+          <div class="item-info">
+            <span class="item-name">${escapeHtml(cat.display_name)}</span>
+            <span class="item-slug">${escapeHtml(cat.slug)}</span>
+            ${cat.description ? `<div class="item-description">${escapeHtml(cat.description)}</div>` : ''}
+            <div class="item-meta">
+              <span class="item-badge ${cat.loads_from_ingredients ? 'dynamic' : 'static'}">
+                ${cat.loads_from_ingredients ? `Dynamic (${escapeHtml(cat.ingredient_category)})` : 'Static'}
+              </span>
+              ${cat.aliases ? `<span class="item-badge aliases" title="${escapeHtml(cat.aliases)}">Keywords: ${escapeHtml(cat.aliases.split(',').slice(0, 3).join(', '))}${cat.aliases.split(',').length > 3 ? '...' : ''}</span>` : ''}
+            </div>
+          </div>
+          <div class="item-actions">
+            <button class="action-btn primary edit-btn" data-id="${cat.id}">Edit</button>
+          </div>
+        </li>
+      `).join("");
+
+      // Attach edit button handlers
+      document.querySelectorAll(".edit-btn").forEach(btn => {
+        btn.addEventListener("click", () => openEditModal(parseInt(btn.dataset.id)));
+      });
+    }
+
+    // Open modal for adding new category
+    function openAddModal() {
+      editingCategoryId = null;
+      modalTitle.textContent = "Add New Category";
+      deleteBtn.style.display = "none";
+
+      document.getElementById("categoryId").value = "";
+      document.getElementById("displayName").value = "";
+      document.getElementById("slug").value = "";
+      document.getElementById("aliases").value = "";
+      document.getElementById("promptSuffix").value = "What would you like?";
+      document.getElementById("loadsFromIngredients").checked = false;
+      document.getElementById("ingredientCategory").value = "";
+      document.getElementById("description").value = "";
+
+      ingredientCategoryField.style.display = "none";
+      descriptionField.style.display = "block";
+
+      categoryModal.classList.add("active");
+    }
+
+    // Open modal for editing existing category
+    function openEditModal(id) {
+      const cat = categories.find(c => c.id === id);
+      if (!cat) return;
+
+      editingCategoryId = id;
+      modalTitle.textContent = "Edit Category";
+      deleteBtn.style.display = "inline-block";
+
+      document.getElementById("categoryId").value = cat.id;
+      document.getElementById("displayName").value = cat.display_name;
+      document.getElementById("slug").value = cat.slug;
+      document.getElementById("aliases").value = cat.aliases || "";
+      document.getElementById("promptSuffix").value = cat.prompt_suffix || "";
+      document.getElementById("loadsFromIngredients").checked = cat.loads_from_ingredients;
+      document.getElementById("ingredientCategory").value = cat.ingredient_category || "";
+      document.getElementById("description").value = cat.description || "";
+
+      if (cat.loads_from_ingredients) {
+        ingredientCategoryField.style.display = "block";
+        descriptionField.style.display = "none";
+      } else {
+        ingredientCategoryField.style.display = "none";
+        descriptionField.style.display = "block";
+      }
+
+      categoryModal.classList.add("active");
+    }
+
+    // Close category modal
+    function closeModal() {
+      categoryModal.classList.remove("active");
+      editingCategoryId = null;
+    }
+
+    // Save category (create or update)
+    async function saveCategory() {
+      const payload = {
+        display_name: document.getElementById("displayName").value.trim(),
+        slug: document.getElementById("slug").value.trim().toLowerCase(),
+        aliases: document.getElementById("aliases").value.trim() || null,
+        prompt_suffix: document.getElementById("promptSuffix").value.trim() || null,
+        loads_from_ingredients: document.getElementById("loadsFromIngredients").checked,
+        ingredient_category: document.getElementById("loadsFromIngredients").checked
+          ? document.getElementById("ingredientCategory").value.trim() || null
+          : null,
+        description: !document.getElementById("loadsFromIngredients").checked
+          ? document.getElementById("description").value.trim() || null
+          : null,
+      };
+
+      if (!payload.display_name || !payload.slug) {
+        showStatus("Display Name and Slug are required", "error");
+        return;
+      }
+
+      try {
+        let response;
+        if (editingCategoryId) {
+          response = await authFetch(`${API_BASE}/${editingCategoryId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        } else {
+          response = await authFetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || "Failed to save category");
+        }
+
+        closeModal();
+        showStatus(editingCategoryId ? "Category updated successfully" : "Category created successfully", "success");
+        loadCategories();
+      } catch (error) {
+        console.error("Save error:", error);
+        showStatus(error.message, "error");
+      }
+    }
+
+    // Open delete confirmation modal
+    function openDeleteModal() {
+      if (!editingCategoryId) return;
+
+      const cat = categories.find(c => c.id === editingCategoryId);
+      if (!cat) return;
+
+      deletingCategoryId = editingCategoryId;
+      document.getElementById("deleteCategoryName").textContent = cat.display_name;
+      closeModal();
+      deleteModal.classList.add("active");
+    }
+
+    // Close delete modal
+    function closeDeleteModal() {
+      deleteModal.classList.remove("active");
+      deletingCategoryId = null;
+    }
+
+    // Confirm delete
+    async function confirmDelete() {
+      if (!deletingCategoryId) return;
+
+      try {
+        const response = await authFetch(`${API_BASE}/${deletingCategoryId}`, {
+          method: "DELETE",
+        });
+
+        if (!response.ok && response.status !== 204) {
+          const error = await response.json();
+          throw new Error(error.detail || "Failed to delete category");
+        }
+
+        closeDeleteModal();
+        showStatus("Category deleted successfully", "success");
+        loadCategories();
+      } catch (error) {
+        console.error("Delete error:", error);
+        showStatus(error.message, "error");
+      }
+    }
+
+    // Event listeners
+    document.getElementById("addCategoryBtn").addEventListener("click", openAddModal);
+    document.getElementById("modalClose").addEventListener("click", closeModal);
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("saveBtn").addEventListener("click", saveCategory);
+    document.getElementById("deleteBtn").addEventListener("click", openDeleteModal);
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", confirmDelete);
+
+    // Close modals on overlay click
+    categoryModal.addEventListener("click", (e) => {
+      if (e.target === categoryModal) closeModal();
+    });
+    deleteModal.addEventListener("click", (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    // Close modals on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeModal();
+        closeDeleteModal();
+      }
+    });
+
+    // Load categories on page load
+    loadCategories();
+  </script>
+</body>
+</html>

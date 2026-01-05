@@ -12,13 +12,7 @@ import re
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .parsers.constants import (
-    NYC_NEIGHBORHOOD_ZIPS,
-    get_toppings,
-    get_proteins,
-    get_cheeses,
-    get_spreads,
-)
+from .parsers.constants import NYC_NEIGHBORHOOD_ZIPS
 
 # Batch size for modifier category pagination (toppings, proteins, etc.)
 MODIFIER_BATCH_SIZE = 6
@@ -473,177 +467,91 @@ class StoreInfoHandler:
 
         For categories with database-backed items (toppings, proteins, cheeses, spreads),
         this method loads items dynamically and sets pagination state for "what else" follow-ups.
+
+        Category data is loaded from menu_data["modifier_categories"] which comes from the
+        modifier_categories database table. Falls back to hardcoded values if not found.
         """
-        # Categories that load from database with pagination
-        db_categories = {
-            "toppings": (get_toppings, "For toppings, we have", "What would you like on your bagel?"),
-            "proteins": (get_proteins, "For proteins, we have", "What would you like?"),
-            "cheeses": (get_cheeses, "For cheeses, we have", "Which cheese would you like?"),
-            "spreads": (get_spreads, "For spreads, we have", "What sounds good?"),
-        }
+        # Try to get category info from menu_data (database-backed)
+        modifier_categories = self._menu_data.get("modifier_categories", {})
+        categories_data = modifier_categories.get("categories", {})
+        cat_info = categories_data.get(category)
 
-        if category in db_categories:
-            getter_fn, prefix, suffix = db_categories[category]
-            return self._describe_db_modifier_category(
-                category, getter_fn, prefix, suffix, order
-            )
+        if cat_info:
+            # Check if this category loads from ingredients (needs pagination)
+            if cat_info.get("options"):
+                # Database-backed category with dynamic options
+                return self._describe_db_modifier_category_from_menu(
+                    category, cat_info, order
+                )
+            elif cat_info.get("description"):
+                # Static category with fixed description
+                description = cat_info.get("description", "")
+                prompt_suffix = cat_info.get("prompt_suffix", "What would you like?")
+                message = f"{description} {prompt_suffix}"
+                order.clear_menu_pagination()
+                return StateMachineResult(message=message, order=order)
 
-        # Small fixed lists that don't need pagination
-        static_categories = {
-            "sweeteners": (
-                "For sweeteners, we have sugar, raw sugar, honey, Equal, Splenda, and Stevia.",
-                "Would you like any of these in your drink?"
-            ),
-            "milks": (
-                "For milk options, we have whole milk, skim, 2%, oat milk, almond milk, and soy milk.",
-                "Which would you like?"
-            ),
-            "syrups": (
-                "We have vanilla, hazelnut, and caramel flavor syrups.",
-                "Would you like to add a flavor?"
-            ),
-            "condiments": (
-                "We have mayo, mustard, ketchup, hot sauce, and salt & pepper.",
-                "Would you like any of these?"
-            ),
-            "add-ons": (
-                "You can add extra proteins, cheeses, or veggies to most items.",
-                "What would you like to add?"
-            ),
-            "extras": (
-                "You can add extra proteins, cheeses, or veggies to most items.",
-                "What would you like to add?"
-            ),
-        }
-
-        info = static_categories.get(category, ("We have various options available.", "What would you like?"))
-        message = f"{info[0]} {info[1]}"
-
-        # Clear any previous pagination since these are complete lists
+        # Category not found in database - log warning and return generic response
+        logger.warning("Modifier category '%s' not found in database", category)
         order.clear_menu_pagination()
+        return StateMachineResult(
+            message="We have various options available. What would you like?",
+            order=order
+        )
 
-        return StateMachineResult(message=message, order=order)
-
-    def _describe_db_modifier_category(
+    def _describe_db_modifier_category_from_menu(
         self,
         category: str,
-        getter_fn: callable,
-        prefix: str,
-        suffix: str,
+        cat_info: dict,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Describe a modifier category loaded from database with pagination support.
+        """Describe a modifier category using pre-loaded options from menu_data.
 
         Args:
             category: Category key for pagination (e.g., 'toppings', 'proteins')
-            getter_fn: Function to get items from database cache (e.g., get_toppings)
-            prefix: Message prefix (e.g., "For toppings, we have")
-            suffix: Message suffix/question (e.g., "What would you like?")
+            cat_info: Category info dict from menu_data with 'options', 'description', etc.
             order: Current order state
         """
-        try:
-            items_set = getter_fn()
-        except RuntimeError:
-            # Database cache not loaded
-            logger.warning("Database cache not loaded for %s", category)
+        options = cat_info.get("options", [])
+        display_name = cat_info.get("display_name", category.title())
+        prompt_suffix = cat_info.get("prompt_suffix", "What would you like?")
+
+        if not options:
             order.clear_menu_pagination()
             return StateMachineResult(
-                message=f"We have various {category} available. {suffix}",
+                message=f"We have various {display_name.lower()} available. {prompt_suffix}",
                 order=order,
             )
 
-        if not items_set:
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message=f"We have various {category} available. {suffix}",
-                order=order,
-            )
+        # Format options for display
+        items_list = sorted(options)
 
-        # Convert to sorted list, filtering out duplicates and normalizing
-        # Remove plural variants and normalize to clean display names
-        items_list = self._normalize_modifier_items(items_set, category)
-
-        if not items_list:
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message=f"We have various {category} available. {suffix}",
-                order=order,
-            )
-
-        # Get first batch
-        batch = items_list[:MODIFIER_BATCH_SIZE]
-        remaining = len(items_list) - len(batch)
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Set pagination for "what else" follow-up
-            order.set_menu_pagination(category, MODIFIER_BATCH_SIZE, len(items_list))
-        else:
+        if len(items_list) <= MODIFIER_BATCH_SIZE:
             # Show all items, no pagination needed
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]} and {batch[1]}"
+            if len(items_list) == 1:
+                items_str = items_list[0]
+            elif len(items_list) == 2:
+                items_str = f"{items_list[0]} and {items_list[1]}"
             else:
-                items_str = ", ".join(batch[:-1]) + f", and {batch[-1]}"
+                items_str = ", ".join(items_list[:-1]) + f", and {items_list[-1]}"
+
             order.clear_menu_pagination()
+            message = f"For {display_name.lower()}, we have {items_str}. {prompt_suffix}"
+        else:
+            # Show first batch with pagination
+            first_batch = items_list[:MODIFIER_BATCH_SIZE]
+            if len(first_batch) == 1:
+                items_str = first_batch[0]
+            elif len(first_batch) == 2:
+                items_str = f"{first_batch[0]} and {first_batch[1]}"
+            else:
+                items_str = ", ".join(first_batch[:-1]) + f", and {first_batch[-1]}"
 
-        message = f"{prefix} {items_str}. {suffix}"
+            # Set pagination state for "what else" follow-ups
+            order.set_menu_pagination(category, MODIFIER_BATCH_SIZE, len(items_list))
+            message = f"For {display_name.lower()}, we have {items_str}, and more. {prompt_suffix}"
+
         return StateMachineResult(message=message, order=order)
-
-    def _normalize_modifier_items(self, items_set: set, category: str) -> list[str]:
-        """Normalize and deduplicate modifier items for display.
-
-        Removes plural variants, filters out very similar items,
-        and returns a clean sorted list for user display.
-        """
-        # Convert to lowercase for deduplication
-        seen_base = set()
-        normalized = []
-
-        for item in sorted(items_set):
-            item_lower = item.lower()
-
-            # Skip plural forms if singular exists
-            if item_lower.endswith('s') and not item_lower.endswith('ss'):
-                singular = item_lower.rstrip('s')
-                if singular in seen_base:
-                    continue
-
-            # Skip "es" plural forms
-            if item_lower.endswith('es'):
-                singular = item_lower[:-2]
-                if singular in seen_base:
-                    continue
-
-            # For cheeses category, filter out cream cheese variants (those belong in spreads)
-            if category == "cheeses":
-                if "cream cheese" in item_lower or " cc" in item_lower:
-                    continue
-                # Skip spread-like items
-                if item_lower in ("avocado spread", "lox spread"):
-                    continue
-
-            # Track base form
-            base = item_lower.rstrip('s')
-            if base in seen_base:
-                continue
-            seen_base.add(base)
-            seen_base.add(item_lower)
-
-            # Capitalize for display
-            normalized.append(item.title() if item.islower() else item)
-
-        return normalized
 
     def _describe_item_modifiers(
         self,

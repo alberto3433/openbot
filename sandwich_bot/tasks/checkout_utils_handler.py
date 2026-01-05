@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, SpeedMenuBagelItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, EspressoItemTask, SpeedMenuBagelItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -226,7 +226,7 @@ class CheckoutUtilsHandler:
             # Use formal summary for counting identical items
             last_formal_summary = last_item.get_summary()
             # Use natural spoken summary for coffee items, formal summary for others
-            if isinstance(last_item, CoffeeItemTask) and hasattr(last_item, "get_spoken_summary"):
+            if isinstance(last_item, (CoffeeItemTask, EspressoItemTask)) and hasattr(last_item, "get_spoken_summary"):
                 last_summary = last_item.get_spoken_summary()
             else:
                 last_summary = last_formal_summary

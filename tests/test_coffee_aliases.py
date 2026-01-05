@@ -163,7 +163,8 @@ class TestCoffeeAliasesIntegration:
         from sandwich_bot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "espresso" in coffee_types
-        assert "double espresso" in coffee_types
+        # Note: "double espresso" and "triple espresso" are now modifiers,
+        # not separate coffee types. They are handled by the coffee parser.
 
     def test_hot_chocolate_aliases(self):
         """Hot chocolate should be recognized by various terms."""
@@ -178,3 +179,39 @@ class TestCoffeeAliasesIntegration:
         from sandwich_bot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "cold brew" in coffee_types
+
+
+class TestEspressoParsingIntegration:
+    """Integration tests for espresso ordering flow."""
+
+    def test_espresso_parses_as_coffee_not_menu_item(self):
+        """Espresso should be parsed as coffee, not as a menu item."""
+        from sandwich_bot.tasks.parsers import parse_open_input
+        result = parse_open_input("espresso")
+        assert result.new_coffee, "Espresso should be detected as coffee"
+        assert result.new_coffee_type == "Espresso", f"Coffee type should be 'Espresso', got '{result.new_coffee_type}'"
+        assert result.new_menu_item is None, "Espresso should not be parsed as menu item"
+
+    def test_double_espresso_parses_as_coffee(self):
+        """Double espresso should be parsed as coffee with extra shots."""
+        from sandwich_bot.tasks.parsers import parse_open_input
+        result = parse_open_input("double espresso")
+        assert result.new_coffee, "Double espresso should be detected as coffee"
+        assert result.new_coffee_type == "Espresso", f"Coffee type should be 'Espresso', got '{result.new_coffee_type}'"
+        assert result.new_menu_item is None, "Double espresso should not be parsed as menu item"
+
+    def test_triple_espresso_parses_as_coffee(self):
+        """Triple espresso should be parsed as coffee with extra shots."""
+        from sandwich_bot.tasks.parsers import parse_open_input
+        result = parse_open_input("triple espresso")
+        assert result.new_coffee, "Triple espresso should be detected as coffee"
+        assert result.new_coffee_type == "Espresso", f"Coffee type should be 'Espresso', got '{result.new_coffee_type}'"
+        assert result.new_menu_item is None, "Triple espresso should not be parsed as menu item"
+
+    def test_espresso_with_milk_parses_correctly(self):
+        """Espresso with milk modifier should parse correctly."""
+        from sandwich_bot.tasks.parsers import parse_open_input
+        result = parse_open_input("espresso with oat milk")
+        assert result.new_coffee, "Espresso with milk should be detected as coffee"
+        assert result.new_coffee_type == "Espresso", f"Coffee type should be 'Espresso', got '{result.new_coffee_type}'"
+        assert result.new_coffee_milk == "oat", f"Milk should be 'oat', got '{result.new_coffee_milk}'"

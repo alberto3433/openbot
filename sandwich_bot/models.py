@@ -32,6 +32,7 @@ class ItemType(Base):
     id = Column(Integer, primary_key=True, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sandwich", "pizza", "drink"
     display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
+    display_name_plural = Column(String, nullable=True)  # e.g., "coffees and teas" for sized_beverage (if irregular)
     is_configurable = Column(Boolean, nullable=False, default=True)  # True = has attributes to customize
     skip_config = Column(Boolean, nullable=False, default=False)  # True = skip config questions (e.g., sodas don't need hot/iced)
 
@@ -44,6 +45,34 @@ class ItemType(Base):
     # Relationships
     attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
     menu_items = relationship("MenuItem", back_populates="item_type")
+
+
+class ModifierCategory(Base):
+    """
+    Defines a modifier/add-on category for menu item customization.
+
+    This maps user input keywords (like "sweetener", "sugar", "milk", "dairy")
+    to canonical category names (like "sweeteners", "milks") for answering
+    questions like "what sweeteners do you have?".
+
+    Some categories are database-backed (toppings, proteins, cheeses, spreads)
+    where items are loaded from the Ingredient table. Others are static
+    (sweeteners, milks, syrups) with predefined descriptions.
+    """
+    __tablename__ = "modifier_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sweeteners", "milks"
+    display_name = Column(String, nullable=False)  # e.g., "Sweeteners", "Milks"
+    aliases = Column(String, nullable=True)  # Comma-separated keywords: "sweetener, sugar, sugars"
+
+    # For static response categories (not database-backed)
+    description = Column(String, nullable=True)  # e.g., "we have sugar, raw sugar, honey..."
+    prompt_suffix = Column(String, nullable=True)  # e.g., "Would you like any in your drink?"
+
+    # For database-backed categories (load from Ingredient table)
+    loads_from_ingredients = Column(Boolean, nullable=False, default=False)
+    ingredient_category = Column(String, nullable=True)  # Maps to Ingredient.category value
 
 
 class AttributeDefinition(Base):

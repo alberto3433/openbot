@@ -350,3 +350,102 @@ class ItemTypeUpdate(BaseModel):
     display_name: Optional[str] = None
     is_configurable: Optional[bool] = None
     skip_config: Optional[bool] = None
+
+
+# =============================================================================
+# Modifier Category Schemas
+# =============================================================================
+
+class ModifierCategoryOut(BaseModel):
+    """
+    Response model for a modifier category.
+
+    Modifier categories define groups of add-ons/modifiers that customers
+    can ask about (e.g., "what sweeteners do you have?").
+
+    Attributes:
+        id: Database primary key
+        slug: URL-safe identifier (e.g., "sweeteners")
+        display_name: Human-readable name (e.g., "Sweeteners")
+        aliases: Comma-separated keywords that trigger this category
+        description: Static response text for small categories
+        prompt_suffix: Question to ask after listing options
+        loads_from_ingredients: If True, options are loaded from Ingredient table
+        ingredient_category: Category value in Ingredient table (if loads_from_ingredients)
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+    aliases: Optional[str] = None
+    description: Optional[str] = None
+    prompt_suffix: Optional[str] = None
+    loads_from_ingredients: bool = False
+    ingredient_category: Optional[str] = None
+
+
+class ModifierCategoryCreate(BaseModel):
+    """
+    Request model for creating a modifier category.
+
+    Attributes:
+        slug: URL-safe identifier (required)
+        display_name: Human-readable name (required)
+        aliases: Comma-separated keywords (e.g., "sweetener, sugar, sugars")
+        description: Static response text (for small fixed lists)
+        prompt_suffix: Question after listing (default: "What would you like?")
+        loads_from_ingredients: Load options from Ingredient table (default: False)
+        ingredient_category: Ingredient.category value (if loads_from_ingredients)
+
+    Example (static category):
+        {
+            "slug": "sweeteners",
+            "display_name": "Sweeteners",
+            "aliases": "sweetener, sweeteners, sugar, sugars",
+            "description": "We have sugar, raw sugar, honey, Equal, Splenda, and Stevia.",
+            "prompt_suffix": "Would you like any of these in your drink?",
+            "loads_from_ingredients": false
+        }
+
+    Example (database-backed category):
+        {
+            "slug": "toppings",
+            "display_name": "Toppings",
+            "aliases": "topping, toppings, bagel topping",
+            "prompt_suffix": "What would you like on your bagel?",
+            "loads_from_ingredients": true,
+            "ingredient_category": "topping"
+        }
+    """
+    slug: str
+    display_name: str
+    aliases: Optional[str] = None
+    description: Optional[str] = None
+    prompt_suffix: str = "What would you like?"
+    loads_from_ingredients: bool = False
+    ingredient_category: Optional[str] = None
+
+
+class ModifierCategoryUpdate(BaseModel):
+    """
+    Request model for updating a modifier category.
+
+    All fields optional - only provided fields are updated.
+
+    Attributes:
+        slug: New slug
+        display_name: New display name
+        aliases: New comma-separated keywords
+        description: New static response text
+        prompt_suffix: New question text
+        loads_from_ingredients: Update database-backed flag
+        ingredient_category: New ingredient category
+    """
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
+    aliases: Optional[str] = None
+    description: Optional[str] = None
+    prompt_suffix: Optional[str] = None
+    loads_from_ingredients: Optional[bool] = None
+    ingredient_category: Optional[str] = None

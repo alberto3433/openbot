@@ -18,6 +18,7 @@ from .models import (
     OrderTask,
     BagelItemTask,
     CoffeeItemTask,
+    EspressoItemTask,
     MenuItemTask,
     SpeedMenuBagelItemTask,
     TaskStatus,
@@ -117,6 +118,12 @@ class TakingItemsHandler:
         """Set menu data for configuration checks."""
         self._menu_data = value or {}
 
+    @property
+    def _modifier_category_keywords(self) -> dict[str, str]:
+        """Get modifier category keyword mapping from menu data."""
+        modifier_cats = self._menu_data.get("modifier_categories", {})
+        return modifier_cats.get("keyword_to_category", {})
+
     def _get_bagel_menu_item_info(self, menu_item_name: str) -> dict | None:
         """
         Check if a menu item contains a bagel and get its configuration info.
@@ -158,7 +165,12 @@ class TakingItemsHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle greeting phase."""
-        parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
+        parsed = parse_open_input(
+            user_input,
+            model=self.model,
+            spread_types=self._spread_types,
+            modifier_category_keywords=self._modifier_category_keywords,
+        )
 
         logger.info(
             "Greeting phase parsed: is_greeting=%s, unclear=%s, new_bagel=%s, quantity=%d",
@@ -336,7 +348,12 @@ class TakingItemsHandler:
                         order=order,
                     )
 
-        parsed = parse_open_input(user_input, model=self.model, spread_types=self._spread_types)
+        parsed = parse_open_input(
+            user_input,
+            model=self.model,
+            spread_types=self._spread_types,
+            modifier_category_keywords=self._modifier_category_keywords,
+        )
 
         # Extract modifiers from raw input (keyword-based, no LLM)
         extracted_modifiers = extract_modifiers_from_input(user_input)
@@ -1503,6 +1520,13 @@ class TakingItemsHandler:
         for parsed_item in parsed.parsed_items:
             order, summary = self._add_parsed_item(parsed_item, order)
 
+            # DIAGNOSTIC: Log after each item is processed
+            logger.info(
+                "DIAG: After _add_parsed_item: type=%s, summary='%s', summaries=%s, pending_field=%s, items_count=%d",
+                type(parsed_item).__name__, summary, summaries + ([summary] if summary else []),
+                order.pending_field, len(order.items.items)
+            )
+
             # Check if add failed (e.g., item not found on menu)
             if order.last_add_error is not None:
                 # Return the error message instead of continuing
@@ -1533,6 +1557,14 @@ class TakingItemsHandler:
                         display_name = summary
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
+
+        # DIAGNOSTIC: Log state before disambiguation checks
+        logger.info(
+            "DIAG: Before checks - summaries=%s, pending_field=%s, pending_drink_options=%s, pending_item_options=%s",
+            summaries, order.pending_field,
+            len(order.pending_drink_options) if order.pending_drink_options else 0,
+            len(order.pending_item_options) if order.pending_item_options else 0
+        )
 
         # Check if we're waiting for drink type selection (user said "drink" or partial term like "juice")
         # This must be checked BEFORE checking summaries because add_coffee sets pending_field
@@ -1587,6 +1619,48 @@ class TakingItemsHandler:
 
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 return StateMachineResult(message=message, order=order)
+
+        # Check if we're waiting for drink selection (e.g., "latte" matches Latte and Matcha Latte)
+        # This handles disambiguation when a drink type matches multiple menu items
+        if order.pending_field == "drink_selection" and order.pending_drink_options:
+            logger.info("Pending drink selection - presenting %d options", len(order.pending_drink_options))
+
+            # Build the clarification message from pending options
+            # Format: numbered list showing each option
+            option_list = []
+            for i, item in enumerate(order.pending_drink_options, 1):
+                name = item.get("name", "Unknown")
+                price = item.get("base_price", 0)
+                if price > 0:
+                    option_list.append(f"{i}. {name} (${price:.2f})")
+                else:
+                    option_list.append(f"{i}. {name}")
+
+            options_str = "\n".join(option_list)
+
+            # Get the drink term from summaries (e.g., "latte" from "large iced latte")
+            # The first summary that looks like a drink is the one being disambiguated
+            drink_term = "that drink"
+            for summary in summaries:
+                if summary:
+                    # Extract just the drink type (last word typically)
+                    drink_term = summary.split()[-1] if summary else "that drink"
+                    break
+
+            # If there are other items (like bagels) that were added, acknowledge them
+            other_summaries = [s for s in summaries if s and drink_term.lower() not in s.lower()]
+            if other_summaries:
+                if len(other_summaries) == 1:
+                    prefix = f"Got it, {other_summaries[0]}! For the {drink_term}, "
+                else:
+                    items_str = ", ".join(other_summaries[:-1]) + f" and {other_summaries[-1]}"
+                    prefix = f"Got it, {items_str}! For the {drink_term}, "
+            else:
+                prefix = ""
+
+            message = f"{prefix}We have a few options:\n{options_str}\nWhich would you like?"
+            order.phase = OrderPhase.CONFIGURING_ITEM.value
+            return StateMachineResult(message=message, order=order)
 
         if not summaries:
             return None
@@ -1723,6 +1797,12 @@ class TakingItemsHandler:
                 message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
                 order=order,
             )
+
+        # DIAGNOSTIC: Log final state before response generation
+        logger.info(
+            "DIAG: Final state - summaries=%s, items_needing_config=%d, items_in_order=%d",
+            summaries, len(items_needing_config), len(order.items.items)
+        )
 
         # If no items need configuration, return simple confirmation
         if not items_needing_config:

@@ -75,6 +75,7 @@ from .admin_analytics import admin_analytics_router
 from .admin_stores import admin_stores_router
 from .admin_company import admin_company_router
 from .admin_modifiers import admin_modifiers_router
+from .admin_modifier_categories import admin_modifier_categories_router
 from .admin_testing import admin_testing_router
 from .public import public_stores_router, public_company_router
 from .tts import tts_router
@@ -88,6 +89,7 @@ __all__ = [
     "admin_stores_router",
     "admin_company_router",
     "admin_modifiers_router",
+    "admin_modifier_categories_router",
     "admin_testing_router",
     "public_stores_router",
     "public_company_router",

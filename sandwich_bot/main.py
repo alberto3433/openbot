@@ -95,6 +95,7 @@ from .routes import (
     admin_stores_router,
     admin_company_router,
     admin_modifiers_router,
+    admin_modifier_categories_router,
     admin_testing_router,
     public_stores_router,
     public_company_router,
@@ -323,6 +324,7 @@ api_v1_router.include_router(admin_analytics_router)
 api_v1_router.include_router(admin_stores_router)
 api_v1_router.include_router(admin_company_router)
 api_v1_router.include_router(admin_modifiers_router)
+api_v1_router.include_router(admin_modifier_categories_router)
 api_v1_router.include_router(admin_testing_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
@@ -342,6 +344,7 @@ app.include_router(admin_analytics_router)
 app.include_router(admin_stores_router)
 app.include_router(admin_company_router)
 app.include_router(admin_modifiers_router)
+app.include_router(admin_modifier_categories_router)
 app.include_router(admin_testing_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)

@@ -577,6 +577,13 @@ class BagelConfigHandler:
         # First check if the user is requesting modifiers instead of a spread
         # e.g., "make it bacon egg and cheese" when asked about spread
         modifiers = extract_modifiers_from_input(user_input)
+
+        # Filter out cream cheese variants from cheeses - these are spreads, not sliced cheeses
+        # This prevents "Honey Walnut Cream Cheese" from being treated as a cheese (like American)
+        # and added to extras when user is answering a spread question
+        if modifiers.cheeses:
+            modifiers.cheeses = [c for c in modifiers.cheeses if "cream cheese" not in c.lower()]
+
         has_modifiers = (
             modifiers.proteins or modifiers.cheeses or modifiers.toppings
         )

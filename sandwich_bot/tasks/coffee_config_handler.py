@@ -206,23 +206,15 @@ class CoffeeConfigHandler:
             # Standard coffee types that don't need menu lookup (latte, cappuccino, etc.)
             standard_coffee_types = get_coffee_types()
             if coffee_type_lower not in standard_coffee_types:
-                # Unknown drink - suggest available options
+                # Unknown drink - mark it so taking_items_handler can show the right message
                 logger.info("ADD COFFEE: Unknown drink '%s', no matches found", coffee_type_lower)
-                # Get all drinks to suggest
-                drink_names = [item.get("name", "Unknown") for item in all_drinks[:8]]
-                if len(drink_names) > 5:
-                    drinks_str = ", ".join(drink_names[:5]) + ", and more"
-                elif len(drink_names) == 2:
-                    drinks_str = f"{drink_names[0]} or {drink_names[1]}"
-                elif drink_names:
-                    drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
-                else:
-                    drinks_str = "various drinks"
-
                 order.pending_field = "drink_type"
+                order.unknown_drink_request = coffee_type  # Store for message generation
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
+                # Note: StateMachineResult message is discarded by _add_parsed_item,
+                # the actual message is generated in taking_items_handler.py
                 return StateMachineResult(
-                    message=f"Sorry, we don't have {coffee_type}. We have {drinks_str}. What would you like?",
+                    message="",  # Will be overwritten
                     order=order,
                 )
 
@@ -1052,7 +1044,9 @@ class CoffeeConfigHandler:
                     )
                     drink.mark_in_progress()
                     order.items.add_item(drink)
-                    return self.configure_next_incomplete_coffee(order)
+                    # Use _get_next_question which checks for incomplete bagels first
+                    # This ensures bagels are configured before coffees when both are ordered together
+                    return self._get_next_question(order)
 
         # Clear pending state and pagination
         order.clear_pending()

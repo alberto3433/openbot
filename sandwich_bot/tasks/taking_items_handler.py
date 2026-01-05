@@ -1440,13 +1440,19 @@ class TakingItemsHandler:
 
                 drink_names = [item.get("name", "Unknown") for item in batch]
 
+                # Check if this is for an unknown drink request (user asked for something we don't have)
+                unknown_prefix = ""
+                if order.unknown_drink_request:
+                    unknown_prefix = f"Sorry, we don't have {order.unknown_drink_request}. "
+                    order.unknown_drink_request = None  # Clear after using
+
                 if remaining > 0:
                     # Format with "and more"
                     if len(drink_names) == 1:
                         drinks_str = drink_names[0]
                     else:
                         drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
-                    message = f"We have {drinks_str}, and more. What type of drink would you like?"
+                    message = f"{unknown_prefix}We have {drinks_str}, and more. What type of drink would you like?"
                     # Set pagination for "what else" follow-up
                     order.set_menu_pagination("drink", batch_size, len(all_drinks))
                 else:
@@ -1457,7 +1463,7 @@ class TakingItemsHandler:
                         drinks_str = f"{drink_names[0]} or {drink_names[1]}"
                     else:
                         drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
-                    message = f"We have {drinks_str}. Which would you like?"
+                    message = f"{unknown_prefix}We have {drinks_str}. Which would you like?"
 
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 return StateMachineResult(message=message, order=order)

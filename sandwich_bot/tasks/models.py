@@ -785,6 +785,10 @@ class OrderTask(BaseTask):
     # Each entry is a dict with: name, base_price, id, etc.
     pending_drink_options: list[dict] = Field(default_factory=list)
 
+    # Unknown drink request - stores the drink name user asked for that doesn't exist
+    # Used to show "Sorry, we don't have X" message
+    unknown_drink_request: str | None = Field(default=None)
+
     # Generic menu item options for disambiguation (cookies, muffins, etc.)
     # Used when user says "cookies" and there are multiple cookie types
     pending_item_options: list[dict] = Field(default_factory=list)
@@ -842,6 +846,9 @@ class OrderTask(BaseTask):
             return True
         # Handle drink selection when multiple options were presented
         if self.pending_field == "drink_selection":
+            return True
+        # Handle drink type selection (disambiguation like "latte" matching multiple items)
+        if self.pending_field == "drink_type":
             return True
         # Handle generic item selection (cookies, muffins, etc.) when multiple options presented
         if self.pending_field == "item_selection":

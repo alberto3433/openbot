@@ -102,7 +102,7 @@ from .constants import (
     get_proteins,
     get_cheeses,
     get_toppings,
-    MODIFIER_NORMALIZATIONS,
+    # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Regex patterns - basic
     QUALIFIER_PATTERNS,
     GREETING_PATTERNS,
@@ -217,7 +217,7 @@ __all__ = [
     "get_proteins",
     "get_cheeses",
     "get_toppings",
-    "MODIFIER_NORMALIZATIONS",
+    # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",
     "GREETING_PATTERNS",

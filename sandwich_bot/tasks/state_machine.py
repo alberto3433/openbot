@@ -87,7 +87,6 @@ from .parsers import (
     get_cheeses,
     get_toppings,
     get_bagel_spreads,
-    MODIFIER_NORMALIZATIONS,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,
     GREETING_PATTERNS,

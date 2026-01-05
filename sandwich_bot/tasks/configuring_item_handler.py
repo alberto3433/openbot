@@ -235,6 +235,14 @@ class ConfiguringItemHandler:
         if order.pending_field == "duplicate_selection":
             return self.taking_items_handler.handle_duplicate_selection(user_input, order)
 
+        # Handle "same thing" clarification when user has both previous order AND cart items
+        if order.pending_field == "same_thing_clarification":
+            return self.taking_items_handler.handle_same_thing_clarification(user_input, order)
+
+        # Handle suggested item confirmation ("Would you like to order one?" -> "yes" / "give me one")
+        if order.pending_field == "confirm_suggested_item":
+            return self.taking_items_handler.handle_confirm_suggested_item(user_input, order)
+
         item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
         if item is None:
             order.clear_pending()

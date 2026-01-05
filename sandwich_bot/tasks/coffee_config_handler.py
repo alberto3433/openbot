@@ -165,11 +165,38 @@ class CoffeeConfigHandler:
             ]
 
             if len(matching_drinks) == 1:
-                # Single match - add it directly
+                # Single match - add it directly with proper skip_config handling
                 matched_drink = matching_drinks[0]
-                coffee_type = matched_drink.get("name")
-                logger.info("ADD COFFEE: Single match for '%s' -> '%s', adding directly", coffee_type_lower, coffee_type)
-                # Fall through to normal add logic below
+                matched_name = matched_drink.get("name")
+                matched_price = matched_drink.get("base_price", 2.50)
+                skip_config = matched_drink.get("skip_config", False) or is_soda_drink(matched_name)
+                logger.info("ADD COFFEE: Single match for '%s' -> '%s', skip_config=%s", coffee_type_lower, matched_name, skip_config)
+
+                if skip_config:
+                    # Add directly as complete (no size/iced questions)
+                    drink = CoffeeItemTask(
+                        drink_type=matched_name,
+                        size=None,
+                        iced=None,
+                        milk=None,
+                        sweeteners=[],
+                        flavor_syrups=[],
+                        unit_price=matched_price,
+                    )
+                    drink.mark_complete()
+                    order.items.add_item(drink)
+                    order.clear_pending()
+                    if self._get_next_question:
+                        return self._get_next_question(order)
+                    return StateMachineResult(
+                        message=f"Got it, {matched_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    # Needs configuration - add as in_progress and configure
+                    coffee_type = matched_name
+                    coffee_type_lower = matched_name.lower()
+                    # Fall through to normal add logic below
 
             elif len(matching_drinks) > 1:
                 # Multiple matches - show only the filtered options

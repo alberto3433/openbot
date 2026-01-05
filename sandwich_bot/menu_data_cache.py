@@ -75,6 +75,7 @@ class MenuDataCache:
         self._coffee_alias_to_canonical: dict[str, str] = {}
         self._soda_alias_to_canonical: dict[str, str] = {}
         self._speed_menu_bagels: dict[str, str] = {}  # alias -> menu item name
+        self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
 
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
@@ -135,6 +136,7 @@ class MenuDataCache:
                 self._load_speed_menu_bagels(db)
                 self._load_by_pound_items(db)
                 self._load_by_pound_category_names(db)
+                self._load_modifier_aliases(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -678,6 +680,49 @@ class MenuDataCache:
             len(category_names),
         )
 
+    def _load_modifier_aliases(self, db: Session) -> None:
+        """Load modifier alias mappings from ingredient aliases.
+
+        Builds a mapping from user input variations (aliases) to canonical
+        Ingredient.name values. This replaces the hardcoded MODIFIER_NORMALIZATIONS
+        constant in constants.py.
+
+        The mapping is used for normalizing modifier input like "lox" -> "Nova Scotia Salmon",
+        "veggie" -> "Vegetable Cream Cheese", etc.
+        """
+        from .models import Ingredient
+
+        modifier_aliases: dict[str, str] = {}
+
+        # Query all ingredients with aliases
+        ingredients_with_aliases = (
+            db.query(Ingredient)
+            .filter(Ingredient.aliases.isnot(None))
+            .filter(Ingredient.aliases != "")
+            .all()
+        )
+
+        for ing in ingredients_with_aliases:
+            canonical_name = ing.name  # Preserve original casing
+
+            # Parse comma-separated aliases
+            for alias in ing.aliases.split(","):
+                alias = alias.strip().lower()
+                if alias:
+                    modifier_aliases[alias] = canonical_name
+
+            # Also add the ingredient name itself (lowercase) as a key
+            name_lower = ing.name.lower()
+            modifier_aliases[name_lower] = canonical_name
+
+        self._modifier_aliases = modifier_aliases
+
+        logger.debug(
+            "Loaded %d modifier aliases from %d ingredients",
+            len(modifier_aliases),
+            len(ingredients_with_aliases),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -949,6 +994,34 @@ class MenuDataCache:
             return name
         name_lower = name.lower().strip()
         return self._soda_alias_to_canonical.get(name_lower, name)
+
+    def normalize_modifier(self, modifier: str) -> str:
+        """
+        Normalize a modifier name or alias to its canonical Ingredient name.
+
+        This replaces the hardcoded MODIFIER_NORMALIZATIONS dictionary in constants.py.
+        Aliases are loaded from the Ingredient.aliases column in the database.
+
+        Args:
+            modifier: User input like "lox", "veggie", "scallion", "eggs"
+
+        Returns:
+            Canonical Ingredient.name (e.g., "Nova Scotia Salmon" for "lox",
+            "Vegetable Cream Cheese" for "veggie") or the original modifier
+            if no mapping found (graceful failure).
+
+        Examples:
+            >>> cache.normalize_modifier("lox")
+            "Nova Scotia Salmon"
+            >>> cache.normalize_modifier("veggie")
+            "Vegetable Cream Cheese"
+            >>> cache.normalize_modifier("unknown")
+            "unknown"  # Returns original if not found
+        """
+        if not self._is_loaded:
+            return modifier
+        modifier_lower = modifier.lower().strip()
+        return self._modifier_aliases.get(modifier_lower, modifier)
 
     # =========================================================================
     # Partial Matching Methods

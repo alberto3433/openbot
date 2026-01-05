@@ -282,6 +282,8 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.config_options_page = sm_state.get("config_options_page", 0)
         order.multi_item_config_names = sm_state.get("multi_item_config_names", [])
         order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
+        order.pending_same_thing_clarification = sm_state.get("pending_same_thing_clarification")
+        order.pending_suggested_item = sm_state.get("pending_suggested_item")
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -862,6 +864,8 @@ def order_task_to_dict(
         "config_options_page": order.config_options_page,  # Pagination for "what else" during field config
         "multi_item_config_names": order.multi_item_config_names,  # Names for multi-item summary
         "pending_duplicate_selection": order.pending_duplicate_selection,  # Items for "one more" disambiguation
+        "pending_same_thing_clarification": order.pending_same_thing_clarification,  # "Same thing" disambiguation
+        "pending_suggested_item": order.pending_suggested_item,  # Item name for "Would you like to order one?" confirmation
     }
 
     return order_dict

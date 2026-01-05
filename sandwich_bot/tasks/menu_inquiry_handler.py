@@ -638,6 +638,10 @@ class MenuInquiryHandler:
             # Format with proper capitalization
             formatted_name = item_query.title()
             message = f"{formatted_name} has {description}. Would you like to order one?"
+
+            # Store context so "yes" / "give me one" adds this item
+            order.pending_suggested_item = formatted_name
+            order.pending_field = "confirm_suggested_item"
         else:
             # Item not found - offer to help find it
             message = (

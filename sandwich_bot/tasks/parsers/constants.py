@@ -121,45 +121,9 @@ WORD_TO_NUM = {
 # Use get_bagel_spreads() to access spread patterns for matching.
 # Data is loaded from ingredients (category='spread') and cream cheese menu items.
 
-# Map short names to full names for normalization
-MODIFIER_NORMALIZATIONS = {
-    # Proteins
-    "eggs": "egg",
-    "egg whites": "egg white",
-    "scrambled eggs": "scrambled egg",
-    "nova": "nova scotia salmon",
-    "lox": "nova scotia salmon",
-    # Cheeses - normalize to just the cheese name
-    "american cheese": "american",
-    "swiss cheese": "swiss",
-    "cheddar cheese": "cheddar",
-    "muenster cheese": "muenster",
-    "provolone cheese": "provolone",
-    "gouda cheese": "gouda",
-    "mozzarella cheese": "mozzarella",
-    "pepper jack cheese": "pepper jack",
-    # Toppings
-    "tomatoes": "tomato",
-    "onions": "onion",
-    "red onions": "red onion",
-    "cucumbers": "cucumber",
-    "pickles": "pickle",
-    "mushrooms": "mushroom",
-    "green peppers": "green pepper",
-    "red peppers": "red pepper",
-    "bell peppers": "bell pepper",
-    # Spreads
-    "plain cream cheese": "cream cheese",
-    "veggie cream cheese": "vegetable cream cheese",
-    "veggie": "vegetable cream cheese",
-    "scallion": "scallion cream cheese",
-    "strawberry": "strawberry cream cheese",
-    "blueberry": "blueberry cream cheese",
-    "olive": "olive cream cheese",
-    "honey walnut": "honey walnut cream cheese",
-    "tofu": "tofu cream cheese",
-    "jalapeno cream cheese": "jalapeño cream cheese",
-}
+# NOTE: MODIFIER_NORMALIZATIONS has been moved to the database.
+# Use menu_cache.normalize_modifier() to normalize modifier names.
+# Aliases are stored in the Ingredient.aliases column and loaded at startup.
 
 # =============================================================================
 # Regex Patterns
@@ -262,7 +226,6 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # Map of side item keywords to canonical menu names
 SIDE_ITEM_MAP = {
     "sausage": "Side of Sausage",
-    "turkey sausage": "Side of Sausage",  # No turkey sausage on menu, map to regular
     "bacon": "Side of Bacon",
     "turkey bacon": "Side of Turkey Bacon",
     "ham": "Side of Ham",

@@ -1127,12 +1127,95 @@ class TakingItemsHandler:
                 )
             return self._duplicate_all_items(order, active_items)
 
-        # Handle repeat order request
+        # Handle repeat order / "same thing" request
         if parsed.wants_repeat_order:
-            return self.checkout_handler.handle_repeat_order(
-                order,
-                returning_customer=self._returning_customer,
-                set_repeat_info_callback=self._set_repeat_info_callback,
+            active_items = order.items.get_active_items()
+            has_cart_items = len(active_items) > 0
+            has_previous_order = (
+                self._returning_customer
+                and self._returning_customer.get("last_order_items")
+            )
+
+            # Case 1: Both previous order AND items in cart - ask for clarification
+            if has_previous_order and has_cart_items:
+                # Build item options for cart
+                item_options = []
+                for item in reversed(active_items):
+                    item_options.append({
+                        "id": item.id,
+                        "summary": item.get_summary(),
+                        "quantity": item.quantity,
+                    })
+
+                order.pending_same_thing_clarification = {
+                    "has_previous_order": True,
+                    "cart_items": item_options,
+                }
+                order.pending_field = "same_thing_clarification"
+
+                # Build the question
+                if len(active_items) == 1:
+                    cart_option = f"another {active_items[0].get_summary()}"
+                else:
+                    cart_option = "duplicate something from your current order"
+
+                logger.info("'Same thing' ambiguous: has previous order AND %d cart items", len(active_items))
+                return StateMachineResult(
+                    message=f"Would you like to repeat your previous order, or {cart_option}?",
+                    order=order,
+                )
+
+            # Case 2: Only previous order (no cart items) - repeat previous order
+            if has_previous_order:
+                return self.checkout_handler.handle_repeat_order(
+                    order,
+                    returning_customer=self._returning_customer,
+                    set_repeat_info_callback=self._set_repeat_info_callback,
+                )
+
+            # Case 3: Only cart items (no previous order) - treat as duplicate
+            if has_cart_items:
+                # Reuse duplicate logic: single item = duplicate it, multiple = ask which one
+                if len(active_items) == 1:
+                    last_item = active_items[-1]
+                    last_item_name = last_item.get_summary()
+                    new_item = last_item.model_copy(deep=True)
+                    new_item.id = str(uuid.uuid4())
+                    new_item.mark_complete()
+                    order.items.add_item(new_item)
+                    logger.info("'Same thing' with single cart item: duplicated '%s'", last_item_name)
+                    return StateMachineResult(
+                        message=f"I've added another {last_item_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    # Multiple items - ask which one to duplicate
+                    item_options = []
+                    for item in reversed(active_items):
+                        item_options.append({
+                            "id": item.id,
+                            "summary": item.get_summary(),
+                            "quantity": item.quantity,
+                        })
+                    order.pending_duplicate_selection = {
+                        "count": 1,
+                        "items": item_options,
+                    }
+                    order.pending_field = "duplicate_selection"
+                    question_parts = [f"another {opt['summary']}" for opt in item_options]
+                    question = ", ".join(question_parts) + ", or all the items in your order?"
+                    question = question[0].upper() + question[1:]
+                    logger.info("'Same thing' with %d cart items: asking which to duplicate", len(active_items))
+                    return StateMachineResult(
+                        message=question,
+                        order=order,
+                    )
+
+            # Case 4: Neither previous order nor cart items
+            logger.info("'Same thing' requested but no previous order and no cart items")
+            return StateMachineResult(
+                message="I don't have a previous order on file for you. What can I get for you today?",
+                order=order,
             )
 
         # Check if user specified order type upfront (e.g., "I'd like to place a pickup order")
@@ -1819,6 +1902,55 @@ class TakingItemsHandler:
                 order=order,
             )
 
+    def handle_confirm_suggested_item(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to 'Would you like to order one?' after item description.
+
+        Called when user asked about an item (e.g., 'what's in the Lexington?'),
+        bot described it and asked 'Would you like to order one?'.
+        """
+        suggested_item = order.pending_suggested_item
+        user_lower = user_input.lower().strip()
+
+        # Clear context first (will be processed either way)
+        order.pending_suggested_item = None
+        order.pending_field = None
+
+        # Check for affirmative response
+        affirmative_patterns = [
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay",
+            "give me one", "i'll take one", "i'll have one",
+            "i want one", "one please", "get me one",
+            "i'll take it", "i'll have it", "i want it",
+            "sounds good", "let's do it", "please", "definitely",
+            "absolutely", "of course", "why not", "go ahead",
+        ]
+
+        is_affirmative = any(pattern in user_lower for pattern in affirmative_patterns)
+
+        if is_affirmative and suggested_item:
+            logger.info(
+                "User confirmed suggested item '%s' with response: '%s'",
+                suggested_item, user_input
+            )
+            # Use existing add_menu_item to add the suggested item
+            return self.item_adder_handler.add_menu_item(
+                suggested_item,
+                quantity=1,
+                order=order,
+            )
+
+        # Not affirmative - process as normal taking_items input
+        # User might be ordering something else or saying no
+        logger.info(
+            "User did not confirm suggested item '%s', processing as normal input: '%s'",
+            suggested_item, user_input
+        )
+        return self.handle_open_input(user_input, order)
+
     def _duplicate_all_items(
         self,
         order: OrderTask,
@@ -1855,3 +1987,132 @@ class TakingItemsHandler:
                 message=f"I've duplicated everything in your order. Anything else?",
                 order=order,
             )
+
+    def handle_same_thing_clarification(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to 'same thing' clarification question.
+
+        Called when user said "same thing" and we have both a previous order
+        AND items in the current cart, so we asked which they meant.
+        """
+        from .parsers.deterministic import DUPLICATE_ALL_PATTERN
+
+        pending_info = order.pending_same_thing_clarification
+        if not pending_info:
+            order.pending_field = None
+            return StateMachineResult(
+                message="Something went wrong. What can I get for you?",
+                order=order,
+            )
+
+        cart_items = pending_info.get("cart_items", [])
+        text = user_input.strip().lower()
+
+        # Check if user wants to repeat previous order
+        previous_order_patterns = [
+            "previous", "last order", "my order", "repeat", "the order",
+            "what i had", "before", "last time"
+        ]
+        if any(pattern in text for pattern in previous_order_patterns):
+            order.pending_same_thing_clarification = None
+            order.pending_field = None
+            return self.checkout_handler.handle_repeat_order(
+                order,
+                returning_customer=self._returning_customer,
+                set_repeat_info_callback=self._set_repeat_info_callback,
+            )
+
+        # Check if user wants to duplicate all items in cart
+        if DUPLICATE_ALL_PATTERN.match(text) or "all" in text or "everything" in text:
+            order.pending_same_thing_clarification = None
+            order.pending_field = None
+            active_items = order.items.get_active_items()
+            return self._duplicate_all_items(order, active_items)
+
+        # Check if user wants to duplicate something from cart (single item case or specific item)
+        cart_patterns = ["cart", "current", "another", "duplicate", "one more"]
+        if any(pattern in text for pattern in cart_patterns):
+            order.pending_same_thing_clarification = None
+            order.pending_field = None
+            active_items = order.items.get_active_items()
+
+            if len(active_items) == 1:
+                # Single item - duplicate it
+                last_item = active_items[-1]
+                last_item_name = last_item.get_summary()
+                new_item = last_item.model_copy(deep=True)
+                new_item.id = str(uuid.uuid4())
+                new_item.mark_complete()
+                order.items.add_item(new_item)
+                logger.info("'Same thing' clarified: duplicated single cart item '%s'", last_item_name)
+                return StateMachineResult(
+                    message=f"I've added another {last_item_name}. Anything else?",
+                    order=order,
+                )
+            else:
+                # Multiple items - ask which one
+                item_options = []
+                for item in reversed(active_items):
+                    item_options.append({
+                        "id": item.id,
+                        "summary": item.get_summary(),
+                        "quantity": item.quantity,
+                    })
+                order.pending_duplicate_selection = {
+                    "count": 1,
+                    "items": item_options,
+                }
+                order.pending_field = "duplicate_selection"
+                question_parts = [f"another {opt['summary']}" for opt in item_options]
+                question = ", ".join(question_parts) + ", or all the items?"
+                question = question[0].upper() + question[1:]
+                return StateMachineResult(
+                    message=question,
+                    order=order,
+                )
+
+        # Try to match user's response to one of the cart items directly
+        matched_item = None
+        for item_info in cart_items:
+            summary_lower = item_info["summary"].lower()
+            if text in summary_lower or summary_lower in text:
+                matched_item = item_info
+                break
+
+        if matched_item:
+            order.pending_same_thing_clarification = None
+            order.pending_field = None
+
+            # Find the actual item by ID
+            item_to_duplicate = None
+            for item in order.items.get_active_items():
+                if item.id == matched_item["id"]:
+                    item_to_duplicate = item
+                    break
+
+            if item_to_duplicate:
+                item_name = item_to_duplicate.get_summary()
+                new_item = item_to_duplicate.model_copy(deep=True)
+                new_item.id = str(uuid.uuid4())
+                new_item.mark_complete()
+                order.items.add_item(new_item)
+                logger.info("'Same thing' clarified: duplicated specific item '%s'", item_name)
+                return StateMachineResult(
+                    message=f"I've added another {item_name}. Anything else?",
+                    order=order,
+                )
+
+        # Didn't understand - repeat the question
+        active_items = order.items.get_active_items()
+        if len(active_items) == 1:
+            cart_option = f"another {active_items[0].get_summary()}"
+        else:
+            cart_option = "duplicate something from your current order"
+
+        return StateMachineResult(
+            message=f"I didn't catch that. Would you like to repeat your previous order, or {cart_option}?",
+            order=order,
+        )

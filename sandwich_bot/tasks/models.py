@@ -811,6 +811,16 @@ class OrderTask(BaseTask):
     # Dict with: count (int - how many to duplicate), items (list of item summaries for question)
     pending_duplicate_selection: dict | None = None
 
+    # Pending "same thing" disambiguation
+    # Used when user says "same thing" and we have both a previous order AND items in cart
+    # Dict with: has_previous_order (bool), cart_items (list of item summaries)
+    pending_same_thing_clarification: dict | None = None
+
+    # Pending suggested item from menu inquiry
+    # Set when bot describes an item and asks "Would you like to order one?"
+    # Stores the menu item name (e.g., "The Lexington") for confirmation
+    pending_suggested_item: str | None = None
+
     # Menu query pagination state for "show more" functionality
     # Dict with: category (str), offset (int), total_items (int)
     # Used when user asks "what other X do you have?" or "more X"
@@ -859,6 +869,9 @@ class OrderTask(BaseTask):
         # Handle duplicate item selection when multiple items in cart
         if self.pending_field == "duplicate_selection":
             return True
+        # Handle suggested item confirmation ("Would you like to order one?" -> "yes")
+        if self.pending_field == "confirm_suggested_item":
+            return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 
     def is_configuring_multiple(self) -> bool:
@@ -870,6 +883,7 @@ class OrderTask(BaseTask):
         self.pending_item_ids = []
         self.pending_field = None
         self.config_options_page = 0
+        self.pending_suggested_item = None
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

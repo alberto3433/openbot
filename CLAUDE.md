@@ -111,7 +111,7 @@ Input variations are normalized to canonical forms:
 - "cc" → "cream cheese"
 - "bec" → bacon, egg, cheese
 
-See `sandwich_bot/tasks/parsers/constants.py` for `MODIFIER_NORMALIZATIONS`.
+Modifier normalization uses `Ingredient.aliases` in the database. Use `menu_cache.normalize_modifier()` to normalize modifier names.
 
 ### Pricing System
 

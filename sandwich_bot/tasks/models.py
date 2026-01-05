@@ -716,7 +716,7 @@ class CheckoutTask(BaseTask):
         is_delivery: bool = False,
         city_tax_rate: float = 0.0,
         state_tax_rate: float = 0.0,
-        delivery_fee: float = 2.99,
+        delivery_fee: float = 0.0,
     ) -> None:
         """Calculate order totals."""
         self.subtotal = subtotal

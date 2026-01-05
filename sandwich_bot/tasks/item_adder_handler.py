@@ -682,13 +682,13 @@ class ItemAdderHandler:
         logger.info("Adding %d bagels from details", len(bagel_details))
 
         for i, details in enumerate(bagel_details):
-            # Look up base price
-            base_price = 2.50
+            # Look up base price from menu (no fallback - fail gracefully with 0)
+            base_price = 0
             if details.bagel_type:
                 bagel_name = f"{details.bagel_type.title()} Bagel" if "bagel" not in details.bagel_type.lower() else details.bagel_type
                 menu_item = self.menu_lookup.lookup_menu_item(bagel_name)
                 if menu_item:
-                    base_price = menu_item.get("base_price", 2.50)
+                    base_price = menu_item.get("base_price", 0)
 
             # Build extras list from extracted modifiers (apply to first bagel only)
             extras: list[str] = []

@@ -142,6 +142,7 @@ def build_store_info(
             store_info["city_tax_rate"] = store.city_tax_rate or 0.0
             store_info["state_tax_rate"] = store.state_tax_rate or 0.0
             store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
+            store_info["delivery_fee"] = store.delivery_fee if store.delivery_fee is not None else 0.0
             # Add location and contact info
             store_info["address"] = store.address
             store_info["city"] = store.city

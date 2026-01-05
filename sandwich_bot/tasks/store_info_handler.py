@@ -12,7 +12,9 @@ import re
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .parsers.constants import NYC_NEIGHBORHOOD_ZIPS
+
+# Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
+# Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
 
 # Batch size for modifier category pagination (toppings, proteins, etc.)
 MODIFIER_BATCH_SIZE = 6
@@ -159,17 +161,18 @@ class StoreInfoHandler:
             zip_code = zip_match.group(1)
             return self._check_delivery_for_zip(zip_code, all_stores, order)
 
-        # Check if it's a known neighborhood
+        # Check if it's a known neighborhood (from database)
+        neighborhood_zip_codes = self._menu_data.get("neighborhood_zip_codes", {})
         neighborhood_key = query_clean.replace("'", "'").strip()
-        if neighborhood_key in NYC_NEIGHBORHOOD_ZIPS:
-            zip_codes = NYC_NEIGHBORHOOD_ZIPS[neighborhood_key]
+        if neighborhood_key in neighborhood_zip_codes:
+            zip_codes = neighborhood_zip_codes[neighborhood_key]
             # Check if any of these zip codes are in delivery zones
             return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
 
         # Try fuzzy matching for neighborhoods (common variations)
-        for key in NYC_NEIGHBORHOOD_ZIPS:
+        for key in neighborhood_zip_codes:
             if key in query_clean or query_clean in key:
-                zip_codes = NYC_NEIGHBORHOOD_ZIPS[key]
+                zip_codes = neighborhood_zip_codes[key]
                 return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
 
         # Check if it looks like an address (has numbers suggesting a street address)

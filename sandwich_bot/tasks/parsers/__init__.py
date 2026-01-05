@@ -123,7 +123,7 @@ from .constants import (
     STORE_HOURS_PATTERNS,
     STORE_LOCATION_PATTERNS,
     DELIVERY_ZONE_PATTERNS,
-    NYC_NEIGHBORHOOD_ZIPS,
+    # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Recommendation patterns
     RECOMMENDATION_PATTERNS,
     # Item description patterns
@@ -235,7 +235,7 @@ __all__ = [
     "STORE_HOURS_PATTERNS",
     "STORE_LOCATION_PATTERNS",
     "DELIVERY_ZONE_PATTERNS",
-    "NYC_NEIGHBORHOOD_ZIPS",
+    # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Constants - Recommendation patterns
     "RECOMMENDATION_PATTERNS",
     # Constants - Item description patterns

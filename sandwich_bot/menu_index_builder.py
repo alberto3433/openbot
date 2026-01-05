@@ -16,6 +16,7 @@ from .models import (
     AttributeDefinition,
     AttributeOption,
     ModifierCategory,
+    NeighborhoodZipCode,
 )
 
 
@@ -145,6 +146,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         item_json = {
             "id": item.id,
             "name": item.name,
+            "description": item.description,  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
             "category": item.category,
             "is_signature": bool(item.is_signature),
             "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
@@ -203,6 +205,17 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     )
     index["cheese_types"] = [ing.name for ing in cheese_ingredients]
     index["cheese_prices"] = {ing.name.lower(): ing.base_price for ing in cheese_ingredients}
+
+    # Cream cheese flavors - extracted from ingredients with 'Cream Cheese' in name
+    # These are used for listing cream cheese options to customers
+    cream_cheese_flavors = []
+    for ing in cheese_ingredients:
+        if "cream cheese" in ing.name.lower():
+            # Extract flavor (e.g., "Plain Cream Cheese" -> "plain")
+            flavor = ing.name.lower().replace(" cream cheese", "").strip()
+            if flavor and flavor not in cream_cheese_flavors:
+                cream_cheese_flavors.append(flavor)
+    index["cream_cheese_flavors"] = cream_cheese_flavors
 
     # Sauce types - all ingredients with category 'sauce'
     sauce_ingredients = (
@@ -303,6 +316,13 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Build item keyword mappings for modifier inquiry parsing
     # Maps keywords like "latte", "cappuccino" -> "coffee" (item type slug)
     index["item_keywords"] = _build_item_keywords(db)
+
+    # Build neighborhood to zip code mappings for delivery zone lookups
+    index["neighborhood_zip_codes"] = _build_neighborhood_zip_codes(db)
+
+    # Build item descriptions mapping for "what's on" queries
+    # Maps normalized item names to descriptions
+    index["item_descriptions"] = _build_item_descriptions(db)
 
     return index
 
@@ -649,6 +669,51 @@ def _build_modifier_categories(db: Session) -> Dict[str, Any]:
         "keyword_to_category": keyword_to_category,
         "categories": category_data,
     }
+
+
+def _build_neighborhood_zip_codes(db: Session) -> Dict[str, List[str]]:
+    """
+    Build a neighborhood-to-zip-codes mapping from the database.
+
+    Used for delivery zone lookups when customers specify a neighborhood
+    instead of a zip code.
+
+    Returns:
+        Dict mapping lowercase neighborhood names to lists of zip codes.
+        Example: {"tribeca": ["10007", "10013", "10282"], "uws": ["10023", "10024", "10025"]}
+    """
+    neighborhoods = db.query(NeighborhoodZipCode).all()
+
+    result: Dict[str, List[str]] = {}
+    for n in neighborhoods:
+        result[n.neighborhood.lower()] = n.zip_codes or []
+
+    return result
+
+
+def _build_item_descriptions(db: Session) -> Dict[str, str]:
+    """
+    Build an item-name-to-description mapping from menu items.
+
+    Used for answering "what's on the X" questions without hardcoded descriptions.
+
+    Returns:
+        Dict mapping lowercase item names to descriptions.
+        Example: {"the classic bec": "Two Eggs, Applewood Smoked Bacon, and Cheddar"}
+    """
+    # Get all menu items with descriptions
+    items = db.query(MenuItem).filter(MenuItem.description.isnot(None)).all()
+
+    result: Dict[str, str] = {}
+    for item in items:
+        name_lower = item.name.lower()
+        result[name_lower] = item.description
+
+        # Also add without "the " prefix for easier matching
+        if name_lower.startswith("the "):
+            result[name_lower[4:]] = item.description
+
+    return result
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

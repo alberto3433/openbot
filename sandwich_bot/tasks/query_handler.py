@@ -13,11 +13,13 @@ from typing import TYPE_CHECKING
 
 from .schemas import OrderPhase
 from .parsers.constants import (
-    NYC_NEIGHBORHOOD_ZIPS,
     get_by_pound_items,
     get_by_pound_category_names,
     get_item_type_display_name,
 )
+
+# Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
+# Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
 
 if TYPE_CHECKING:
     from .models import OrderTask
@@ -41,68 +43,8 @@ class QueryHandler:
     to handle various types of informational inquiries.
     """
 
-    # Item descriptions from Zucker's menu (what's on each item)
-    ITEM_DESCRIPTIONS = {
-        # Egg Sandwiches
-        "the classic bec": "Two Eggs, Applewood Smoked Bacon, and Cheddar",
-        "classic bec": "Two Eggs, Applewood Smoked Bacon, and Cheddar",
-        "the latke bec": "Two Eggs, Applewood Smoked Bacon, Cheddar, and a Breakfast Potato Latke",
-        "latke bec": "Two Eggs, Applewood Smoked Bacon, Cheddar, and a Breakfast Potato Latke",
-        "the leo": "Smoked Nova Scotia Salmon, Eggs, and Sautéed Onions",
-        "leo": "Smoked Nova Scotia Salmon, Eggs, and Sautéed Onions",
-        "the delancey": "Two Eggs, Corned Beef or Pastrami, Breakfast Potato Latke, Sautéed Onions, and Swiss",
-        "delancey": "Two Eggs, Corned Beef or Pastrami, Breakfast Potato Latke, Sautéed Onions, and Swiss",
-        "the mulberry": "Two Eggs, Esposito's Sausage, Green & Red Peppers, and Sautéed Onions",
-        "mulberry": "Two Eggs, Esposito's Sausage, Green & Red Peppers, and Sautéed Onions",
-        "the truffled egg": "Two Eggs, Swiss, Truffle Cream Cheese, and Sautéed Mushrooms",
-        "truffled egg": "Two Eggs, Swiss, Truffle Cream Cheese, and Sautéed Mushrooms",
-        "the lexington": "Egg Whites, Swiss, and Spinach",
-        "lexington": "Egg Whites, Swiss, and Spinach",
-        "the columbus": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese",
-        "columbus": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese",
-        "the health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        # Signature Sandwiches
-        "the zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "the traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "the flatiron": "Everything-seeded Salmon with Scallion Cream Cheese and Fresh Avocado",
-        "flatiron": "Everything-seeded Salmon with Scallion Cream Cheese and Fresh Avocado",
-        "the alton brown": "Smoked Trout with Plain Cream Cheese, Avocado Horseradish, and Tobiko",
-        "alton brown": "Smoked Trout with Plain Cream Cheese, Avocado Horseradish, and Tobiko",
-        "the old-school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "old-school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "old school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "the max zucker": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions",
-        "max zucker": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions",
-        "the chelsea club": "Chicken Salad, Cheddar, Smoked Bacon, Beefsteak Tomatoes, Lettuce, and Red Onions",
-        "chelsea club": "Chicken Salad, Cheddar, Smoked Bacon, Beefsteak Tomatoes, Lettuce, and Red Onions",
-        "the grand central": "Grilled Chicken, Smoked Bacon, Beefsteak Tomatoes, Romaine, and Dijon Mayo",
-        "grand central": "Grilled Chicken, Smoked Bacon, Beefsteak Tomatoes, Romaine, and Dijon Mayo",
-        "the tribeca": "Roast Turkey, Havarti, Romaine, Beefsteak Tomatoes, Basil Mayo, and Cracked Black Pepper",
-        "tribeca": "Roast Turkey, Havarti, Romaine, Beefsteak Tomatoes, Basil Mayo, and Cracked Black Pepper",
-        "the natural": "Smoked Turkey, Brie, Beefsteak Tomatoes, Lettuce, and Dijon Dill Sauce",
-        "natural": "Smoked Turkey, Brie, Beefsteak Tomatoes, Lettuce, and Dijon Dill Sauce",
-        "the blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
-        "blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
-        "the reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
-        "reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
-        # Speed Menu Bagels
-        "the classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",
-        "classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",
-        # Omelettes
-        "the chipotle egg omelette": "Three Eggs with Pepper Jack Cheese, Jalapeños, and Chipotle Cream Cheese",
-        "chipotle egg omelette": "Three Eggs with Pepper Jack Cheese, Jalapeños, and Chipotle Cream Cheese",
-        "chipotle omelette": "Three Eggs with Pepper Jack Cheese, Jalapeños, and Chipotle Cream Cheese",
-        "the health nut omelette": "Three Egg Whites with Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "health nut omelette": "Three Egg Whites with Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "the delancey omelette": "Three Eggs with Corned Beef or Pastrami, Onions, and Swiss Cheese",
-        "delancey omelette": "Three Eggs with Corned Beef or Pastrami, Onions, and Swiss Cheese",
-        # Avocado Toast
-        "the avocado toast": "Crushed Avocado with Diced Tomatoes, Lemon Everything Seeds, Salt and Pepper",
-        "avocado toast": "Crushed Avocado with Diced Tomatoes, Lemon Everything Seeds, Salt and Pepper",
-    }
+    # Note: ITEM_DESCRIPTIONS has been moved to the database (menu_items.description column)
+    # Item descriptions are now loaded via menu_data["item_descriptions"]
 
     def __init__(
         self,
@@ -221,16 +163,17 @@ class QueryHandler:
             zip_code = zip_match.group(1)
             return self._check_delivery_for_zip(zip_code, all_stores, order)
 
-        # Check if it's a known neighborhood
+        # Check if it's a known neighborhood (from database)
+        neighborhood_zip_codes = self._menu_data.get("neighborhood_zip_codes", {})
         neighborhood_key = query_clean.replace("'", "'").strip()
-        if neighborhood_key in NYC_NEIGHBORHOOD_ZIPS:
-            zip_codes = NYC_NEIGHBORHOOD_ZIPS[neighborhood_key]
+        if neighborhood_key in neighborhood_zip_codes:
+            zip_codes = neighborhood_zip_codes[neighborhood_key]
             return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
 
         # Try fuzzy matching for neighborhoods
-        for key in NYC_NEIGHBORHOOD_ZIPS:
+        for key in neighborhood_zip_codes:
             if key in query_clean or query_clean in key:
-                zip_codes = NYC_NEIGHBORHOOD_ZIPS[key]
+                zip_codes = neighborhood_zip_codes[key]
                 return self._check_delivery_for_neighborhood(query, zip_codes, all_stores, order)
 
         # Check if it looks like an address
@@ -801,10 +744,14 @@ class QueryHandler:
             )
 
         item_query_lower = item_query.lower().strip()
-        description = self.ITEM_DESCRIPTIONS.get(item_query_lower)
+
+        # Get item descriptions from menu_data (loaded from database)
+        item_descriptions = self._menu_data.get("item_descriptions", {}) if self._menu_data else {}
+
+        description = item_descriptions.get(item_query_lower)
 
         if not description:
-            for key, desc in self.ITEM_DESCRIPTIONS.items():
+            for key, desc in item_descriptions.items():
                 if item_query_lower in key or key in item_query_lower:
                     description = desc
                     break
@@ -815,8 +762,11 @@ class QueryHandler:
                 for item in items:
                     item_name = item.get("name", "").lower()
                     if item_query_lower in item_name or item_name in item_query_lower:
-                        item_key = item.get("name", "").lower()
-                        description = self.ITEM_DESCRIPTIONS.get(item_key)
+                        # Check if item has a description directly
+                        description = item.get("description")
+                        if not description:
+                            # Fall back to item_descriptions lookup
+                            description = item_descriptions.get(item_name)
                         if description:
                             break
                 if description:

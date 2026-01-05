@@ -70,7 +70,7 @@ def calculate_order_total(
 
     delivery_fee = 0.0
     if is_delivery and store_info:
-        delivery_fee = store_info.get("delivery_fee", 2.99) or 0.0
+        delivery_fee = store_info.get("delivery_fee", 0.0) or 0.0
 
     return {
         "subtotal": round_money(subtotal),

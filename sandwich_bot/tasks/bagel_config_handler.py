@@ -55,12 +55,25 @@ BAGEL_TYPE_BATCH_SIZE = 4
 # NOTE: get_bagel_types_list() is now loaded from the database via get_bagel_types_list()
 # from parsers.constants, which delegates to menu_data_cache.
 
-# List of cream cheese flavors for listing when user asks
-CREAM_CHEESE_TYPES_LIST = [
-    "plain", "scallion", "veggie", "strawberry",  # Most common
-    "honey walnut", "lox", "chive", "blueberry",  # Popular
-    "olive", "jalapeno", "garlic herb", "sun-dried tomato",  # Less common
-]
+# NOTE: Cream cheese flavors are now loaded from the database via get_spread_types()
+# from parsers.constants. Use _get_cream_cheese_types_list() to get them.
+
+
+def _get_cream_cheese_types_list() -> list[str]:
+    """
+    Get cream cheese flavors from the database.
+
+    Returns a sorted list of cream cheese flavor types (e.g., "plain", "scallion").
+    Falls back to a minimal set if database is not loaded.
+    """
+    try:
+        spread_types = get_spread_types()
+        # Add "plain" which may not be in spread_types (it's the default)
+        flavors = sorted(spread_types | {"plain"})
+        return flavors if flavors else ["plain", "scallion", "veggie"]
+    except RuntimeError:
+        # Database not loaded, return minimal fallback
+        return ["plain", "scallion", "veggie"]
 
 
 def _is_pagination_request(user_input: str) -> bool:
@@ -407,11 +420,11 @@ class BagelConfigHandler:
         if is_asking_for_options:
             # Show cream cheese options with pagination
             batch_size = 6  # Show more cream cheese types per batch
-            batch = CREAM_CHEESE_TYPES_LIST[:batch_size]
+            batch = _get_cream_cheese_types_list()[:batch_size]
             types_str = ", ".join(batch)
-            has_more = len(CREAM_CHEESE_TYPES_LIST) > batch_size
+            has_more = len(_get_cream_cheese_types_list()) > batch_size
             if has_more:
-                order.set_menu_pagination("cream_cheese_types", batch_size, len(CREAM_CHEESE_TYPES_LIST))
+                order.set_menu_pagination("cream_cheese_types", batch_size, len(_get_cream_cheese_types_list()))
                 return StateMachineResult(
                     message=f"We have {types_str}, and more. Which would you like?",
                     order=order,
@@ -427,12 +440,12 @@ class BagelConfigHandler:
             pagination = order.get_menu_pagination()
             if pagination and pagination.get("category") == "cream_cheese_types":
                 offset = pagination.get("offset", 0)
-                batch = CREAM_CHEESE_TYPES_LIST[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                batch = _get_cream_cheese_types_list()[offset:offset + BAGEL_TYPE_BATCH_SIZE]
                 if batch:
                     new_offset = offset + BAGEL_TYPE_BATCH_SIZE
-                    has_more = new_offset < len(CREAM_CHEESE_TYPES_LIST)
+                    has_more = new_offset < len(_get_cream_cheese_types_list())
                     if has_more:
-                        order.set_menu_pagination("cream_cheese_types", new_offset, len(CREAM_CHEESE_TYPES_LIST))
+                        order.set_menu_pagination("cream_cheese_types", new_offset, len(_get_cream_cheese_types_list()))
                         types_str = ", ".join(batch)
                         return StateMachineResult(
                             message=f"We also have {types_str}, and more.",

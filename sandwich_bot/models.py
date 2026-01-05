@@ -248,6 +248,7 @@ class MenuItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
     category = Column(String, nullable=False, index=True)  # 'sandwich', 'side', 'drink', 'dessert', etc.
     is_signature = Column(Boolean, default=False, nullable=False)
     base_price = Column(Float, nullable=False)
@@ -560,6 +561,7 @@ class Store(Base):
 
     # Delivery configuration
     delivery_zip_codes = Column(JSON, nullable=False, default=list)  # List of zip codes for delivery
+    delivery_fee = Column(Float, nullable=False, default=2.99)  # Delivery fee in dollars
 
     # Soft delete support
     deleted_at = Column(DateTime(timezone=True), nullable=True)
@@ -567,6 +569,21 @@ class Store(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# --- Neighborhood to Zip Code mapping ---
+
+class NeighborhoodZipCode(Base):
+    """
+    Maps neighborhood names to their zip codes.
+    Used for delivery zone lookups when customers specify a neighborhood.
+    """
+    __tablename__ = "neighborhood_zip_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    neighborhood = Column(String(100), unique=True, nullable=False, index=True)
+    zip_codes = Column(JSON, nullable=False, default=list)  # List of zip codes
+    borough = Column(String(50), nullable=True)  # Manhattan, Brooklyn, Queens, Bronx
 
 
 # --- Company model for company-level settings ---

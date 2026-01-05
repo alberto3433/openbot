@@ -43,68 +43,8 @@ class MenuInquiryHandler:
     Manages menu listings, price inquiries, item descriptions, and signature menu queries.
     """
 
-    # Item descriptions from Zucker's menu (what's on each item)
-    ITEM_DESCRIPTIONS = {
-        # Egg Sandwiches
-        "the classic bec": "Two Eggs, Applewood Smoked Bacon, and Cheddar",
-        "classic bec": "Two Eggs, Applewood Smoked Bacon, and Cheddar",
-        "the latke bec": "Two Eggs, Applewood Smoked Bacon, Cheddar, and a Breakfast Potato Latke",
-        "latke bec": "Two Eggs, Applewood Smoked Bacon, Cheddar, and a Breakfast Potato Latke",
-        "the leo": "Smoked Nova Scotia Salmon, Eggs, and Sauteed Onions",
-        "leo": "Smoked Nova Scotia Salmon, Eggs, and Sauteed Onions",
-        "the delancey": "Two Eggs, Corned Beef or Pastrami, Breakfast Potato Latke, Sauteed Onions, and Swiss",
-        "delancey": "Two Eggs, Corned Beef or Pastrami, Breakfast Potato Latke, Sauteed Onions, and Swiss",
-        "the mulberry": "Two Eggs, Esposito's Sausage, Green & Red Peppers, and Sauteed Onions",
-        "mulberry": "Two Eggs, Esposito's Sausage, Green & Red Peppers, and Sauteed Onions",
-        "the truffled egg": "Two Eggs, Swiss, Truffle Cream Cheese, and Sauteed Mushrooms",
-        "truffled egg": "Two Eggs, Swiss, Truffle Cream Cheese, and Sauteed Mushrooms",
-        "the lexington": "Egg Whites, Swiss, and Spinach",
-        "lexington": "Egg Whites, Swiss, and Spinach",
-        "the columbus": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese",
-        "columbus": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese",
-        "the health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "health nut": "Three Egg Whites, Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        # Signature Sandwiches
-        "the zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "zucker's traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "the traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "traditional": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers",
-        "the flatiron": "Everything-seeded Salmon with Scallion Cream Cheese and Fresh Avocado",
-        "flatiron": "Everything-seeded Salmon with Scallion Cream Cheese and Fresh Avocado",
-        "the alton brown": "Smoked Trout with Plain Cream Cheese, Avocado Horseradish, and Tobiko",
-        "alton brown": "Smoked Trout with Plain Cream Cheese, Avocado Horseradish, and Tobiko",
-        "the old-school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "old-school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "old school tuna": "Fresh Tuna Salad with Lettuce and Beefsteak Tomatoes",
-        "the max zucker": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions",
-        "max zucker": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions",
-        "the chelsea club": "Chicken Salad, Cheddar, Smoked Bacon, Beefsteak Tomatoes, Lettuce, and Red Onions",
-        "chelsea club": "Chicken Salad, Cheddar, Smoked Bacon, Beefsteak Tomatoes, Lettuce, and Red Onions",
-        "the grand central": "Grilled Chicken, Smoked Bacon, Beefsteak Tomatoes, Romaine, and Dijon Mayo",
-        "grand central": "Grilled Chicken, Smoked Bacon, Beefsteak Tomatoes, Romaine, and Dijon Mayo",
-        "the tribeca": "Roast Turkey, Havarti, Romaine, Beefsteak Tomatoes, Basil Mayo, and Cracked Black Pepper",
-        "tribeca": "Roast Turkey, Havarti, Romaine, Beefsteak Tomatoes, Basil Mayo, and Cracked Black Pepper",
-        "the natural": "Smoked Turkey, Brie, Beefsteak Tomatoes, Lettuce, and Dijon Dill Sauce",
-        "natural": "Smoked Turkey, Brie, Beefsteak Tomatoes, Lettuce, and Dijon Dill Sauce",
-        "the blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
-        "blt": "Applewood Smoked Bacon, Lettuce, Beefsteak Tomatoes, and Mayo",
-        "the reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
-        "reuben": "Corned Beef, Pastrami, or Roast Turkey with Sauerkraut, Swiss Cheese, and Russian Dressing",
-        # Speed Menu Bagels
-        "the classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",
-        "classic": "Two Eggs, Applewood Smoked Bacon, and Cheddar on a Bagel",
-        # Omelettes
-        "the chipotle egg omelette": "Three Eggs with Pepper Jack Cheese, Jalapenos, and Chipotle Cream Cheese",
-        "chipotle egg omelette": "Three Eggs with Pepper Jack Cheese, Jalapenos, and Chipotle Cream Cheese",
-        "chipotle omelette": "Three Eggs with Pepper Jack Cheese, Jalapenos, and Chipotle Cream Cheese",
-        "the health nut omelette": "Three Egg Whites with Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "health nut omelette": "Three Egg Whites with Mushrooms, Spinach, Green & Red Peppers, and Tomatoes",
-        "the delancey omelette": "Three Eggs with Corned Beef or Pastrami, Onions, and Swiss Cheese",
-        "delancey omelette": "Three Eggs with Corned Beef or Pastrami, Onions, and Swiss Cheese",
-        # Avocado Toast
-        "the avocado toast": "Crushed Avocado with Diced Tomatoes, Lemon Everything Seeds, Salt and Pepper",
-        "avocado toast": "Crushed Avocado with Diced Tomatoes, Lemon Everything Seeds, Salt and Pepper",
-    }
+    # Note: ITEM_DESCRIPTIONS has been moved to the database (menu_items.description column)
+    # Item descriptions are now loaded via menu_data["item_descriptions"]
 
     def __init__(
         self,
@@ -747,27 +687,32 @@ class MenuInquiryHandler:
 
         item_query_lower = item_query.lower().strip()
 
+        # Get item descriptions from menu_data (loaded from database)
+        item_descriptions = self.menu_data.get("item_descriptions", {}) if self.menu_data else {}
+
         # Try to find an exact match or close match in descriptions
-        description = self.ITEM_DESCRIPTIONS.get(item_query_lower)
+        description = item_descriptions.get(item_query_lower)
 
         if not description:
             # Try partial matching - look for item_query in keys
-            for key, desc in self.ITEM_DESCRIPTIONS.items():
+            for key, desc in item_descriptions.items():
                 if item_query_lower in key or key in item_query_lower:
                     description = desc
                     break
 
         if not description:
-            # Also search menu_data for item names
+            # Also search menu_data for item names and their descriptions
             if self.menu_data:
                 items_by_type = self.menu_data.get("items_by_type", {})
                 for item_type, items in items_by_type.items():
                     for item in items:
                         item_name = item.get("name", "").lower()
                         if item_query_lower in item_name or item_name in item_query_lower:
-                            # Found the item in menu but no description - check ITEM_DESCRIPTIONS again
-                            item_key = item.get("name", "").lower()
-                            description = self.ITEM_DESCRIPTIONS.get(item_key)
+                            # Check if item has a description directly
+                            description = item.get("description")
+                            if not description:
+                                # Fall back to item_descriptions lookup
+                                description = item_descriptions.get(item_name)
                             if description:
                                 break
                     if description:

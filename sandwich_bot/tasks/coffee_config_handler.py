@@ -169,7 +169,7 @@ class CoffeeConfigHandler:
                 # Single match - add it directly with proper skip_config handling
                 matched_drink = matching_drinks[0]
                 matched_name = matched_drink.get("name")
-                matched_price = matched_drink.get("base_price", 2.50)
+                matched_price = matched_drink.get("base_price", 0)
                 skip_config = matched_drink.get("skip_config", False) or is_soda_drink(matched_name)
                 logger.info("ADD COFFEE: Single match for '%s' -> '%s', skip_config=%s", coffee_type_lower, matched_name, skip_config)
 
@@ -357,7 +357,7 @@ class CoffeeConfigHandler:
 
         # Look up item from menu to get price and skip_config flag
         menu_item = self.menu_lookup.lookup_menu_item(coffee_type) if coffee_type and self.menu_lookup else None
-        price = menu_item.get("base_price", 2.50) if menu_item else (self.pricing.lookup_coffee_price(coffee_type) if self.pricing else 2.50)
+        price = menu_item.get("base_price", 0) if menu_item else (self.pricing.lookup_coffee_price(coffee_type) if self.pricing else 0)
 
         # Check if this drink should skip configuration questions
         # Check if this is a soda/bottled drink FIRST - these skip configuration
@@ -928,7 +928,7 @@ class CoffeeConfigHandler:
 
         # Found the selection - retrieve stored modifiers BEFORE clearing pending state
         selected_name = selected_item.get("name", "drink")
-        selected_price = selected_item.get("base_price", 2.50)
+        selected_price = selected_item.get("base_price", 0)
 
         # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
         stored_mods = order.pending_coffee_modifiers or {}
@@ -1138,7 +1138,7 @@ class CoffeeConfigHandler:
             if selected_item:
                 # Found the selection - retrieve stored modifiers before clearing pending state
                 selected_name = selected_item.get("name", "drink")
-                selected_price = selected_item.get("base_price", 2.50)
+                selected_price = selected_item.get("base_price", 0)
 
                 # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
                 stored_mods = order.pending_coffee_modifiers or {}

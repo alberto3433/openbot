@@ -112,16 +112,17 @@ def persist_pending_order(
     # Calculate subtotal from line items
     subtotal = sum((it.get("line_total") or 0.0) for it in items)
 
-    # Get tax rates from store
+    # Get tax rates and delivery fee from store
     city_tax_rate = 0.0
     state_tax_rate = 0.0
-    delivery_fee = 2.99  # Default delivery fee
+    delivery_fee = 0.0
 
     if store_id:
         store = db.query(Store).filter(Store.store_id == store_id).first()
         if store:
             city_tax_rate = store.city_tax_rate or 0.0
             state_tax_rate = store.state_tax_rate or 0.0
+            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
 
     # Calculate taxes
     city_tax = subtotal * city_tax_rate
@@ -240,16 +241,17 @@ def persist_confirmed_order(
     # Calculate subtotal from line items
     subtotal = sum((it.get("line_total") or 0.0) for it in items)
 
-    # Get tax rates from store
+    # Get tax rates and delivery fee from store
     city_tax_rate = 0.0
     state_tax_rate = 0.0
-    delivery_fee = 2.99  # Default delivery fee
+    delivery_fee = 0.0
 
     if store_id:
         store = db.query(Store).filter(Store.store_id == store_id).first()
         if store:
             city_tax_rate = store.city_tax_rate or 0.0
             state_tax_rate = store.state_tax_rate or 0.0
+            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
 
     # Calculate taxes
     city_tax = subtotal * city_tax_rate

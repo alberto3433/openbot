@@ -22,9 +22,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default upcharges if not found in menu/pricing database
-DEFAULT_DOUBLE_SHOT_PRICE = 1.00
-DEFAULT_TRIPLE_SHOT_PRICE = 2.00
+# Note: DEFAULT_DOUBLE_SHOT_PRICE and DEFAULT_TRIPLE_SHOT_PRICE were removed.
+# All pricing should come from the database. If not found, we return 0 (fail gracefully).
 
 
 class EspressoConfigHandler:
@@ -142,8 +141,8 @@ class EspressoConfigHandler:
             items = self.menu_lookup.lookup_menu_items("espresso")
             for item in items:
                 if item.get("name", "").lower() == "espresso":
-                    return item.get("base_price", 3.00)
-        return 3.00  # Default fallback
+                    return item.get("base_price", 0)
+        return 0  # Fail gracefully - no fallback
 
     def _get_double_shot_upcharge(self) -> float:
         """Get upcharge for double shot."""
@@ -151,7 +150,7 @@ class EspressoConfigHandler:
             upcharge = self.pricing.lookup_coffee_modifier_price("double_shot", "extras")
             if upcharge > 0:
                 return upcharge
-        return DEFAULT_DOUBLE_SHOT_PRICE
+        return 0  # Fail gracefully - no fallback
 
     def _get_triple_shot_upcharge(self) -> float:
         """Get upcharge for triple shot."""
@@ -159,7 +158,7 @@ class EspressoConfigHandler:
             upcharge = self.pricing.lookup_coffee_modifier_price("triple_shot", "extras")
             if upcharge > 0:
                 return upcharge
-        return DEFAULT_TRIPLE_SHOT_PRICE
+        return 0  # Fail gracefully - no fallback
 
     def _get_shot_name(self, shots: int) -> str:
         """Get the name for the shot count."""

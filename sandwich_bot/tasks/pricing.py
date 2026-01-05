@@ -772,16 +772,8 @@ class PricingEngine:
             Minimum price found for the category, or 0 if not found
         """
         if not self._menu_data:
-            # Return sensible defaults for common categories
-            defaults = {
-                "bagel": 2.50,
-                "sized_beverage": 2.50,
-                "beverage": 2.00,
-                "egg_sandwich": 6.95,
-                "omelette": 8.95,
-                "side": 1.50,
-            }
-            return defaults.get(item_type, 0)
+            # No menu data available - fail gracefully with 0
+            return 0
 
         items_by_type = self._menu_data.get("items_by_type", {})
 

@@ -7,7 +7,7 @@ This module provides bidirectional conversion between:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from .models import (
     TaskStatus,
@@ -17,7 +17,6 @@ from .models import (
     MenuItemTask,
     SpeedMenuBagelItemTask,
 )
-from .field_config import MenuFieldConfig
 from .pricing import PricingEngine
 from ..services.tax_utils import calculate_order_total
 

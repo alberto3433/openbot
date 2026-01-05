@@ -10,7 +10,6 @@ import pytest
 @pytest.fixture(autouse=True)
 def ensure_cache_loaded(menu_cache_loaded):
     """Ensure menu cache is loaded before each test in this module."""
-    pass
 
 
 class TestGetCoffeeTypes:

@@ -5,7 +5,7 @@ This module contains dataclasses for holding extracted modifiers
 from user input (bagel modifiers, coffee modifiers).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 class ExtractedModifiers:

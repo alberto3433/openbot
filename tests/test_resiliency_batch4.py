@@ -5,7 +5,6 @@ Tests the system's ability to handle various quantity expressions,
 including words, large numbers, and quantity changes.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
 

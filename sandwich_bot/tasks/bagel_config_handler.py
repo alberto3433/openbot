@@ -39,7 +39,6 @@ from .parsers.deterministic import (
 from .parsers.constants import (
     MORE_MENU_ITEMS_PATTERNS,
     get_spread_types,
-    get_spreads,
     get_bagel_types,
     get_bagel_types_list,
 )

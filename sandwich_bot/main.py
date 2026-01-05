@@ -63,7 +63,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
-import os
 import pathlib
 import uuid
 from contextlib import asynccontextmanager
@@ -141,7 +140,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize menu data cache from database
     from .menu_data_cache import menu_cache
-    from .db import get_db, SessionLocal
+    from .db import SessionLocal
 
     logger.info("Initializing menu data cache...")
     try:
@@ -358,98 +357,15 @@ app.include_router(vapi_router)
 
 # From config
 from .config import (
-    DEFAULT_STORE_IDS,
-    STORE_NAMES,
-    get_random_store_id,
-    RATE_LIMIT_CHAT,
     RATE_LIMIT_ENABLED,
-    get_rate_limit_chat,
-    SESSION_TTL_SECONDS,
-    SESSION_MAX_CACHE_SIZE,
-    MAX_MESSAGE_LENGTH,
-    ADMIN_USERNAME,
-    ADMIN_PASSWORD,
 )
 
 # From services/session
-from .services.session import (
-    SESSION_CACHE,
-    get_or_create_session,
-    save_session,
-    clear_cache,
-    get_cache_stats,
-    _cleanup_expired_sessions,
-    _evict_oldest_sessions,
-)
 
 # From services/order
-from .services.order import (
-    persist_pending_order,
-    persist_confirmed_order,
-)
 
 # From services/helpers
-from .services.helpers import (
-    get_or_create_company,
-    lookup_customer_by_phone as _lookup_customer_by_phone,
-    get_primary_item_type_name,
-    serialize_menu_item,
-)
 
 # From schemas - Pydantic models
-from .schemas.chat import (
-    ChatStartResponse,
-    ChatMessageRequest,
-    ChatMessageResponse,
-    ActionOut,
-    AbandonedSessionRequest,
-    ReturningCustomerInfo,
-)
-from .schemas.menu import (
-    MenuItemOut,
-    MenuItemCreate,
-    MenuItemUpdate,
-)
-from .schemas.orders import (
-    OrderSummaryOut,
-    OrderItemOut,
-    OrderDetailOut,
-    OrderListResponse,
-)
-from .schemas.ingredients import (
-    IngredientOut,
-    IngredientCreate,
-    IngredientUpdate,
-    IngredientAvailabilityUpdate,
-    IngredientStoreAvailabilityOut,
-    MenuItemStoreAvailabilityOut,
-    MenuItemAvailabilityUpdate,
-)
-from .schemas.stores import (
-    StoreOut,
-    StoreCreate,
-    StoreUpdate,
-)
-from .schemas.company import (
-    CompanyOut,
-    CompanyUpdate,
-)
-from .schemas.analytics import (
-    SessionAnalyticsOut,
-    SessionAnalyticsListResponse,
-    AnalyticsSummary,
-)
-from .schemas.modifiers import (
-    ItemTypeOut,
-    ItemTypeCreate,
-    ItemTypeUpdate,
-    AttributeDefinitionOut,
-    AttributeDefinitionCreate,
-    AttributeDefinitionUpdate,
-    AttributeOptionOut,
-    AttributeOptionCreate,
-    AttributeOptionUpdate,
-)
 
 # From sammy/llm_client - LLM functions
-from .sammy.llm_client import call_sandwich_bot

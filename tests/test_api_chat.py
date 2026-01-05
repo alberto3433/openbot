@@ -54,7 +54,6 @@ def test_chat_message_add_sandwich_updates_order_state(client, monkeypatch, disa
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
 
-    from sandwich_bot import main as main_mod
 
     def fake_call(
         conversation_history,
@@ -124,7 +123,6 @@ def test_multi_item_order_adds_all_items(client, monkeypatch, disable_state_mach
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
 
-    from sandwich_bot import main as main_mod
 
     def fake_multi_item_call(
         conversation_history,
@@ -245,7 +243,6 @@ def test_multi_item_order_can_remove_single_item(client, monkeypatch, disable_st
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
 
-    from sandwich_bot import main as main_mod
 
     # First, add multiple items
     def fake_multi_item_call(
@@ -398,7 +395,6 @@ def test_legacy_single_intent_format_still_works(client, monkeypatch, disable_st
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
 
-    from sandwich_bot import main as main_mod
 
     def fake_legacy_call(
         conversation_history,
@@ -458,7 +454,6 @@ def test_chat_message_handles_llm_error_gracefully(client, monkeypatch, disable_
     start_resp = client.post("/chat/start")
     session_id = start_resp.json()["session_id"]
 
-    from sandwich_bot import main as main_mod
 
     def fake_call_that_fails(*args, **kwargs):
         raise Exception("OpenAI API is down")
@@ -570,7 +565,6 @@ def test_rate_limit_can_be_disabled(client, monkeypatch):
 
 def test_modification_add_topping_to_existing_sandwich(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then add a topping mid-order."""
-    from sandwich_bot import main as main_mod
 
     # Start session
     start_resp = client.post("/chat/start")
@@ -663,7 +657,6 @@ def test_modification_add_topping_to_existing_sandwich(client, monkeypatch, disa
 
 def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then remove a topping mid-order."""
-    from sandwich_bot import main as main_mod
 
     # Start session
     start_resp = client.post("/chat/start")
@@ -751,7 +744,6 @@ def test_modification_remove_topping_from_existing_sandwich(client, monkeypatch,
 
 def test_modification_add_and_remove_toppings_simultaneously(client, monkeypatch, disable_state_machine):
     """Test full flow: add sandwich, then add and remove toppings in one request."""
-    from sandwich_bot import main as main_mod
 
     # Start session
     start_resp = client.post("/chat/start")
@@ -837,7 +829,6 @@ def test_modification_change_sandwich_type(client, monkeypatch, disable_state_ma
     Note: The LLM fallback path uses apply_intent_to_order_state which transforms
     item names based on menu lookup. Sandwiches not found become "Custom {protein} Sandwich".
     """
-    from sandwich_bot import main as main_mod
 
     # Start session
     start_resp = client.post("/chat/start")
@@ -923,7 +914,6 @@ def test_modification_change_sandwich_type(client, monkeypatch, disable_state_ma
 
 def test_modification_first_sandwich_by_index(client, monkeypatch, disable_state_machine):
     """Test full flow: add two sandwiches, modify the first one by index."""
-    from sandwich_bot import main as main_mod
 
     # Start session
     start_resp = client.post("/chat/start")
@@ -1051,8 +1041,6 @@ def test_chat_start_with_caller_id(client):
 
 def test_chat_start_with_caller_id_recognizes_returning_customer(client, monkeypatch, disable_state_machine):
     """Test that returning customers are recognized by phone number."""
-    from sandwich_bot import main as main_mod
-    from sandwich_bot.models import Order, OrderItem
 
     # First, create a prior order with a phone number
     start_resp = client.post("/chat/start")

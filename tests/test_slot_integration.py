@@ -10,7 +10,7 @@ import logging
 from unittest.mock import patch, MagicMock
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
 
 
 class TestSlotComparisonLogging:
@@ -73,7 +73,6 @@ class TestSlotComparisonLogging:
 
     def test_slot_logging_on_order_flow(self, state_machine, capture_slot_logs):
         """Verify slot comparison logs throughout an order flow."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
 

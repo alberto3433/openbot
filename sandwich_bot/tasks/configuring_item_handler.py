@@ -11,7 +11,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from .models import OrderTask, ItemTask, MenuItemTask
+from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
 
 if TYPE_CHECKING:

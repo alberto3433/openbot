@@ -5,7 +5,6 @@ Tests the system's ability to handle replacement and modification requests
 where the user wants to change something about an item already in their order.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
 

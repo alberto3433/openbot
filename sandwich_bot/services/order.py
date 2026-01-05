@@ -38,7 +38,6 @@ handling various item types (sandwiches, bagels, coffees) with their
 specific configurations.
 """
 
-import json
 import logging
 from typing import Any, Dict, Optional
 

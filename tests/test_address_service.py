@@ -2,7 +2,6 @@
 Tests for the address completion service.
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 from sandwich_bot.address_service import (

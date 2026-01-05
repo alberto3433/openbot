@@ -7,11 +7,7 @@ Tests complete flows through the state machine.
 import pytest
 from unittest.mock import patch, MagicMock
 
-from sandwich_bot.tasks.adapter import (
-    dict_to_order_task,
-    order_task_to_dict,
-)
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
 
 
 # =============================================================================
@@ -27,7 +23,7 @@ class TestStateMachineMultiBagel:
             OrderStateMachine,
         )
         from sandwich_bot.tasks.schemas import OrderPhase, BagelChoiceResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         # Create order with 3 bagels that don't have types yet
         order = OrderTask()
@@ -64,7 +60,7 @@ class TestStateMachineMultiBagel:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 
         # Create order with 2 bagels - first has type, second doesn't
         order = OrderTask()
@@ -96,7 +92,7 @@ class TestMixedItemBagelChoice:
             OrderPhase,
             BagelChoiceResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
 
         # Create order with:
         # - MenuItemTask "Butter Sandwich" (spread_sandwich) needing bagel_choice
@@ -144,7 +140,7 @@ class TestMixedItemBagelChoice:
             OrderPhase,
             BagelChoiceResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
 
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
@@ -472,7 +468,7 @@ class TestMenuItemToasted:
             OrderStateMachine,
             OpenInputResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+        from sandwich_bot.tasks.models import OrderTask
 
         order = OrderTask()
         sm = OrderStateMachine(menu_data=menu_data)
@@ -682,7 +678,6 @@ class TestOrderTypeUpfront:
         """
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
-            OpenInputResponse,
             OrderPhase,
         )
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
@@ -1516,7 +1511,6 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_latte_full_flow(self):
         """Test complete bagel + latte configuration flow."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1596,7 +1590,6 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_coke_no_queue(self):
         """Test that bagel + coke doesn't queue coffee (sodas skip config)."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1799,7 +1792,7 @@ class TestDrinkClarification:
     def test_multiple_drink_matches_asks_for_clarification(self):
         """Test that when multiple drinks match, user is asked to choose."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
 
         # Create menu data with multiple orange juice options in the correct structure
         # The coffee handler looks in items_by_type -> beverage, not in "drinks"
@@ -1901,7 +1894,6 @@ class TestDrinkClarification:
     def test_tropicana_matches_two_options(self):
         """Test that 'tropicana orange juice' matches 2 items, not all 3."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask
 
         menu_data = {
             "drinks": [
@@ -2701,7 +2693,7 @@ class TestCoffeeSize:
     def test_cancel_coffee_during_size_config(self):
         """Test canceling coffee during size configuration via _handle_configuring_item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -3069,7 +3061,7 @@ class TestCoffeeModifierRemoval:
     def test_without_milk_removes_milk(self):
         """Test that 'without milk' removes milk from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3091,7 +3083,7 @@ class TestCoffeeModifierRemoval:
     def test_without_sugar_removes_sweetener(self):
         """Test that 'without sugar' removes sweetener from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3113,7 +3105,7 @@ class TestCoffeeModifierRemoval:
     def test_without_syrup_removes_syrup(self):
         """Test that 'without syrup' removes syrup from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -5021,7 +5013,7 @@ class TestDrinkSelectionHandler:
     def test_select_by_number(self):
         """Test selecting drink by number."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5147,7 +5139,6 @@ class TestByPoundHandlers:
     def test_general_inquiry_asks_for_category(self):
         """Test that general by-the-pound inquiry asks which category."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase
         from sandwich_bot.tasks.models import OrderTask
 
         sm = OrderStateMachine()

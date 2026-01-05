@@ -4,7 +4,6 @@ Resiliency Test Batch 7: Order Confirmation & Checkout
 Tests the system's ability to handle order completion and checkout flows.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
 

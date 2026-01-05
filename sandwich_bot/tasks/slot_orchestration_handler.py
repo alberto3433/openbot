@@ -31,7 +31,6 @@ class SlotOrchestrationHandler:
 
     def __init__(self) -> None:
         """Initialize the slot orchestration handler."""
-        pass
 
     def log_slot_comparison(self, order: OrderTask) -> None:
         """

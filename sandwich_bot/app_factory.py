@@ -37,8 +37,6 @@ def create_app(
     """
     # Import here to avoid circular imports
     from .main import (
-        app as base_app,
-        api_v1_router,
         chat_router,
         admin_menu_router,
         admin_orders_router,

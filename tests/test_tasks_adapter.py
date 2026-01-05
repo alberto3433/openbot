@@ -4,7 +4,6 @@ Tests for the adapter module.
 Tests state conversion between dict-based order state and OrderTask.
 """
 
-import pytest
 
 from sandwich_bot.tasks.adapter import (
     dict_to_order_task,

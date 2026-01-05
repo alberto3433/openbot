@@ -7,7 +7,7 @@ what information to collect next based on the current OrderTask state.
 See docs/slot-orchestrator-migration.md for the full migration plan.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 import logging
@@ -19,7 +19,6 @@ from .models import (
     CoffeeItemTask,
     SpeedMenuBagelItemTask,
     MenuItemTask,
-    TaskStatus,
 )
 
 logger = logging.getLogger(__name__)

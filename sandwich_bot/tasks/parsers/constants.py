@@ -225,18 +225,6 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # Note: SIDE_ITEM_MAP was moved to the database - use menu_cache.resolve_side_alias()
 # Side item aliases are stored in the menu_items.aliases column.
 
-# Side item types (chips, salads, etc.)
-# NOTE: generic "chips" not here - handled by GENERIC_CATEGORY_TERMS for disambiguation
-SIDE_ITEM_TYPES = {
-    "potato chips", "kettle chips", "bagel chips",
-    "salad", "side salad", "green salad",
-    "fruit", "fresh fruit", "fruit cup",
-    "coleslaw", "cole slaw",
-    "pickle", "pickles",
-    "fries", "french fries",
-    "soup", "soup of the day",
-}
-
 # =============================================================================
 # Menu Item Recognition
 # =============================================================================

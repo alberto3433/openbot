@@ -10,7 +10,6 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 import re
 import uuid
-import warnings
 from typing import Callable, TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
@@ -38,7 +37,7 @@ from .schemas import (
     ParsedSideItemEntry,
     ParsedItem,
 )
-from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
+from .parsers import parse_open_input, extract_modifiers_from_input
 from .parsers.constants import get_bagel_types, get_bagel_spreads
 
 if TYPE_CHECKING:

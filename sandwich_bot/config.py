@@ -55,7 +55,7 @@ Usage:
 
 import os
 import random
-from typing import List, Optional
+from typing import List
 
 
 # =============================================================================

@@ -9,9 +9,6 @@ Key insight: When pending_item_id points to an incomplete item, ALL input
 is interpreted in the context of that item - no new items can be created.
 """
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Literal, Optional, Union
 import logging
 import re
 import uuid
@@ -23,9 +20,7 @@ from .models import (
     CoffeeItemTask,
     SpeedMenuBagelItemTask,
     ItemTask,
-    TaskStatus,
 )
-from .slot_orchestrator import SlotOrchestrator, SlotCategory
 from .pricing import PricingEngine
 from .menu_lookup import MenuLookup
 from .query_handler import QueryHandler
@@ -41,7 +36,7 @@ from .order_utils_handler import OrderUtilsHandler
 from .item_adder_handler import ItemAdderHandler
 from .checkout_utils_handler import CheckoutUtilsHandler
 from .config_helper_handler import ConfigHelperHandler
-from .modifier_change_handler import ModifierChangeHandler, ModifierCategory
+from .modifier_change_handler import ModifierChangeHandler
 from .slot_orchestration_handler import SlotOrchestrationHandler
 from .configuring_item_handler import ConfiguringItemHandler
 from .taking_items_handler import TakingItemsHandler
@@ -92,8 +87,6 @@ from .parsers import (
     GREETING_PATTERNS,
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    # Constants - Side items
-    SIDE_ITEM_TYPES,
     # Constants - Menu item recognition
     KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,

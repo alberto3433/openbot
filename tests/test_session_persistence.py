@@ -4,16 +4,15 @@ Tests for session persistence functionality.
 import os
 import uuid
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, ChatSession, MenuItem
+from sandwich_bot.models import Base, ChatSession
 from sandwich_bot.main import (
     get_or_create_session,
     save_session,
     SESSION_CACHE,
     _cleanup_expired_sessions,
-    SESSION_TTL_SECONDS,
 )
 
 
@@ -178,7 +177,6 @@ class TestSessionPersistenceIntegration:
     def test_chat_message_persists_to_database(self, client, monkeypatch):
         """Test that /chat/message updates session in database."""
         import sandwich_bot.db as db_mod
-        from sandwich_bot import main as main_mod
 
         # Start session
         start_resp = client.post("/chat/start")

@@ -5,12 +5,10 @@ These tests validate the most important order flows work correctly,
 especially multi-item orders and edge cases that have caused bugs.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask
-from sandwich_bot.tasks.schemas import OrderPhase
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
 
 
 def create_full_menu_data():

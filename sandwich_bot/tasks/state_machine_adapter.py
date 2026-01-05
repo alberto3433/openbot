@@ -12,10 +12,8 @@ from typing import Any, Dict, List, Tuple
 
 from .state_machine import (
     OrderStateMachine,
-    OrderPhase,
     StateMachineResult,
 )
-from .models import OrderTask
 from .adapter import (
     dict_to_order_task,
     order_task_to_dict,

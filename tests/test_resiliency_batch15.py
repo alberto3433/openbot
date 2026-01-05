@@ -4,7 +4,6 @@ Resiliency Test Batch 15: Corrections After Misunderstanding
 Tests the system's ability to handle corrections and clarifications.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 

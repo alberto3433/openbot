@@ -4,7 +4,6 @@ Resiliency Test Batch 10: Gratitude & Social Responses
 Tests the system's ability to handle thank you, sorry, and social responses.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask
 

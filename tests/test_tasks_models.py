@@ -12,9 +12,6 @@ from sandwich_bot.tasks.models import (
     BagelItemTask,
     CoffeeItemTask,
     DeliveryMethodTask,
-    CustomerInfoTask,
-    CheckoutTask,
-    PaymentTask,
     ItemsTask,
     OrderTask,
 )

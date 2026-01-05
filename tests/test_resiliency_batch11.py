@@ -4,7 +4,6 @@ Resiliency Test Batch 11: Dietary & Allergy Questions
 Tests the system's ability to handle dietary restriction and allergy questions.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask
 

@@ -4,9 +4,8 @@ Resiliency Test Batch 6: Cancellation & Removal
 Tests the system's ability to handle removal and cancellation requests.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask, TaskStatus
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
 
 
 class TestCancellationRemoval:

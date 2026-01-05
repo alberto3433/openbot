@@ -54,13 +54,11 @@ class BaseTTSProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Provider name for display."""
-        pass
 
     @property
     @abstractmethod
     def voices(self) -> List[Voice]:
         """List of available voices."""
-        pass
 
     @abstractmethod
     async def synthesize(
@@ -80,7 +78,6 @@ class BaseTTSProvider(ABC):
         Returns:
             Audio data as bytes (MP3 format)
         """
-        pass
 
     async def synthesize_stream(
         self,

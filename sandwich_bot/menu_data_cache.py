@@ -27,7 +27,7 @@ import asyncio
 import logging
 import threading
 from collections import defaultdict
-from datetime import datetime, time
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session

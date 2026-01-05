@@ -108,8 +108,6 @@ from .constants import (
     GREETING_PATTERNS,
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    # Side items
-    SIDE_ITEM_TYPES,
     # Menu item recognition
     KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,
@@ -222,8 +220,6 @@ __all__ = [
     "GREETING_PATTERNS",
     "DONE_PATTERNS",
     "REPEAT_ORDER_PATTERNS",
-    # Constants - Side items
-    "SIDE_ITEM_TYPES",
     # Constants - Menu item recognition
     "KNOWN_MENU_ITEMS",
     "NO_THE_PREFIX_ITEMS",

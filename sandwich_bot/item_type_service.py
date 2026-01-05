@@ -14,8 +14,6 @@ from .models import (
     ItemType,
     AttributeDefinition,
     AttributeOption,
-    AttributeOptionIngredient,
-    Ingredient,
 )
 
 

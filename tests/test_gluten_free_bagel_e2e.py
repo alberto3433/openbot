@@ -5,9 +5,8 @@ Tests the complete flow from ordering to final price calculation,
 verifying the gluten free upcharge is properly applied and displayed.
 """
 
-import pytest
-from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, SpeedMenuBagelItemTask, TaskStatus
+from sandwich_bot.tasks.state_machine import OrderStateMachine
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, SpeedMenuBagelItemTask
 from sandwich_bot.tasks.adapter import order_task_to_dict
 from sandwich_bot.tasks.pricing import PricingEngine
 

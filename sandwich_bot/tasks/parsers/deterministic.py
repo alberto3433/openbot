@@ -8,7 +8,6 @@ input patterns like greetings, simple bagel orders, coffee orders, etc.
 
 import re
 import logging
-from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
 
@@ -49,7 +48,6 @@ from .constants import (
     DONE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    SIDE_ITEM_TYPES,
     KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,

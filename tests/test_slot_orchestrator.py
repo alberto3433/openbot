@@ -5,7 +5,6 @@ These tests verify the slot-filling logic in isolation,
 without involving the full state machine.
 """
 
-import pytest
 from sandwich_bot.tasks.models import (
     OrderTask,
     BagelItemTask,
@@ -19,7 +18,6 @@ from sandwich_bot.tasks.slot_orchestrator import (
     SlotCategory,
     SlotDefinition,
     ItemSlotOrchestrator,
-    get_item_slots,
     sync_db_order_to_task,
 )
 

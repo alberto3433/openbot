@@ -4,9 +4,8 @@ Resiliency Test Batch 18: Help & Confusion
 Tests the system's ability to handle help requests and confusion.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
 
 
 class TestHelpConfusion:

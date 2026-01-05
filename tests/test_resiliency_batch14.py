@@ -4,7 +4,6 @@ Resiliency Test Batch 14: Pronoun/Context References
 Tests the system's ability to handle pronouns and contextual references.
 """
 
-import pytest
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
 

@@ -9,7 +9,7 @@ Includes:
 
 import pytest
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from sandwich_bot.tasks.parsing import (
     ParsedBagelItem,

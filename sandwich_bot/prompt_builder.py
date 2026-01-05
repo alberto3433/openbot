@@ -11,7 +11,7 @@ using the same core ordering logic with customized prompts.
 """
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
 from .models import Company, ItemType, AttributeDefinition, AttributeOption

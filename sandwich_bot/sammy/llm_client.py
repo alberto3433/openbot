@@ -52,7 +52,7 @@ if LLM_PROVIDER == "openai":
             f"OPENAI_API_KEY not found in {env_path}. "
             "Create a .env file with OPENAI_API_KEY=sk-proj-... at the project root."
         )
-    from openai import OpenAI, APITimeoutError as OpenAITimeoutError
+    from openai import OpenAI
     openai_client = OpenAI(api_key=openai_api_key, timeout=DEFAULT_TIMEOUT)
     logger.debug("OpenAI client initialized")
 

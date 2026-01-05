@@ -158,23 +158,33 @@ def disable_state_machine(monkeypatch):
 
 @pytest.fixture(scope="session", autouse=True)
 def menu_cache_loaded():
-    """Load the menu cache from the database for all tests.
+    """Load the menu cache and menu data from the database for all tests.
 
     This is a session-scoped autouse fixture so the cache is loaded once at the
     start of the test session. This is required because spread/bagel types are
     loaded from the database - there are no hardcoded fallbacks.
+
+    Also builds the menu_index dict and sets it as global menu_data for
+    OrderStateMachine to use when tests don't explicitly pass menu_data.
     """
     if not TEST_DATABASE_URL:
         pytest.skip("DATABASE_URL environment variable required - spread/bagel types are loaded from database")
 
     from sandwich_bot.menu_data_cache import menu_cache
+    from sandwich_bot.menu_index_builder import build_menu_index
+    from sandwich_bot.tasks.state_machine import set_global_menu_data
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     db = TestingSessionLocal()
     try:
+        # Load menu cache (spread types, bagel types, etc.)
         menu_cache.load_from_db(db, fail_on_error=True)
+
+        # Build menu index dict and set as global for OrderStateMachine
+        menu_data = build_menu_index(db)
+        set_global_menu_data(menu_data)
     finally:
         db.close()
 

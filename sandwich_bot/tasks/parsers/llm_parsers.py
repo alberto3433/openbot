@@ -34,6 +34,7 @@ from ..schemas import (
 from .deterministic import (
     parse_open_input_deterministic,
     _parse_multi_item_order,
+    _parse_bagel_with_modifiers,
 )
 
 logger = logging.getLogger(__name__)
@@ -363,8 +364,19 @@ def parse_open_input(user_input: str, context: str = "", model: str = "gpt-4o-mi
     ]:
         cleaned = cleaned.replace(phrase, "")
 
-    # If "and" or comma still appears, try multi-item deterministic parsing first
+    # If "and" or comma still appears, it might be multi-item OR a single bagel with multiple modifiers
+    # Pattern: "bagel with X, Y, and Z" is a single bagel with modifiers, NOT multi-item
     if " and " in cleaned or ", " in cleaned:
+        # Check for single bagel with modifiers pattern first
+        # e.g., "plain bagel with Egg Whites, Swiss, and Spinach"
+        if "bagel" in input_lower and " with " in input_lower:
+            logger.info("Bagel with modifiers pattern detected: %s", user_input[:50])
+            result = _parse_bagel_with_modifiers(user_input)
+            if result is not None:
+                logger.info("Parsed bagel with modifiers: %s", user_input[:50])
+                return result
+
+        # Otherwise try multi-item deterministic parsing
         logger.info("Multi-item order detected, trying deterministic parse: %s", user_input[:50])
         result = _parse_multi_item_order(user_input)
         if result is not None:

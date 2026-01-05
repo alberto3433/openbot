@@ -1166,6 +1166,16 @@ class BagelConfigHandler:
                 # If we get here, item wasn't handled - log and continue to next
                 logger.warning("Queued config item not handled: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
 
+            # Before returning "Anything else?", check for incomplete items (e.g., coffee added via disambiguation)
+            if self._get_next_question:
+                next_result = self._get_next_question(order)
+                # If an item was found that needs configuration (pending_field is set), return with bagel summary
+                if order.pending_field:
+                    return StateMachineResult(
+                        message=f"Got it, {summary}. {next_result.message}",
+                        order=order,
+                    )
+
             # Explicitly set to TAKING_ITEMS - we're asking for more items
             order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(

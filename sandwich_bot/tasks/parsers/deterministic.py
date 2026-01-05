@@ -2968,6 +2968,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     bagel_qty = 1
     bagel_type = None
     bagel_toasted = None
+    bagel_scooped = None
     bagel_spread = None
     bagel_spread_type = None
     side_item = None

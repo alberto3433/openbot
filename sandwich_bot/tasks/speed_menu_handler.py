@@ -70,8 +70,27 @@ class SpeedMenuBagelHandler:
 
         # Look up item from menu to get price
         menu_item = self.menu_lookup.lookup_menu_item(item_name) if self.menu_lookup else None
-        price = menu_item.get("base_price", 10.00) if menu_item else 10.00
-        menu_item_id = menu_item.get("id") if menu_item else None
+
+        # Validate that the menu item exists - fail gracefully if not found
+        if not menu_item:
+            if self.menu_lookup:
+                message, _ = self.menu_lookup.get_not_found_message(item_name)
+            else:
+                message = f"I'm sorry, I couldn't find '{item_name}' on our menu."
+            return StateMachineResult(
+                message=message,
+                order=order,
+            )
+
+        price = menu_item.get("base_price")
+        if price is None:
+            logger.error("Menu item '%s' has no base_price defined", item_name)
+            return StateMachineResult(
+                message=f"I'm sorry, I couldn't get the price for '{item_name}'. Please try ordering something else.",
+                order=order,
+            )
+
+        menu_item_id = menu_item.get("id")
 
         # Create the requested quantity of items
         for _ in range(quantity):

@@ -1317,6 +1317,8 @@ class TakingItemsHandler:
         Returns tuple of (updated_order, item_summary_string).
         """
         if isinstance(item, ParsedSpeedMenuBagelEntry):
+            # Track item count before to detect if item was actually added
+            items_before = len(order.items.items)
             result = self.speed_menu_handler.add_speed_menu_bagel(
                 item_name=item.speed_menu_name,
                 quantity=item.quantity,
@@ -1326,12 +1328,22 @@ class TakingItemsHandler:
                 modifications=item.modifiers,
             )
             order = result.order
-            # Build summary from the added item
-            summary = item.speed_menu_name
-            if item.bagel_type:
-                summary += f" on {item.bagel_type}"
-            if item.quantity > 1:
-                summary = f"{item.quantity} {summary}s"
+            items_after = len(order.items.items)
+
+            # Check if item was actually added (validation may have rejected it)
+            if items_after > items_before:
+                # Build summary from the added item
+                summary = item.speed_menu_name
+                if item.bagel_type:
+                    summary += f" on {item.bagel_type}"
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {summary}s"
+            else:
+                # Item not found - store the error message for the caller
+                logger.info("Speed menu item '%s' not found - storing error result", item.speed_menu_name)
+                order.last_add_error = result  # Store error for _process_multi_item_order
+                summary = ""  # Don't add to summaries
+
             return order, summary
 
         elif isinstance(item, ParsedMenuItemEntry):

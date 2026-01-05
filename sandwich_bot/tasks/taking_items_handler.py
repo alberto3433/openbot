@@ -13,6 +13,8 @@ import uuid
 import warnings
 from typing import Callable, TYPE_CHECKING
 
+from sandwich_bot.menu_data_cache import menu_cache
+
 from .models import (
     OrderTask,
     BagelItemTask,
@@ -37,7 +39,7 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input, extract_coffee_modifiers_from_input
-from .parsers.constants import get_bagel_types, get_bagel_spreads, MODIFIER_NORMALIZATIONS
+from .parsers.constants import get_bagel_types, get_bagel_spreads
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -645,7 +647,7 @@ class TakingItemsHandler:
                         for spread in sorted(get_bagel_spreads(), key=len, reverse=True):
                             if spread in input_lower:
                                 # Normalize the spread name
-                                new_spread = MODIFIER_NORMALIZATIONS.get(spread, spread)
+                                new_spread = menu_cache.normalize_modifier(spread)
                                 break
 
                         if new_spread:
@@ -1715,18 +1717,44 @@ class TakingItemsHandler:
             return self._duplicate_all_items(order, active_items)
 
         # Try to match user's response to one of the item options
+        # First, normalize common aliases (e.g., "coke" -> "Coca-Cola")
+        from .parsers.constants import resolve_soda_alias
+        normalized_text = resolve_soda_alias(text).lower()
+
         matched_item = None
+        best_match_score = 0
+
         for item_info in items:
             summary_lower = item_info["summary"].lower()
-            # Check if user's response matches the item summary or is a substring
-            if text in summary_lower or summary_lower in text:
+            score = 0
+
+            # Exact match (highest priority)
+            if normalized_text == summary_lower:
+                score = 100
+            # Normalized text matches item exactly
+            elif normalized_text in summary_lower and len(normalized_text) == len(summary_lower):
+                score = 90
+            # User text is the full item name
+            elif text == summary_lower:
+                score = 85
+            # Normalized text starts with item or item starts with normalized text
+            elif summary_lower.startswith(normalized_text) or normalized_text.startswith(summary_lower):
+                score = 70
+            # Original text is substring of item name (but check it's not a partial match like "coke" in "diet coke")
+            elif text in summary_lower:
+                # Penalize if there's a more specific match possible
+                # "coke" in "diet coke" should score lower than "coke" matching "coca-cola" via alias
+                score = 30
+            # Check for partial word matches (e.g., "bagel" matches "plain bagel toasted")
+            else:
+                words = text.split()
+                matching_words = sum(1 for word in words if len(word) > 2 and word in summary_lower)
+                if matching_words > 0:
+                    score = 20 + matching_words * 5
+
+            if score > best_match_score:
+                best_match_score = score
                 matched_item = item_info
-                break
-            # Check for partial matches (e.g., "bagel" matches "plain bagel toasted")
-            words = text.split()
-            if any(word in summary_lower for word in words if len(word) > 2):
-                matched_item = item_info
-                break
 
         # Also check for ordinal responses: "the first one", "the second", "1", "2", etc.
         if not matched_item:

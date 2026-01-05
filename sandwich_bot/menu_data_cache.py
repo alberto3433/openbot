@@ -526,18 +526,36 @@ class MenuDataCache:
         self._soda_alias_to_canonical = alias_to_canonical
 
     def _load_known_menu_items(self, db: Session) -> None:
-        """Load all menu item names for recognition."""
+        """Load all menu item names and aliases for recognition.
+
+        This method builds the set of known menu item strings that the parser
+        uses to recognize user input. It includes:
+        - Full menu item names (lowercased)
+        - Names without "The " prefix (for matching "blt" to "The BLT")
+        - All aliases from the aliases column (comma-separated)
+
+        This replaces the hardcoded KNOWN_MENU_ITEMS constant in constants.py.
+        """
         from .models import MenuItem
 
         menu_items = set()
 
         all_items = db.query(MenuItem).all()
         for item in all_items:
+            # Add the full name
             menu_items.add(item.name.lower())
+
             # Also add without "The " prefix for matching
             name_lower = item.name.lower()
             if name_lower.startswith("the "):
                 menu_items.add(name_lower[4:])
+
+            # Add all aliases if present
+            if item.aliases:
+                for alias in item.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        menu_items.add(alias)
 
         self._known_menu_items = menu_items
 

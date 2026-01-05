@@ -48,9 +48,9 @@ from .constants import (
     DONE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,
+    get_known_menu_items,
     COFFEE_TYPO_MAP,
     get_bagel_types,
     get_soda_types,
@@ -1270,7 +1270,7 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
-    for item in sorted(KNOWN_MENU_ITEMS, key=len, reverse=True):
+    for item in sorted(get_known_menu_items(), key=len, reverse=True):
         if item in text_lower or text_lower.startswith(item):
             if item in MENU_ITEM_CANONICAL_NAMES:
                 canonical = MENU_ITEM_CANONICAL_NAMES[item]

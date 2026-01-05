@@ -88,7 +88,6 @@ from .parsers import (
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     # Constants - Menu item recognition
-    KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,
     MENU_ITEM_CANONICAL_NAMES,
     # Constants - Coffee typos

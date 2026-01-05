@@ -241,6 +241,10 @@ class MenuItem(Base):
     # Values: 'fish', 'spread', 'cheese', 'cold_cut', 'salad'
     by_pound_category = Column(String, nullable=True)
 
+    # Classifier for sub-category grouping (e.g., 'muffin', 'cookie', 'omelette')
+    # Enables filtering like "what muffins do you have?" without hardcoded lists
+    classifier = Column(String, nullable=True, index=True)
+
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify
     # For "contains_X" flags: True if ANY ingredient contains the allergen

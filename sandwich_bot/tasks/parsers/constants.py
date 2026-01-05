@@ -6,7 +6,10 @@ for recognizing and normalizing user input. These include menu items,
 ingredient lists, regex patterns for intent detection, and price data.
 """
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Drink Type Categories
@@ -228,107 +231,17 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # =============================================================================
 # Menu Item Recognition
 # =============================================================================
-
-# Known menu item names for deterministic matching
-# Items starting with "the" will be prefixed with "The " in canonical form
-# Other items (sandwiches, etc.) will be title-cased without prefix
-KNOWN_MENU_ITEMS = {
-    # Egg sandwiches (signature items with "The" prefix)
-    "the lexington", "lexington",
-    "the classic bec", "classic bec",
-    "the grand central", "grand central",
-    "the wall street", "wall street",
-    "the tribeca", "tribeca",
-    "the columbus", "columbus",
-    "the hudson", "hudson",
-    "the chelsea", "chelsea",
-    "the midtown", "midtown",
-    # Other signature sandwiches (with "The" prefix)
-    "the delancey", "delancey",
-    "the leo", "leo",
-    "the avocado toast", "avocado toast",
-    "the health nut", "health nut",
-    "the zucker's traditional", "zucker's traditional", "the traditional", "traditional",
-    "the reuben", "reuben",
-    "the blt", "blt",
-    "the chelsea club", "chelsea club",
-    "the natural", "natural",
-    "turkey club",
-    "hot pastrami sandwich", "pastrami sandwich",
-    "nova scotia salmon", "nova salmon",
-    # Omelettes
-    "chipotle egg omelette", "the chipotle egg omelette", "chipotle omelette",
-    "cheese omelette",
-    "western omelette",
-    "veggie omelette",
-    "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
-    "spinach & feta omelet", "spinach and feta omelet", "spinach feta omelet",
-    # Spread Sandwiches (cream cheese, butter, etc.)
-    "plain cream cheese sandwich", "plain cream cheese",
-    "scallion cream cheese sandwich", "scallion cream cheese",
-    "vegetable cream cheese sandwich", "veggie cream cheese", "vegetable cream cheese",
-    "sun-dried tomato cream cheese sandwich", "sun dried tomato cream cheese",
-    "strawberry cream cheese sandwich", "strawberry cream cheese",
-    "blueberry cream cheese sandwich", "blueberry cream cheese",
-    "kalamata olive cream cheese sandwich", "olive cream cheese",
-    "maple raisin walnut cream cheese sandwich", "maple raisin walnut", "maple walnut cream cheese",
-    "jalapeno cream cheese sandwich", "jalapeno cream cheese", "jalapeño cream cheese",
-    "nova scotia cream cheese sandwich", "nova cream cheese", "lox spread sandwich",
-    "truffle cream cheese sandwich", "truffle cream cheese",
-    "butter sandwich", "bagel with butter",
-    "peanut butter sandwich", "peanut butter bagel",
-    "nutella sandwich", "nutella bagel",
-    "hummus sandwich", "hummus bagel", "hummus",
-    "avocado spread sandwich", "avocado spread",
-    "tofu plain sandwich", "tofu plain", "plain tofu",
-    "tofu scallion sandwich", "tofu scallion", "scallion tofu",
-    "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
-    "tofu nova sandwich", "tofu nova", "nova tofu",
-    # Smoked Fish Sandwiches (not salads - these are actual fish)
-    "belly lox sandwich", "belly lox", "belly lox on bagel",
-    "gravlax sandwich", "gravlax", "gravlax on bagel",
-    "nova scotia salmon sandwich", "nova sandwich", "nova on bagel",
-    # Salad Sandwiches
-    "tuna salad sandwich", "tuna salad", "tuna sandwich",
-    "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
-    "baked salmon salad sandwich", "baked salmon salad", "salmon salad sandwich",
-    "egg salad sandwich", "egg salad",
-    "chicken salad sandwich", "chicken salad",
-    "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
-    "lemon chicken salad sandwich", "lemon chicken salad",
-    # Additional omelettes
-    "the mulberry omelette", "mulberry omelette", "the mulberry", "mulberry",
-    "the nova omelette", "nova omelette",
-    "bacon and cheddar omelette", "bacon cheddar omelette",
-    # Grilled items
-    "grilled cheese", "grilled cheese sandwich",
-    # Sides (for multi-item orders)
-    "side of bacon", "bacon", "side of sausage", "sausage",
-    "turkey bacon", "side of turkey bacon",
-    "latkes", "potato latkes",
-    "bagel chips",  # generic "chips" uses GENERIC_CATEGORY_TERMS for disambiguation
-    "fruit cup", "fruit salad",
-    "cole slaw", "coleslaw",
-    "potato salad", "macaroni salad",
-    # Breakfast items
-    "oatmeal", "steel cut oatmeal", "organic steel-cut oatmeal",
-    "yogurt parfait", "yogurt", "low fat yogurt granola parfait",
-    # Nova/Lox synonyms (for natural language matching)
-    "nova lox", "nova lox sandwich", "lox sandwich", "lox",
-    # Pastries and snacks (for multi-item orders)
-    "blueberry muffin", "corn muffin", "chocolate chip muffin",
-    "banana walnut muffin", "cranberry muffin", "lemon poppy muffin",
-    "morning glory muffin", "apple cinnamon muffin", "double-chocolate muffin",
-    "muffin",  # Generic - will ask for type
-    "black and white cookie", "black & white cookie", "chocolate chip cookie",
-    "peanut butter cookie", "oatmeal raisin cookie",
-    "cookie",  # Generic - will ask for type
-    "brownie", "danish", "rugelach", "babka",
-    # Specific beverage items (need to match before generic coffee parsing)
-    "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
-    "tropicana no pulp", "tropicana",
-    "fresh squeezed orange juice",
-}
+# NOTE: KNOWN_MENU_ITEMS has been removed. All menu item names and aliases are
+# now loaded from the database via menu_data_cache._load_known_menu_items().
+# Use get_known_menu_items() to access the cached set of recognized item names.
+#
+# The database stores:
+# - menu_items.name: canonical item names
+# - menu_items.aliases: comma-separated short forms and synonyms
+#
+# The cache includes all names (lowercased), names without "The " prefix,
+# and all aliases. This enables matching user input like "blt", "the blt",
+# "bacon egg and cheese", etc. to their canonical database entries.
 
 # Items that should NOT get "The " prefix (salad and spread sandwiches)
 NO_THE_PREFIX_ITEMS = {
@@ -1264,16 +1177,24 @@ def get_soda_types() -> set[str]:
 
 def get_known_menu_items() -> set[str]:
     """
-    Get all known menu item names.
+    Get all known menu item names and aliases from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded KNOWN_MENU_ITEMS.
+    Returns data from cache. If cache is not loaded or empty, returns an
+    empty set and logs a warning. This function no longer falls back to
+    hardcoded KNOWN_MENU_ITEMS - all data comes from the database.
+
+    The cached set includes:
+    - Full menu item names (lowercased)
+    - Names without "The " prefix
+    - All aliases from the aliases column
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_known_menu_items()
         if cached:
             return cached
-    return KNOWN_MENU_ITEMS
+    logger.warning("get_known_menu_items: cache not loaded, returning empty set")
+    return set()
 
 
 def get_speed_menu_bagels() -> dict[str, str]:

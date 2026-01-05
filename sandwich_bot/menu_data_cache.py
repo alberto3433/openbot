@@ -534,14 +534,33 @@ class MenuDataCache:
         - Names without "The " prefix (for matching "blt" to "The BLT")
         - All aliases from the aliases column (comma-separated)
 
+        EXCLUDES certain item types that have their own configuration flows:
+        - 'bagel': goes through bagel config (toasted, spread, etc.)
+        - 'sized_beverage': goes through coffee config (size, iced, milk, etc.)
+
+        These items are recognized by their respective parsers, not as direct
+        menu item matches.
+
         This replaces the hardcoded KNOWN_MENU_ITEMS constant in constants.py.
         """
-        from .models import MenuItem
+        from .models import MenuItem, ItemType
 
         menu_items = set()
 
+        # Get item_type ids to exclude items that have config flows
+        exclude_slugs = ['bagel', 'sized_beverage']
+        exclude_type_ids = set()
+        for slug in exclude_slugs:
+            item_type = db.query(ItemType).filter(ItemType.slug == slug).first()
+            if item_type:
+                exclude_type_ids.add(item_type.id)
+
         all_items = db.query(MenuItem).all()
         for item in all_items:
+            # Skip items that have their own configuration flows
+            if item.item_type_id in exclude_type_ids:
+                continue
+
             # Add the full name
             menu_items.add(item.name.lower())
 

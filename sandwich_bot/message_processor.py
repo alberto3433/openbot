@@ -224,13 +224,13 @@ class MessageProcessor:
     def _get_or_create_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load session from database."""
         # Import here to avoid circular dependency
-        from .main import get_or_create_session
+        from .services.session import get_or_create_session
         return get_or_create_session(self.db, session_id)
 
     def _save_session(self, session_id: str, session_data: Dict[str, Any]) -> None:
         """Save session to database."""
         # Import here to avoid circular dependency
-        from .main import save_session
+        from .services.session import save_session
         save_session(self.db, session_id, session_data)
 
     # -------------------------------------------------------------------------

@@ -2372,8 +2372,6 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 # Captures: quantity phrase + item name
 BY_POUND_PATTERN = re.compile(
     r"""
-    (?:i(?:'ll|\ will)?\ (?:have|take|get|want)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like|i\ need|i\ want)?
-    \s*
     (?:
         ((?:a\s+)?half\s+(?:a\s+)?(?:pound|lb))    # a half pound / half a pound / half pound / half lb
         |(\d+(?:\s*/\s*\d+)?)\s*(?:pound|lb)s?     # 1/4 pound, 2 pounds, 1 lb
@@ -2416,6 +2414,19 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
         OpenInputResponse with by_pound_items if matched, None otherwise.
     """
     text_lower = text.lower().strip()
+
+    # Strip common action verb prefixes - these indicate intent, not item type
+    # The quantity phrase ("quarter pound", "half pound") identifies by-the-pound orders
+    action_prefixes = [
+        "i'll have ", "i will have ", "i have ", "i'll take ", "i will take ", "i take ",
+        "i'll get ", "i will get ", "i get ", "i want ", "i'd like ", "i would like ",
+        "i like ", "i need ", "give me ", "can i have ", "can i get ", "let me get ",
+        "let me have ", "may i have ", "could i get ", "could i have ",
+    ]
+    for prefix in action_prefixes:
+        if text_lower.startswith(prefix):
+            text_lower = text_lower[len(prefix):]
+            break
 
     match = BY_POUND_PATTERN.match(text_lower)
     if not match:
@@ -2666,6 +2677,7 @@ def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
 def _parse_modifier_inquiry(
     text: str,
     modifier_category_keywords: dict[str, str] | None = None,
+    modifier_item_keywords: dict[str, str] | None = None,
 ) -> OpenInputResponse | None:
     """Parse modifier/add-on inquiry questions.
 
@@ -2674,9 +2686,13 @@ def _parse_modifier_inquiry(
         modifier_category_keywords: Mapping of keywords to category slugs
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
             If None, modifier category detection is skipped but item detection still works.
+        modifier_item_keywords: Mapping of item keywords to item type slugs
+            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
+            If None, item detection is skipped.
     """
     text_lower = text.lower().strip()
     keywords = modifier_category_keywords or {}
+    item_keywords = modifier_item_keywords or {}
 
     for pattern, item_group, category_group in MODIFIER_INQUIRY_PATTERNS:
         match = pattern.search(text_lower)

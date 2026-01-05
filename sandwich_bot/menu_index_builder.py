@@ -300,7 +300,41 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Build modifier categories for answering questions like "what sweeteners do you have?"
     index["modifier_categories"] = _build_modifier_categories(db)
 
+    # Build item keyword mappings for modifier inquiry parsing
+    # Maps keywords like "latte", "cappuccino" -> "coffee" (item type slug)
+    index["item_keywords"] = _build_item_keywords(db)
+
     return index
+
+
+def _build_item_keywords(db: Session) -> Dict[str, str]:
+    """
+    Build a keyword-to-item-type-slug mapping from ItemType aliases.
+
+    This maps user input keywords like "latte", "cappuccino", "bagels"
+    to their canonical item type slugs like "coffee", "bagel".
+
+    Returns:
+        Dict mapping lowercase keywords to item type slugs.
+        Example: {"latte": "coffee", "lattes": "coffee", "cappuccino": "coffee"}
+    """
+    keyword_to_slug: Dict[str, str] = {}
+
+    item_types = db.query(ItemType).all()
+    for it in item_types:
+        # Add the slug and display_name as keywords
+        keyword_to_slug[it.slug.lower()] = it.slug
+        if it.display_name:
+            keyword_to_slug[it.display_name.lower()] = it.slug
+
+        # Add aliases from the aliases field (comma-separated)
+        if it.aliases:
+            for alias in it.aliases.split(","):
+                alias = alias.strip().lower()
+                if alias:
+                    keyword_to_slug[alias] = it.slug
+
+    return keyword_to_slug
 
 
 def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:

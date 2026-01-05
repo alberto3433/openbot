@@ -2372,7 +2372,7 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 # Captures: quantity phrase + item name
 BY_POUND_PATTERN = re.compile(
     r"""
-    (?:i(?:'ll|\ will)?\ (?:have|take|get)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like|i\ need)?
+    (?:i(?:'ll|\ will)?\ (?:have|take|get|want)|give\ me|can\ i\ (?:have|get)|i(?:'d|\ would)?\ like|i\ need|i\ want)?
     \s*
     (?:
         ((?:a\s+)?half\s+(?:a\s+)?(?:pound|lb))    # a half pound / half a pound / half pound / half lb

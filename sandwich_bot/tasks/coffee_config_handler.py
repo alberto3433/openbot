@@ -426,10 +426,17 @@ class CoffeeConfigHandler:
                 # Calculate upcharges for extra shots if pricing is available
                 if self.pricing and shots > 1:
                     # Use the same pricing logic as recalculate_coffee_price
+                    # Default fallback prices if not found in database
+                    DEFAULT_DOUBLE_SHOT_PRICE = 1.00
+                    DEFAULT_TRIPLE_SHOT_PRICE = 2.00
                     if shots == 2:
                         extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("double_shot", "extras")
+                        if extra_shots_upcharge == 0:
+                            extra_shots_upcharge = DEFAULT_DOUBLE_SHOT_PRICE
                     else:  # shots >= 3
                         extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("triple_shot", "extras")
+                        if extra_shots_upcharge == 0:
+                            extra_shots_upcharge = DEFAULT_TRIPLE_SHOT_PRICE
                     espresso.extra_shots_upcharge = extra_shots_upcharge
                     espresso.unit_price += extra_shots_upcharge
                 espresso.mark_complete()  # No configuration needed

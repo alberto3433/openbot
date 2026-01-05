@@ -516,6 +516,16 @@ class TestDeterministicParserHelpers:
         assert spread is None
         assert spread_type is None
 
+    def test_extract_spread_cc_alias(self):
+        """Test that 'cc' alias is normalized to 'cream cheese'."""
+        # "cc" is an alias for "Cream Cheese" in the database
+        # The extraction should normalize it to "cream cheese" for:
+        # 1. Consistent display in the order summary
+        # 2. Correct pricing lookup
+        spread, spread_type = _extract_spread("cc")
+        assert spread == "cream cheese", f"Expected 'cream cheese' but got '{spread}'"
+        assert spread_type is None
+
 
 class TestDeterministicParserGreetings:
     """Tests for deterministic parsing of greetings."""
@@ -1522,9 +1532,9 @@ class TestSplitQuantityBagelParsing:
         assert result.parsed_items[0].bagel_type == "plain"
         assert result.parsed_items[0].spread == "cream cheese"
         assert result.parsed_items[0].spread_type == "scallion"
-        # Second bagel: lox
+        # Second bagel: lox (normalized to canonical name from database)
         assert result.parsed_items[1].bagel_type == "plain"
-        assert result.parsed_items[1].spread == "nova scotia salmon"
+        assert result.parsed_items[1].spread == "Nova Scotia Salmon"
 
     def test_two_bagels_toasted_variants(self):
         """Test parsing 'two everything bagels one toasted one not toasted'."""

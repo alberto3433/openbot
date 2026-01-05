@@ -10,6 +10,8 @@ import re
 import logging
 from typing import TYPE_CHECKING
 
+from sandwich_bot.menu_data_cache import menu_cache
+
 from ..schemas import (
     OpenInputResponse,
     ExtractedModifiers,
@@ -37,7 +39,6 @@ from .constants import (
     get_proteins,
     get_cheeses,
     get_toppings,
-    MODIFIER_NORMALIZATIONS,
     # Dynamic spread functions (loaded from database)
     get_spreads,
     get_spread_types,
@@ -591,7 +592,7 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
                     )
                     if not overlaps:
                         matched_spans.append((pos, end))
-                        normalized = MODIFIER_NORMALIZATIONS.get(modifier, modifier)
+                        normalized = menu_cache.normalize_modifier(modifier)
                         if normalized not in target_list:
                             target_list.append(normalized)
                             logger.debug(f"Extracted {category}: '{modifier}' -> '{normalized}'")
@@ -902,7 +903,11 @@ def _build_spread_types_from_menu(cheese_types: list[str]) -> set[str]:
 
 
 def _extract_spread(text: str, extra_spread_types: set[str] | None = None) -> tuple[str | None, str | None]:
-    """Extract spread and spread type from text. Returns (spread, spread_type)."""
+    """Extract spread and spread type from text. Returns (spread, spread_type).
+
+    Note: The returned spread is normalized to its canonical name (e.g., "cc" -> "cream cheese").
+    This ensures consistent display and correct pricing lookup.
+    """
     text_lower = text.lower()
 
     spread = None
@@ -910,7 +915,9 @@ def _extract_spread(text: str, extra_spread_types: set[str] | None = None) -> tu
 
     for s in sorted(get_spreads(), key=len, reverse=True):
         if s in text_lower:
-            spread = s
+            # Normalize alias to canonical name (e.g., "cc" -> "Cream Cheese")
+            normalized = menu_cache.normalize_modifier(s)
+            spread = normalized.lower() if normalized != s else s
             break
 
     all_spread_types = get_spread_types()
@@ -972,7 +979,9 @@ def extract_spread_with_disambiguation(
     spreads = get_spreads()
     for s in sorted(spreads, key=len, reverse=True):
         if s in text_lower:
-            spread = s
+            # Normalize alias to canonical name (e.g., "cc" -> "Cream Cheese")
+            normalized = menu_cache.normalize_modifier(s)
+            spread = normalized.lower() if normalized != s else s
             break
 
     # Get all available spread types
@@ -1518,7 +1527,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
             for protein in ["nova scotia salmon", "nova", "lox", "salmon", "whitefish", "tuna"]:
                 if protein in part_lower:
                     # This is actually a spread/fish order
-                    normalized = MODIFIER_NORMALIZATIONS.get(protein, protein)
+                    normalized = menu_cache.normalize_modifier(protein)
                     spread = normalized
                     break
 

@@ -281,6 +281,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.menu_query_pagination = sm_state.get("menu_query_pagination")
         order.config_options_page = sm_state.get("config_options_page", 0)
         order.multi_item_config_names = sm_state.get("multi_item_config_names", [])
+        order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -860,6 +861,7 @@ def order_task_to_dict(
         "menu_query_pagination": order.menu_query_pagination,  # Pagination state for "show more" menu listings
         "config_options_page": order.config_options_page,  # Pagination for "what else" during field config
         "multi_item_config_names": order.multi_item_config_names,  # Names for multi-item summary
+        "pending_duplicate_selection": order.pending_duplicate_selection,  # Items for "one more" disambiguation
     }
 
     return order_dict

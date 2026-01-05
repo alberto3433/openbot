@@ -1335,6 +1335,8 @@ class TakingItemsHandler:
             return order, summary
 
         elif isinstance(item, ParsedMenuItemEntry):
+            # Track item count before to detect if item was actually added
+            items_before = len(order.items.items)
             result = self.item_adder_handler.add_menu_item(
                 item.menu_item_name,
                 item.quantity,
@@ -1344,9 +1346,19 @@ class TakingItemsHandler:
                 item.modifiers,
             )
             order = result.order
-            summary = item.menu_item_name
-            if item.quantity > 1:
-                summary = f"{item.quantity} {summary}s"
+            items_after = len(order.items.items)
+
+            # Check if item was actually added
+            if items_after > items_before:
+                summary = item.menu_item_name
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {summary}s"
+            else:
+                # Item not found - store the error message for the caller
+                logger.info("Menu item '%s' not found - storing error result", item.menu_item_name)
+                order.last_add_error = result  # Store error for _process_multi_item_order
+                summary = ""  # Don't add to summaries
+
             return order, summary
 
         elif isinstance(item, ParsedBagelEntry):
@@ -1472,8 +1484,19 @@ class TakingItemsHandler:
         added_items: list[tuple[str, str, str]] = []  # (item_id, item_name, item_type)
         summaries = []
 
+        # Clear any previous error
+        order.last_add_error = None
+
         for parsed_item in parsed.parsed_items:
             order, summary = self._add_parsed_item(parsed_item, order)
+
+            # Check if add failed (e.g., item not found on menu)
+            if order.last_add_error is not None:
+                # Return the error message instead of continuing
+                error_result = order.last_add_error
+                order.last_add_error = None  # Clear it
+                return error_result
+
             if summary:
                 summaries.append(summary)
                 # Find the item that was just added (last item with matching type)

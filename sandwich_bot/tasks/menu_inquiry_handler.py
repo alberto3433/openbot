@@ -137,22 +137,19 @@ class MenuInquiryHandler:
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        # TRUE category terms - these return the full category, not filtered results
-        # When a user asks for "coffee", they want ALL coffee drinks (lattes, etc.)
-        category_terms = {
-            "coffee": "sized_beverage",
-            "tea": "sized_beverage",
-            "latte": "sized_beverage",
-            "espresso": "sized_beverage",
-            "soda": "beverage",
-            "water": "beverage",
-        }
-
         # Handle "beverage" or "drink" queries by combining both types
         if menu_query_type in ("beverage", "drink"):
             sized_items = items_by_type.get("sized_beverage", [])
             cold_items = items_by_type.get("beverage", [])
             return sized_items + cold_items, "beverage"
+
+        # Handle "coffee" query - return ALL sized beverages (lattes, cappuccinos, etc. are coffee drinks)
+        if menu_query_type == "coffee":
+            return items_by_type.get("sized_beverage", []), "sized_beverage"
+
+        # Handle "soda" query - return all bottled/cold beverages
+        if menu_query_type == "soda":
+            return items_by_type.get("beverage", []), "beverage"
 
         # Handle dessert queries by combining dessert, pastry, and snack types
         dessert_queries = (
@@ -164,11 +161,6 @@ class MenuInquiryHandler:
             pastry_items = items_by_type.get("pastry", [])
             snack_items = items_by_type.get("snack", [])
             return dessert_items + pastry_items + snack_items, "dessert"
-
-        # If it's a known category term, return the full category
-        if menu_query_type in category_terms:
-            lookup_type = category_terms[menu_query_type]
-            return items_by_type.get(lookup_type, []), lookup_type
 
         # HYBRID APPROACH: For any other term, try partial string matching on all drinks
         # This handles "juice", "snapple", "mocha", "chai", "iced", etc.

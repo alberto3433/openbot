@@ -78,6 +78,7 @@ class MenuDataCache:
         self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
         self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
+        self._menu_item_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
 
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
@@ -528,8 +529,11 @@ class MenuDataCache:
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names and aliases for recognition.
 
-        This method builds the set of known menu item strings that the parser
-        uses to recognize user input. It includes:
+        This method builds:
+        1. A set of known menu item strings for pattern matching
+        2. A mapping from aliases to canonical menu item names
+
+        Known items include:
         - Full menu item names (lowercased)
         - Names without "The " prefix (for matching "blt" to "The BLT")
         - All aliases from the aliases column (comma-separated)
@@ -541,11 +545,15 @@ class MenuDataCache:
         These items are recognized by their respective parsers, not as direct
         menu item matches.
 
-        This replaces the hardcoded KNOWN_MENU_ITEMS constant in constants.py.
+        This replaces:
+        - The hardcoded KNOWN_MENU_ITEMS constant in constants.py
+        - The hardcoded NO_THE_PREFIX_ITEMS constant in constants.py
+        - The hardcoded MENU_ITEM_CANONICAL_NAMES constant in constants.py
         """
         from .models import MenuItem, ItemType
 
         menu_items = set()
+        alias_to_canonical: dict[str, str] = {}
 
         # Get item_type ids to exclude items that have config flows
         exclude_slugs = ['bagel', 'sized_beverage']
@@ -561,13 +569,18 @@ class MenuDataCache:
             if item.item_type_id in exclude_type_ids:
                 continue
 
+            canonical_name = item.name  # Preserve original casing
+            name_lower = item.name.lower()
+
             # Add the full name
-            menu_items.add(item.name.lower())
+            menu_items.add(name_lower)
+            alias_to_canonical[name_lower] = canonical_name
 
             # Also add without "The " prefix for matching
-            name_lower = item.name.lower()
             if name_lower.startswith("the "):
-                menu_items.add(name_lower[4:])
+                without_the = name_lower[4:]
+                menu_items.add(without_the)
+                alias_to_canonical[without_the] = canonical_name
 
             # Add all aliases if present
             if item.aliases:
@@ -575,8 +588,16 @@ class MenuDataCache:
                     alias = alias.strip().lower()
                     if alias:
                         menu_items.add(alias)
+                        alias_to_canonical[alias] = canonical_name
 
         self._known_menu_items = menu_items
+        self._menu_item_alias_to_canonical = alias_to_canonical
+
+        logger.debug(
+            "Loaded %d known menu items with %d alias mappings",
+            len(menu_items),
+            len(alias_to_canonical),
+        )
 
     def _load_speed_menu_bagels(self, db: Session) -> None:
         """Load speed menu bagel aliases from signature items.
@@ -1147,6 +1168,43 @@ class MenuDataCache:
             return None
         name_lower = name.lower().strip()
         return self._side_alias_to_canonical.get(name_lower)
+
+    def resolve_menu_item_alias(self, name: str) -> str | None:
+        """
+        Resolve a menu item name or alias to its canonical menu item name.
+
+        This replaces:
+        - The hardcoded MENU_ITEM_CANONICAL_NAMES dictionary in constants.py
+        - The hardcoded NO_THE_PREFIX_ITEMS set in constants.py
+
+        Aliases are loaded from the MenuItem.aliases column in the database.
+        The canonical name is the MenuItem.name which already includes correct
+        casing and "The " prefix where appropriate.
+
+        Args:
+            name: User input like "tuna salad", "blt", "cheese omelette"
+
+        Returns:
+            Canonical MenuItem.name (e.g., "Tuna Salad Sandwich" for "tuna salad",
+            "The BLT" for "blt", "Cheese Omelette" for "cheese omelette")
+            or None if not found.
+            Returns None (not original) to allow graceful failure handling
+            by the caller.
+
+        Examples:
+            >>> cache.resolve_menu_item_alias("tuna salad")
+            "Tuna Salad Sandwich"
+            >>> cache.resolve_menu_item_alias("blt")
+            "The BLT"
+            >>> cache.resolve_menu_item_alias("cheese omelette")
+            "Cheese Omelette"
+            >>> cache.resolve_menu_item_alias("unknown item")
+            None  # Not found - caller should handle gracefully
+        """
+        if not self._is_loaded:
+            return None
+        name_lower = name.lower().strip()
+        return self._menu_item_alias_to_canonical.get(name_lower)
 
     # =========================================================================
     # Partial Matching Methods

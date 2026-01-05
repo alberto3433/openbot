@@ -341,14 +341,12 @@ class QueryHandler:
             return self.list_by_pound_category("spread", order)
 
         # TRUE category terms - these return the full category, not filtered results
-        # When a user asks for "coffee", they want ALL coffee drinks (lattes, etc.)
+        # When a user asks for "coffee", they want ALL sized beverages (lattes, cappuccinos, etc.)
+        # Note: "tea", "latte", "espresso" are NOT category terms - they use partial matching
+        # to filter items containing that keyword in the name
         category_terms = {
             "coffee": "sized_beverage",
-            "tea": "sized_beverage",
-            "latte": "sized_beverage",
-            "espresso": "sized_beverage",
             "soda": "beverage",
-            "water": "beverage",
         }
 
         # HYBRID APPROACH: For terms not in category_terms, try partial string matching

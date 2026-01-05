@@ -227,11 +227,23 @@ class MenuLookup:
         # Pass 3: Item name is contained in search term
         # e.g., searching "The Chipotle Egg Omelette" finds item named "Chipotle Egg Omelette"
         # Prefer LONGER item names (more complete match)
+        # IMPORTANT: Require minimum similarity to prevent false matches like "ham" in "hamburger"
         matches = []
         for variant in search_variants:
             for item in all_items:
                 item_name_db = item.get("name", "").lower()
                 if item_name_db in variant:
+                    # Compute similarity ratio: item name length / search term length
+                    # Require at least 50% overlap to prevent false positives
+                    # e.g., "ham" (3) in "hamburger" (9) = 0.33 -> rejected
+                    # e.g., "chipotle egg omelette" (21) in "the chipotle egg omelette" (25) = 0.84 -> OK
+                    match_ratio = len(item_name_db) / len(variant) if variant else 0
+                    if match_ratio < 0.5:
+                        logger.debug(
+                            "Pass 3 reject: item '%s' (%d) in search '%s' (%d), ratio=%.2f",
+                            item_name_db, len(item_name_db), variant, len(variant), match_ratio
+                        )
+                        continue
                     # Check required_match_phrases filter
                     if self._passes_match_filter(item, item_name):
                         matches.append(item)
@@ -241,17 +253,30 @@ class MenuLookup:
 
         # Pass 4: Normalized matching
         # Handles "blue berry" matching "blueberry", "black and white" matching "black & white"
+        # Also applies similarity threshold for reverse matches (item in search term)
         matches = []
         for variant in search_variants:
             variant_compact = normalize_for_match(variant)
             for item in all_items:
                 item_name_db = item.get("name", "").lower()
                 item_name_db_compact = normalize_for_match(item_name_db)
-                # Check if compact search term is in compact item name or vice versa
-                if variant_compact in item_name_db_compact or item_name_db_compact in variant_compact:
-                    # Check required_match_phrases filter
+
+                # Case 1: Search term is in item name (e.g., "blueberry" in "Blueberry Muffin")
+                if variant_compact in item_name_db_compact:
                     if self._passes_match_filter(item, item_name):
                         matches.append(item)
+                # Case 2: Item name is in search term - apply similarity threshold
+                elif item_name_db_compact in variant_compact:
+                    # Require at least 50% overlap to prevent false positives
+                    match_ratio = len(item_name_db_compact) / len(variant_compact) if variant_compact else 0
+                    if match_ratio >= 0.5:
+                        if self._passes_match_filter(item, item_name):
+                            matches.append(item)
+                    else:
+                        logger.debug(
+                            "Pass 4 reject: item '%s' in search '%s', ratio=%.2f",
+                            item_name_db_compact, variant_compact, match_ratio
+                        )
         if matches:
             # Return the shortest matching name (most specific)
             return min(matches, key=lambda x: len(x.get("name", "")))
@@ -315,10 +340,19 @@ class MenuLookup:
 
         # Pass 2: Item name is contained in search term
         # e.g., "tropicana orange juice" finds "Tropicana"
+        # IMPORTANT: Require minimum similarity to prevent false matches like "ham" in "hamburger"
         matches = []
         for item in all_items:
             item_name_db = item.get("name", "").lower()
             if item_name_db in item_name_lower:
+                # Compute similarity ratio: require at least 50% overlap
+                match_ratio = len(item_name_db) / len(item_name_lower) if item_name_lower else 0
+                if match_ratio < 0.5:
+                    logger.debug(
+                        "lookup_menu_items Pass 2 reject: item '%s' in search '%s', ratio=%.2f",
+                        item_name_db, item_name_lower, match_ratio
+                    )
+                    continue
                 # Check required_match_phrases filter
                 if self._passes_match_filter(item, item_name):
                     matches.append(item)
@@ -328,15 +362,28 @@ class MenuLookup:
 
         # Pass 3: Normalized matching
         # Handles "blue berry" matching "blueberry", "black and white" matching "black & white"
+        # Also applies similarity threshold for reverse matches
         item_name_compact = normalize_for_match(item_name_lower)
         matches = []
         for item in all_items:
             item_name_db = item.get("name", "").lower()
             item_name_db_compact = normalize_for_match(item_name_db)
-            if item_name_compact in item_name_db_compact or item_name_db_compact in item_name_compact:
-                # Check required_match_phrases filter
+
+            # Case 1: Search term is in item name - no threshold needed
+            if item_name_compact in item_name_db_compact:
                 if self._passes_match_filter(item, item_name):
                     matches.append(item)
+            # Case 2: Item name is in search term - apply similarity threshold
+            elif item_name_db_compact in item_name_compact:
+                match_ratio = len(item_name_db_compact) / len(item_name_compact) if item_name_compact else 0
+                if match_ratio >= 0.5:
+                    if self._passes_match_filter(item, item_name):
+                        matches.append(item)
+                else:
+                    logger.debug(
+                        "lookup_menu_items Pass 3 reject: item '%s' in search '%s', ratio=%.2f",
+                        item_name_db_compact, item_name_compact, match_ratio
+                    )
         if matches:
             return sorted(matches, key=lambda x: len(x.get("name", "")))
 

@@ -1418,6 +1418,9 @@ class TestSpreadSandwichWithCoke:
                         "item_type": "spread_sandwich",
                     },
                 ],
+                "beverage": [
+                    {"id": 999, "name": "Coca-Cola", "base_price": 2.50, "item_type": "beverage"},
+                ],
             },
             "item_type_configs": {},
         }
@@ -1450,6 +1453,9 @@ class TestSpreadSandwichWithCoke:
                         "base_price": 5.75,
                         "item_type": "spread_sandwich",
                     },
+                ],
+                "beverage": [
+                    {"id": 999, "name": "Coca-Cola", "base_price": 2.50, "item_type": "beverage"},
                 ],
             },
             "item_type_configs": {},

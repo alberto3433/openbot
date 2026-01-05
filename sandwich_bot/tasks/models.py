@@ -835,6 +835,10 @@ class OrderTask(BaseTask):
     # Used to build final summary like "Great, both toasted. Anything else?"
     multi_item_config_names: list[str] = Field(default_factory=list)
 
+    # Transient error storage for _add_parsed_item -> _process_multi_item_order communication
+    # This is a transient field that should not be serialized
+    last_add_error: Any | None = Field(default=None, exclude=True)
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:

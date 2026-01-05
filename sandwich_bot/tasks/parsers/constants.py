@@ -243,211 +243,21 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # and all aliases. This enables matching user input like "blt", "the blt",
 # "bacon egg and cheese", etc. to their canonical database entries.
 
-# Items that should NOT get "The " prefix (salad and spread sandwiches)
-NO_THE_PREFIX_ITEMS = {
-    "plain cream cheese sandwich", "plain cream cheese",
-    "scallion cream cheese sandwich", "scallion cream cheese",
-    "vegetable cream cheese sandwich", "veggie cream cheese", "vegetable cream cheese",
-    "sun-dried tomato cream cheese sandwich", "sun dried tomato cream cheese",
-    "strawberry cream cheese sandwich", "strawberry cream cheese",
-    "blueberry cream cheese sandwich", "blueberry cream cheese",
-    "kalamata olive cream cheese sandwich", "olive cream cheese",
-    "maple raisin walnut cream cheese sandwich", "maple raisin walnut", "maple walnut cream cheese",
-    "jalapeno cream cheese sandwich", "jalapeno cream cheese", "jalapeño cream cheese",
-    "nova scotia cream cheese sandwich", "nova cream cheese", "lox spread sandwich",
-    "truffle cream cheese sandwich", "truffle cream cheese",
-    "butter sandwich", "bagel with butter",
-    "peanut butter sandwich", "peanut butter bagel",
-    "nutella sandwich", "nutella bagel",
-    "hummus sandwich", "hummus bagel", "hummus",
-    "avocado spread sandwich", "avocado spread",
-    "tofu plain sandwich", "tofu plain", "plain tofu",
-    "tofu scallion sandwich", "tofu scallion", "scallion tofu",
-    "tofu vegetable sandwich", "tofu veggie", "tofu vegetable", "veggie tofu",
-    "tofu nova sandwich", "tofu nova", "nova tofu",
-    # Smoked Fish Sandwiches
-    "belly lox sandwich", "belly lox", "belly lox on bagel",
-    "gravlax sandwich", "gravlax", "gravlax on bagel",
-    "nova scotia salmon sandwich", "nova sandwich", "nova on bagel",
-    # Salad Sandwiches
-    "tuna salad sandwich", "tuna salad", "tuna sandwich",
-    "whitefish salad sandwich", "whitefish salad", "whitefish sandwich",
-    "baked salmon salad sandwich", "baked salmon salad", "salmon salad sandwich",
-    "egg salad sandwich", "egg salad",
-    "chicken salad sandwich", "chicken salad",
-    "cranberry pecan chicken salad sandwich", "cranberry pecan chicken salad", "cranberry chicken salad",
-    "lemon chicken salad sandwich", "lemon chicken salad",
-    "turkey club",
-    "hot pastrami sandwich", "pastrami sandwich",
-    "cheese omelette",
-    "western omelette",
-    "veggie omelette",
-    "spinach & feta omelette", "spinach and feta omelette", "spinach feta omelette",
-    "spinach & feta omelet", "spinach and feta omelet", "spinach feta omelet",
-    "mulberry omelette", "bacon and cheddar omelette", "bacon cheddar omelette",
-    "nova omelette",
-    # Grilled items (no "The" prefix)
-    "grilled cheese", "grilled cheese sandwich",
-    # Sides (no "The" prefix)
-    "side of bacon", "bacon", "side of sausage", "sausage",
-    "turkey bacon", "side of turkey bacon",
-    "latkes", "potato latkes",
-    "bagel chips",  # generic "chips" uses GENERIC_CATEGORY_TERMS
-    "fruit cup", "fruit salad",
-    "cole slaw", "coleslaw",
-    "potato salad", "macaroni salad",
-    # Breakfast items (no "The" prefix)
-    "oatmeal", "steel cut oatmeal", "organic steel-cut oatmeal",
-    "yogurt parfait", "yogurt", "low fat yogurt granola parfait",
-    # Nova/Lox synonyms
-    "nova lox", "nova lox sandwich", "lox sandwich", "lox",
-    # Specific beverage items
-    "tropicana orange juice 46 oz", "tropicana orange juice", "tropicana 46 oz",
-    "tropicana no pulp", "tropicana",
-    "fresh squeezed orange juice",
-}
-
-# Mapping from short forms to canonical menu item names
-MENU_ITEM_CANONICAL_NAMES = {
-    # Spread sandwiches - map short forms to full names
-    "plain cream cheese": "Plain Cream Cheese Sandwich",
-    "scallion cream cheese": "Scallion Cream Cheese Sandwich",
-    "veggie cream cheese": "Vegetable Cream Cheese Sandwich",
-    "vegetable cream cheese": "Vegetable Cream Cheese Sandwich",
-    "sun dried tomato cream cheese": "Sun-Dried Tomato Cream Cheese Sandwich",
-    "strawberry cream cheese": "Strawberry Cream Cheese Sandwich",
-    "blueberry cream cheese": "Blueberry Cream Cheese Sandwich",
-    "olive cream cheese": "Kalamata Olive Cream Cheese Sandwich",
-    "maple raisin walnut": "Maple Raisin Walnut Cream Cheese Sandwich",
-    "maple walnut cream cheese": "Maple Raisin Walnut Cream Cheese Sandwich",
-    "jalapeno cream cheese": "Jalapeno Cream Cheese Sandwich",
-    "jalapeño cream cheese": "Jalapeno Cream Cheese Sandwich",
-    "nova cream cheese": "Nova Scotia Cream Cheese Sandwich",
-    "lox spread sandwich": "Nova Scotia Cream Cheese Sandwich",
-    "truffle cream cheese": "Truffle Cream Cheese Sandwich",
-    "bagel with butter": "Butter Sandwich",
-    "peanut butter bagel": "Peanut Butter Sandwich",
-    "nutella bagel": "Nutella Sandwich",
-    "hummus bagel": "Hummus Sandwich",
-    "avocado spread": "Avocado Spread Sandwich",
-    "tofu plain": "Tofu Plain Sandwich",
-    "plain tofu": "Tofu Plain Sandwich",
-    "tofu scallion": "Tofu Scallion Sandwich",
-    "scallion tofu": "Tofu Scallion Sandwich",
-    "tofu veggie": "Tofu Vegetable Sandwich",
-    "tofu vegetable": "Tofu Vegetable Sandwich",
-    "veggie tofu": "Tofu Vegetable Sandwich",
-    "tofu nova": "Tofu Nova Sandwich",
-    "nova tofu": "Tofu Nova Sandwich",
-    # Smoked fish sandwiches - map short forms to full names
-    "belly lox": "Belly Lox Sandwich",
-    "belly lox sandwich": "Belly Lox Sandwich",
-    "belly lox on bagel": "Belly Lox Sandwich",
-    "gravlax": "Gravlax Sandwich",
-    "gravlax sandwich": "Gravlax Sandwich",
-    "gravlax on bagel": "Gravlax Sandwich",
-    "nova sandwich": "Nova Scotia Salmon Sandwich",
-    "nova on bagel": "Nova Scotia Salmon Sandwich",
-    # Salad sandwiches - map short forms to full names
-    "tuna salad": "Tuna Salad Sandwich",
-    "tuna sandwich": "Tuna Salad Sandwich",
-    "whitefish salad": "Whitefish Salad Sandwich",
-    "whitefish sandwich": "Whitefish Salad Sandwich",
-    "baked salmon salad": "Baked Salmon Salad Sandwich",
-    "salmon salad sandwich": "Baked Salmon Salad Sandwich",
-    "egg salad": "Egg Salad Sandwich",
-    "chicken salad": "Chicken Salad Sandwich",
-    "cranberry pecan chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
-    "cranberry chicken salad": "Cranberry Pecan Chicken Salad Sandwich",
-    "lemon chicken salad": "Lemon Chicken Salad Sandwich",
-    # Signature sandwiches - uppercase acronyms
-    "blt": "The BLT",
-    "the blt": "The BLT",
-    "chelsea club": "The Chelsea Club",
-    "the chelsea club": "The Chelsea Club",
-    "natural": "The Natural",
-    "the natural": "The Natural",
-    # Specific beverage items
-    # Note: "tropicana orange juice" is intentionally NOT mapped here to allow
-    # lookup_menu_items to find both "Tropicana Orange Juice 46 oz" and
-    # "Tropicana Orange Juice No Pulp" and ask user for clarification
-    "tropicana orange juice 46 oz": "Tropicana Orange Juice 46 oz",
-    "tropicana 46 oz": "Tropicana Orange Juice 46 oz",
-    "tropicana no pulp": "Tropicana Orange Juice No Pulp",
-    "tropicana": "Tropicana Orange Juice No Pulp",
-    "fresh squeezed orange juice": "Fresh Squeezed Orange Juice",
-    # Coca Cola products - "coke" should map to regular Coca-Cola, not Diet Coke
-    "coke": "Coca-Cola",
-    "coca cola": "Coca-Cola",
-    "coca-cola": "Coca-Cola",
-    "diet coke": "Diet Coke",
-    "diet coca cola": "Diet Coke",
-    "coke zero": "Coke Zero",
-    "coca cola zero": "Coke Zero",
-    # Dr. Brown's sodas - map to database names (with period)
-    "dr brown's cream soda": "Dr. Brown's Cream Soda",
-    "dr browns cream soda": "Dr. Brown's Cream Soda",
-    "dr brown's black cherry": "Dr. Brown's Black Cherry",
-    "dr browns black cherry": "Dr. Brown's Black Cherry",
-    "dr brown's cel-ray": "Dr. Brown's Cel-Ray",
-    "dr browns cel-ray": "Dr. Brown's Cel-Ray",
-    "cel-ray": "Dr. Brown's Cel-Ray",
-    "dr brown's": "Dr. Brown's Cream Soda",  # Default to cream soda
-    "dr browns": "Dr. Brown's Cream Soda",
-    "dr. brown's": "Dr. Brown's Cream Soda",
-    "dr. browns": "Dr. Brown's Cream Soda",
-    # Milk beverages (plain "milk" is a coffee modifier, not a standalone drink)
-    "chocolate milk": "Chocolate Milk",
-    "chocolate milks": "Chocolate Milk",
-    # Omelettes - map "and" to "&" for database match
-    "spinach and feta omelette": "Spinach & Feta Omelette",
-    "spinach feta omelette": "Spinach & Feta Omelette",
-    # Single 't' spelling variants (omelet vs omelette)
-    "spinach and feta omelet": "Spinach & Feta Omelette",
-    "spinach feta omelet": "Spinach & Feta Omelette",
-    "spinach & feta omelet": "Spinach & Feta Omelette",
-    # Additional omelettes
-    "mulberry": "The Mulberry Omelette",
-    "the mulberry": "The Mulberry Omelette",
-    "mulberry omelette": "The Mulberry Omelette",
-    "the mulberry omelette": "The Mulberry Omelette",
-    "nova omelette": "The Nova Omelette",
-    "the nova omelette": "The Nova Omelette",
-    "bacon and cheddar omelette": "Bacon and Cheddar Omelette",
-    "bacon cheddar omelette": "Bacon and Cheddar Omelette",
-    # Grilled items
-    "grilled cheese": "Grilled Cheese",
-    "grilled cheese sandwich": "Grilled Cheese",
-    # Sides
-    "side of bacon": "Bacon",
-    "bacon": "Bacon",
-    "side of sausage": "Side of Sausage",
-    "sausage": "Side of Sausage",
-    "turkey bacon": "Turkey Bacon",
-    "side of turkey bacon": "Turkey Bacon",
-    "latkes": "Latkes",
-    "potato latkes": "Latkes",
-    "bagel chips": "Bagel Chips",
-    # NOTE: generic "chips" not mapped here - handled by GENERIC_CATEGORY_TERMS for disambiguation
-    "fruit cup": "Fruit Cup",
-    "fruit salad": "Fruit Salad",
-    "cole slaw": "Cole Slaw",
-    "coleslaw": "Cole Slaw",
-    "potato salad": "Potato Salad",
-    "macaroni salad": "Macaroni Salad",
-    # Breakfast items
-    "oatmeal": "Oatmeal",
-    "steel cut oatmeal": "Organic Steel-Cut Oatmeal",
-    "organic steel-cut oatmeal": "Organic Steel-Cut Oatmeal",
-    "yogurt parfait": "Yogurt Parfait",
-    "yogurt": "Yogurt Parfait",
-    "low fat yogurt granola parfait": "Low Fat Yogurt Granola Parfait",
-    # Nova/Lox synonyms - map to Nova Scotia Salmon Sandwich
-    "nova lox": "Nova Scotia Salmon Sandwich",
-    "nova lox sandwich": "Nova Scotia Salmon Sandwich",
-    "lox sandwich": "Nova Scotia Salmon Sandwich",
-    "lox": "Belly Lox Sandwich",  # "lox" alone defaults to Belly Lox
-}
+# =============================================================================
+# Menu Item Recognition (MOVED TO DATABASE)
+# =============================================================================
+# NOTE: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES have been moved to
+# the database. All menu item aliases are now stored in the MenuItem.aliases
+# column and loaded via menu_cache.
+#
+# To resolve user input to canonical menu item names, use:
+#   from sandwich_bot.menu_data_cache import menu_cache
+#   canonical_name = menu_cache.resolve_menu_item_alias("tuna salad")
+#   # Returns: "Tuna Salad Sandwich" or None if not found
+#
+# See migrations:
+# - b2c3d4e5f6g8_migrate_menu_item_canonical_names.py
+# - c3d4e5f6g7h9_add_remaining_menu_aliases.py
 
 # =============================================================================
 # Coffee Typo Corrections
@@ -471,8 +281,6 @@ COFFEE_TYPO_MAP = {
     "macchiato": "macchiato",
     "machiato": "macchiato",
     "machato": "macchiato",
-    "mocca": "mocha",
-    "moca": "mocha",
 }
 
 # =============================================================================
@@ -827,6 +635,8 @@ MODIFIER_CATEGORY_KEYWORDS: dict[str, str] = {
     "cream cheese": "spreads",
     "topping": "toppings",
     "toppings": "toppings",
+    "bagel topping": "toppings",  # Added to handle "what kind of bagel toppings"
+    "bagel toppings": "toppings",  # Added to handle "what kind of bagel toppings"
     "protein": "proteins",
     "proteins": "proteins",
     "meat": "proteins",
@@ -872,6 +682,8 @@ MODIFIER_INQUIRY_PATTERNS = [
     (re.compile(r"what (?:do you have|options?|choices?) (?:for|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 1, 0),
     # "what goes on a bagel?" / "what goes in coffee?"
     (re.compile(r"what (?:goes|can go) (?:on|in|with) (?:a |my |the )?(.+?)(?:\?|$)", re.IGNORECASE), 1, 0),
+    # "what kind of bagel toppings do you have?" / "what types of spreads do you have?"
+    (re.compile(r"what (?:kind|kinds|type|types) of (\w+(?:\s+\w+)?) do you (?:have|offer|carry)(?:\?|$)", re.IGNORECASE), 0, 1),
     # "what sweeteners do you have?" / "what milks do you have?"
     (re.compile(r"what (\w+(?:\s+\w+)?) do you (?:have|offer|carry)(?:\?|$)", re.IGNORECASE), 0, 1),
     # "do you have sweeteners?" / "do you have flavored syrups?"

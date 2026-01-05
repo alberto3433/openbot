@@ -1584,6 +1584,94 @@ class TestSplitQuantityBagelParsing:
         result = _parse_split_quantity_bagels("two plain bagels with cream cheese")
         assert result is None  # Should not match - no split pattern
 
+    def test_spread_alias_cc_toasted_lox(self):
+        """Test parsing '2 plain bagels, one with cc toasted, one with lox not toasted'.
+
+        This tests spread alias normalization (cc -> cream cheese) and combined
+        attribute extraction (spread + toasted together).
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels(
+            "2 plain bagels, one with cc toasted, one with lox not toasted"
+        )
+        assert result is not None
+        assert result.new_bagel_quantity == 2
+        assert result.new_bagel_type == "plain"
+        assert len(result.parsed_items) == 2
+        # First bagel: cream cheese (from "cc" alias), toasted
+        assert result.parsed_items[0].bagel_type == "plain"
+        assert result.parsed_items[0].spread == "cream cheese"
+        assert result.parsed_items[0].toasted is True
+        # Second bagel: lox, not toasted
+        assert result.parsed_items[1].bagel_type == "plain"
+        assert result.parsed_items[1].spread == "Nova Scotia Salmon"
+        assert result.parsed_items[1].toasted is False
+
+    def test_different_bagel_types_one_plain_one_everything(self):
+        """Test parsing '2 bagels, one plain, one everything'.
+
+        This tests per-item bagel type detection where each item
+        specifies a different bagel type.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("2 bagels, one plain, one everything")
+        assert result is not None
+        assert result.new_bagel_quantity == 2
+        assert len(result.parsed_items) == 2
+        # First bagel: plain
+        assert result.parsed_items[0].bagel_type == "plain"
+        # Second bagel: everything
+        assert result.parsed_items[1].bagel_type == "everything"
+
+    def test_uneven_split_one_toasted_two_not(self):
+        """Test parsing '3 bagels, one toasted, two not toasted'.
+
+        This tests uneven split handling where distribution quantities
+        (one, two) don't match equal division.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("3 bagels, one toasted, two not toasted")
+        assert result is not None
+        assert result.new_bagel_quantity == 3
+        assert len(result.parsed_items) == 3
+        # First bagel: toasted
+        assert result.parsed_items[0].toasted is True
+        # Second and third bagels: not toasted
+        assert result.parsed_items[1].toasted is False
+        assert result.parsed_items[2].toasted is False
+
+    def test_first_second_ordinals_with_spreads(self):
+        """Test parsing '2 bagels, first one with butter, second one with cream cheese'.
+
+        This tests ordinal patterns (first/second) for specifying
+        different configurations.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels(
+            "2 bagels, first one with butter, second one with cream cheese"
+        )
+        assert result is not None
+        assert result.new_bagel_quantity == 2
+        assert len(result.parsed_items) == 2
+        # First bagel: butter
+        assert result.parsed_items[0].spread == "butter"
+        # Second bagel: cream cheese
+        assert result.parsed_items[1].spread == "cream cheese"
+
+    def test_spread_alias_pb(self):
+        """Test parsing with peanut butter alias 'pb'."""
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+
+        result = _parse_split_quantity_bagels("2 bagels, one with pb, one with cc")
+        assert result is not None
+        assert len(result.parsed_items) == 2
+        assert result.parsed_items[0].spread == "peanut butter"
+        assert result.parsed_items[1].spread == "cream cheese"
+
 
 class TestSplitQuantityDrinksParsing:
     """Tests for split-quantity drink parsing (e.g., 'two coffees one with milk one black')."""
@@ -1681,6 +1769,40 @@ class TestSplitQuantityDrinksParsing:
         assert result.parsed_items[0].temperature == "iced"
         assert result.parsed_items[1].size == "large"
         assert result.parsed_items[1].temperature == "hot"
+
+    def test_uneven_split_one_iced_two_hot(self):
+        """Test parsing '3 coffees, one iced, two hot'.
+
+        This tests uneven split handling where distribution quantities
+        don't match equal division.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("3 coffees, one iced, two hot")
+        assert result is not None
+        assert result.new_coffee_quantity == 3
+        assert len(result.parsed_items) == 3
+        # First coffee: iced
+        assert result.parsed_items[0].temperature == "iced"
+        # Second and third coffees: hot
+        assert result.parsed_items[1].temperature == "hot"
+        assert result.parsed_items[2].temperature == "hot"
+
+    def test_two_coffees_one_hot_one_iced(self):
+        """Test parsing '2 coffees, one hot, one iced'.
+
+        This tests the basic hot/iced split pattern.
+        """
+        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+
+        result = _parse_split_quantity_drinks("2 coffees, one hot, one iced")
+        assert result is not None
+        assert result.new_coffee_quantity == 2
+        assert len(result.parsed_items) == 2
+        # First coffee: hot
+        assert result.parsed_items[0].temperature == "hot"
+        # Second coffee: iced
+        assert result.parsed_items[1].temperature == "iced"
 
 
 class TestParsedItemsMultiItem:

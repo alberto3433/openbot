@@ -110,8 +110,8 @@ from .constants import (
     REPEAT_ORDER_PATTERNS,
     # Menu item recognition
     get_known_menu_items,
-    NO_THE_PREFIX_ITEMS,
-    MENU_ITEM_CANONICAL_NAMES,
+    # Note: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES were moved to the database
+    # - use menu_cache.resolve_menu_item_alias() instead
     # Coffee typos
     COFFEE_TYPO_MAP,
     # Price inquiry patterns
@@ -222,8 +222,8 @@ __all__ = [
     "REPEAT_ORDER_PATTERNS",
     # Constants - Menu item recognition
     "get_known_menu_items",
-    "NO_THE_PREFIX_ITEMS",
-    "MENU_ITEM_CANONICAL_NAMES",
+    # Note: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES were moved to the database
+    # - use menu_cache.resolve_menu_item_alias() instead
     # Constants - Coffee typos
     "COFFEE_TYPO_MAP",
     # Constants - Price inquiry patterns

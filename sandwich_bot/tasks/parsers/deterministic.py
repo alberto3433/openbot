@@ -3037,6 +3037,39 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                         coffee_result.new_coffee_size, coffee_result.new_coffee_iced, coffee_result.new_coffee_milk)
             continue
 
+        # If "bagel" is explicitly in the part, try bagel parsing FIRST before menu item
+        # This prevents "everything bagel with veggie cc" from matching "Vegetable Cream Cheese (1 lb)"
+        part_lower = part.lower()
+        if "bagel" in part_lower:
+            parsed = parse_open_input_deterministic(part)
+            if parsed and parsed.new_bagel:
+                bagel = True
+                bagel_qty = parsed.new_bagel_quantity or 1
+                bagel_type = parsed.new_bagel_type
+                bagel_toasted = parsed.new_bagel_toasted
+                bagel_spread = parsed.new_bagel_spread
+                bagel_spread_type = parsed.new_bagel_spread_type
+
+                # Build modifiers list from spread and extras
+                modifiers = []
+                if parsed.new_bagel_spread_type:
+                    modifiers.append(parsed.new_bagel_spread_type)
+                if parsed.new_bagel_toppings:
+                    modifiers.extend(parsed.new_bagel_toppings)
+
+                # Add to parsed_items
+                parsed_items.append(ParsedBagelEntry(
+                    bagel_type=bagel_type,
+                    toasted=bagel_toasted,
+                    spread=parsed.new_bagel_spread,
+                    spread_type=parsed.new_bagel_spread_type,
+                    quantity=bagel_qty,
+                    modifiers=modifiers,
+                ))
+                logger.info("Multi-item: detected bagel '%s' (qty=%d, toasted=%s, spread=%s, spread_type=%s)",
+                            bagel_type, bagel_qty, bagel_toasted, bagel_spread, parsed.new_bagel_spread_type)
+                continue
+
         item_name, item_qty = _extract_menu_item_from_text(part)
         if item_name:
             bagel_choice = _extract_bagel_type(part)
@@ -3218,9 +3251,6 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         first_coffee = coffee_list[0] if coffee_list else None
         logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s, parsed_items=%d",
                     len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name, len(parsed_items))
-        # DIAGNOSTIC: Log each parsed item type and key details
-        for idx, pitem in enumerate(parsed_items):
-            logger.info("DIAG: parsed_items[%d] = type=%s, details=%s", idx, type(pitem).__name__, pitem)
         return OpenInputResponse(
             new_menu_item=first_menu_item.name if first_menu_item else None,
             new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,

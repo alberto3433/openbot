@@ -1520,13 +1520,6 @@ class TakingItemsHandler:
         for parsed_item in parsed.parsed_items:
             order, summary = self._add_parsed_item(parsed_item, order)
 
-            # DIAGNOSTIC: Log after each item is processed
-            logger.info(
-                "DIAG: After _add_parsed_item: type=%s, summary='%s', summaries=%s, pending_field=%s, items_count=%d",
-                type(parsed_item).__name__, summary, summaries + ([summary] if summary else []),
-                order.pending_field, len(order.items.items)
-            )
-
             # Check if add failed (e.g., item not found on menu)
             if order.last_add_error is not None:
                 # Return the error message instead of continuing
@@ -1557,14 +1550,6 @@ class TakingItemsHandler:
                         display_name = summary
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
-
-        # DIAGNOSTIC: Log state before disambiguation checks
-        logger.info(
-            "DIAG: Before checks - summaries=%s, pending_field=%s, pending_drink_options=%s, pending_item_options=%s",
-            summaries, order.pending_field,
-            len(order.pending_drink_options) if order.pending_drink_options else 0,
-            len(order.pending_item_options) if order.pending_item_options else 0
-        )
 
         # Check if we're waiting for drink type selection (user said "drink" or partial term like "juice")
         # This must be checked BEFORE checking summaries because add_coffee sets pending_field
@@ -1797,12 +1782,6 @@ class TakingItemsHandler:
                 message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
                 order=order,
             )
-
-        # DIAGNOSTIC: Log final state before response generation
-        logger.info(
-            "DIAG: Final state - summaries=%s, items_needing_config=%d, items_in_order=%d",
-            summaries, len(items_needing_config), len(order.items.items)
-        )
 
         # If no items need configuration, return simple confirmation
         if not items_needing_config:

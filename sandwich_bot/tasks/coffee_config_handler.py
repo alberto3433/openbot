@@ -222,7 +222,7 @@ class CoffeeConfigHandler:
                 order.pending_field = "drink_type"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 return StateMachineResult(
-                    message=f"I couldn't find '{coffee_type}' on our menu. We have {drinks_str}. What would you like?",
+                    message=f"Sorry, we don't have {coffee_type}. We have {drinks_str}. What would you like?",
                     order=order,
                 )
 
@@ -970,14 +970,98 @@ class CoffeeConfigHandler:
                 order=order,
             )
 
+        # FIRST: Check if we have pending drink options (from disambiguation like "latte" matching multiple items)
+        # If so, try to match the user's input against those options before doing anything else
+        if order.pending_drink_options:
+            options = order.pending_drink_options
+            selected_item = None
+
+            # Try to match by number (1, 2, 3, "first", "second", etc.)
+            number_map = {
+                "1": 0, "one": 0, "first": 0, "the first": 0, "number 1": 0, "number one": 0,
+                "2": 1, "two": 1, "second": 1, "the second": 1, "number 2": 1, "number two": 1,
+                "3": 2, "three": 2, "third": 2, "the third": 2, "number 3": 2, "number three": 2,
+                "4": 3, "four": 3, "fourth": 3, "the fourth": 3, "number 4": 3, "number four": 3,
+            }
+
+            for key, idx in number_map.items():
+                if key in user_lower:
+                    if idx < len(options):
+                        selected_item = options[idx]
+                        break
+
+            # If not found by number, try to match by name
+            if not selected_item:
+                for option in options:
+                    option_name = option.get("name", "").lower()
+                    # Check if the option name is in user input or vice versa
+                    if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
+                        selected_item = option
+                        break
+                    # Also try matching individual words
+                    for word in user_lower.split():
+                        if len(word) > 3 and word in option_name:
+                            selected_item = option
+                            break
+                    if selected_item:
+                        break
+
+            if selected_item:
+                # Found the selection - clear pending state and add the drink
+                selected_name = selected_item.get("name", "drink")
+                selected_price = selected_item.get("base_price", 2.50)
+                order.pending_drink_options = []
+                order.clear_pending()
+
+                logger.info("DRINK TYPE SELECTION: User chose '%s' (price: $%.2f)", selected_name, selected_price)
+
+                # Check if this drink should skip configuration
+                is_configurable_coffee = any(
+                    bev in selected_name.lower() for bev in get_coffee_types()
+                )
+                should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
+
+                if should_skip_config or not is_configurable_coffee:
+                    # Add directly as complete (no size/iced questions)
+                    drink = CoffeeItemTask(
+                        drink_type=selected_name,
+                        size=None,
+                        iced=None,
+                        milk=None,
+                        sweeteners=[],
+                        flavor_syrups=[],
+                        unit_price=selected_price,
+                    )
+                    drink.mark_complete()
+                    order.items.add_item(drink)
+
+                    return StateMachineResult(
+                        message=f"Got it, {selected_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    # Needs configuration - add as in_progress
+                    drink = CoffeeItemTask(
+                        drink_type=selected_name,
+                        size=None,
+                        iced=None,
+                        milk=None,
+                        sweeteners=[],
+                        flavor_syrups=[],
+                        unit_price=selected_price,
+                    )
+                    drink.mark_in_progress()
+                    order.items.add_item(drink)
+                    return self.configure_next_incomplete_coffee(order)
+
         # Clear pending state and pagination
         order.clear_pending()
         order.clear_menu_pagination()
 
         # Try to parse the drink type from the user's input
         # Use the deterministic parser to extract coffee type
-        from .parsers.deterministic import parse_open_input
-        parsed = parse_open_input(user_input)
+        from .parsers.deterministic import parse_open_input_deterministic
+        parsed = parse_open_input_deterministic(user_input)
 
         # Check if they specified a coffee/drink
         if parsed and (parsed.new_coffee or parsed.new_coffee_type):

@@ -103,6 +103,11 @@ class CheckoutHandler:
         modifier_cats = self._menu_data.get("modifier_categories", {})
         return modifier_cats.get("keyword_to_category", {})
 
+    @property
+    def _modifier_item_keywords(self) -> dict[str, str]:
+        """Get item keyword to item type slug mapping from menu data."""
+        return self._menu_data.get("item_keywords", {})
+
     def set_context(
         self,
         store_info: dict | None = None,
@@ -606,6 +611,7 @@ class CheckoutHandler:
             model=self.model,
             spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
+            modifier_item_keywords=self._modifier_item_keywords,
         )
         logger.info("CONFIRMATION: parse_open_input result - new_menu_item=%s, new_bagel=%s, new_coffee=%s, new_coffee_type=%s, new_speed_menu_bagel=%s",
                    item_parsed.new_menu_item, item_parsed.new_bagel, item_parsed.new_coffee, item_parsed.new_coffee_type, item_parsed.new_speed_menu_bagel)

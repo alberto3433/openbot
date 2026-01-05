@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
-from .models import CoffeeItemTask, EspressoItemTask, OrderTask, ItemTask, TaskStatus
+from .models import CoffeeItemTask, OrderTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import (
     parse_coffee_size,
@@ -409,42 +409,8 @@ class CoffeeConfigHandler:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Check if this is an espresso drink - use EspressoItemTask instead
-        is_espresso = coffee_type_lower == "espresso"
-        if is_espresso:
-            # Espresso drinks don't need size or hot/iced configuration
-            # Calculate shots: 1 = single (default), 2 = double, 3 = triple
-            shots = 1 + extra_shots  # extra_shots: 0=single, 1=double, 2=triple
-
-            for _ in range(quantity):
-                espresso = EspressoItemTask(
-                    shots=shots,
-                    decaf=decaf,
-                    unit_price=price,
-                    special_instructions=special_instructions,
-                )
-                # Calculate upcharges for extra shots if pricing is available
-                if self.pricing and shots > 1:
-                    # Use the same pricing logic as recalculate_coffee_price
-                    # Default fallback prices if not found in database
-                    DEFAULT_DOUBLE_SHOT_PRICE = 1.00
-                    DEFAULT_TRIPLE_SHOT_PRICE = 2.00
-                    if shots == 2:
-                        extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("double_shot", "extras")
-                        if extra_shots_upcharge == 0:
-                            extra_shots_upcharge = DEFAULT_DOUBLE_SHOT_PRICE
-                    else:  # shots >= 3
-                        extra_shots_upcharge = self.pricing.lookup_coffee_modifier_price("triple_shot", "extras")
-                        if extra_shots_upcharge == 0:
-                            extra_shots_upcharge = DEFAULT_TRIPLE_SHOT_PRICE
-                    espresso.extra_shots_upcharge = extra_shots_upcharge
-                    espresso.unit_price += extra_shots_upcharge
-                espresso.mark_complete()  # No configuration needed
-                order.items.add_item(espresso)
-
-            # Return to taking items
-            order.clear_pending()
-            return self._get_next_question(order)
+        # Note: Espresso is now handled by EspressoConfigHandler in taking_items_handler.py
+        # This add_coffee method only handles regular coffee/tea drinks
 
         # Regular coffee/tea - needs configuration
         # Build sweeteners list from parameters

@@ -205,7 +205,8 @@ CHANGE_REQUEST_PATTERNS = [
     # "can you change the bagel to X"
     (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
     # "actually X instead" / "actually make it X"
-    (re.compile(r"actually\s+(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # Negative lookahead excludes cancellation keywords so "actually cancel that" is NOT a change request
+    (re.compile(r"actually\s+(?!cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "I meant X" / "I want X instead"
     (re.compile(r"(?:i\s+meant|i\s+want(?:ed)?)\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "no wait, X" / "wait, X instead"
@@ -572,25 +573,9 @@ ITEM_DESCRIPTION_PATTERNS = [
 # - use menu_data["modifier_categories"]["keyword_to_category"] instead
 # - see migration j0k1l2m3n4o5_add_modifier_categories_table.py
 
-# Item types for modifier inquiries
-MODIFIER_ITEM_KEYWORDS: dict[str, str] = {
-    "coffee": "coffee",
-    "coffees": "coffee",
-    "latte": "coffee",
-    "lattes": "coffee",
-    "cappuccino": "coffee",
-    "tea": "tea",
-    "teas": "tea",
-    "hot chocolate": "hot_chocolate",
-    "hot cocoa": "hot_chocolate",
-    "cocoa": "hot_chocolate",
-    "bagel": "bagel",
-    "bagels": "bagel",
-    "sandwich": "sandwich",
-    "sandwiches": "sandwich",
-    "egg sandwich": "sandwich",
-    "bec": "sandwich",
-}
+# Note: MODIFIER_ITEM_KEYWORDS was moved to the database (item_types.aliases column)
+# - use menu_data["item_keywords"] instead
+# - populated by menu_index_builder._build_item_keywords()
 
 # Patterns for modifier inquiries - each returns (pattern, item_group_index, category_group_index)
 # Group indices are 1-based, or 0 if not captured
@@ -776,7 +761,7 @@ def get_bagel_types() -> set[str]:
         cached = cache.get_bagel_types()
         if cached:
             return cached
-    return _FALLBACK_BAGEL_TYPES
+    return set()
 
 
 def get_bagel_types_list() -> list[str]:
@@ -858,22 +843,9 @@ def get_cheeses() -> set[str]:
     )
 
 
-# Fallback bagel types when database cache isn't loaded
-# These are the most common bagel types for pattern matching
-_FALLBACK_BAGEL_TYPES = {
-    "plain", "everything", "sesame", "poppy", "onion",
-    "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
-    "whole wheat", "wheat", "salt", "garlic", "bialy",
-    "egg", "multigrain", "asiago", "jalapeno", "blueberry",
-    "gluten free", "gluten-free",
-}
-
-# Fallback coffee types when database cache isn't loaded
-# These are the most common coffee/tea drink keywords for pattern matching
-_FALLBACK_COFFEE_TYPES = {
-    "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
-    "cold brew", "tea", "chai", "matcha", "hot chocolate",
-}
+# Note: _FALLBACK_BAGEL_TYPES and _FALLBACK_COFFEE_TYPES were removed.
+# Bagel and coffee types are now loaded from the database.
+# If the cache is not available, functions return empty sets and fail gracefully.
 
 
 def get_coffee_types() -> set[str]:
@@ -888,7 +860,7 @@ def get_coffee_types() -> set[str]:
         cached = cache.get_coffee_types()
         if cached:
             return cached
-    return _FALLBACK_COFFEE_TYPES
+    return set()
 
 
 def get_soda_types() -> set[str]:
@@ -1090,25 +1062,9 @@ def find_bagel_matches(query: str) -> list[str]:
         query: User input like "cinnamon" or "whole wheat"
 
     Returns:
-        List of matching bagel types.
+        List of matching bagel types, or empty list if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
         return cache.find_bagel_matches(query)
-
-    # Fallback: simple substring matching
-    query_lower = query.lower().strip()
-    query_lower = query_lower.replace("bagel", "").strip()
-
-    if not query_lower:
-        return []
-
-    if query_lower in _FALLBACK_BAGEL_TYPES:
-        return [query_lower]
-
-    matches = []
-    for bagel_type in _FALLBACK_BAGEL_TYPES:
-        if query_lower in bagel_type or bagel_type in query_lower:
-            matches.append(bagel_type)
-
-    return sorted(matches)
+    return []

@@ -29,6 +29,7 @@ from .message_builder import MessageBuilder
 from .checkout_handler import CheckoutHandler
 from .bagel_config_handler import BagelConfigHandler
 from .coffee_config_handler import CoffeeConfigHandler
+from .espresso_config_handler import EspressoConfigHandler
 from .speed_menu_handler import SpeedMenuBagelHandler
 from .store_info_handler import StoreInfoHandler
 from .menu_inquiry_handler import MenuInquiryHandler
@@ -328,6 +329,12 @@ class OrderStateMachine:
         )
         # Now set the coffee callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_coffee = self.coffee_handler.configure_next_incomplete_coffee
+        # Initialize espresso config handler
+        self.espresso_handler = EspressoConfigHandler(
+            pricing=self.pricing,
+            menu_lookup=self.menu_lookup,
+            get_next_question=self.checkout_utils_handler.get_next_question,
+        )
         # Initialize bagel config handler
         self.bagel_handler = BagelConfigHandler(
             model=self.model,
@@ -404,6 +411,7 @@ class OrderStateMachine:
             model=self.model,
             pricing=self.pricing,
             coffee_handler=self.coffee_handler,
+            espresso_handler=self.espresso_handler,
             item_adder_handler=self.item_adder_handler,
             speed_menu_handler=self.speed_menu_handler,
             menu_inquiry_handler=self.menu_inquiry_handler,

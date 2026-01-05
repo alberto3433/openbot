@@ -981,6 +981,26 @@ class TestCancellationPatternDetection:
         assert result.cancel_item == "__last_item__", \
             f"Expected cancel_item='__last_item__' but got '{result.cancel_item}' for: {text}"
 
+    @pytest.mark.parametrize("text", [
+        "actually cancel that",
+        "actually remove that",
+        "actually forget it",
+        "actually nevermind that",
+        "actually scratch that",
+        "actually take off the bagel",
+    ])
+    def test_cancellation_phrases_not_matched_as_change_requests(self, text):
+        """Ensure cancellation phrases are NOT detected as change requests.
+
+        This prevents 'actually cancel that' from being routed to the
+        modifier_change_handler instead of the cancellation handler.
+        """
+        from sandwich_bot.tasks.modifier_change_handler import ModifierChangeHandler
+        handler = ModifierChangeHandler()
+        result = handler.detect_change_request(text)
+        assert result is None, \
+            f"'{text}' should NOT be detected as a change request, but got: {result}"
+
 
 class TestTaxQuestionPatternDetection:
     """Tests for tax question pattern detection."""

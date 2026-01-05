@@ -340,6 +340,7 @@ def parse_open_input(
     model: str = "gpt-4o-mini",
     spread_types: set[str] | None = None,
     modifier_category_keywords: dict[str, str] | None = None,
+    modifier_item_keywords: dict[str, str] | None = None,
 ) -> OpenInputResponse:
     """Parse user input when open for new orders.
 
@@ -353,6 +354,8 @@ def parse_open_input(
         spread_types: Optional set of spread type keywords from database
         modifier_category_keywords: Mapping of keywords to category slugs
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
+        modifier_item_keywords: Mapping of item keywords to item type slugs
+            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
     """
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
@@ -429,6 +432,7 @@ def parse_open_input(
         user_input,
         spread_types=spread_types,
         modifier_category_keywords=modifier_category_keywords,
+        modifier_item_keywords=modifier_item_keywords,
     )
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])

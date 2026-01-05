@@ -44,6 +44,7 @@ from .parsers.constants import get_bagel_types, get_bagel_spreads
 if TYPE_CHECKING:
     from .pricing import PricingEngine
     from .coffee_config_handler import CoffeeConfigHandler
+    from .espresso_config_handler import EspressoConfigHandler
     from .item_adder_handler import ItemAdderHandler
     from .speed_menu_handler import SpeedMenuBagelHandler
     from .menu_inquiry_handler import MenuInquiryHandler
@@ -68,6 +69,7 @@ class TakingItemsHandler:
         model: str = "gpt-4o-mini",
         pricing: "PricingEngine | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
+        espresso_handler: "EspressoConfigHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
         speed_menu_handler: "SpeedMenuBagelHandler | None" = None,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
@@ -83,6 +85,7 @@ class TakingItemsHandler:
             model: LLM model to use for parsing.
             pricing: Pricing engine.
             coffee_handler: Handler for coffee items.
+            espresso_handler: Handler for espresso items.
             item_adder_handler: Handler for adding items.
             speed_menu_handler: Handler for speed menu items.
             menu_inquiry_handler: Handler for menu inquiries.
@@ -94,6 +97,7 @@ class TakingItemsHandler:
         self.model = model
         self.pricing = pricing
         self.coffee_handler = coffee_handler
+        self.espresso_handler = espresso_handler
         self.item_adder_handler = item_adder_handler
         self.speed_menu_handler = speed_menu_handler
         self.menu_inquiry_handler = menu_inquiry_handler
@@ -123,6 +127,11 @@ class TakingItemsHandler:
         """Get modifier category keyword mapping from menu data."""
         modifier_cats = self._menu_data.get("modifier_categories", {})
         return modifier_cats.get("keyword_to_category", {})
+
+    @property
+    def _modifier_item_keywords(self) -> dict[str, str]:
+        """Get item keyword to item type slug mapping from menu data."""
+        return self._menu_data.get("item_keywords", {})
 
     def _get_bagel_menu_item_info(self, menu_item_name: str) -> dict | None:
         """
@@ -170,6 +179,7 @@ class TakingItemsHandler:
             model=self.model,
             spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
+            modifier_item_keywords=self._modifier_item_keywords,
         )
 
         logger.info(
@@ -353,6 +363,7 @@ class TakingItemsHandler:
             model=self.model,
             spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
+            modifier_item_keywords=self._modifier_item_keywords,
         )
 
         # Extract modifiers from raw input (keyword-based, no LLM)
@@ -1456,6 +1467,35 @@ class TakingItemsHandler:
             return order, summary
 
         elif isinstance(item, ParsedCoffeeEntry):
+            # Check if this is an espresso drink - route to espresso handler
+            drink_type_lower = (item.drink_type or "").lower()
+            is_espresso = drink_type_lower == "espresso"
+
+            if is_espresso and self.espresso_handler:
+                # Calculate shots: 1 + extra_shots (0=single, 1=double, 2=triple)
+                shots = 1 + item.extra_shots
+                result = self.espresso_handler.add_espresso(
+                    shots=shots,
+                    quantity=item.quantity,
+                    order=order,
+                    decaf=item.decaf,
+                    special_instructions=item.special_instructions,
+                )
+                order = result.order
+                # Build summary based on shots
+                if shots == 2:
+                    summary = "double espresso"
+                elif shots >= 3:
+                    summary = "triple espresso"
+                else:
+                    summary = "espresso"
+                if item.decaf:
+                    summary = f"decaf {summary}"
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {summary}s"
+                return order, summary
+
+            # Regular coffee/drink - use coffee handler
             # Extract first sweetener if present
             sweetener = item.sweeteners[0].type if item.sweeteners else None
             sweetener_qty = item.sweeteners[0].quantity if item.sweeteners else 1

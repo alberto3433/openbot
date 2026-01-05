@@ -62,7 +62,6 @@ from .constants import (
     RECOMMENDATION_PATTERNS,
     ITEM_DESCRIPTION_PATTERNS,
     MODIFIER_INQUIRY_PATTERNS,
-    MODIFIER_ITEM_KEYWORDS,
     MORE_MENU_ITEMS_PATTERNS,
     get_by_pound_items,
     find_by_pound_item,
@@ -2719,7 +2718,7 @@ def _parse_modifier_inquiry(
             # Normalize item type
             item_type = None
             if item_text:
-                item_type = MODIFIER_ITEM_KEYWORDS.get(item_text.lower())
+                item_type = item_keywords.get(item_text.lower())
                 # If item_text doesn't match known items, it might be a category
                 if not item_type and item_text.lower() in keywords:
                     category_text = item_text
@@ -3379,6 +3378,7 @@ def parse_open_input_deterministic(
     user_input: str,
     spread_types: set[str] | None = None,
     modifier_category_keywords: dict[str, str] | None = None,
+    modifier_item_keywords: dict[str, str] | None = None,
 ) -> OpenInputResponse | None:
     """
     Try to parse user input deterministically without LLM.
@@ -3388,6 +3388,8 @@ def parse_open_input_deterministic(
         spread_types: Optional set of spread type keywords from database
         modifier_category_keywords: Mapping of keywords to category slugs
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
+        modifier_item_keywords: Mapping of item keywords to item type slugs
+            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
 
     Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
     """
@@ -3454,7 +3456,7 @@ def parse_open_input_deterministic(
         return item_desc_result
 
     # Check for modifier/add-on inquiries
-    modifier_inquiry_result = _parse_modifier_inquiry(text, modifier_category_keywords)
+    modifier_inquiry_result = _parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
 

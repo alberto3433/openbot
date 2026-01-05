@@ -725,6 +725,21 @@ class PricingEngine:
             total += syrup_upcharge
         item.syrup_upcharge = syrup_upcharge
 
+        # Extra shots upcharge (for double/triple espresso)
+        # extra_shots=1 means double (1 extra), extra_shots=2 means triple (2 extra)
+        extra_shots_upcharge = 0.0
+        if hasattr(item, 'extra_shots') and item.extra_shots > 0:
+            # Look up double_shot or triple_shot modifier price
+            if item.extra_shots == 1:
+                extra_shots_upcharge = self.lookup_coffee_modifier_price("double_shot", "extras")
+            elif item.extra_shots >= 2:
+                extra_shots_upcharge = self.lookup_coffee_modifier_price("triple_shot", "extras")
+            total += extra_shots_upcharge
+            if extra_shots_upcharge > 0:
+                logger.debug("Coffee extra shots upcharge: %d shots = +$%.2f", item.extra_shots, extra_shots_upcharge)
+        if hasattr(item, 'extra_shots_upcharge'):
+            item.extra_shots_upcharge = extra_shots_upcharge
+
         # Iced upcharge (varies by size)
         iced_upcharge = 0.0
         if item.iced is True and item.size:
@@ -736,8 +751,8 @@ class PricingEngine:
         item.unit_price = total
 
         logger.info(
-            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f + iced=$%.2f -> total=$%.2f",
-            base_price, size_upcharge, milk_upcharge, syrup_upcharge, iced_upcharge, total
+            "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f + shots=$%.2f + iced=$%.2f -> total=$%.2f",
+            base_price, size_upcharge, milk_upcharge, syrup_upcharge, extra_shots_upcharge, iced_upcharge, total
         )
 
         return total

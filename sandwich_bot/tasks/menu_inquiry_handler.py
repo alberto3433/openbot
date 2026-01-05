@@ -17,7 +17,13 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .parsers.constants import get_item_type_display_name
+from .parsers.constants import (
+    get_item_type_display_name,
+    get_toppings,
+    get_proteins,
+    get_cheeses,
+    get_spreads,
+)
 
 if TYPE_CHECKING:
     from .pricing_engine import PricingEngine
@@ -227,6 +233,7 @@ class MenuInquiryHandler:
         """Handle 'show more' menu requests.
 
         Continues listing items from where the previous menu query left off.
+        Supports both menu item categories and modifier categories (toppings, proteins, etc.).
         """
         pagination = order.get_menu_pagination()
 
@@ -241,7 +248,18 @@ class MenuInquiryHandler:
         offset = pagination.get("offset", 0)
         total_items = pagination.get("total_items", 0)
 
-        # Get items for this category
+        # Check if this is a modifier category (toppings, proteins, cheeses, spreads)
+        modifier_categories = {
+            "toppings": get_toppings,
+            "proteins": get_proteins,
+            "cheeses": get_cheeses,
+            "spreads": get_spreads,
+        }
+
+        if category in modifier_categories:
+            return self._handle_more_modifier_items(category, modifier_categories[category], offset, order)
+
+        # Get items for this category (menu items)
         items, lookup_type = self._get_items_for_category(category)
 
         if not items or offset >= len(items):
@@ -272,6 +290,120 @@ class MenuInquiryHandler:
             message=message,
             order=order,
         )
+
+    def _handle_more_modifier_items(
+        self,
+        category: str,
+        getter_fn: Callable,
+        offset: int,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle 'show more' for modifier categories (toppings, proteins, etc.)."""
+        try:
+            items_set = getter_fn()
+        except RuntimeError:
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like anything?",
+                order=order,
+            )
+
+        if not items_set:
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like anything?",
+                order=order,
+            )
+
+        # Normalize items (same logic as store_info_handler)
+        items_list = self._normalize_modifier_items(items_set, category)
+
+        if not items_list or offset >= len(items_list):
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like anything?",
+                order=order,
+            )
+
+        # Get next batch (use smaller batch size for modifiers)
+        modifier_batch_size = 6
+        batch = items_list[offset:offset + modifier_batch_size]
+        remaining = len(items_list) - (offset + len(batch))
+        has_more = remaining > 0
+
+        # Format the list
+        if has_more:
+            if len(batch) == 1:
+                items_str = batch[0]
+            elif len(batch) == 2:
+                items_str = f"{batch[0]}, {batch[1]}"
+            else:
+                items_str = ", ".join(batch)
+            items_str += f", and {remaining} more"
+
+            # Update pagination for next "what else"
+            new_offset = offset + modifier_batch_size
+            order.set_menu_pagination(category, new_offset, len(items_list))
+        else:
+            # Last batch
+            if len(batch) == 1:
+                items_str = batch[0]
+            elif len(batch) == 2:
+                items_str = f"{batch[0]} and {batch[1]}"
+            else:
+                items_str = ", ".join(batch[:-1]) + f", and {batch[-1]}"
+            order.clear_menu_pagination()
+
+        # Build response
+        if has_more:
+            message = f"We also have {items_str}. Would you like any of these?"
+        else:
+            message = f"We also have {items_str}. That's all we have. Would you like any?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _normalize_modifier_items(self, items_set: set, category: str) -> list[str]:
+        """Normalize and deduplicate modifier items for display.
+
+        Removes plural variants, filters out very similar items,
+        and returns a clean sorted list for user display.
+        """
+        seen_base = set()
+        normalized = []
+
+        for item in sorted(items_set):
+            item_lower = item.lower()
+
+            # Skip plural forms if singular exists
+            if item_lower.endswith('s') and not item_lower.endswith('ss'):
+                singular = item_lower.rstrip('s')
+                if singular in seen_base:
+                    continue
+
+            # Skip "es" plural forms
+            if item_lower.endswith('es'):
+                singular = item_lower[:-2]
+                if singular in seen_base:
+                    continue
+
+            # For cheeses category, filter out cream cheese variants (those belong in spreads)
+            if category == "cheeses":
+                if "cream cheese" in item_lower or " cc" in item_lower:
+                    continue
+                if item_lower in ("avocado spread", "lox spread"):
+                    continue
+
+            # Track base form
+            base = item_lower.rstrip('s')
+            if base in seen_base:
+                continue
+            seen_base.add(base)
+            seen_base.add(item_lower)
+
+            # Capitalize for display
+            normalized.append(item.title() if item.islower() else item)
+
+        return normalized
 
     def handle_menu_query(
         self,

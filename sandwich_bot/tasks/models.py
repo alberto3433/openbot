@@ -242,6 +242,7 @@ class CoffeeItemTask(ItemTask):
     size_upcharge: float = 0.0
     milk_upcharge: float = 0.0
     syrup_upcharge: float = 0.0  # Total upcharge for all syrups
+    extra_shots_upcharge: float = 0.0  # Upcharge for double/triple espresso
     iced_upcharge: float = 0.0
 
     def get_display_name(self) -> str:
@@ -785,6 +786,11 @@ class OrderTask(BaseTask):
     # Each entry is a dict with: name, base_price, id, etc.
     pending_drink_options: list[dict] = Field(default_factory=list)
 
+    # Coffee modifiers stored during drink disambiguation
+    # When user says "large iced oat milk latte" and we ask "Latte or Seasonal Matcha Latte?",
+    # we store the modifiers here so they can be applied when user clarifies the drink type
+    pending_coffee_modifiers: dict = Field(default_factory=dict)
+
     # Unknown drink request - stores the drink name user asked for that doesn't exist
     # Used to show "Sorry, we don't have X" message
     unknown_drink_request: str | None = Field(default=None)
@@ -888,6 +894,7 @@ class OrderTask(BaseTask):
         self.pending_field = None
         self.config_options_page = 0
         self.pending_suggested_item = None
+        self.pending_coffee_modifiers = {}
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

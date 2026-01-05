@@ -117,6 +117,7 @@ def _build_coffee_parsed_item(
     special_instructions: str | None = None,
     sweeteners: list | None = None,
     syrups: list | None = None,
+    extra_shots: int = 0,
 ) -> ParsedCoffeeEntry:
     """Build a ParsedCoffeeEntry from boolean flag data."""
     return ParsedCoffeeEntry(
@@ -130,6 +131,7 @@ def _build_coffee_parsed_item(
         special_instructions=special_instructions,
         sweeteners=sweeteners or [],
         syrups=syrups or [],
+        extra_shots=extra_shots,
     )
 
 
@@ -2178,6 +2180,13 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     if re.search(r'\bdecaf\b', text_lower):
         decaf = True
 
+    # Extract extra shots for espresso drinks (double = 1 extra, triple = 2 extra)
+    extra_shots = 0
+    if re.search(r'\btriple\s+(?:shot\s+)?espresso\b', text_lower):
+        extra_shots = 2
+    elif re.search(r'\bdouble\s+(?:shot\s+)?espresso\b', text_lower):
+        extra_shots = 1
+
     # Extract milk preference
     milk = None
     milk_patterns = [
@@ -2202,9 +2211,9 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     special_instructions = ", ".join(coffee_instructions) if coffee_instructions else None
 
     logger.debug(
-        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s(%d), special_instructions=%s",
+        "Deterministic parse: coffee order - type=%s, qty=%d, size=%s, iced=%s, decaf=%s, milk=%s, sweetener=%s(%d), syrup=%s(%d), extra_shots=%d, special_instructions=%s",
         coffee_type, quantity, size, iced, decaf, milk,
-        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, coffee_mods.syrup_quantity, special_instructions
+        coffee_mods.sweetener, coffee_mods.sweetener_quantity, coffee_mods.flavor_syrup, coffee_mods.syrup_quantity, extra_shots, special_instructions
     )
 
     # Build parsed_items for unified handler (Phase 8 dual-write)
@@ -2229,6 +2238,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             special_instructions=special_instructions,
             sweeteners=sweeteners,
             syrups=syrups,
+            extra_shots=extra_shots,
         )
         for _ in range(quantity)
     ]

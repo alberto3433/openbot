@@ -100,6 +100,9 @@ class ParsedCoffeeEntry(BaseModel):
     # Flag for when user says "syrup" without specifying flavor
     wants_syrup: bool = False
 
+    # Extra espresso shots (1 = double, 2 = triple)
+    extra_shots: int = 0
+
     # Legacy modifiers list (for backwards compatibility during migration)
     modifiers: list[str] = Field(default_factory=list)
 

@@ -263,17 +263,18 @@ class CoffeeItemTask(ItemTask):
         return " ".join(parts)
 
     def get_summary(self) -> str:
-        """Get a summary description of this drink with upcharges."""
+        """Get a summary description of this drink for bot responses.
+
+        Note: Upcharges are tracked internally but not displayed in responses
+        to sound more natural when read aloud.
+        """
         parts = []
 
         if self.size:
             parts.append(self.size)
 
         if self.iced is True:
-            if self.iced_upcharge > 0:
-                parts.append(f"iced (+${self.iced_upcharge:.2f})")
-            else:
-                parts.append("iced")
+            parts.append("iced")
         elif self.iced is False:
             parts.append("hot")
 
@@ -285,7 +286,7 @@ class CoffeeItemTask(ItemTask):
         else:
             parts.append("coffee")
 
-        # Add flavor syrups with upcharges
+        # Add flavor syrups
         if self.flavor_syrups:
             syrup_parts = []
             for syrup in self.flavor_syrups:
@@ -294,17 +295,12 @@ class CoffeeItemTask(ItemTask):
                 qty_prefix = f"{qty} " if qty > 1 else ""
                 syrup_parts.append(f"{qty_prefix}{flavor} syrup")
             syrup_str = " and ".join(syrup_parts)
-            if self.syrup_upcharge > 0:
-                parts.append(f"with {syrup_str} (+${self.syrup_upcharge:.2f})")
-            else:
-                parts.append(f"with {syrup_str}")
+            parts.append(f"with {syrup_str}")
 
         if self.milk:
             # "none" or "black" means no milk - show as "black" for clarity
             if self.milk.lower() in ("none", "black"):
                 parts.append("black")
-            elif self.milk_upcharge > 0:
-                parts.append(f"with {self.milk} milk (+${self.milk_upcharge:.2f})")
             else:
                 parts.append(f"with {self.milk} milk")
 
@@ -334,15 +330,15 @@ class CoffeeItemTask(ItemTask):
 
         Uses special instructions phrase when it describes a modifier,
         e.g., 'with a splash of milk' instead of 'with whole milk'.
+
+        Note: Upcharges are tracked internally but not displayed in responses
+        to sound more natural when read aloud.
         """
         parts = []
 
-        # Size with upcharge
+        # Size (upcharges tracked internally, not displayed)
         if self.size:
-            if self.size_upcharge > 0:
-                parts.append(f"{self.size} (+${self.size_upcharge:.2f})")
-            else:
-                parts.append(self.size)
+            parts.append(self.size)
 
         # Hot/iced
         if self.iced is True:
@@ -356,7 +352,7 @@ class CoffeeItemTask(ItemTask):
         else:
             parts.append("coffee")
 
-        # Add flavor syrups with upcharges
+        # Add flavor syrups (upcharges tracked internally, not displayed)
         if self.flavor_syrups:
             syrup_parts = []
             for syrup in self.flavor_syrups:
@@ -365,10 +361,7 @@ class CoffeeItemTask(ItemTask):
                 qty_prefix = f"{qty} " if qty > 1 else ""
                 syrup_parts.append(f"{qty_prefix}{flavor} syrup")
             syrup_str = " and ".join(syrup_parts)
-            if self.syrup_upcharge > 0:
-                parts.append(f"with {syrup_str} (+${self.syrup_upcharge:.2f})")
-            else:
-                parts.append(f"with {syrup_str}")
+            parts.append(f"with {syrup_str}")
 
         # Check if special instructions describe milk (e.g., "a splash of milk", "light cream")
         special_describes_milk = False
@@ -389,8 +382,6 @@ class CoffeeItemTask(ItemTask):
                 # Use natural phrase from special_instructions instead of formal milk type
                 parts.append(f"with {self.special_instructions}")
                 special_used_for_milk = True
-            elif self.milk_upcharge > 0:
-                parts.append(f"with {self.milk} milk (+${self.milk_upcharge:.2f})")
             else:
                 parts.append(f"with {self.milk} milk")
         elif special_describes_milk:

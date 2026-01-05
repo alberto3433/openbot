@@ -89,7 +89,8 @@ from .parsers import (
     REPEAT_ORDER_PATTERNS,
     # Constants - Price inquiry patterns
     PRICE_INQUIRY_PATTERNS,
-    MENU_CATEGORY_KEYWORDS,
+    # Note: MENU_CATEGORY_KEYWORDS was moved to the database
+    # - use menu_cache.get_category_keyword_mapping() instead
     # Constants - Store info patterns
     STORE_HOURS_PATTERNS,
     STORE_LOCATION_PATTERNS,

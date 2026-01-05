@@ -35,6 +35,12 @@ class ItemType(Base):
     is_configurable = Column(Boolean, nullable=False, default=True)  # True = has attributes to customize
     skip_config = Column(Boolean, nullable=False, default=False)  # True = skip config questions (e.g., sodas don't need hot/iced)
 
+    # Category keyword support (replaces MENU_CATEGORY_KEYWORDS constant)
+    aliases = Column(String, nullable=True)  # Comma-separated keywords that map to this type (e.g., "bagels" for "bagel")
+    expands_to = Column(JSON, nullable=True)  # JSON array of slugs for meta-categories (e.g., ["pastry", "snack"] for "dessert")
+    name_filter = Column(String, nullable=True)  # Substring filter for item names (e.g., "tea" to filter sized_beverage)
+    is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
+
     # Relationships
     attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
     menu_items = relationship("MenuItem", back_populates="item_type")

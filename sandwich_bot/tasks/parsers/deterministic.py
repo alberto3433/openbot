@@ -55,7 +55,6 @@ from .constants import (
     resolve_coffee_alias,
     resolve_soda_alias,
     PRICE_INQUIRY_PATTERNS,
-    MENU_CATEGORY_KEYWORDS,
     STORE_HOURS_PATTERNS,
     STORE_LOCATION_PATTERNS,
     DELIVERY_ZONE_PATTERNS,
@@ -2488,8 +2487,10 @@ def _parse_price_inquiry_deterministic(text: str) -> OpenInputResponse | None:
 
             logger.debug("Price inquiry detected: item_text='%s'", item_text)
 
-            if item_text in MENU_CATEGORY_KEYWORDS:
-                menu_type = MENU_CATEGORY_KEYWORDS[item_text]
+            # Look up category keyword in DB-loaded cache
+            category_info = menu_cache.get_category_keyword_mapping(item_text)
+            if category_info:
+                menu_type = category_info["slug"]
                 logger.info("PRICE INQUIRY (category): '%s' -> menu_query_type=%s", text[:50], menu_type)
                 return OpenInputResponse(
                     asks_about_price=True,
@@ -2500,8 +2501,9 @@ def _parse_price_inquiry_deterministic(text: str) -> OpenInputResponse | None:
             your_match = re.match(r"your\s+(.+)", item_text)
             if your_match:
                 item_after_your = your_match.group(1).strip()
-                if item_after_your in MENU_CATEGORY_KEYWORDS:
-                    menu_type = MENU_CATEGORY_KEYWORDS[item_after_your]
+                category_info = menu_cache.get_category_keyword_mapping(item_after_your)
+                if category_info:
+                    menu_type = category_info["slug"]
                     logger.info("PRICE INQUIRY (category): '%s' -> menu_query_type=%s", text[:50], menu_type)
                     return OpenInputResponse(
                         asks_about_price=True,
@@ -2582,9 +2584,10 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
                     menu_query_type=None,  # None means list all categories
                 )
 
-            # Check if it maps to a known category
-            if category_text in MENU_CATEGORY_KEYWORDS:
-                menu_type = MENU_CATEGORY_KEYWORDS[category_text]
+            # Check if it maps to a known category (DB lookup)
+            category_info = menu_cache.get_category_keyword_mapping(category_text)
+            if category_info:
+                menu_type = category_info["slug"]
                 logger.info("MENU QUERY: '%s' -> menu_query_type=%s", text[:50], menu_type)
                 return OpenInputResponse(
                     menu_query=True,

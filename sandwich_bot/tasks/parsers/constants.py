@@ -278,43 +278,25 @@ PRICE_INQUIRY_PATTERNS = [
     re.compile(r"how\s+much\s+for\s+(?:the\s+)?(?:a\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
 ]
 
-# Menu type keywords for category price inquiries (e.g., "how much are bagels?")
-# Only plural forms - singular forms should be treated as specific item queries
-MENU_CATEGORY_KEYWORDS = {
-    "bagels": "bagel",
-    "coffees": "coffee",
-    "lattes": "coffee",
-    "cappuccinos": "coffee",
-    "espressos": "coffee",
-    "teas": "tea",
-    "drinks": "beverage",
-    "beverages": "beverage",
-    "sodas": "beverage",
-    "sandwiches": "sandwich",
-    "egg sandwiches": "egg_sandwich",
-    "fish sandwiches": "fish_sandwich",
-    "cream cheese sandwiches": "spread_sandwich",
-    "spread sandwiches": "spread_sandwich",
-    "salad sandwiches": "salad_sandwich",
-    "deli sandwiches": "deli_sandwich",
-    "signature sandwiches": "signature_sandwich",
-    "omelettes": "omelette",
-    "omelets": "omelette",  # Single 't' spelling variant
-    "sides": "side",
-    # Desserts and pastries
-    "desserts": "dessert",
-    "pastries": "dessert",
-    "sweets": "dessert",
-    "sweet stuff": "dessert",
-    "bakery": "dessert",
-    "baked goods": "dessert",
-    "treats": "dessert",
-    "cookies": "dessert",
-    "muffins": "dessert",
-    "brownies": "dessert",
-    "donuts": "dessert",
-    "doughnuts": "dessert",
-}
+# =============================================================================
+# Menu Category Keywords (MOVED TO DATABASE)
+# =============================================================================
+# NOTE: MENU_CATEGORY_KEYWORDS has been moved to the database.
+# Category keyword mappings are now stored in the item_types table:
+# - item_types.aliases: comma-separated keywords that map to this type
+# - item_types.expands_to: JSON array of slugs for meta-categories
+# - item_types.name_filter: substring filter for item names (e.g., "tea")
+# - item_types.is_virtual: true for meta-categories without direct items
+#
+# To look up category keywords, use:
+#   from sandwich_bot.menu_data_cache import menu_cache
+#   category_info = menu_cache.get_category_keyword_mapping("desserts")
+#   # Returns: {"slug": "dessert", "expands_to": ["pastry", "snack"], ...}
+#
+# To get all available category keywords (for error messages):
+#   available = menu_cache.get_available_category_keywords()
+#
+# See migration: g7h8i9j0k1l2_add_category_keywords_to_item_types.py
 
 # =============================================================================
 # Store Info Inquiry Patterns

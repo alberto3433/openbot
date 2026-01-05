@@ -114,9 +114,11 @@ from .constants import (
     # - use menu_cache.resolve_menu_item_alias() instead
     # Note: COFFEE_TYPO_MAP was moved to the database as aliases on coffee items
     # - see migration d4e5f6g7h8i9_add_coffee_typo_aliases.py
+    # Note: MENU_CATEGORY_KEYWORDS was moved to the database
+    # - use menu_cache.get_category_keyword_mapping() instead
+    # - see migration g7h8i9j0k1l2_add_category_keywords_to_item_types.py
     # Price inquiry patterns
     PRICE_INQUIRY_PATTERNS,
-    MENU_CATEGORY_KEYWORDS,
     # Store info patterns
     STORE_HOURS_PATTERNS,
     STORE_LOCATION_PATTERNS,
@@ -225,9 +227,10 @@ __all__ = [
     # Note: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES were moved to the database
     # - use menu_cache.resolve_menu_item_alias() instead
     # Note: COFFEE_TYPO_MAP was moved to the database as aliases on coffee items
+    # Note: MENU_CATEGORY_KEYWORDS was moved to the database
+    # - use menu_cache.get_category_keyword_mapping() instead
     # Constants - Price inquiry patterns
     "PRICE_INQUIRY_PATTERNS",
-    "MENU_CATEGORY_KEYWORDS",
     # Constants - Store info patterns
     "STORE_HOURS_PATTERNS",
     "STORE_LOCATION_PATTERNS",

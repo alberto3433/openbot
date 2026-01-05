@@ -80,6 +80,10 @@ class MenuDataCache:
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
         self._menu_item_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
 
+        # Category keyword mappings (replaces MENU_CATEGORY_KEYWORDS constant)
+        # Maps user keywords (bagels, desserts, etc.) to category info
+        self._category_keywords: dict[str, dict] = {}  # keyword -> {slug, expands_to, name_filter}
+
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
         self._by_pound_aliases: dict[str, tuple[str, str]] = {}  # alias -> (canonical_name, category)
@@ -141,6 +145,7 @@ class MenuDataCache:
                 self._load_by_pound_category_names(db)
                 self._load_modifier_aliases(db)
                 self._load_side_items(db)
+                self._load_category_keywords(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -831,6 +836,83 @@ class MenuDataCache:
             len(items),
         )
 
+    def _load_category_keywords(self, db: Session) -> None:
+        """Load category keyword mappings from item_types table.
+
+        Builds a mapping from user keywords (bagels, desserts, coffees, etc.)
+        to category info (slug, expands_to, name_filter).
+
+        This replaces the hardcoded MENU_CATEGORY_KEYWORDS constant in constants.py.
+
+        For virtual/meta categories (dessert, beverage_all, etc.), the expands_to
+        field contains a list of slugs to query. For regular categories,
+        expands_to is None and the slug itself is used.
+
+        Raises:
+            RuntimeError: If no category keywords found in database.
+        """
+        import json
+        from .models import ItemType
+
+        category_keywords: dict[str, dict] = {}
+
+        # Query all item_types that have aliases defined
+        item_types = (
+            db.query(ItemType)
+            .filter(ItemType.aliases.isnot(None))
+            .filter(ItemType.aliases != "")
+            .all()
+        )
+
+        for item_type in item_types:
+            slug = item_type.slug
+
+            # Parse expands_to JSON if present
+            expands_to = None
+            if hasattr(item_type, 'expands_to') and item_type.expands_to:
+                if isinstance(item_type.expands_to, str):
+                    try:
+                        expands_to = json.loads(item_type.expands_to)
+                    except json.JSONDecodeError:
+                        logger.warning("Invalid expands_to JSON for item_type %s", slug)
+                else:
+                    expands_to = item_type.expands_to
+
+            # Get name_filter if present
+            name_filter = getattr(item_type, 'name_filter', None)
+
+            # Create category info dict
+            category_info = {
+                "slug": slug,
+                "expands_to": expands_to,
+                "name_filter": name_filter,
+            }
+
+            # Add slug itself as a key
+            category_keywords[slug] = category_info
+
+            # Add all aliases as keys
+            for alias in item_type.aliases.split(","):
+                alias = alias.strip().lower()
+                if alias:
+                    category_keywords[alias] = category_info
+
+        # Fail if database has no category keywords configured
+        if not category_keywords:
+            raise RuntimeError(
+                "No category keywords found in database. Run migrations to populate "
+                "item_types.aliases column. Expected categories: bagel, omelette, "
+                "dessert, coffee, etc."
+            )
+
+        self._category_keywords = category_keywords
+
+        logger.debug(
+            "Loaded %d category keywords from %d item_types",
+            len(category_keywords),
+            len(item_types),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1205,6 +1287,56 @@ class MenuDataCache:
             return None
         name_lower = name.lower().strip()
         return self._menu_item_alias_to_canonical.get(name_lower)
+
+    def get_category_keyword_mapping(self, keyword: str) -> dict | None:
+        """
+        Look up category info for a user keyword.
+
+        This replaces the hardcoded MENU_CATEGORY_KEYWORDS constant in constants.py.
+        Category keywords are loaded from the item_types.aliases column.
+
+        Args:
+            keyword: User input like "bagels", "desserts", "coffees", "teas"
+
+        Returns:
+            Dict with category info if found:
+            {
+                "slug": str,          # The item_type slug (e.g., "dessert", "bagel")
+                "expands_to": list | None,  # List of slugs to query (for meta-categories)
+                "name_filter": str | None,  # Substring filter for item names (e.g., "tea")
+            }
+            Returns None if keyword not found.
+
+        Examples:
+            >>> cache.get_category_keyword_mapping("bagels")
+            {"slug": "bagel", "expands_to": None, "name_filter": None}
+            >>> cache.get_category_keyword_mapping("desserts")
+            {"slug": "dessert", "expands_to": ["pastry", "snack"], "name_filter": None}
+            >>> cache.get_category_keyword_mapping("teas")
+            {"slug": "tea", "expands_to": ["sized_beverage"], "name_filter": "tea"}
+            >>> cache.get_category_keyword_mapping("unknown")
+            None
+        """
+        if not self._is_loaded:
+            return None
+        keyword_lower = keyword.lower().strip()
+        return self._category_keywords.get(keyword_lower)
+
+    def get_available_category_keywords(self) -> list[str]:
+        """
+        Get list of all available category keywords for error messages.
+
+        Returns:
+            Sorted list of all valid category keywords that can be used
+            in menu/price queries.
+
+        Example:
+            >>> cache.get_available_category_keywords()
+            ["bagels", "beverages", "coffees", "desserts", "drinks", ...]
+        """
+        if not self._is_loaded:
+            return []
+        return sorted(self._category_keywords.keys())
 
     # =========================================================================
     # Partial Matching Methods

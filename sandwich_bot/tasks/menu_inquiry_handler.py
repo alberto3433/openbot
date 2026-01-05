@@ -15,6 +15,8 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
+from sandwich_bot.menu_data_cache import menu_cache
+
 from .models import OrderTask
 from .schemas import StateMachineResult
 from .parsers.constants import (
@@ -133,40 +135,54 @@ class MenuInquiryHandler:
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
 
-        Uses hybrid approach:
-        1. Category terms (coffee, tea, soda, water) return full categories
-        2. Everything else uses partial string matching on all drinks
-        3. If no matches found, returns empty list (caller handles error message)
+        Uses DB-driven approach:
+        1. Look up category in menu_cache.get_category_keyword_mapping()
+        2. If found with expands_to, collect items from all those slugs
+        3. If found with name_filter, filter items by that substring
+        4. Otherwise, use the slug directly
+        5. Fall back to partial string matching on all drinks
 
         Returns:
             Tuple of (items list, category_key for pagination)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        # Handle "beverage" or "drink" queries by combining both types
-        if menu_query_type in ("beverage", "drink"):
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            return sized_items + cold_items, "beverage"
+        # Look up category info from DB-loaded cache
+        category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
 
-        # Handle "coffee" query - return ALL sized beverages (lattes, cappuccinos, etc. are coffee drinks)
-        if menu_query_type == "coffee":
-            return items_by_type.get("sized_beverage", []), "sized_beverage"
+        if category_info:
+            slug = category_info["slug"]
+            expands_to = category_info.get("expands_to")
+            name_filter = category_info.get("name_filter")
 
-        # Handle "soda" query - return all bottled/cold beverages
-        if menu_query_type == "soda":
-            return items_by_type.get("beverage", []), "beverage"
+            if expands_to:
+                # Meta-category: collect items from all expanded slugs
+                all_items = []
+                for target_slug in expands_to:
+                    all_items.extend(items_by_type.get(target_slug, []))
 
-        # Handle dessert queries by combining dessert, pastry, and snack types
-        dessert_queries = (
-            "dessert", "desserts", "pastry", "pastries", "sweet", "sweets",
-            "sweet stuff", "bakery", "baked goods", "treats", "treat",
-        )
-        if menu_query_type in dessert_queries:
-            dessert_items = items_by_type.get("dessert", [])
-            pastry_items = items_by_type.get("pastry", [])
-            snack_items = items_by_type.get("snack", [])
-            return dessert_items + pastry_items + snack_items, "dessert"
+                # Apply name_filter if present (e.g., for "tea" category)
+                if name_filter:
+                    filter_term = name_filter.lower()
+                    all_items = [
+                        item for item in all_items
+                        if filter_term in item.get("name", "").lower()
+                    ]
+
+                return all_items, slug
+            else:
+                # Direct category: use the slug directly
+                items = items_by_type.get(slug, [])
+
+                # Apply name_filter if present
+                if name_filter:
+                    filter_term = name_filter.lower()
+                    items = [
+                        item for item in items
+                        if filter_term in item.get("name", "").lower()
+                    ]
+
+                return items, slug
 
         # HYBRID APPROACH: For any other term, try partial string matching on all drinks
         # This handles "juice", "snapple", "mocha", "chai", "iced", etc.
@@ -441,9 +457,10 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle "beverage" or "drink" queries by combining both types
-        if menu_query_type in ("beverage", "drink"):
-            items, category_key = self._get_items_for_category("beverage")
+        # Handle beverage queries (beverage_all from DB, or legacy beverage/drink terms)
+        # DB maps "drinks"/"beverages" to "beverage_all" slug
+        if menu_query_type in ("beverage_all", "beverage", "drink"):
+            items, category_key = self._get_items_for_category(menu_query_type)
             if items:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
                 # Save pagination state if there are more items
@@ -460,19 +477,15 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle "sandwich" specially - too broad, need to ask what kind
-        if menu_query_type == "sandwich":
+        # Handle "sandwich" or "sandwich_all" specially - too broad, need to ask what kind
+        if menu_query_type in ("sandwich", "sandwich_all"):
             return StateMachineResult(
                 message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
                 order=order,
             )
 
-        # Handle "dessert", "pastry", "sweets", etc. by combining dessert and pastry types
-        dessert_queries = (
-            "dessert", "desserts", "pastry", "pastries", "sweet", "sweets",
-            "sweet stuff", "bakery", "baked goods", "treats", "treat",
-        )
-        if menu_query_type in dessert_queries:
+        # Handle dessert queries (DB maps dessert terms to "dessert" slug)
+        if menu_query_type == "dessert":
             items, category_key = self._get_items_for_category("dessert")
             if items:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)

@@ -49,7 +49,6 @@ from .constants import (
     DONE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    SIDE_ITEM_MAP,
     SIDE_ITEM_TYPES,
     KNOWN_MENU_ITEMS,
     NO_THE_PREFIX_ITEMS,
@@ -1032,7 +1031,14 @@ def extract_spread_with_disambiguation(
 
 
 def _extract_side_item(text: str) -> tuple[str | None, int]:
-    """Extract side item from text. Returns (side_item_name, quantity)."""
+    """Extract side item from text. Returns (side_item_name, quantity).
+
+    Uses database lookup via menu_cache.resolve_side_alias() to map user input
+    to canonical menu item names. If no match is found, returns None to allow
+    graceful failure handling by the caller.
+
+    Note: This replaces the hardcoded SIDE_ITEM_MAP constant.
+    """
     text_lower = text.lower()
 
     side_match = re.search(r'\bside\s+of\s+(\w+(?:\s+\w+){0,2})', text_lower)
@@ -1041,11 +1047,15 @@ def _extract_side_item(text: str) -> tuple[str | None, int]:
 
     side_text = side_match.group(1).strip()
 
-    for keyword in sorted(SIDE_ITEM_MAP.keys(), key=len, reverse=True):
-        if side_text == keyword or side_text.startswith(keyword + " ") or side_text.startswith(keyword):
-            return SIDE_ITEM_MAP[keyword], 1
+    # Try to resolve via database lookup
+    canonical = menu_cache.resolve_side_alias(side_text)
+    if canonical:
+        return canonical, 1
 
-    return f"Side of {side_text.title()}", 1
+    # Not found in database - return None for graceful failure
+    # The caller should handle this case (e.g., show "we don't have that")
+    logger.debug("Side item not found in database: %s", side_text)
+    return None, 1
 
 
 def _extract_menu_item_modifications(text: str) -> list[str]:

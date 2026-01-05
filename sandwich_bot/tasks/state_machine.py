@@ -93,7 +93,6 @@ from .parsers import (
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     # Constants - Side items
-    SIDE_ITEM_MAP,
     SIDE_ITEM_TYPES,
     # Constants - Menu item recognition
     KNOWN_MENU_ITEMS,

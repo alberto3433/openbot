@@ -76,6 +76,8 @@ class MenuDataCache:
         self._soda_alias_to_canonical: dict[str, str] = {}
         self._speed_menu_bagels: dict[str, str] = {}  # alias -> menu item name
         self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
+        self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
+        self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
 
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
@@ -137,6 +139,7 @@ class MenuDataCache:
                 self._load_by_pound_items(db)
                 self._load_by_pound_category_names(db)
                 self._load_modifier_aliases(db)
+                self._load_side_items(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -723,6 +726,53 @@ class MenuDataCache:
             len(ingredients_with_aliases),
         )
 
+    def _load_side_items(self, db: Session) -> None:
+        """Load side items and their aliases from menu_items.
+
+        Builds a mapping from user input variations (aliases) to canonical
+        MenuItem.name values. This replaces the hardcoded SIDE_ITEM_MAP
+        constant in constants.py.
+
+        The mapping is used for resolving side item input like "sausage" ->
+        "Side of Sausage", "latke" -> "Side of Breakfast Latke", etc.
+        """
+        from .models import MenuItem
+
+        side_items: set[str] = set()
+        alias_to_canonical: dict[str, str] = {}
+
+        # Query side items (category = 'side')
+        items = (
+            db.query(MenuItem)
+            .filter(MenuItem.category == "side")
+            .all()
+        )
+
+        for item in items:
+            canonical_name = item.name  # Preserve original casing
+            name_lower = canonical_name.lower()
+
+            # Add the item name (lowercase)
+            side_items.add(name_lower)
+            alias_to_canonical[name_lower] = canonical_name
+
+            # Add all aliases if present
+            if item.aliases:
+                for alias in item.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        side_items.add(alias)
+                        alias_to_canonical[alias] = canonical_name
+
+        self._side_items = side_items
+        self._side_alias_to_canonical = alias_to_canonical
+
+        logger.debug(
+            "Loaded %d side item aliases from %d items",
+            len(alias_to_canonical),
+            len(items),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1022,6 +1072,44 @@ class MenuDataCache:
             return modifier
         modifier_lower = modifier.lower().strip()
         return self._modifier_aliases.get(modifier_lower, modifier)
+
+    def get_side_items(self) -> set[str]:
+        """
+        Get all known side item names and aliases (lowercase).
+
+        Returns:
+            Set of side item names and their aliases, all lowercase.
+        """
+        return self._side_items.copy()
+
+    def resolve_side_alias(self, name: str) -> str | None:
+        """
+        Resolve a side item name or alias to its canonical menu item name.
+
+        This replaces the hardcoded SIDE_ITEM_MAP dictionary in constants.py.
+        Aliases are loaded from the MenuItem.aliases column in the database.
+
+        Args:
+            name: User input like "sausage", "latke", "bacon"
+
+        Returns:
+            Canonical MenuItem.name (e.g., "Side of Sausage" for "sausage",
+            "Side of Breakfast Latke" for "latke") or None if not found.
+            Returns None (not original) to allow graceful failure handling
+            by the caller.
+
+        Examples:
+            >>> cache.resolve_side_alias("sausage")
+            "Side of Sausage"
+            >>> cache.resolve_side_alias("latke")
+            "Side of Breakfast Latke"
+            >>> cache.resolve_side_alias("unknown")
+            None  # Not found - caller should handle gracefully
+        """
+        if not self._is_loaded:
+            return None
+        name_lower = name.lower().strip()
+        return self._side_alias_to_canonical.get(name_lower)
 
     # =========================================================================
     # Partial Matching Methods

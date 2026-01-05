@@ -220,21 +220,10 @@ REPEAT_ORDER_PATTERNS = re.compile(
 )
 
 # =============================================================================
-# Side Item Mapping
+# Side Items
 # =============================================================================
-
-# Map of side item keywords to canonical menu names
-SIDE_ITEM_MAP = {
-    "sausage": "Side of Sausage",
-    "bacon": "Side of Bacon",
-    "turkey bacon": "Side of Turkey Bacon",
-    "ham": "Side of Ham",
-    "chicken sausage": "Side of Chicken Sausage",
-    "latke": "Side of Breakfast Latke",
-    "breakfast latke": "Side of Breakfast Latke",
-    "hard boiled egg": "Hard Boiled Egg (2)",
-    "eggs": "Hard Boiled Egg (2)",
-}
+# Note: SIDE_ITEM_MAP was moved to the database - use menu_cache.resolve_side_alias()
+# Side item aliases are stored in the menu_items.aliases column.
 
 # Side item types (chips, salads, etc.)
 # NOTE: generic "chips" not here - handled by GENERIC_CATEGORY_TERMS for disambiguation

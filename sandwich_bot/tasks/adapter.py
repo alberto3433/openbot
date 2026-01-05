@@ -711,28 +711,24 @@ def order_task_to_dict(
             decaf = getattr(item, 'decaf', None)
             extra_shots_upcharge = getattr(item, 'extra_shots_upcharge', 0.0) or 0.0
 
-            # Build display name
-            display_parts = []
-            if decaf is True:
-                display_parts.append("decaf")
-            if shots == 2:
-                display_parts.append("double")
-            elif shots >= 3:
-                display_parts.append("triple")
-            display_parts.append("espresso")
-            display_name = " ".join(display_parts)
+            # Menu item name is always "Espresso" - modifiers show shot count
+            display_name = "Espresso"
 
-            # Build modifiers list
+            # Build modifiers list (shot count and decaf as separate line items)
             modifiers = []
             free_details = []
 
-            # Extra shots with upcharge
-            if shots > 1 and extra_shots_upcharge > 0:
-                shot_name = "double shot" if shots == 2 else "triple shot"
-                modifiers.append({"name": shot_name, "price": extra_shots_upcharge})
-            elif shots > 1:
-                shot_name = "double shot" if shots == 2 else "triple shot"
-                free_details.append(shot_name)
+            # Double/triple as modifier with upcharge
+            if shots == 2:
+                if extra_shots_upcharge > 0:
+                    modifiers.append({"name": "double", "price": extra_shots_upcharge})
+                else:
+                    free_details.append("double")
+            elif shots >= 3:
+                if extra_shots_upcharge > 0:
+                    modifiers.append({"name": "triple", "price": extra_shots_upcharge})
+                else:
+                    free_details.append("triple")
 
             # Decaf - always free
             if decaf is True:

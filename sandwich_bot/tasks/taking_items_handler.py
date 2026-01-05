@@ -967,6 +967,27 @@ class TakingItemsHandler:
         if parsed.cancel_item:
             cancel_item_desc = parsed.cancel_item.lower()
             active_items = order.items.get_active_items()
+
+            # Handle special "__last_item__" value for "cancel that", "remove it", etc.
+            if parsed.cancel_item == "__last_item__" and active_items:
+                last_item = active_items[-1]
+                removed_name = last_item.get_summary()
+                idx = order.items.items.index(last_item)
+                order.items.remove_item(idx)
+                logger.info("Cancellation: removed last item from cart: %s", removed_name)
+
+                remaining_items = order.items.get_active_items()
+                if remaining_items:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                        order=order,
+                    )
+
             if active_items:
                 # Check if plural removal (e.g., "coffees", "bagels")
                 is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2

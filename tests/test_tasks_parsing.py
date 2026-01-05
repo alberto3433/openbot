@@ -955,6 +955,32 @@ class TestCancellationPatternDetection:
         assert result.cancel_item == "coke"
         assert result.replace_last_item is False
 
+    @pytest.mark.parametrize("text", [
+        "cancel that",
+        "cancel it",
+        "cancel this",
+        "remove that",
+        "remove it",
+        "nevermind that",
+        "never mind that",
+        "forget that",
+        "forget it",
+        "scratch that",
+        "cancel the last one",
+        "cancel the last item",
+        "remove the last one",
+        "actually cancel that",
+        "actually remove that",
+        "actually forget it",
+        "actually nevermind that",
+    ])
+    def test_cancel_that_pronouns_detected(self, text):
+        """Test that 'cancel that' and similar pronouns trigger last item cancellation."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item == "__last_item__", \
+            f"Expected cancel_item='__last_item__' but got '{result.cancel_item}' for: {text}"
+
 
 class TestTaxQuestionPatternDetection:
     """Tests for tax question pattern detection."""

@@ -186,4 +186,5 @@ ADMIN_PAGES = {
     "company": "admin_company.html",
     "modifiers": "admin_modifiers.html",
     "item_types": "admin_item_types.html",
+    "modifier_categories": "admin_modifier_categories.html",
 }

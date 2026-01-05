@@ -247,6 +247,7 @@ CANCEL_ITEM_PATTERN = re.compile(
 FILLER_WORDS_PATTERN = re.compile(
     r"^(?:"
     r"actually,\s*"  # "actually," with comma is filler
+    r"|actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)"  # "actually cancel/remove" etc.
     r"|oh[,\s]+"     # "oh" is always filler
     r"|wait,\s*"     # "wait," with comma is filler
     r"|um+[,\s]+"    # "um" is always filler
@@ -3530,6 +3531,11 @@ def parse_open_input_deterministic(
                 break
         if cancel_item:
             cancel_item = cancel_item.strip()
+            # Handle pronouns that refer to the last item
+            last_item_pronouns = {"that", "it", "this", "the last one", "the last item", "last one", "last item"}
+            if cancel_item.lower() in last_item_pronouns:
+                logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
+                return OpenInputResponse(cancel_item="__last_item__")
             logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
             return OpenInputResponse(cancel_item=cancel_item)
 

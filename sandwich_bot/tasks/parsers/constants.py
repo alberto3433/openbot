@@ -260,30 +260,6 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # - c3d4e5f6g7h9_add_remaining_menu_aliases.py
 
 # =============================================================================
-# Coffee Typo Corrections
-# =============================================================================
-
-# Common typos/variations for coffee beverages
-COFFEE_TYPO_MAP = {
-    "appuccino": "cappuccino",
-    "capuccino": "cappuccino",
-    "cappucino": "cappuccino",
-    "cappuccinno": "cappuccino",
-    "capuchino": "cappuccino",
-    "expresso": "espresso",
-    "expreso": "espresso",
-    "esspresso": "espresso",
-    "late": "latte",
-    "lattee": "latte",
-    "latte'": "latte",
-    "americano": "americano",
-    "amercano": "americano",
-    "macchiato": "macchiato",
-    "machiato": "macchiato",
-    "machato": "macchiato",
-}
-
-# =============================================================================
 # Price Inquiry Patterns
 # =============================================================================
 

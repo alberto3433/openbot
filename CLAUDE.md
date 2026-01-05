@@ -154,12 +154,14 @@ Items store all details in `item_config` JSON column:
 - **Adapter tests**: `test_tasks_adapter.py` - validates data conversion
 - **Resiliency tests**: `test_resiliency_batch*.py` - end-to-end conversation flows
 
-## Database Policy
+## Database Environment
 
-- **Single source of truth**: The Neon/Postgres database specified by DATABASE_URL
-- **Never** create or use local SQLite databases (app.db) for testing, debugging, or development
-- **Never** assume an empty or different database state than production
-- All database queries, tests, and verifications must run against the Neon/Postgres database
+**IMPORTANT**: This project uses a single Neon PostgreSQL database as the source of truth. There is no local development database.
+
+- Do NOT query or inspect local SQLite files (e.g., `app.db`) - they are stale/incomplete
+- Do NOT use `sqlite3` commands to check schema or data
+- All database access should use the configured `DATABASE_URL` environment variable
+- To inspect database state, use the running application or connect to Neon directly
 - Alembic for migrations in `alembic/versions/`
 
 Key tables:

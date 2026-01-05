@@ -112,8 +112,8 @@ from .constants import (
     get_known_menu_items,
     # Note: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES were moved to the database
     # - use menu_cache.resolve_menu_item_alias() instead
-    # Coffee typos
-    COFFEE_TYPO_MAP,
+    # Note: COFFEE_TYPO_MAP was moved to the database as aliases on coffee items
+    # - see migration d4e5f6g7h8i9_add_coffee_typo_aliases.py
     # Price inquiry patterns
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,
@@ -224,8 +224,7 @@ __all__ = [
     "get_known_menu_items",
     # Note: NO_THE_PREFIX_ITEMS and MENU_ITEM_CANONICAL_NAMES were moved to the database
     # - use menu_cache.resolve_menu_item_alias() instead
-    # Constants - Coffee typos
-    "COFFEE_TYPO_MAP",
+    # Note: COFFEE_TYPO_MAP was moved to the database as aliases on coffee items
     # Constants - Price inquiry patterns
     "PRICE_INQUIRY_PATTERNS",
     "MENU_CATEGORY_KEYWORDS",

@@ -87,8 +87,6 @@ from .parsers import (
     GREETING_PATTERNS,
     DONE_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-    # Constants - Coffee typos
-    COFFEE_TYPO_MAP,
     # Constants - Price inquiry patterns
     PRICE_INQUIRY_PATTERNS,
     MENU_CATEGORY_KEYWORDS,

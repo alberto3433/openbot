@@ -49,7 +49,6 @@ from .constants import (
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     get_known_menu_items,
-    COFFEE_TYPO_MAP,
     get_bagel_types,
     get_soda_types,
     get_coffee_types,
@@ -2132,13 +2131,6 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         if re.search(rf'\b{re.escape(bev)}s?\b', text_lower):
             coffee_type = bev
             break
-
-    if not coffee_type:
-        for typo, correct in COFFEE_TYPO_MAP.items():
-            if re.search(rf'\b{typo}\b', text_lower):
-                coffee_type = correct
-                logger.debug("Deterministic parse: corrected typo '%s' -> '%s'", typo, correct)
-                break
 
     if not coffee_type:
         return None

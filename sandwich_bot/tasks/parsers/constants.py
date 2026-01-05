@@ -106,49 +106,16 @@ WORD_TO_NUM = {
 # Bagel Modifiers
 # =============================================================================
 
-# Valid proteins that can be added to a bagel
-BAGEL_PROTEINS = {
-    "bacon", "ham", "turkey", "pastrami", "corned beef",
-    "nova", "lox", "nova scotia salmon", "baked salmon",
-    "egg", "eggs", "egg white", "egg whites", "scrambled egg", "scrambled eggs",
-    "sausage", "avocado",
-}
-
-# Valid cheeses
-BAGEL_CHEESES = {
-    "cheese",  # Generic cheese - triggers clarification for specific type
-    "american", "american cheese",
-    "swiss", "swiss cheese",
-    "cheddar", "cheddar cheese",
-    "muenster", "muenster cheese",
-    "provolone", "provolone cheese",
-    "gouda", "gouda cheese",
-    "mozzarella", "mozzarella cheese",
-    "pepper jack", "pepper jack cheese",
-}
-
-# Valid toppings/extras
-BAGEL_TOPPINGS = {
-    "tomato", "tomatoes",
-    "onion", "onions", "red onion", "red onions",
-    "lettuce",
-    "capers",
-    "cucumber", "cucumbers",
-    "pickles", "pickle",
-    "sauerkraut",
-    "sprouts",
-    "spinach",
-    "mushroom", "mushrooms",
-    "green pepper", "green peppers",
-    "red pepper", "red peppers",
-    "bell pepper", "bell peppers",
-    "everything seeds",
-    "mayo", "mayonnaise",
-    "mustard",
-    "ketchup",
-    "hot sauce",
-    "salt", "pepper", "salt and pepper",
-}
+# NOTE: BAGEL_PROTEINS, BAGEL_CHEESES, BAGEL_TOPPINGS have been moved to the database.
+# Use get_proteins(), get_cheeses(), get_toppings() to access these from the
+# ingredients table. Data is loaded at startup via MenuDataCache and includes
+# both ingredient names and their aliases for matching user input.
+#
+# Example categories in ingredients table:
+# - category='protein': bacon, ham, turkey, etc. with aliases (nova -> nova scotia salmon)
+# - category='cheese': american cheese, swiss cheese, etc. with aliases
+# - category='topping': tomato, onion, lettuce, etc. with aliases
+# - category='sauce': mayo, mustard, hot sauce, etc. (also included in toppings)
 
 # NOTE: BAGEL_SPREADS has been moved to the database.
 # Use get_bagel_spreads() to access spread patterns for matching.
@@ -1244,44 +1211,67 @@ def get_bagel_types_list() -> list[str]:
 
 def get_proteins() -> set[str]:
     """
-    Get protein types (bacon, ham, etc.).
+    Get protein types (bacon, ham, etc.) from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_PROTEINS.
+    Returns data from cache which includes both ingredient names and
+    their aliases (e.g., "nova" and "lox" both map to Nova Scotia Salmon).
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_proteins()
         if cached:
             return cached
-    return BAGEL_PROTEINS
+    raise RuntimeError(
+        "Proteins not available. Ensure menu_data_cache is loaded with protein data from the database."
+    )
 
 
 def get_toppings() -> set[str]:
     """
-    Get topping types (tomato, onion, etc.).
+    Get topping types (tomato, onion, etc.) from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_TOPPINGS.
+    Returns data from cache which includes both ingredient names and
+    their aliases. Also includes sauces (mayo, mustard, etc.) which
+    function as toppings on bagels.
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_toppings()
         if cached:
             return cached
-    return BAGEL_TOPPINGS
+    raise RuntimeError(
+        "Toppings not available. Ensure menu_data_cache is loaded with topping data from the database."
+    )
 
 
 def get_cheeses() -> set[str]:
     """
-    Get cheese types (american, swiss, etc.).
+    Get sliced cheese types (american, swiss, etc.) from the database.
 
-    Returns data from cache if loaded, otherwise returns hardcoded BAGEL_CHEESES.
+    Returns data from cache which includes both ingredient names and
+    their aliases. Only returns actual sliced cheeses, not cream cheese
+    spreads which are in the "spread" category.
+
+    Raises:
+        RuntimeError: If menu cache is not loaded. There is no fallback -
+            code should fail if database isn't properly set up.
     """
     cache = _get_menu_cache()
     if cache:
         cached = cache.get_cheeses()
         if cached:
             return cached
-    return BAGEL_CHEESES
+    raise RuntimeError(
+        "Cheeses not available. Ensure menu_data_cache is loaded with cheese data from the database."
+    )
 
 
 # Fallback bagel types when database cache isn't loaded

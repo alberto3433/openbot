@@ -82,10 +82,10 @@ from .parsers import (
     get_bagel_types,
     get_spreads,
     get_spread_types,
-    # Constants - Bagel modifiers
-    BAGEL_PROTEINS,
-    BAGEL_CHEESES,
-    BAGEL_TOPPINGS,
+    # Constants - Bagel modifiers (loaded from database via dynamic functions)
+    get_proteins,
+    get_cheeses,
+    get_toppings,
     get_bagel_spreads,
     MODIFIER_NORMALIZATIONS,
     # Constants - Regex patterns (basic)

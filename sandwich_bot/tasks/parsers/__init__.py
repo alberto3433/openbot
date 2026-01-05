@@ -98,10 +98,10 @@ from .constants import (
     get_by_pound_items,
     find_by_pound_item,
     get_by_pound_category_names,
-    # Bagel modifiers
-    BAGEL_PROTEINS,
-    BAGEL_CHEESES,
-    BAGEL_TOPPINGS,
+    # Bagel modifiers (loaded from database via dynamic functions)
+    get_proteins,
+    get_cheeses,
+    get_toppings,
     MODIFIER_NORMALIZATIONS,
     # Regex patterns - basic
     QUALIFIER_PATTERNS,
@@ -213,10 +213,10 @@ __all__ = [
     "get_by_pound_items",
     "find_by_pound_item",
     "get_by_pound_category_names",
-    # Constants - Bagel modifiers
-    "BAGEL_PROTEINS",
-    "BAGEL_CHEESES",
-    "BAGEL_TOPPINGS",
+    # Constants - Bagel modifiers (loaded from database via dynamic functions)
+    "get_proteins",
+    "get_cheeses",
+    "get_toppings",
     "MODIFIER_NORMALIZATIONS",
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",

@@ -317,7 +317,11 @@ class MenuDataCache:
         self._bagel_types_list = bagel_types_list
 
     def _load_proteins(self, db: Session) -> None:
-        """Load protein types from ingredients table."""
+        """Load protein types from ingredients table.
+
+        Loads protein ingredient names and their aliases for matching user input.
+        Fails with RuntimeError if no proteins found in database.
+        """
         from .models import Ingredient
 
         proteins = set()
@@ -329,25 +333,35 @@ class MenuDataCache:
         )
 
         for ing in protein_ingredients:
+            # Add the ingredient name
             proteins.add(ing.name.lower())
+            # Also add aliases if present
+            if ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        proteins.add(alias)
 
-        # Add common proteins if DB is empty
+        # Fail if database has no proteins configured
         if not proteins:
-            proteins = {
-                "bacon", "ham", "turkey", "pastrami", "corned beef",
-                "nova", "lox", "nova scotia salmon", "baked salmon",
-                "egg", "eggs", "egg white", "egg whites", "scrambled egg",
-                "sausage", "avocado",
-            }
+            raise RuntimeError(
+                "No proteins found in database. Run migrations to populate ingredients table."
+            )
 
         self._proteins = proteins
 
     def _load_toppings(self, db: Session) -> None:
-        """Load topping types from ingredients table."""
+        """Load topping types from ingredients table.
+
+        Loads topping ingredient names and their aliases for matching user input.
+        Also includes sauces (mayo, mustard, etc.) as they function as toppings.
+        Fails with RuntimeError if no toppings found in database.
+        """
         from .models import Ingredient
 
         toppings = set()
 
+        # Load toppings category
         topping_ingredients = (
             db.query(Ingredient)
             .filter(Ingredient.category == "topping")
@@ -355,25 +369,46 @@ class MenuDataCache:
         )
 
         for ing in topping_ingredients:
+            # Add the ingredient name
             toppings.add(ing.name.lower())
+            # Also add aliases if present
+            if ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        toppings.add(alias)
 
-        # Add common toppings if DB is empty
+        # Also load sauces as they function as toppings on bagels
+        sauce_ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.category == "sauce")
+            .all()
+        )
+
+        for ing in sauce_ingredients:
+            toppings.add(ing.name.lower())
+            if ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        toppings.add(alias)
+
+        # Fail if database has no toppings configured
         if not toppings:
-            toppings = {
-                "tomato", "tomatoes", "onion", "onions", "red onion",
-                "lettuce", "capers", "cucumber", "cucumbers",
-                "pickles", "pickle", "sauerkraut", "sprouts",
-                "spinach", "mushroom", "mushrooms",
-                "green pepper", "green peppers", "red pepper", "red peppers",
-                "bell pepper", "bell peppers",
-                "everything seeds", "mayo", "mayonnaise", "mustard",
-                "ketchup", "hot sauce", "salt", "pepper",
-            }
+            raise RuntimeError(
+                "No toppings found in database. Run migrations to populate ingredients table."
+            )
 
         self._toppings = toppings
 
     def _load_cheeses(self, db: Session) -> None:
-        """Load cheese types from ingredients table."""
+        """Load sliced cheese types from ingredients table.
+
+        Loads cheese ingredient names and their aliases for matching user input.
+        Only loads actual sliced cheeses (American, Swiss, etc.), not cream cheese
+        spreads which are in the "spread" category.
+        Fails with RuntimeError if no cheeses found in database.
+        """
         from .models import Ingredient
 
         cheeses = set()
@@ -385,14 +420,20 @@ class MenuDataCache:
         )
 
         for ing in cheese_ingredients:
+            # Add the ingredient name
             cheeses.add(ing.name.lower())
+            # Also add aliases if present
+            if ing.aliases:
+                for alias in ing.aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        cheeses.add(alias)
 
-        # Add common cheeses if DB is empty
+        # Fail if database has no cheeses configured
         if not cheeses:
-            cheeses = {
-                "american", "swiss", "cheddar", "muenster",
-                "provolone", "gouda", "mozzarella", "pepper jack",
-            }
+            raise RuntimeError(
+                "No cheeses found in database. Run migrations to populate ingredients table."
+            )
 
         self._cheeses = cheeses
 

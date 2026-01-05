@@ -33,9 +33,10 @@ from ..schemas import (
 from .constants import (
     WORD_TO_NUM,
     get_speed_menu_bagels,
-    BAGEL_PROTEINS,
-    BAGEL_CHEESES,
-    BAGEL_TOPPINGS,
+    # Bagel modifiers (loaded from database via dynamic functions)
+    get_proteins,
+    get_cheeses,
+    get_toppings,
     MODIFIER_NORMALIZATIONS,
     # Dynamic spread functions (loaded from database)
     get_spreads,
@@ -599,9 +600,9 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
 
     # Extract in order of specificity
     find_and_add(get_bagel_spreads(), result.spreads, "spread")
-    find_and_add(BAGEL_PROTEINS, result.proteins, "protein")
-    find_and_add(BAGEL_CHEESES, result.cheeses, "cheese")
-    find_and_add(BAGEL_TOPPINGS, result.toppings, "topping")
+    find_and_add(get_proteins(), result.proteins, "protein")
+    find_and_add(get_cheeses(), result.cheeses, "cheese")
+    find_and_add(get_toppings(), result.toppings, "topping")
 
     # Special case: if user just says "cheese" without a specific type, mark for clarification
     # Check if only generic "cheese" was extracted (not a specific type like "american")

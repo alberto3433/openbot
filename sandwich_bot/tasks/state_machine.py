@@ -208,7 +208,7 @@ def _get_pending_item_description(item: "ItemTask") -> str:
     elif isinstance(item, MenuItemTask):
         return item.menu_item_name or "item"
     elif isinstance(item, CoffeeItemTask):
-        return item.beverage_type or "coffee"
+        return item.drink_type or "coffee"
     elif isinstance(item, SpeedMenuBagelItemTask):
         return item.speed_menu_name or "bagel"
     return "item"

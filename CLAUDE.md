@@ -104,6 +104,10 @@ OrderTask (root)
 4. **CHECKOUT**: Collecting customer info, order type, payment method
 5. **COMPLETE**: Order finalized
 
+### Frontend/Backend Separation
+
+The frontend (`static/index.html`) should be a pure data renderer with no business logic. All item-type-specific logic, pricing calculations, and display formatting decisions belong in the backend adapter (`tasks/adapter.py`). The frontend renders whatever data structure the API returns without checking `item_type` or other schema-specific fields.
+
 ### Modifier Normalization
 
 Input variations are normalized to canonical forms:

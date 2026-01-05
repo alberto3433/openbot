@@ -104,6 +104,10 @@ class EspressoConfigHandler:
                 extra_shots_upcharge=extra_shots_upcharge,
                 special_instructions=special_instructions,
             )
+            logger.info(
+                "ESPRESSO CREATED: shots=%d, extra_shots_upcharge=%.2f, unit_price=%.2f",
+                espresso.shots, espresso.extra_shots_upcharge, espresso.unit_price
+            )
             espresso.mark_complete()  # No configuration needed
             order.items.add_item(espresso)
 

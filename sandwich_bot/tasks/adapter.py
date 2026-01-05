@@ -436,6 +436,7 @@ def order_task_to_dict(
                 "menu_item_type": menu_item_type,
                 "modifications": getattr(item, 'modifications', []),
                 "modifiers": modifiers,  # Itemized price breakdown (spread, etc.)
+                "free_details": [],  # Menu items use modifiers for all details (toasted with price=0)
                 "side_choice": side_choice,
                 "bagel_choice": bagel_choice,
                 "toasted": toasted,  # For spread/salad sandwiches
@@ -566,6 +567,7 @@ def order_task_to_dict(
                 "needs_cheese_clarification": getattr(item, 'needs_cheese_clarification', False),
                 "base_price": base_price,
                 "modifiers": modifiers,
+                "free_details": [],  # Bagels use modifiers for all details (including toasted/scooped with price=0)
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,
@@ -710,6 +712,10 @@ def order_task_to_dict(
             shots = getattr(item, 'shots', 1)
             decaf = getattr(item, 'decaf', None)
             extra_shots_upcharge = getattr(item, 'extra_shots_upcharge', 0.0) or 0.0
+            logger.info(
+                "ADAPTER ESPRESSO: shots=%d, extra_shots_upcharge=%.2f, unit_price=%.2f",
+                shots, extra_shots_upcharge, item.unit_price or 0
+            )
 
             # Menu item name is always "Espresso" - modifiers show shot count
             display_name = "Espresso"
@@ -737,6 +743,11 @@ def order_task_to_dict(
             # Calculate base price (total - upcharges)
             total_price = item.unit_price or 0
             base_price = total_price - extra_shots_upcharge
+
+            logger.info(
+                "ADAPTER ESPRESSO RESULT: modifiers=%s, free_details=%s, base_price=%.2f",
+                modifiers, free_details, base_price
+            )
 
             item_dict = {
                 "item_type": "espresso",
@@ -820,6 +831,7 @@ def order_task_to_dict(
                 "cheese_choice": cheese_choice,
                 "base_price": base_price,
                 "modifiers": modifiers,
+                "free_details": [],  # Speed menu bagels use modifiers for all details
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": item.unit_price * item.quantity if item.unit_price else 0,

@@ -369,6 +369,24 @@ class TestParseUserMessageIntegration:
         # Deterministic parser returns "whole", LLM may return "splash" or "whole"
         assert coffee.milk is not None
 
+    def test_parse_coffee_with_sweetener_and_syrup(self):
+        """Test that coffee with 'sugar and vanilla syrups' extracts both modifiers.
+
+        Regression test for bug where multi-item parser incorrectly split on ' and '
+        between coffee modifiers, losing the syrup information.
+        """
+        result = parse_user_message("large iced coffee with sugar and 2 vanilla syrups")
+
+        assert len(result.new_coffees) >= 1
+        coffee = result.new_coffees[0]
+        # Coffee type may be "coffee" or "drip coffee" depending on menu config
+        assert "coffee" in coffee.drink_type.lower()
+        assert coffee.size == "large"
+        assert coffee.iced is True
+        assert coffee.sweetener == "sugar"
+        # flavor_syrup is the correct field name in ParsedCoffeeItem
+        assert coffee.flavor_syrup == "vanilla"
+
     def test_parse_greeting(self):
         """Test parsing a simple greeting."""
         result = parse_user_message("Hi there!")

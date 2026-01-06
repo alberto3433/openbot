@@ -3096,6 +3096,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 bagel_qty = parsed.new_bagel_quantity or 1
                 bagel_type = parsed.new_bagel_type
                 bagel_toasted = parsed.new_bagel_toasted
+                bagel_scooped = parsed.new_bagel_scooped
                 bagel_spread = parsed.new_bagel_spread
                 bagel_spread_type = parsed.new_bagel_spread_type
 
@@ -3110,13 +3111,14 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 parsed_items.append(ParsedBagelEntry(
                     bagel_type=bagel_type,
                     toasted=bagel_toasted,
+                    scooped=bagel_scooped,
                     spread=parsed.new_bagel_spread,
                     spread_type=parsed.new_bagel_spread_type,
                     quantity=bagel_qty,
                     modifiers=modifiers,
                 ))
-                logger.info("Multi-item: detected bagel '%s' (qty=%d, toasted=%s, spread=%s, spread_type=%s)",
-                            bagel_type, bagel_qty, bagel_toasted, bagel_spread, parsed.new_bagel_spread_type)
+                logger.info("Multi-item: detected bagel '%s' (qty=%d, toasted=%s, scooped=%s, spread=%s, spread_type=%s)",
+                            bagel_type, bagel_qty, bagel_toasted, bagel_scooped, bagel_spread, parsed.new_bagel_spread_type)
                 continue
 
         item_name, item_qty = _extract_menu_item_from_text(part)

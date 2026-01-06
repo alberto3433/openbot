@@ -2961,6 +2961,36 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
 
+    # Early exit: Don't split bagel orders where commas separate modifiers from the bagel
+    # e.g., "pumpernickel bagel, butter, not toasted please" should NOT be split
+    # The commas are just punctuation, not item separators
+    if len(restored_parts) >= 2:
+        first_part_lower = restored_parts[0].lower()
+        # Check if first part is a bagel
+        if "bagel" in first_part_lower:
+            # Define what counts as bagel modifiers (not separate items)
+            bagel_modifier_keywords = [
+                # Spreads
+                "butter", "cream cheese", "cc", "scallion", "veggie", "vegetable",
+                "plain", "lox", "peanut butter", "nutella", "hummus", "jelly",
+                "strawberry", "grape", "raspberry", "jam", "preserves",
+                # Toasted state
+                "toasted", "not toasted", "untoasted",
+                # Scooped state
+                "scooped", "not scooped",
+                # Polite words that might end up as separate parts
+                "please", "thanks", "thank you",
+            ]
+            other_parts = restored_parts[1:]
+            # Check if ALL other parts are just modifiers, not separate items
+            all_are_modifiers = all(
+                any(mod in part.lower() for mod in bagel_modifier_keywords)
+                for part in other_parts
+            )
+            if all_are_modifiers:
+                logger.debug("Multi-item: skipping split - detected bagel with comma-separated modifiers: '%s'", text[:60])
+                return None  # Let bagel parser handle the complete input
+
     # Use a list to collect ALL menu items instead of overwriting
     menu_item_list: list[MenuItemOrderDetails] = []
     coffee_list: list[CoffeeOrderDetails] = []

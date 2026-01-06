@@ -660,6 +660,16 @@ class TestDeterministicParserBagelOrders:
         assert result.new_bagel_toasted is True
         assert result.new_bagel_spread == "cream cheese"
 
+    def test_bagel_with_comma_separated_modifiers(self):
+        """Test bagel with modifiers separated by commas - regression test."""
+        # This case was being incorrectly split by multi-item parser
+        result = parse_open_input_deterministic("pumpernickel bagel, butter, not toasted please")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_type == "pumpernickel"
+        assert result.new_bagel_spread == "butter"
+        assert result.new_bagel_toasted is False
+
 
 class TestDeterministicParserFallback:
     """Tests for cases that should fall back to LLM."""

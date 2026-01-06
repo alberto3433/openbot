@@ -6,7 +6,9 @@ in a single request.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask
+from sandwich_bot.tasks.models import (
+    OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask, SpeedMenuBagelItemTask
+)
 
 
 class TestMultiItemOrders:
@@ -98,7 +100,9 @@ class TestMultiItemOrders:
 
         Scenario:
         - User says: "the classic and a large latte"
-        - Expected: System adds The Classic and a latte
+        - Expected: System adds The Classic and asks for latte clarification
+        - User clarifies: "regular latte"
+        - Expected: System adds the latte
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -112,20 +116,29 @@ class TestMultiItemOrders:
         # Should have added items
         all_items = result.order.items.get_active_items()
 
-        # Should have at least one item
+        # Should have at least one item (The Classic)
         assert len(all_items) >= 1, f"Should have added items. Message: {result.message}"
 
-        # Check for classic (as MenuItemTask or BagelItemTask) and coffee
+        # Check for classic (as MenuItemTask, BagelItemTask, or SpeedMenuBagelItemTask)
         has_classic = any(
             (isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()) or
+            (isinstance(i, SpeedMenuBagelItemTask) and "classic" in (i.menu_item_name or "").lower()) or
             (isinstance(i, BagelItemTask))
             for i in all_items
         )
-        has_coffee = any(isinstance(i, CoffeeItemTask) for i in all_items)
 
-        # At minimum recognize one of them
-        assert has_classic or has_coffee, \
-            f"Should recognize classic or coffee. Items: {all_items}"
+        # Classic should be recognized
+        assert has_classic, f"Should recognize The Classic. Items: {all_items}"
+
+        # Check if latte needs clarification (multiple latte types exist)
+        coffees = [i for i in all_items if isinstance(i, CoffeeItemTask)]
+        if len(coffees) == 0 and ("latte" in result.message.lower() or "matcha" in result.message.lower()):
+            # System correctly asks for clarification between latte types
+            result = sm.process("regular latte", result.order)
+            coffees = [i for i in result.order.items.get_active_items() if isinstance(i, CoffeeItemTask)]
+
+        # Should have coffee after clarification
+        assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
 
     def test_quantity_on_each_item(self):
         """

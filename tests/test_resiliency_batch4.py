@@ -63,14 +63,15 @@ class TestEdgeCaseQuantities:
         Test: User orders "a couple of coffees".
 
         Scenario:
-        - User says: "a couple of large iced lattes"
-        - Expected: System adds 2 coffees
+        - User says: "a couple of large iced cappuccinos"
+        - Expected: System adds 2 cappuccinos
+        Note: Using cappuccino (unambiguous) to test "couple" quantity recognition
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
         sm = OrderStateMachine()
-        result = sm.process("a couple of large iced lattes", order)
+        result = sm.process("a couple of large iced cappuccinos", order)
 
         # Should have a response
         assert result.message is not None

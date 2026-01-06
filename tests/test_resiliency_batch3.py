@@ -43,6 +43,8 @@ class TestNaturalLanguageVariation:
 
         Scenario:
         - User says: "lemme get a large iced latte"
+        - Expected: System asks for clarification between Latte and Seasonal Matcha Latte
+        - User clarifies: "regular latte"
         - Expected: System adds a large iced latte
         """
         order = OrderTask()
@@ -54,12 +56,21 @@ class TestNaturalLanguageVariation:
         # Should have a response
         assert result.message is not None
 
-        # Should have added a coffee
+        # Check if clarification is needed (multiple latte types exist)
         coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        if len(coffees) == 0:
+            # System correctly asks for clarification between latte types
+            assert "latte" in result.message.lower() or "matcha" in result.message.lower(), \
+                f"Should ask about latte type. Message: {result.message}"
+
+            # User clarifies they want regular latte
+            result = sm.process("regular latte", result.order)
+            coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+
         assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
 
         coffee = coffees[0]
-        assert coffee.drink_type == "latte", f"Should be latte, got: {coffee.drink_type}"
+        assert coffee.drink_type.lower() == "latte", f"Should be latte, got: {coffee.drink_type}"
         assert coffee.size == "large", f"Should be large, got: {coffee.size}"
         assert coffee.iced is True, f"Should be iced, got: {coffee.iced}"
 

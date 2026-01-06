@@ -1690,6 +1690,10 @@ class TestSpeedMenuBagelParsing:
         ("classic bec but on a plain bagel", "plain"),
         ("give me the classic bec on a pumpernickel bagel", "pumpernickel"),
         ("I want the lexington on whole wheat", "whole wheat"),
+        # Without "on/with" prefix - should still extract bagel type
+        ("bec everything bagel toasted", "everything"),
+        ("classic bec plain bagel", "plain"),
+        ("the leo sesame bagel", "sesame"),
     ])
     def test_speed_menu_with_bagel_choice(self, text, expected_bagel):
         """Test that speed menu items with bagel choice are correctly parsed."""

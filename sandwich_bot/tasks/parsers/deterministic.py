@@ -2024,6 +2024,18 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
                 bagel_choice = bagel_type
                 break
 
+    # Fallback: look for "[bagel_type] bagel" without "on/with" prefix
+    # e.g., "bec everything bagel toasted" -> everything
+    if not bagel_choice:
+        for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
+            pattern = re.compile(
+                r"\b" + re.escape(bagel_type) + r"\s+bagels?\b",
+                re.IGNORECASE
+            )
+            if pattern.search(text_lower):
+                bagel_choice = bagel_type
+                break
+
     # Extract modifications (e.g., "with mayo and mustard", "no onions")
     modifications = _extract_menu_item_modifications(text)
 

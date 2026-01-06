@@ -137,7 +137,6 @@ class MessageProcessor:
             menu_index=menu_index,
             store_info=store_info,
             returning_customer=returning_customer,
-            llm_fallback_fn=None,  # State machine handles everything
         )
 
         # 5. Update history

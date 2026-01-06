@@ -42,6 +42,7 @@ from .modifier_change_handler import ModifierChangeHandler
 from .slot_orchestration_handler import SlotOrchestrationHandler
 from .configuring_item_handler import ConfiguringItemHandler
 from .taking_items_handler import TakingItemsHandler
+from .handler_config import HandlerConfig
 
 # Import from new modular structure
 from .schemas import (
@@ -307,51 +308,49 @@ class OrderStateMachine:
         self.query_handler = QueryHandler(self._menu_data, None, self.pricing)
         # Initialize message builder
         self.message_builder = MessageBuilder()
+        # Create shared handler configuration
+        self._handler_config = HandlerConfig(
+            model=self.model,
+            pricing=self.pricing,
+            menu_lookup=self.menu_lookup,
+            menu_data=self._menu_data,
+            message_builder=self.message_builder,
+            check_redirect=_check_redirect_to_pending_item,
+        )
         # Initialize checkout handler (context set per-request in process())
         self.checkout_handler = CheckoutHandler(
-            model=self.model,
-            message_builder=self.message_builder,
+            config=self._handler_config,
             transition_callback=self._transition_to_next_slot,
         )
         # Initialize checkout utils handler early (coffee callback set below)
         self.checkout_utils_handler = CheckoutUtilsHandler(
+            config=self._handler_config,
             transition_to_next_slot=self._transition_to_next_slot,
             configure_next_incomplete_coffee=None,  # Set after coffee_handler init
-            message_builder=self.message_builder,
         )
+        # Update handler config with get_next_question callback (now that checkout_utils_handler exists)
+        self._handler_config.get_next_question = self.checkout_utils_handler.get_next_question
         # Initialize coffee config handler
         self.coffee_handler = CoffeeConfigHandler(
-            model=self.model,
-            pricing=self.pricing,
-            menu_lookup=self.menu_lookup,
-            get_next_question=self.checkout_utils_handler.get_next_question,
-            check_redirect=_check_redirect_to_pending_item,
+            config=self._handler_config,
         )
         # Now set the coffee callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_coffee = self.coffee_handler.configure_next_incomplete_coffee
         # Initialize espresso config handler
         self.espresso_handler = EspressoConfigHandler(
-            pricing=self.pricing,
-            menu_lookup=self.menu_lookup,
-            get_next_question=self.checkout_utils_handler.get_next_question,
+            config=self._handler_config,
         )
         # Initialize bagel config handler
         self.bagel_handler = BagelConfigHandler(
-            model=self.model,
-            pricing=self.pricing,
-            get_next_question=self.checkout_utils_handler.get_next_question,
+            config=self._handler_config,
             get_item_by_id=self.checkout_utils_handler.get_item_by_id,
             configure_coffee=self.coffee_handler.configure_next_incomplete_coffee,
-            check_redirect=_check_redirect_to_pending_item,
         )
         # Now set the bagel callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_bagel = self.bagel_handler.configure_next_incomplete_bagel
         # Initialize speed menu bagel handler
         self.speed_menu_handler = SpeedMenuBagelHandler(
-            model=self.model,
-            menu_lookup=self.menu_lookup,
-            get_next_question=self.checkout_utils_handler.get_next_question,
-            pricing_engine=self.pricing,
+            config=self._handler_config,
         )
         # Now set the speed menu bagel callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_speed_menu_bagel = self.speed_menu_handler.configure_next_incomplete_speed_menu_bagel
@@ -359,37 +358,30 @@ class OrderStateMachine:
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize by-the-pound handler
         self.by_pound_handler = ByPoundHandler(
-            model=self.model,
-            menu_data=self._menu_data,
-            pricing=self.pricing,
+            config=self._handler_config,
             process_taking_items_input=self._handle_taking_items,
         )
         # Initialize menu inquiry handler
         self.menu_inquiry_handler = MenuInquiryHandler(
-            menu_data=self._menu_data,
-            pricing=self.pricing,
+            config=self._handler_config,
             list_by_pound_category=self.by_pound_handler.list_by_pound_category,
         )
         # Initialize order utils handler
         self.order_utils_handler = OrderUtilsHandler(
+            config=self._handler_config,
             build_order_summary=self.checkout_utils_handler.build_order_summary,
-            message_builder=self.message_builder,
         )
         # Initialize item adder handler
         self.item_adder_handler = ItemAdderHandler(
-            menu_lookup=self.menu_lookup,
-            pricing=self.pricing,
-            get_next_question=self.checkout_utils_handler.get_next_question,
+            config=self._handler_config,
             configure_next_incomplete_bagel=self.bagel_handler.configure_next_incomplete_bagel,
         )
-        self.item_adder_handler.menu_data = self._menu_data
         # Initialize modifier change handler
-        self.modifier_change_handler = ModifierChangeHandler(pricing=self.pricing)
+        self.modifier_change_handler = ModifierChangeHandler(config=self._handler_config)
         # Initialize config helper handler
         self.config_helper_handler = ConfigHelperHandler(
-            model=self.model,
+            config=self._handler_config,
             modifier_change_handler=self.modifier_change_handler,
-            get_next_question=self.checkout_utils_handler.get_next_question,
         )
         # Set confirmation-related callbacks on checkout_handler (now that dependencies are ready)
         self.checkout_handler.order_utils_handler = self.order_utils_handler
@@ -397,6 +389,7 @@ class OrderStateMachine:
         self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
+            config=self._handler_config,
             by_pound_handler=self.by_pound_handler,
             coffee_handler=self.coffee_handler,
             bagel_handler=self.bagel_handler,
@@ -408,8 +401,7 @@ class OrderStateMachine:
         )
         # Initialize taking items handler
         self.taking_items_handler = TakingItemsHandler(
-            model=self.model,
-            pricing=self.pricing,
+            config=self._handler_config,
             coffee_handler=self.coffee_handler,
             espresso_handler=self.espresso_handler,
             item_adder_handler=self.item_adder_handler,
@@ -420,7 +412,6 @@ class OrderStateMachine:
             checkout_utils_handler=self.checkout_utils_handler,
             checkout_handler=self.checkout_handler,
         )
-        self.taking_items_handler.menu_data = self._menu_data
         # Set taking_items_handler on configuring_item_handler (after both are created)
         self.configuring_item_handler.taking_items_handler = self.taking_items_handler
 
@@ -435,6 +426,8 @@ class OrderStateMachine:
         self._spread_types = _build_spread_types_from_menu(
             self._menu_data.get("cheese_types", [])
         )
+        # Update handler config menu data (used by handlers initialized with config)
+        self._handler_config.menu_data = self._menu_data
         # Update menu lookup engine menu data
         self.menu_lookup.menu_data = self._menu_data
         # Update pricing engine menu data

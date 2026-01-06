@@ -11,13 +11,14 @@ The main variable is the number of shots:
 """
 
 import logging
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from .models import EspressoItemTask, OrderTask
 from .schemas import StateMachineResult
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
-    from .pricing_engine import PricingEngine
+    from .pricing import PricingEngine
     from .menu_lookup import MenuLookup
 
 logger = logging.getLogger(__name__)
@@ -36,23 +37,23 @@ class EspressoConfigHandler:
     - Main config is number of shots (single, double, triple)
     """
 
-    def __init__(
-        self,
-        pricing: "PricingEngine | None" = None,
-        menu_lookup: "MenuLookup | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
-    ):
+    def __init__(self, config: HandlerConfig | None = None, **kwargs):
         """
         Initialize the espresso config handler.
 
         Args:
-            pricing: PricingEngine instance for price lookups.
-            menu_lookup: MenuLookup instance for menu item lookups.
-            get_next_question: Callback to get the next question in the flow.
+            config: HandlerConfig with shared dependencies.
+            **kwargs: Legacy parameter support (pricing, menu_lookup, get_next_question).
         """
-        self.pricing = pricing
-        self.menu_lookup = menu_lookup
-        self._get_next_question = get_next_question
+        if config:
+            self.pricing = config.pricing
+            self.menu_lookup = config.menu_lookup
+            self._get_next_question = config.get_next_question
+        else:
+            # Legacy support for direct parameters
+            self.pricing = kwargs.get("pricing")
+            self.menu_lookup = kwargs.get("menu_lookup")
+            self._get_next_question = kwargs.get("get_next_question")
 
     def add_espresso(
         self,

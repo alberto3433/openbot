@@ -42,6 +42,7 @@ from .parsers import parse_open_input, extract_modifiers_from_input
 from .parsers.constants import get_bagel_types, get_bagel_spreads
 
 if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
     from .pricing import PricingEngine
     from .coffee_config_handler import CoffeeConfigHandler
     from .espresso_config_handler import EspressoConfigHandler
@@ -66,8 +67,7 @@ class TakingItemsHandler:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        pricing: "PricingEngine | None" = None,
+        config: "HandlerConfig | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
         espresso_handler: "EspressoConfigHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
@@ -77,13 +77,13 @@ class TakingItemsHandler:
         by_pound_handler: "ByPoundHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         checkout_handler: "CheckoutHandler | None" = None,
+        **kwargs,
     ) -> None:
         """
         Initialize the taking items handler.
 
         Args:
-            model: LLM model to use for parsing.
-            pricing: Pricing engine.
+            config: HandlerConfig with shared dependencies.
             coffee_handler: Handler for coffee items.
             espresso_handler: Handler for espresso items.
             item_adder_handler: Handler for adding items.
@@ -93,24 +93,33 @@ class TakingItemsHandler:
             by_pound_handler: Handler for by-pound items.
             checkout_utils_handler: Handler for checkout utilities.
             checkout_handler: Handler for checkout flow including confirmation/repeat orders.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.pricing = pricing
-        self.coffee_handler = coffee_handler
-        self.espresso_handler = espresso_handler
-        self.item_adder_handler = item_adder_handler
-        self.speed_menu_handler = speed_menu_handler
-        self.menu_inquiry_handler = menu_inquiry_handler
-        self.store_info_handler = store_info_handler
-        self.by_pound_handler = by_pound_handler
-        self.checkout_utils_handler = checkout_utils_handler
-        self.checkout_handler = checkout_handler
+        if config:
+            self.model = config.model
+            self.pricing = config.pricing
+            self._menu_data = config.menu_data or {}
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.pricing = kwargs.get("pricing")
+            self._menu_data = {}
+
+        # Handler-specific dependencies
+        self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
+        self.espresso_handler = espresso_handler or kwargs.get("espresso_handler")
+        self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
+        self.speed_menu_handler = speed_menu_handler or kwargs.get("speed_menu_handler")
+        self.menu_inquiry_handler = menu_inquiry_handler or kwargs.get("menu_inquiry_handler")
+        self.store_info_handler = store_info_handler or kwargs.get("store_info_handler")
+        self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
+        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
+        self.checkout_handler = checkout_handler or kwargs.get("checkout_handler")
 
         # Context set per-request
         self._spread_types: list[str] = []
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
-        self._menu_data: dict = {}
 
     @property
     def menu_data(self) -> dict:

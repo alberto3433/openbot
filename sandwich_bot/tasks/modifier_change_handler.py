@@ -25,6 +25,7 @@ from .parsers.constants import (
 )
 
 if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
     from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
@@ -99,13 +100,22 @@ class ModifierChangeHandler:
         "cheese": ModifierCategory.CHEESE,
     }
 
-    def __init__(self, pricing: "PricingEngine | None" = None):
+    def __init__(
+        self,
+        config: "HandlerConfig | None" = None,
+        **kwargs,
+    ):
         """Initialize the modifier change handler.
 
         Args:
-            pricing: Optional pricing engine for recalculating prices after changes.
+            config: HandlerConfig with shared dependencies.
+            **kwargs: Legacy parameter support.
         """
-        self.pricing = pricing
+        if config:
+            self.pricing = config.pricing
+        else:
+            # Legacy support for direct parameters
+            self.pricing = kwargs.get("pricing")
 
     def detect_change_request(self, user_input: str) -> ChangeRequest | None:
         """

@@ -45,6 +45,7 @@ from .parsers.llm_parsers import (
 from ..address_service import complete_address
 
 if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
     from .order_utils_handler import OrderUtilsHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
 
@@ -62,40 +63,49 @@ class CheckoutHandler:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        message_builder=None,
-        transition_callback=None,
+        config: "HandlerConfig | None" = None,
         order_utils_handler: "OrderUtilsHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
+        transition_callback: Callable[[OrderTask], None] | None = None,
         handle_taking_items_with_parsed: Callable[
             [OpenInputResponse, OrderTask, ExtractedModifiers, str], StateMachineResult
         ] | None = None,
+        **kwargs,
     ):
         """
         Initialize the checkout handler.
 
         Args:
-            model: LLM model to use for parsing.
-            message_builder: MessageBuilder instance for generating messages.
-            transition_callback: Callback function to transition order to next slot.
+            config: HandlerConfig with shared dependencies.
             order_utils_handler: Handler for order utilities (tax, quantity changes).
             checkout_utils_handler: Handler for checkout utilities (order summary).
+            transition_callback: Callback function to transition order to next slot.
             handle_taking_items_with_parsed: Callback to handle parsed items during confirmation.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.message_builder = message_builder
-        self._transition_to_next_slot = transition_callback
-        self.order_utils_handler = order_utils_handler
-        self.checkout_utils_handler = checkout_utils_handler
-        self._handle_taking_items_with_parsed = handle_taking_items_with_parsed
+        if config:
+            self.model = config.model
+            self.message_builder = config.message_builder
+            self._store_info = config.store_info
+            self._menu_data = config.menu_data or {}
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.message_builder = kwargs.get("message_builder")
+            self._store_info = None
+            self._menu_data = {}
+
+        # Handler-specific dependencies and callbacks
+        self.order_utils_handler = order_utils_handler or kwargs.get("order_utils_handler")
+        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
+        self._transition_to_next_slot = transition_callback or kwargs.get("transition_callback")
+        self._handle_taking_items_with_parsed = handle_taking_items_with_parsed or kwargs.get("handle_taking_items_with_parsed")
 
         # Context set per-request
-        self._store_info: dict | None = None
         self._returning_customer: dict | None = None
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
         self._spread_types: list[str] = []
-        self._menu_data: dict = {}
 
     @property
     def _modifier_category_keywords(self) -> dict[str, str]:

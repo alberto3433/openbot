@@ -21,9 +21,10 @@ from .parsers import (
 )
 from .parsers.constants import get_coffee_types, is_soda_drink
 from .message_builder import MessageBuilder
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
-    from .pricing_engine import PricingEngine
+    from .pricing import PricingEngine
     from .menu_lookup import MenuLookup
 
 logger = logging.getLogger(__name__)
@@ -50,29 +51,27 @@ class CoffeeConfigHandler:
     Manages adding coffee items, size selection, and hot/iced preference.
     """
 
-    def __init__(
-        self,
-        model: str = "gpt-4o-mini",
-        pricing: "PricingEngine | None" = None,
-        menu_lookup: "MenuLookup | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
-        check_redirect: Callable[[str, ItemTask, OrderTask, str], StateMachineResult | None] | None = None,
-    ):
+    def __init__(self, config: HandlerConfig | None = None, **kwargs):
         """
         Initialize the coffee config handler.
 
         Args:
-            model: LLM model to use for parsing.
-            pricing: PricingEngine instance for price lookups.
-            menu_lookup: MenuLookup instance for menu item lookups.
-            get_next_question: Callback to get the next question in the flow.
-            check_redirect: Callback to check if user is ordering a new item.
+            config: HandlerConfig with shared dependencies.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.pricing = pricing
-        self.menu_lookup = menu_lookup
-        self._get_next_question = get_next_question
-        self._check_redirect = check_redirect
+        if config:
+            self.model = config.model
+            self.pricing = config.pricing
+            self.menu_lookup = config.menu_lookup
+            self._get_next_question = config.get_next_question
+            self._check_redirect = config.check_redirect
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.pricing = kwargs.get("pricing")
+            self.menu_lookup = kwargs.get("menu_lookup")
+            self._get_next_question = kwargs.get("get_next_question")
+            self._check_redirect = kwargs.get("check_redirect")
 
     def add_coffee(
         self,

@@ -9,7 +9,7 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 
 from .models import (
     OrderTask,
@@ -22,9 +22,9 @@ from .models import (
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .message_builder import MessageBuilder
+    from .handler_config import HandlerConfig
+    from ..services.message_builder import MessageBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -38,23 +38,36 @@ class OrderUtilsHandler:
 
     def __init__(
         self,
+        config: "HandlerConfig | None" = None,
         build_order_summary: Callable[[OrderTask], str] | None = None,
-        message_builder: "MessageBuilder | None" = None,
+        **kwargs,
     ):
         """
         Initialize the order utils handler.
 
         Args:
+            config: HandlerConfig with shared dependencies.
             build_order_summary: Callback to build order summary string.
-            message_builder: MessageBuilder instance for generating follow-up questions.
+            **kwargs: Legacy parameter support.
         """
-        self._build_order_summary = build_order_summary
-        self._message_builder = message_builder
-        self._store_info: dict = {}
+        if config:
+            self._message_builder = config.message_builder
+            self._store_info = config.store_info or {}
+        else:
+            # Legacy support for direct parameters
+            self._message_builder = kwargs.get("message_builder")
+            self._store_info = {}
+
+        # Handler-specific callback
+        self._build_order_summary = build_order_summary or kwargs.get("build_order_summary")
 
     def set_store_info(self, store_info: dict | None) -> None:
-        """Set the store info for tax calculations."""
+        """Set the store info for tax calculations (legacy method)."""
         self._store_info = store_info or {}
+
+    def set_message_builder(self, message_builder: "MessageBuilder | None") -> None:
+        """Set the message builder (for use when set post-init)."""
+        self._message_builder = message_builder
 
     def handle_quantity_change(
         self,

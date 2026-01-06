@@ -17,10 +17,11 @@ from .models import (
     TaskStatus,
 )
 from .schemas import OrderPhase, StateMachineResult, BagelOrderDetails, ExtractedModifiers
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
-    from .pricing_engine import PricingEngine
+    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -35,24 +36,30 @@ class ItemAdderHandler:
 
     def __init__(
         self,
-        menu_lookup: "MenuLookup | None" = None,
-        pricing: "PricingEngine | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
+        config: HandlerConfig | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
+        **kwargs,
     ):
         """
         Initialize the item adder handler.
 
         Args:
-            menu_lookup: MenuLookup instance for item lookups.
-            pricing: PricingEngine instance for price calculations.
-            get_next_question: Callback to determine the next question.
+            config: HandlerConfig with shared dependencies.
             configure_next_incomplete_bagel: Callback to configure bagels.
+            **kwargs: Legacy parameter support.
         """
-        self.menu_lookup = menu_lookup
-        self.pricing = pricing
-        self._get_next_question = get_next_question
-        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
+        if config:
+            self.menu_lookup = config.menu_lookup
+            self.pricing = config.pricing
+            self._get_next_question = config.get_next_question
+        else:
+            # Legacy support for direct parameters
+            self.menu_lookup = kwargs.get("menu_lookup")
+            self.pricing = kwargs.get("pricing")
+            self._get_next_question = kwargs.get("get_next_question")
+
+        # Handler-specific callback
+        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
         self._menu_data: dict = {}
 
     @property

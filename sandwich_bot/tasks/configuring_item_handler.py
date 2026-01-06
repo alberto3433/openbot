@@ -15,6 +15,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
 
 if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
     from .by_pound_handler import ByPoundHandler
     from .coffee_config_handler import CoffeeConfigHandler
     from .bagel_config_handler import BagelConfigHandler
@@ -167,6 +168,7 @@ class ConfiguringItemHandler:
 
     def __init__(
         self,
+        config: "HandlerConfig | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
         bagel_handler: "BagelConfigHandler | None" = None,
@@ -175,11 +177,14 @@ class ConfiguringItemHandler:
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
+        **kwargs,
     ) -> None:
         """
         Initialize the configuring item handler.
 
         Args:
+            config: HandlerConfig with shared dependencies (currently unused,
+                    but accepted for consistency with other handlers).
             by_pound_handler: Handler for by-pound items.
             coffee_handler: Handler for coffee configuration.
             bagel_handler: Handler for bagel configuration.
@@ -188,15 +193,20 @@ class ConfiguringItemHandler:
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
             item_adder_handler: Handler for adding items.
+            **kwargs: Legacy parameter support.
         """
-        self.by_pound_handler = by_pound_handler
-        self.coffee_handler = coffee_handler
-        self.bagel_handler = bagel_handler
-        self.speed_menu_handler = speed_menu_handler
-        self.config_helper_handler = config_helper_handler
-        self.checkout_utils_handler = checkout_utils_handler
-        self.modifier_change_handler = modifier_change_handler
-        self.item_adder_handler = item_adder_handler
+        # This handler primarily composes other handlers, so config is not directly used
+        # but we accept it for consistency with the HandlerConfig pattern
+        _ = config  # Unused but accepted for API consistency
+
+        self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
+        self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
+        self.bagel_handler = bagel_handler or kwargs.get("bagel_handler")
+        self.speed_menu_handler = speed_menu_handler or kwargs.get("speed_menu_handler")
+        self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
+        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
+        self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
+        self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
         # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
         self.taking_items_handler: "TakingItemsHandler | None" = None
 

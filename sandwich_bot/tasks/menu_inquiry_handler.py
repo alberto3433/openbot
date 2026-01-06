@@ -28,7 +28,8 @@ from .parsers.constants import (
 )
 
 if TYPE_CHECKING:
-    from .pricing_engine import PricingEngine
+    from .handler_config import HandlerConfig
+    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +49,28 @@ class MenuInquiryHandler:
 
     def __init__(
         self,
-        menu_data: dict | None = None,
-        pricing: "PricingEngine | None" = None,
+        config: "HandlerConfig | None" = None,
         list_by_pound_category: Callable[[str, OrderTask], StateMachineResult] | None = None,
+        **kwargs,
     ):
         """
         Initialize the menu inquiry handler.
 
         Args:
-            menu_data: Menu data dictionary containing items_by_type, cheese_types, etc.
-            pricing: PricingEngine instance for price lookups.
+            config: HandlerConfig with shared dependencies.
             list_by_pound_category: Callback to list items in a by-the-pound category.
+            **kwargs: Legacy parameter support.
         """
-        self._menu_data = menu_data or {}
-        self.pricing = pricing
-        self._list_by_pound_category = list_by_pound_category
+        if config:
+            self._menu_data = config.menu_data or {}
+            self.pricing = config.pricing
+        else:
+            # Legacy support for direct parameters
+            self._menu_data = kwargs.get("menu_data") or {}
+            self.pricing = kwargs.get("pricing")
+
+        # Handler-specific callback
+        self._list_by_pound_category = list_by_pound_category or kwargs.get("list_by_pound_category")
 
     @property
     def menu_data(self) -> dict:

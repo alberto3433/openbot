@@ -43,6 +43,7 @@ from .parsers.constants import (
     get_bagel_types_list,
 )
 from .message_builder import MessageBuilder
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -142,30 +143,35 @@ class BagelConfigHandler:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        pricing: "PricingEngine | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
+        config: HandlerConfig | None = None,
         get_item_by_id: Callable[[OrderTask, str], ItemTask | None] | None = None,
         configure_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
-        check_redirect: Callable[[str, ItemTask, OrderTask, str], StateMachineResult | None] | None = None,
+        **kwargs,
     ):
         """
         Initialize the bagel configuration handler.
 
         Args:
-            model: LLM model to use for parsing.
-            pricing: PricingEngine instance for price calculations.
-            get_next_question: Callback to get the next question for the order.
+            config: HandlerConfig with shared dependencies.
             get_item_by_id: Callback to find an item by ID.
             configure_coffee: Callback to configure next incomplete coffee.
-            check_redirect: Callback to check for redirect to pending item.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.pricing = pricing
-        self._get_next_question = get_next_question
-        self._get_item_by_id = get_item_by_id
-        self._configure_coffee = configure_coffee
-        self._check_redirect = check_redirect
+        if config:
+            self.model = config.model
+            self.pricing = config.pricing
+            self._get_next_question = config.get_next_question
+            self._check_redirect = config.check_redirect
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.pricing = kwargs.get("pricing")
+            self._get_next_question = kwargs.get("get_next_question")
+            self._check_redirect = kwargs.get("check_redirect")
+
+        # Handler-specific callbacks (not in HandlerConfig)
+        self._get_item_by_id = get_item_by_id or kwargs.get("get_item_by_id")
+        self._configure_coffee = configure_coffee or kwargs.get("configure_coffee")
 
     def _resolve_spread_disambiguation(
         self,

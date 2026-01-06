@@ -15,7 +15,8 @@ from .models import OrderTask, CoffeeItemTask, EspressoItemTask, SpeedMenuBagelI
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
-    from .message_builder import MessageBuilder
+    from .handler_config import HandlerConfig
+    from ..services.message_builder import MessageBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -30,27 +31,36 @@ class CheckoutUtilsHandler:
 
     def __init__(
         self,
+        config: "HandlerConfig | None" = None,
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_speed_menu_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
-        message_builder: "MessageBuilder | None" = None,
+        **kwargs,
     ):
         """
         Initialize the checkout utils handler.
 
         Args:
+            config: HandlerConfig with shared dependencies.
             transition_to_next_slot: Callback to transition to the next slot.
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
             configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
             configure_next_incomplete_speed_menu_bagel: Callback to configure next incomplete speed menu bagel.
-            message_builder: MessageBuilder instance for generating summaries.
+            **kwargs: Legacy parameter support.
         """
-        self._transition_to_next_slot = transition_to_next_slot
-        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
-        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
-        self._configure_next_incomplete_speed_menu_bagel = configure_next_incomplete_speed_menu_bagel
-        self._message_builder = message_builder
+        if config:
+            self._message_builder = config.message_builder
+        else:
+            # Legacy support for direct parameters
+            self._message_builder = kwargs.get("message_builder")
+
+        # Handler-specific callbacks
+        self._transition_to_next_slot = transition_to_next_slot or kwargs.get("transition_to_next_slot")
+        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
+        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
+        self._configure_next_incomplete_speed_menu_bagel = configure_next_incomplete_speed_menu_bagel or kwargs.get("configure_next_incomplete_speed_menu_bagel")
+
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
 

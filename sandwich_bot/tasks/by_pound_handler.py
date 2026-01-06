@@ -14,9 +14,10 @@ from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult, ByPoundOrderItem
 from .parsers import parse_by_pound_category
 from .parsers.constants import get_by_pound_items, get_by_pound_category_names
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
-    from .pricing_engine import PricingEngine
+    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +32,30 @@ class ByPoundHandler:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        menu_data: dict | None = None,
-        pricing: "PricingEngine | None" = None,
+        config: HandlerConfig | None = None,
         process_taking_items_input: Callable[[str, OrderTask], StateMachineResult] | None = None,
+        **kwargs,
     ):
         """
         Initialize the by-the-pound handler.
 
         Args:
-            model: LLM model to use for parsing.
-            menu_data: Menu data dictionary for category listings.
-            pricing: PricingEngine instance for price lookups.
+            config: HandlerConfig with shared dependencies.
             process_taking_items_input: Callback to process new order input.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self._menu_data = menu_data or {}
-        self.pricing = pricing
-        self._process_taking_items_input = process_taking_items_input
+        if config:
+            self.model = config.model
+            self._menu_data = config.menu_data or {}
+            self.pricing = config.pricing
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self._menu_data = kwargs.get("menu_data") or {}
+            self.pricing = kwargs.get("pricing")
+
+        # Handler-specific callback
+        self._process_taking_items_input = process_taking_items_input or kwargs.get("process_taking_items_input")
 
     @property
     def menu_data(self) -> dict:

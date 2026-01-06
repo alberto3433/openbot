@@ -14,6 +14,7 @@ from .models import SpeedMenuBagelItemTask, OrderTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_toasted_deterministic, parse_toasted_choice
 from .pricing import PricingEngine
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
@@ -28,26 +29,25 @@ class SpeedMenuBagelHandler:
     Manages adding speed menu bagel items and toasted preference selection.
     """
 
-    def __init__(
-        self,
-        model: str = "gpt-4o-mini",
-        menu_lookup: "MenuLookup | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
-        pricing_engine: "PricingEngine | None" = None,
-    ):
+    def __init__(self, config: HandlerConfig | None = None, **kwargs):
         """
         Initialize the speed menu bagel handler.
 
         Args:
-            model: LLM model to use for parsing.
-            menu_lookup: MenuLookup instance for menu item lookups.
-            get_next_question: Callback to get the next question in the flow.
-            pricing_engine: PricingEngine instance for price calculations.
+            config: HandlerConfig with shared dependencies.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.menu_lookup = menu_lookup
-        self._get_next_question = get_next_question
-        self.pricing_engine = pricing_engine
+        if config:
+            self.model = config.model
+            self.menu_lookup = config.menu_lookup
+            self._get_next_question = config.get_next_question
+            self.pricing_engine = config.pricing
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.menu_lookup = kwargs.get("menu_lookup")
+            self._get_next_question = kwargs.get("get_next_question")
+            self.pricing_engine = kwargs.get("pricing_engine") or kwargs.get("pricing")
 
     def add_speed_menu_bagel(
         self,

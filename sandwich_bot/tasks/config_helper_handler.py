@@ -15,6 +15,7 @@ from typing import Callable, Optional, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, ItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
+from .handler_config import HandlerConfig
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -74,21 +75,28 @@ class ConfigHelperHandler:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        config: HandlerConfig | None = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
-        get_next_question: Callable[[OrderTask], StateMachineResult] | None = None,
+        **kwargs,
     ):
         """
         Initialize the config helper handler.
 
         Args:
-            model: LLM model to use for parsing.
+            config: HandlerConfig with shared dependencies.
             modifier_change_handler: Handler for modifier changes.
-            get_next_question: Callback to get next question.
+            **kwargs: Legacy parameter support.
         """
-        self.model = model
-        self.modifier_change_handler = modifier_change_handler
-        self._get_next_question = get_next_question
+        if config:
+            self.model = config.model
+            self._get_next_question = config.get_next_question
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self._get_next_question = kwargs.get("get_next_question")
+
+        # Handler-specific dependency
+        self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
 
     def check_cancellation_during_config(
         self,

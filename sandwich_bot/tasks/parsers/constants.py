@@ -151,6 +151,9 @@ QUALIFIER_PATTERNS = [
     (r'\b(?:just\s+)?a\s+little\s+(?:bit\s+of\s+)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a little'),
     # "no X" / "hold the X" / "without X"
     (r'\b(?:no\s+|hold\s+the\s+|without\s+)(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'no'),
+    # "X on the side" - captures single-word modifiers like sugar, cream, milk
+    # Uses negative lookbehind to avoid matching "coffee cream" when user says "coffee cream on the side"
+    (r'\b(\w+)\s+on\s+the\s+side\b', 'on the side'),
 ]
 
 # Greeting patterns

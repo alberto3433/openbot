@@ -813,6 +813,8 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
                 continue
             if qualifier == 'no':
                 instruction = f"no {item}"
+            elif qualifier == 'on the side':
+                instruction = f"{item} on the side"
             else:
                 instruction = f"{qualifier} {item}"
             if instruction not in instructions:
@@ -2202,6 +2204,10 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             break
 
     coffee_mods = extract_coffee_modifiers_from_input(text)
+
+    # Fall back to coffee_mods.milk if local patterns didn't match (e.g., "cream")
+    if milk is None and coffee_mods.milk:
+        milk = coffee_mods.milk
 
     instructions_list = extract_special_instructions_from_input(text)
     coffee_keywords = {'milk', 'cream', 'ice', 'hot', 'shot', 'espresso', 'foam', 'whip', 'sugar', 'syrup'}

@@ -1287,6 +1287,51 @@ class TestNotesExtraction:
         assert coffee.special_instructions is not None
         assert "splash" in coffee.special_instructions.lower() or "milk" in coffee.special_instructions.lower()
 
+    def test_coffee_with_sugar_on_the_side(self):
+        """Test that 'sugar on the side' adds sugar as sweetener AND to special_instructions."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        from sandwich_bot.tasks.schemas import ParsedCoffeeEntry
+        result = parse_open_input_deterministic("large coffee iced sugar on the side")
+        assert result is not None
+        assert result.new_coffee is True
+        # Sugar SHOULD be extracted as a sweetener (for pricing/cart)
+        assert result.new_coffee_sweetener == "sugar"
+        # Sugar on the side should ALSO be in special_instructions
+        assert result.new_coffee_special_instructions is not None
+        assert "sugar on the side" in result.new_coffee_special_instructions.lower()
+        # Also check parsed_items
+        coffee_items = [item for item in result.parsed_items if isinstance(item, ParsedCoffeeEntry)]
+        assert len(coffee_items) >= 1
+        coffee = coffee_items[0]
+        assert len(coffee.sweeteners) >= 1  # Sweetener added for pricing
+        assert coffee.sweeteners[0].type == "sugar"
+        assert coffee.special_instructions is not None
+        assert "sugar on the side" in coffee.special_instructions.lower()
+
+    def test_coffee_with_cream_on_the_side(self):
+        """Test that 'cream on the side' adds cream as milk AND to special_instructions."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        result = parse_open_input_deterministic("large coffee cream on the side")
+        assert result is not None
+        assert result.new_coffee is True
+        # Cream SHOULD be extracted as milk (for pricing/cart)
+        assert result.new_coffee_milk == "cream"
+        # Cream on the side should ALSO be in special_instructions
+        assert result.new_coffee_special_instructions is not None
+        assert "cream on the side" in result.new_coffee_special_instructions.lower()
+
+    def test_coffee_with_milk_on_the_side(self):
+        """Test that 'milk on the side' adds milk AND to special_instructions."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        result = parse_open_input_deterministic("coffee milk on the side")
+        assert result is not None
+        assert result.new_coffee is True
+        # Milk SHOULD be extracted (defaults to whole when just "milk" is mentioned)
+        assert result.new_coffee_milk == "whole"
+        # Milk on the side should ALSO be in special_instructions
+        assert result.new_coffee_special_instructions is not None
+        assert "milk on the side" in result.new_coffee_special_instructions.lower()
+
     def test_multi_item_bagel_and_speed_menu_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order

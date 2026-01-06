@@ -361,17 +361,21 @@ class TestReplacementModificationScenarios:
         """
         from sandwich_bot.tasks.models import MenuItemTask
 
-        # Create menu data with an omelette
+        # Create menu data with an omelette and coffee
         menu_data = {
             "all_items": [
                 {"id": 500, "name": "Spinach & Feta Omelette", "base_price": 14.50, "category": "omelette"},
+                {"id": 501, "name": "Coffee", "base_price": 3.45, "category": "sized_beverage"},
             ],
             "items_by_type": {
                 "omelette": [
                     {"id": 500, "name": "Spinach & Feta Omelette", "base_price": 14.50, "category": "omelette"},
                 ],
+                "sized_beverage": [
+                    {"id": 501, "name": "Coffee", "base_price": 3.45, "category": "sized_beverage"},
+                ],
             },
-            "categories": ["omelette"],
+            "categories": ["omelette", "sized_beverage"],
         }
 
         order = OrderTask()

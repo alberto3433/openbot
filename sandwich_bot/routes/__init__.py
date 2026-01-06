@@ -77,6 +77,9 @@ from .admin_company import admin_company_router
 from .admin_modifiers import admin_modifiers_router
 from .admin_modifier_categories import admin_modifier_categories_router
 from .admin_testing import admin_testing_router
+from .admin_item_type_fields import admin_item_type_fields_router
+from .admin_item_type_attributes import admin_item_type_attributes_router
+from .admin_response_patterns import admin_response_patterns_router
 from .public import public_stores_router, public_company_router
 from .tts import tts_router
 
@@ -91,6 +94,9 @@ __all__ = [
     "admin_modifiers_router",
     "admin_modifier_categories_router",
     "admin_testing_router",
+    "admin_item_type_fields_router",
+    "admin_item_type_attributes_router",
+    "admin_response_patterns_router",
     "public_stores_router",
     "public_company_router",
     "tts_router",

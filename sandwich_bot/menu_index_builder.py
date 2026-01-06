@@ -17,6 +17,9 @@ from .models import (
     AttributeOption,
     ModifierCategory,
     NeighborhoodZipCode,
+    ItemTypeAttribute,
+    MenuItemAttributeValue,
+    MenuItemAttributeSelection,
 )
 
 
@@ -66,6 +69,64 @@ def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
         "base_ingredients": base_ingredients,
         "choice_groups": choice_groups,
     }
+
+
+def _build_default_config_from_relational(db: Session, menu_item: MenuItem) -> Optional[Dict[str, Any]]:
+    """
+    Build a default_config dict from relational tables for backward compatibility.
+
+    This reads from menu_item_attribute_values and menu_item_attribute_selections
+    tables and constructs a dict that matches the legacy default_config JSON format.
+
+    Args:
+        db: Database session
+        menu_item: The menu item to get config for
+
+    Returns:
+        Dict with attribute values, or None if no values exist.
+        Example: {"bread": "Bagel", "protein": "Egg White", "cheese": "Swiss", "toppings": ["Spinach"]}
+    """
+    # Get single-value attributes
+    attr_values = (
+        db.query(MenuItemAttributeValue)
+        .filter(MenuItemAttributeValue.menu_item_id == menu_item.id)
+        .all()
+    )
+
+    if not attr_values:
+        return None
+
+    config: Dict[str, Any] = {}
+
+    for av in attr_values:
+        attr = av.attribute
+        if not attr:
+            continue
+
+        slug = attr.slug
+
+        if attr.input_type == "boolean":
+            if av.value_boolean is not None:
+                config[slug] = av.value_boolean
+        elif attr.input_type == "multi_select":
+            # Multi-select values come from the selections table
+            selections = (
+                db.query(MenuItemAttributeSelection)
+                .filter(
+                    MenuItemAttributeSelection.menu_item_id == menu_item.id,
+                    MenuItemAttributeSelection.attribute_id == attr.id
+                )
+                .all()
+            )
+            if selections:
+                config[slug] = [sel.option.display_name for sel in selections if sel.option]
+        else:  # single_select or text
+            if av.option:
+                config[slug] = av.option.display_name
+            elif av.value_text:
+                config[slug] = av.value_text
+
+    return config if config else None
 
 
 def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
@@ -127,14 +188,18 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
 
-        # Get default_config from the new column, fall back to extra_metadata for migration
-        default_config = item.default_config
-        if default_config is None and item.extra_metadata:
-            try:
-                meta = json.loads(item.extra_metadata)
-                default_config = meta.get("default_config")
-            except (json.JSONDecodeError, TypeError):
-                pass
+        # Get default_config from relational tables (new system)
+        # Falls back to JSON column during transition period
+        default_config = _build_default_config_from_relational(db, item)
+        if default_config is None:
+            # Fallback to JSON column for items not yet migrated
+            default_config = item.default_config
+            if default_config is None and item.extra_metadata:
+                try:
+                    meta = json.loads(item.extra_metadata)
+                    default_config = meta.get("default_config")
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
         # Get item type info if available
         item_type_slug = None
@@ -364,6 +429,9 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
     This provides the LLM with structured information about configurable items
     that goes beyond the hardcoded sandwich attributes.
 
+    Uses the new item_type_attributes table (consolidated schema) with fallback
+    to attribute_definitions for backward compatibility during transition.
+
     Args:
         db: Database session
         store_id: Optional store ID for availability filtering
@@ -385,49 +453,99 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
             }
             continue
 
-        # Get all attribute definitions for this item type
-        attr_defs = (
-            db.query(AttributeDefinition)
-            .filter(AttributeDefinition.item_type_id == it.id)
-            .order_by(AttributeDefinition.display_order)
+        # Try new item_type_attributes table first (consolidated schema)
+        item_type_attrs = (
+            db.query(ItemTypeAttribute)
+            .filter(ItemTypeAttribute.item_type_id == it.id)
+            .order_by(ItemTypeAttribute.display_order)
             .all()
         )
 
         attributes = []
-        for ad in attr_defs:
-            # Get options for this attribute
-            options_query = (
-                db.query(AttributeOption)
-                .filter(AttributeOption.attribute_definition_id == ad.id)
-                .order_by(AttributeOption.display_order)
+
+        if item_type_attrs:
+            # Use new consolidated table
+            for ita in item_type_attrs:
+                # Get options linked to this attribute via item_type_attribute_id
+                options = (
+                    db.query(AttributeOption)
+                    .filter(
+                        AttributeOption.item_type_attribute_id == ita.id,
+                        AttributeOption.is_available == True
+                    )
+                    .order_by(AttributeOption.display_order)
+                    .all()
+                )
+
+                attr_data = {
+                    "slug": ita.slug,
+                    "display_name": ita.display_name,
+                    "input_type": ita.input_type,
+                    "is_required": ita.is_required,
+                    "allow_none": ita.allow_none,
+                    "ask_in_conversation": ita.ask_in_conversation,
+                    "question_text": ita.question_text,
+                    "options": [
+                        {
+                            "slug": opt.slug,
+                            "display_name": opt.display_name,
+                            "price_modifier": opt.price_modifier,
+                            "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
+                            "is_default": opt.is_default,
+                        }
+                        for opt in options
+                    ],
+                }
+
+                if ita.input_type == "multi_select":
+                    attr_data["min_selections"] = ita.min_selections
+                    attr_data["max_selections"] = ita.max_selections
+
+                attributes.append(attr_data)
+        else:
+            # Fallback to old attribute_definitions table
+            attr_defs = (
+                db.query(AttributeDefinition)
+                .filter(AttributeDefinition.item_type_id == it.id)
+                .order_by(AttributeDefinition.display_order)
+                .all()
             )
 
-            # Filter by availability
-            options = options_query.filter(AttributeOption.is_available == True).all()
+            for ad in attr_defs:
+                # Get options for this attribute
+                options = (
+                    db.query(AttributeOption)
+                    .filter(
+                        AttributeOption.attribute_definition_id == ad.id,
+                        AttributeOption.is_available == True
+                    )
+                    .order_by(AttributeOption.display_order)
+                    .all()
+                )
 
-            attr_data = {
-                "slug": ad.slug,
-                "display_name": ad.display_name,
-                "input_type": ad.input_type,
-                "is_required": ad.is_required,
-                "allow_none": ad.allow_none,
-                "options": [
-                    {
-                        "slug": opt.slug,
-                        "display_name": opt.display_name,
-                        "price_modifier": opt.price_modifier,
-                        "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
-                        "is_default": opt.is_default,
-                    }
-                    for opt in options
-                ],
-            }
+                attr_data = {
+                    "slug": ad.slug,
+                    "display_name": ad.display_name,
+                    "input_type": ad.input_type,
+                    "is_required": ad.is_required,
+                    "allow_none": ad.allow_none,
+                    "options": [
+                        {
+                            "slug": opt.slug,
+                            "display_name": opt.display_name,
+                            "price_modifier": opt.price_modifier,
+                            "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
+                            "is_default": opt.is_default,
+                        }
+                        for opt in options
+                    ],
+                }
 
-            if ad.input_type == "multi_select":
-                attr_data["min_selections"] = ad.min_selections
-                attr_data["max_selections"] = ad.max_selections
+                if ad.input_type == "multi_select":
+                    attr_data["min_selections"] = ad.min_selections
+                    attr_data["max_selections"] = ad.max_selections
 
-            attributes.append(attr_data)
+                attributes.append(attr_data)
 
         result[it.slug] = {
             "display_name": it.display_name,

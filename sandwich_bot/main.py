@@ -97,6 +97,9 @@ from .routes import (
     admin_modifiers_router,
     admin_modifier_categories_router,
     admin_testing_router,
+    admin_item_type_fields_router,
+    admin_item_type_attributes_router,
+    admin_response_patterns_router,
     public_stores_router,
     public_company_router,
     tts_router,
@@ -326,6 +329,9 @@ api_v1_router.include_router(admin_company_router)
 api_v1_router.include_router(admin_modifiers_router)
 api_v1_router.include_router(admin_modifier_categories_router)
 api_v1_router.include_router(admin_testing_router)
+api_v1_router.include_router(admin_item_type_fields_router)
+api_v1_router.include_router(admin_item_type_attributes_router)
+api_v1_router.include_router(admin_response_patterns_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
@@ -346,6 +352,9 @@ app.include_router(admin_company_router)
 app.include_router(admin_modifiers_router)
 app.include_router(admin_modifier_categories_router)
 app.include_router(admin_testing_router)
+app.include_router(admin_item_type_fields_router)
+app.include_router(admin_item_type_attributes_router)
+app.include_router(admin_response_patterns_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)

@@ -45,6 +45,65 @@ class ItemType(Base):
     # Relationships
     attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
     menu_items = relationship("MenuItem", back_populates="item_type")
+    fields = relationship("ItemTypeField", back_populates="item_type", cascade="all, delete-orphan")
+    type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
+
+
+class ItemTypeField(Base):
+    """
+    Defines configurable fields for each item type.
+
+    This table stores field definitions like bagel_type, toasted, spread, etc.
+    for each item type. Fields can be marked as required (must have value for
+    item to be complete) and/or ask (should prompt user for this field).
+
+    The question_text is used to prompt the user when asking for this field.
+    Fields are ordered by display_order for consistent question sequence.
+    """
+    __tablename__ = "item_type_field"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False)
+    field_name = Column(String(100), nullable=False)
+    display_order = Column(Integer, nullable=False, default=0)
+    required = Column(Boolean, nullable=False, default=False)  # Item needs this field to be complete
+    ask = Column(Boolean, nullable=False, default=True)  # Should prompt user for this field
+    question_text = Column(Text, nullable=True)  # Question to ask user for this field
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    item_type = relationship("ItemType", back_populates="fields")
+
+    __table_args__ = (
+        UniqueConstraint('item_type_id', 'field_name', name='uq_item_type_field_item_type_field'),
+        Index('idx_item_type_field_item_type', 'item_type_id'),
+    )
+
+
+class ResponsePattern(Base):
+    """
+    Stores patterns for recognizing user response types.
+
+    This table enables data-driven response classification for:
+    - Affirmative responses (yes, yeah, yep, sure, ok, etc.)
+    - Negative responses (no, nope, nah, no thanks, etc.)
+    - Cancel responses (cancel, never mind, forget it, etc.)
+    - Done responses (that's all, that's it, nothing else, etc.)
+
+    Patterns are matched case-insensitively against normalized user input.
+    """
+    __tablename__ = "response_pattern"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pattern_type = Column(String(50), nullable=False, index=True)  # 'affirmative', 'negative', 'cancel', 'done'
+    pattern = Column(String(100), nullable=False)  # The pattern to match
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('pattern_type', 'pattern', name='uq_response_pattern_type_pattern'),
+        Index('idx_response_pattern_type', 'pattern_type'),
+    )
 
 
 class ModifierCategory(Base):
@@ -127,6 +186,10 @@ class AttributeOption(Base):
     id = Column(Integer, primary_key=True, index=True)
     attribute_definition_id = Column(Integer, ForeignKey("attribute_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
 
+    # New FK to consolidated item_type_attributes (for transition period)
+    # After migration is complete, this will replace attribute_definition_id
+    item_type_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=True, index=True)
+
     slug = Column(String, nullable=False)  # e.g., "white", "wheat", "lettuce"
     display_name = Column(String, nullable=False)  # e.g., "White Bread", "Wheat Bread", "Lettuce"
 
@@ -145,7 +208,143 @@ class AttributeOption(Base):
 
     # Relationships
     attribute_definition = relationship("AttributeDefinition", back_populates="options")
+    item_type_attribute = relationship("ItemTypeAttribute")
     ingredient_links = relationship("AttributeOptionIngredient", back_populates="attribute_option", cascade="all, delete-orphan")
+
+
+class ItemTypeAttribute(Base):
+    """
+    Consolidated attribute definition for item types.
+
+    Merges the functionality of item_type_field (conversation flow) and
+    attribute_definitions (UI configuration) into a single table.
+
+    Examples for egg_sandwich: bread, bagel_type, protein, cheese, toppings, toasted
+    Examples for sized_beverage: size, iced, milk, sweetener, syrup
+
+    Each attribute can have:
+    - Options (via attribute_options table) for single_select/multi_select types
+    - A question_text for conversational prompts
+    - Required/optional status for order completion
+    """
+    __tablename__ = "item_type_attributes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Identity
+    slug = Column(String(50), nullable=False)  # e.g., "bread", "bagel_type", "protein"
+    display_name = Column(String(100), nullable=True)  # e.g., "Bread", "Bagel Type", "Protein"
+
+    # Type and validation (from attribute_definitions)
+    input_type = Column(String(20), nullable=False, default="single_select")
+    # "single_select": Pick exactly one
+    # "multi_select": Pick multiple
+    # "boolean": Yes/no
+    # "text": Free text input
+
+    is_required = Column(Boolean, nullable=False, default=False)  # Must be specified for complete order
+    allow_none = Column(Boolean, nullable=False, default=True)  # Can select "none" option
+    min_selections = Column(Integer, nullable=True)  # For multi_select: minimum selections
+    max_selections = Column(Integer, nullable=True)  # For multi_select: maximum selections
+
+    # Conversational flow (from item_type_field)
+    display_order = Column(Integer, nullable=False, default=0)  # Order in which to ask questions
+    ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user for this
+    question_text = Column(Text, nullable=True)  # Question to ask user for this field
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint: one attribute per slug per item type
+    __table_args__ = (
+        UniqueConstraint("item_type_id", "slug", name="uq_item_type_attributes_type_slug"),
+    )
+
+    # Relationships
+    item_type = relationship("ItemType", back_populates="type_attributes")
+    menu_item_values = relationship("MenuItemAttributeValue", back_populates="attribute", cascade="all, delete-orphan")
+    menu_item_selections = relationship("MenuItemAttributeSelection", back_populates="attribute", cascade="all, delete-orphan")
+
+
+class MenuItemAttributeValue(Base):
+    """
+    Stores attribute values for a specific menu item.
+
+    This replaces the default_config JSON column on menu_items with a proper
+    relational structure. Each menu item has one row per attribute.
+
+    For example, "The Lexington" (an egg_sandwich) would have rows for:
+    - bread: option_id -> "Bagel", still_ask=TRUE (ask which bagel type)
+    - protein: option_id -> "Egg White", still_ask=FALSE (locked)
+    - cheese: option_id -> "Swiss", still_ask=TRUE (default but changeable)
+    - toasted: value_boolean=NULL, still_ask=TRUE (must ask)
+    """
+    __tablename__ = "menu_item_attribute_values"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # For single_select: store the selected option
+    option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="SET NULL"), nullable=True)
+
+    # For boolean type
+    value_boolean = Column(Boolean, nullable=True)
+
+    # For text type (rarely needed)
+    value_text = Column(Text, nullable=True)
+
+    # Whether to still ask user even if there's a default value
+    # TRUE = ask (e.g., "which bagel type?", or "confirm cheese?")
+    # FALSE = use value as-is (locked, don't ask)
+    still_ask = Column(Boolean, nullable=False, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint: one value per attribute per menu item
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "attribute_id", name="uq_menu_item_attribute_values"),
+    )
+
+    # Relationships
+    menu_item = relationship("MenuItem", back_populates="attribute_values")
+    attribute = relationship("ItemTypeAttribute", back_populates="menu_item_values")
+    option = relationship("AttributeOption")
+
+
+class MenuItemAttributeSelection(Base):
+    """
+    Join table for multi-select attribute values.
+
+    For menu items with multi-select attributes (like toppings), this stores
+    one row per selected option.
+
+    For example, if "The Lexington" has toppings: ["Spinach", "Tomato"], this
+    table would have two rows linking the menu item to those topping options.
+    """
+    __tablename__ = "menu_item_attribute_selections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=False)
+    option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="CASCADE"), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Unique constraint: one entry per option per attribute per menu item
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "attribute_id", "option_id", name="uq_menu_item_attr_selection"),
+    )
+
+    # Relationships
+    menu_item = relationship("MenuItem", back_populates="attribute_selections")
+    attribute = relationship("ItemTypeAttribute", back_populates="menu_item_selections")
+    option = relationship("AttributeOption")
 
 
 class AttributeOptionIngredient(Base):
@@ -308,6 +507,8 @@ class MenuItem(Base):
         cascade="all, delete-orphan",
     )
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
+    attribute_values = relationship("MenuItemAttributeValue", back_populates="menu_item", cascade="all, delete-orphan")
+    attribute_selections = relationship("MenuItemAttributeSelection", back_populates="menu_item", cascade="all, delete-orphan")
 
 
 # --- Per-store menu item availability (86 system) ---

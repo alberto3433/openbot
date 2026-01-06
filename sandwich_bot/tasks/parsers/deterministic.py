@@ -185,11 +185,11 @@ def _build_side_parsed_item(
 # Replace item patterns: "make it a X instead", "change it to X", "actually X instead", etc.
 REPLACE_ITEM_PATTERN = re.compile(
     r"^(?:"
-    # "make it X", "make it a X" - requires "make it"
-    r"make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    # "make it X", "make that X", "make this X" - requires "make it/that/this"
+    r"make\s+(?:it|that|this)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
-    # "can you make it X?", "could you make it X?" - requires "can/could you make it"
-    r"(?:can|could)\s+you\s+make\s+it\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    # "can you make it X?", "could you make it X?" - requires "can/could you make it/that/this"
+    r"(?:can|could)\s+you\s+make\s+(?:it|that|this)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "change it to X", "change to X" - requires "change"
     r"change\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
@@ -318,13 +318,13 @@ MAKE_IT_N_PATTERN = re.compile(
 # "one more" / "another" pattern - adds 1 more of the last item
 ONE_MORE_PATTERN = re.compile(
     r"^(?:"
-    r"(?:and\s+)?one\s+more"  # "one more", "and one more"
+    r"(?:and\s+)?one\s+more(?:\s+of\s+(?:those|them|that))?"  # "one more", "one more of those"
     r"|"
-    r"(?:and\s+)?another(?:\s+one)?"  # "another", "another one", "and another"
+    r"(?:and\s+)?another(?:\s+one(?:\s+of\s+(?:those|them|that))?)?"  # "another", "another one", "another one of those"
     r"|"
     r"add\s+(?:one\s+more|another)"  # "add one more", "add another"
     r"|"
-    r"(?:one|1)\s+more\s+(?:of\s+)?(?:those|them|that)"  # "one more of those"
+    r"(?:one|1)\s+more\s+(?:of\s+)?(?:those|them|that)"  # "1 more of those"
     r")"
     r"[\s!.,?]*$",
     re.IGNORECASE

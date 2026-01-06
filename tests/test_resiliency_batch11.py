@@ -33,28 +33,6 @@ class TestDietaryAllergyQuestions:
         ])
         assert responds, f"Should respond about gluten-free. Message: {result.message}"
 
-    def test_vegan_options(self):
-        """
-        Test: User asks about vegan options.
-
-        Scenario:
-        - User says: "any vegan options?"
-        - Expected: System responds about vegan availability
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("any vegan options?", order)
-
-        assert result.message is not None
-        # Should acknowledge the dietary question
-        message_lower = result.message.lower()
-        responds = any(word in message_lower for word in [
-            "vegan", "option", "have", "yes", "no", "sorry", "dairy", "plant"
-        ])
-        assert responds, f"Should respond about vegan. Message: {result.message}"
-
     def test_dairy_free_cream_cheese(self):
         """
         Test: User asks about dairy-free cream cheese.

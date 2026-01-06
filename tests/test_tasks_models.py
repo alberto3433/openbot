@@ -262,7 +262,7 @@ class TestCoffeeItemTask:
         assert "latte" in summary
         assert "oat milk" in summary
         assert "vanilla" in summary
-        assert "2 extra shots" in summary
+        assert "triple" in summary  # base shot + 2 extra = triple
 
     def test_coffee_fields_with_size_config(self):
         """Test that size field is configured to always ask."""

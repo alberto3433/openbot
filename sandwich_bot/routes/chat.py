@@ -72,9 +72,7 @@ from ..models import Store, SessionAnalytics
 from ..order_logic import apply_intent_to_order_state
 from ..menu_index_builder import build_menu_index, get_menu_version
 from ..services.session import get_or_create_session, save_session
-from ..services.order import persist_confirmed_order
 from ..services.helpers import get_customer_info, get_or_create_company, get_primary_item_type_name
-from ..sammy.llm_client import call_sandwich_bot
 from ..schemas.chat import (
     ChatStartResponse,
     ChatMessageRequest,
@@ -210,170 +208,39 @@ def chat_message(
 ) -> ChatMessageResponse:
     """Send a message to the chat bot and receive a response with order updates."""
     from ..message_processor import MessageProcessor, ProcessingContext
-    from ..tasks.state_machine_adapter import is_state_machine_enabled
 
-    # Use MessageProcessor when state machine is enabled (default)
-    # Fall back to LLM path when state machine is disabled (for testing)
-    use_chain_orchestrator = is_state_machine_enabled()
-
-    if use_chain_orchestrator:
-        logger.info("Using MessageProcessor for chat message")
-        try:
-            processor = MessageProcessor(db)
-            result = processor.process(ProcessingContext(
-                user_message=req.message,
-                session_id=req.session_id,
-            ))
-
-            processed_actions = [
-                ActionOut(intent=a.get("intent", "unknown"), slots=a.get("slots", {}))
-                for a in result.actions
-            ]
-
-            return ChatMessageResponse(
-                reply=result.reply,
-                order_state=result.order_state,
-                actions=processed_actions,
-                intent=result.primary_intent,
-                slots=result.primary_slots,
-            )
-
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except Exception as e:
-            logger.error("MessageProcessor failed: %s", str(e), exc_info=True)
-            return ChatMessageResponse(
-                reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
-                order_state={},
-                actions=[],
-                intent="error",
-                slots={},
-            )
-
-    # LLM Fallback path (when chain orchestrator is disabled)
-    return _process_message_llm_fallback(request, req, db)
-
-
-def _process_message_llm_fallback(
-    request: Request,
-    req: ChatMessageRequest,
-    db: Session,
-) -> ChatMessageResponse:
-    """Process message using LLM when chain orchestrator is disabled."""
-    session = get_or_create_session(db, req.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Invalid session_id")
-
-    history = session["history"]
-    order_state = session["order"]
-    returning_customer = session.get("returning_customer")
-    session_store_id = session.get("store_id")
-    session_caller_id = session.get("caller_id")
-
-    if not returning_customer and session_caller_id:
-        returning_customer = _lookup_customer_by_phone(db, session_caller_id)
-        if returning_customer:
-            session["returning_customer"] = returning_customer
-
-    company = get_or_create_company(db)
-    menu_index = build_menu_index(db, store_id=session_store_id)
-    current_menu_version = get_menu_version(menu_index)
-    session_menu_version = session.get("menu_version")
-    include_menu_in_system = session_menu_version is None or session_menu_version != current_menu_version
-
+    logger.info("Processing chat message for session: %s", req.session_id[:8])
     try:
-        llm_result = call_sandwich_bot(
-            history,
-            order_state,
-            menu_index,
-            req.message,
-            include_menu_in_system=include_menu_in_system,
-            returning_customer=returning_customer,
-            caller_id=session_caller_id,
-            bot_name=company.bot_persona_name,
-            company_name=company.name,
-            db=db,
-            use_dynamic_prompt=True,
+        processor = MessageProcessor(db)
+        result = processor.process(ProcessingContext(
+            user_message=req.message,
+            session_id=req.session_id,
+        ))
+
+        processed_actions = [
+            ActionOut(intent=a.get("intent", "unknown"), slots=a.get("slots", {}))
+            for a in result.actions
+        ]
+
+        return ChatMessageResponse(
+            reply=result.reply,
+            order_state=result.order_state,
+            actions=processed_actions,
+            intent=result.primary_intent,
+            slots=result.primary_slots,
         )
-        if include_menu_in_system:
-            session["menu_version"] = current_menu_version
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error("LLM call failed: %s", str(e))
+        logger.error("MessageProcessor failed: %s", str(e), exc_info=True)
         return ChatMessageResponse(
             reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
-            order_state=order_state,
+            order_state={},
             actions=[],
             intent="error",
             slots={},
         )
-
-    actions = llm_result.get("actions", [])
-    reply = llm_result.get("reply", "")
-
-    if not actions and llm_result.get("intent"):
-        actions = [{"intent": llm_result.get("intent"), "slots": llm_result.get("slots", {})}]
-
-    processed_actions = []
-    updated_order_state = order_state
-    ADD_INTENTS = {"add_sandwich", "add_pizza", "add_side", "add_drink", "add_coffee", "add_sized_beverage", "add_beverage"}
-
-    for action in actions:
-        intent = action.get("intent", "unknown")
-        slots = action.get("slots", {})
-
-        if intent in ADD_INTENTS and "db_order_id" in updated_order_state:
-            del updated_order_state["db_order_id"]
-            updated_order_state["items"] = []
-            updated_order_state["status"] = "pending"
-
-        updated_order_state = apply_intent_to_order_state(
-            updated_order_state, intent, slots, menu_index, returning_customer
-        )
-        processed_actions.append(ActionOut(intent=intent, slots=slots))
-
-    # Collect all slots for order persistence
-    all_slots = {}
-    for action in actions:
-        all_slots.update(action.get("slots", {}))
-
-    # Get customer info from order state
-    customer_block = updated_order_state.get("customer", {})
-    customer_name = customer_block.get("name") or all_slots.get("customer_name") or all_slots.get("name")
-    customer_phone = customer_block.get("phone") or all_slots.get("phone") or session_caller_id
-    customer_email = customer_block.get("email") or all_slots.get("email")
-
-    # Persist if order is confirmed AND we have customer info
-    order_is_confirmed = updated_order_state.get("status") == "confirmed"
-    has_customer_info = customer_name and (customer_phone or customer_email)
-    order_not_yet_confirmed = updated_order_state.get("_confirmed_logged") is not True
-
-    if order_is_confirmed and has_customer_info and order_not_yet_confirmed:
-        # Ensure customer info is in order state for persistence
-        if "customer" not in updated_order_state:
-            updated_order_state["customer"] = {}
-        updated_order_state["customer"]["name"] = customer_name
-        updated_order_state["customer"]["phone"] = customer_phone
-
-        # persist_confirmed_order handles both creating new orders and updating pending ones
-        persist_confirmed_order(db, updated_order_state, all_slots, store_id=session_store_id)
-        logger.info("Order persisted for customer: %s (store: %s)", customer_name, session_store_id)
-        updated_order_state["_confirmed_logged"] = True
-
-    session["order"] = updated_order_state
-    history.append({"role": "user", "content": req.message})
-    history.append({"role": "assistant", "content": reply})
-    save_session(db, req.session_id, session)
-
-    primary_intent = processed_actions[0].intent if processed_actions else "unknown"
-    primary_slots = processed_actions[0].slots if processed_actions else {}
-
-    return ChatMessageResponse(
-        reply=reply,
-        order_state=session["order"],
-        actions=processed_actions,
-        intent=primary_intent,
-        slots=primary_slots,
-    )
 
 
 @chat_router.post("/message/stream")
@@ -389,7 +256,6 @@ def chat_message_stream(
     Uses Server-Sent Events (SSE) to stream the response as it's generated.
     """
     from ..message_processor import MessageProcessor, ProcessingContext
-    from ..tasks.state_machine_adapter import is_state_machine_enabled
     from ..db import SessionLocal
 
     session = get_or_create_session(db, req.session_id)
@@ -398,9 +264,6 @@ def chat_message_stream(
             yield f"data: {json.dumps({'error': 'Invalid session_id'})}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-    # Use MessageProcessor when state machine is enabled (default)
-    # Fall back to LLM path when state machine is disabled (for testing)
-    use_chain_orchestrator = is_state_machine_enabled()
     session_store_id = session.get("store_id")
     session_caller_id = session.get("caller_id")
 
@@ -409,35 +272,31 @@ def chat_message_stream(
         stream_db = SessionLocal()
 
         try:
-            if use_chain_orchestrator:
-                logger.info("Using MessageProcessor for streaming chat message")
-                try:
-                    processor = MessageProcessor(stream_db)
-                    result = processor.process(ProcessingContext(
-                        user_message=req.message,
-                        session_id=req.session_id,
-                        caller_id=session_caller_id,
-                        store_id=session_store_id,
-                        session=session,
-                    ))
+            logger.info("Processing streaming chat message for session: %s", req.session_id[:8])
+            processor = MessageProcessor(stream_db)
+            result = processor.process(ProcessingContext(
+                user_message=req.message,
+                session_id=req.session_id,
+                caller_id=session_caller_id,
+                store_id=session_store_id,
+                session=session,
+            ))
 
-                    words = result.reply.split()
-                    for i, word in enumerate(words):
-                        token = word + (" " if i < len(words) - 1 else "")
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+            words = result.reply.split()
+            for i, word in enumerate(words):
+                token = word + (" " if i < len(words) - 1 else "")
+                yield f"data: {json.dumps({'token': token})}\n\n"
 
-                    processed_actions = [
-                        {"intent": a.get("intent", "unknown"), "slots": a.get("slots", {})}
-                        for a in result.actions
-                    ]
+            processed_actions = [
+                {"intent": a.get("intent", "unknown"), "slots": a.get("slots", {})}
+                for a in result.actions
+            ]
 
-                    yield f"data: {json.dumps({'done': True, 'reply': result.reply, 'order_state': result.order_state, 'actions': processed_actions})}\n\n"
-                    return
+            yield f"data: {json.dumps({'done': True, 'reply': result.reply, 'order_state': result.order_state, 'actions': processed_actions})}\n\n"
 
-                except Exception as e:
-                    logger.error("MessageProcessor failed in stream: %s", e, exc_info=True)
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                    return
+        except Exception as e:
+            logger.error("MessageProcessor failed in stream: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         finally:
             stream_db.close()

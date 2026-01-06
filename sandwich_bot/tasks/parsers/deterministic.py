@@ -858,8 +858,8 @@ def _extract_toasted(text: str) -> bool | None:
     """Extract toasted preference from text."""
     text_lower = text.lower()
 
-    # Check for "not toasted" first (including typos)
-    if re.search(r"\bnot\s+(?:toasted|tosted|tostd)\b", text_lower):
+    # Check for "not toasted" or "untoasted" first (including typos)
+    if re.search(r"\b(?:not\s+(?:toasted|tosted|tostd)|untoasted)\b", text_lower):
         return False
     # Check for "toasted" and common typos
     if re.search(r"\b(?:toasted|tosted|tostd)\b", text_lower):

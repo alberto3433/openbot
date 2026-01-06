@@ -29,9 +29,6 @@ from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index_builder import build_menu_index, get_menu_version
 from .services.helpers import get_customer_info
-from sandwich_bot.sammy.llm_client import call_sandwich_bot
-from .order_logic import apply_intent_to_order_state
-from .email_service import send_payment_link_email
 
 
 logger = logging.getLogger(__name__)
@@ -39,150 +36,6 @@ logger = logging.getLogger(__name__)
 # Router for Vapi voice endpoints
 vapi_router = APIRouter(prefix="/voice/vapi", tags=["Voice - Vapi"])
 
-
-# ----- Flow Guidance Generator -----
-
-def _item_uses_bagel(item: Dict[str, Any]) -> bool:
-    """
-    Check if an order item uses a bagel.
-
-    An item uses a bagel if:
-    - Its item_type is "bagel"
-    - Its bread field contains "bagel" (case insensitive)
-    - Its menu_item_name contains "bagel" (case insensitive)
-    """
-    # Check item type
-    item_type = (item.get("item_type") or "").lower()
-    if item_type == "bagel":
-        return True
-
-    # Check bread field
-    bread = (item.get("bread") or "").lower()
-    if "bagel" in bread:
-        return True
-
-    # Check menu item name (e.g., "Lox Bagel", "Everything Bagel")
-    name = (item.get("menu_item_name") or "").lower()
-    if "bagel" in name:
-        return True
-
-    return False
-
-
-def _get_items_needing_toasting(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Get bagel items that haven't been asked about toasting yet.
-
-    Returns items where:
-    - Item uses a bagel (by type, bread, or name)
-    - toasted field is None (not yet set to True or False)
-    """
-    needs_toasting = []
-    for i, item in enumerate(items):
-        if _item_uses_bagel(item) and item.get("toasted") is None:
-            needs_toasting.append({"index": i, "item": item})
-    return needs_toasting
-
-
-def generate_flow_guidance(order_state: Dict[str, Any], history: List[Dict[str, str]]) -> str:
-    """
-    Generate explicit guidance about current order status and next steps.
-
-    This helps prevent the LLM from asking for information it already has
-    by making the current state crystal clear.
-    """
-    customer = order_state.get("customer", {})
-    items = order_state.get("items", [])
-    order_type = order_state.get("order_type")
-    payment_status = order_state.get("payment_status")
-    payment_method = order_state.get("payment_method")
-
-    lines = ["\n=== CURRENT ORDER STATUS (READ THIS CAREFULLY) ==="]
-
-    # Items status
-    if items:
-        lines.append(f"  ITEMS IN CART: {len(items)} item(s)")
-        for idx, item in enumerate(items[:3]):  # Show first 3
-            item_name = item.get('menu_item_name', 'Unknown')
-            toasted_status = ""
-            if _item_uses_bagel(item):
-                if item.get("toasted") is True:
-                    toasted_status = " [TOASTED]"
-                elif item.get("toasted") is False:
-                    toasted_status = " [NOT TOASTED]"
-                else:
-                    toasted_status = " [TOASTING: NOT YET ASKED]"
-            lines.append(f"    - {item_name}{toasted_status}")
-        if len(items) > 3:
-            lines.append(f"    - ... and {len(items) - 3} more")
-    else:
-        lines.append("  ITEMS IN CART: None yet")
-
-    # Check for bagel items needing toasting confirmation
-    items_needing_toasting = _get_items_needing_toasting(items)
-
-    # Customer info - be very explicit
-    lines.append("")
-    lines.append("  CUSTOMER INFO:")
-
-    if customer.get("name"):
-        lines.append(f"    ✓ Name: {customer['name']} — ALREADY HAVE, DO NOT ASK")
-    else:
-        lines.append("    ✗ Name: NOT YET COLLECTED")
-
-    if customer.get("phone"):
-        phone = customer["phone"]
-        masked = f"...{phone[-4:]}" if len(phone) >= 4 else phone
-        lines.append(f"    ✓ Phone: {masked} — ALREADY HAVE, DO NOT ASK")
-    else:
-        lines.append("    ✗ Phone: NOT YET COLLECTED")
-
-    if customer.get("email"):
-        lines.append(f"    ✓ Email: {customer['email']} — ALREADY HAVE, DO NOT ASK")
-    else:
-        lines.append("    ✗ Email: Not collected (only needed for email payment link)")
-
-    # Order type
-    lines.append("")
-    if order_type:
-        lines.append(f"  ✓ Order Type: {order_type.upper()} — ALREADY SET, DO NOT ASK")
-    else:
-        lines.append("  ✗ Order Type: NOT YET SET (pickup or delivery)")
-
-    # Payment
-    if payment_status or payment_method:
-        lines.append(f"  ✓ Payment: {payment_method or payment_status} — ALREADY HANDLED")
-    else:
-        lines.append("  ✗ Payment: NOT YET HANDLED")
-
-    # Determine next step
-    lines.append("")
-    lines.append("  >>> NEXT STEP:")
-
-    if not items:
-        lines.append("      Take their order - ask what they'd like")
-    elif items_needing_toasting:
-        # Bagel items need toasting confirmation BEFORE proceeding
-        lines.append("      *** STOP - TOASTING REQUIRED BEFORE CONTINUING ***")
-        lines.append(f"      You have {len(items_needing_toasting)} bagel item(s) that MUST be asked about toasting:")
-        for x in items_needing_toasting:
-            lines.append(f"        - Item #{x['index']}: {x['item'].get('menu_item_name', 'Unknown')}")
-        lines.append("      YOUR RESPONSE MUST ASK: 'Would you like that toasted?'")
-        lines.append("      DO NOT ask about sides, drinks, pickup, or anything else until toasting is answered!")
-        idx = items_needing_toasting[0]['index']  # First item needing toasting
-        lines.append(f"      When they answer, use update_sandwich with toasted=true or toasted=false and item_index={idx}")
-    elif not order_type:
-        lines.append("      Ask: 'Is this for pickup or delivery?'")
-    elif not customer.get("name"):
-        lines.append("      Ask for their name (you have their phone from caller ID)")
-    elif not payment_status and not payment_method:
-        lines.append("      Offer payment options: text link, email link, card over phone, or pay at pickup")
-    else:
-        lines.append("      CONFIRM THE ORDER with confirm_order intent - DO NOT ask more questions!")
-
-    lines.append("=== END STATUS ===\n")
-
-    return "\n".join(lines)
 
 # Environment configuration
 VAPI_SECRET_KEY = os.getenv("VAPI_SECRET_KEY", "")  # Optional: for webhook authentication
@@ -733,11 +586,6 @@ async def vapi_chat_completions(
             order_state["customer"]["email"] = returning_customer["email"]
             logger.info("Pre-filled customer email in order state: %s", returning_customer["email"])
 
-    # Get company info
-    company = db.query(Company).first()
-    bot_name = company.bot_persona_name if company else "Sammy"
-    company_name = company.name if company else "Sammy's Subs"
-
     # Build menu index
     menu_index = build_menu_index(db, store_id=session_store_id)
 
@@ -745,105 +593,40 @@ async def vapi_chat_completions(
     current_menu_version = get_menu_version(menu_index)
     include_menu = session_data.get("menu_version") != current_menu_version
 
-    # Use MessageProcessor when state machine is enabled (default)
-    # Fall back to LLM path when state machine is disabled (for testing)
-    from .tasks.state_machine_adapter import is_state_machine_enabled
-    use_orchestrator = is_state_machine_enabled()
-    if use_orchestrator:
-        # Use MessageProcessor for unified processing
-        logger.info("Using MessageProcessor for voice message")
-        try:
-            from .message_processor import MessageProcessor, ProcessingContext
+    # Use MessageProcessor for unified processing
+    from .message_processor import MessageProcessor, ProcessingContext
 
-            processor = MessageProcessor(db)
-            result = processor.process(ProcessingContext(
-                user_message=user_message,
-                session_id=session_id,
-                caller_id=phone_number,
-                store_id=session_store_id,
-                session=session_data,  # Pass pre-loaded session
-            ))
+    logger.info("Using MessageProcessor for voice message")
+    try:
+        processor = MessageProcessor(db)
+        result = processor.process(ProcessingContext(
+            user_message=user_message,
+            session_id=session_id,
+            caller_id=phone_number,
+            store_id=session_store_id,
+            session=session_data,  # Pass pre-loaded session
+        ))
 
-            reply = result.reply
-            order_state = result.order_state
-            actions = result.actions
+        reply = result.reply
+        order_state = result.order_state
+        history = result.session.get("history", [])
 
-            if include_menu:
-                session_data["menu_version"] = current_menu_version
+        if include_menu:
+            session_data["menu_version"] = current_menu_version
 
-        except Exception as e:
-            logger.error("MessageProcessor failed for voice session: %s", e, exc_info=True)
-            error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
-            if stream:
-                return StreamingResponse(
-                    _generate_sse_stream(error_reply),
-                    media_type="text/event-stream",
-                )
-            else:
-                return _build_completion_response(error_reply)
-    else:
-        # Use the legacy LLM-based approach
-        # Generate flow guidance to help LLM know what to do next
-        flow_guidance = generate_flow_guidance(order_state, history)
-        logger.info("Flow guidance generated:\n%s", flow_guidance)
-
-        # Prepend flow guidance to user message so LLM sees current state clearly
-        enhanced_user_message = flow_guidance + "\nUSER SAID: " + user_message
-
-        # Call the bot
-        try:
-            llm_result = call_sandwich_bot(
-                history,
-                order_state,
-                menu_index,
-                enhanced_user_message,
-                include_menu_in_system=include_menu,
-                returning_customer=returning_customer,
-                caller_id=phone_number,
-                bot_name=bot_name,
-                company_name=company_name,
-                db=db,
-                use_dynamic_prompt=True,
+    except Exception as e:
+        logger.error("MessageProcessor failed for voice session: %s", e, exc_info=True)
+        error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
+        if stream:
+            return StreamingResponse(
+                _generate_sse_stream(error_reply),
+                media_type="text/event-stream",
             )
-
-            if include_menu:
-                session_data["menu_version"] = current_menu_version
-
-        except Exception as e:
-            logger.error("LLM call failed for voice session: %s", e)
-            error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
-            if stream:
-                return StreamingResponse(
-                    _generate_sse_stream(error_reply),
-                    media_type="text/event-stream",
-                )
-            else:
-                return _build_completion_response(error_reply)
-
-        # Process actions from LLM result
-        reply = llm_result.get("reply", "")
-        actions = llm_result.get("actions", [])
-
-        # Backward compatibility
-        if not actions and llm_result.get("intent"):
-            actions = [{"intent": llm_result.get("intent"), "slots": llm_result.get("slots", {})}]
-
-        # Apply actions to order state (only for LLM path - MessageProcessor already did this)
-        all_slots = {}
-        for action in actions:
-            intent = action.get("intent", "unknown")
-            slots = action.get("slots", {})
-            all_slots.update(slots)
-            order_state = apply_intent_to_order_state(
-                order_state, intent, slots, menu_index, returning_customer
-            )
+        else:
+            return _build_completion_response(error_reply)
 
     # Check if this is the first user message - add personalized greeting
-    # This is VAPI-specific and applies to both paths
-    # Note: For MessageProcessor path, history was updated inside the processor
-    if use_orchestrator:
-        # Get updated history from result
-        history = result.session.get("history", [])
+    # This is VAPI-specific: prepend greeting for returning customers
     user_message_count = sum(1 for msg in history if msg.get("role") == "user")
     if user_message_count <= 1 and returning_customer and returning_customer.get("name"):
         # This is the first exchange with a returning customer
@@ -853,106 +636,14 @@ async def vapi_chat_completions(
         reply = greeting_prefix + reply
         logger.info("Added personalized greeting for returning customer: %s", customer_name)
 
-    # For LLM fallback path only - handle history update, payment link, order persistence, session save
-    # MessageProcessor already handles these for the orchestrator path
-    if not use_orchestrator:
-        # Add messages to history
-        session_data["history"].append({"role": "user", "content": user_message})
-        session_data["history"].append({"role": "assistant", "content": reply})
-
-        # Check if we need to send a payment link email
-        payment_link_action = next(
-            (a for a in actions if a.get("intent") == "request_payment_link"),
-            None
-        )
-        if payment_link_action:
-            link_method = (
-                order_state.get("link_delivery_method")
-                or all_slots.get("link_delivery_method")
-            )
-            customer_email = (
-                order_state.get("customer", {}).get("email")
-                or all_slots.get("customer_email")
-            )
-            customer_name = (
-                order_state.get("customer", {}).get("name")
-                or all_slots.get("customer_name")
-            )
-            customer_phone_for_email = (
-                order_state.get("customer", {}).get("phone")
-                or phone_number
-            )
-
-            if link_method == "email" and customer_email:
-                items = order_state.get("items", [])
-                order_type = order_state.get("order_type", "pickup")
-
-                # Persist order early so we have an order ID for the email
-                # This also calculates the total with tax
-                from .main import persist_pending_order
-                pending_order = persist_pending_order(
-                    db, order_state, all_slots, store_id=session_store_id
-                )
-                order_id = pending_order.id if pending_order else 0
-
-                # Read checkout_state AFTER persist_pending_order (which populates it with tax)
-                checkout_state = order_state.get("checkout_state", {})
-                order_total = (
-                    pending_order.total_price if pending_order
-                    else checkout_state.get("total")
-                    or sum(item.get("line_total", 0) for item in items)
-                )
-
-                # Extract tax breakdown from checkout state
-                subtotal = checkout_state.get("subtotal")
-                city_tax = checkout_state.get("city_tax", 0)
-                state_tax = checkout_state.get("state_tax", 0)
-                delivery_fee = checkout_state.get("delivery_fee", 0)
-
-                # Send the payment link email
-                try:
-                    email_result = send_payment_link_email(
-                        to_email=customer_email,
-                        order_id=order_id,
-                        amount=order_total,
-                        store_name=company_name,
-                        customer_name=customer_name,
-                        customer_phone=customer_phone_for_email,
-                        order_type=order_type,
-                        items=items,
-                        subtotal=subtotal,
-                        city_tax=city_tax,
-                        state_tax=state_tax,
-                        delivery_fee=delivery_fee,
-                    )
-                    logger.info("Voice order payment link email sent: %s", email_result.get("status"))
-                except Exception as e:
-                    logger.error("Failed to send payment link email for voice order: %s", e)
-
-        # Check if order should be persisted to database
-        if order_state.get("status") == "confirmed":
-            # Late import to avoid circular dependency
-            from .main import persist_confirmed_order
-            persisted_order = persist_confirmed_order(
-                db, order_state, all_slots, store_id=session_store_id
-            )
-            if persisted_order:
-                logger.info("Voice order persisted for customer: %s (store: %s)",
-                           persisted_order.customer_name, session_store_id or "default")
-
-        # Update session data and save
-        session_data["order"] = order_state
-        _save_session_data(db, session_id, session_data)
-    else:
-        # For MessageProcessor path, update the phone session cache with the new session data
-        # MessageProcessor already saved to database, but we need to update our local cache
-        session_data["history"] = result.session.get("history", [])
-        session_data["order"] = order_state
-        # Update phone session cache
-        normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
-        if normalized_phone in _phone_sessions:
-            _phone_sessions[normalized_phone]["session_data"] = session_data
-            _phone_sessions[normalized_phone]["last_access"] = time.time()
+    # Update phone session cache with new session data
+    # MessageProcessor already saved to database, but we need to update our local cache
+    session_data["history"] = result.session.get("history", [])
+    session_data["order"] = order_state
+    normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
+    if normalized_phone in _phone_sessions:
+        _phone_sessions[normalized_phone]["session_data"] = session_data
+        _phone_sessions[normalized_phone]["last_access"] = time.time()
 
     logger.info("Voice reply to %s: %s", phone_number[-4:], reply[:50])
 

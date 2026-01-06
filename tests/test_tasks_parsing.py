@@ -670,6 +670,22 @@ class TestDeterministicParserBagelOrders:
         assert result.new_bagel_spread == "butter"
         assert result.new_bagel_toasted is False
 
+    @pytest.mark.parametrize("text,expected_toasted", [
+        ("untoasted plain bagel", False),
+        ("an untoasted plain bagel with nova", False),
+        ("can I get an untoasted plain bagel with nova and capers", False),
+        ("plain bagel untoasted", False),
+        ("not toasted plain bagel", False),
+        ("plain bagel not toasted", False),
+    ])
+    def test_untoasted_bagel_detected(self, text, expected_toasted):
+        """Test that 'untoasted' and 'not toasted' set toasted=False."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parse result for: {text}"
+        assert result.new_bagel is True, f"Expected new_bagel=True for: {text}"
+        assert result.new_bagel_toasted == expected_toasted, \
+            f"Expected toasted={expected_toasted} for '{text}', got {result.new_bagel_toasted}"
+
 
 class TestDeterministicParserFallback:
     """Tests for cases that should fall back to LLM."""

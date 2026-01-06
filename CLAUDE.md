@@ -175,6 +175,27 @@ Key tables:
 - `menu_items`: Available menu items per store
 - `stores`: Store locations with tax rates and delivery zones
 
+## Daily Database Checks
+
+**Check for duplicate menu items daily** - Duplicates can cause incorrect matching and pricing issues.
+
+```sql
+-- Find duplicate menu items (run against Neon database)
+SELECT LOWER(name) as name, category, COUNT(*) as count
+FROM menu_items
+GROUP BY LOWER(name), category
+HAVING COUNT(*) > 1
+ORDER BY count DESC;
+
+-- Delete duplicates, keeping the oldest entry (lowest ID)
+DELETE FROM menu_items
+WHERE id NOT IN (
+    SELECT MIN(id)
+    FROM menu_items
+    GROUP BY LOWER(name), category
+);
+```
+
 ## Environment Variables
 
 ```

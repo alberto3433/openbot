@@ -76,6 +76,7 @@ class MenuItemOut(BaseModel):
         metadata: Additional item data (description, defaults, etc.)
         item_type_id: Foreign key to ItemType for configuration options
         aliases: Comma-separated synonyms for matching (e.g., "coke, coca cola")
+        abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,6 +89,7 @@ class MenuItemOut(BaseModel):
     metadata: Dict[str, Any]
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 
 class MenuItemCreate(BaseModel):
@@ -105,6 +107,7 @@ class MenuItemCreate(BaseModel):
         metadata: Additional item data (default: empty dict)
         item_type_id: Link to ItemType for configuration (optional)
         aliases: Comma-separated synonyms for matching (optional)
+        abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
 
     Example:
         {
@@ -126,6 +129,7 @@ class MenuItemCreate(BaseModel):
     metadata: Dict[str, Any] = {}
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -144,6 +148,7 @@ class MenuItemUpdate(BaseModel):
         metadata: Replace metadata dict (optional, replaces entire dict)
         item_type_id: Change linked ItemType (optional)
         aliases: Comma-separated synonyms for matching (optional)
+        abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
 
     Example:
         # Update only the price
@@ -163,3 +168,4 @@ class MenuItemUpdate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None

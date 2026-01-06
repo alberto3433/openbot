@@ -3460,6 +3460,10 @@ def parse_open_input_deterministic(
     """
     text = user_input.strip()
 
+    # Expand abbreviations before any parsing (e.g., "cc" -> "cream cheese")
+    # This must happen first so downstream parsers see canonical forms
+    text = menu_cache.expand_abbreviations(text)
+
     # Check for greetings
     if GREETING_PATTERNS.match(text):
         logger.debug("Deterministic parse: greeting detected")

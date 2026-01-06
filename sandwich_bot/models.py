@@ -273,6 +273,9 @@ class MenuItem(Base):
     # Example: "coke, coca cola" for "Coca-Cola" allows "coke" to match
     aliases = Column(String, nullable=True)
 
+    # Abbreviation for text expansion (e.g., "oj" expands to "orange juice" before parsing)
+    abbreviation = Column(String, nullable=True)
+
     # By-the-pound category for items sold by weight
     # Values: 'fish', 'spread', 'cheese', 'cold_cut', 'salad'
     by_pound_category = Column(String, nullable=True)
@@ -355,6 +358,9 @@ class Ingredient(Base):
 
     # Aliases for matching (comma-separated, e.g., "wheat" for "Whole Wheat Bagel")
     aliases = Column(Text, nullable=True)
+
+    # Abbreviation for text expansion (e.g., "cc" expands to "cream cheese" before parsing)
+    abbreviation = Column(String, nullable=True)
 
     # relationships
     recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")

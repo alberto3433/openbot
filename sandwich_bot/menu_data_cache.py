@@ -80,6 +80,10 @@ class MenuDataCache:
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
         self._menu_item_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
 
+        # Abbreviations for text expansion before parsing (e.g., "cc" -> "cream cheese")
+        # Unlike aliases (used for matching), abbreviations replace text in the input
+        self._abbreviations: dict[str, str] = {}  # abbreviation -> canonical name (lowercase)
+
         # Category keyword mappings (replaces MENU_CATEGORY_KEYWORDS constant)
         # Maps user keywords (bagels, desserts, etc.) to category info
         self._category_keywords: dict[str, dict] = {}  # keyword -> {slug, expands_to, name_filter}
@@ -146,6 +150,7 @@ class MenuDataCache:
                 self._load_modifier_aliases(db)
                 self._load_side_items(db)
                 self._load_category_keywords(db)
+                self._load_abbreviations(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -157,7 +162,7 @@ class MenuDataCache:
                     "Menu data cache loaded: %d spread_types, %d bagel_types, "
                     "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
                     "%d soda_types, %d menu_items, %d speed_menu_aliases, "
-                    "%d by_pound_categories",
+                    "%d by_pound_categories, %d abbreviations",
                     len(self._spread_types),
                     len(self._bagel_types),
                     len(self._proteins),
@@ -168,6 +173,7 @@ class MenuDataCache:
                     len(self._known_menu_items),
                     len(self._speed_menu_bagels),
                     len(self._by_pound_items),
+                    len(self._abbreviations),
                 )
 
             except Exception as e:
@@ -914,6 +920,62 @@ class MenuDataCache:
             len(item_types),
         )
 
+    def _load_abbreviations(self, db: Session) -> None:
+        """Load abbreviations from ingredients and menu_items tables.
+
+        Abbreviations are short forms that get expanded before parsing.
+        Unlike aliases (used for matching), abbreviations perform text
+        replacement on the input string.
+
+        Example: "cc" -> "cream cheese", so "strawberry cc" becomes
+        "strawberry cream cheese" before parsing.
+
+        Loads from both:
+        - ingredients.abbreviation column
+        - menu_items.abbreviation column
+        """
+        import re
+        from .models import Ingredient, MenuItem
+
+        abbreviations: dict[str, str] = {}
+
+        # Load abbreviations from ingredients
+        ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.abbreviation.isnot(None))
+            .filter(Ingredient.abbreviation != "")
+            .all()
+        )
+
+        for ingredient in ingredients:
+            abbrev = ingredient.abbreviation.strip().lower()
+            canonical = ingredient.name.lower()
+            if abbrev and canonical:
+                abbreviations[abbrev] = canonical
+
+        # Load abbreviations from menu_items
+        menu_items = (
+            db.query(MenuItem)
+            .filter(MenuItem.abbreviation.isnot(None))
+            .filter(MenuItem.abbreviation != "")
+            .all()
+        )
+
+        for item in menu_items:
+            abbrev = item.abbreviation.strip().lower()
+            canonical = item.name.lower()
+            if abbrev and canonical:
+                abbreviations[abbrev] = canonical
+
+        self._abbreviations = abbreviations
+
+        logger.debug(
+            "Loaded %d abbreviations from %d ingredients and %d menu items",
+            len(abbreviations),
+            len(ingredients),
+            len(menu_items),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1288,6 +1350,56 @@ class MenuDataCache:
             return None
         name_lower = name.lower().strip()
         return self._menu_item_alias_to_canonical.get(name_lower)
+
+    def get_abbreviations(self) -> dict[str, str]:
+        """
+        Get the abbreviation-to-canonical mapping.
+
+        Returns:
+            Dict mapping abbreviation (lowercase) to canonical name (lowercase).
+            Example: {"cc": "cream cheese", "pb": "peanut butter"}
+        """
+        return self._abbreviations.copy() if self._is_loaded else {}
+
+    def expand_abbreviations(self, text: str) -> str:
+        """
+        Expand abbreviations in the input text.
+
+        Performs word-boundary replacement of abbreviations with their
+        canonical forms. This should be called at the very beginning of
+        parsing, before any other text processing.
+
+        Args:
+            text: Raw user input text
+
+        Returns:
+            Text with abbreviations expanded to canonical forms.
+            Returns original text if cache not loaded.
+
+        Examples:
+            >>> cache.expand_abbreviations("strawberry cc")
+            "strawberry cream cheese"
+            >>> cache.expand_abbreviations("plain bagel with cc toasted")
+            "plain bagel with cream cheese toasted"
+            >>> cache.expand_abbreviations("I want a pb&j")  # no match for "pb&j"
+            "I want a pb&j"
+        """
+        import re
+
+        if not self._is_loaded or not self._abbreviations:
+            return text
+
+        result = text
+        # Sort by length descending to match longer abbreviations first
+        for abbrev, canonical in sorted(
+            self._abbreviations.items(), key=lambda x: len(x[0]), reverse=True
+        ):
+            # Use word boundary matching (case-insensitive)
+            # This ensures "cc" matches but "success" doesn't become "sucream cheesess"
+            pattern = rf'\b{re.escape(abbrev)}\b'
+            result = re.sub(pattern, canonical, result, flags=re.IGNORECASE)
+
+        return result
 
     def get_category_keyword_mapping(self, keyword: str) -> dict | None:
         """

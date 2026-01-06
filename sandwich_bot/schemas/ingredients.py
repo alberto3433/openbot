@@ -79,6 +79,7 @@ class IngredientOut(BaseModel):
         track_inventory: Whether to track counts (legacy, usually False)
         is_available: Global availability (False = 86'd everywhere)
         aliases: Comma-separated synonyms for matching (e.g., "wheat" for "Whole Wheat Bagel")
+        abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -89,6 +90,7 @@ class IngredientOut(BaseModel):
     track_inventory: bool
     is_available: bool
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 
 class IngredientCreate(BaseModel):
@@ -102,6 +104,7 @@ class IngredientCreate(BaseModel):
         track_inventory: Enable inventory counting (default: False)
         is_available: Initial availability (default: True)
         aliases: Comma-separated synonyms for matching (optional)
+        abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
 
     Example:
         {
@@ -118,6 +121,7 @@ class IngredientCreate(BaseModel):
     track_inventory: bool = False
     is_available: bool = True
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 
 class IngredientUpdate(BaseModel):
@@ -133,6 +137,7 @@ class IngredientUpdate(BaseModel):
         track_inventory: Update inventory tracking
         is_available: Update global availability (to 86 or un-86)
         aliases: Comma-separated synonyms for matching
+        abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
     name: Optional[str] = None
     category: Optional[str] = None
@@ -140,6 +145,7 @@ class IngredientUpdate(BaseModel):
     track_inventory: Optional[bool] = None
     is_available: Optional[bool] = None
     aliases: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 
 class IngredientAvailabilityUpdate(BaseModel):

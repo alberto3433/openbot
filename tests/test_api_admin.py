@@ -6,7 +6,7 @@ def test_admin_menu_returns_items(client, admin_auth):
     assert isinstance(data, list)
     names = {item["name"] for item in data}
     assert "Turkey Club" in names
-    assert "soda" in names
+    assert "Chips" in names  # Side item from fixture
 
 
 def test_admin_menu_requires_auth(client):

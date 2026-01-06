@@ -68,7 +68,7 @@ import secrets
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from .config import ADMIN_USERNAME, ADMIN_PASSWORD
+from . import config
 
 
 # =============================================================================
@@ -124,7 +124,7 @@ def verify_admin_credentials(
           whether username or password was wrong)
     """
     # Fail closed: if password not configured, deny all access
-    if not ADMIN_PASSWORD:
+    if not config.ADMIN_PASSWORD:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin authentication not configured. Set ADMIN_PASSWORD environment variable.",
@@ -134,11 +134,11 @@ def verify_admin_credentials(
     # An attacker cannot determine how many characters matched based on response time
     username_correct = secrets.compare_digest(
         credentials.username.encode("utf-8"),
-        ADMIN_USERNAME.encode("utf-8"),
+        config.ADMIN_USERNAME.encode("utf-8"),
     )
     password_correct = secrets.compare_digest(
         credentials.password.encode("utf-8"),
-        ADMIN_PASSWORD.encode("utf-8"),
+        config.ADMIN_PASSWORD.encode("utf-8"),
     )
 
     if not (username_correct and password_correct):

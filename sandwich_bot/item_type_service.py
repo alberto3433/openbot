@@ -263,9 +263,6 @@ def get_available_options_for_attribute(
         .all()
     )
 
-    # TODO: Add store-specific availability filtering using AttributeOptionIngredient
-    # and IngredientStoreAvailability
-
     return [
         {
             "slug": opt.slug,

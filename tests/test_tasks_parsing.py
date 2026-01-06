@@ -1332,6 +1332,118 @@ class TestNotesExtraction:
         assert result.new_coffee_special_instructions is not None
         assert "milk on the side" in result.new_coffee_special_instructions.lower()
 
+    # -------------------------------------------------------------------------
+    # Standalone Special Instruction Patterns
+    # -------------------------------------------------------------------------
+
+    def test_special_instruction_room_for_cream(self):
+        """Test 'room for cream' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("coffee room for cream")
+        assert any("room" in i.lower() for i in instructions)
+
+    def test_special_instruction_not_too_hot(self):
+        """Test 'not too hot' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("latte not too hot")
+        assert any("not too hot" in i.lower() for i in instructions)
+
+    def test_special_instruction_lukewarm(self):
+        """Test 'lukewarm' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("coffee lukewarm please")
+        assert any("lukewarm" in i.lower() for i in instructions)
+
+    def test_special_instruction_upside_down(self):
+        """Test 'upside down' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("caramel macchiato upside down")
+        assert any("upside down" in i.lower() for i in instructions)
+
+    def test_special_instruction_well_stirred(self):
+        """Test 'well stirred' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("iced coffee well stirred")
+        assert any("well stirred" in i.lower() for i in instructions)
+
+    def test_special_instruction_mixed(self):
+        """Test 'mixed' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("latte mixed")
+        assert any("mixed" in i.lower() for i in instructions)
+
+    def test_special_instruction_lightly_toasted(self):
+        """Test 'lightly toasted' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("plain bagel lightly toasted")
+        assert any("lightly toasted" in i.lower() for i in instructions)
+
+    def test_special_instruction_well_done(self):
+        """Test 'well done' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("everything bagel well done")
+        assert any("well done" in i.lower() for i in instructions)
+
+    def test_special_instruction_cut_in_half(self):
+        """Test 'cut in half' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("bagel with cream cheese cut in half")
+        assert any("cut in half" in i.lower() for i in instructions)
+
+    def test_special_instruction_sliced(self):
+        """Test 'sliced' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("plain bagel sliced")
+        assert any("sliced" in i.lower() for i in instructions)
+
+    def test_special_instruction_open_faced(self):
+        """Test 'open faced' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("egg sandwich open faced")
+        assert any("open faced" in i.lower() for i in instructions)
+
+    def test_special_instruction_spread_thin(self):
+        """Test 'spread thin' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("bagel with cream cheese spread thin")
+        assert any("spread thin" in i.lower() for i in instructions)
+
+    def test_special_instruction_on_one_side(self):
+        """Test 'on one side' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("cream cheese only on one side")
+        assert any("on one side" in i.lower() for i in instructions)
+
+    def test_special_instruction_on_both_halves(self):
+        """Test 'on both halves' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("butter on both halves")
+        assert any("on both halves" in i.lower() for i in instructions)
+
+    def test_special_instruction_melted(self):
+        """Test 'melted' is captured as special instruction."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("bagel with cheese melted")
+        assert any("melted" in i.lower() for i in instructions)
+
+    def test_special_instruction_extra_ice(self):
+        """Test 'extra ice' is captured as special instruction (existing qualifier pattern)."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("iced coffee extra ice")
+        assert any("extra ice" in i.lower() for i in instructions)
+
+    def test_special_instruction_light_ice(self):
+        """Test 'light ice' is captured as special instruction (existing qualifier pattern)."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("iced coffee light ice")
+        assert any("light ice" in i.lower() for i in instructions)
+
+    def test_special_instruction_no_ice(self):
+        """Test 'no ice' is captured as special instruction (existing qualifier pattern)."""
+        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        instructions = extract_special_instructions_from_input("iced coffee no ice")
+        assert any("no ice" in i.lower() for i in instructions)
+
     def test_multi_item_bagel_and_speed_menu_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order

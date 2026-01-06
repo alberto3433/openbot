@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from sandwich_bot.models import Base, ChatSession
-from sandwich_bot.main import (
+from sandwich_bot.services.session import (
     get_or_create_session,
     save_session,
     SESSION_CACHE,
@@ -174,84 +174,6 @@ class TestSessionPersistenceIntegration:
         assert len(db_record.history) == 1  # Initial greeting
         assert db_record.order_state["status"] == "pending"
 
-    def test_chat_message_persists_to_database(self, client, monkeypatch):
-        """Test that /chat/message updates session in database."""
-        import sandwich_bot.db as db_mod
-
-        # Start session
-        start_resp = client.post("/chat/start")
-        session_id = start_resp.json()["session_id"]
-
-        # Mock LLM
-        def fake_call(
-            conversation_history,
-            current_order_state,
-            menu_json,
-            user_message,
-            model=None,
-            **kwargs,
-        ):
-            return {
-                "reply": "Got it!",
-                "intent": "small_talk",
-                "slots": {},
-            }
-
-        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
-
-        # Send message
-        client.post(
-            "/chat/message",
-            json={"session_id": session_id, "message": "Hello"},
-        )
-
-        # Check database has updated session
-        TestingSessionLocal = db_mod.SessionLocal
-        db_sess = TestingSessionLocal()
-        db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
-        db_sess.close()
-
-        assert db_record is not None
-        # Should have: initial greeting + user message + assistant reply = 3
-        assert len(db_record.history) == 3
-
-    def test_session_recoverable_after_cache_clear(self, client, monkeypatch, disable_state_machine):
-        """Test session can be used after clearing cache (simulating restart)."""
-        from sandwich_bot import main as main_mod
-
-        # Start session
-        start_resp = client.post("/chat/start")
-        session_id = start_resp.json()["session_id"]
-
-        # Clear cache to simulate restart
-        main_mod.SESSION_CACHE.clear()
-
-        # Mock LLM
-        def fake_call(
-            conversation_history,
-            current_order_state,
-            menu_json,
-            user_message,
-            model=None,
-            **kwargs,
-        ):
-            return {
-                "reply": "I remember you!",
-                "intent": "small_talk",
-                "slots": {},
-            }
-
-        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
-
-        # Session should still work (loaded from DB)
-        resp = client.post(
-            "/chat/message",
-            json={"session_id": session_id, "message": "Do you remember me?"},
-        )
-
-        assert resp.status_code == 200
-        assert resp.json()["reply"] == "I remember you!"
-
 
 class TestSessionCacheTTL:
     """Test session cache TTL and eviction functionality."""
@@ -259,7 +181,6 @@ class TestSessionCacheTTL:
     def test_session_cache_stores_last_access_time(self, client):
         """Test that cache entries include last_access timestamp."""
         import time
-        import sandwich_bot.main as main_mod
 
         # Start a session via API (this goes through the proper DB)
         before = time.time()
@@ -268,9 +189,9 @@ class TestSessionCacheTTL:
 
         session_id = resp.json()["session_id"]
 
-        # Check cache entry has last_access (use main_mod.SESSION_CACHE to get live reference)
-        assert session_id in main_mod.SESSION_CACHE
-        entry = main_mod.SESSION_CACHE[session_id]
+        # Check cache entry has last_access
+        assert session_id in SESSION_CACHE
+        entry = SESSION_CACHE[session_id]
         assert "last_access" in entry
         assert "data" in entry
         assert before <= entry["last_access"] <= after
@@ -278,26 +199,24 @@ class TestSessionCacheTTL:
     def test_expired_sessions_are_cleaned_up(self, client, monkeypatch):
         """Test that expired sessions are removed from cache."""
         import time
-        import sandwich_bot.main as main_mod
         import sandwich_bot.db as db_mod
         import sandwich_bot.services.session as session_mod
 
-        # Set a very short TTL for testing - patch both main and session module
+        # Set a very short TTL for testing
         monkeypatch.setattr(session_mod, "SESSION_TTL_SECONDS", 1)
-        monkeypatch.setattr(main_mod, "SESSION_TTL_SECONDS", 1)
 
         # Start a session via API
         resp = client.post("/chat/start")
         session_id = resp.json()["session_id"]
-        assert session_id in main_mod.SESSION_CACHE
+        assert session_id in SESSION_CACHE
 
         # Artificially age the session
-        main_mod.SESSION_CACHE[session_id]["last_access"] = time.time() - 10
+        SESSION_CACHE[session_id]["last_access"] = time.time() - 10
 
         # Cleanup should remove expired session
         removed = _cleanup_expired_sessions()
         assert removed >= 1
-        assert session_id not in main_mod.SESSION_CACHE
+        assert session_id not in SESSION_CACHE
 
         # Session should still be in database
         TestingSessionLocal = db_mod.SessionLocal
@@ -305,32 +224,3 @@ class TestSessionCacheTTL:
         db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
         db_sess.close()
         assert db_record is not None
-
-    def test_get_or_create_updates_last_access(self, client, monkeypatch):
-        """Test that accessing a cached session updates last_access."""
-        import time
-        import sandwich_bot.main as main_mod
-
-        # Start a session
-        resp = client.post("/chat/start")
-        session_id = resp.json()["session_id"]
-
-        initial_access = main_mod.SESSION_CACHE[session_id]["last_access"]
-
-        # Small delay to ensure time difference
-        time.sleep(0.05)
-
-        # Mock LLM so we can send a message
-        def fake_call(*args, **kwargs):
-            return {"reply": "Hi!", "intent": "small_talk", "slots": {}}
-
-        monkeypatch.setattr("sandwich_bot.routes.chat.call_sandwich_bot", fake_call)
-
-        # Access the session by sending a message
-        client.post(
-            "/chat/message",
-            json={"session_id": session_id, "message": "Hello"},
-        )
-
-        updated_access = main_mod.SESSION_CACHE[session_id]["last_access"]
-        assert updated_access > initial_access

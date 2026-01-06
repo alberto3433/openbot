@@ -156,6 +156,29 @@ QUALIFIER_PATTERNS = [
     (r'\b(\w+)\s+on\s+the\s+side\b', 'on the side'),
 ]
 
+# Standalone instruction patterns - phrases that should be captured verbatim
+# These don't follow the "qualifier + target" format
+STANDALONE_INSTRUCTION_PATTERNS = [
+    # Coffee preparation
+    r'\b(?:leave\s+)?room\s+(?:for\s+(?:cream|milk))?\b',  # "leave room", "room for cream"
+    r'\bnot\s+too\s+hot\b',  # "not too hot"
+    r'\blukewarm\b',  # "lukewarm"
+    r'\bupside\s+down\b',  # "upside down" (espresso poured last)
+    r'\bwell\s+stirred\b',  # "well stirred"
+    r'\b(?:well\s+)?mixed\b',  # "mixed", "well mixed"
+    # Bagel/toast preparation
+    r'\blightly\s+toasted\b',  # "lightly toasted"
+    r'\bwell\s+done\b',  # "well done"
+    r'\bcut\s+in\s+half\b',  # "cut in half"
+    r'\bsliced\b',  # "sliced"
+    r'\bopen\s+faced\b',  # "open faced"
+    # Spread/topping application
+    r'\bspread\s+thin\b',  # "spread thin"
+    r'\b(?:only\s+)?on\s+one\s+side\b',  # "on one side", "only on one side"
+    r'\bon\s+both\s+(?:halves|sides)\b',  # "on both halves", "on both sides"
+    r'\bmelted\b',  # "melted" (for cheese)
+]
+
 # Greeting patterns
 GREETING_PATTERNS = re.compile(
     r"^(hi|hello|hey|good morning|good afternoon|good evening|howdy|yo)[\s!.,]*$",

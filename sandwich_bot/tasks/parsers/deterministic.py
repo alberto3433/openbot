@@ -43,6 +43,7 @@ from .constants import (
     get_spread_types,
     get_bagel_spreads,
     QUALIFIER_PATTERNS,
+    STANDALONE_INSTRUCTION_PATTERNS,
     GREETING_PATTERNS,
     GRATITUDE_PATTERNS,
     DONE_PATTERNS,
@@ -800,11 +801,12 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
         user_input: The raw user input string
 
     Returns:
-        List of instruction strings like ["light cream cheese", "extra bacon"]
+        List of instruction strings like ["light cream cheese", "extra bacon", "leave room"]
     """
     instructions = []
     input_lower = user_input.lower()
 
+    # Check qualifier patterns (e.g., "light X", "extra X", "no X")
     for pattern, qualifier in QUALIFIER_PATTERNS:
         for match in re.finditer(pattern, input_lower, re.IGNORECASE):
             item = match.group(1).strip()
@@ -820,6 +822,15 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
             if instruction not in instructions:
                 instructions.append(instruction)
                 logger.debug(f"Extracted special instruction: '{instruction}' from input")
+
+    # Check standalone patterns (e.g., "leave room", "cut in half", "melted")
+    for pattern in STANDALONE_INSTRUCTION_PATTERNS:
+        match = re.search(pattern, input_lower, re.IGNORECASE)
+        if match:
+            instruction = match.group(0).strip()
+            if instruction and instruction not in instructions:
+                instructions.append(instruction)
+                logger.debug(f"Extracted standalone instruction: '{instruction}' from input")
 
     return instructions
 

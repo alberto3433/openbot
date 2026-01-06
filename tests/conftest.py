@@ -28,27 +28,18 @@ def client():
 
     # Lazy imports to avoid requiring DATABASE_URL for non-db tests
     import sandwich_bot.db as db
-    import sandwich_bot.main as main_mod
     import sandwich_bot.config as config_mod
-    import sandwich_bot.auth as auth_mod
     from sandwich_bot.models import Base, MenuItem
-    from sandwich_bot.main import app, SESSION_CACHE
+    from sandwich_bot.main import app
+    from sandwich_bot.services.session import SESSION_CACHE
 
-    # Store original values from all modules that may cache these
-    original_username = main_mod.ADMIN_USERNAME
-    original_password = main_mod.ADMIN_PASSWORD
+    # Store original values
     original_config_username = config_mod.ADMIN_USERNAME
     original_config_password = config_mod.ADMIN_PASSWORD
-    original_auth_username = auth_mod.ADMIN_USERNAME
-    original_auth_password = auth_mod.ADMIN_PASSWORD
 
-    # Set test credentials in all modules that may use them
-    main_mod.ADMIN_USERNAME = TEST_ADMIN_USERNAME
-    main_mod.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
+    # Set test credentials
     config_mod.ADMIN_USERNAME = TEST_ADMIN_USERNAME
     config_mod.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
-    auth_mod.ADMIN_USERNAME = TEST_ADMIN_USERNAME
-    auth_mod.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -135,25 +126,14 @@ def client():
     SESSION_CACHE.clear()
 
     # Restore original credentials
-    main_mod.ADMIN_USERNAME = original_username
-    main_mod.ADMIN_PASSWORD = original_password
+    config_mod.ADMIN_USERNAME = original_config_username
+    config_mod.ADMIN_PASSWORD = original_config_password
 
 
 @pytest.fixture
 def admin_auth():
     """Returns HTTP Basic Auth tuple for admin endpoints."""
     return (TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
-
-
-@pytest.fixture
-def disable_state_machine(monkeypatch):
-    """Disable the state machine for tests that mock call_sandwich_bot.
-
-    The state machine bypasses call_sandwich_bot entirely, so tests that
-    rely on mocking call_sandwich_bot need to disable it to use the LLM path.
-    """
-    # Set the environment variable that controls the state machine
-    monkeypatch.setenv("STATE_MACHINE_ENABLED", "false")
 
 
 @pytest.fixture(scope="session", autouse=True)

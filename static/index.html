@@ -1088,31 +1088,6 @@
         </div>
       </details>
 
-      <!-- Test Orders Panel (Dev Mode) -->
-      <details class="caller-id-panel" id="test-orders-panel" style="background: var(--success-bg);">
-        <summary style="color: var(--success-text);">Test Orders - By-Pound Pricing (Dev Mode)</summary>
-        <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
-          <button type="button" class="test-order-btn" data-order="I'd like a quarter pound of nova" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            1/4 lb Nova
-          </button>
-          <button type="button" class="test-order-btn" data-order="Can I get a pound of sable please" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            1 lb Sable
-          </button>
-          <button type="button" class="test-order-btn" data-order="I'll have half a pound of whitefish salad" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            1/2 lb Whitefish Salad
-          </button>
-          <button type="button" class="test-order-btn" data-order="Give me a quarter pound of plain cream cheese and a quarter pound of scallion cream cheese" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            Cream Cheese (2 types)
-          </button>
-          <button type="button" class="test-order-btn" data-order="I need half pound of lox, quarter pound sturgeon, and a pound of whitefish salad for pickup" style="padding: 8px 12px; background: var(--brand-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            Multi By-Pound Order
-          </button>
-        </div>
-        <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 11px;">
-          Click a button to send a test order for by-pound items. Prices should come from database.
-        </div>
-      </details>
-
       <!-- TTS Voice Controls -->
       <div class="tts-controls" id="tts-controls">
         <label>
@@ -2111,20 +2086,6 @@
     };
 
     renderOrderPanel(orderState);
-
-    // =====================================================
-    // Test Orders (Dev Mode)
-    // =====================================================
-    document.querySelectorAll('.test-order-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const orderText = btn.getAttribute('data-order');
-        if (!connected || !sessionId) {
-          alert('Please start a session first (click "Start Call" above)');
-          return;
-        }
-        sendMessage(orderText);
-      });
-    });
   </script>
 </body>
 </html>

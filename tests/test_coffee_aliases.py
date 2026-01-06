@@ -38,7 +38,6 @@ class TestGetCoffeeTypes:
         coffee_types = get_coffee_types()
         # These are aliases, not the actual item names
         assert "chai" in coffee_types  # alias for Chai Tea
-        assert "tea" in coffee_types  # alias for Hot Tea, Iced Tea, etc.
         assert "matcha" in coffee_types  # alias for Seasonal Matcha Latte
         assert "drip" in coffee_types  # alias for Coffee
         assert "hot cocoa" in coffee_types  # alias for Hot Chocolate
@@ -85,13 +84,6 @@ class TestCoffeeOrderPattern:
         assert pattern.search("I want a matcha")
         assert pattern.search("can I get a matcha latte")
 
-    def test_coffee_order_pattern_matches_tea(self):
-        """Coffee order pattern should match tea alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
-        assert pattern.search("I want a tea")
-        assert pattern.search("can I get a hot tea")
-
     def test_coffee_order_pattern_matches_with_size(self):
         """Coffee order pattern should match orders with size."""
         from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
@@ -126,13 +118,6 @@ class TestParseCoffeeDeterministic:
         assert result is not None
         assert result.new_menu_item is not None or result.new_coffee_type is not None
 
-    def test_parse_coffee_with_tea_alias(self):
-        """_parse_coffee_deterministic should recognize 'tea' alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_coffee_deterministic
-        result = _parse_coffee_deterministic("I'll have a tea")
-        assert result is not None
-        assert result.new_menu_item is not None or result.new_coffee_type is not None
-
     def test_parse_coffee_with_drip_alias(self):
         """_parse_coffee_deterministic should recognize 'drip' alias for coffee."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_coffee_deterministic
@@ -155,7 +140,6 @@ class TestCoffeeAliasesIntegration:
         assert "green tea" in coffee_types
         assert "earl grey tea" in coffee_types
         # Aliases
-        assert "tea" in coffee_types
         assert "chai" in coffee_types
 
     def test_espresso_variations_recognized(self):

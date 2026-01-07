@@ -32,19 +32,24 @@ def is_soda_drink(drink_type: str | None) -> bool:
 
     Uses database-loaded soda types (via get_soda_types()) which includes
     both item names and their aliases from the menu_items.aliases column.
+
+    Sized beverages (coffee, latte, etc.) are explicitly excluded even if
+    they appear in soda types due to bottled versions (e.g., "Bottled Coffee").
     """
     if not drink_type:
         return False
     drink_lower = drink_type.lower().strip()
+
+    # Sized beverages (coffee, latte, tea, etc.) are NEVER sodas - they need configuration
+    # This prevents "Coffee" from matching "Bottled Coffee" in soda types
+    coffee_types = get_coffee_types()
+    if drink_lower in coffee_types:
+        return False
+
+    # Check exact match only - database includes aliases so substring matching is unnecessary
+    # and causes false positives (e.g., "coffee" matching "bottled coffee")
     soda_types = get_soda_types()
-    # Check exact match first
-    if drink_lower in soda_types:
-        return True
-    # Check if any soda type is contained in the drink name
-    for soda in soda_types:
-        if soda in drink_lower or drink_lower in soda:
-            return True
-    return False
+    return drink_lower in soda_types
 
 
 # =============================================================================
@@ -365,6 +370,35 @@ DELIVERY_ZONE_PATTERNS = [
     re.compile(r"(?:do|can)\s+you\s+deliver\s+in\s+(.+?)(?:\?|$)", re.IGNORECASE),
     # "delivery to X" / "deliver to X"
     re.compile(r"deliver(?:y)?\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE),
+]
+
+# =============================================================================
+# Customer Service / Escalation Patterns
+# =============================================================================
+
+# Customer service patterns - user wants to speak to someone or has a complaint
+# When matched, provide contact information (corporate email and store phone)
+CUSTOMER_SERVICE_PATTERNS = [
+    # Speak to manager/person
+    re.compile(r"(?:i\s+)?(?:want|need|would\s+like)\s+to\s+(?:speak|talk)\s+(?:to|with)\s+(?:a\s+)?(?:manager|supervisor|person|human|someone)", re.IGNORECASE),
+    re.compile(r"(?:can|may)\s+i\s+(?:speak|talk)\s+(?:to|with)\s+(?:a\s+)?(?:manager|supervisor|person|human|someone)", re.IGNORECASE),
+    re.compile(r"(?:get|let)\s+me\s+(?:a\s+)?(?:manager|supervisor)", re.IGNORECASE),
+    re.compile(r"(?:is\s+there\s+)?(?:a\s+)?manager\s+(?:i\s+can\s+speak\s+(?:to|with)|available)", re.IGNORECASE),
+    # Order issues / complaints
+    re.compile(r"(?:my\s+)?order\s+(?:was|is)\s+(?:wrong|incorrect|messed\s+up|missing|not\s+right)", re.IGNORECASE),
+    re.compile(r"(?:you\s+)?(?:got|made)\s+(?:my\s+)?order\s+wrong", re.IGNORECASE),
+    re.compile(r"(?:there(?:'?s|\s+is|\s+was)\s+)?(?:a\s+)?(?:problem|issue)\s+(?:with\s+)?(?:my\s+)?order", re.IGNORECASE),
+    re.compile(r"(?:i\s+)?(?:have|got)\s+(?:a\s+)?(?:complaint|problem|issue)", re.IGNORECASE),
+    re.compile(r"(?:i\s+)?(?:want|need)\s+to\s+(?:complain|file\s+a\s+complaint|report\s+(?:a\s+)?(?:problem|issue))", re.IGNORECASE),
+    re.compile(r"(?:something(?:'?s|\s+is)\s+)?wrong\s+with\s+(?:my\s+)?(?:order|food)", re.IGNORECASE),
+    re.compile(r"(?:this\s+)?(?:is(?:n'?t|\s+not)\s+)?what\s+i\s+ordered", re.IGNORECASE),
+    re.compile(r"(?:i\s+)?(?:didn'?t\s+get|never\s+(?:got|received))\s+(?:my\s+)?(?:order|food|item)", re.IGNORECASE),
+    re.compile(r"missing\s+(?:item|food|part\s+of\s+my\s+order)", re.IGNORECASE),
+    re.compile(r"(?:i(?:'?m|\s+am)\s+)?(?:very\s+)?(?:unhappy|dissatisfied|disappointed|upset)\s+(?:with\s+)?(?:my\s+)?(?:order)?", re.IGNORECASE),
+    # Refund requests
+    re.compile(r"(?:i\s+)?(?:want|need|would\s+like)\s+(?:a\s+)?refund", re.IGNORECASE),
+    re.compile(r"(?:can|how\s+(?:do|can))\s+i\s+(?:get\s+)?(?:a\s+)?refund", re.IGNORECASE),
+    re.compile(r"(?:i\s+)?(?:want|need)\s+(?:my\s+)?money\s+back", re.IGNORECASE),
 ]
 
 # =============================================================================

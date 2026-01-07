@@ -954,7 +954,8 @@ class TakingItemsHandler:
         # Handle modifier removal: "remove the bacon", "no cheese", etc.
         # Check if cancel_item is actually a modifier on the last item
         if parsed.cancel_item:
-            cancel_item_desc = parsed.cancel_item.lower().strip()
+            # Normalize: lowercase, strip, and collapse multiple spaces to single space
+            cancel_item_desc = ' '.join(parsed.cancel_item.lower().split())
             active_items = order.items.get_active_items()
 
             # Known modifiers that can be removed from bagels
@@ -1920,11 +1921,13 @@ class TakingItemsHandler:
                     elif item.toasted is None:
                         signature_item_handler_items.append((item.id, item.menu_item_name, "signature_item", "signature_item_toasted"))
                 elif isinstance(item, CoffeeItemTask):
-                    # Coffee items: check size first, then hot/iced
+                    # Coffee items: check size first, then hot/iced, then modifiers
                     if item.size is None:
                         coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_size"))
                     elif item.iced is None:
                         coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
+                    elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
+                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_modifiers"))
 
         # Build final list: only FIRST item from each handler group + all individual items
         # Handlers with internal loops will find subsequent items of their type automatically
@@ -2032,6 +2035,8 @@ class TakingItemsHandler:
             question = f"Got it! What size {first_item_name} would you like? Small or Large?"
         elif first_field == "coffee_style":
             question = f"Got it! Would you like the {first_item_name} hot or iced?"
+        elif first_field == "coffee_modifiers":
+            question = f"Got it, {first_item_name}! Would you like any milk, sugar or syrup?"
         elif first_field == "cheese_choice":
             # Regular bagel with generic "cheese" - ask for type
             item = next((i for i in order.items.items if i.id == first_item_id), None)

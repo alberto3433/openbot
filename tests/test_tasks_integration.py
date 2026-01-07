@@ -3140,6 +3140,34 @@ class TestCoffeeModifiers:
         assert coffee.sweeteners[0]["quantity"] == 2
         assert coffee.status == TaskStatus.COMPLETE
 
+    def test_coffee_hot_small_asks_modifiers(self):
+        """Test that 'coffee hot small' asks for modifiers even with size and temp set."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # User orders coffee with size and temperature but no modifiers
+        result = sm.process("coffee hot small", order)
+
+        # Should ask about modifiers (milk, sugar, syrup)
+        msg_lower = result.message.lower()
+        assert "milk" in msg_lower or "sugar" in msg_lower or "syrup" in msg_lower, \
+            f"Expected modifiers question but got: {result.message}"
+
+        # Verify coffee was added with correct attributes
+        coffees = [i for i in order.items.items if hasattr(i, 'drink_type')]
+        assert len(coffees) == 1
+        coffee = coffees[0]
+        assert coffee.size == "small"
+        assert coffee.iced is False  # hot = not iced
+
+        # Should be pending on modifiers field
+        assert order.pending_field == "coffee_modifiers"
+
 
 class TestCoffeeModifierRemoval:
     """Tests for removing coffee modifiers with 'without X' patterns."""
@@ -3209,6 +3237,73 @@ class TestCoffeeModifierRemoval:
         assert len(order.items.get_active_items()) == 1
         assert coffee.flavor_syrups == []
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
+
+
+class TestBagelModifierRemoval:
+    """Tests for removing modifiers from bagels in TAKING_ITEMS phase."""
+
+    def test_remove_cream_cheese_removes_spread_not_item(self):
+        """Test that 'remove the cream cheese' removes spread, not the entire bagel.
+
+        Regression test for bug where 'remove the cream cheese' removed the whole bagel
+        because 'cream cheese' was found in the item summary.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Bagel with blueberry cream cheese spread
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            toasted=True,
+            spread="cream cheese",
+            spread_type="blueberry",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        result = sm.process("remove the cream cheese", order)
+
+        # Bagel should still exist
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, "Bagel should NOT be removed, only the spread"
+
+        # Spread should be removed
+        assert bagel.spread is None, "Spread should be removed"
+        assert bagel.spread_type is None, "Spread type should be removed"
+
+        # Response should mention removed
+        assert "removed" in result.message.lower()
+
+    def test_remove_cream_cheese_with_double_space(self):
+        """Test that input with double spaces still works (voice input artifact)."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            toasted=True,
+            spread="cream cheese",
+            spread_type="blueberry",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # Double space (common voice transcription artifact)
+        result = sm.process("remove the cream  cheese", order)
+
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, "Bagel should NOT be removed"
+        assert bagel.spread is None, "Spread should be removed"
 
 
 # =============================================================================

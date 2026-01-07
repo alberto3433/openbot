@@ -433,7 +433,97 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Maps normalized item names to descriptions
     index["item_descriptions"] = _build_item_descriptions(db)
 
+    # Build ingredient-to-items mapping for ingredient-based search
+    # When user says "something with chicken", this index helps find matching items
+    index["ingredient_to_items"] = _build_ingredient_to_items(index)
+
     return index
+
+
+def _build_ingredient_to_items(menu_index: Dict[str, Any]) -> Dict[str, list[Dict[str, Any]]]:
+    """
+    Build a mapping of ingredients to menu items that contain them by default.
+
+    Scans menu items for ingredients in:
+    - Item names (e.g., "Chicken Salad Sandwich")
+    - Item descriptions (e.g., "Grilled Chicken, Bacon, Tomato...")
+    - default_config values (e.g., {"protein": "Chicken Salad"})
+
+    Returns:
+        Dict mapping lowercase ingredient names to lists of matching menu items.
+        Example: {"chicken": [{"id": 123, "name": "Chicken Salad Sandwich", ...}]}
+    """
+    import re
+
+    # Common ingredients to index
+    # Focus on proteins and key ingredients customers might search for
+    SEARCHABLE_INGREDIENTS = {
+        # Proteins
+        "chicken", "turkey", "bacon", "ham", "pastrami", "corned beef",
+        "roast beef", "tuna", "salmon", "lox", "nova", "whitefish",
+        "sable", "sturgeon", "egg", "eggs",
+        # Other key ingredients
+        "avocado", "hummus",
+    }
+
+    ingredient_to_items: Dict[str, list[Dict[str, Any]]] = {
+        ing: [] for ing in SEARCHABLE_INGREDIENTS
+    }
+
+    # Collect all menu items from various categories
+    all_items: list[Dict[str, Any]] = []
+    for category in ["signature_sandwiches", "custom_sandwiches", "sides", "drinks", "desserts", "other"]:
+        if category in menu_index:
+            all_items.extend(menu_index[category])
+
+    # Also check items_by_type for comprehensive coverage
+    if "items_by_type" in menu_index:
+        for type_slug, items in menu_index["items_by_type"].items():
+            if isinstance(items, list):
+                for item in items:
+                    if item not in all_items:
+                        all_items.append(item)
+
+    for item in all_items:
+        item_name = (item.get("name") or "").lower()
+        item_desc = (item.get("description") or "").lower()
+        default_config = item.get("default_config") or {}
+
+        # Build searchable text from default_config values
+        config_text = " ".join(
+            str(v).lower() for v in default_config.values()
+            if isinstance(v, str)
+        )
+        # Also check list values in config (e.g., {"extras": ["Bacon", "Tomato"]})
+        for v in default_config.values():
+            if isinstance(v, list):
+                config_text += " " + " ".join(str(x).lower() for x in v)
+
+        combined_text = f"{item_name} {item_desc} {config_text}"
+
+        for ingredient in SEARCHABLE_INGREDIENTS:
+            # Use word boundary to avoid partial matches (e.g., "ham" in "shamrock")
+            if re.search(rf'\b{re.escape(ingredient)}\b', combined_text):
+                # Avoid duplicates
+                if item not in ingredient_to_items[ingredient]:
+                    ingredient_to_items[ingredient].append(item)
+
+    # Remove empty entries
+    ingredient_to_items = {k: v for k, v in ingredient_to_items.items() if v}
+
+    # Add common aliases
+    if "lox" in ingredient_to_items or "salmon" in ingredient_to_items:
+        # Merge lox and salmon results
+        combined = []
+        for item in ingredient_to_items.get("lox", []) + ingredient_to_items.get("salmon", []):
+            if item not in combined:
+                combined.append(item)
+        if combined:
+            ingredient_to_items["lox"] = combined
+            ingredient_to_items["salmon"] = combined
+            ingredient_to_items["nova"] = combined
+
+    return ingredient_to_items
 
 
 def _build_item_keywords(db: Session) -> Dict[str, str]:

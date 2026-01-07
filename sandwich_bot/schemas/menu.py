@@ -90,6 +90,7 @@ class MenuItemOut(BaseModel):
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
+    required_match_phrases: Optional[str] = None
 
 
 class MenuItemCreate(BaseModel):
@@ -130,6 +131,7 @@ class MenuItemCreate(BaseModel):
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
+    required_match_phrases: Optional[str] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -169,3 +171,4 @@ class MenuItemUpdate(BaseModel):
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
+    required_match_phrases: Optional[str] = None

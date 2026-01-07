@@ -5496,3 +5496,76 @@ class TestSignatureMenuInquiryHandler:
 
         # No pagination state
         assert result.order.get_menu_pagination() is None
+
+
+class TestIngredientSearchPagination:
+    """Tests for ingredient search pagination ('what else' follow-up)."""
+
+    def test_ingredient_search_what_else_shows_more_items(self):
+        """Test that 'what else' shows remaining items after ingredient search."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        # Create 10 mock chicken items (more than the 6 shown initially)
+        chicken_items = [
+            {"id": i, "name": f"Chicken Item {i}", "description": f"Chicken dish #{i}"}
+            for i in range(1, 11)
+        ]
+        sm.menu_data = {
+            "ingredient_to_items": {
+                "chicken": chicken_items,
+            },
+            "items_by_type": {},
+            "item_name_to_id": {},
+            "items_by_id": {},
+        }
+        order = OrderTask()
+
+        # First request - "chicken" shows first 6 items
+        result1 = sm.process("chicken", order)
+
+        # Verify first batch and pagination state
+        assert "chicken item 1" in result1.message.lower()
+        assert "chicken item 6" in result1.message.lower()
+        assert "and 4 more" in result1.message.lower()
+        assert result1.order.pending_ingredient_search is not None
+        assert result1.order.pending_ingredient_search["ingredient"] == "chicken"
+        assert result1.order.pending_ingredient_search["offset"] == 6
+
+        # Second request - "what else" shows remaining 4 items
+        result2 = sm.process("what else", result1.order)
+
+        assert "chicken item 7" in result2.message.lower()
+        assert "chicken item 10" in result2.message.lower()
+        assert "that's all" in result2.message.lower()
+
+        # Pagination should be cleared
+        assert result2.order.pending_ingredient_search is None
+
+    def test_ingredient_search_pagination_cleared_on_new_request(self):
+        """Test that non-'more' requests clear ingredient search pagination."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        chicken_items = [
+            {"id": i, "name": f"Chicken Item {i}", "description": f"Chicken dish #{i}"}
+            for i in range(1, 10)
+        ]
+        sm.menu_data = {
+            "ingredient_to_items": {"chicken": chicken_items},
+            "items_by_type": {"signature_items": []},
+            "item_name_to_id": {},
+            "items_by_id": {},
+        }
+        order = OrderTask()
+
+        # First request - "chicken" sets up pagination
+        result1 = sm.process("chicken", order)
+        assert result1.order.pending_ingredient_search is not None
+
+        # Second request - any non-"more" request should clear pagination
+        # Using "hello" which won't match as a "wants_more_menu_items" request
+        result2 = sm.process("hello", result1.order)
+        assert result2.order.pending_ingredient_search is None

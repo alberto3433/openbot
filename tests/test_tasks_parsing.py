@@ -1010,6 +1010,10 @@ class TestCancellationPatternDetection:
         "forget that",
         "forget it",
         "scratch that",
+        "cancel last",
+        "cancel last item",
+        "remove last",
+        "remove last item",
         "cancel the last one",
         "cancel the last item",
         "remove the last one",
@@ -2253,3 +2257,131 @@ class TestDuplicatePatterns:
         assert result is not None
         assert result.duplicate_last_item == 2  # Add 2 more to reach 3 total
         assert result.duplicate_new_item_type is None
+
+
+# =============================================================================
+# Ingredient-Based Menu Search Tests
+# =============================================================================
+
+class TestIngredientBasedSearch:
+    """Tests for ingredient-based menu search functionality."""
+
+    @pytest.fixture
+    def mock_ingredient_to_items(self):
+        """Create a mock ingredient_to_items mapping for testing."""
+        return {
+            "chicken": [
+                {"id": 1, "name": "Chicken Salad Sandwich", "description": "Classic chicken salad"},
+                {"id": 2, "name": "Chicken Cutlet Sandwich", "description": "Crispy cutlet"},
+                {"id": 3, "name": "The Chelsea Club", "description": "Chicken Salad, Bacon, Tomato"},
+            ],
+            "bacon": [
+                {"id": 4, "name": "The Classic BEC", "description": "Bacon, Egg, and Cheese"},
+                {"id": 3, "name": "The Chelsea Club", "description": "Chicken Salad, Bacon, Tomato"},
+            ],
+            "turkey": [
+                {"id": 5, "name": "Turkey Club", "description": "Roasted turkey breast"},
+            ],
+        }
+
+    def test_standalone_chicken_triggers_search(self, mock_ingredient_to_items):
+        """Test that 'chicken' by itself triggers ingredient search."""
+        result = parse_open_input_deterministic(
+            "chicken",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "chicken"
+        assert len(result.ingredient_search_matches) == 3
+
+    def test_something_with_chicken_triggers_search(self, mock_ingredient_to_items):
+        """Test that 'something with chicken' triggers ingredient search."""
+        result = parse_open_input_deterministic(
+            "something with chicken",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "chicken"
+        assert len(result.ingredient_search_matches) == 3
+
+    def test_anything_with_bacon_triggers_search(self, mock_ingredient_to_items):
+        """Test that 'anything with bacon' triggers ingredient search."""
+        result = parse_open_input_deterministic(
+            "anything with bacon",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "bacon"
+        assert len(result.ingredient_search_matches) == 2
+
+    def test_what_has_turkey_triggers_search(self, mock_ingredient_to_items):
+        """Test that 'what has turkey' triggers ingredient search."""
+        result = parse_open_input_deterministic(
+            "what has turkey",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "turkey"
+        assert len(result.ingredient_search_matches) == 1
+
+    def test_chicken_sandwich_does_not_trigger_search(self, mock_ingredient_to_items):
+        """Test that 'chicken sandwich' is a normal order, not ingredient search."""
+        result = parse_open_input_deterministic(
+            "chicken sandwich",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        # Should NOT be ingredient search (has "sandwich" signal)
+        assert result is None or not result.ingredient_search_matches
+
+    def test_chicken_salad_does_not_trigger_search(self, mock_ingredient_to_items):
+        """Test that 'chicken salad' is a normal order, not ingredient search."""
+        result = parse_open_input_deterministic(
+            "chicken salad",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        # Should NOT be ingredient search (has "salad" signal)
+        assert result is None or not result.ingredient_search_matches
+
+    def test_unknown_ingredient_no_match(self, mock_ingredient_to_items):
+        """Test that unknown ingredients don't trigger search."""
+        result = parse_open_input_deterministic(
+            "something with lobster",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        # "lobster" isn't in our mapping, so shouldn't be ingredient search
+        assert result is None or not result.ingredient_search_matches
+
+    def test_empty_ingredient_to_items_disabled(self):
+        """Test that ingredient search is disabled when mapping is empty or None."""
+        result = parse_open_input_deterministic(
+            "chicken",
+            ingredient_to_items=None
+        )
+        # Without ingredient mapping, this should fall through (return None)
+        assert result is None or not result.ingredient_search_matches
+
+        result2 = parse_open_input_deterministic(
+            "chicken",
+            ingredient_to_items={}
+        )
+        assert result2 is None or not result2.ingredient_search_matches
+
+    def test_id_like_something_with_chicken(self, mock_ingredient_to_items):
+        """Test 'I'd like something with chicken' pattern."""
+        result = parse_open_input_deterministic(
+            "I'd like something with chicken",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "chicken"
+        assert len(result.ingredient_search_matches) == 3
+
+    def test_can_i_get_something_with_bacon(self, mock_ingredient_to_items):
+        """Test 'can I get something with bacon' pattern."""
+        result = parse_open_input_deterministic(
+            "can I get something with bacon",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.ingredient_search_query == "bacon"
+        assert len(result.ingredient_search_matches) == 2

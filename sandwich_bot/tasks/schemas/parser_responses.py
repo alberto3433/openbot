@@ -634,6 +634,17 @@ class OpenInputResponse(BaseModel):
         description="Items ordered by the pound (e.g., 'a pound of Muenster', 'half pound of nova')"
     )
 
+    # Ingredient-based menu search
+    # When user types just an ingredient (e.g., "chicken"), show items containing it
+    ingredient_search_query: str | None = Field(
+        default=None,
+        description="The ingredient user is searching for (e.g., 'chicken', 'bacon')"
+    )
+    ingredient_search_matches: list[dict] = Field(
+        default_factory=list,
+        description="Menu items that contain the searched ingredient by default"
+    )
+
     # Flow control
     done_ordering: bool = Field(
         default=False,

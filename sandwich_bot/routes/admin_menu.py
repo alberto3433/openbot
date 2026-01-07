@@ -105,6 +105,9 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         available_qty=item.available_qty,
         metadata=meta,
         item_type_id=item.item_type_id,
+        aliases=item.aliases,
+        abbreviation=item.abbreviation,
+        required_match_phrases=item.required_match_phrases,
     )
 
 
@@ -137,6 +140,9 @@ def create_menu_item(
         available_qty=payload.available_qty,
         extra_metadata=json.dumps(payload.metadata or {}),
         item_type_id=payload.item_type_id,
+        aliases=payload.aliases,
+        abbreviation=payload.abbreviation,
+        required_match_phrases=payload.required_match_phrases,
     )
     db.add(item)
     db.commit()
@@ -184,6 +190,12 @@ def update_menu_item(
         item.extra_metadata = json.dumps(payload.metadata)
     if payload.item_type_id is not None:
         item.item_type_id = payload.item_type_id
+    if payload.aliases is not None:
+        item.aliases = payload.aliases
+    if payload.abbreviation is not None:
+        item.abbreviation = payload.abbreviation
+    if payload.required_match_phrases is not None:
+        item.required_match_phrases = payload.required_match_phrases
 
     db.commit()
     db.refresh(item)

@@ -2789,6 +2789,110 @@ def _parse_more_menu_items(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# Ingredient-Based Menu Search
+# =============================================================================
+
+def _parse_ingredient_search(
+    text: str,
+    ingredient_to_items: dict[str, list[dict]] | None = None,
+) -> OpenInputResponse | None:
+    """
+    Parse ingredient-only inputs and return matching menu items.
+
+    When a user types just an ingredient name (like "chicken" or "something with bacon"),
+    this function searches for menu items that contain that ingredient by default.
+
+    Args:
+        text: User input text to parse
+        ingredient_to_items: Mapping from ingredient names to menu items containing them.
+            If None, ingredient search is disabled.
+
+    Returns:
+        OpenInputResponse with ingredient_search_query and ingredient_search_matches set,
+        or None if no ingredient match found.
+    """
+    if not ingredient_to_items:
+        return None
+
+    text_lower = text.lower().strip()
+
+    # Patterns that indicate ingredient search:
+    # - "chicken" (standalone ingredient)
+    # - "something with chicken"
+    # - "anything with bacon"
+    # - "items with turkey"
+    # - "what has chicken"
+    # - "do you have anything with chicken"
+
+    # Pattern 1: "something/anything/items with [ingredient]"
+    with_pattern = re.match(
+        r'^(?:(?:i(?:\'?d| would)? like |(?:can i )?(?:get|have) )?'
+        r'(?:something|anything|an item|items|a sandwich|sandwiches) '
+        r'(?:with|that (?:has|have|contain|contains)) '
+        r'(\w+))\s*[?.]?$',
+        text_lower
+    )
+    if with_pattern:
+        ingredient = with_pattern.group(1)
+        if ingredient in ingredient_to_items:
+            matches = ingredient_to_items[ingredient]
+            logger.info(
+                "INGREDIENT SEARCH: '%s' -> found %d items with '%s'",
+                text[:50], len(matches), ingredient
+            )
+            return OpenInputResponse(
+                ingredient_search_query=ingredient,
+                ingredient_search_matches=matches,
+            )
+
+    # Pattern 2: "what has [ingredient]" / "what contains [ingredient]"
+    what_has_pattern = re.match(
+        r'^what (?:has|have|contains?) (\w+)\s*[?.]?$',
+        text_lower
+    )
+    if what_has_pattern:
+        ingredient = what_has_pattern.group(1)
+        if ingredient in ingredient_to_items:
+            matches = ingredient_to_items[ingredient]
+            logger.info(
+                "INGREDIENT SEARCH (what has): '%s' -> found %d items with '%s'",
+                text[:50], len(matches), ingredient
+            )
+            return OpenInputResponse(
+                ingredient_search_query=ingredient,
+                ingredient_search_matches=matches,
+            )
+
+    # Pattern 3: Standalone ingredient name (e.g., just "chicken")
+    # Only trigger if it's a short phrase (1-3 words) ending with an ingredient
+    # This avoids triggering on complex orders
+    words = text_lower.split()
+    if len(words) <= 3:
+        # Check if the last word is a known ingredient
+        potential_ingredient = words[-1].rstrip('?.,!')
+        if potential_ingredient in ingredient_to_items:
+            # Make sure it's not part of an obvious order ("chicken sandwich", "bacon egg")
+            order_signals = [
+                "bagel", "sandwich", "salad", "soup", "egg", "omelette",
+                "omelet", "coffee", "latte", "please", "want", "like", "get",
+            ]
+            has_order_signal = any(signal in text_lower for signal in order_signals)
+
+            if not has_order_signal:
+                matches = ingredient_to_items[potential_ingredient]
+                logger.info(
+                    "INGREDIENT SEARCH (standalone): '%s' -> found %d items with '%s'",
+                    text[:50], len(matches), potential_ingredient
+                )
+                return OpenInputResponse(
+                    ingredient_search_query=potential_ingredient,
+                    ingredient_search_matches=matches,
+                )
+
+    return None
+
+
+# =============================================================================
 # "Add More" Parsing (add a third, add another, etc.)
 # =============================================================================
 
@@ -3476,6 +3580,7 @@ def parse_open_input_deterministic(
     spread_types: set[str] | None = None,
     modifier_category_keywords: dict[str, str] | None = None,
     modifier_item_keywords: dict[str, str] | None = None,
+    ingredient_to_items: dict[str, list[dict]] | None = None,
 ) -> OpenInputResponse | None:
     """
     Try to parse user input deterministically without LLM.
@@ -3487,6 +3592,8 @@ def parse_open_input_deterministic(
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
         modifier_item_keywords: Mapping of item keywords to item type slugs
             (e.g., {"latte": "coffee", "cappuccino": "coffee"})
+        ingredient_to_items: Mapping of ingredient names to menu items containing them
+            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
 
     Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
     """
@@ -3560,6 +3667,12 @@ def parse_open_input_deterministic(
     modifier_inquiry_result = _parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
+
+    # Check for ingredient-based menu search
+    # When user says "chicken" or "something with bacon", show matching items
+    ingredient_search_result = _parse_ingredient_search(text, ingredient_to_items)
+    if ingredient_search_result:
+        return ingredient_search_result
 
     # Check for by-the-pound orders EARLY
     # Must be checked BEFORE spread/salad sandwich matching to prevent
@@ -3663,7 +3776,7 @@ def parse_open_input_deterministic(
                 return OpenInputResponse(cancel_item="__all_items__")
             # Handle pronouns that refer to the last item
             last_item_pronouns = {
-                "that", "it", "this", "the last one", "the last item", "last one", "last item",
+                "that", "it", "this", "last", "the last one", "the last item", "last one", "last item",
                 # "remove from the order" -> remove the last item mentioned
                 "from the order", "from my order"
             }

@@ -460,6 +460,12 @@
           <input id="itemAliases" type="text" placeholder="e.g., coke, coca cola, cola" />
           <small style="color: #666; font-size: 0.8em;">Comma-separated alternative names that customers might use</small>
         </div>
+
+        <div class="field">
+          <label for="itemRequiredPhrases">Required Match Phrases</label>
+          <input id="itemRequiredPhrases" type="text" placeholder="e.g., coffee cake, cake" />
+          <small style="color: #666; font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
+        </div>
         </div><!-- End Basic Info Tab -->
 
         <!-- Attributes Tab -->
@@ -500,6 +506,7 @@
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
     const itemAliasesEl = document.getElementById("itemAliases");
+    const itemRequiredPhrasesEl = document.getElementById("itemRequiredPhrases");
 
     // Tab elements
     const detailTabsEl = document.getElementById("detailTabs");
@@ -681,6 +688,7 @@
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
       itemAliasesEl.value = "";
+      itemRequiredPhrasesEl.value = "";
 
       // Clear attributes tab
       attributesContainerEl.innerHTML = '<div class="no-attrs-message">Create or select a menu item to configure its attributes.</div>';
@@ -718,6 +726,7 @@
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
       itemAliasesEl.value = item.aliases || "";
+      itemRequiredPhrasesEl.value = item.required_match_phrases || "";
 
       // Load attributes for the Attributes tab
       loadAttributeForm(item.id);
@@ -742,7 +751,8 @@
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
-        aliases: itemAliasesEl.value.trim() || null
+        aliases: itemAliasesEl.value.trim() || null,
+        required_match_phrases: itemRequiredPhrasesEl.value.trim() || null
       };
 
       if (!payload.name) {

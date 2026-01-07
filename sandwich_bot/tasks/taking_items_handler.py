@@ -144,6 +144,11 @@ class TakingItemsHandler:
         """Get item keyword to item type slug mapping from menu data."""
         return self._menu_data.get("item_keywords", {})
 
+    @property
+    def _ingredient_to_items(self) -> dict[str, list[dict]]:
+        """Get ingredient-to-items mapping for ingredient-based menu search."""
+        return self._menu_data.get("ingredient_to_items", {})
+
     def _get_bagel_menu_item_info(self, menu_item_name: str) -> dict | None:
         """
         Check if a menu item contains a bagel and get its configuration info.
@@ -191,6 +196,7 @@ class TakingItemsHandler:
             spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
+            ingredient_to_items=self._ingredient_to_items,
         )
 
         logger.info(
@@ -375,6 +381,7 @@ class TakingItemsHandler:
             spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
+            ingredient_to_items=self._ingredient_to_items,
         )
 
         # Extract modifiers from raw input (keyword-based, no LLM)
@@ -404,9 +411,63 @@ class TakingItemsHandler:
         # Reset menu pagination on any non-"more items" request
         if not parsed.wants_more_menu_items:
             order.clear_menu_pagination()
+            order.pending_ingredient_search = None
 
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)
+
+        # Handle ingredient-based menu search
+        # When user says "chicken" or "something with bacon", show matching items
+        if parsed.ingredient_search_matches:
+            ingredient = parsed.ingredient_search_query or "that ingredient"
+            matches = parsed.ingredient_search_matches
+            logger.info(
+                "INGREDIENT SEARCH: showing %d items with '%s'",
+                len(matches), ingredient
+            )
+
+            # Build a nice response showing the matching items
+            if len(matches) == 1:
+                item = matches[0]
+                item_name = item.get("name", "that item")
+                desc = item.get("description", "")
+                msg = f"For {ingredient}, we have the {item_name}"
+                if desc:
+                    msg += f" ({desc})"
+                msg += ". Would you like one?"
+            else:
+                # Multiple items - list them (cap at 6 for initial display)
+                display_count = min(6, len(matches))
+                item_names = [m.get("name", "item") for m in matches[:display_count]]
+                has_more = len(matches) > display_count
+
+                # Format the list properly
+                if len(item_names) == 1:
+                    items_list = item_names[0]
+                elif len(item_names) == 2:
+                    items_list = f"{item_names[0]} or {item_names[1]}"
+                elif has_more:
+                    # "Item1, Item2, ..., Item6, and X more" (no "or" before "and")
+                    items_list = ", ".join(item_names)
+                    items_list += f", and {len(matches) - display_count} more"
+                else:
+                    # "Item1, Item2, Item3, Item4, Item5, or Item6"
+                    items_list = ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
+
+                msg = f"For items with {ingredient}, we have: {items_list}. Which would you like?"
+
+                # Store pagination state for "what else" follow-up
+                if has_more:
+                    order.pending_ingredient_search = {
+                        "ingredient": ingredient,
+                        "matches": matches,
+                        "offset": display_count,
+                    }
+
+            return StateMachineResult(
+                message=msg,
+                order=order,
+            )
 
         # Handle "add [modifier]" patterns that should modify the last coffee
         # e.g., "add vanilla syrup", "add oat milk", "with caramel"

@@ -341,6 +341,7 @@ def parse_open_input(
     spread_types: set[str] | None = None,
     modifier_category_keywords: dict[str, str] | None = None,
     modifier_item_keywords: dict[str, str] | None = None,
+    ingredient_to_items: dict[str, list[dict]] | None = None,
 ) -> OpenInputResponse:
     """Parse user input when open for new orders.
 
@@ -356,6 +357,8 @@ def parse_open_input(
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
         modifier_item_keywords: Mapping of item keywords to item type slugs
             (e.g., {"latte": "coffee", "cappuccino": "coffee"})
+        ingredient_to_items: Mapping of ingredient names to menu items containing them
+            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
     """
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
@@ -433,6 +436,7 @@ def parse_open_input(
         spread_types=spread_types,
         modifier_category_keywords=modifier_category_keywords,
         modifier_item_keywords=modifier_item_keywords,
+        ingredient_to_items=ingredient_to_items,
     )
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])

@@ -904,6 +904,11 @@ class OrderTask(BaseTask):
     # Used when user asks "what other X do you have?" or "more X"
     menu_query_pagination: dict | None = None
 
+    # Ingredient search pagination state for "what else" follow-up
+    # Dict with: ingredient (str), matches (list of item dicts), offset (int)
+    # Used when user says "chicken" and we show items, then they say "what else"
+    pending_ingredient_search: dict | None = None
+
     # Configuration options page for "what else" during field configuration
     # Tracks which page of options (e.g., bagel types) we're showing
     # 0 = first page (default), 1 = second page, etc.

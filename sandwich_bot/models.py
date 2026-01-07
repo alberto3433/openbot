@@ -451,7 +451,7 @@ class MenuItem(Base):
     __tablename__ = "menu_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
     category = Column(String, nullable=False, index=True)  # 'sandwich', 'side', 'drink', 'dessert', etc.
     is_signature = Column(Boolean, default=False, nullable=False)

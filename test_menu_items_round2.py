@@ -1,7 +1,7 @@
 """
 Extended Menu Item Test Script - Round 2
 Tests 30 additional menu items with varied ordering patterns.
-Focus: Speed menu items, quantities, custom builds, modifications, and edge cases.
+Focus: Signature items, quantities, custom builds, modifications, and edge cases.
 
 VALIDATION: Tests now validate that the CORRECT items are ordered, not just ANY items.
 """
@@ -214,7 +214,7 @@ TEST_CASES = [
             'text'
         ],
         'expected_items': [
-            {'name': 'The Classic', 'type': 'speed_menu_bagel'}
+            {'name': 'The Classic', 'type': 'signature_item'}
         ]
     },
     {
@@ -231,7 +231,7 @@ TEST_CASES = [
             'in store'
         ],
         'expected_items': [
-            {'name': 'The Traditional', 'type': 'speed_menu_bagel'}
+            {'name': 'The Traditional', 'type': 'signature_item'}
         ]
     },
     {
@@ -247,7 +247,7 @@ TEST_CASES = [
             'text'
         ],
         'expected_items': [
-            {'name': 'Max Zucker', 'type': 'speed_menu_bagel'}
+            {'name': 'Max Zucker', 'type': 'signature_item'}
         ]
     },
     {
@@ -263,7 +263,7 @@ TEST_CASES = [
             'email'
         ],
         'expected_items': [
-            {'name': 'Chelsea Club', 'type': 'speed_menu_bagel'}
+            {'name': 'Chelsea Club', 'type': 'signature_item'}
         ]
     },
     {
@@ -279,7 +279,7 @@ TEST_CASES = [
             'text'
         ],
         'expected_items': [
-            {'name': 'Flatiron Traditional', 'type': 'speed_menu_bagel'}
+            {'name': 'Flatiron Traditional', 'type': 'signature_item'}
         ]
     },
 
@@ -569,7 +569,7 @@ TEST_CASES = [
             'text'
         ],
         'expected_items': [
-            {'name': 'The Leo', 'type': 'speed_menu_bagel'}
+            {'name': 'The Leo', 'type': 'signature_item'}
         ]
     },
     {
@@ -692,7 +692,7 @@ TEST_CASES = [
             'in store'
         ],
         'expected_items': [
-            {'name': 'The Leo', 'type': 'speed_menu_bagel'},
+            {'name': 'The Leo', 'type': 'signature_item'},
             {'name': 'latte', 'type': 'drink'}
         ]
     },

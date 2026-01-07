@@ -494,10 +494,10 @@ class TestMenuItemToasted:
         result = parse_open_input("ham egg and cheese on wheat toasted")
 
         # Should have toasted set to True (in speed menu bagel fields since it's recognized as HEC)
-        assert result.new_speed_menu_bagel_toasted is True, f"Should extract toasted=True, got {result.new_speed_menu_bagel_toasted}"
+        assert result.new_signature_item_toasted is True, f"Should extract toasted=True, got {result.new_signature_item_toasted}"
         # Parser may return abbreviation "HEC" or full name "Ham Egg and Cheese Bagel"
         valid_names = ["Ham Egg and Cheese Bagel", "HEC"]
-        assert result.new_speed_menu_bagel_name in valid_names, f"Should be HEC or Ham Egg and Cheese Bagel, got {result.new_speed_menu_bagel_name}"
+        assert result.new_signature_item_name in valid_names, f"Should be HEC or Ham Egg and Cheese Bagel, got {result.new_signature_item_name}"
 
     def test_multi_item_parser_extracts_bagel_toasted(self):
         """Test that the multi-item parser extracts toasted for bagels.
@@ -1765,7 +1765,7 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_menu_item(self):
         """Test ordering a bagel and a menu item (like The Classic BEC) together."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import BagelItemTask, SpeedMenuBagelItemTask
+        from sandwich_bot.tasks.models import BagelItemTask, SignatureItemTask
 
         # Use global menu data which has all pricing info
         sm = OrderStateMachine()
@@ -1777,12 +1777,12 @@ class TestBagelWithCoffeeConfig:
 
         # Should have both items in the order
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        speed_menu_items = [i for i in order.items.items if isinstance(i, SpeedMenuBagelItemTask)]
+        signature_items = [i for i in order.items.items if isinstance(i, SignatureItemTask)]
         assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
-        assert len(speed_menu_items) == 1, f"Expected 1 speed menu item, got: {len(speed_menu_items)}"
+        assert len(signature_items) == 1, f"Expected 1 speed menu item, got: {len(signature_items)}"
 
         # Speed menu item should be The Classic BEC
-        assert speed_menu_items[0].menu_item_name == "The Classic BEC"
+        assert signature_items[0].menu_item_name == "The Classic BEC"
 
         # Should be asking for bagel type (bagel needs config)
         assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
@@ -2534,14 +2534,14 @@ class TestRecommendationInquiry:
         # Should NOT modify the order
         assert len(order.items.items) == 0
 
-    def test_general_recommendation_with_speed_menu(self):
+    def test_general_recommendation_with_signature_items(self):
         """Test general recommendation when speed menu items exist."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "speed_menu_bagel": [
+                "signature_item": [
                     {"name": "Nova Special"},
                 ],
             }
@@ -2555,7 +2555,7 @@ class TestRecommendationInquiry:
         # Should NOT modify the order
         assert len(order.items.items) == 0
 
-    def test_general_recommendation_without_speed_menu(self):
+    def test_general_recommendation_without_signature_items(self):
         """Test general recommendation when no speed menu items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
@@ -4154,7 +4154,7 @@ class TestConfirmationHandler:
                 # No new item detected
                 mock_open.return_value = OpenInputResponse(
                     new_menu_item=None, new_bagel=False, new_coffee=False,
-                    new_speed_menu_bagel=False
+                    new_signature_item=False
                 )
 
                 result = sm.checkout_handler.handle_confirmation("no I want to change something", order)
@@ -4296,7 +4296,7 @@ class TestGreetingHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=True, unclear=False, new_bagel=False,
-                new_coffee=False, new_speed_menu_bagel=False
+                new_coffee=False, new_signature_item=False
             )
 
             result = sm._handle_greeting("hello", order)
@@ -4317,7 +4317,7 @@ class TestGreetingHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 is_greeting=False, unclear=True, new_bagel=False,
-                new_coffee=False, new_speed_menu_bagel=False
+                new_coffee=False, new_signature_item=False
             )
 
             result = sm._handle_greeting("uh what", order)
@@ -4339,7 +4339,7 @@ class TestGreetingHandler:
                 is_greeting=False, unclear=False,
                 new_bagel=True, new_bagel_quantity=1, new_bagel_type="plain",
                 new_bagel_toasted=True, new_bagel_spread="cream cheese",
-                new_coffee=False, new_speed_menu_bagel=False
+                new_coffee=False, new_signature_item=False
             )
 
             result = sm._handle_greeting("can I get a plain bagel toasted with cream cheese", order)
@@ -4365,7 +4365,7 @@ class TestGreetingHandler:
                 is_greeting=False, unclear=False,
                 new_bagel=False, new_coffee=True, new_coffee_type="drip coffee",
                 new_coffee_size="large", new_coffee_iced=True,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_greeting("I'd like a large iced drip coffee", order)
@@ -4397,7 +4397,7 @@ class TestTakingItemsHandler:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=True, new_bagel_quantity=1, new_bagel_type="everything",
                 new_bagel_toasted=True, new_bagel_spread="butter",
-                new_coffee=False, new_speed_menu_bagel=False
+                new_coffee=False, new_signature_item=False
             )
 
             result = sm._handle_taking_items("an everything bagel toasted with butter", order)
@@ -4422,7 +4422,7 @@ class TestTakingItemsHandler:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=False, new_coffee=True, new_coffee_type="drip coffee",
                 new_coffee_size="medium", new_coffee_iced=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("a medium drip coffee", order)
@@ -4448,7 +4448,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 done_ordering=True, new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("that's all", order)
@@ -4475,7 +4475,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="latte", new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("cancel the latte", order)
@@ -4512,7 +4512,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="coffees", new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("remove the coffees", order)
@@ -4542,7 +4542,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 duplicate_last_item=1, new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("make it 2", order)
@@ -4563,7 +4563,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 order_type="pickup", new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("I'd like to place a pickup order", order)
@@ -4584,7 +4584,7 @@ class TestTakingItemsHandler:
         with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
                 cancel_item="bagel", new_bagel=False, new_coffee=False,
-                new_speed_menu_bagel=False
+                new_signature_item=False
             )
 
             result = sm._handle_taking_items("cancel the bagel", order)
@@ -4605,7 +4605,7 @@ class TestTakingItemsHandler:
             mock_parse.return_value = OpenInputResponse(
                 new_bagel=True, new_bagel_quantity=3, new_bagel_type="plain",
                 new_bagel_toasted=True, new_bagel_spread="cream cheese",
-                new_coffee=False, new_speed_menu_bagel=False
+                new_coffee=False, new_signature_item=False
             )
 
             result = sm._handle_taking_items("3 plain bagels toasted with cream cheese", order)
@@ -4887,25 +4887,25 @@ class TestEmailHandler:
 
 
 class TestSpeedMenuBagelToastedHandler:
-    """Tests for _handle_speed_menu_bagel_toasted."""
+    """Tests for _handle_signature_item_toasted."""
 
     def test_yes_toasted_completes_item(self):
         """Test that 'yes' sets toasted=True and completes item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item = SignatureItemTask(menu_item_name="The Classic")
         item.mark_in_progress()
         order.items.add_item(item)
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("yes please", item, order)
+        result = sm.signature_item_handler.handle_signature_item_toasted("yes please", item, order)
 
         assert item.toasted is True
         assert item.status == TaskStatus.COMPLETE
@@ -4915,19 +4915,19 @@ class TestSpeedMenuBagelToastedHandler:
         """Test that 'no' sets toasted=False and completes item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-        item = SpeedMenuBagelItemTask(menu_item_name="The Leo")
+        item = SignatureItemTask(menu_item_name="The Leo")
         item.mark_in_progress()
         order.items.add_item(item)
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("no thanks", item, order)
+        result = sm.signature_item_handler.handle_signature_item_toasted("no thanks", item, order)
 
         assert item.toasted is False
         assert item.status == TaskStatus.COMPLETE
@@ -4936,13 +4936,13 @@ class TestSpeedMenuBagelToastedHandler:
         """Test that unclear input asks for toasted preference again."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, ToastedChoiceResponse
-        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask
+        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item = SignatureItemTask(menu_item_name="The Classic")
         item.mark_in_progress()
         order.items.add_item(item)
         order.pending_item_id = item.id
@@ -4951,7 +4951,7 @@ class TestSpeedMenuBagelToastedHandler:
         with patch("sandwich_bot.tasks.bagel_config_handler.parse_toasted_choice") as mock_parse:
             mock_parse.return_value = ToastedChoiceResponse(toasted=None)
 
-            result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("what?", item, order)
+            result = sm.signature_item_handler.handle_signature_item_toasted("what?", item, order)
 
             assert "toasted" in result.message.lower()
             assert item.toasted is None
@@ -4960,20 +4960,20 @@ class TestSpeedMenuBagelToastedHandler:
         """Test that 'toasted' is parsed deterministically without LLM."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+        item = SignatureItemTask(menu_item_name="The Classic")
         item.mark_in_progress()
         order.items.add_item(item)
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
         # "toasted" should be parsed deterministically
-        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("toasted", item, order)
+        result = sm.signature_item_handler.handle_signature_item_toasted("toasted", item, order)
 
         assert item.toasted is True
         assert item.status == TaskStatus.COMPLETE
@@ -4982,19 +4982,19 @@ class TestSpeedMenuBagelToastedHandler:
         """Test that 'not toasted' is parsed deterministically."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SpeedMenuBagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-        item = SpeedMenuBagelItemTask(menu_item_name="The Leo")
+        item = SignatureItemTask(menu_item_name="The Leo")
         item.mark_in_progress()
         order.items.add_item(item)
         order.pending_item_id = item.id
         order.pending_field = "toasted"
 
-        result = sm.speed_menu_handler.handle_speed_menu_bagel_toasted("not toasted", item, order)
+        result = sm.signature_item_handler.handle_signature_item_toasted("not toasted", item, order)
 
         assert item.toasted is False
         assert item.status == TaskStatus.COMPLETE
@@ -5323,7 +5323,7 @@ class TestSignatureMenuInquiryHandler:
                 "signature_items": [
                     {"name": "Turkey Club"},
                 ],
-                "speed_menu_bagel": [
+                "signature_item": [
                     {"name": "The Classic"},
                 ],
             }
@@ -5364,7 +5364,7 @@ class TestSignatureMenuInquiryHandler:
         sm = OrderStateMachine()
         sm.menu_data = {
             "items_by_type": {
-                "speed_menu_bagel": [
+                "signature_item": [
                     {"name": "The Classic"},
                     {"name": "The Leo"},
                 ],
@@ -5372,25 +5372,25 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("speed_menu_bagel", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_item", order)
 
         assert "the classic and the leo" in result.message.lower()
 
-    def test_speed_menu_bagel_type_pluralized(self):
-        """Test that speed_menu_bagel type is pluralized correctly."""
+    def test_signature_item_type_pluralized(self):
+        """Test that signature_item type is pluralized correctly."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
         sm = OrderStateMachine()
         sm.menu_data = {
             "items_by_type": {
-                "speed_menu_bagel": [
+                "signature_item": [
                     {"name": "The Classic"},
                 ],
             }
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("speed_menu_bagel", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_item", order)
 
         assert "speed menu bagels" in result.message.lower()

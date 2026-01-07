@@ -66,7 +66,7 @@ def create_full_menu_data():
             "everything": {"id": 202, "name": "Everything Bagel", "base_price": 2.75},
             "sesame": {"id": 203, "name": "Sesame Bagel", "base_price": 2.50},
         },
-        "speed_menu_items": {
+        "signature_items": {
             "the classic bec": {"id": 401, "name": "The Classic BEC", "base_price": 9.50},
             "classic bec": {"id": 401, "name": "The Classic BEC", "base_price": 9.50},
             "the leo": {"id": 402, "name": "The Leo", "base_price": 14.00},
@@ -334,7 +334,7 @@ class TestCriticalOrderScenarios:
     # =========================================================================
     # TEST 5: Speed Menu + Coffee Combo
     # =========================================================================
-    def test_05_speed_menu_plus_coffee(self):
+    def test_05_signature_item_plus_coffee(self):
         """
         Test: 'classic BEC and a medium iced coffee'
         Should add speed menu item and coffee.
@@ -649,7 +649,7 @@ def run_all_tests():
         ("Test 2: Bagel + Specific Coffee", test_class.test_02_bagel_plus_specific_coffee),
         ("Test 3: Coffee First Then Bagel", test_class.test_03_coffee_first_then_bagel),
         ("Test 4: Multiple Same Items", test_class.test_04_multiple_same_items),
-        ("Test 5: Speed Menu + Coffee", test_class.test_05_speed_menu_plus_coffee),
+        ("Test 5: Signature Item + Coffee", test_class.test_05_signature_item_plus_coffee),
         ("Test 6: Modification Mid-Flow", test_class.test_06_modification_mid_flow),
         ("Test 7: Ambiguous Drink + Muffin", test_class.test_07_ambiguous_drink_and_muffin),
         ("Test 8: Complex Modifiers", test_class.test_08_complex_single_item_modifiers),

@@ -64,7 +64,7 @@ def create_menu_data():
             "everything": {"id": 202, "name": "Everything Bagel", "base_price": 2.75},
             "sesame": {"id": 203, "name": "Sesame Bagel", "base_price": 2.50},
         },
-        "speed_menu_items": {
+        "signature_items": {
             "the classic bec": {"id": 401, "name": "The Classic BEC", "base_price": 9.50},
             "classic bec": {"id": 401, "name": "The Classic BEC", "base_price": 9.50},
             "the classic": {"id": 401, "name": "The Classic BEC", "base_price": 9.50},
@@ -221,7 +221,7 @@ class TestAmbiguousItemOrders:
                 "what type", "which bagel", "what kind"
             ]), f"Should ask about bagel type. Message: {result.message}"
 
-    def test_the_classic_matches_speed_menu(self):
+    def test_the_classic_matches_signature_item(self):
         """
         Test: User says "the classic" which should match a speed menu item.
 

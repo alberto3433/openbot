@@ -21,6 +21,7 @@ from .models import (
     EspressoItemTask,
     MenuItemTask,
     SpeedMenuBagelItemTask,
+    SignatureItemTask,
     TaskStatus,
 )
 from .schemas.phases import OrderPhase
@@ -36,6 +37,7 @@ from .schemas import (
     ParsedCoffeeEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
+    ParsedSignatureItemEntry,
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input

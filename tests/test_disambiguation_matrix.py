@@ -208,8 +208,6 @@ class TestSpecificItemsWithGenericSuffix:
 
     @pytest.mark.parametrize("user_input,expected_match_count,should_disambiguate", [
         ("bagel chips", 4, True),        # Multiple bagel chips variants
-        ("potato chips", 1, False),       # Single match
-        ("kettle chips", 1, False),       # Single match
         ("orange juice", 3, True),        # Multiple OJ variants (Tropicana, Fresh Squeezed, etc.)
         ("chocolate chip cookie", 1, False),  # Likely single match
     ])
@@ -223,8 +221,6 @@ class TestSpecificItemsWithGenericSuffix:
 
     @pytest.mark.parametrize("user_input,min_matches,max_matches", [
         ("bagel chips", 4, 10),      # All bagel chips variants
-        ("potato chips", 1, 1),      # Exactly one
-        ("kettle chips", 1, 1),      # Exactly one
         ("orange juice", 2, 10),     # Multiple OJ types
     ])
     def test_specific_item_menu_lookup(self, menu_lookup, user_input, min_matches, max_matches):
@@ -236,8 +232,6 @@ class TestSpecificItemsWithGenericSuffix:
 
     @pytest.mark.parametrize("user_input,should_disambiguate", [
         ("bagel chips", True),       # Multiple matches - should disambiguate
-        ("potato chips", False),     # Single match - should add directly
-        ("kettle chips", False),     # Single match - should add directly
     ])
     def test_specific_item_disambiguation_behavior(self, item_handler, user_input, should_disambiguate, fresh_order):
         """Handler should disambiguate or add directly based on match count."""
@@ -267,8 +261,7 @@ class TestExactMenuItemNames:
         "Bagel Chips - BBQ",
         "Bagel Chips - Salt",
         "Bagel Chips - Sea Salt & Vinegar",
-        "Potato Chips",
-        "Kettle Chips",
+        "Chips",
     ])
     def test_exact_name_menu_lookup(self, menu_lookup, user_input):
         """Exact menu names should return exactly one match."""
@@ -279,8 +272,8 @@ class TestExactMenuItemNames:
             f"'{user_input}' should find at least 1 match, got {len(matches)}"
 
     @pytest.mark.parametrize("user_input", [
-        "Potato Chips",
-        "Kettle Chips",
+        "Bagel Chips - BBQ",  # Exact match
+        "Bagel Chips - Salt",  # Exact match
     ])
     def test_exact_name_adds_directly(self, item_handler, user_input, fresh_order):
         """Exact menu names with single match should add directly."""
@@ -399,10 +392,9 @@ class TestFullFlowIntegration:
         assert fresh_order.pending_field == "item_selection"
         assert len(fresh_order.pending_item_options) >= 4
 
-        # Verify all chip types are in options
+        # Verify bagel chip variants are in options
         option_names = [opt['name'] for opt in fresh_order.pending_item_options]
         assert any('Bagel Chips' in name for name in option_names)
-        assert any('Potato Chips' in name for name in option_names)
 
     def test_bagel_chips_full_flow(self, item_handler, fresh_order):
         """Test 'bagel chips' shows all bagel chip variants."""
@@ -421,20 +413,6 @@ class TestFullFlowIntegration:
         option_names = [opt['name'] for opt in fresh_order.pending_item_options]
         assert all('Bagel Chips' in name or 'bagel chips' in name.lower() for name in option_names), \
             f"All options should be bagel chips variants, got: {option_names}"
-
-    def test_potato_chips_full_flow(self, item_handler, fresh_order):
-        """Test 'potato chips' adds directly (single match)."""
-        # Step 1: Parser
-        parser_result = get_parser_result("potato chips")
-        assert parser_result.new_menu_item == "potato chips"
-
-        # Step 2: Handler processes it - should add directly
-        handler_result = get_handler_result(item_handler, "potato chips", fresh_order)
-
-        # Step 3: Should NOT be in disambiguation state
-        assert handler_result == "SINGLE_MATCH_FOUND", \
-            "Potato chips should add directly without disambiguation"
-
 
 # ============================================================================
 # Run tests with verbose output

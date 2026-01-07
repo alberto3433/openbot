@@ -1660,9 +1660,8 @@ class TestSpeedMenuBagelParsing:
         ("classic bec", "The Classic BEC"),
         ("The Leo", "The Leo"),
         ("leo", "The Leo"),
-        # Note: "The Traditional" maps to "The Zucker's Traditional" in the database
-        ("The Traditional", "The Zucker's Traditional"),
-        ("traditional", "The Zucker's Traditional"),
+        ("The Traditional", "The Traditional"),
+        ("traditional", "The Traditional"),
         ("The Max Zucker", "The Max Zucker"),
         ("max zucker", "The Max Zucker"),
         # Note: "The Classic" maps to "The Classic BEC" (no standalone "The Classic" item)

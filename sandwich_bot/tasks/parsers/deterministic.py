@@ -3214,6 +3214,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
 
     # Early exit: Don't split coffee orders where " and " connects modifiers
     # e.g., "large iced coffee with sugar and 2 vanilla syrups" should NOT be split
+    # e.g., "large latte with oat milk and 2 sugars" should NOT be split
     # This allows the coffee parser to handle the complete input with all modifiers
     if " with " in text_lower and " and " in text_lower:
         # Check if this looks like a single coffee order with multiple modifiers
@@ -3221,28 +3222,47 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                           "macchiato", "mocha", "tea", "chai", "matcha", "cold brew"]
         sweeteners = ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
         syrups = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin", "cinnamon", "lavender", "syrup"]
+        milks = ["oat", "almond", "soy", "coconut", "skim", "whole", "2%", "milk", "half and half"]
+        # Note: "cream" is intentionally omitted from milks to avoid matching "cream cheese"
+
+        # Item keywords that indicate a separate item, not just modifiers
+        item_keywords = ["bagel", "sandwich", "classic", "leo", "traditional",
+                        "croissant", "muffin", "pastry", "donut", "cookie",
+                        "salad", "soup", "avocado toast"]
 
         has_coffee = any(kw in text_lower for kw in coffee_keywords)
         if has_coffee:
             # Get the part after "with"
             after_with = text_lower.split(" with ", 1)[1] if " with " in text_lower else ""
-            # Check if " and " connects sweetener/syrup modifiers
-            # Pattern: "[sweetener] and [qty] [syrup]" or "[modifier] and [modifier]"
+            # Check if " and " connects sweetener/syrup/milk modifiers
+            # Pattern: "[modifier] and [modifier]" where modifiers are sweetener, syrup, or milk
             if " and " in after_with:
                 before_and = after_with.split(" and ")[0].strip()
                 after_and = after_with.split(" and ", 1)[1].strip()
 
-                # Check if before_and is a sweetener and after_and contains a syrup
-                before_is_sweetener = any(sw in before_and for sw in sweeteners)
-                after_has_syrup = any(sy in after_and for sy in syrups)
+                # If after_and contains an item keyword, it's a multi-item order, not modifiers
+                after_has_item = any(item in after_and for item in item_keywords)
+                if after_has_item:
+                    # Don't skip - this is a multi-item order like "coffee with milk and a bagel"
+                    pass
+                else:
+                    # Check modifier types for before_and
+                    before_is_sweetener = any(sw in before_and for sw in sweeteners)
+                    before_has_syrup = any(sy in before_and for sy in syrups)
+                    before_has_milk = any(m in before_and for m in milks)
 
-                # Also check reverse: syrup and sweetener
-                before_has_syrup = any(sy in before_and for sy in syrups)
-                after_is_sweetener = any(sw in after_and for sw in sweeteners)
+                    # Check modifier types for after_and
+                    after_is_sweetener = any(sw in after_and for sw in sweeteners)
+                    after_has_syrup = any(sy in after_and for sy in syrups)
+                    after_has_milk = any(m in after_and for m in milks)
 
-                if (before_is_sweetener and after_has_syrup) or (before_has_syrup and after_is_sweetener):
-                    logger.debug("Multi-item: skipping split - detected coffee with modifier pattern: '%s'", text[:60])
-                    return None  # Let coffee parser handle the complete input
+                    # Skip split if both parts are coffee modifiers (any combination)
+                    before_is_coffee_modifier = before_is_sweetener or before_has_syrup or before_has_milk
+                    after_is_coffee_modifier = after_is_sweetener or after_has_syrup or after_has_milk
+
+                    if before_is_coffee_modifier and after_is_coffee_modifier:
+                        logger.debug("Multi-item: skipping split - detected coffee with modifier pattern: '%s'", text[:60])
+                        return None  # Let coffee parser handle the complete input
 
     compound_phrases = [
         # Egg sandwich phrases (longer phrases first to match properly)

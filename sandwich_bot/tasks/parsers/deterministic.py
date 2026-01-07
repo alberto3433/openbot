@@ -117,6 +117,7 @@ def _build_coffee_parsed_item(
     sweeteners: list | None = None,
     syrups: list | None = None,
     extra_shots: int = 0,
+    original_text: str | None = None,
 ) -> ParsedCoffeeEntry:
     """Build a ParsedCoffeeEntry from boolean flag data."""
     return ParsedCoffeeEntry(
@@ -131,6 +132,7 @@ def _build_coffee_parsed_item(
         sweeteners=sweeteners or [],
         syrups=syrups or [],
         extra_shots=extra_shots,
+        original_text=original_text,
     )
 
 
@@ -1836,6 +1838,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
                 quantity=1,
                 milk=milk,
                 decaf=decaf,
+                original_text=text,
             ))
             item_count += 1
             logger.info(
@@ -1851,6 +1854,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
             temperature="iced" if base_iced else ("hot" if base_iced is False else None),
             quantity=1,
             decaf=base_decaf,
+            original_text=text,
         ))
 
     # Get first coffee for the primary new_coffee fields
@@ -2269,6 +2273,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             sweeteners=sweeteners,
             syrups=syrups,
             extra_shots=extra_shots,
+            original_text=text,
         )
         for _ in range(quantity)
     ]
@@ -3246,6 +3251,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 decaf=coffee_result.new_coffee_decaf,
                 sweeteners=sweeteners,
                 syrups=syrups,
+                original_text=part,
             ))
             logger.info("Multi-item: detected coffee '%s' (qty=%d, size=%s, iced=%s, milk=%s) via direct parse",
                         coffee_result.new_coffee_type, coffee_result.new_coffee_quantity or 1,
@@ -3376,6 +3382,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 decaf=parsed.new_coffee_decaf,
                 sweeteners=sweeteners,
                 syrups=syrups,
+                original_text=part,
             ))
             logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
                         parsed.new_coffee_type, parsed.new_coffee_quantity or 1,

@@ -1611,6 +1611,7 @@ class TakingItemsHandler:
                 wants_syrup=item.wants_syrup,
                 cream_level=item.cream_level,
                 extra_shots=item.extra_shots,
+                original_input=item.original_text,
             )
             order = result.order
             summary = item.drink_type

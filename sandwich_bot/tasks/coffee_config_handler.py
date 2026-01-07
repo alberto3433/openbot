@@ -90,6 +90,7 @@ class CoffeeConfigHandler:
         wants_syrup: bool = False,
         cream_level: str | None = None,
         extra_shots: int = 0,
+        original_input: str | None = None,
     ) -> StateMachineResult:
         """Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
@@ -157,10 +158,13 @@ class CoffeeConfigHandler:
             cold_items = items_by_type.get("beverage", [])
             all_drinks = sized_items + cold_items
 
-            # Filter drinks that contain the search term
+            # Filter drinks that contain the search term AND pass the required_match_phrases filter
+            # Use original_input for the match filter to preserve full context (e.g., "boxed coffee" vs "coffee")
+            filter_input = (original_input or coffee_type).lower() if (original_input or coffee_type) else ""
             matching_drinks = [
                 item for item in all_drinks
                 if coffee_type_lower in item.get("name", "").lower()
+                and self.menu_lookup._passes_match_filter(item, filter_input)
             ]
 
             if len(matching_drinks) == 1:
@@ -1266,6 +1270,7 @@ class CoffeeConfigHandler:
                 decaf=parsed.new_coffee_decaf,
                 syrup_quantity=parsed.new_coffee_syrup_quantity or 1,
                 cream_level=parsed.new_coffee_cream_level,
+                original_input=user_input,
             )
 
         # Try direct matching with known drink types
@@ -1281,6 +1286,7 @@ class CoffeeConfigHandler:
                     flavor_syrup=None,
                     quantity=1,
                     order=order,
+                    original_input=user_input,
                 )
 
         # Try to look up in menu
@@ -1299,6 +1305,7 @@ class CoffeeConfigHandler:
                     flavor_syrup=None,
                     quantity=1,
                     order=order,
+                    original_input=user_input,
                 )
 
         # Couldn't parse - ask again

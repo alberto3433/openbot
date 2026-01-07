@@ -103,6 +103,10 @@ class ParsedCoffeeEntry(BaseModel):
     # Extra espresso shots (1 = double, 2 = triple)
     extra_shots: int = 0
 
+    # Original text that was parsed (for required_match_phrases filtering)
+    # Preserves "boxed coffee" when drink_type is extracted as "coffee"
+    original_text: str | None = None
+
     # Legacy modifiers list (for backwards compatibility during migration)
     modifiers: list[str] = Field(default_factory=list)
 

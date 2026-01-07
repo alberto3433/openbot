@@ -1010,6 +1010,25 @@ class TakingItemsHandler:
                         order=order,
                     )
 
+            # Handle special "__all_items__" value for "remove all", "cancel everything", etc.
+            if parsed.cancel_item == "__all_items__":
+                if active_items:
+                    num_items = len(active_items)
+                    # Remove all items by marking them as cancelled
+                    for item in active_items:
+                        idx = order.items.items.index(item)
+                        order.items.remove_item(idx)
+                    logger.info("Cancellation: removed ALL %d items from cart", num_items)
+                    return StateMachineResult(
+                        message="OK, I've cleared your order. What would you like to order?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message="Your order is already empty. What would you like to order?",
+                        order=order,
+                    )
+
             if active_items:
                 # Check if plural removal (e.g., "coffees", "bagels")
                 is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2

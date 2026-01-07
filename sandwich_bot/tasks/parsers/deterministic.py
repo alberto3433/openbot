@@ -226,6 +226,8 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"|"
     r"remove\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
+    r"clear\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
     r"take\s+(?:off\s+)?(?:the\s+)?(.+?)(?:\s+off)?[\s!.,]*$"
     r"|"
     r"never\s*mind\s+(?:the\s+)?(.+?)[\s!.,]*$"
@@ -3642,12 +3644,23 @@ def parse_open_input_deterministic(
     cancel_match = CANCEL_ITEM_PATTERN.match(text)
     if cancel_match:
         cancel_item = None
-        for i in range(1, 9):
+        for i in range(1, 10):  # 9 capture groups in pattern
             if cancel_match.group(i):
                 cancel_item = cancel_match.group(i)
                 break
         if cancel_item:
             cancel_item = cancel_item.strip()
+            # Handle "all" / "everything" to clear entire order
+            all_items_phrases = {
+                "all", "everything", "all of it", "the order", "my order",
+                "the whole order", "my whole order", "all items", "all the items",
+                "the whole thing", "it all", "them all",
+                # Without "the" prefix (pattern strips "the")
+                "order", "whole order", "whole thing"
+            }
+            if cancel_item.lower() in all_items_phrases:
+                logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)
+                return OpenInputResponse(cancel_item="__all_items__")
             # Handle pronouns that refer to the last item
             last_item_pronouns = {"that", "it", "this", "the last one", "the last item", "last one", "last item"}
             if cancel_item.lower() in last_item_pronouns:

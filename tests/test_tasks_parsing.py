@@ -1045,6 +1045,31 @@ class TestCancellationPatternDetection:
         assert result is None, \
             f"'{text}' should NOT be detected as a change request, but got: {result}"
 
+    @pytest.mark.parametrize("text", [
+        "remove all",
+        "cancel all",
+        "remove everything",
+        "cancel everything",
+        "forget everything",
+        "remove the order",
+        "cancel the order",
+        "remove my order",
+        "cancel my order",
+        "clear the order",
+        "remove all items",
+        "cancel all the items",
+        "nevermind the whole order",
+        "forget the whole thing",
+        "remove it all",
+        "cancel them all",
+    ])
+    def test_cancel_all_items_detected(self, text):
+        """Test that 'remove all' and similar phrases trigger full order cancellation."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item == "__all_items__", \
+            f"Expected cancel_item='__all_items__' but got '{result.cancel_item}' for: {text}"
+
 
 class TestTaxQuestionPatternDetection:
     """Tests for tax question pattern detection."""

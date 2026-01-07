@@ -81,7 +81,7 @@ class TestIsSodaDrink:
         from sandwich_bot.tasks.parsers.constants import is_soda_drink
         assert is_soda_drink("pepsi") is False
         assert is_soda_drink("mountain dew") is False
-        assert is_soda_drink("gatorade") is False
+        assert is_soda_drink("red bull") is False  # Not on menu
 
     def test_is_soda_drink_with_none(self):
         """is_soda_drink should return False for None input."""

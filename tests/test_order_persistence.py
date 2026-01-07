@@ -22,17 +22,19 @@ def test_persist_confirmed_order_creates_order_and_items():
 
     db = SessionLocal()
 
-    # Seed one menu item
-    m = MenuItem(
-        name="Turkey Club",
-        category="sandwich",
-        is_signature=True,
-        base_price=8.0,
-        available_qty=5,
-        extra_metadata="{}",
-    )
-    db.add(m)
-    db.commit()
+    # Seed one menu item (get-or-create to handle existing items)
+    m = db.query(MenuItem).filter(MenuItem.name == "Turkey Club").first()
+    if not m:
+        m = MenuItem(
+            name="Turkey Club",
+            category="sandwich",
+            is_signature=True,
+            base_price=8.0,
+            available_qty=5,
+            extra_metadata="{}",
+        )
+        db.add(m)
+        db.commit()
 
     # Build a confirmed order_state with 2 of that item
     order_state = {

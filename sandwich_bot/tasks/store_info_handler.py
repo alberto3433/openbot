@@ -67,9 +67,9 @@ class StoreInfoHandler:
         if hours:
             # We have hours info - return it
             if store_name:
-                message = f"Our hours at {store_name} are {hours}. Can I help you with an order?"
+                message = f"Store hours for our {store_name} location are {hours}. Can I help you with an order?"
             else:
-                message = f"Our hours are {hours}. Can I help you with an order?"
+                message = f"Our store hours are {hours}. Can I help you with an order?"
             return StateMachineResult(message=message, order=order)
 
         # No hours info available
@@ -112,9 +112,9 @@ class StoreInfoHandler:
             full_address = ", ".join(address_parts)
 
             if store_name:
-                message = f"{store_name} is located at {full_address}. Can I help you with an order?"
+                message = f"The address for our {store_name} location is {full_address}. Can I help you with an order?"
             else:
-                message = f"We're located at {full_address}. Can I help you with an order?"
+                message = f"Our address is {full_address}. Can I help you with an order?"
             return StateMachineResult(message=message, order=order)
 
         # No address info available

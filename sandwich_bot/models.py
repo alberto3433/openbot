@@ -53,6 +53,7 @@ class ItemType(Base):
     menu_items = relationship("MenuItem", back_populates="item_type")
     fields = relationship("ItemTypeField", back_populates="item_type", cascade="all, delete-orphan")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
+    type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
 
 
 class ItemTypeField(Base):
@@ -258,6 +259,11 @@ class ItemTypeAttribute(Base):
     display_order = Column(Integer, nullable=False, default=0)  # Order in which to ask questions
     ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user for this
     question_text = Column(Text, nullable=True)  # Question to ask user for this field
+
+    # Ingredient integration - when True, options come from item_type_ingredients table
+    # instead of attribute_options, filtered by ingredient_group
+    loads_from_ingredients = Column(Boolean, nullable=False, default=False)
+    ingredient_group = Column(String(50), nullable=True)  # Links to ItemTypeIngredient.ingredient_group
 
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
@@ -574,6 +580,7 @@ class Ingredient(Base):
     choice_for = relationship("RecipeChoiceItem", back_populates="ingredient", cascade="all, delete-orphan")
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
     attribute_option_links = relationship("AttributeOptionIngredient", back_populates="ingredient", cascade="all, delete-orphan")
+    item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
 
 
 # --- Per-store ingredient availability (86 system) ---
@@ -594,6 +601,63 @@ class IngredientStoreAvailability(Base):
 
     # relationships
     ingredient = relationship("Ingredient", back_populates="store_availability")
+
+
+# --- Item Type Ingredients (for unified ingredient management across item types) ---
+
+class ItemTypeIngredient(Base):
+    """
+    Links ingredients to item types with per-type configuration.
+
+    This enables a unified ingredient system where physical items like milk,
+    sweeteners, and syrups can be managed alongside proteins, toppings, and spreads
+    in a single ingredients table, with per-item-type configuration.
+
+    When an attribute has loads_from_ingredients=True, its options come from
+    this table filtered by ingredient_group, instead of from attribute_options.
+
+    Examples:
+    - Oat Milk linked to 'sized_beverage' with ingredient_group='milk', price_modifier=0.75
+    - Bacon linked to 'bagel' with ingredient_group='protein', price_modifier=3.00
+    - Vanilla Syrup linked to 'sized_beverage' with ingredient_group='syrup', price_modifier=0.50
+    """
+    __tablename__ = "item_type_ingredients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False)
+
+    # Grouping - which selector/category this appears in
+    # e.g., 'milk', 'sweetener', 'syrup', 'spread', 'protein', 'topping', 'cheese'
+    ingredient_group = Column(String(50), nullable=False)
+
+    # Pricing - can vary by item type (oat milk might cost different for latte vs iced coffee)
+    price_modifier = Column(Numeric(10, 2), nullable=False, default=0.00)
+
+    # Display configuration
+    display_order = Column(Integer, nullable=False, default=0)
+    display_name_override = Column(String(100), nullable=True)  # e.g., "Oat" instead of "Oat Milk"
+
+    # Selection behavior
+    is_default = Column(Boolean, nullable=False, default=False)
+    is_available = Column(Boolean, nullable=False, default=True)  # Per-item-type override
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint: one entry per item_type + ingredient + group combination
+    __table_args__ = (
+        UniqueConstraint('item_type_id', 'ingredient_id', 'ingredient_group', name='uq_item_type_ingredient_group'),
+        Index('idx_item_type_ingredients_item_type', 'item_type_id'),
+        Index('idx_item_type_ingredients_ingredient', 'ingredient_id'),
+        Index('idx_item_type_ingredients_group', 'ingredient_group'),
+        Index('idx_item_type_ingredients_item_type_group', 'item_type_id', 'ingredient_group'),
+    )
+
+    # Relationships
+    item_type = relationship("ItemType", back_populates="type_ingredients")
+    ingredient = relationship("Ingredient", back_populates="item_type_links")
 
 
 # --- New Recipe model ---

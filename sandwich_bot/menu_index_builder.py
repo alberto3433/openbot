@@ -18,6 +18,7 @@ from .models import (
     ModifierCategory,
     NeighborhoodZipCode,
     ItemTypeAttribute,
+    ItemTypeIngredient,
     MenuItemAttributeValue,
     MenuItemAttributeSelection,
     Company,
@@ -604,36 +605,76 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
         if item_type_attrs:
             # Use new consolidated table
             for ita in item_type_attrs:
-                # Get options linked to this attribute via item_type_attribute_id
-                options = (
-                    db.query(AttributeOption)
-                    .filter(
-                        AttributeOption.item_type_attribute_id == ita.id,
-                        AttributeOption.is_available == True
+                # Check if this attribute loads from ingredients table
+                if ita.loads_from_ingredients and ita.ingredient_group:
+                    # Load options from item_type_ingredients table
+                    ingredient_links = (
+                        db.query(ItemTypeIngredient)
+                        .join(Ingredient)
+                        .filter(
+                            ItemTypeIngredient.item_type_id == it.id,
+                            ItemTypeIngredient.ingredient_group == ita.ingredient_group,
+                            ItemTypeIngredient.is_available == True,
+                            Ingredient.is_available == True  # Also check ingredient availability
+                        )
+                        .order_by(ItemTypeIngredient.display_order)
+                        .all()
                     )
-                    .order_by(AttributeOption.display_order)
-                    .all()
-                )
 
-                attr_data = {
-                    "slug": ita.slug,
-                    "display_name": ita.display_name,
-                    "input_type": ita.input_type,
-                    "is_required": ita.is_required,
-                    "allow_none": ita.allow_none,
-                    "ask_in_conversation": ita.ask_in_conversation,
-                    "question_text": ita.question_text,
-                    "options": [
-                        {
-                            "slug": opt.slug,
-                            "display_name": opt.display_name,
-                            "price_modifier": opt.price_modifier,
-                            "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
-                            "is_default": opt.is_default,
-                        }
-                        for opt in options
-                    ],
-                }
+                    attr_data = {
+                        "slug": ita.slug,
+                        "display_name": ita.display_name,
+                        "input_type": ita.input_type,
+                        "is_required": ita.is_required,
+                        "allow_none": ita.allow_none,
+                        "ask_in_conversation": ita.ask_in_conversation,
+                        "question_text": ita.question_text,
+                        "loads_from_ingredients": True,
+                        "ingredient_group": ita.ingredient_group,
+                        "options": [
+                            {
+                                "slug": link.ingredient.name.lower().replace(" ", "_"),
+                                "display_name": link.display_name_override or link.ingredient.name,
+                                "ingredient_id": link.ingredient_id,
+                                "ingredient_name": link.ingredient.name,
+                                "price_modifier": float(link.price_modifier),
+                                "iced_price_modifier": 0.0,  # No iced modifier for ingredients (handled elsewhere)
+                                "is_default": link.is_default,
+                            }
+                            for link in ingredient_links
+                        ],
+                    }
+                else:
+                    # Get options linked to this attribute via item_type_attribute_id (original behavior)
+                    options = (
+                        db.query(AttributeOption)
+                        .filter(
+                            AttributeOption.item_type_attribute_id == ita.id,
+                            AttributeOption.is_available == True
+                        )
+                        .order_by(AttributeOption.display_order)
+                        .all()
+                    )
+
+                    attr_data = {
+                        "slug": ita.slug,
+                        "display_name": ita.display_name,
+                        "input_type": ita.input_type,
+                        "is_required": ita.is_required,
+                        "allow_none": ita.allow_none,
+                        "ask_in_conversation": ita.ask_in_conversation,
+                        "question_text": ita.question_text,
+                        "options": [
+                            {
+                                "slug": opt.slug,
+                                "display_name": opt.display_name,
+                                "price_modifier": opt.price_modifier,
+                                "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
+                                "is_default": opt.is_default,
+                            }
+                            for opt in options
+                        ],
+                    }
 
                 if ita.input_type == "multi_select":
                     attr_data["min_selections"] = ita.min_selections

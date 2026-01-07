@@ -73,6 +73,62 @@ class CoffeeConfigHandler:
             self._get_next_question = kwargs.get("get_next_question")
             self._check_redirect = kwargs.get("check_redirect")
 
+    def _get_beverage_options(self, attribute_slug: str) -> list[str]:
+        """Get available options for a beverage attribute from menu data.
+
+        Args:
+            attribute_slug: The attribute slug (e.g., 'milk', 'sweetener', 'syrup')
+
+        Returns:
+            List of option display names. Falls back to defaults if menu data unavailable.
+        """
+        # Fallback defaults in case menu data is not available
+        defaults = {
+            "milk": ["whole milk", "skim milk", "oat milk", "almond milk"],
+            "sweetener": ["sugar", "Splenda", "Sweet'N Low"],
+            "syrup": ["vanilla", "caramel", "hazelnut"],
+        }
+
+        if not self.menu_lookup or not hasattr(self.menu_lookup, "menu_data"):
+            return defaults.get(attribute_slug, [])
+
+        menu_data = self.menu_lookup.menu_data
+        item_types = menu_data.get("item_types", {})
+        sized_beverage = item_types.get("sized_beverage", {})
+        attributes = sized_beverage.get("attributes", [])
+
+        for attr in attributes:
+            if attr.get("slug") == attribute_slug:
+                options = attr.get("options", [])
+                # Filter to only available options and get display names
+                names = [
+                    opt.get("display_name", opt.get("slug", ""))
+                    for opt in options
+                    if opt.get("display_name") or opt.get("slug")
+                ]
+                if names:
+                    return names
+
+        return defaults.get(attribute_slug, [])
+
+    def _format_options_list(self, options: list[str], conjunction: str = "and") -> str:
+        """Format a list of options into a natural language string.
+
+        Args:
+            options: List of option names
+            conjunction: Word to use before last item ("and" or "or")
+
+        Returns:
+            Formatted string like "vanilla, caramel, and hazelnut"
+        """
+        if not options:
+            return ""
+        if len(options) == 1:
+            return options[0]
+        if len(options) == 2:
+            return f"{options[0]} {conjunction} {options[1]}"
+        return ", ".join(options[:-1]) + f", {conjunction} {options[-1]}"
+
     def add_coffee(
         self,
         coffee_type: str | None,
@@ -540,8 +596,10 @@ class CoffeeConfigHandler:
                 order.pending_item_id = coffee.id
                 order.pending_field = "syrup_flavor"
                 logger.info("Coffee has wants_syrup flag, skipping to syrup flavor question")
+                syrup_options = self._get_beverage_options("syrup")
+                syrup_list = self._format_options_list(syrup_options, "and")
                 return StateMachineResult(
-                    message="Which flavor syrup would you like? We have vanilla, caramel, and hazelnut.",
+                    message=f"Which flavor syrup would you like? We have {syrup_list}.",
                     order=order,
                 )
 
@@ -723,14 +781,27 @@ class CoffeeConfigHandler:
 
         if is_asking_options:
             # Answer the question and re-ask about modifiers
+            # Get available options dynamically from menu data
             if "milk" in user_lower:
-                answer = "We have whole milk, skim milk, oat milk, and almond milk."
+                milk_options = self._get_beverage_options("milk")
+                milk_list = self._format_options_list(milk_options, "and")
+                answer = f"We have {milk_list}."
             elif "sugar" in user_lower or "sweetener" in user_lower:
-                answer = "We have regular sugar, Splenda, and Sweet'N Low."
+                sweetener_options = self._get_beverage_options("sweetener")
+                sweetener_list = self._format_options_list(sweetener_options, "and")
+                answer = f"We have {sweetener_list}."
             elif "syrup" in user_lower or "flavor" in user_lower:
-                answer = "We have vanilla, caramel, and hazelnut syrup."
+                syrup_options = self._get_beverage_options("syrup")
+                syrup_list = self._format_options_list(syrup_options, "and")
+                answer = f"We have {syrup_list}."
             else:
-                answer = "We have various milk options (whole, skim, oat, almond), sweeteners (sugar, Splenda, Sweet'N Low), and syrups (vanilla, caramel, hazelnut)."
+                milk_options = self._get_beverage_options("milk")
+                sweetener_options = self._get_beverage_options("sweetener")
+                syrup_options = self._get_beverage_options("syrup")
+                milk_list = self._format_options_list(milk_options, "and")
+                sweetener_list = self._format_options_list(sweetener_options, "and")
+                syrup_list = self._format_options_list(syrup_options, "and")
+                answer = f"We have {milk_list} for milk, {sweetener_list} for sweeteners, and {syrup_list} for syrups."
 
             return StateMachineResult(
                 message=f"{answer} Would you like any of these?",
@@ -772,8 +843,10 @@ class CoffeeConfigHandler:
             logger.info(f"Set pending syrup quantity: {coffee_mods.syrup_quantity}")
 
             order.pending_field = "syrup_flavor"
+            syrup_options = self._get_beverage_options("syrup")
+            syrup_list = self._format_options_list(syrup_options, "and")
             return StateMachineResult(
-                message="Which flavor syrup would you like? We have vanilla, caramel, and hazelnut.",
+                message=f"Which flavor syrup would you like? We have {syrup_list}.",
                 order=order,
             )
 
@@ -862,8 +935,10 @@ class CoffeeConfigHandler:
             return self.configure_next_incomplete_coffee(order)
 
         # Couldn't parse a flavor - ask again
+        syrup_options = self._get_beverage_options("syrup")
+        syrup_list = self._format_options_list(syrup_options, "or")
         return StateMachineResult(
-            message="I didn't catch that. Which syrup flavor would you like - vanilla, caramel, or hazelnut?",
+            message=f"I didn't catch that. Which syrup flavor would you like - {syrup_list}?",
             order=order,
         )
 

@@ -232,6 +232,20 @@ python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel
 - **PR requirements**: All tests must pass, code should be reviewed
 - **Main branch**: Protected; merge only via PR
 
+## Versioning
+
+**IMPORTANT**: Update the version number in `pyproject.toml` before every deployment to GitHub.
+
+```toml
+# In pyproject.toml
+version = "0.1.0"  # Increment this before each deployment
+```
+
+Version format: `MAJOR.MINOR.PATCH`
+- **MAJOR**: Breaking changes or major feature releases
+- **MINOR**: New features, significant improvements
+- **PATCH**: Bug fixes, small improvements
+
 ## Debugging
 
 ```bash

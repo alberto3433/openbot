@@ -172,8 +172,18 @@ class CoffeeConfigHandler:
                 matched_drink = matching_drinks[0]
                 matched_name = matched_drink.get("name")
                 matched_price = matched_drink.get("base_price", 0)
-                skip_config = matched_drink.get("skip_config", False) or is_soda_drink(matched_name)
-                logger.info("ADD COFFEE: Single match for '%s' -> '%s', skip_config=%s", coffee_type_lower, matched_name, skip_config)
+
+                # Check if this is a sized beverage that needs configuration
+                is_sized_beverage = matched_drink in sized_items
+                needs_size_config = is_sized_beverage and (size is None or iced is None)
+
+                # For sized beverages without size/iced, always ask for configuration
+                if needs_size_config:
+                    skip_config = False
+                else:
+                    skip_config = matched_drink.get("skip_config", False) or is_soda_drink(matched_name)
+                logger.info("ADD COFFEE: Single match for '%s' -> '%s', skip_config=%s, is_sized=%s, needs_size_config=%s",
+                            coffee_type_lower, matched_name, skip_config, is_sized_beverage, needs_size_config)
 
                 if skip_config:
                     # Add directly as complete (no size/iced questions)

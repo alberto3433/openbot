@@ -599,8 +599,12 @@ class BagelConfigHandler:
         # For MenuItemTask (omelette side bagels), use simpler handling
         if isinstance(item, MenuItemTask):
             # Try deterministic spread parsing first
-            no_spread_patterns = ["nothing", "plain", "no spread", "none", "no thanks", "nope", "nah"]
-            if any(p in input_lower for p in no_spread_patterns):
+            # Check for explicit no-spread responses
+            # Note: "plain" should only mean "no spread" when NOT followed by "cream cheese" or "cc"
+            # e.g., "plain" = no spread, but "plain cream cheese" = cream cheese spread
+            no_spread_patterns = ["nothing", "no spread", "none", "no thanks", "nope", "nah"]
+            is_plain_only = "plain" in input_lower and "cream cheese" not in input_lower and " cc" not in input_lower
+            if any(p in input_lower for p in no_spread_patterns) or is_plain_only:
                 item.spread = "none"
             else:
                 det_spread, det_spread_type = _extract_spread(user_input)
@@ -711,8 +715,11 @@ class BagelConfigHandler:
         else:
             # Try deterministic spread parsing first
             # This handles cases like "kalamata olive" -> "kalamata olive cream cheese"
-            no_spread_patterns = ["nothing", "plain", "no spread", "none", "no thanks", "nope", "nah"]
-            if any(p in input_lower for p in no_spread_patterns):
+            # Note: "plain" should only mean "no spread" when NOT followed by "cream cheese" or "cc"
+            # e.g., "plain" = no spread, but "plain cream cheese" = cream cheese spread
+            no_spread_patterns = ["nothing", "no spread", "none", "no thanks", "nope", "nah"]
+            is_plain_only = "plain" in input_lower and "cream cheese" not in input_lower and " cc" not in input_lower
+            if any(p in input_lower for p in no_spread_patterns) or is_plain_only:
                 item.spread = "none"
             else:
                 # Use disambiguation-aware spread extraction

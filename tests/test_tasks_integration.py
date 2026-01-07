@@ -3375,6 +3375,43 @@ class TestBagelModifierRemoval:
         # Spread should be updated
         assert "veggie" in active_items[0].spread.lower() or "cream cheese" in active_items[0].spread.lower()
 
+    def test_plain_cream_cheese_sets_spread_not_none(self):
+        """Test that 'plain cream cheese' sets cream cheese spread, not 'none'.
+
+        Regression test for bug where 'plain cream cheese' was interpreted as
+        'no spread' because 'plain' matched the no-spread pattern before the
+        spread extraction logic could run.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM
+        order.pending_field = "spread"
+
+        # Bagel waiting for spread choice
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            toasted=True,
+            spread=None,
+        )
+        order.items.add_item(bagel)
+        # Set pending_item_id so is_configuring_item() returns True
+        order.pending_item_id = bagel.id
+
+        # User says "plain cream cheese" in response to spread question
+        result = sm.process("plain cream cheese", order)
+
+        # The bagel should have cream cheese spread, NOT "none"
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1
+        assert active_items[0].spread is not None, "Spread should be set"
+        assert active_items[0].spread != "none", "Spread should NOT be 'none'"
+        assert "cream cheese" in active_items[0].spread.lower(), \
+            f"Spread should be cream cheese, got: {active_items[0].spread}"
+
 
 # =============================================================================
 # Side Choice Handler Tests

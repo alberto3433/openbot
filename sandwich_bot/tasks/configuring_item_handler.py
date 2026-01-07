@@ -146,6 +146,12 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             if any(kw in input_lower for kw in style_keywords):
                 return False  # Let them ask about style options
 
+        # Asking about milk/sugar/syrup when being asked about coffee modifiers → relevant
+        if pending_field == "coffee_modifiers":
+            modifier_keywords = ["milk", "sugar", "syrup", "sweetener", "cream", "flavor"]
+            if any(kw in input_lower for kw in modifier_keywords):
+                return False  # Let them ask about modifier options
+
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:
         if pattern.search(user_input):

@@ -99,7 +99,10 @@ def _build_modifier_acknowledgment(modifiers: ExtractedModifiers) -> str:
     added_items = []
     if modifiers.proteins:
         added_items.extend(modifiers.proteins)
-    if modifiers.cheeses:
+    # For cheese: if needs clarification, say "cheese" generically; otherwise list specific types
+    if modifiers.needs_cheese_clarification:
+        added_items.append("cheese")
+    elif modifiers.cheeses:
         added_items.extend(modifiers.cheeses)
     if modifiers.toppings:
         added_items.extend(modifiers.toppings)
@@ -142,8 +145,14 @@ def apply_modifiers_to_bagel(
             item.extras.extend(modifiers.proteins)
 
     # Cheeses go to extras (unless we're skipping them)
-    if not skip_cheeses and modifiers.cheeses:
-        item.extras.extend(modifiers.cheeses)
+    if not skip_cheeses:
+        if modifiers.needs_cheese_clarification:
+            # Add generic "cheese" - will be replaced with specific type later
+            if "cheese" not in item.extras:
+                item.extras.append("cheese")
+            item.needs_cheese_clarification = True
+        elif modifiers.cheeses:
+            item.extras.extend(modifiers.cheeses)
 
     # Toppings go to extras
     if modifiers.toppings:
@@ -158,10 +167,6 @@ def apply_modifiers_to_bagel(
         existing_instructions = item.special_instructions or ""
         new_instructions = modifiers.get_special_instructions_string()
         item.special_instructions = f"{existing_instructions}, {new_instructions}".strip(", ") if existing_instructions else new_instructions
-
-    # Check if user said generic "cheese" without specifying type
-    if modifiers.needs_cheese_clarification:
-        item.needs_cheese_clarification = True
 
 
 class BagelConfigHandler:

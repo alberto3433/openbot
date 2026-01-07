@@ -711,6 +711,32 @@ class CoffeeConfigHandler:
 
         user_lower = user_input.lower().strip()
 
+        # Check if user is asking about available options (e.g., "what kind of milk do you have?")
+        option_question_patterns = [
+            r"what (?:kind|type|kinds|types) (?:of )?milk",
+            r"what milk",
+            r"what (?:kind|type|kinds|types) (?:of )?(?:sugar|sweetener)",
+            r"what (?:kind|type|kinds|types) (?:of )?(?:syrup|flavor)",
+            r"what (?:do you have|options|choices)",
+        ]
+        is_asking_options = any(re.search(p, user_lower) for p in option_question_patterns)
+
+        if is_asking_options:
+            # Answer the question and re-ask about modifiers
+            if "milk" in user_lower:
+                answer = "We have whole milk, skim milk, oat milk, and almond milk."
+            elif "sugar" in user_lower or "sweetener" in user_lower:
+                answer = "We have regular sugar, Splenda, and Sweet'N Low."
+            elif "syrup" in user_lower or "flavor" in user_lower:
+                answer = "We have vanilla, caramel, and hazelnut syrup."
+            else:
+                answer = "We have various milk options (whole, skim, oat, almond), sweeteners (sugar, Splenda, Sweet'N Low), and syrups (vanilla, caramel, hazelnut)."
+
+            return StateMachineResult(
+                message=f"{answer} Would you like any of these?",
+                order=order,
+            )
+
         # Check for negative responses - user doesn't want any modifiers
         negative_patterns = [
             r'\bno\b', r'\bnope\b', r'\bnothing\b', r'\bnone\b',

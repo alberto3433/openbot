@@ -606,16 +606,24 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     find_and_add(get_cheeses(), result.cheeses, "cheese")
     find_and_add(get_toppings(), result.toppings, "topping")
 
-    # Special case: if user just says "cheese" without a specific type, mark for clarification
-    # Check if only generic "cheese" was extracted (not a specific type like "american")
-    if "cheese" in result.cheeses and not any(
-        c in result.cheeses for c in [
-            "american", "swiss", "cheddar", "muenster", "provolone",
-            "gouda", "mozzarella", "pepper jack"
-        ]
-    ):
-        result.needs_cheese_clarification = True
-        logger.debug("Generic 'cheese' detected - needs clarification")
+    # Special case: detect generic "cheese" even if not in database cheeses list
+    # This handles "add cheese" where user wants sliced cheese but didn't specify type
+    # Exclude "cream cheese" which is a spread, not a sliced cheese
+    generic_cheese_pattern = re.compile(r'\bcheese\b', re.IGNORECASE)
+    cream_cheese_pattern = re.compile(r'\bcream\s+cheese\b', re.IGNORECASE)
+    has_generic_cheese = generic_cheese_pattern.search(input_lower) and not cream_cheese_pattern.search(input_lower)
+
+    if has_generic_cheese:
+        # Check if we found any specific cheese types
+        specific_cheeses = ["american", "swiss", "cheddar", "muenster", "provolone",
+                            "gouda", "mozzarella", "pepper jack"]
+        has_specific_cheese = any(c in result.cheeses for c in specific_cheeses)
+        if not has_specific_cheese:
+            # User said "cheese" without a specific type - needs clarification
+            if "cheese" not in result.cheeses:
+                result.cheeses.append("cheese")
+            result.needs_cheese_clarification = True
+            logger.debug("Generic 'cheese' detected - needs clarification")
 
     # Extract special instructions (filter to only bagel-related ones)
     instructions_list = extract_special_instructions_from_input(user_input)
@@ -1357,10 +1365,23 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     modifier_text_clean = modifier_text.replace(",", " ").replace(" and ", " ")
     potential_modifiers = modifier_text_clean.split()
 
+    # Pre-process: Mask out spread patterns to prevent "cheese" from matching
+    # inside "cream cheese" (since "cheese" is an alias for American Cheese)
+    # Common patterns: "scallion cream cheese", "plain cream cheese", "cream cheese", "cc"
+    modifier_text_for_matching = modifier_text.lower()
+    spread_patterns = [
+        r'\b\w+\s+cream\s+cheese\b',  # "scallion cream cheese", "plain cream cheese"
+        r'\bcream\s+cheese\b',         # "cream cheese"
+        r'\bcc\b',                      # abbreviated "cc"
+    ]
+    for pattern in spread_patterns:
+        modifier_text_for_matching = re.sub(pattern, '___SPREAD___', modifier_text_for_matching)
+
     # Match against known modifiers (handle multi-word modifiers like "turkey bacon")
     # Sort by length to match longer phrases first
+    # Use word boundary matching to prevent partial matches
     for modifier in sorted(all_modifiers, key=len, reverse=True):
-        if modifier in modifier_text.lower():
+        if re.search(rf'\b{re.escape(modifier)}\b', modifier_text_for_matching):
             normalized = menu_cache.normalize_modifier(modifier)
             if normalized not in modifiers_found:
                 modifiers_found.append(normalized)

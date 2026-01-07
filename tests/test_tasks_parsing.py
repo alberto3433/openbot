@@ -2608,3 +2608,30 @@ class TestAddModifierToItem:
         assert result.modify_existing_item is False
         # Should be parsed as a sandwich order (signature item or bagel with modifiers)
         assert len(result.parsed_items) >= 1
+
+    def test_add_scallion_cream_cheese_no_american_cheese(self):
+        """Test 'add scallion cream cheese instead' does NOT add American Cheese.
+
+        Regression test for bug where 'cheese' alias for American Cheese was
+        matching as a substring in 'cream cheese', causing American Cheese
+        to be incorrectly added to the modifiers list.
+        """
+        result = parse_open_input_deterministic("add scallion cream cheese instead")
+        # Should not match as add-modifier since scallion cream cheese is a spread
+        # not a protein/cheese/topping modifier
+        # The key assertion: should NOT have American Cheese in modifiers
+        if result is not None and result.modify_add_modifiers:
+            modifiers_lower = [m.lower() for m in result.modify_add_modifiers]
+            assert "american cheese" not in modifiers_lower, \
+                f"American Cheese should not match 'cream cheese': {result.modify_add_modifiers}"
+
+    def test_add_scallion_cc_no_american_cheese(self):
+        """Test 'add scallion cc instead' does NOT add American Cheese.
+
+        Tests the abbreviated 'cc' for cream cheese as well.
+        """
+        result = parse_open_input_deterministic("add scallion cc instead")
+        if result is not None and result.modify_add_modifiers:
+            modifiers_lower = [m.lower() for m in result.modify_add_modifiers]
+            assert "american cheese" not in modifiers_lower, \
+                f"American Cheese should not match 'cc' (cream cheese): {result.modify_add_modifiers}"

@@ -1058,7 +1058,7 @@
       </svg>
     </div>
     <div class="header-right">
-      <span class="header-subtitle">Demo Web Chat <span id="app-version" style="opacity: 0.7; font-size: 11px;">v0.1.0</span></span>
+      <span class="header-subtitle">Demo Web Chat</span>
       <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
         <span class="icon">☀️</span>
         <span>Light</span>
@@ -1252,6 +1252,7 @@
 
     let STORE_NAMES = {};
     const USE_STREAMING = true;
+    const APP_VERSION = "0.1.0";
 
     let companyInfo = {
       name: "Zucker's Bagels",
@@ -1381,7 +1382,7 @@
         connected = true;
         sessionStartTime = Date.now();
 
-        let headerText = "Session: " + sessionId.substring(0, 8);
+        let headerText = `v${APP_VERSION} | ` + sessionId.substring(0, 8);
         if (storeId && STORE_NAMES[storeId]) headerText += ` | ${STORE_NAMES[storeId]}`;
         if (callerId) headerText += ` | ${callerId}`;
         if (data.returning_customer && data.returning_customer.name) {

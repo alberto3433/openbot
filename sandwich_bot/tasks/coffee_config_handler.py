@@ -100,6 +100,10 @@ class CoffeeConfigHandler:
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
+        # Track if sized beverage path determined config is needed
+        # This prevents is_soda_drink from overriding the decision later
+        sized_beverage_needs_config = False
+
         # Check if this is a generic drink request (no specific type)
         # If so, present drink options instead of defaulting to coffee
         generic_drink_terms = {"drink", "drinks", "beverage", "beverages", "something to drink"}
@@ -209,6 +213,9 @@ class CoffeeConfigHandler:
                     # Needs configuration - add as in_progress and configure
                     coffee_type = matched_name
                     coffee_type_lower = matched_name.lower()
+                    # Mark that this is a sized beverage needing config - prevents
+                    # is_soda_drink from overriding this decision later
+                    sized_beverage_needs_config = True
                     # Fall through to normal add logic below
 
             elif len(matching_drinks) > 1:
@@ -376,7 +383,11 @@ class CoffeeConfigHandler:
         coffee_type_lower = (coffee_type or "").lower()
 
         should_skip_config = False
-        if is_soda_drink(coffee_type):
+        if sized_beverage_needs_config:
+            # Already determined this is a sized beverage needing config - don't override
+            logger.info("ADD COFFEE: skip_config=False (sized beverage needs config)")
+            should_skip_config = False
+        elif is_soda_drink(coffee_type):
             # Soda/bottled drinks don't need size or hot/iced configuration
             logger.info("ADD COFFEE: skip_config=True (soda/bottled drink: %s)", coffee_type)
             should_skip_config = True

@@ -100,6 +100,10 @@ def update_company(
         company.corporate_email = payload.corporate_email
     if payload.website is not None:
         company.website = payload.website
+    if payload.instagram_handle is not None:
+        company.instagram_handle = payload.instagram_handle
+    if payload.feedback_form_url is not None:
+        company.feedback_form_url = payload.feedback_form_url
     if payload.logo_url is not None:
         company.logo_url = payload.logo_url
     if payload.business_hours is not None:

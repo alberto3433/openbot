@@ -2385,3 +2385,226 @@ class TestIngredientBasedSearch:
         assert result is not None
         assert result.ingredient_search_query == "bacon"
         assert len(result.ingredient_search_matches) == 2
+
+    def test_remove_the_bacon_is_cancellation_not_search(self, mock_ingredient_to_items):
+        """Test 'remove the bacon' triggers cancellation, not ingredient search.
+
+        This is a regression test for a bug where 'remove the bacon' would
+        incorrectly trigger an ingredient search for 'bacon' instead of
+        removing bacon from the current item.
+        """
+        result = parse_open_input_deterministic(
+            "remove the bacon",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        # Should be a cancellation, not ingredient search
+        assert result.cancel_item == "bacon"
+        assert result.ingredient_search_query is None
+        assert not result.ingredient_search_matches
+
+    def test_cancel_the_ham_is_cancellation_not_search(self, mock_ingredient_to_items):
+        """Test 'cancel the ham' triggers cancellation even if ham is an ingredient."""
+        result = parse_open_input_deterministic(
+            "cancel the ham",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        assert result.cancel_item == "ham"
+        assert result.ingredient_search_query is None
+
+
+class TestEggCheeseSandwichAbbreviations:
+    """Tests for egg+cheese sandwich abbreviation parsing (SEC, HEC, BEC, etc.)."""
+
+    def test_ham_egg_and_cheese_on_wheat_toasted(self):
+        """Test 'ham egg and cheese on wheat toasted' parses as breakfast sandwich.
+
+        This is a regression test for a bug where 'ham egg and cheese on wheat toasted'
+        was incorrectly parsed as 'Ham (1 lb)' deli item instead of a breakfast sandwich.
+        """
+        result = parse_open_input_deterministic("ham egg and cheese on wheat toasted")
+        assert result is not None
+        # Should be a bagel order with ham and egg proteins, not a deli item
+        assert result.new_bagel is True
+        assert result.new_bagel_proteins is not None
+        assert "ham" in result.new_bagel_proteins
+        assert "egg" in result.new_bagel_proteins
+        assert result.new_bagel_needs_cheese_clarification is True
+        assert result.new_bagel_toasted is True
+        # Should NOT be a menu item
+        assert result.new_menu_item is None
+
+    def test_hec_abbreviation(self):
+        """Test 'HEC' abbreviation parses as ham egg and cheese sandwich."""
+        result = parse_open_input_deterministic("HEC")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_proteins is not None
+        assert "ham" in result.new_bagel_proteins
+        assert "egg" in result.new_bagel_proteins
+        assert result.new_bagel_needs_cheese_clarification is True
+
+    def test_sec_abbreviation(self):
+        """Test 'SEC' abbreviation parses as sausage egg and cheese sandwich."""
+        result = parse_open_input_deterministic("SEC")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_proteins is not None
+        assert "sausage" in result.new_bagel_proteins
+        assert "egg" in result.new_bagel_proteins
+        assert result.new_bagel_needs_cheese_clarification is True
+
+    def test_bec_abbreviation(self):
+        """Test 'BEC' abbreviation parses as 'The Classic BEC' signature item.
+
+        Note: BEC matches the signature item 'The Classic BEC' which is checked
+        before egg cheese sandwich abbreviations, so it returns as a signature item.
+        """
+        result = parse_open_input_deterministic("BEC")
+        assert result is not None
+        # BEC matches as a signature item
+        assert result.new_signature_item is True
+        assert result.new_signature_item_name == "The Classic BEC"
+
+    def test_ham_egg_cheese_without_bagel_word(self):
+        """Test 'ham egg cheese' without explicit 'bagel' word."""
+        result = parse_open_input_deterministic("ham egg cheese")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_proteins is not None
+        assert "ham" in result.new_bagel_proteins
+
+    def test_ham_egg_and_cheese_on_everything_bagel(self):
+        """Test 'ham egg and cheese on an everything bagel'."""
+        result = parse_open_input_deterministic("ham egg and cheese on an everything bagel")
+        assert result is not None
+        assert result.new_bagel is True
+        assert result.new_bagel_proteins is not None
+        assert "ham" in result.new_bagel_proteins
+        assert result.new_bagel_type == "everything"
+
+
+class TestAddModifierToItem:
+    """Tests for add-modifier patterns (add bacon, extra cheese, etc.)."""
+
+    def test_add_bacon_simple(self):
+        """Test 'add bacon' returns modify_existing_item with bacon modifier."""
+        result = parse_open_input_deterministic("add bacon")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        assert result.modify_target_description is None  # No target specified
+
+    def test_add_bacon_does_not_trigger_ingredient_search(self):
+        """Test 'add bacon' does NOT trigger ingredient search.
+
+        This is a regression test for a bug where 'add bacon' would trigger
+        an ingredient search instead of adding bacon to the current item.
+        """
+        mock_ingredient_to_items = {
+            "bacon": [{"name": "Bacon"}, {"name": "Side of Bacon"}],
+        }
+        result = parse_open_input_deterministic(
+            "add bacon",
+            ingredient_to_items=mock_ingredient_to_items
+        )
+        assert result is not None
+        # Should be a modify request, NOT an ingredient search
+        assert result.modify_existing_item is True
+        assert result.ingredient_search_query is None
+        assert not result.ingredient_search_matches
+
+    def test_extra_bacon(self):
+        """Test 'extra bacon' is treated as add bacon."""
+        result = parse_open_input_deterministic("extra bacon")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+
+    def test_more_cheese(self):
+        """Test 'more cheese' is treated as add cheese."""
+        result = parse_open_input_deterministic("more cheese")
+        assert result is not None
+        assert result.modify_existing_item is True
+        # Check for any cheese variant (American Cheese, Swiss Cheese, etc.)
+        assert any("cheese" in m.lower() for m in result.modify_add_modifiers)
+
+    def test_add_bacon_and_cheese(self):
+        """Test 'add bacon and cheese' adds both modifiers."""
+        result = parse_open_input_deterministic("add bacon and cheese")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        # Check for any cheese variant (American Cheese, Swiss Cheese, etc.)
+        assert any("cheese" in m.lower() for m in result.modify_add_modifiers)
+
+    def test_add_bacon_to_the_bagel(self):
+        """Test 'add bacon to the bagel' specifies target."""
+        result = parse_open_input_deterministic("add bacon to the bagel")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        assert result.modify_target_description == "bagel"
+
+    def test_add_bacon_to_the_plain_bagel(self):
+        """Test 'add bacon to the plain bagel' specifies target with type."""
+        result = parse_open_input_deterministic("add bacon to the plain bagel")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        assert result.modify_target_description == "plain bagel"
+
+    def test_add_bacon_to_the_omelette(self):
+        """Test 'add bacon to the omelette' works for non-bagel items."""
+        result = parse_open_input_deterministic("add bacon to the omelette")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        assert result.modify_target_description == "omelette"
+
+    def test_put_bacon_on_it(self):
+        """Test 'put bacon on it' is treated as add bacon."""
+        result = parse_open_input_deterministic("put bacon on it")
+        assert result is not None
+        assert result.modify_existing_item is True
+        assert "bacon" in result.modify_add_modifiers
+        assert result.modify_target_description is None  # "it" = implicit target
+
+    def test_add_egg(self):
+        """Test 'add egg' adds egg modifier."""
+        result = parse_open_input_deterministic("add egg")
+        assert result is not None
+        assert result.modify_existing_item is True
+        # Check case-insensitively since function may return "Egg"
+        assert any("egg" in m.lower() for m in result.modify_add_modifiers)
+
+    def test_add_tomato_and_onion(self):
+        """Test 'add tomato and onion' adds both toppings."""
+        result = parse_open_input_deterministic("add tomato and onion")
+        assert result is not None
+        assert result.modify_existing_item is True
+        # Check case-insensitively since function may return "Tomato", "Onion"
+        assert any("tomato" in m.lower() for m in result.modify_add_modifiers)
+        assert any("onion" in m.lower() for m in result.modify_add_modifiers)
+
+    def test_add_unknown_item_returns_none(self):
+        """Test 'add unicorn' returns None (unknown modifier)."""
+        result = parse_open_input_deterministic("add unicorn")
+        # Should return None because "unicorn" is not a known modifier
+        # This will fall through to other parsers or LLM
+        assert result is None or result.modify_existing_item is False
+
+    def test_add_bacon_egg_and_cheese_not_caught(self):
+        """Test 'add bacon egg and cheese' is NOT caught by add-modifier parser.
+
+        This should fall through to other parsers and be parsed as a breakfast
+        sandwich order (either as a signature item "The Classic BEC" or as a
+        bagel with bacon, egg, and cheese).
+        """
+        result = parse_open_input_deterministic("add bacon egg and cheese")
+        # Should NOT be treated as add-modifier
+        assert result is not None
+        assert result.modify_existing_item is False
+        # Should be parsed as a sandwich order (signature item or bagel with modifiers)
+        assert len(result.parsed_items) >= 1

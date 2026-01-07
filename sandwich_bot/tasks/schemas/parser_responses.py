@@ -598,6 +598,12 @@ class OpenInputResponse(BaseModel):
         description="The location (zip code or neighborhood) the user is asking about delivery for"
     )
 
+    # Customer service escalation
+    wants_customer_service: bool = Field(
+        default=False,
+        description="User wants to speak to a manager, report an issue, or escalate a complaint (e.g., 'I want to speak to a manager', 'my order was wrong', 'I need a refund')"
+    )
+
     # Recommendation questions (should NOT add to cart)
     asks_recommendation: bool = Field(
         default=False,
@@ -721,6 +727,10 @@ class OpenInputResponse(BaseModel):
     modify_new_spread_type: str | None = Field(
         default=None,
         description="Type of spread (e.g., 'scallion', 'veggie', 'plain')"
+    )
+    modify_add_modifiers: list[str] = Field(
+        default_factory=list,
+        description="Modifiers to add to existing item (e.g., ['bacon', 'cheese'] for 'add bacon and cheese')"
     )
 
     # Multi-item order handling - list of parsed items for generic processing

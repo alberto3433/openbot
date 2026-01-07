@@ -192,6 +192,48 @@
       padding: 40px;
       color: #666;
     }
+    /* Checkbox group styles */
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .checkbox-item:hover {
+      background: #f0f0f0;
+    }
+    .checkbox-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .checkbox-item label {
+      cursor: pointer;
+      font-size: 13px;
+      flex: 1;
+      margin: 0;
+    }
+    .section-icon {
+      margin-right: 8px;
+    }
+    .catering-fields {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 600px) {
+      .catering-fields {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -273,6 +315,18 @@
             <input type="url" id="website" placeholder="e.g., https://www.sammyssubs.com" />
           </div>
 
+          <div class="form-row">
+            <div class="form-group">
+              <label for="instagramHandle">Instagram Handle</label>
+              <input type="text" id="instagramHandle" placeholder="e.g., @zuckersbagels" />
+            </div>
+            <div class="form-group">
+              <label for="feedbackFormUrl">Feedback Form URL</label>
+              <input type="url" id="feedbackFormUrl" placeholder="e.g., https://survey.example.com/feedback" />
+              <div class="hint">URL where customers can leave feedback</div>
+            </div>
+          </div>
+
           <div class="form-group">
             <label for="logoUrl">Logo URL</label>
             <input type="url" id="logoUrl" placeholder="e.g., https://example.com/logo.png" />
@@ -287,6 +341,130 @@
             <button type="button" class="btn primary" id="saveBtn">Save Changes</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Payment Methods Section -->
+    <div class="section">
+      <div class="section-header"><span class="section-icon">💳</span>Payment Methods</div>
+      <div class="section-body">
+        <div class="checkbox-grid">
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsCreditCards" />
+            <label for="acceptsCreditCards">Credit Cards</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsDebitCards" />
+            <label for="acceptsDebitCards">Debit Cards</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsCash" />
+            <label for="acceptsCash">Cash</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsApplePay" />
+            <label for="acceptsApplePay">Apple Pay</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsGooglePay" />
+            <label for="acceptsGooglePay">Google Pay</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsVenmo" />
+            <label for="acceptsVenmo">Venmo</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="acceptsPaypal" />
+            <label for="acceptsPaypal">PayPal</label>
+          </div>
+        </div>
+        <div class="hint" style="margin-top: 12px;">Select all payment methods your business accepts</div>
+      </div>
+    </div>
+
+    <!-- Dietary & Certification Section -->
+    <div class="section">
+      <div class="section-header"><span class="section-icon">🥗</span>Dietary & Certifications</div>
+      <div class="section-body">
+        <div class="checkbox-grid">
+          <div class="checkbox-item">
+            <input type="checkbox" id="isKosher" />
+            <label for="isKosher">Kosher</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="isHalal" />
+            <label for="isHalal">Halal</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="hasVegetarianOptions" />
+            <label for="hasVegetarianOptions">Vegetarian Options</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="hasVeganOptions" />
+            <label for="hasVeganOptions">Vegan Options</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="hasGlutenFreeOptions" />
+            <label for="hasGlutenFreeOptions">Gluten-Free Options</label>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="kosherCertification">Kosher Certification</label>
+          <input type="text" id="kosherCertification" placeholder="e.g., Tablet K, OU, OK Kosher" />
+          <div class="hint">If kosher, specify the certifying organization</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Amenities Section -->
+    <div class="section">
+      <div class="section-header"><span class="section-icon">🏪</span>Amenities</div>
+      <div class="section-body">
+        <div class="checkbox-grid">
+          <div class="checkbox-item">
+            <input type="checkbox" id="wifiAvailable" />
+            <label for="wifiAvailable">Free WiFi</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="wheelchairAccessible" />
+            <label for="wheelchairAccessible">Wheelchair Accessible</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="outdoorSeating" />
+            <label for="outdoorSeating">Outdoor Seating</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Catering Section -->
+    <div class="section">
+      <div class="section-header"><span class="section-icon">🍽️</span>Catering</div>
+      <div class="section-body">
+        <div class="checkbox-grid" style="margin-bottom: 16px;">
+          <div class="checkbox-item">
+            <input type="checkbox" id="offersCatering" />
+            <label for="offersCatering">Offers Catering Services</label>
+          </div>
+        </div>
+        <div class="catering-fields">
+          <div class="form-group">
+            <label for="cateringMinimumOrder">Minimum Order ($)</label>
+            <input type="number" id="cateringMinimumOrder" min="0" step="0.01" placeholder="e.g., 50.00" />
+          </div>
+          <div class="form-group">
+            <label for="cateringAdvanceNoticeHours">Advance Notice (hours)</label>
+            <input type="number" id="cateringAdvanceNoticeHours" min="0" placeholder="e.g., 24" />
+          </div>
+          <div class="form-group">
+            <label for="cateringPhone">Catering Phone</label>
+            <input type="tel" id="cateringPhone" placeholder="e.g., (212) 555-0000" />
+          </div>
+          <div class="form-group">
+            <label for="cateringEmail">Catering Email</label>
+            <input type="email" id="cateringEmail" placeholder="e.g., catering@company.com" />
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -345,6 +523,7 @@
 
     // Populate form with company data
     function populateForm(data) {
+      // Basic info
       document.getElementById("companyName").value = data.name || "";
       document.getElementById("botPersonaName").value = data.bot_persona_name || "";
       document.getElementById("tagline").value = data.tagline || "";
@@ -353,7 +532,38 @@
       document.getElementById("corporatePhone").value = data.corporate_phone || "";
       document.getElementById("corporateEmail").value = data.corporate_email || "";
       document.getElementById("website").value = data.website || "";
+      document.getElementById("instagramHandle").value = data.instagram_handle || "";
+      document.getElementById("feedbackFormUrl").value = data.feedback_form_url || "";
       document.getElementById("logoUrl").value = data.logo_url || "";
+
+      // Payment methods
+      document.getElementById("acceptsCreditCards").checked = data.accepts_credit_cards ?? true;
+      document.getElementById("acceptsDebitCards").checked = data.accepts_debit_cards ?? true;
+      document.getElementById("acceptsCash").checked = data.accepts_cash ?? true;
+      document.getElementById("acceptsApplePay").checked = data.accepts_apple_pay ?? false;
+      document.getElementById("acceptsGooglePay").checked = data.accepts_google_pay ?? false;
+      document.getElementById("acceptsVenmo").checked = data.accepts_venmo ?? false;
+      document.getElementById("acceptsPaypal").checked = data.accepts_paypal ?? false;
+
+      // Dietary & Certifications
+      document.getElementById("isKosher").checked = data.is_kosher ?? false;
+      document.getElementById("isHalal").checked = data.is_halal ?? false;
+      document.getElementById("hasVegetarianOptions").checked = data.has_vegetarian_options ?? true;
+      document.getElementById("hasVeganOptions").checked = data.has_vegan_options ?? true;
+      document.getElementById("hasGlutenFreeOptions").checked = data.has_gluten_free_options ?? false;
+      document.getElementById("kosherCertification").value = data.kosher_certification || "";
+
+      // Amenities
+      document.getElementById("wifiAvailable").checked = data.wifi_available ?? false;
+      document.getElementById("wheelchairAccessible").checked = data.wheelchair_accessible ?? true;
+      document.getElementById("outdoorSeating").checked = data.outdoor_seating ?? false;
+
+      // Catering
+      document.getElementById("offersCatering").checked = data.offers_catering ?? false;
+      document.getElementById("cateringMinimumOrder").value = data.catering_minimum_order || "";
+      document.getElementById("cateringAdvanceNoticeHours").value = data.catering_advance_notice_hours || "";
+      document.getElementById("cateringPhone").value = data.catering_phone || "";
+      document.getElementById("cateringEmail").value = data.catering_email || "";
 
       updatePreview();
       updateLogoPreview();
@@ -393,7 +603,12 @@
         return;
       }
 
+      // Get catering values (convert empty strings to null)
+      const cateringMinOrder = document.getElementById("cateringMinimumOrder").value;
+      const cateringAdvanceHours = document.getElementById("cateringAdvanceNoticeHours").value;
+
       const payload = {
+        // Basic info
         name,
         bot_persona_name: botPersonaName,
         tagline: document.getElementById("tagline").value.trim() || null,
@@ -402,7 +617,38 @@
         corporate_phone: document.getElementById("corporatePhone").value.trim() || null,
         corporate_email: document.getElementById("corporateEmail").value.trim() || null,
         website: document.getElementById("website").value.trim() || null,
+        instagram_handle: document.getElementById("instagramHandle").value.trim() || null,
+        feedback_form_url: document.getElementById("feedbackFormUrl").value.trim() || null,
         logo_url: document.getElementById("logoUrl").value.trim() || null,
+
+        // Payment methods
+        accepts_credit_cards: document.getElementById("acceptsCreditCards").checked,
+        accepts_debit_cards: document.getElementById("acceptsDebitCards").checked,
+        accepts_cash: document.getElementById("acceptsCash").checked,
+        accepts_apple_pay: document.getElementById("acceptsApplePay").checked,
+        accepts_google_pay: document.getElementById("acceptsGooglePay").checked,
+        accepts_venmo: document.getElementById("acceptsVenmo").checked,
+        accepts_paypal: document.getElementById("acceptsPaypal").checked,
+
+        // Dietary & Certifications
+        is_kosher: document.getElementById("isKosher").checked,
+        is_halal: document.getElementById("isHalal").checked,
+        has_vegetarian_options: document.getElementById("hasVegetarianOptions").checked,
+        has_vegan_options: document.getElementById("hasVeganOptions").checked,
+        has_gluten_free_options: document.getElementById("hasGlutenFreeOptions").checked,
+        kosher_certification: document.getElementById("kosherCertification").value.trim() || null,
+
+        // Amenities
+        wifi_available: document.getElementById("wifiAvailable").checked,
+        wheelchair_accessible: document.getElementById("wheelchairAccessible").checked,
+        outdoor_seating: document.getElementById("outdoorSeating").checked,
+
+        // Catering
+        offers_catering: document.getElementById("offersCatering").checked,
+        catering_minimum_order: cateringMinOrder ? parseFloat(cateringMinOrder) : null,
+        catering_advance_notice_hours: cateringAdvanceHours ? parseInt(cateringAdvanceHours, 10) : null,
+        catering_phone: document.getElementById("cateringPhone").value.trim() || null,
+        catering_email: document.getElementById("cateringEmail").value.trim() || null,
       };
 
       try {

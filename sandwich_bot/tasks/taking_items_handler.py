@@ -41,7 +41,14 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input
-from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_bagel_types, get_bagel_spreads
+from .parsers.constants import (
+    DEFAULT_PAGINATION_SIZE,
+    get_bagel_types,
+    get_bagel_spreads,
+    get_proteins,
+    get_cheeses,
+    get_toppings,
+)
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -613,13 +620,45 @@ class TakingItemsHandler:
                 if parsed.modify_new_spread_type:
                     target_item.spread_type = parsed.modify_new_spread_type
 
+                # Apply add-modifier modifications ("add bacon", "extra cheese", etc.)
+                if parsed.modify_add_modifiers:
+                    known_proteins = get_proteins()
+                    known_cheeses = get_cheeses()
+                    known_toppings = get_toppings()
+
+                    for modifier in parsed.modify_add_modifiers:
+                        modifier_lower = modifier.lower()
+                        # Check if this modifier is a protein
+                        if modifier_lower in {p.lower() for p in known_proteins} or modifier in known_proteins:
+                            # If no sandwich_protein set, use that field
+                            if not target_item.sandwich_protein:
+                                target_item.sandwich_protein = modifier
+                            else:
+                                # Already have a protein, add to extras
+                                if modifier not in target_item.extras:
+                                    target_item.extras.append(modifier)
+                        # Check if this modifier is a cheese
+                        elif modifier_lower in {c.lower() for c in known_cheeses} or modifier in known_cheeses:
+                            if modifier not in target_item.extras:
+                                target_item.extras.append(modifier)
+                        # Check if this modifier is a topping
+                        elif modifier_lower in {t.lower() for t in known_toppings} or modifier in known_toppings:
+                            if modifier not in target_item.extras:
+                                target_item.extras.append(modifier)
+                        else:
+                            # Unknown modifier type, add to extras anyway
+                            if modifier not in target_item.extras:
+                                target_item.extras.append(modifier)
+                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bagel_type)
+
                 # Recalculate price
                 self.pricing.recalculate_bagel_price(target_item)
 
                 updated_summary = target_item.get_summary()
                 logger.info(
-                    "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s",
-                    target_item.bagel_type, parsed.modify_new_spread, parsed.modify_new_spread_type
+                    "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s, add_modifiers=%s",
+                    target_item.bagel_type, parsed.modify_new_spread, parsed.modify_new_spread_type,
+                    parsed.modify_add_modifiers
                 )
                 return StateMachineResult(
                     message=f"Sure, I've updated your {updated_summary}. Anything else?",
@@ -1396,6 +1435,9 @@ class TakingItemsHandler:
 
         if parsed.asks_delivery_zone:
             return self.store_info_handler.handle_delivery_zone_inquiry(parsed.delivery_zone_query, order)
+
+        if parsed.wants_customer_service:
+            return self.store_info_handler.handle_customer_service_inquiry(order)
 
         if parsed.asks_recommendation:
             return self.store_info_handler.handle_recommendation_inquiry(parsed.recommendation_category, order)

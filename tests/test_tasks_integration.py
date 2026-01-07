@@ -2465,6 +2465,86 @@ class TestStoreInfoInquiries:
 
 
 # =============================================================================
+# Customer Service Inquiry Tests
+# =============================================================================
+
+class TestCustomerServiceInquiries:
+    """Tests for customer service escalation pattern detection and handling."""
+
+    def test_customer_service_pattern_detection_manager(self):
+        """Test pattern detection for 'I want to speak to a manager'."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("I want to speak to a manager")
+        assert result.wants_customer_service is True
+
+    def test_customer_service_pattern_detection_order_wrong(self):
+        """Test pattern detection for 'my order was wrong'."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("my order was wrong")
+        assert result.wants_customer_service is True
+
+    def test_customer_service_pattern_detection_refund(self):
+        """Test pattern detection for refund requests."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("I need a refund")
+        assert result.wants_customer_service is True
+
+    def test_customer_service_pattern_detection_complaint(self):
+        """Test pattern detection for complaints."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("I have a complaint about my order")
+        assert result.wants_customer_service is True
+
+    def test_customer_service_handler_with_contact_info(self):
+        """Test customer service handler returns contact info."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={
+            "company_info": {
+                "corporate_email": "test@example.com",
+                "feedback_form_url": "https://example.com/feedback",
+            }
+        })
+        store_info = {
+            "phone": "212-555-1234",
+            "name": "Test Location",
+        }
+        sm.store_info_handler.set_store_info(store_info)
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_customer_service_inquiry(order)
+
+        assert "test@example.com" in result.message
+        assert "212-555-1234" in result.message
+
+    def test_customer_service_handler_minimal_info(self):
+        """Test customer service handler with minimal contact info."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine(menu_data={})
+        sm.store_info_handler.set_store_info({})
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_customer_service_inquiry(order)
+
+        # Should have a fallback message even without contact info
+        assert "sorry" in result.message.lower()
+
+    def test_normal_order_not_detected_as_customer_service(self):
+        """Test that normal orders don't trigger customer service pattern."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("I want to order a plain bagel")
+        assert result.wants_customer_service is False
+
+
+# =============================================================================
 # Recommendation Inquiry Handler Tests
 # =============================================================================
 
@@ -5569,3 +5649,130 @@ class TestIngredientSearchPagination:
         # Using "hello" which won't match as a "wants_more_menu_items" request
         result2 = sm.process("hello", result1.order)
         assert result2.order.pending_ingredient_search is None
+
+
+class TestModifierRemovalDuringConfig:
+    """Tests for removing modifiers during the CONFIGURING_ITEM phase."""
+
+    def test_remove_bacon_during_config_removes_modifier_not_item(self):
+        """Test that 'remove the bacon' during bagel config removes the bacon modifier, not the whole item.
+
+        Regression test for bug where "remove the bacon" while being asked "Would you like toasted?"
+        would remove the entire bagel item instead of just the bacon modifier.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "ingredient_to_items": {},
+            "items_by_type": {"signature_items": []},
+            "item_name_to_id": {},
+            "items_by_id": {},
+        }
+
+        # Create an order with a bagel that has bacon and egg, in CONFIGURING_ITEM state
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            sandwich_protein="bacon",
+            extras=["Egg"],
+        )
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        # Set up config state (asking about toasted)
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        # Process "remove the bacon"
+        result = sm.process("remove the bacon", order)
+
+        # Verify the bagel is still there
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == 1, "Bagel should NOT be removed, only the bacon modifier"
+
+        # Verify bacon was removed
+        remaining_bagel = active_items[0]
+        assert isinstance(remaining_bagel, BagelItemTask)
+        assert remaining_bagel.sandwich_protein is None, "Bacon should be removed"
+
+        # Verify egg is still there
+        assert remaining_bagel.extras == ["Egg"], "Egg should still be in extras"
+
+        # Verify we continue with the config question
+        assert "removed" in result.message.lower() and "bacon" in result.message.lower()
+
+    def test_remove_egg_during_config_removes_from_extras(self):
+        """Test removing an extra (egg) during config removes it from extras list."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "ingredient_to_items": {},
+            "items_by_type": {"signature_items": []},
+            "item_name_to_id": {},
+            "items_by_id": {},
+        }
+
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            sandwich_protein="bacon",
+            extras=["Egg", "cheese"],
+        )
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        result = sm.process("remove the egg", order)
+
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == 1, "Bagel should NOT be removed"
+
+        remaining_bagel = active_items[0]
+        assert remaining_bagel.sandwich_protein == "bacon", "Bacon should still be there"
+        assert "Egg" not in remaining_bagel.extras, "Egg should be removed from extras"
+        assert "cheese" in remaining_bagel.extras, "Cheese should still be in extras"
+
+    def test_remove_nonexistent_modifier_falls_through_to_item_search(self):
+        """Test that removing a modifier not on the item falls through to item search logic."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "ingredient_to_items": {},
+            "items_by_type": {"signature_items": []},
+            "item_name_to_id": {},
+            "items_by_id": {},
+        }
+
+        order = OrderTask()
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            # No bacon on this bagel
+        )
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_item_id = bagel.id
+        order.pending_field = "toasted"
+
+        result = sm.process("remove the lox", order)
+
+        # Since lox isn't on the bagel, it should fall through
+        # and try to find items with "lox" in them
+        # Since there's no match, it returns "couldn't find"
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == 1, "Bagel should still be there"
+        assert "couldn't find" in result.message.lower() or "lox" in result.message.lower()

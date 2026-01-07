@@ -20,6 +20,7 @@ from .models import (
     ItemTypeAttribute,
     MenuItemAttributeValue,
     MenuItemAttributeSelection,
+    Company,
 )
 
 
@@ -436,6 +437,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Build ingredient-to-items mapping for ingredient-based search
     # When user says "something with chicken", this index helps find matching items
     index["ingredient_to_items"] = _build_ingredient_to_items(index)
+
+    # Build company info for customer service inquiries
+    index["company_info"] = _build_company_info(db)
 
     return index
 
@@ -966,6 +970,35 @@ def _build_item_descriptions(db: Session) -> Dict[str, str]:
             result[name_lower[4:]] = item.description
 
     return result
+
+
+def _build_company_info(db: Session) -> Dict[str, Any]:
+    """
+    Build company info for customer service inquiries.
+
+    Used to provide contact information when users want to speak to a manager,
+    report issues, or request refunds.
+
+    Returns:
+        Dict with company contact information.
+        Example: {
+            "corporate_email": "zuckersbagelsnyc@gmail.com",
+            "corporate_phone": "212-555-0000",
+            "instagram_handle": "@zuckersbagels",
+            "feedback_form_url": "https://survey.example.com/feedback"
+        }
+    """
+    company = db.query(Company).first()
+
+    if not company:
+        return {}
+
+    return {
+        "corporate_email": company.corporate_email,
+        "corporate_phone": company.corporate_phone,
+        "instagram_handle": company.instagram_handle,
+        "feedback_form_url": company.feedback_form_url,
+    }
 
 
 def get_menu_version(menu_index: Dict[str, Any]) -> str:

@@ -234,17 +234,22 @@ python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel
 
 ## Versioning
 
-**IMPORTANT**: Update the version number in `pyproject.toml` before every deployment to GitHub.
+**IMPORTANT**: Update the version number in BOTH files before every commit/push to GitHub:
 
+1. **`pyproject.toml`** (line 7):
 ```toml
-# In pyproject.toml
-version = "0.1.0"  # Increment this before each deployment
+version = "0.1.1"  # Increment this
+```
+
+2. **`static/index.html`** (search for `APP_VERSION`):
+```javascript
+const APP_VERSION = "0.1.1";  // Keep in sync with pyproject.toml
 ```
 
 Version format: `MAJOR.MINOR.PATCH`
-- **MAJOR**: Breaking changes or major feature releases
+- **PATCH**: Bug fixes, small improvements (most commits)
 - **MINOR**: New features, significant improvements
-- **PATCH**: Bug fixes, small improvements
+- **MAJOR**: Breaking changes or major feature releases
 
 ## Debugging
 

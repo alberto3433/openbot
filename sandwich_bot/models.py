@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    Numeric,
     event,
     func,
 )
@@ -819,11 +820,44 @@ class Company(Base):
     corporate_email = Column(String, nullable=True)
     website = Column(String, nullable=True)
 
+    # Social media & feedback
+    instagram_handle = Column(String, nullable=True)  # e.g., "@zuckersbagels"
+    feedback_form_url = Column(String, nullable=True)  # URL to customer feedback form
+
     # Branding
     logo_url = Column(String, nullable=True)  # URL to company logo
 
     # Business hours (JSON for structured format)
     business_hours = Column(JSON, nullable=True)  # e.g., {"mon": "9-5", "tue": "9-5", ...}
+
+    # Payment Methods
+    accepts_credit_cards = Column(Boolean, nullable=False, default=True)
+    accepts_debit_cards = Column(Boolean, nullable=False, default=True)
+    accepts_cash = Column(Boolean, nullable=False, default=True)
+    accepts_apple_pay = Column(Boolean, nullable=False, default=False)
+    accepts_google_pay = Column(Boolean, nullable=False, default=False)
+    accepts_venmo = Column(Boolean, nullable=False, default=False)
+    accepts_paypal = Column(Boolean, nullable=False, default=False)
+
+    # Dietary & Certification Info
+    is_kosher = Column(Boolean, nullable=False, default=False)
+    kosher_certification = Column(String, nullable=True)  # e.g., "Tablet K", "OU", "OK"
+    is_halal = Column(Boolean, nullable=False, default=False)
+    has_vegetarian_options = Column(Boolean, nullable=False, default=True)
+    has_vegan_options = Column(Boolean, nullable=False, default=True)
+    has_gluten_free_options = Column(Boolean, nullable=False, default=False)
+
+    # Amenities
+    wifi_available = Column(Boolean, nullable=False, default=False)
+    wheelchair_accessible = Column(Boolean, nullable=False, default=True)
+    outdoor_seating = Column(Boolean, nullable=False, default=False)
+
+    # Catering
+    offers_catering = Column(Boolean, nullable=False, default=False)
+    catering_minimum_order = Column(Numeric(10, 2), nullable=True)  # e.g., 50.00
+    catering_advance_notice_hours = Column(Integer, nullable=True)  # e.g., 24
+    catering_phone = Column(String, nullable=True)
+    catering_email = Column(String, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

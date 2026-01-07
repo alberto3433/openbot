@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Callable, Optional, TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, ItemTask
+from .models import OrderTask, MenuItemTask, ItemTask, BagelItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
 from .handler_config import HandlerConfig
@@ -90,10 +90,12 @@ class ConfigHelperHandler:
         if config:
             self.model = config.model
             self._get_next_question = config.get_next_question
+            self.pricing = config.pricing
         else:
             # Legacy support for direct parameters
             self.model = kwargs.get("model", "gpt-4o-mini")
             self._get_next_question = kwargs.get("get_next_question")
+            self.pricing = kwargs.get("pricing")
 
         # Handler-specific dependency
         self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
@@ -145,6 +147,77 @@ class ConfigHelperHandler:
                     message=f"OK, I've removed the {item_name}. What would you like to order?",
                     order=order,
                 )
+
+        # Check if this is a modifier removal on the current item being configured
+        # Known modifiers that can be removed from bagels
+        removable_modifiers = {
+            # Proteins
+            "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
+            "lox", "nova", "salmon", "whitefish", "tuna",
+            # Eggs
+            "egg", "eggs", "fried egg", "scrambled egg",
+            # Cheeses
+            "cheese", "american", "american cheese", "swiss", "swiss cheese",
+            "cheddar", "cheddar cheese", "muenster", "muenster cheese",
+            "provolone", "provolone cheese",
+            # Spreads
+            "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
+            # Toppings
+            "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
+            "avocado", "capers",
+        }
+
+        if cancel_desc in removable_modifiers and isinstance(current_item, BagelItemTask):
+            modifier_removed = False
+            removed_modifier_name = cancel_desc
+
+            # Check sandwich_protein
+            if current_item.sandwich_protein and cancel_desc in current_item.sandwich_protein.lower():
+                current_item.sandwich_protein = None
+                modifier_removed = True
+                logger.info("Modifier removal during config: removed protein '%s' from bagel", cancel_desc)
+
+            # Check extras list
+            if current_item.extras:
+                new_extras = []
+                for extra in current_item.extras:
+                    if cancel_desc not in extra.lower():
+                        new_extras.append(extra)
+                    else:
+                        modifier_removed = True
+                        logger.info("Modifier removal during config: removed extra '%s' from bagel", extra)
+                current_item.extras = new_extras
+
+            # Check spread
+            if current_item.spread and cancel_desc in current_item.spread.lower():
+                current_item.spread = None
+                current_item.spread_type = None
+                modifier_removed = True
+                logger.info("Modifier removal during config: removed spread '%s' from bagel", cancel_desc)
+
+            if modifier_removed:
+                # Recalculate price if pricing handler is available
+                if self.pricing:
+                    try:
+                        self.pricing.recalculate_bagel_price(current_item)
+                    except (ValueError, KeyError):
+                        # Price recalculation failed (missing menu data), skip
+                        logger.debug("Could not recalculate bagel price after modifier removal")
+
+                updated_summary = current_item.get_summary()
+
+                # Return to config question or continue with configuration
+                question = self.get_current_config_question(order, current_item)
+                if question:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_modifier_name}. {question}",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_modifier_name}. Your bagel is now {updated_summary}. Anything else?",
+                        order=order,
+                    )
 
         # Get all active items to search through
         active_items = order.items.get_active_items()

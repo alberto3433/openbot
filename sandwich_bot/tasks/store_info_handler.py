@@ -131,6 +131,58 @@ class StoreInfoHandler:
             order=order,
         )
 
+    def handle_customer_service_inquiry(self, order: OrderTask) -> StateMachineResult:
+        """Handle customer service escalation requests.
+
+        When a customer says things like "I want to speak to a manager", "my order was wrong",
+        or "I need a refund", provide them with the corporate email and store phone number.
+
+        Args:
+            order: Current order state (unchanged)
+
+        Returns:
+            StateMachineResult with contact information for customer service
+        """
+        store_info = self._store_info or {}
+        store_phone = store_info.get("phone")
+        store_name = store_info.get("name")
+
+        # Get company info from menu_data
+        company_info = self._menu_data.get("company_info", {})
+        corporate_email = company_info.get("corporate_email")
+        instagram_handle = company_info.get("instagram_handle")
+        feedback_form_url = company_info.get("feedback_form_url")
+
+        # Build the response message
+        contact_parts = []
+
+        if store_phone:
+            if store_name:
+                contact_parts.append(f"call our {store_name} location at {store_phone}")
+            else:
+                contact_parts.append(f"call us at {store_phone}")
+
+        if corporate_email:
+            contact_parts.append(f"email us at {corporate_email}")
+
+        if feedback_form_url:
+            contact_parts.append(f"submit feedback at {feedback_form_url}")
+
+        if contact_parts:
+            contact_str = ", or ".join(contact_parts)
+            message = (
+                f"I'm sorry to hear that. For customer service assistance, you can {contact_str}. "
+                "Our team will be happy to help resolve any issues. Is there anything else I can help with?"
+            )
+        else:
+            # Fallback if no contact info is available
+            message = (
+                "I'm sorry to hear that. Please reach out to our team for assistance with your concern. "
+                "Is there anything else I can help with?"
+            )
+
+        return StateMachineResult(message=message, order=order)
+
     def handle_delivery_zone_inquiry(self, query: str | None, order: OrderTask) -> StateMachineResult:
         """Handle inquiry about whether we deliver to a specific location.
 

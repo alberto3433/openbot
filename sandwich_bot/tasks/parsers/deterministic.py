@@ -65,6 +65,7 @@ from .constants import (
     ITEM_DESCRIPTION_PATTERNS,
     MODIFIER_INQUIRY_PATTERNS,
     MORE_MENU_ITEMS_PATTERNS,
+    CUSTOMER_SERVICE_PATTERNS,
     get_by_pound_items,
     find_by_pound_item,
 )
@@ -1268,6 +1269,122 @@ def _parse_modify_existing_item(text: str, spread_types: set[str]) -> OpenInputR
     return None
 
 
+def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
+    """Detect requests to add modifiers (proteins, cheeses, toppings) to an existing item.
+
+    Catches patterns like:
+    - "add bacon" - add single modifier to current/last item
+    - "add bacon and cheese" - add multiple modifiers
+    - "add bacon to the bagel" - add modifier to specific item
+    - "add bacon to the plain bagel" - add modifier to specific item type
+    - "extra bacon" / "more bacon" - alternative action words
+    - "put bacon on it" - implicit target
+
+    Does NOT catch patterns like:
+    - "add bacon egg and cheese" - this is a breakfast sandwich order
+    - "add ham egg and cheese" - this is a breakfast sandwich order
+
+    Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    # Skip patterns that look like breakfast sandwiches ("add bacon egg and cheese")
+    # These should be handled by _parse_egg_cheese_sandwich_abbrev instead
+    if re.search(r"\begg\s+(?:and|&|n)\s+cheese\b", text_lower):
+        return None
+
+    # Get known modifiers (proteins, cheeses, toppings - NOT spreads, handled separately)
+    known_proteins = get_proteins()
+    known_cheeses = get_cheeses()
+    known_toppings = get_toppings()
+    all_modifiers = known_proteins | known_cheeses | known_toppings
+
+    # === Pattern Group 1: "add/put/extra/more MODIFIER to the TARGET" ===
+    # Captures: modifier(s) and target item
+    target_patterns = [
+        # "add bacon to the bagel" / "add bacon to the plain bagel"
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+        # "add bacon to the omelette" / "add bacon to my omelette"
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+    ]
+
+    modifier_text = None
+    target_item = None
+
+    for pattern in target_patterns:
+        match = re.match(pattern, text_lower)
+        if match:
+            modifier_text = match.group(1).strip()
+            target_item = match.group(2).strip()
+            break
+
+    # === Pattern Group 2: "add/extra/more/put MODIFIER" (no explicit target) ===
+    if not modifier_text:
+        no_target_patterns = [
+            # "add bacon" / "add bacon and cheese"
+            r"^(?:add|put)\s+(.+?)(?:\s+please)?$",
+            # "extra bacon" / "extra cheese"
+            r"^extra\s+(.+?)(?:\s+please)?$",
+            # "more bacon" / "more cheese"
+            r"^more\s+(.+?)(?:\s+please)?$",
+        ]
+
+        for pattern in no_target_patterns:
+            match = re.match(pattern, text_lower)
+            if match:
+                modifier_text = match.group(1).strip()
+                target_item = None  # Implicit - apply to last/current item
+                break
+
+    # === Pattern Group 3: "put MODIFIER on it" ===
+    if not modifier_text:
+        match = re.match(r"^put\s+(.+?)\s+on\s+it(?:\s+please)?$", text_lower)
+        if match:
+            modifier_text = match.group(1).strip()
+            target_item = None  # "it" means last/current item
+
+    # No pattern matched
+    if not modifier_text:
+        return None
+
+    # === Parse modifier_text to extract individual modifiers ===
+    # Handle "bacon and cheese", "bacon, cheese, and tomato", etc.
+    modifiers_found = []
+
+    # Split by "and" and commas
+    # "bacon and cheese" -> ["bacon", "cheese"]
+    # "bacon, cheese, and tomato" -> ["bacon", "cheese", "tomato"]
+    modifier_text_clean = modifier_text.replace(",", " ").replace(" and ", " ")
+    potential_modifiers = modifier_text_clean.split()
+
+    # Match against known modifiers (handle multi-word modifiers like "turkey bacon")
+    # Sort by length to match longer phrases first
+    for modifier in sorted(all_modifiers, key=len, reverse=True):
+        if modifier in modifier_text.lower():
+            normalized = menu_cache.normalize_modifier(modifier)
+            if normalized not in modifiers_found:
+                modifiers_found.append(normalized)
+
+    # If no known modifiers found, this isn't an add-modifier request
+    if not modifiers_found:
+        return None
+
+    # Clean up target_item if present (remove trailing "please", "thanks", etc.)
+    if target_item:
+        target_item = re.sub(r"\s*(please|thanks|thank you)$", "", target_item).strip()
+
+    logger.info(
+        "ADD MODIFIER TO ITEM: '%s' -> modifiers=%s, target=%s",
+        text[:50], modifiers_found, target_item
+    )
+
+    return OpenInputResponse(
+        modify_existing_item=True,
+        modify_target_description=target_item,
+        modify_add_modifiers=modifiers_found,
+    )
+
+
 def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
     """Try to extract a known menu item from text."""
     text_lower = text.lower().strip()
@@ -1928,6 +2045,21 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
         potential_type = bagel_match.group(1).lower().strip()
         if potential_type in get_bagel_types():
             bagel_type = potential_type
+
+    # Also check for "on BAGEL_TYPE" without explicit "bagel" word
+    # e.g., "ham egg and cheese on wheat toasted" where "wheat" is a bagel type
+    if not bagel_type:
+        on_type_pattern = re.compile(
+            r"\bon\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\b",
+            re.IGNORECASE
+        )
+        on_match = on_type_pattern.search(text)
+        if on_match:
+            potential_type = on_match.group(1).lower().strip()
+            # Remove trailing "toasted" or "not toasted" if present
+            potential_type = re.sub(r"\s*(not\s+)?toasted$", "", potential_type).strip()
+            if potential_type in get_bagel_types():
+                bagel_type = potential_type
 
     # Check for toasted if specified
     toasted = _extract_toasted(text)
@@ -2687,6 +2819,22 @@ def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
     return None
 
 
+def _parse_customer_service_inquiry(text: str) -> OpenInputResponse | None:
+    """Parse customer service escalation requests.
+
+    Detects when user wants to speak to a manager, report an issue,
+    request a refund, or escalate a complaint.
+    """
+    text_lower = text.lower().strip()
+
+    for pattern in CUSTOMER_SERVICE_PATTERNS:
+        if pattern.search(text_lower):
+            logger.info("CUSTOMER SERVICE INQUIRY: '%s'", text[:50])
+            return OpenInputResponse(wants_customer_service=True)
+
+    return None
+
+
 def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
     """Parse item description questions."""
     text_lower = text.lower().strip()
@@ -2877,9 +3025,16 @@ def _parse_ingredient_search(
         potential_ingredient = words[-1].rstrip('?.,!')
         if potential_ingredient in ingredient_to_items:
             # Make sure it's not part of an obvious order ("chicken sandwich", "bacon egg")
+            # or a modification/removal command ("remove the bacon", "cancel the ham")
+            # or an add-modifier command ("add bacon", "extra cheese")
             order_signals = [
                 "bagel", "sandwich", "salad", "soup", "egg", "omelette",
                 "omelet", "coffee", "latte", "please", "want", "like", "get",
+                # Cancel/remove commands - should not trigger ingredient search
+                "remove", "cancel", "delete", "take off", "no more", "drop",
+                "forget", "skip", "hold the", "without", "lose the", "scratch",
+                # Add-modifier commands - should not trigger ingredient search
+                "add", "extra", "more", "put",
             ]
             has_order_signal = any(signal in text_lower for signal in order_signals)
 
@@ -3644,6 +3799,13 @@ def parse_open_input_deterministic(
     if price_result:
         return price_result
 
+    # Check for add-modifier patterns ("add bacon", "extra cheese", "more cheese")
+    # This MUST run BEFORE _parse_more_menu_items() because "more cheese" would otherwise
+    # be caught by the "^more\b" pattern in MORE_MENU_ITEMS_PATTERNS
+    add_modifier_result = _parse_add_modifier_to_item(text)
+    if add_modifier_result:
+        return add_modifier_result
+
     # Check for "show more" menu requests BEFORE menu queries
     # "what other pastries do you have?" should be pagination, not a new query
     more_items_result = _parse_more_menu_items(text)
@@ -3664,6 +3826,11 @@ def parse_open_input_deterministic(
     store_info_result = _parse_store_info_inquiry(text)
     if store_info_result:
         return store_info_result
+
+    # Check for customer service escalation requests
+    customer_service_result = _parse_customer_service_inquiry(text)
+    if customer_service_result:
+        return customer_service_result
 
     # Check for item description inquiries
     item_desc_result = _parse_item_description_inquiry(text)
@@ -3692,6 +3859,13 @@ def parse_open_input_deterministic(
     signature_item_result = _parse_signature_item_deterministic(text)
     if signature_item_result:
         return signature_item_result
+
+    # Check for egg+cheese sandwich abbreviations (SEC, HEC, BEC, "ham egg and cheese", etc.)
+    # This MUST run BEFORE menu item lookup to prevent "ham egg and cheese" from matching
+    # "Ham (1 lb)" as a deli item instead of being parsed as a breakfast sandwich
+    egg_cheese_result = _parse_egg_cheese_sandwich_abbrev(text)
+    if egg_cheese_result:
+        return egg_cheese_result
 
     # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
     make_it_n_match = MAKE_IT_N_PATTERN.match(text)

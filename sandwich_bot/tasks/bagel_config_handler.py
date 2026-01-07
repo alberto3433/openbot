@@ -86,6 +86,36 @@ def _is_pagination_request(user_input: str) -> bool:
     return False
 
 
+def _build_modifier_acknowledgment(modifiers: ExtractedModifiers) -> str:
+    """
+    Build an acknowledgment message for modifiers that were added.
+
+    Args:
+        modifiers: Extracted modifiers from user input
+
+    Returns:
+        Acknowledgment string like "Got it, I've added bacon and cheese! " or empty string
+    """
+    added_items = []
+    if modifiers.proteins:
+        added_items.extend(modifiers.proteins)
+    if modifiers.cheeses:
+        added_items.extend(modifiers.cheeses)
+    if modifiers.toppings:
+        added_items.extend(modifiers.toppings)
+    if modifiers.spreads:
+        added_items.extend(modifiers.spreads)
+
+    if not added_items:
+        return ""
+
+    if len(added_items) == 1:
+        return f"Got it, I've added {added_items[0]}! "
+    else:
+        items_str = ", ".join(added_items[:-1]) + f" and {added_items[-1]}"
+        return f"Got it, I've added {items_str}! "
+
+
 def apply_modifiers_to_bagel(
     item: BagelItemTask,
     modifiers: ExtractedModifiers,
@@ -336,8 +366,15 @@ class BagelConfigHandler:
                 bagel_type = bt
                 break
 
-        # If no bagel type found, check if user is trying to order a new item
-        if not bagel_type and self._check_redirect:
+        # Before redirect check, see if user is adding modifiers to the current item
+        # e.g., "add american cheese" or "and cheese" should acknowledge and stay on track
+        modifiers_for_acknowledgment = None
+        if not bagel_type and isinstance(item, BagelItemTask):
+            modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
+
+        # If no bagel type found AND no modifiers detected, check if user is trying to order a new item
+        has_modifiers = modifiers_for_acknowledgment and modifiers_for_acknowledgment.has_modifiers()
+        if not bagel_type and not has_modifiers and self._check_redirect:
             redirect = self._check_redirect(
                 user_input, item, order, "What kind of bagel would you like?"
             )
@@ -359,12 +396,23 @@ class BagelConfigHandler:
                 bagel_type = parsed.bagel_type
 
         if not bagel_type:
+            # Check if the user added modifiers - acknowledge them before re-asking
+            acknowledgment = ""
+            if has_modifiers:
+                # Apply modifiers to the bagel
+                apply_modifiers_to_bagel(item, modifiers_for_acknowledgment)
+                if self.pricing:
+                    self.pricing.recalculate_bagel_price(item)
+                acknowledgment = _build_modifier_acknowledgment(modifiers_for_acknowledgment)
+                if acknowledgment:
+                    logger.info("Acknowledged modifiers during bagel type question")
+
             # Show first batch of bagel types and set up pagination
             batch = get_bagel_types_list()[:DEFAULT_PAGINATION_SIZE]
             types_str = ", ".join(batch)
             order.set_menu_pagination("bagel_types", DEFAULT_PAGINATION_SIZE, len(get_bagel_types_list()))
             return StateMachineResult(
-                message=f"What kind of bagel? We have {types_str}, and more.",
+                message=f"{acknowledgment}What kind of bagel? We have {types_str}, and more.",
                 order=order,
             )
 
@@ -758,7 +806,15 @@ class BagelConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for bagel or sandwich."""
-        if self._check_redirect:
+        # Before redirect check, see if user is adding modifiers to the current item
+        # e.g., "add blueberry cream cheese" should acknowledge and stay on track
+        modifiers_for_acknowledgment = None
+        if isinstance(item, BagelItemTask):
+            modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
+
+        # If no modifiers detected, check if user is trying to order a new item
+        has_modifiers = modifiers_for_acknowledgment and modifiers_for_acknowledgment.has_modifiers()
+        if not has_modifiers and self._check_redirect:
             redirect = self._check_redirect(
                 user_input, item, order, "Would you like it toasted?"
             )
@@ -772,8 +828,18 @@ class BagelConfigHandler:
             toasted = parsed.toasted
 
         if toasted is None:
+            # Check if the user added modifiers - acknowledge them before re-asking
+            acknowledgment = ""
+            if has_modifiers:
+                apply_modifiers_to_bagel(item, modifiers_for_acknowledgment)
+                if self.pricing:
+                    self.pricing.recalculate_bagel_price(item)
+                acknowledgment = _build_modifier_acknowledgment(modifiers_for_acknowledgment)
+                if acknowledgment:
+                    logger.info("Acknowledged modifiers during toasted question")
+
             return StateMachineResult(
-                message="Would you like that toasted? Yes or no?",
+                message=f"{acknowledgment}Would you like that toasted? Yes or no?",
                 order=order,
             )
 
@@ -895,7 +961,12 @@ class BagelConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle cheese type selection when user said generic 'cheese'."""
-        if self._check_redirect:
+        # Before redirect check, see if user is adding modifiers to the current item
+        modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
+
+        # If no modifiers detected, check if user is trying to order a new item
+        has_modifiers = modifiers_for_acknowledgment and modifiers_for_acknowledgment.has_modifiers()
+        if not has_modifiers and self._check_redirect:
             redirect = self._check_redirect(
                 user_input, item, order, "What kind of cheese would you like?"
             )
@@ -923,8 +994,26 @@ class BagelConfigHandler:
                 break
 
         if not selected_cheese:
+            # Check if the user added modifiers - acknowledge them before re-asking
+            acknowledgment = ""
+            if has_modifiers:
+                # Apply non-cheese modifiers (skip cheeses since we're asking about cheese)
+                apply_modifiers_to_bagel(item, modifiers_for_acknowledgment, skip_cheeses=True)
+                if self.pricing:
+                    self.pricing.recalculate_bagel_price(item)
+                # Build acknowledgment for non-cheese modifiers only
+                non_cheese_modifiers = ExtractedModifiers(
+                    proteins=modifiers_for_acknowledgment.proteins,
+                    cheeses=[],  # Skip cheese in acknowledgment since we're asking about it
+                    toppings=modifiers_for_acknowledgment.toppings,
+                    spreads=modifiers_for_acknowledgment.spreads,
+                )
+                acknowledgment = _build_modifier_acknowledgment(non_cheese_modifiers)
+                if acknowledgment:
+                    logger.info("Acknowledged modifiers during cheese question")
+
             return StateMachineResult(
-                message="What kind of cheese? We have American, cheddar, Swiss, and muenster.",
+                message=f"{acknowledgment}What kind of cheese? We have American, cheddar, Swiss, and muenster.",
                 order=order,
             )
 

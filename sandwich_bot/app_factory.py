@@ -64,7 +64,7 @@ def create_app(
     app = FastAPI(
         title="Restaurant Order Bot API",
         description="Multi-tenant restaurant ordering chatbot API",
-        version="2.0.0",
+        version="2.1.0",
     )
 
     # Add tenant middleware

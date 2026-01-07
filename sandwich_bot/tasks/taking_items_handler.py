@@ -2114,7 +2114,7 @@ class TakingItemsHandler:
             "User did not confirm suggested item '%s', processing as normal input: '%s'",
             suggested_item, user_input
         )
-        return self.handle_open_input(user_input, order)
+        return self.handle_taking_items(user_input, order)
 
     def _duplicate_all_items(
         self,

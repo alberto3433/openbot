@@ -3662,7 +3662,11 @@ def parse_open_input_deterministic(
                 logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)
                 return OpenInputResponse(cancel_item="__all_items__")
             # Handle pronouns that refer to the last item
-            last_item_pronouns = {"that", "it", "this", "the last one", "the last item", "last one", "last item"}
+            last_item_pronouns = {
+                "that", "it", "this", "the last one", "the last item", "last one", "last item",
+                # "remove from the order" -> remove the last item mentioned
+                "from the order", "from my order"
+            }
             if cancel_item.lower() in last_item_pronouns:
                 logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
                 return OpenInputResponse(cancel_item="__last_item__")

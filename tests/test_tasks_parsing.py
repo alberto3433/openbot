@@ -1017,6 +1017,8 @@ class TestCancellationPatternDetection:
         "actually remove that",
         "actually forget it",
         "actually nevermind that",
+        "remove from the order",
+        "remove from my order",
     ])
     def test_cancel_that_pronouns_detected(self, text):
         """Test that 'cancel that' and similar pronouns trigger last item cancellation."""

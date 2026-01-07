@@ -553,6 +553,10 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="User is asking to see more items from a previous menu query (e.g., 'what other pastries?', 'what else?', 'more options')"
     )
+    more_menu_category: str | None = Field(
+        default=None,
+        description="The category extracted from 'what other X' queries (e.g., 'signature sandwiches' from 'what other signature sandwiches do you have?'). Used to start a fresh query when no pagination context exists."
+    )
     asking_signature_menu: bool = Field(
         default=False,
         description="User is asking about signature/speed menu items (e.g., 'what are your speed menu bagels?', 'what signature items do you have?')"

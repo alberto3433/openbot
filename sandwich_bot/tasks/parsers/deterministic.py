@@ -2951,13 +2951,33 @@ def _parse_modifier_inquiry(
 
 
 def _parse_more_menu_items(text: str) -> OpenInputResponse | None:
-    """Parse 'show more' menu requests like 'what other drinks do you have?'"""
+    """Parse 'show more' menu requests like 'what other drinks do you have?'
+
+    Also extracts the category from "what other X" patterns so the handler can
+    start a fresh query if no pagination context exists.
+    """
     text_lower = text.lower().strip()
 
     for pattern in MORE_MENU_ITEMS_PATTERNS:
         if pattern.search(text_lower):
             logger.info("MORE MENU ITEMS: '%s'", text[:50])
-            return OpenInputResponse(wants_more_menu_items=True)
+
+            # Try to extract the category from "what other X" patterns
+            # e.g., "what other signature sandwiches do you have?" -> "signature sandwiches"
+            category_match = re.search(
+                r'what (?:other|else|more) ([a-z]+(?: [a-z]+)*?)(?:\s+(?:do you have|are there|can i get|you got)|\?|$)',
+                text_lower
+            )
+            category = None
+            if category_match:
+                category = category_match.group(1).strip()
+                # Clean up common suffixes
+                if category.endswith(' options'):
+                    category = category[:-8].strip()
+                if category:
+                    logger.info("MORE MENU ITEMS: extracted category '%s'", category)
+
+            return OpenInputResponse(wants_more_menu_items=True, more_menu_category=category)
 
     return None
 

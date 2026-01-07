@@ -1506,7 +1506,7 @@ class TakingItemsHandler:
             return self.menu_inquiry_handler.handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 
         if parsed.wants_more_menu_items:
-            return self.menu_inquiry_handler.handle_more_menu_items(order)
+            return self.menu_inquiry_handler.handle_more_menu_items(order, parsed.more_menu_category)
 
         if parsed.asking_signature_menu:
             return self.menu_inquiry_handler.handle_signature_menu_inquiry(parsed.signature_menu_type, order)

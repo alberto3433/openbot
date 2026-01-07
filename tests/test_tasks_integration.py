@@ -5779,6 +5779,41 @@ class TestSignatureMenuInquiryHandler:
         # No pagination state
         assert result.order.get_menu_pagination() is None
 
+    def test_what_other_signature_sandwiches_without_pagination_context(self):
+        """Test that 'what other signature sandwiches' works without prior query.
+
+        Regression test for bug where 'what other signature sandwiches do you have?'
+        returned 'More of what?' because there was no pagination context.
+        Now it should treat this as a fresh query for signature items.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_items": [
+                    {"name": "Reuben"},
+                    {"name": "BLT"},
+                    {"name": "Club Sandwich"},
+                ],
+            }
+        }
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # User asks about signature sandwiches without any prior menu query
+        result = sm.process("what other signature sandwiches do you have?", order)
+
+        # Should NOT say "More of what?"
+        assert "more of what" not in result.message.lower(), \
+            f"Should list signature items, not ask 'more of what'. Got: {result.message}"
+
+        # Should list the signature items
+        assert "reuben" in result.message.lower() or "blt" in result.message.lower() or "signature" in result.message.lower(), \
+            f"Should mention signature items. Got: {result.message}"
+
 
 class TestIngredientSearchPagination:
     """Tests for ingredient search pagination ('what else' follow-up)."""

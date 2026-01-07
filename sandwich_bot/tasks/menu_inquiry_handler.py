@@ -193,12 +193,17 @@ class MenuInquiryHandler:
         else:
             return ", ".join(item_list[:-1]) + f", and {item_list[-1]}", has_more
 
-    def handle_more_menu_items(self, order: OrderTask) -> StateMachineResult:
+    def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
 
         Continues listing items from where the previous menu query left off.
         Supports both menu item categories, modifier categories (toppings, proteins, etc.),
         and ingredient search results.
+
+        Args:
+            order: The current order state
+            category: Optional category extracted from "what other X" queries. If provided
+                and there's no existing pagination, this triggers a fresh query for that category.
         """
         # Check for ingredient search pagination first
         ingredient_search = order.pending_ingredient_search
@@ -208,7 +213,13 @@ class MenuInquiryHandler:
         pagination = order.get_menu_pagination()
 
         if not pagination:
-            # No previous menu query - ask what they want to see more of
+            # No previous menu query - check if we have a category from "what other X"
+            if category:
+                # Treat as a fresh menu query for this category
+                logger.info("MORE MENU ITEMS: No pagination, treating '%s' as fresh query", category)
+                return self._handle_category_as_menu_query(category, order)
+
+            # No category either - ask what they want to see more of
             return StateMachineResult(
                 message="More of what? What would you like me to list?",
                 order=order,
@@ -312,6 +323,62 @@ class MenuInquiryHandler:
             message=message,
             order=order,
         )
+
+    def _handle_category_as_menu_query(
+        self,
+        category: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle a category from 'what other X' as a fresh menu query.
+
+        Maps common category phrases to the appropriate menu type and handler.
+        """
+        category_lower = category.lower().strip()
+
+        # Map category phrases to menu types
+        # "signature sandwiches" -> signature_items, "egg sandwiches" -> egg_sandwich, etc.
+        category_map = {
+            "signature sandwich": "signature_items",
+            "signature sandwiches": "signature_items",
+            "signature item": "signature_items",
+            "signature items": "signature_items",
+            "egg sandwich": "egg_sandwich",
+            "egg sandwiches": "egg_sandwich",
+            "fish sandwich": "fish_sandwich",
+            "fish sandwiches": "fish_sandwich",
+            "cream cheese sandwich": "spread_sandwich",
+            "cream cheese sandwiches": "spread_sandwich",
+            "spread sandwich": "spread_sandwich",
+            "spread sandwiches": "spread_sandwich",
+            "salad sandwich": "salad_sandwich",
+            "salad sandwiches": "salad_sandwich",
+            "deli sandwich": "deli_sandwich",
+            "deli sandwiches": "deli_sandwich",
+            "bagel": "bagel",
+            "bagels": "bagel",
+            "coffee": "sized_beverage",
+            "coffees": "sized_beverage",
+            "drink": "sized_beverage",
+            "drinks": "sized_beverage",
+            "side": "side",
+            "sides": "side",
+            "omelette": "omelette",
+            "omelettes": "omelette",
+        }
+
+        menu_type = category_map.get(category_lower)
+
+        if menu_type:
+            logger.info("Category '%s' mapped to menu type '%s'", category, menu_type)
+            # Use signature menu handler for signature items
+            if menu_type == "signature_items":
+                return self.handle_signature_menu_inquiry(menu_type, order)
+            # Use regular menu query handler for other types
+            return self.handle_menu_query(menu_type, order)
+
+        # Couldn't map to a known category - try a generic lookup
+        logger.info("Category '%s' not in map, trying generic lookup", category)
+        return self.handle_menu_query(category_lower, order)
 
     def _handle_more_modifier_items(
         self,

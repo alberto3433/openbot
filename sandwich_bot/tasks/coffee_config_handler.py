@@ -74,42 +74,24 @@ class CoffeeConfigHandler:
             self._check_redirect = kwargs.get("check_redirect")
 
     def _get_beverage_options(self, attribute_slug: str) -> list[str]:
-        """Get available options for a beverage attribute from menu data.
+        """Get available options for a beverage attribute from the database cache.
 
         Args:
             attribute_slug: The attribute slug (e.g., 'milk', 'sweetener', 'syrup')
 
         Returns:
-            List of option display names. Falls back to defaults if menu data unavailable.
+            List of option display names from the database.
         """
-        # Fallback defaults in case menu data is not available
-        defaults = {
-            "milk": ["whole milk", "skim milk", "oat milk", "almond milk"],
-            "sweetener": ["sugar", "Splenda", "Sweet'N Low"],
-            "syrup": ["vanilla", "caramel", "hazelnut"],
-        }
+        from ..menu_data_cache import menu_cache
 
-        if not self.menu_lookup or not hasattr(self.menu_lookup, "menu_data"):
-            return defaults.get(attribute_slug, [])
-
-        menu_data = self.menu_lookup.menu_data
-        item_types = menu_data.get("item_types", {})
-        sized_beverage = item_types.get("sized_beverage", {})
-        attributes = sized_beverage.get("attributes", [])
-
-        for attr in attributes:
-            if attr.get("slug") == attribute_slug:
-                options = attr.get("options", [])
-                # Filter to only available options and get display names
-                names = [
-                    opt.get("display_name", opt.get("slug", ""))
-                    for opt in options
-                    if opt.get("display_name") or opt.get("slug")
-                ]
-                if names:
-                    return names
-
-        return defaults.get(attribute_slug, [])
+        if attribute_slug == "milk":
+            return menu_cache.get_beverage_milks()
+        elif attribute_slug == "sweetener":
+            return menu_cache.get_beverage_sweeteners()
+        elif attribute_slug == "syrup":
+            return menu_cache.get_beverage_syrups()
+        else:
+            return []
 
     def _format_options_list(self, options: list[str], conjunction: str = "and") -> str:
         """Format a list of options into a natural language string.
@@ -1267,8 +1249,8 @@ class CoffeeConfigHandler:
                 stored_quantity = stored_mods.get("quantity", 1)
 
                 logger.info(
-                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, iced=%s, milk=%s, syrup=%s",
-                    selected_name, selected_price, stored_size, stored_iced, stored_milk, stored_syrup
+                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+                    selected_name, selected_price, stored_size, stored_iced, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
                 )
 
                 order.pending_drink_options = []
@@ -1304,7 +1286,7 @@ class CoffeeConfigHandler:
                     sweeteners_list = []
                     if stored_sweetener:
                         sweeteners_list.append({
-                            "sweetener": stored_sweetener,
+                            "type": stored_sweetener,
                             "quantity": stored_sweetener_qty or 1,
                         })
 

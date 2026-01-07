@@ -71,6 +71,11 @@ class MenuDataCache:
         self._soda_types: set[str] = set()
         self._known_menu_items: set[str] = set()
 
+        # Beverage modifier options (from item_type_ingredients table)
+        self._beverage_milks: list[str] = []  # Ordered list of milk options
+        self._beverage_sweeteners: list[str] = []  # Ordered list of sweetener options
+        self._beverage_syrups: list[str] = []  # Ordered list of syrup options
+
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
         self._coffee_alias_to_canonical: dict[str, str] = {}
         self._soda_alias_to_canonical: dict[str, str] = {}
@@ -152,6 +157,7 @@ class MenuDataCache:
                 self._load_cheeses(db)
                 self._load_coffee_types(db)
                 self._load_soda_types(db)
+                self._load_beverage_modifiers(db)
                 self._load_known_menu_items(db)
                 self._load_signature_item_aliases(db)
                 self._load_by_pound_items(db)
@@ -549,6 +555,48 @@ class MenuDataCache:
 
         self._soda_types = soda_types
         self._soda_alias_to_canonical = alias_to_canonical
+
+    def _load_beverage_modifiers(self, db: Session) -> None:
+        """Load beverage modifier options (milk, sweetener, syrup) from the database.
+
+        Queries the item_type_ingredients table for sized_beverage modifiers,
+        grouped by ingredient_group (milk, sweetener, syrup).
+
+        Results are ordered by display_order and store display names for user-facing text.
+        """
+        from .models import ItemType, ItemTypeIngredient, Ingredient
+
+        # Find the sized_beverage item type
+        sized_beverage = db.query(ItemType).filter(ItemType.slug == "sized_beverage").first()
+        if not sized_beverage:
+            logger.warning("No sized_beverage item type found - beverage modifiers not loaded")
+            return
+
+        # Load modifiers for each group
+        for group, target_list in [
+            ("milk", self._beverage_milks),
+            ("sweetener", self._beverage_sweeteners),
+            ("syrup", self._beverage_syrups),
+        ]:
+            # Query ingredients linked to sized_beverage with this group
+            modifiers = (
+                db.query(ItemTypeIngredient, Ingredient)
+                .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
+                .filter(ItemTypeIngredient.item_type_id == sized_beverage.id)
+                .filter(ItemTypeIngredient.ingredient_group == group)
+                .filter(ItemTypeIngredient.is_available == True)
+                .order_by(ItemTypeIngredient.display_order)
+                .all()
+            )
+
+            # Build the list of display names
+            target_list.clear()
+            for link, ingredient in modifiers:
+                # Use display_name_override if set, otherwise use ingredient name
+                display_name = link.display_name_override or ingredient.name
+                target_list.append(display_name)
+
+            logger.debug("Loaded %d %s options: %s", len(target_list), group, target_list)
 
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names and aliases for recognition.
@@ -1172,6 +1220,27 @@ class MenuDataCache:
     def get_soda_types(self) -> set[str]:
         """Get soda/bottled beverage types."""
         return self._soda_types.copy() if self._is_loaded else set()
+
+    def get_beverage_milks(self) -> list[str]:
+        """Get available milk options for beverages.
+
+        Returns ordered list of milk display names from the database.
+        """
+        return self._beverage_milks.copy() if self._is_loaded else []
+
+    def get_beverage_sweeteners(self) -> list[str]:
+        """Get available sweetener options for beverages.
+
+        Returns ordered list of sweetener display names from the database.
+        """
+        return self._beverage_sweeteners.copy() if self._is_loaded else []
+
+    def get_beverage_syrups(self) -> list[str]:
+        """Get available syrup/flavor options for beverages.
+
+        Returns ordered list of syrup display names from the database.
+        """
+        return self._beverage_syrups.copy() if self._is_loaded else []
 
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""

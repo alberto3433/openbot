@@ -229,12 +229,16 @@ class MenuInquiryHandler:
         offset = pagination.get("offset", 0)
         total_items = pagination.get("total_items", 0)
 
-        # Check if this is a modifier category (toppings, proteins, cheeses, spreads)
+        # Check if this is a modifier category (toppings, proteins, cheeses, spreads, milks, etc.)
+        # Note: milks/sweeteners/syrups use menu_cache which returns lists, not sets
         modifier_categories = {
             "toppings": get_toppings,
             "proteins": get_proteins,
             "cheeses": get_cheeses,
             "spreads": get_spreads,
+            "milks": lambda: set(menu_cache.get_beverage_milks()),
+            "sweeteners": lambda: set(menu_cache.get_beverage_sweeteners()),
+            "syrups": lambda: set(menu_cache.get_beverage_syrups()),
         }
 
         if category in modifier_categories:

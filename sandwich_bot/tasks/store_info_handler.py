@@ -608,24 +608,51 @@ class StoreInfoHandler:
 
         return StateMachineResult(message=message, order=order)
 
+    def _format_beverage_modifiers_list(self) -> dict[str, str]:
+        """Get formatted lists of beverage modifiers from the database cache."""
+        from ..menu_data_cache import menu_cache
+
+        # Get options from cache
+        milks = menu_cache.get_beverage_milks()
+        sweeteners = menu_cache.get_beverage_sweeteners()
+        syrups = menu_cache.get_beverage_syrups()
+
+        def format_list(items: list[str]) -> str:
+            if not items:
+                return ""
+            if len(items) == 1:
+                return items[0]
+            if len(items) == 2:
+                return f"{items[0]} or {items[1]}"
+            return ", ".join(items[:-1]) + ", or " + items[-1]
+
+        return {
+            "milks": format_list(milks),
+            "sweeteners": format_list(sweeteners),
+            "syrups": format_list(syrups),
+        }
+
     def _describe_item_modifiers(
         self,
         item_type: str,
         order: OrderTask,
     ) -> StateMachineResult:
         """Describe all available modifiers for a specific item type."""
+        # Get dynamic beverage modifier lists from database
+        bev_mods = self._format_beverage_modifiers_list()
+
         item_modifiers = {
             "coffee": (
                 "For coffee, you can add:\n"
-                "• Sweeteners: sugar, raw sugar, honey, Equal, Splenda, or Stevia\n"
-                "• Milk: whole, skim, 2%, oat, almond, or soy\n"
-                "• Flavor syrups: vanilla, hazelnut, or caramel\n"
+                f"• Sweeteners: {bev_mods['sweeteners']}\n"
+                f"• Milk: {bev_mods['milks']}\n"
+                f"• Flavor syrups: {bev_mods['syrups']}\n"
                 "Just let me know what you'd like!"
             ),
             "tea": (
                 "For tea, you can add:\n"
-                "• Sweeteners: sugar, raw sugar, honey, Equal, Splenda, or Stevia\n"
-                "• Milk: whole, skim, 2%, oat, almond, or soy\n"
+                f"• Sweeteners: {bev_mods['sweeteners']}\n"
+                f"• Milk: {bev_mods['milks']}\n"
                 "What would you like in your tea?"
             ),
             "hot_chocolate": (

@@ -1,7 +1,7 @@
 # Sandwich Shop Chatbot MVP
 
 This package contains a functional skeleton for a Python-based sandwich shop chatbot,
-using FastAPI, SQLite, SQLAlchemy, and OpenAI.
+using FastAPI, PostgreSQL (Neon), SQLAlchemy, and OpenAI.
 
 ## 📦 Directory Structure
 
@@ -55,6 +55,6 @@ pytest -q
 - `order_logic.py` performs deterministic updates to the order.
 - `inventory.py` decrements stock after confirmation.
 - `models.py` defines the SQLAlchemy models.
-- `menu_index_builder.py` loads menu items from SQLite.
+- `menu_index_builder.py` loads menu items from the database.
 
 This is a **minimal runnable scaffold** designed to be extended into a full FastAPI service.

@@ -99,6 +99,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     return MenuItemOut(
         id=item.id,
         name=item.name,
+        description=item.description,
         category=item.category,
         is_signature=item.is_signature,
         base_price=float(item.base_price),
@@ -134,6 +135,7 @@ def create_menu_item(
     """Create a new menu item. Requires admin authentication."""
     item = MenuItem(
         name=payload.name,
+        description=payload.description,
         category=payload.category,
         is_signature=payload.is_signature,
         base_price=payload.base_price,
@@ -178,6 +180,8 @@ def update_menu_item(
 
     if payload.name is not None:
         item.name = payload.name
+    if payload.description is not None:
+        item.description = payload.description
     if payload.category is not None:
         item.category = payload.category
     if payload.is_signature is not None:

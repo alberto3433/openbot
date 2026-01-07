@@ -175,8 +175,9 @@ class MenuItemConverter(ItemConverter):
         ):
             modifiers.append({"name": "Toasted", "price": 0})
 
-        spread_price = getattr(item, 'spread_price', None)
-        if spread and spread != "none" and spread_price and spread_price > 0:
+        # Add spread to modifiers if set (show even if price is 0 or not set)
+        spread_price = getattr(item, 'spread_price', None) or 0
+        if spread and spread != "none":
             modifiers.append({"name": spread, "price": spread_price})
 
         item_modifications = getattr(item, 'modifications', []) or []

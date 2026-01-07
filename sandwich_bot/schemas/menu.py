@@ -82,6 +82,7 @@ class MenuItemOut(BaseModel):
 
     id: int
     name: str
+    description: Optional[str] = None
     category: str
     is_signature: bool
     base_price: float
@@ -123,6 +124,7 @@ class MenuItemCreate(BaseModel):
         }
     """
     name: str
+    description: Optional[str] = None
     category: str
     is_signature: bool = False
     base_price: float
@@ -163,6 +165,7 @@ class MenuItemUpdate(BaseModel):
         {"aliases": "veggie, veg delight"}
     """
     name: Optional[str] = None
+    description: Optional[str] = None
     category: Optional[str] = None
     is_signature: Optional[bool] = None
     base_price: Optional[float] = None

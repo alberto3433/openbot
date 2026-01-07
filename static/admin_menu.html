@@ -435,6 +435,12 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="itemDescription">Description</label>
+          <textarea id="itemDescription" rows="2" placeholder="e.g., Two eggs, bacon, and cheddar cheese on a bagel"></textarea>
+          <small style="color: #666; font-size: 0.8em;">Brief description of what's included in this item</small>
+        </div>
+
         <div class="field-row">
           <div class="field">
             <label for="itemCategory">Item Type</label>
@@ -502,6 +508,7 @@
 
     const itemIdEl = document.getElementById("itemId");
     const itemNameEl = document.getElementById("itemName");
+    const itemDescriptionEl = document.getElementById("itemDescription");
     const itemCategoryEl = document.getElementById("itemCategory");
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
@@ -684,6 +691,7 @@
       detailTitleEl.textContent = "New menu item";
       itemIdEl.value = "";
       itemNameEl.value = "";
+      itemDescriptionEl.value = "";
       itemCategoryEl.value = "";
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
@@ -721,6 +729,7 @@
       detailTitleEl.textContent = item.name || "Menu item";
       itemIdEl.value = item.id || "";
       itemNameEl.value = item.name || "";
+      itemDescriptionEl.value = item.description || "";
       // Set item type dropdown by item_type_id
       itemCategoryEl.value = item.item_type_id || "";
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
@@ -747,6 +756,7 @@
 
       const payload = {
         name: itemNameEl.value.trim(),
+        description: itemDescriptionEl.value.trim() || null,
         category: categoryName, // Keep category as display name for backwards compatibility
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,

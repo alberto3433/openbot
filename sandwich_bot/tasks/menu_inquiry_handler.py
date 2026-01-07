@@ -20,6 +20,7 @@ from sandwich_bot.menu_data_cache import menu_cache
 from .models import OrderTask
 from .schemas import StateMachineResult
 from .parsers.constants import (
+    DEFAULT_PAGINATION_SIZE,
     get_item_type_display_name,
     get_toppings,
     get_proteins,
@@ -33,8 +34,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Number of items to show per page when listing menu items
-MENU_BATCH_SIZE = 10
+# NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 
 class MenuInquiryHandler:
@@ -166,7 +166,7 @@ class MenuInquiryHandler:
         Returns:
             Tuple of (formatted string, has_more_items)
         """
-        batch = items[offset:offset + MENU_BATCH_SIZE]
+        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
         remaining = len(items) - (offset + len(batch))
         has_more = remaining > 0
 
@@ -238,7 +238,7 @@ class MenuInquiryHandler:
         items_str, has_more = self._format_items_list(items, offset, False, lookup_type)
 
         # Update pagination state
-        new_offset = offset + MENU_BATCH_SIZE
+        new_offset = offset + DEFAULT_PAGINATION_SIZE
         if has_more:
             order.set_menu_pagination(category, new_offset, len(items))
         else:
@@ -289,9 +289,8 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Get next batch (use smaller batch size for modifiers)
-        modifier_batch_size = 6
-        batch = items_list[offset:offset + modifier_batch_size]
+        # Get next batch
+        batch = items_list[offset:offset + DEFAULT_PAGINATION_SIZE]
         remaining = len(items_list) - (offset + len(batch))
         has_more = remaining > 0
 
@@ -306,7 +305,7 @@ class MenuInquiryHandler:
             items_str += f", and {remaining} more"
 
             # Update pagination for next "what else"
-            new_offset = offset + modifier_batch_size
+            new_offset = offset + DEFAULT_PAGINATION_SIZE
             order.set_menu_pagination(category, new_offset, len(items_list))
         else:
             # Last batch
@@ -414,7 +413,7 @@ class MenuInquiryHandler:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
                 # Save pagination state if there are more items
                 if has_more:
-                    order.set_menu_pagination(category_key, MENU_BATCH_SIZE, len(items))
+                    order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
                 else:
                     order.clear_menu_pagination()
                 return StateMachineResult(
@@ -440,7 +439,7 @@ class MenuInquiryHandler:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
                 # Save pagination state if there are more items
                 if has_more:
-                    order.set_menu_pagination(category_key, MENU_BATCH_SIZE, len(items))
+                    order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
                 else:
                     order.clear_menu_pagination()
                 return StateMachineResult(
@@ -482,7 +481,7 @@ class MenuInquiryHandler:
 
         # Save pagination state if there are more items
         if has_more:
-            order.set_menu_pagination(menu_query_type, MENU_BATCH_SIZE, len(items))
+            order.set_menu_pagination(menu_query_type, DEFAULT_PAGINATION_SIZE, len(items))
         else:
             order.clear_menu_pagination()
 
@@ -582,7 +581,7 @@ class MenuInquiryHandler:
             "spread sandwich": ("spread_sandwich", "spread sandwiches"),
             "salad sandwich": ("salad_sandwich", "salad sandwiches"),
             "deli sandwich": ("deli_sandwich", "deli sandwiches"),
-            "signature sandwich": ("signature_sandwich", "signature sandwiches"),
+            "signature sandwich": ("signature_items", "signature sandwiches"),
         }
 
         if query_lower in sandwich_type_map and self.pricing:
@@ -748,10 +747,10 @@ class MenuInquiryHandler:
         menu_type: str | None,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle inquiry about signature/speed menu items.
+        """Handle inquiry about signature menu items.
 
         Args:
-            menu_type: Specific type like 'signature_sandwich' or 'speed_menu_bagel',
+            menu_type: Specific type like 'signature_items', 'egg_sandwich', or 'signature_item',
                       or None for all signature items
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
@@ -766,10 +765,8 @@ class MenuInquiryHandler:
             else:
                 type_display_name = type_name + "s"
         else:
-            # No specific type - combine signature_sandwich and speed_menu_bagel items
-            items = []
-            items.extend(items_by_type.get("signature_sandwich", []))
-            items.extend(items_by_type.get("speed_menu_bagel", []))
+            # No specific type - get all signature items
+            items = items_by_type.get("signature_items", [])
             type_display_name = "signature menu options"
 
         if not items:

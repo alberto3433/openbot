@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, EspressoItemTask, SpeedMenuBagelItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, EspressoItemTask, SignatureItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ class CheckoutUtilsHandler:
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_speed_menu_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
+        configure_next_incomplete_signature_item: Callable[[OrderTask], StateMachineResult] | None = None,
         **kwargs,
     ):
         """
@@ -46,7 +46,7 @@ class CheckoutUtilsHandler:
             transition_to_next_slot: Callback to transition to the next slot.
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
             configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
-            configure_next_incomplete_speed_menu_bagel: Callback to configure next incomplete speed menu bagel.
+            configure_next_incomplete_signature_item: Callback to configure next incomplete signature item.
             **kwargs: Legacy parameter support.
         """
         if config:
@@ -59,7 +59,7 @@ class CheckoutUtilsHandler:
         self._transition_to_next_slot = transition_to_next_slot or kwargs.get("transition_to_next_slot")
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
         self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
-        self._configure_next_incomplete_speed_menu_bagel = configure_next_incomplete_speed_menu_bagel or kwargs.get("configure_next_incomplete_speed_menu_bagel")
+        self._configure_next_incomplete_signature_item = configure_next_incomplete_signature_item or kwargs.get("configure_next_incomplete_signature_item")
 
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -83,12 +83,12 @@ class CheckoutUtilsHandler:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
                             return self._configure_next_incomplete_bagel(order)
-                # Handle speed menu bagels that need configuration
-                elif isinstance(item, SpeedMenuBagelItemTask):
+                # Handle signature items that need configuration
+                elif isinstance(item, SignatureItemTask):
                     if item.bagel_choice is None or item.toasted is None:
-                        logger.info("Found incomplete speed menu bagel, starting configuration")
-                        if self._configure_next_incomplete_speed_menu_bagel:
-                            return self._configure_next_incomplete_speed_menu_bagel(order)
+                        logger.info("Found incomplete signature item, starting configuration")
+                        if self._configure_next_incomplete_signature_item:
+                            return self._configure_next_incomplete_signature_item(order)
                 # Handle coffee that needs configuration
                 elif isinstance(item, CoffeeItemTask):
                     logger.info("Found incomplete coffee, starting configuration")
@@ -168,9 +168,9 @@ class CheckoutUtilsHandler:
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
                 # Build abbreviated question based on the pending field
-                if pending_field in ("toasted", "speed_menu_bagel_toasted", "menu_item_bagel_toasted"):
+                if pending_field in ("toasted", "signature_item_toasted", "menu_item_bagel_toasted"):
                     question = f"And the {item_name}?"
-                elif pending_field in ("bagel_choice", "bagel_type", "speed_menu_bagel_type"):
+                elif pending_field in ("bagel_choice", "bagel_type", "signature_item_bagel_type"):
                     question = f"And what bagel for the {item_name}?"
                 elif pending_field == "coffee_size":
                     question = f"And what size for the {item_name}? Small or Large?"
@@ -187,10 +187,10 @@ class CheckoutUtilsHandler:
                     # Start bagel configuration
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)
-                elif item_type == "speed_menu_bagel" and isinstance(target_item, SpeedMenuBagelItemTask):
-                    # Start speed menu bagel configuration
-                    if self._configure_next_incomplete_speed_menu_bagel:
-                        return self._configure_next_incomplete_speed_menu_bagel(order)
+                elif item_type == "signature_item" and isinstance(target_item, SignatureItemTask):
+                    # Start signature item configuration
+                    if self._configure_next_incomplete_signature_item:
+                        return self._configure_next_incomplete_signature_item(order)
                 elif item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
                     # Start coffee configuration
                     if self._configure_next_incomplete_coffee:

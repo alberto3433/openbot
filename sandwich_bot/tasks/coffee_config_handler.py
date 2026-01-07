@@ -19,7 +19,7 @@ from .parsers import (
     parse_hot_iced_deterministic,
     extract_coffee_modifiers_from_input,
 )
-from .parsers.constants import get_coffee_types, is_soda_drink
+from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink
 from .message_builder import MessageBuilder
 from .handler_config import HandlerConfig
 
@@ -117,9 +117,8 @@ class CoffeeConfigHandler:
 
             if all_drinks:
                 # Show first batch of drinks with pagination
-                batch_size = 5
-                batch = all_drinks[:batch_size]
-                remaining = len(all_drinks) - batch_size
+                batch = all_drinks[:DEFAULT_PAGINATION_SIZE]
+                remaining = len(all_drinks) - DEFAULT_PAGINATION_SIZE
 
                 drink_names = [item.get("name", "Unknown") for item in batch]
 
@@ -131,7 +130,7 @@ class CoffeeConfigHandler:
                         drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
                     message = f"We have {drinks_str}, and more. What type of drink would you like?"
                     # Set pagination for "what else" follow-up
-                    order.set_menu_pagination("drink", batch_size, len(all_drinks))
+                    order.set_menu_pagination("drink", DEFAULT_PAGINATION_SIZE, len(all_drinks))
                 else:
                     # All drinks fit in one batch
                     if len(drink_names) == 1:
@@ -212,13 +211,12 @@ class CoffeeConfigHandler:
                     message = f"We have {drinks_str}. Which would you like?"
                 else:
                     # Show first batch with pagination
-                    batch_size = 5
-                    batch = matching_drinks[:batch_size]
-                    remaining = len(matching_drinks) - batch_size
+                    batch = matching_drinks[:DEFAULT_PAGINATION_SIZE]
+                    remaining = len(matching_drinks) - DEFAULT_PAGINATION_SIZE
                     batch_names = [item.get("name", "Unknown") for item in batch]
                     drinks_str = ", ".join(batch_names[:-1]) + f", {batch_names[-1]}"
                     message = f"We have {drinks_str}, and {remaining} more. Which would you like?"
-                    order.set_menu_pagination(coffee_type_lower, batch_size, len(matching_drinks))
+                    order.set_menu_pagination(coffee_type_lower, DEFAULT_PAGINATION_SIZE, len(matching_drinks))
 
                 # Store filtered options for selection handling
                 order.pending_drink_options = matching_drinks
@@ -1062,8 +1060,7 @@ class CoffeeConfigHandler:
                 all_drinks = sized_items + cold_items
 
                 if offset < len(all_drinks):
-                    batch_size = 5
-                    batch = all_drinks[offset:offset + batch_size]
+                    batch = all_drinks[offset:offset + DEFAULT_PAGINATION_SIZE]
                     remaining = len(all_drinks) - (offset + len(batch))
 
                     drink_names = [item.get("name", "Unknown") for item in batch]
@@ -1074,7 +1071,7 @@ class CoffeeConfigHandler:
                         else:
                             drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
                         message = f"We also have {drinks_str}, and more."
-                        order.set_menu_pagination("drink", offset + batch_size, len(all_drinks))
+                        order.set_menu_pagination("drink", offset + DEFAULT_PAGINATION_SIZE, len(all_drinks))
                     else:
                         if len(drink_names) == 1:
                             drinks_str = drink_names[0]

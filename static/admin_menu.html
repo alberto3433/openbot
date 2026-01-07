@@ -229,72 +229,104 @@
       font-size: 12px;
       color: #666;
     }
-    .ingredients {
-      font-size: 13px;
-      background: #f1f8e9;
-      border-radius: 4px;
-      padding: 6px 8px;
-      border: 1px solid #c5e1a5;
+    /* Tab Styles */
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 16px;
     }
-    .ingredients strong {
-      font-weight: 600;
+    .detail-tab {
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #666;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
     }
-    /* Config Builder Styles */
-    .config-builder {
-      background: #fafafa;
-      border: 1px solid #e0e0e0;
-      border-radius: 6px;
-      padding: 12px;
-      margin-top: 4px;
+    .detail-tab:hover {
+      color: #333;
+      background: #f5f5f5;
     }
-    .config-builder.hidden {
+    .detail-tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+    }
+    .tab-panel {
       display: none;
     }
-    .config-section {
-      margin-bottom: 12px;
+    .tab-panel.active {
+      display: block;
     }
-    .config-section:last-child {
-      margin-bottom: 0;
+    /* Attribute Form Styles */
+    .attr-form-section {
+      margin-bottom: 20px;
     }
-    .config-section-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: #555;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-    }
-    .config-row {
+    .attr-form-row {
       display: flex;
+      flex-direction: column;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #eee;
+    }
+    .attr-form-row:last-child {
+      border-bottom: none;
+    }
+    .attr-form-label {
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .attr-form-label .required {
+      font-size: 10px;
+      background: #ffebee;
+      color: #c62828;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .attr-form-label .type-badge {
+      font-size: 10px;
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .attr-form-control {
+      display: flex;
+      align-items: center;
       gap: 12px;
       flex-wrap: wrap;
     }
-    .config-field {
-      display: flex;
-      flex-direction: column;
-      min-width: 120px;
-    }
-    .config-field label {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 3px;
-    }
-    .config-field select {
-      padding: 6px 8px;
+    .attr-form-control select {
+      padding: 8px 10px;
       border: 1px solid #ccc;
       border-radius: 4px;
       font-size: 13px;
-      background: #fff;
+      min-width: 200px;
     }
-    .checkbox-grid {
+    .attr-form-control input[type="text"] {
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      min-width: 200px;
+    }
+    .attr-checkbox-group {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 8px;
     }
-    .checkbox-chip {
+    .attr-chip {
       display: flex;
       align-items: center;
       gap: 4px;
-      padding: 4px 10px;
+      padding: 6px 12px;
       border: 1px solid #ccc;
       border-radius: 16px;
       font-size: 12px;
@@ -302,52 +334,46 @@
       background: #fff;
       transition: all 0.15s;
     }
-    .checkbox-chip:hover {
+    .attr-chip:hover {
       background: #f5f5f5;
       border-color: #999;
     }
-    .checkbox-chip.selected {
+    .attr-chip.selected {
       background: #e3f2fd;
       border-color: #1976d2;
       color: #1565c0;
     }
-    .checkbox-chip input[type="checkbox"] {
+    .attr-chip input[type="checkbox"] {
       display: none;
     }
-    .toasted-toggle {
+    .still-ask-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #666;
+      margin-left: 12px;
+    }
+    .still-ask-toggle input {
+      width: 14px;
+      height: 14px;
+    }
+    .boolean-toggle {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 4px;
     }
-    .toasted-toggle input[type="checkbox"] {
+    .boolean-toggle input[type="checkbox"] {
       width: 18px;
       height: 18px;
     }
-    .toasted-toggle label {
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .config-toggle {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .config-toggle button {
-      padding: 4px 10px;
-      border: 1px solid #ccc;
+    .no-attrs-message {
+      padding: 20px;
+      text-align: center;
+      color: #888;
+      font-size: 14px;
+      background: #f9f9f9;
       border-radius: 4px;
-      background: #fff;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .config-toggle button.active {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .config-toggle button:hover:not(.active) {
-      background: #f5f5f5;
     }
   </style>
 </head>
@@ -390,6 +416,14 @@
       </div>
 
       <div id="detailBody" style="flex: 1; overflow-y: auto;">
+        <!-- Tabs -->
+        <div class="detail-tabs" id="detailTabs">
+          <button class="detail-tab active" data-tab="basic">Basic Info</button>
+          <button class="detail-tab" data-tab="attributes">Attributes</button>
+        </div>
+
+        <!-- Basic Info Tab -->
+        <div class="tab-panel active" id="tabBasicInfo">
         <div class="field-row">
           <div class="field">
             <label for="itemId">ID</label>
@@ -426,77 +460,12 @@
           <input id="itemAliases" type="text" placeholder="e.g., coke, coca cola, cola" />
           <small style="color: #666; font-size: 0.8em;">Comma-separated alternative names that customers might use</small>
         </div>
+        </div><!-- End Basic Info Tab -->
 
-        <div class="field">
-          <label>Default Configuration</label>
-          <div class="config-toggle">
-            <button type="button" id="visualModeBtn" class="active">Visual Builder</button>
-            <button type="button" id="jsonModeBtn">Raw JSON</button>
-          </div>
-
-          <!-- Visual Config Builder -->
-          <div id="configBuilder" class="config-builder">
-            <div class="config-section">
-              <div class="config-row">
-                <div class="config-field">
-                  <label>Size</label>
-                  <select id="configSize">
-                    <option value="">None</option>
-                    <option value="6&quot;">6"</option>
-                    <option value="12&quot;">12"</option>
-                  </select>
-                </div>
-                <div class="config-field">
-                  <label>Bread</label>
-                  <select id="configBread">
-                    <option value="">None</option>
-                  </select>
-                </div>
-                <div class="config-field">
-                  <label>Protein</label>
-                  <select id="configProtein">
-                    <option value="">None</option>
-                  </select>
-                </div>
-                <div class="config-field">
-                  <label>Cheese</label>
-                  <select id="configCheese">
-                    <option value="">None</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div class="config-section-label">Toppings</div>
-              <div id="toppingsGrid" class="checkbox-grid">
-                <!-- Populated by JS -->
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div class="config-section-label">Sauces</div>
-              <div id="saucesGrid" class="checkbox-grid">
-                <!-- Populated by JS -->
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div class="toasted-toggle">
-                <input type="checkbox" id="configToasted" />
-                <label for="configToasted">Toasted</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Raw JSON (hidden by default) -->
-          <textarea id="itemMetadata" class="hidden" placeholder='{"default_config": {"bread": "wheat", "protein": "turkey", "toppings": ["lettuce","tomato"]}}'></textarea>
-        </div>
-
-        <div class="field">
-          <label>Preview</label>
-          <div id="ingredientsView" class="ingredients">
-            No configuration yet.
+        <!-- Attributes Tab -->
+        <div class="tab-panel" id="tabAttributes">
+          <div id="attributesContainer">
+            <div class="no-attrs-message">Select a menu item to configure its attributes.</div>
           </div>
         </div>
       </div>
@@ -517,8 +486,6 @@
     let allItems = [];
     let filteredItems = [];
     let currentIndex = -1;
-    let ingredientsByCategory = {};
-    let isVisualMode = true;
     let itemTypes = []; // Store item types for dropdown
 
     const menuListEl = document.getElementById("menuList");
@@ -526,7 +493,6 @@
     const searchInputEl = document.getElementById("searchInput");
     const detailTitleEl = document.getElementById("detailTitle");
     const statusTextEl = document.getElementById("statusText");
-    const ingredientsViewEl = document.getElementById("ingredientsView");
 
     const itemIdEl = document.getElementById("itemId");
     const itemNameEl = document.getElementById("itemName");
@@ -534,19 +500,26 @@
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
     const itemAliasesEl = document.getElementById("itemAliases");
-    const itemMetadataEl = document.getElementById("itemMetadata");
 
-    // Config builder elements
-    const configBuilderEl = document.getElementById("configBuilder");
-    const visualModeBtnEl = document.getElementById("visualModeBtn");
-    const jsonModeBtnEl = document.getElementById("jsonModeBtn");
-    const configSizeEl = document.getElementById("configSize");
-    const configBreadEl = document.getElementById("configBread");
-    const configProteinEl = document.getElementById("configProtein");
-    const configCheeseEl = document.getElementById("configCheese");
-    const configToastedEl = document.getElementById("configToasted");
-    const toppingsGridEl = document.getElementById("toppingsGrid");
-    const saucesGridEl = document.getElementById("saucesGrid");
+    // Tab elements
+    const detailTabsEl = document.getElementById("detailTabs");
+    const tabBasicInfoEl = document.getElementById("tabBasicInfo");
+    const tabAttributesEl = document.getElementById("tabAttributes");
+    const attributesContainerEl = document.getElementById("attributesContainer");
+    let currentAttributeFormData = null; // Store loaded attribute form data
+
+    // Tab switching
+    detailTabsEl.querySelectorAll(".detail-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        const tabName = tab.dataset.tab;
+        // Update active tab
+        detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        // Show/hide panels
+        tabBasicInfoEl.classList.toggle("active", tabName === "basic");
+        tabAttributesEl.classList.toggle("active", tabName === "attributes");
+      });
+    });
 
     document.getElementById("newItemBtn").addEventListener("click", () => {
       selectItemByIndex(-1, true);
@@ -579,83 +552,6 @@
 
     searchInputEl.addEventListener("input", applyFilters);
     categoryFilterEl.addEventListener("change", applyFilters);
-    itemMetadataEl.addEventListener("input", () => {
-      updateIngredientsViewSafe();
-    });
-
-    // Mode toggle handlers
-    visualModeBtnEl.addEventListener("click", () => {
-      if (!isVisualMode) {
-        // Switching from JSON to Visual - parse JSON and populate visual builder
-        try {
-          const meta = parseMetadata();
-          populateVisualFromMeta(meta);
-        } catch (err) {
-          setStatus("Cannot switch: " + err.message, true);
-          return;
-        }
-      }
-      isVisualMode = true;
-      visualModeBtnEl.classList.add("active");
-      jsonModeBtnEl.classList.remove("active");
-      configBuilderEl.classList.remove("hidden");
-      itemMetadataEl.classList.add("hidden");
-    });
-
-    jsonModeBtnEl.addEventListener("click", () => {
-      if (isVisualMode) {
-        // Switching from Visual to JSON - sync visual to JSON first
-        syncVisualToJson();
-      }
-      isVisualMode = false;
-      jsonModeBtnEl.classList.add("active");
-      visualModeBtnEl.classList.remove("active");
-      itemMetadataEl.classList.remove("hidden");
-      configBuilderEl.classList.add("hidden");
-    });
-
-    // Config builder change handlers
-    configSizeEl.addEventListener("change", onConfigChange);
-    configBreadEl.addEventListener("change", onConfigChange);
-    configProteinEl.addEventListener("change", onConfigChange);
-    configCheeseEl.addEventListener("change", onConfigChange);
-    configToastedEl.addEventListener("change", onConfigChange);
-
-    function onConfigChange() {
-      syncVisualToJson();
-      updateIngredientsViewSafe();
-    }
-
-    // Load ingredients for config builder
-    async function loadIngredients() {
-      try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients`, { credentials: 'include' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-
-        // Group by category
-        ingredientsByCategory = {};
-        data.forEach(ing => {
-          const cat = ing.category || "other";
-          if (!ingredientsByCategory[cat]) {
-            ingredientsByCategory[cat] = [];
-          }
-          ingredientsByCategory[cat].push(ing.name);
-        });
-
-        // Populate dropdowns
-        populateDropdown(configBreadEl, ingredientsByCategory.bread || []);
-        populateDropdown(configProteinEl, ingredientsByCategory.protein || []);
-        populateDropdown(configCheeseEl, ingredientsByCategory.cheese || []);
-
-        // Populate checkbox grids
-        populateCheckboxGrid(toppingsGridEl, ingredientsByCategory.topping || [], "topping");
-        populateCheckboxGrid(saucesGridEl, ingredientsByCategory.sauce || [], "sauce");
-
-      } catch (err) {
-        console.error("Error loading ingredients:", err);
-      }
-    }
 
     // Load item types for the category dropdown
     async function loadItemTypes() {
@@ -689,113 +585,6 @@
         opt.textContent = it.display_name;
         categoryFilterEl.appendChild(opt);
       });
-    }
-
-    function populateDropdown(selectEl, items) {
-      // Keep the "None" option
-      selectEl.innerHTML = '<option value="">None</option>';
-      items.forEach(item => {
-        const opt = document.createElement("option");
-        opt.value = item.toLowerCase();
-        opt.textContent = item;
-        selectEl.appendChild(opt);
-      });
-    }
-
-    function populateCheckboxGrid(gridEl, items, category) {
-      gridEl.innerHTML = "";
-      items.forEach(item => {
-        const chip = document.createElement("label");
-        chip.className = "checkbox-chip";
-        chip.innerHTML = `
-          <input type="checkbox" value="${item.toLowerCase()}" data-category="${category}" />
-          ${item}
-        `;
-        chip.querySelector("input").addEventListener("change", (e) => {
-          chip.classList.toggle("selected", e.target.checked);
-          onConfigChange();
-        });
-        gridEl.appendChild(chip);
-      });
-    }
-
-    function syncVisualToJson() {
-      const config = {};
-
-      if (configSizeEl.value) config.size = configSizeEl.value;
-      if (configBreadEl.value) config.bread = configBreadEl.value;
-      if (configProteinEl.value) config.protein = configProteinEl.value;
-      if (configCheeseEl.value) config.cheese = configCheeseEl.value;
-
-      // Get selected toppings
-      const toppings = [];
-      toppingsGridEl.querySelectorAll("input:checked").forEach(cb => {
-        toppings.push(cb.value);
-      });
-      if (toppings.length > 0) config.toppings = toppings;
-
-      // Get selected sauces
-      const sauces = [];
-      saucesGridEl.querySelectorAll("input:checked").forEach(cb => {
-        sauces.push(cb.value);
-      });
-      if (sauces.length > 0) config.sauces = sauces;
-
-      config.toasted = configToastedEl.checked;
-
-      // Build the full metadata object
-      const meta = Object.keys(config).length > 0 ? { default_config: config } : {};
-      itemMetadataEl.value = Object.keys(meta).length > 0 ? JSON.stringify(meta, null, 2) : "";
-    }
-
-    function populateVisualFromMeta(meta) {
-      // Clear all fields first
-      configSizeEl.value = "";
-      configBreadEl.value = "";
-      configProteinEl.value = "";
-      configCheeseEl.value = "";
-      configToastedEl.checked = false;
-      toppingsGridEl.querySelectorAll("input").forEach(cb => {
-        cb.checked = false;
-        cb.closest(".checkbox-chip").classList.remove("selected");
-      });
-      saucesGridEl.querySelectorAll("input").forEach(cb => {
-        cb.checked = false;
-        cb.closest(".checkbox-chip").classList.remove("selected");
-      });
-
-      // Get config from metadata (handle both old and new formats)
-      const config = meta.default_config || meta;
-      if (!config || typeof config !== "object") return;
-
-      // Populate single selects
-      if (config.size) configSizeEl.value = config.size;
-      if (config.bread) configBreadEl.value = config.bread.toLowerCase();
-      if (config.protein) configProteinEl.value = config.protein.toLowerCase();
-      if (config.cheese) configCheeseEl.value = config.cheese.toLowerCase();
-      if (config.toasted !== undefined) configToastedEl.checked = config.toasted;
-
-      // Populate toppings
-      if (Array.isArray(config.toppings)) {
-        config.toppings.forEach(t => {
-          const cb = toppingsGridEl.querySelector(`input[value="${t.toLowerCase()}"]`);
-          if (cb) {
-            cb.checked = true;
-            cb.closest(".checkbox-chip").classList.add("selected");
-          }
-        });
-      }
-
-      // Populate sauces
-      if (Array.isArray(config.sauces)) {
-        config.sauces.forEach(s => {
-          const cb = saucesGridEl.querySelector(`input[value="${s.toLowerCase()}"]`);
-          if (cb) {
-            cb.checked = true;
-            cb.closest(".checkbox-chip").classList.add("selected");
-          }
-        });
-      }
     }
 
     function setStatus(msg, isError = false) {
@@ -892,30 +681,16 @@
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
       itemAliasesEl.value = "";
-      itemMetadataEl.value = "";
-      ingredientsViewEl.textContent = "No configuration yet.";
 
-      // Reset visual config builder
-      configSizeEl.value = "";
-      configBreadEl.value = "";
-      configProteinEl.value = "";
-      configCheeseEl.value = "";
-      configToastedEl.checked = false;
-      toppingsGridEl.querySelectorAll("input").forEach(cb => {
-        cb.checked = false;
-        cb.closest(".checkbox-chip")?.classList.remove("selected");
-      });
-      saucesGridEl.querySelectorAll("input").forEach(cb => {
-        cb.checked = false;
-        cb.closest(".checkbox-chip")?.classList.remove("selected");
-      });
+      // Clear attributes tab
+      attributesContainerEl.innerHTML = '<div class="no-attrs-message">Create or select a menu item to configure its attributes.</div>';
+      currentAttributeFormData = null;
 
-      // Ensure visual mode is active
-      isVisualMode = true;
-      visualModeBtnEl.classList.add("active");
-      jsonModeBtnEl.classList.remove("active");
-      configBuilderEl.classList.remove("hidden");
-      itemMetadataEl.classList.add("hidden");
+      // Reset to Basic Info tab
+      detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
+      detailTabsEl.querySelector('[data-tab="basic"]').classList.add("active");
+      tabBasicInfoEl.classList.add("active");
+      tabAttributesEl.classList.remove("active");
     }
 
     function selectItemByIndex(idx, newItem = false) {
@@ -943,87 +718,18 @@
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
       itemAliasesEl.value = item.aliases || "";
-      itemMetadataEl.value = item.metadata ? JSON.stringify(item.metadata, null, 2) : "";
 
-      // Populate visual config builder from metadata
-      if (item.metadata && isVisualMode) {
-        populateVisualFromMeta(item.metadata);
-      } else {
-        // Reset visual builder if no metadata
-        populateVisualFromMeta({});
-      }
+      // Load attributes for the Attributes tab
+      loadAttributeForm(item.id);
 
-      // Ensure visual mode is active
-      isVisualMode = true;
-      visualModeBtnEl.classList.add("active");
-      jsonModeBtnEl.classList.remove("active");
-      configBuilderEl.classList.remove("hidden");
-      itemMetadataEl.classList.add("hidden");
-
-      updateIngredientsViewSafe();
-    }
-
-    function parseMetadata() {
-      const raw = itemMetadataEl.value.trim();
-      if (!raw) return {};
-      try {
-        const obj = JSON.parse(raw);
-        return obj && typeof obj === "object" ? obj : {};
-      } catch (e) {
-        throw new Error("Metadata must be valid JSON.");
-      }
-    }
-
-    function updateIngredientsViewSafe() {
-      try {
-        const meta = parseMetadata();
-        renderIngredients(meta);
-      } catch (err) {
-        ingredientsViewEl.textContent = "Invalid JSON: " + err.message;
-      }
-    }
-
-    function renderIngredients(meta) {
-      if (!meta || typeof meta !== "object" || Object.keys(meta).length === 0) {
-        ingredientsViewEl.textContent = "No configuration yet.";
-        return;
-      }
-
-      // Handle both old format (direct config) and new format (wrapped in default_config)
-      const config = meta.default_config || meta;
-
-      const parts = [];
-      // Pizza attributes
-      if (config.size) parts.push(`<strong>Size:</strong> ${config.size}`);
-      if (config.crust) parts.push(`<strong>Crust:</strong> ${config.crust}`);
-      if (config.sauce) parts.push(`<strong>Sauce:</strong> ${config.sauce}`);
-      // Sandwich attributes
-      if (config.bread) parts.push(`<strong>Bread:</strong> ${config.bread}`);
-      if (config.protein) parts.push(`<strong>Protein:</strong> ${config.protein}`);
-      // Common attributes
-      if (config.cheese) parts.push(`<strong>Cheese:</strong> ${config.cheese}`);
-      if (Array.isArray(config.toppings) && config.toppings.length) {
-        parts.push(`<strong>Toppings:</strong> ${config.toppings.join(", ")}`);
-      }
-      if (Array.isArray(config.sauces) && config.sauces.length) {
-        parts.push(`<strong>Sauces:</strong> ${config.sauces.join(", ")}`);
-      }
-      if (config.toasted !== undefined) {
-        parts.push(`<strong>Toasted:</strong> ${config.toasted ? "Yes" : "No"}`);
-      }
-      if (parts.length === 0) {
-        ingredientsViewEl.innerHTML = "Metadata keys: " + Object.keys(meta).join(", ");
-      } else {
-        ingredientsViewEl.innerHTML = parts.join("<br/>");
-      }
+      // Reset to Basic Info tab when selecting a new item
+      detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
+      detailTabsEl.querySelector('[data-tab="basic"]').classList.add("active");
+      tabBasicInfoEl.classList.add("active");
+      tabAttributesEl.classList.remove("active");
     }
 
     async function saveCurrentItem() {
-      // Sync visual builder to JSON before saving
-      if (isVisualMode) {
-        syncVisualToJson();
-      }
-
       const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
       const selectedItemTypeId = itemCategoryEl.value ? parseInt(itemCategoryEl.value, 10) : null;
       // Get the display_name from the selected option for category field
@@ -1036,19 +742,11 @@
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
-        aliases: itemAliasesEl.value.trim() || null,
-        metadata: null
+        aliases: itemAliasesEl.value.trim() || null
       };
 
       if (!payload.name) {
         setStatus("Name is required.", true);
-        return;
-      }
-
-      try {
-        payload.metadata = parseMetadata();
-      } catch (err) {
-        setStatus(err.message, true);
         return;
       }
 
@@ -1101,10 +799,222 @@
       }
     }
 
-    // Initialize: load item types and ingredients first, then menu items
+    // ==================== Attribute Tab Functions ====================
+
+    async function loadAttributeForm(itemId) {
+      if (!itemId) {
+        attributesContainerEl.innerHTML = '<div class="no-attrs-message">Select a menu item to configure its attributes.</div>';
+        currentAttributeFormData = null;
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/menu/${itemId}/edit-form`, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        currentAttributeFormData = data;
+        renderAttributeForm(data);
+      } catch (err) {
+        console.error("Error loading attribute form:", err);
+        attributesContainerEl.innerHTML = '<div class="no-attrs-message">Error loading attributes. See console.</div>';
+        currentAttributeFormData = null;
+      }
+    }
+
+    function renderAttributeForm(data) {
+      if (!data.fields || data.fields.length === 0) {
+        attributesContainerEl.innerHTML = '<div class="no-attrs-message">This item type has no configurable attributes.</div>';
+        return;
+      }
+
+      let html = '<div class="attr-form-section">';
+
+      for (const field of data.fields) {
+        html += `<div class="attr-form-row" data-attr-id="${field.attribute_id}" data-attr-slug="${field.slug}">`;
+        html += `<div class="attr-form-label">`;
+        html += `<span>${field.display_name}</span>`;
+        if (field.is_required) {
+          html += `<span class="required">Required</span>`;
+        }
+        html += `<span class="type-badge">${field.input_type}</span>`;
+        html += `</div>`;
+        html += `<div class="attr-form-control">`;
+
+        if (field.input_type === 'single_select') {
+          html += renderSingleSelect(field);
+        } else if (field.input_type === 'multi_select') {
+          html += renderMultiSelect(field);
+        } else if (field.input_type === 'boolean') {
+          html += renderBooleanToggle(field);
+        } else if (field.input_type === 'text') {
+          html += renderTextInput(field);
+        }
+
+        // Still ask toggle (for single_select and boolean)
+        if (field.input_type === 'single_select' || field.input_type === 'boolean') {
+          const stillAskChecked = field.still_ask ? 'checked' : '';
+          html += `<label class="still-ask-toggle">`;
+          html += `<input type="checkbox" class="still-ask-checkbox" data-attr-id="${field.attribute_id}" ${stillAskChecked}>`;
+          html += `<span>Still ask customer</span>`;
+          html += `</label>`;
+        }
+
+        html += `</div></div>`;
+      }
+
+      html += '</div>';
+      html += '<div style="margin-top: 16px; display: flex; justify-content: flex-end;">';
+      html += '<button class="btn-primary" id="saveAttributesBtn">Save Attributes</button>';
+      html += '</div>';
+
+      attributesContainerEl.innerHTML = html;
+
+      // Add save button listener
+      document.getElementById("saveAttributesBtn").addEventListener("click", saveAttributes);
+
+      // Add change listeners to update UI feedback
+      attributesContainerEl.querySelectorAll("select, input").forEach(el => {
+        el.addEventListener("change", () => {
+          // Mark form as dirty if needed
+        });
+      });
+
+      // Add chip click listeners for multi-select
+      attributesContainerEl.querySelectorAll(".attr-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const checkbox = chip.querySelector("input[type='checkbox']");
+          checkbox.checked = !checkbox.checked;
+          chip.classList.toggle("selected", checkbox.checked);
+        });
+      });
+    }
+
+    function renderSingleSelect(field) {
+      let html = `<select data-attr-id="${field.attribute_id}" class="attr-select">`;
+      if (field.allow_none) {
+        html += `<option value="">-- None --</option>`;
+      }
+      for (const opt of field.options) {
+        const selected = field.current_option_id === opt.id ? 'selected' : '';
+        const price = opt.price_modifier > 0 ? ` (+$${opt.price_modifier.toFixed(2)})` : '';
+        html += `<option value="${opt.id}" ${selected}>${opt.display_name}${price}</option>`;
+      }
+      html += `</select>`;
+      return html;
+    }
+
+    function renderMultiSelect(field) {
+      let html = '<div class="attr-checkbox-group">';
+      const selectedIds = field.current_option_ids || [];
+      for (const opt of field.options) {
+        const isSelected = selectedIds.includes(opt.id);
+        const selectedClass = isSelected ? 'selected' : '';
+        const checked = isSelected ? 'checked' : '';
+        const price = opt.price_modifier > 0 ? ` (+$${opt.price_modifier.toFixed(2)})` : '';
+        html += `<label class="attr-chip ${selectedClass}">`;
+        html += `<input type="checkbox" value="${opt.id}" data-attr-id="${field.attribute_id}" ${checked}>`;
+        html += `${opt.display_name}${price}`;
+        html += `</label>`;
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderBooleanToggle(field) {
+      const checked = field.current_boolean === true ? 'checked' : '';
+      return `<label class="boolean-toggle">
+        <input type="checkbox" data-attr-id="${field.attribute_id}" class="attr-boolean" ${checked}>
+        <span>${field.current_boolean === true ? 'Yes' : 'No'}</span>
+      </label>`;
+    }
+
+    function renderTextInput(field) {
+      const value = field.current_text || '';
+      return `<input type="text" data-attr-id="${field.attribute_id}" class="attr-text" value="${value}" placeholder="Enter value...">`;
+    }
+
+    async function saveAttributes() {
+      const itemId = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
+      if (!itemId || !currentAttributeFormData) {
+        setStatus("No item selected.", true);
+        return;
+      }
+
+      // Build the attributes payload
+      const attributes = {};
+
+      for (const field of currentAttributeFormData.fields) {
+        const attrId = field.attribute_id;
+        const slug = field.slug;
+
+        if (field.input_type === 'single_select') {
+          const selectEl = attributesContainerEl.querySelector(`select[data-attr-id="${attrId}"]`);
+          const stillAskEl = attributesContainerEl.querySelector(`.still-ask-checkbox[data-attr-id="${attrId}"]`);
+          if (selectEl) {
+            const optionId = selectEl.value ? parseInt(selectEl.value, 10) : null;
+            attributes[slug] = {
+              option_id: optionId,
+              still_ask: stillAskEl ? stillAskEl.checked : false
+            };
+          }
+        } else if (field.input_type === 'multi_select') {
+          const checkboxes = attributesContainerEl.querySelectorAll(`input[type="checkbox"][data-attr-id="${attrId}"]:not(.still-ask-checkbox)`);
+          const selectedIds = [];
+          checkboxes.forEach(cb => {
+            if (cb.checked) {
+              selectedIds.push(parseInt(cb.value, 10));
+            }
+          });
+          attributes[slug] = {
+            selected_option_ids: selectedIds
+          };
+        } else if (field.input_type === 'boolean') {
+          const boolEl = attributesContainerEl.querySelector(`input.attr-boolean[data-attr-id="${attrId}"]`);
+          const stillAskEl = attributesContainerEl.querySelector(`.still-ask-checkbox[data-attr-id="${attrId}"]`);
+          if (boolEl) {
+            attributes[slug] = {
+              value_boolean: boolEl.checked,
+              still_ask: stillAskEl ? stillAskEl.checked : false
+            };
+          }
+        } else if (field.input_type === 'text') {
+          const textEl = attributesContainerEl.querySelector(`input.attr-text[data-attr-id="${attrId}"]`);
+          if (textEl) {
+            attributes[slug] = {
+              value_text: textEl.value || null
+            };
+          }
+        }
+      }
+
+      const payload = { attributes };
+
+      setStatus("Saving attributes...");
+      try {
+        const resp = await fetch(`${API_BASE}/admin/menu/${itemId}/attributes`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          credentials: 'include'
+        });
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${resp.status}`);
+        }
+        setStatus("Attributes saved.");
+        // Reload attribute form to show updated state
+        await loadAttributeForm(itemId);
+      } catch (err) {
+        console.error("Error saving attributes:", err);
+        setStatus("Error saving attributes: " + err.message, true);
+      }
+    }
+
+    // ==================== End Attribute Tab Functions ====================
+
+    // Initialize: load item types first, then menu items
     async function init() {
       await loadItemTypes();
-      await loadIngredients();
       await loadMenuItems();
     }
     init();

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from .models import SessionAnalytics, Company
-from .menu_index_builder import build_menu_index
+from .menu_data_cache import menu_cache
 from .email_service import send_payment_link_email
 from .chains.integration import process_voice_message
 from .services.helpers import get_customer_info, build_store_info
@@ -124,8 +124,8 @@ class MessageProcessor:
                 session["returning_customer"] = returning_customer
                 logger.info("Re-looked up returning customer: %s", returning_customer.get("name"))
 
-        # 3. Build menu and store context
-        menu_index = build_menu_index(self.db, store_id=session_store_id)
+        # 3. Get cached menu index and store context
+        menu_index = menu_cache.get_menu_index(session_store_id)
         store_info = self._build_store_info(session_store_id)
 
         # 4. Process through state machine
@@ -276,7 +276,7 @@ class MessageProcessor:
     ) -> bool:
         """Persist confirmed order to database."""
         try:
-            from .main import persist_confirmed_order
+            from .services.order import persist_confirmed_order
             persist_confirmed_order(self.db, order_state, slots={}, store_id=store_id)
             logger.info(
                 "Order persisted for customer: %s (store: %s)",

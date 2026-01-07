@@ -6,7 +6,7 @@ verifying the gluten free upcharge is properly applied and displayed.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, SpeedMenuBagelItemTask
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, SignatureItemTask
 from sandwich_bot.tasks.adapter import order_task_to_dict
 from sandwich_bot.tasks.pricing import PricingEngine
 
@@ -257,7 +257,7 @@ class TestGlutenFreeSpeedMenuE2E:
         result = sm.process("I want a classic BEC", order)
 
         # Find the speed menu item
-        speed_items = [i for i in result.order.items.items if isinstance(i, SpeedMenuBagelItemTask)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
         assert len(speed_items) == 1, f"Should have 1 speed menu item, got {len(speed_items)}"
 
         # Answer cheese question if asked
@@ -273,14 +273,14 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify gluten free upcharge applied
-        speed_items = [i for i in result.order.items.items if isinstance(i, SpeedMenuBagelItemTask)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
         assert len(speed_items) == 1
 
         item = speed_items[0]
         assert item.bagel_choice == "gluten free", f"Bagel choice should be gluten free, got: {item.bagel_choice}"
         assert item.bagel_choice_upcharge == 0.80, f"Should have $0.80 upcharge, got: {item.bagel_choice_upcharge}"
 
-    def test_speed_menu_with_regular_bagel_no_upcharge(self):
+    def test_signature_item_with_regular_bagel_no_upcharge(self):
         """
         Test: Speed menu item with regular bagel has no upcharge.
         """
@@ -304,21 +304,21 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify no upcharge for plain bagel
-        speed_items = [i for i in result.order.items.items if isinstance(i, SpeedMenuBagelItemTask)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
         assert len(speed_items) == 1
 
         item = speed_items[0]
         assert item.bagel_choice == "plain", f"Bagel choice should be plain, got: {item.bagel_choice}"
         assert item.bagel_choice_upcharge == 0.0, f"Should have no upcharge, got: {item.bagel_choice_upcharge}"
 
-    def test_speed_menu_gluten_free_adapter_output(self):
+    def test_signature_item_gluten_free_adapter_output(self):
         """
         Test: Speed menu item with gluten free bagel shows upcharge in adapter output.
         """
         order = OrderTask()
 
         # Create a completed speed menu item with gluten free
-        item = SpeedMenuBagelItemTask(
+        item = SignatureItemTask(
             menu_item_name="The Classic BEC",
             menu_item_id=123,  # Integer ID
             toasted=True,

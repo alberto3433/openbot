@@ -9,7 +9,7 @@ from sandwich_bot.tasks.models import (
     OrderTask,
     BagelItemTask,
     CoffeeItemTask,
-    SpeedMenuBagelItemTask,
+    SignatureItemTask,
     MenuItemTask,
     TaskStatus,
 )
@@ -338,16 +338,16 @@ class TestItemSlotOrchestrator:
 
         assert orch.is_complete()
 
-    def test_speed_menu_bagel_only_needs_toasted(self):
-        item = SpeedMenuBagelItemTask(menu_item_name="The Classic")
+    def test_signature_item_only_needs_toasted(self):
+        item = SignatureItemTask(menu_item_name="The Classic")
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
         assert slot is not None
         assert slot.field_name == "toasted"
 
-    def test_speed_menu_bagel_complete_with_toasted(self):
-        item = SpeedMenuBagelItemTask(menu_item_name="The Classic", toasted=True)
+    def test_signature_item_complete_with_toasted(self):
+        item = SignatureItemTask(menu_item_name="The Classic", toasted=True)
         orch = ItemSlotOrchestrator(item)
 
         assert orch.is_complete()

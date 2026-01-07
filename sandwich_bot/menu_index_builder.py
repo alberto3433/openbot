@@ -71,62 +71,96 @@ def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
     }
 
 
-def _build_default_config_from_relational(db: Session, menu_item: MenuItem) -> Optional[Dict[str, Any]]:
+def _preload_menu_item_configs(db: Session) -> Dict[int, Dict[str, Any]]:
     """
-    Build a default_config dict from relational tables for backward compatibility.
+    Pre-load all menu item attribute configurations in batched queries.
 
-    This reads from menu_item_attribute_values and menu_item_attribute_selections
-    tables and constructs a dict that matches the legacy default_config JSON format.
-
-    Args:
-        db: Database session
-        menu_item: The menu item to get config for
+    This replaces the N+1 query pattern where we queried per menu item.
+    Instead, we load everything in 2 queries and group by menu_item_id.
 
     Returns:
-        Dict with attribute values, or None if no values exist.
-        Example: {"bread": "Bagel", "protein": "Egg White", "cheese": "Swiss", "toppings": ["Spinach"]}
+        Dict mapping menu_item_id -> default_config dict
     """
-    # Get single-value attributes
-    attr_values = (
+    from collections import defaultdict
+    from sqlalchemy.orm import joinedload
+
+    # Load ALL attribute values in one query with eager loading
+    all_attr_values = (
         db.query(MenuItemAttributeValue)
-        .filter(MenuItemAttributeValue.menu_item_id == menu_item.id)
+        .options(
+            joinedload(MenuItemAttributeValue.attribute),
+            joinedload(MenuItemAttributeValue.option),
+        )
         .all()
     )
 
-    if not attr_values:
-        return None
+    # Load ALL multi-select selections in one query with eager loading
+    all_selections = (
+        db.query(MenuItemAttributeSelection)
+        .options(joinedload(MenuItemAttributeSelection.option))
+        .all()
+    )
 
-    config: Dict[str, Any] = {}
+    # Group selections by (menu_item_id, attribute_id) for fast lookup
+    selections_by_item_attr: Dict[tuple, List] = defaultdict(list)
+    for sel in all_selections:
+        key = (sel.menu_item_id, sel.attribute_id)
+        selections_by_item_attr[key].append(sel)
 
-    for av in attr_values:
-        attr = av.attribute
-        if not attr:
-            continue
+    # Group attribute values by menu_item_id
+    values_by_item: Dict[int, List] = defaultdict(list)
+    for av in all_attr_values:
+        values_by_item[av.menu_item_id].append(av)
 
-        slug = attr.slug
+    # Build config dicts for each menu item
+    configs: Dict[int, Dict[str, Any]] = {}
 
-        if attr.input_type == "boolean":
-            if av.value_boolean is not None:
-                config[slug] = av.value_boolean
-        elif attr.input_type == "multi_select":
-            # Multi-select values come from the selections table
-            selections = (
-                db.query(MenuItemAttributeSelection)
-                .filter(
-                    MenuItemAttributeSelection.menu_item_id == menu_item.id,
-                    MenuItemAttributeSelection.attribute_id == attr.id
-                )
-                .all()
-            )
-            if selections:
-                config[slug] = [sel.option.display_name for sel in selections if sel.option]
-        else:  # single_select or text
-            if av.option:
-                config[slug] = av.option.display_name
-            elif av.value_text:
-                config[slug] = av.value_text
+    for menu_item_id, attr_values in values_by_item.items():
+        config: Dict[str, Any] = {}
 
-    return config if config else None
+        for av in attr_values:
+            attr = av.attribute
+            if not attr:
+                continue
+
+            slug = attr.slug
+
+            if attr.input_type == "boolean":
+                if av.value_boolean is not None:
+                    config[slug] = av.value_boolean
+            elif attr.input_type == "multi_select":
+                # Look up selections from pre-loaded data
+                key = (menu_item_id, attr.id)
+                selections = selections_by_item_attr.get(key, [])
+                if selections:
+                    config[slug] = [sel.option.display_name for sel in selections if sel.option]
+            else:  # single_select or text
+                if av.option:
+                    config[slug] = av.option.display_name
+                elif av.value_text:
+                    config[slug] = av.value_text
+
+        if config:
+            configs[menu_item_id] = config
+
+    return configs
+
+
+def _build_default_config_from_relational(
+    menu_item_id: int,
+    preloaded_configs: Dict[int, Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Get default_config for a menu item from pre-loaded data.
+
+    Args:
+        menu_item_id: The menu item ID
+        preloaded_configs: Dict from _preload_menu_item_configs()
+
+    Returns:
+        Dict with attribute values, or None if no values exist.
+    """
+    return preloaded_configs.get(menu_item_id)
 
 
 def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
@@ -148,6 +182,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         store_id: Optional store ID for store-specific ingredient availability
     """
     items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
+
+    # Pre-load all menu item configs in batched queries (fixes N+1 query problem)
+    preloaded_configs = _preload_menu_item_configs(db)
 
     # Determine the primary configurable item type for dynamic category naming
     primary_item_type = db.query(ItemType).filter(ItemType.is_configurable == True).first()
@@ -177,6 +214,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for it in all_item_types:
         index["items_by_type"][it.slug] = []
 
+    # Add a special key for signature items (items with is_signature=true across all types)
+    index["items_by_type"]["signature_items"] = []
+
     # Build display name mapping for item types (for custom plural forms)
     # Only include types that have a custom display_name_plural set
     index["item_type_display_names"] = {
@@ -188,9 +228,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
 
-        # Get default_config from relational tables (new system)
+        # Get default_config from pre-loaded relational data (new system)
         # Falls back to JSON column during transition period
-        default_config = _build_default_config_from_relational(db, item)
+        default_config = _build_default_config_from_relational(item.id, preloaded_configs)
         if default_config is None:
             # Fallback to JSON column for items not yet migrated
             default_config = item.default_config
@@ -225,6 +265,10 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         # Add to items_by_type grouping for type-specific queries
         if item_type_slug and item_type_slug in index["items_by_type"]:
             index["items_by_type"][item_type_slug].append(item_json)
+
+        # Also add signature items to the special signature_items list
+        if item.is_signature:
+            index["items_by_type"]["signature_items"].append(item_json)
 
         cat = (item.category or "").lower()
         # Handle both "sandwich"/"pizza" and "signature" categories for main items

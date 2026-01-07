@@ -1,8 +1,11 @@
 """
-Speed Menu Bagel Handler for Order State Machine.
+Signature Item Handler for Order State Machine.
 
-This module handles the speed menu bagel ordering and configuration flow,
+This module handles signature item ordering and configuration flow,
 including toasted preference selection.
+
+Signature items are pre-configured menu items like "The Classic BEC", "The Leo",
+"The Max Zucker" that have is_signature=true in the database.
 
 Extracted from state_machine.py for better separation of concerns.
 """
@@ -10,7 +13,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import SpeedMenuBagelItemTask, OrderTask, TaskStatus
+from .models import SignatureItemTask, OrderTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_toasted_deterministic, parse_toasted_choice
 from .pricing import PricingEngine
@@ -22,16 +25,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SpeedMenuBagelHandler:
+class SignatureItemHandler:
     """
-    Handles speed menu bagel ordering and configuration flow.
+    Handles signature item ordering and configuration flow.
 
-    Manages adding speed menu bagel items and toasted preference selection.
+    Manages adding signature items and toasted preference selection.
     """
 
     def __init__(self, config: HandlerConfig | None = None, **kwargs):
         """
-        Initialize the speed menu bagel handler.
+        Initialize the signature item handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
@@ -49,7 +52,7 @@ class SpeedMenuBagelHandler:
             self._get_next_question = kwargs.get("get_next_question")
             self.pricing_engine = kwargs.get("pricing_engine") or kwargs.get("pricing")
 
-    def add_speed_menu_bagel(
+    def add_signature_item(
         self,
         item_name: str | None,
         quantity: int,
@@ -58,10 +61,10 @@ class SpeedMenuBagelHandler:
         bagel_choice: str | None = None,
         modifications: list[str] | None = None,
     ) -> StateMachineResult:
-        """Add speed menu bagel(s) to the order."""
+        """Add signature item(s) to the order."""
         if not item_name:
             return StateMachineResult(
-                message="Which speed menu item would you like?",
+                message="Which signature item would you like?",
                 order=order,
             )
 
@@ -94,7 +97,7 @@ class SpeedMenuBagelHandler:
 
         # Create the requested quantity of items
         for _ in range(quantity):
-            item = SpeedMenuBagelItemTask(
+            item = SignatureItemTask(
                 menu_item_name=item_name,
                 menu_item_id=menu_item_id,
                 toasted=toasted,
@@ -116,10 +119,10 @@ class SpeedMenuBagelHandler:
             return self._get_next_question(order)
 
         # Need to configure bagel type and/or toasted preference
-        return self.configure_next_incomplete_speed_menu_bagel(order)
+        return self.configure_next_incomplete_signature_item(order)
 
     def _item_has_cheese(self, item_name: str) -> bool:
-        """Check if a speed menu item contains cheese and needs cheese type selection."""
+        """Check if a signature item contains cheese and needs cheese type selection."""
         name_lower = item_name.lower()
         # Items with cheese: BEC (bacon egg cheese), any "egg and cheese" variant
         cheese_indicators = [
@@ -132,15 +135,15 @@ class SpeedMenuBagelHandler:
         ]
         return any(indicator in name_lower for indicator in cheese_indicators)
 
-    def configure_next_incomplete_speed_menu_bagel(
+    def configure_next_incomplete_signature_item(
         self,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Configure the next incomplete speed menu bagel item."""
-        # Find incomplete speed menu bagel items
+        """Configure the next incomplete signature item."""
+        # Find incomplete signature items
         incomplete_items = [
             item for item in order.items.items
-            if isinstance(item, SpeedMenuBagelItemTask) and item.status == TaskStatus.IN_PROGRESS
+            if isinstance(item, SignatureItemTask) and item.status == TaskStatus.IN_PROGRESS
         ]
 
         if not incomplete_items:
@@ -153,7 +156,7 @@ class SpeedMenuBagelHandler:
             if self._item_has_cheese(item.menu_item_name) and item.cheese_choice is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = item.id
-                order.pending_field = "speed_menu_cheese_choice"
+                order.pending_field = "signature_item_cheese_choice"
                 return StateMachineResult(
                     message="What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
                     order=order,
@@ -163,7 +166,7 @@ class SpeedMenuBagelHandler:
             if item.bagel_choice is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = item.id
-                order.pending_field = "speed_menu_bagel_type"
+                order.pending_field = "signature_item_bagel_type"
                 return StateMachineResult(
                     message="What type of bagel would you like for that?",
                     order=order,
@@ -173,7 +176,7 @@ class SpeedMenuBagelHandler:
             if item.toasted is None:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = item.id
-                order.pending_field = "speed_menu_bagel_toasted"
+                order.pending_field = "signature_item_toasted"
                 return StateMachineResult(
                     message="Would you like that toasted?",
                     order=order,
@@ -246,13 +249,13 @@ class SpeedMenuBagelHandler:
         else:
             return f"We also have {options_str}."
 
-    def handle_speed_menu_bagel_type(
+    def handle_signature_item_bagel_type(
         self,
         user_input: str,
-        item: SpeedMenuBagelItemTask,
+        item: SignatureItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle bagel type selection for speed menu bagel."""
+        """Handle bagel type selection for signature item."""
         from .parsers.deterministic import _extract_bagel_type as parse_bagel_type_response
         from .parsers.deterministic import _extract_spread
         from .models import BagelItemTask
@@ -270,7 +273,7 @@ class SpeedMenuBagelHandler:
         bagel_type = parse_bagel_type_response(user_input)
 
         # Check if user is adding a modifier to a different item (e.g., "add cream cheese to the bagel")
-        # This applies when configuring a speed menu item but user mentions spread for plain bagel
+        # This applies when configuring a signature item but user mentions spread for plain bagel
         if bagel_type is None:
             spread, spread_type = _extract_spread(user_input)
             if spread:
@@ -284,7 +287,7 @@ class SpeedMenuBagelHandler:
                     plain_bagels[0].spread = spread
                     if spread_type:
                         plain_bagels[0].spread_type = spread_type
-                    logger.info("Applied spread '%s' to plain bagel while configuring speed menu item", spread)
+                    logger.info("Applied spread '%s' to plain bagel while configuring signature item", spread)
                     return StateMachineResult(
                         message=f"Got it, I added {spread} to your bagel. Now, what type of bagel would you like for your {item.menu_item_name}?",
                         order=order,
@@ -320,7 +323,7 @@ class SpeedMenuBagelHandler:
 
         # Continue to ask for toasted if not set
         if item.toasted is None:
-            order.pending_field = "speed_menu_bagel_toasted"
+            order.pending_field = "signature_item_toasted"
             return StateMachineResult(
                 message="Would you like that toasted?",
                 order=order,
@@ -331,13 +334,13 @@ class SpeedMenuBagelHandler:
         order.clear_pending()
         return self._get_next_question(order)
 
-    def handle_speed_menu_bagel_toasted(
+    def handle_signature_item_toasted(
         self,
         user_input: str,
-        item: SpeedMenuBagelItemTask,
+        item: SignatureItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle toasted preference for speed menu bagel."""
+        """Handle toasted preference for signature item."""
         # Try deterministic parsing first, fall back to LLM
         toasted = parse_toasted_deterministic(user_input)
         if toasted is None:
@@ -356,13 +359,13 @@ class SpeedMenuBagelHandler:
 
         return self._get_next_question(order)
 
-    def handle_speed_menu_cheese_choice(
+    def handle_signature_item_cheese_choice(
         self,
         user_input: str,
-        item: SpeedMenuBagelItemTask,
+        item: SignatureItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle cheese type selection for speed menu bagel with cheese."""
+        """Handle cheese type selection for signature item with cheese."""
         # Check if user is asking for more cheese options
         if self._is_show_more_request(user_input):
             order.config_options_page += 1
@@ -402,7 +405,7 @@ class SpeedMenuBagelHandler:
             )
 
         item.cheese_choice = selected_cheese
-        logger.info("Cheese choice '%s' applied to speed menu item '%s'", selected_cheese, item.menu_item_name)
+        logger.info("Cheese choice '%s' applied to signature item '%s'", selected_cheese, item.menu_item_name)
 
         # Continue to configure bagel type and toasted
-        return self.configure_next_incomplete_speed_menu_bagel(order)
+        return self.configure_next_incomplete_signature_item(order)

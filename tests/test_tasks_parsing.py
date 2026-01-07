@@ -714,8 +714,8 @@ class TestDeterministicParserFallback:
 
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),
-        ("The Leo", "speed_menu_bagel"),
-        ("the chipotle egg omelette", "speed_menu_bagel"),  # Signature item
+        ("The Leo", "signature_item"),
+        ("the chipotle egg omelette", "signature_item"),  # Signature item
     ])
     def test_deterministic_handles_coffee_and_menu_items(self, text, expected_type):
         """Test that coffee and menu items are now handled deterministically."""
@@ -724,9 +724,9 @@ class TestDeterministicParserFallback:
         if expected_type == "coffee":
             assert result.new_coffee is True
             assert result.new_coffee_type.lower() == "coffee"
-        elif expected_type == "speed_menu_bagel":
-            assert result.new_speed_menu_bagel is True
-            assert result.new_speed_menu_bagel_name is not None
+        elif expected_type == "signature_item":
+            assert result.new_signature_item is True
+            assert result.new_signature_item_name is not None
         else:
             assert result.new_menu_item is not None
 
@@ -1444,7 +1444,7 @@ class TestNotesExtraction:
         instructions = extract_special_instructions_from_input("iced coffee no ice")
         assert any("no ice" in i.lower() for i in instructions)
 
-    def test_multi_item_bagel_and_speed_menu_item(self):
+    def test_multi_item_bagel_and_signature_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order
         # Multi-item order: "one bagel and one classic BEC"
@@ -1452,31 +1452,31 @@ class TestNotesExtraction:
         assert result is not None
         # Should detect both items
         assert result.new_bagel is True
-        assert result.new_speed_menu_bagel is True
+        assert result.new_signature_item is True
         # The Classic BEC should be recognized as a speed menu item
-        assert "classic" in result.new_speed_menu_bagel_name.lower() or "bec" in result.new_speed_menu_bagel_name.lower()
+        assert "classic" in result.new_signature_item_name.lower() or "bec" in result.new_signature_item_name.lower()
 
-    def test_multi_item_speed_menu_and_coffee(self):
+    def test_multi_item_signature_item_and_coffee(self):
         """Test multi-item order with speed menu item and coffee."""
         from sandwich_bot.tasks.state_machine import _parse_multi_item_order
         result = _parse_multi_item_order("the lexington and a latte")
         assert result is not None
-        assert result.new_speed_menu_bagel is True
+        assert result.new_signature_item is True
         assert result.new_coffee is True
         # Lexington is a speed menu item
-        assert "lexington" in result.new_speed_menu_bagel_name.lower()
+        assert "lexington" in result.new_signature_item_name.lower()
 
-    def test_multi_item_two_speed_menu_items(self):
+    def test_multi_item_two_signature_items(self):
         """Test multi-item order with two speed menu items (takes the last one)."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_speed_menu_bagel_deterministic
+        from sandwich_bot.tasks.parsers.deterministic import _parse_signature_item_deterministic
         # Note: Multi-item parser only tracks one speed menu item at a time
         # Each item individually should be recognized as a speed menu item
-        leo = _parse_speed_menu_bagel_deterministic("the leo")
-        bec = _parse_speed_menu_bagel_deterministic("the classic bec")
+        leo = _parse_signature_item_deterministic("the leo")
+        bec = _parse_signature_item_deterministic("the classic bec")
         assert leo is not None
         assert bec is not None
-        assert leo.new_speed_menu_bagel is True
-        assert bec.new_speed_menu_bagel is True
+        assert leo.new_signature_item is True
+        assert bec.new_signature_item is True
 
     def test_multi_item_coffee_and_spread_sandwich_with_bagel_type(self):
         """Test that 'a sesame bagel with butter' captures the sesame bagel type."""
@@ -1673,13 +1673,13 @@ class TestSpeedMenuBagelParsing:
         ("The Avocado Toast", "The Avocado Toast"),
         ("avocado toast", "The Avocado Toast"),
     ])
-    def test_speed_menu_item_detected(self, text, expected_name):
+    def test_signature_item_detected(self, text, expected_name):
         """Test that speed menu items are correctly detected."""
-        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
-        result = _parse_speed_menu_bagel_deterministic(text)
+        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to detect speed menu item in: {text}"
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_name == expected_name
+        assert result.new_signature_item is True
+        assert result.new_signature_item_name == expected_name
 
     @pytest.mark.parametrize("text,expected_bagel", [
         ("The Classic BEC on a wheat bagel", "wheat"),
@@ -1695,13 +1695,13 @@ class TestSpeedMenuBagelParsing:
         ("classic bec plain bagel", "plain"),
         ("the leo sesame bagel", "sesame"),
     ])
-    def test_speed_menu_with_bagel_choice(self, text, expected_bagel):
+    def test_signature_item_with_bagel_choice(self, text, expected_bagel):
         """Test that speed menu items with bagel choice are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
-        result = _parse_speed_menu_bagel_deterministic(text)
+        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_bagel_choice == expected_bagel
+        assert result.new_signature_item is True
+        assert result.new_signature_item_bagel_choice == expected_bagel
 
     @pytest.mark.parametrize("text,expected_toasted", [
         ("The Classic BEC toasted", True),
@@ -1709,13 +1709,13 @@ class TestSpeedMenuBagelParsing:
         ("The Leo toasted please", True),
         ("the lexington not toasted", False),
     ])
-    def test_speed_menu_with_toasted(self, text, expected_toasted):
+    def test_signature_item_with_toasted(self, text, expected_toasted):
         """Test that speed menu items with toasted preference are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
-        result = _parse_speed_menu_bagel_deterministic(text)
+        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_toasted == expected_toasted
+        assert result.new_signature_item is True
+        assert result.new_signature_item_toasted == expected_toasted
 
     @pytest.mark.parametrize("text,expected_qty", [
         ("2 classics", 2),
@@ -1723,26 +1723,26 @@ class TestSpeedMenuBagelParsing:
         ("3 classic becs", 3),
         ("three traditionals", 3),
     ])
-    def test_speed_menu_with_quantity(self, text, expected_qty):
+    def test_signature_item_with_quantity(self, text, expected_qty):
         """Test that speed menu items with quantity are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
-        result = _parse_speed_menu_bagel_deterministic(text)
+        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_quantity == expected_qty
+        assert result.new_signature_item is True
+        assert result.new_signature_item_quantity == expected_qty
 
-    def test_speed_menu_with_all_options(self):
+    def test_signature_item_with_all_options(self):
         """Test parsing speed menu with bagel choice, toasted, and quantity."""
-        from sandwich_bot.tasks.state_machine import _parse_speed_menu_bagel_deterministic
-        result = _parse_speed_menu_bagel_deterministic("2 classic becs on wheat bagels toasted")
+        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        result = _parse_signature_item_deterministic("2 classic becs on wheat bagels toasted")
         assert result is not None
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_name == "The Classic BEC"
-        assert result.new_speed_menu_bagel_quantity == 2
-        assert result.new_speed_menu_bagel_bagel_choice == "wheat"
-        assert result.new_speed_menu_bagel_toasted is True
+        assert result.new_signature_item is True
+        assert result.new_signature_item_name == "The Classic BEC"
+        assert result.new_signature_item_quantity == 2
+        assert result.new_signature_item_bagel_choice == "wheat"
+        assert result.new_signature_item_toasted is True
 
-    def test_speed_menu_parsed_before_bagel_check(self):
+    def test_signature_item_parsed_before_bagel_check(self):
         """Test that speed menu items are parsed BEFORE generic bagel check.
 
         This is the key fix - 'The Classic BEC on a wheat bagel' should NOT
@@ -1751,19 +1751,19 @@ class TestSpeedMenuBagelParsing:
         result = parse_open_input_deterministic("The Classic BEC but on a wheat bagel")
         assert result is not None
         # Should be speed menu bagel, NOT a plain bagel
-        assert result.new_speed_menu_bagel is True
-        assert result.new_speed_menu_bagel_name == "The Classic BEC"
-        assert result.new_speed_menu_bagel_bagel_choice == "wheat"
+        assert result.new_signature_item is True
+        assert result.new_signature_item_name == "The Classic BEC"
+        assert result.new_signature_item_bagel_choice == "wheat"
         # Should NOT be a plain bagel
         assert result.new_bagel is False
 
-    def test_non_speed_menu_bagel_still_works(self):
+    def test_non_signature_item_still_works(self):
         """Test that regular bagel orders still work."""
         result = parse_open_input_deterministic("a wheat bagel with cream cheese")
         assert result is not None
         assert result.new_bagel is True
         assert result.new_bagel_type == "wheat"
-        assert result.new_speed_menu_bagel is False
+        assert result.new_signature_item is False
 
 
 class TestSplitQuantityBagelParsing:
@@ -2059,7 +2059,7 @@ class TestSplitQuantityDrinksParsing:
 class TestParsedItemsMultiItem:
     """Tests for parsed_items list in multi-item order parsing."""
 
-    def test_speed_menu_and_menu_item_both_in_parsed_items(self):
+    def test_signature_item_and_menu_item_both_in_parsed_items(self):
         """Test that The Leo + Butter Sandwich both appear in parsed_items.
 
         This was the original bug: 'the leo on wheat toasted and an everything bagel with butter'
@@ -2073,13 +2073,13 @@ class TestParsedItemsMultiItem:
 
         # Check the parsed_items list contains both items
         types = [item.type for item in result.parsed_items]
-        assert "speed_menu_bagel" in types, "Speed menu bagel should be in parsed_items"
+        assert "signature_item" in types, "Speed menu bagel should be in parsed_items"
         assert "menu_item" in types, "Menu item should be in parsed_items"
 
         # Verify The Leo details
-        speed_items = [i for i in result.parsed_items if i.type == "speed_menu_bagel"]
+        speed_items = [i for i in result.parsed_items if i.type == "signature_item"]
         assert len(speed_items) == 1
-        assert speed_items[0].speed_menu_name == "The Leo"
+        assert speed_items[0].signature_item_name == "The Leo"
         assert speed_items[0].bagel_type == "wheat"
         assert speed_items[0].toasted is True
 
@@ -2133,11 +2133,11 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) >= 2
 
         types = [item.type for item in result.parsed_items]
-        # All should be menu_item or speed_menu_bagel
+        # All should be menu_item or signature_item
         for t in types:
-            assert t in ["menu_item", "speed_menu_bagel"]
+            assert t in ["menu_item", "signature_item"]
 
-    def test_speed_menu_and_coffee_both_in_parsed_items(self):
+    def test_signature_item_and_coffee_both_in_parsed_items(self):
         """Test that speed menu bagel + coffee both appear in parsed_items."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
 
@@ -2146,7 +2146,7 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) == 2
 
         types = [item.type for item in result.parsed_items]
-        assert "speed_menu_bagel" in types
+        assert "signature_item" in types
         assert "coffee" in types
 
 

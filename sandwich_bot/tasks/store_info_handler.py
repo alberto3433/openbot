@@ -12,12 +12,12 @@ import re
 
 from .models import OrderTask
 from .schemas import StateMachineResult
+from .parsers.constants import DEFAULT_PAGINATION_SIZE
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
 
-# Batch size for modifier category pagination (toppings, proteins, etc.)
-MODIFIER_BATCH_SIZE = 6
+# NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 logger = logging.getLogger(__name__)
 
@@ -313,8 +313,8 @@ class StoreInfoHandler:
 
     def _recommend_sandwiches(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
         """Recommend popular sandwich options from the menu."""
-        # Look for signature sandwiches or egg sandwiches
-        signature = items_by_type.get("signature_sandwich", [])
+        # Look for signature items (all items with is_signature=true) or egg sandwiches
+        signature = items_by_type.get("signature_items", [])
         egg_sandwiches = items_by_type.get("egg_sandwich", [])
 
         recommendations = []
@@ -353,14 +353,14 @@ class StoreInfoHandler:
 
     def _recommend_breakfast(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
         """Recommend breakfast options."""
-        # Look for speed menu bagels and egg items
-        speed_menu = items_by_type.get("speed_menu_bagel", [])
+        # Look for signature items and egg items
+        signature_items = items_by_type.get("signature_item", [])
         omelettes = items_by_type.get("omelette", [])
 
         recommendations = []
 
-        # Get a speed menu bagel
-        for item in speed_menu[:1]:
+        # Get a signature item
+        for item in signature_items[:1]:
             name = item.get("name", "")
             if name:
                 recommendations.append(name)
@@ -383,7 +383,7 @@ class StoreInfoHandler:
 
     def _recommend_lunch(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
         """Recommend lunch options."""
-        signature = items_by_type.get("signature_sandwich", [])
+        signature = items_by_type.get("signature_items", [])
         salad = items_by_type.get("salad_sandwich", [])
 
         recommendations = []
@@ -408,16 +408,16 @@ class StoreInfoHandler:
 
     def _recommend_general(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
         """General recommendation when no specific category is asked."""
-        speed_menu = items_by_type.get("speed_menu_bagel", [])
+        signature_items = items_by_type.get("signature_item", [])
 
-        # Get a speed menu item name if available
-        speed_item = None
-        if speed_menu:
-            speed_item = speed_menu[0].get("name", "")
+        # Get a signature item name if available
+        signature_item_name = None
+        if signature_items:
+            signature_item_name = signature_items[0].get("name", "")
 
-        if speed_item:
+        if signature_item_name:
             message = (
-                f"Our {speed_item} is really popular! "
+                f"Our {signature_item_name} is really popular! "
                 "We're also known for our everything bagels with cream cheese, and our lattes are great too. "
                 "What are you in the mood for?"
             )
@@ -529,7 +529,7 @@ class StoreInfoHandler:
         # Format options for display
         items_list = sorted(options)
 
-        if len(items_list) <= MODIFIER_BATCH_SIZE:
+        if len(items_list) <= DEFAULT_PAGINATION_SIZE:
             # Show all items, no pagination needed
             if len(items_list) == 1:
                 items_str = items_list[0]
@@ -542,7 +542,7 @@ class StoreInfoHandler:
             message = f"For {display_name.lower()}, we have {items_str}. {prompt_suffix}"
         else:
             # Show first batch with pagination
-            first_batch = items_list[:MODIFIER_BATCH_SIZE]
+            first_batch = items_list[:DEFAULT_PAGINATION_SIZE]
             if len(first_batch) == 1:
                 items_str = first_batch[0]
             elif len(first_batch) == 2:
@@ -551,7 +551,7 @@ class StoreInfoHandler:
                 items_str = ", ".join(first_batch[:-1]) + f", and {first_batch[-1]}"
 
             # Set pagination state for "what else" follow-ups
-            order.set_menu_pagination(category, MODIFIER_BATCH_SIZE, len(items_list))
+            order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
             message = f"For {display_name.lower()}, we have {items_str}, and more. {prompt_suffix}"
 
         return StateMachineResult(message=message, order=order)

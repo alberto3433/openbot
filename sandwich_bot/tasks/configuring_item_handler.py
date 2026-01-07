@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from .by_pound_handler import ByPoundHandler
     from .coffee_config_handler import CoffeeConfigHandler
     from .bagel_config_handler import BagelConfigHandler
-    from .speed_menu_handler import SpeedMenuBagelHandler
+    from .signature_item_handler import SignatureItemHandler
     from .config_helper_handler import ConfigHelperHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .modifier_change_handler import ModifierChangeHandler
@@ -123,13 +123,13 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
                 return False  # Let them ask about cream cheese options
 
         # Asking about cheese types when being asked about cheese choice → relevant
-        if pending_field in ("cheese_choice", "speed_menu_cheese_choice"):
+        if pending_field in ("cheese_choice", "signature_item_cheese_choice"):
             cheese_keywords = ["cheese", "cheeses"]
             if any(kw in input_lower for kw in cheese_keywords):
                 return False  # Let them ask about cheese options
 
         # Asking about bagel types when being asked about bagel choice → relevant
-        if pending_field in ("bagel_choice", "speed_menu_bagel_type"):
+        if pending_field in ("bagel_choice", "signature_item_bagel_type"):
             bagel_keywords = ["bagel", "bagels"]
             if any(kw in input_lower for kw in bagel_keywords):
                 return False  # Let them ask about bagel options
@@ -172,7 +172,7 @@ class ConfiguringItemHandler:
         by_pound_handler: "ByPoundHandler | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
         bagel_handler: "BagelConfigHandler | None" = None,
-        speed_menu_handler: "SpeedMenuBagelHandler | None" = None,
+        signature_item_handler: "SignatureItemHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
@@ -188,7 +188,7 @@ class ConfiguringItemHandler:
             by_pound_handler: Handler for by-pound items.
             coffee_handler: Handler for coffee configuration.
             bagel_handler: Handler for bagel configuration.
-            speed_menu_handler: Handler for speed menu items.
+            signature_item_handler: Handler for signature items.
             config_helper_handler: Handler for config helpers (side choice, etc.).
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
@@ -202,7 +202,7 @@ class ConfiguringItemHandler:
         self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
         self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
         self.bagel_handler = bagel_handler or kwargs.get("bagel_handler")
-        self.speed_menu_handler = speed_menu_handler or kwargs.get("speed_menu_handler")
+        self.signature_item_handler = signature_item_handler or kwargs.get("signature_item_handler")
         self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
         self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
         self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
@@ -312,12 +312,12 @@ class ConfiguringItemHandler:
             return self.coffee_handler.handle_coffee_modifiers(user_input, item, order)
         elif order.pending_field == "syrup_flavor":
             return self.coffee_handler.handle_syrup_flavor(user_input, item, order)
-        elif order.pending_field == "speed_menu_cheese_choice":
-            return self.speed_menu_handler.handle_speed_menu_cheese_choice(user_input, item, order)
-        elif order.pending_field == "speed_menu_bagel_type":
-            return self.speed_menu_handler.handle_speed_menu_bagel_type(user_input, item, order)
-        elif order.pending_field == "speed_menu_bagel_toasted":
-            return self.speed_menu_handler.handle_speed_menu_bagel_toasted(user_input, item, order)
+        elif order.pending_field == "signature_item_cheese_choice":
+            return self.signature_item_handler.handle_signature_item_cheese_choice(user_input, item, order)
+        elif order.pending_field == "signature_item_bagel_type":
+            return self.signature_item_handler.handle_signature_item_bagel_type(user_input, item, order)
+        elif order.pending_field == "signature_item_toasted":
+            return self.signature_item_handler.handle_signature_item_toasted(user_input, item, order)
         elif order.pending_field == "spread_sandwich_toasted":
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
         elif order.pending_field == "menu_item_bagel_toasted":

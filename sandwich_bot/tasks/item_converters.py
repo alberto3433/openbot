@@ -4,7 +4,7 @@ Item Converters for Adapter Layer.
 This module provides the Strategy pattern implementation for converting
 between dict-based item representations and ItemTask objects.
 
-Each item type (bagel, coffee, espresso, menu_item, speed_menu_bagel) has
+Each item type (bagel, coffee, espresso, menu_item, signature_item) has
 its own converter class that handles bidirectional conversion.
 """
 
@@ -19,7 +19,7 @@ from .models import (
     CoffeeItemTask,
     EspressoItemTask,
     MenuItemTask,
-    SpeedMenuBagelItemTask,
+    SignatureItemTask,
 )
 
 if TYPE_CHECKING:
@@ -606,16 +606,16 @@ class EspressoConverter(ItemConverter):
         return result
 
 
-class SpeedMenuBagelConverter(ItemConverter):
-    """Converter for SpeedMenuBagelItemTask."""
+class SignatureItemConverter(ItemConverter):
+    """Converter for SignatureItemTask."""
 
     @property
     def item_type(self) -> str:
-        return "speed_menu_bagel"
+        return "signature_item"
 
-    def from_dict(self, item_dict: Dict[str, Any]) -> SpeedMenuBagelItemTask:
+    def from_dict(self, item_dict: Dict[str, Any]) -> SignatureItemTask:
         item_config = item_dict.get("item_config") or {}
-        speed_menu_item = SpeedMenuBagelItemTask(
+        signature_item = SignatureItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
             menu_item_id=item_dict.get("menu_item_id"),
             toasted=item_dict.get("toasted"),
@@ -626,8 +626,8 @@ class SpeedMenuBagelConverter(ItemConverter):
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
-        self._restore_common_fields(speed_menu_item, item_dict)
-        return speed_menu_item
+        self._restore_common_fields(signature_item, item_dict)
+        return signature_item
 
     def to_dict(
         self,
@@ -730,7 +730,10 @@ ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
 ItemConverterRegistry.register(CoffeeConverter())
 ItemConverterRegistry.register(EspressoConverter())
-ItemConverterRegistry.register(SpeedMenuBagelConverter())
+ItemConverterRegistry.register(SignatureItemConverter())
 
 # Register CoffeeConverter under "drink" as well (for dict input compatibility)
 ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["coffee"]
+
+# Register SignatureItemConverter under "speed_menu_bagel" for backwards compatibility
+ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._converters["signature_item"]

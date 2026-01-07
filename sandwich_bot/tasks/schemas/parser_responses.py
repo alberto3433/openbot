@@ -107,14 +107,31 @@ class ParsedCoffeeEntry(BaseModel):
     modifiers: list[str] = Field(default_factory=list)
 
 
-class ParsedSpeedMenuBagelEntry(BaseModel):
-    """A parsed speed menu bagel from multi-item detection."""
-    type: Literal["speed_menu_bagel"] = "speed_menu_bagel"
-    speed_menu_name: str
+class ParsedSignatureItemEntry(BaseModel):
+    """A parsed signature item from multi-item detection."""
+    type: Literal["signature_item"] = "signature_item"
+    signature_item_name: str
     bagel_type: str | None = None
     toasted: bool | None = None
     quantity: int = 1
     modifiers: list[str] = Field(default_factory=list)
+
+
+class ParsedSignatureItemEntry(BaseModel):
+    """A parsed signature item from multi-item detection.
+
+    Signature items are pre-configured items like 'The Classic BEC', 'The Leo', etc.
+    """
+    type: Literal["signature_item"] = "signature_item"
+    signature_item_name: str  # The name of the signature item (e.g., "The Classic BEC")
+    bagel_type: str | None = None  # Custom bagel choice (e.g., "wheat")
+    toasted: bool | None = None
+    quantity: int = 1
+    modifiers: list[str] = Field(default_factory=list)
+
+
+# Backwards compatibility alias
+ParsedSpeedMenuBagelEntry = ParsedSignatureItemEntry
 
 
 class ParsedSideItemEntry(BaseModel):
@@ -137,7 +154,7 @@ ParsedItem = Union[
     ParsedMenuItemEntry,
     ParsedBagelEntry,
     ParsedCoffeeEntry,
-    ParsedSpeedMenuBagelEntry,
+    ParsedSignatureItemEntry,
     ParsedSideItemEntry,
     ParsedByPoundEntry,
 ]
@@ -317,10 +334,10 @@ class OpenInputResponse(BaseModel):
     """Parser output when open for new items (not configuring a specific item).
 
     MIGRATION NOTE (Phase 10):
-    The boolean flag fields (new_bagel, new_coffee, new_speed_menu_bagel, new_menu_item,
+    The boolean flag fields (new_bagel, new_coffee, new_signature_item, new_menu_item,
     new_side_item and their associated fields) are DEPRECATED. Use the `parsed_items`
     field instead, which provides a unified list of ParsedBagelEntry, ParsedCoffeeEntry,
-    ParsedSpeedMenuBagelEntry, ParsedMenuItemEntry, and ParsedSideItemEntry objects.
+    ParsedSignatureItemEntry, ParsedMenuItemEntry, and ParsedSideItemEntry objects.
 
     The model_validator auto-populates parsed_items from boolean flags for backward
     compatibility, but new code should use parsed_items directly.
@@ -485,32 +502,32 @@ class OpenInputResponse(BaseModel):
         description="DEPRECATED: Use parsed_items instead. When ordering multiple different coffees, list each one separately"
     )
 
-    # DEPRECATED: Use parsed_items with ParsedSpeedMenuBagelEntry instead.
-    # Speed menu bagel orders (pre-configured sandwiches like "The Classic", "The Leo")
+    # DEPRECATED: Use parsed_items with ParsedSignatureItemEntry instead.
+    # Signature item orders (pre-configured sandwiches like "The Classic BEC", "The Leo")
     # These fields are auto-converted to parsed_items by model_validator.
-    new_speed_menu_bagel: bool = Field(
+    new_signature_item: bool = Field(
         default=False,
-        description="DEPRECATED: Use parsed_items. User wants to order a speed menu bagel"
+        description="DEPRECATED: Use parsed_items. User wants to order a signature item"
     )
-    new_speed_menu_bagel_name: str | None = Field(
+    new_signature_item_name: str | None = Field(
         default=None,
-        description="Name of the speed menu bagel (e.g., 'The Classic', 'The Leo', 'The Max Zucker')"
+        description="Name of the signature item (e.g., 'The Classic BEC', 'The Leo', 'The Max Zucker')"
     )
-    new_speed_menu_bagel_quantity: int = Field(
+    new_signature_item_quantity: int = Field(
         default=1,
-        description="Number of speed menu bagels ordered (e.g., '3 Classics' -> 3)"
+        description="Number of signature items ordered (e.g., '3 Classics' -> 3)"
     )
-    new_speed_menu_bagel_toasted: bool | None = Field(
+    new_signature_item_toasted: bool | None = Field(
         default=None,
-        description="Whether the speed menu bagel should be toasted (True/False/None)"
+        description="Whether the signature item should be toasted (True/False/None)"
     )
-    new_speed_menu_bagel_bagel_choice: str | None = Field(
+    new_signature_item_bagel_choice: str | None = Field(
         default=None,
-        description="Custom bagel choice for speed menu item (e.g., 'wheat' for 'Classic BEC on a wheat bagel')"
+        description="Custom bagel choice for signature item (e.g., 'wheat' for 'Classic BEC on a wheat bagel')"
     )
-    new_speed_menu_bagel_modifications: list[str] = Field(
+    new_signature_item_modifications: list[str] = Field(
         default_factory=list,
-        description="Modifications for speed menu bagels (e.g., 'with mayo' -> ['mayo'], 'no onions' -> ['no onions'])"
+        description="Modifications for signature items (e.g., 'with mayo' -> ['mayo'], 'no onions' -> ['no onions'])"
     )
 
     # Clarifications needed
@@ -538,7 +555,7 @@ class OpenInputResponse(BaseModel):
     )
     signature_menu_type: str | None = Field(
         default=None,
-        description="The specific type of signature items being asked about: 'signature_sandwich', 'speed_menu_bagel', or None for all signature items"
+        description="The specific type of signature items being asked about: 'signature_items' or None for all signature items"
     )
     asking_by_pound: bool = Field(
         default=False,
@@ -758,15 +775,15 @@ class OpenInputResponse(BaseModel):
                     syrups=syrups.copy() if syrups else [],
                 ))
 
-        # Add speed menu bagel from boolean flags
-        if self.new_speed_menu_bagel:
-            for _ in range(self.new_speed_menu_bagel_quantity):
-                items.append(ParsedSpeedMenuBagelEntry(
-                    speed_menu_name=self.new_speed_menu_bagel_name or "",
-                    bagel_type=self.new_speed_menu_bagel_bagel_choice,
-                    toasted=self.new_speed_menu_bagel_toasted,
+        # Add signature item from boolean flags
+        if self.new_signature_item:
+            for _ in range(self.new_signature_item_quantity):
+                items.append(ParsedSignatureItemEntry(
+                    signature_item_name=self.new_signature_item_name or "",
+                    bagel_type=self.new_signature_item_bagel_choice,
+                    toasted=self.new_signature_item_toasted,
                     quantity=1,
-                    modifiers=list(self.new_speed_menu_bagel_modifications) if self.new_speed_menu_bagel_modifications else [],
+                    modifiers=list(self.new_signature_item_modifications) if self.new_signature_item_modifications else [],
                 ))
 
         # Add menu item from boolean flags

@@ -242,7 +242,7 @@ class ParsedInput(BaseModel):
     )
     menu_query_type: str | None = Field(
         default=None,
-        description="The type of item being queried: 'egg_sandwich', 'fish_sandwich', 'sandwich', 'bagel', 'drink', 'side', 'signature_sandwich', etc."
+        description="The type of item being queried: 'egg_sandwich', 'fish_sandwich', 'sandwich', 'bagel', 'drink', 'side', 'signature_items', etc."
     )
 
     # Options inquiry - asking about available customization options
@@ -441,7 +441,7 @@ When user asks about what items are available, set menu_query: true and menu_que
 - "what bagels do you have?" -> menu_query: true, menu_query_type: "bagel"
 - "what drinks do you have?" -> menu_query: true, menu_query_type: "drink"
 - "what's on the menu?" -> menu_query: true, menu_query_type: "all"
-- "what signature sandwiches do you have?" -> menu_query: true, menu_query_type: "signature_sandwich"
+- "what signature sandwiches do you have?" -> menu_query: true, menu_query_type: "signature_items"
 - "what sides do you have?" -> menu_query: true, menu_query_type: "side"
 - "what type of X do you have?" -> menu_query: true, menu_query_type based on X
 Key patterns that indicate menu queries:

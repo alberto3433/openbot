@@ -197,11 +197,22 @@ def delete_menu_item(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
-    """Delete a menu item. Requires admin authentication."""
+    """Delete a menu item and its related data. Requires admin authentication."""
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
+
     logger.info("Deleting menu item: %s (id=%d)", item.name, item.id)
+
+    # Delete related attribute values and selections first
+    db.query(MenuItemAttributeValue).filter(
+        MenuItemAttributeValue.menu_item_id == item_id
+    ).delete()
+    db.query(MenuItemAttributeSelection).filter(
+        MenuItemAttributeSelection.menu_item_id == item_id
+    ).delete()
+
+    # Now delete the menu item
     db.delete(item)
     db.commit()
     return None

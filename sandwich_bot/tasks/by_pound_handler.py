@@ -226,7 +226,7 @@ class ByPoundHandler:
                     "sides": ["side"],
                     "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
                     "desserts": ["dessert", "pastry", "snack"],  # Combine dessert, pastry, and snack types
-                    "signature_bagels": ["speed_menu_bagel"],
+                    "signature_bagels": ["signature_item"],
                     "signature_omelettes": ["omelette"],
                 }
                 items_by_type = self._menu_data.get("items_by_type", {})

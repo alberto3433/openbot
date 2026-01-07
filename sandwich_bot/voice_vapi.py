@@ -27,7 +27,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
-from .menu_index_builder import build_menu_index, get_menu_version
+from .menu_index_builder import get_menu_version
+from .menu_data_cache import menu_cache
 from .services.helpers import get_customer_info
 
 
@@ -586,8 +587,8 @@ async def vapi_chat_completions(
             order_state["customer"]["email"] = returning_customer["email"]
             logger.info("Pre-filled customer email in order state: %s", returning_customer["email"])
 
-    # Build menu index
-    menu_index = build_menu_index(db, store_id=session_store_id)
+    # Get cached menu index
+    menu_index = menu_cache.get_menu_index(session_store_id)
 
     # Check if menu needs to be sent
     current_menu_version = get_menu_version(menu_index)

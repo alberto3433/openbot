@@ -525,56 +525,9 @@ class ItemAdderHandler:
             bagel_type, toasted, spread, spread_type, sandwich_protein, extras, special_instructions
         )
 
-        # Determine what question to ask based on what's missing
-        # Flow: bagel_type -> toasted -> spread
-
-        if not bagel_type:
-            # Need bagel type
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = bagel.id
-            order.pending_field = "bagel_choice"
-            return StateMachineResult(
-                message="What kind of bagel would you like?",
-                order=order,
-            )
-
-        if toasted is None:
-            # Need toasted preference
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = bagel.id
-            order.pending_field = "toasted"
-            return StateMachineResult(
-                message="Would you like that toasted?",
-                order=order,
-            )
-
-        # Check if user said "cheese" without specifying type
-        if needs_cheese:
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = bagel.id
-            order.pending_field = "cheese_choice"
-            return StateMachineResult(
-                message="What kind of cheese would you like? We have American, cheddar, Swiss, and muenster.",
-                order=order,
-            )
-
-        if spread is None:
-            # Skip spread question if bagel already has sandwich toppings (ham, egg, cheese, etc.)
-            if extras or sandwich_protein:
-                logger.info("Skipping spread question - bagel has toppings: extras=%s, protein=%s", extras, sandwich_protein)
-            else:
-                # Need spread choice
-                order.phase = OrderPhase.CONFIGURING_ITEM
-                order.pending_item_id = bagel.id
-                order.pending_field = "spread"
-                return StateMachineResult(
-                    message="Would you like cream cheese or butter on that?",
-                    order=order,
-                )
-
-        # All details provided - bagel is complete!
-        bagel.mark_complete()
-        return self._get_next_question(order)
+        # Use unified configuration flow which reads questions from database
+        # and handles all business rules (skip spread if has toppings, etc.)
+        return self._configure_next_incomplete_bagel(order)
 
     def add_bagels(
         self,

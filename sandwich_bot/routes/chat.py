@@ -70,7 +70,8 @@ from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
 from ..models import Store, SessionAnalytics
 from ..order_logic import apply_intent_to_order_state
-from ..menu_index_builder import build_menu_index, get_menu_version
+from ..menu_index_builder import get_menu_version
+from ..menu_data_cache import menu_cache
 from ..services.session import get_or_create_session, save_session
 from ..services.helpers import get_customer_info, get_or_create_company, get_primary_item_type_name
 from ..schemas.chat import (
@@ -324,7 +325,7 @@ def debug_add_coffee(
         return {"error": "Invalid session_id"}
 
     order_state = session["order"]
-    menu_index = build_menu_index(db)
+    menu_index = menu_cache.get_menu_index()
 
     slots = {
         "menu_item_name": "Coffee",

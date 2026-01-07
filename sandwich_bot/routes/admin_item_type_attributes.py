@@ -50,6 +50,8 @@ from ..schemas.item_type_attributes import (
     ItemTypeAttributeCreate,
     ItemTypeAttributeUpdate,
     AttributeOptionOut,
+    AttributeOptionCreate,
+    AttributeOptionUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -259,5 +261,210 @@ def delete_item_type_attribute(
         attr.id
     )
     db.delete(attr)
+    db.commit()
+    return None
+
+
+# =============================================================================
+# Attribute Options Endpoints
+# =============================================================================
+
+@admin_item_type_attributes_router.get(
+    "/{attr_id}/options",
+    response_model=List[AttributeOptionOut],
+    summary="List options for an attribute"
+)
+def list_attribute_options(
+    attr_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[AttributeOptionOut]:
+    """List all options for a specific item type attribute."""
+    # Verify attribute exists
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    options = (
+        db.query(AttributeOption)
+        .filter(AttributeOption.item_type_attribute_id == attr_id)
+        .order_by(AttributeOption.display_order)
+        .all()
+    )
+
+    return [
+        AttributeOptionOut(
+            id=opt.id,
+            slug=opt.slug,
+            display_name=opt.display_name,
+            price_modifier=float(opt.price_modifier or 0),
+            is_default=opt.is_default,
+            is_available=opt.is_available,
+            display_order=opt.display_order,
+        )
+        for opt in options
+    ]
+
+
+@admin_item_type_attributes_router.post(
+    "/{attr_id}/options",
+    response_model=AttributeOptionOut,
+    status_code=201,
+    summary="Create an option for an attribute"
+)
+def create_attribute_option(
+    attr_id: int,
+    payload: AttributeOptionCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Create a new option for an item type attribute."""
+    # Verify attribute exists
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    # Check for duplicate slug
+    existing = db.query(AttributeOption).filter(
+        AttributeOption.item_type_attribute_id == attr_id,
+        AttributeOption.slug == payload.slug
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Option '{payload.slug}' already exists for this attribute"
+        )
+
+    option = AttributeOption(
+        item_type_attribute_id=attr_id,
+        slug=payload.slug,
+        display_name=payload.display_name or payload.slug.replace('_', ' ').title(),
+        price_modifier=payload.price_modifier,
+        is_default=payload.is_default,
+        is_available=payload.is_available,
+        display_order=payload.display_order,
+    )
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+
+    logger.info(
+        "Created attribute option: %s for attribute %s (id=%d)",
+        option.slug,
+        attr.slug,
+        option.id
+    )
+
+    return AttributeOptionOut(
+        id=option.id,
+        slug=option.slug,
+        display_name=option.display_name,
+        price_modifier=float(option.price_modifier or 0),
+        is_default=option.is_default,
+        is_available=option.is_available,
+        display_order=option.display_order,
+    )
+
+
+@admin_item_type_attributes_router.put(
+    "/{attr_id}/options/{option_id}",
+    response_model=AttributeOptionOut,
+    summary="Update an attribute option"
+)
+def update_attribute_option(
+    attr_id: int,
+    option_id: int,
+    payload: AttributeOptionUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Update an existing attribute option."""
+    # Verify attribute exists
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    # Find the option
+    option = db.query(AttributeOption).filter(
+        AttributeOption.id == option_id,
+        AttributeOption.item_type_attribute_id == attr_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Attribute option not found")
+
+    # Check for duplicate slug if changing it
+    if payload.slug is not None and payload.slug != option.slug:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.item_type_attribute_id == attr_id,
+            AttributeOption.slug == payload.slug
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Option '{payload.slug}' already exists for this attribute"
+            )
+
+    # Apply updates
+    if payload.slug is not None:
+        option.slug = payload.slug
+    if payload.display_name is not None:
+        option.display_name = payload.display_name
+    if payload.price_modifier is not None:
+        option.price_modifier = payload.price_modifier
+    if payload.is_default is not None:
+        option.is_default = payload.is_default
+    if payload.is_available is not None:
+        option.is_available = payload.is_available
+    if payload.display_order is not None:
+        option.display_order = payload.display_order
+
+    db.commit()
+    db.refresh(option)
+
+    logger.info("Updated attribute option: %s (id=%d)", option.slug, option.id)
+
+    return AttributeOptionOut(
+        id=option.id,
+        slug=option.slug,
+        display_name=option.display_name,
+        price_modifier=float(option.price_modifier or 0),
+        is_default=option.is_default,
+        is_available=option.is_available,
+        display_order=option.display_order,
+    )
+
+
+@admin_item_type_attributes_router.delete(
+    "/{attr_id}/options/{option_id}",
+    status_code=204,
+    summary="Delete an attribute option"
+)
+def delete_attribute_option(
+    attr_id: int,
+    option_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
+    """Delete an attribute option."""
+    # Verify attribute exists
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    # Find the option
+    option = db.query(AttributeOption).filter(
+        AttributeOption.id == option_id,
+        AttributeOption.item_type_attribute_id == attr_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Attribute option not found")
+
+    logger.info(
+        "Deleting attribute option: %s from attribute %s (id=%d)",
+        option.slug,
+        attr.slug,
+        option.id
+    )
+    db.delete(option)
     db.commit()
     return None

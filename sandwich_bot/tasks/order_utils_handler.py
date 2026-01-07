@@ -17,7 +17,7 @@ from .models import (
     BagelItemTask,
     CoffeeItemTask,
     EspressoItemTask,
-    SpeedMenuBagelItemTask,
+    SignatureItemTask,
 )
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
@@ -218,16 +218,16 @@ class OrderUtilsHandler:
                 new_item.mark_complete()
                 order.items.add_item(new_item)
                 logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.menu_item_name)
-            elif isinstance(template_item, SpeedMenuBagelItemTask):
-                new_item = SpeedMenuBagelItemTask(
-                    speed_menu_name=template_item.speed_menu_name,
+            elif isinstance(template_item, SignatureItemTask):
+                new_item = SignatureItemTask(
+                    menu_item_name=template_item.menu_item_name,
                     toasted=template_item.toasted,
                     bagel_choice=template_item.bagel_choice,
                     unit_price=template_item.unit_price,
                 )
                 new_item.mark_complete()
                 order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.speed_menu_name)
+                logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.menu_item_name)
 
         # Build updated summary
         summary = self._build_order_summary(order) if self._build_order_summary else ""

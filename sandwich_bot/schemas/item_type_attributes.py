@@ -41,6 +41,26 @@ class AttributeOptionOut(BaseModel):
     display_order: int = 0
 
 
+class AttributeOptionCreate(BaseModel):
+    """Request model for creating an attribute option."""
+    slug: str
+    display_name: Optional[str] = None
+    price_modifier: float = 0.0
+    is_default: bool = False
+    is_available: bool = True
+    display_order: int = 0
+
+
+class AttributeOptionUpdate(BaseModel):
+    """Request model for updating an attribute option."""
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
+    price_modifier: Optional[float] = None
+    is_default: Optional[bool] = None
+    is_available: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
 class ItemTypeAttributeOut(BaseModel):
     """
     Response model for item type attributes.

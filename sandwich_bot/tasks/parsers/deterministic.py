@@ -25,6 +25,7 @@ from ..schemas import (
     ParsedMenuItemEntry,
     ParsedBagelEntry,
     ParsedCoffeeEntry,
+    ParsedSignatureItemEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
     ParsedByPoundEntry,
@@ -33,7 +34,7 @@ from ..schemas import (
 )
 from .constants import (
     WORD_TO_NUM,
-    get_speed_menu_bagels,
+    get_signature_item_aliases,
     # Bagel modifiers (loaded from database via dynamic functions)
     get_proteins,
     get_cheeses,
@@ -133,16 +134,16 @@ def _build_coffee_parsed_item(
     )
 
 
-def _build_speed_menu_parsed_item(
-    speed_menu_name: str,
+def _build_signature_item_parsed_item(
+    signature_item_name: str,
     bagel_type: str | None = None,
     toasted: bool | None = None,
     quantity: int = 1,
     modifiers: list[str] | None = None,
-) -> ParsedSpeedMenuBagelEntry:
-    """Build a ParsedSpeedMenuBagelEntry from boolean flag data."""
-    return ParsedSpeedMenuBagelEntry(
-        speed_menu_name=speed_menu_name,
+) -> ParsedSignatureItemEntry:
+    """Build a ParsedSignatureItemEntry from boolean flag data."""
+    return ParsedSignatureItemEntry(
+        signature_item_name=signature_item_name,
         bagel_type=bagel_type,
         toasted=toasted,
         quantity=quantity,
@@ -1951,19 +1952,19 @@ def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
     )
 
 
-def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None:
-    """Parse speed menu bagel orders like 'The Classic BEC on a wheat bagel'."""
+def _parse_signature_item_deterministic(text: str) -> OpenInputResponse | None:
+    """Parse signature item orders like 'The Classic BEC on a wheat bagel'."""
     text_lower = text.lower()
 
-    # Get speed menu bagels mapping from database
-    speed_menu_bagels = get_speed_menu_bagels()
+    # Get signature items mapping from database
+    signature_items = get_signature_item_aliases()
 
     matched_item = None
     matched_key = None
 
-    for key in sorted(speed_menu_bagels.keys(), key=len, reverse=True):
+    for key in sorted(signature_items.keys(), key=len, reverse=True):
         if key in text_lower:
-            matched_item = speed_menu_bagels[key]
+            matched_item = signature_items[key]
             matched_key = key
             break
 
@@ -1973,10 +1974,10 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     # If user says "omelette" but matched item isn't an omelette, skip this match
     # Let the menu item parser handle omelettes properly (e.g., "truffled egg omelette")
     if re.search(r'\bomelet(?:te)?s?\b', text_lower) and 'omelette' not in matched_item.lower():
-        logger.info("SPEED MENU SKIP: text contains 'omelette' but matched '%s' is not an omelette", matched_item)
+        logger.info("SIGNATURE ITEM SKIP: text contains 'omelette' but matched '%s' is not an omelette", matched_item)
         return None
 
-    logger.info("SPEED MENU MATCH: found '%s' -> %s in text '%s'", matched_key, matched_item, text[:50])
+    logger.info("SIGNATURE ITEM MATCH: found '%s' -> %s in text '%s'", matched_key, matched_item, text[:50])
 
     # Extract quantity
     quantity = 1
@@ -2040,7 +2041,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
     modifications = _extract_menu_item_modifications(text)
 
     logger.info(
-        "SPEED MENU PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s, mods=%s",
+        "SIGNATURE ITEM PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s, mods=%s",
         matched_item, quantity, toasted, bagel_choice, modifications
     )
 
@@ -2076,7 +2077,7 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
             coffee_milk = milk_match.group(1)
 
         logger.info(
-            "SPEED MENU + COFFEE: also found coffee - type=%s, size=%s, iced=%s, decaf=%s",
+            "SIGNATURE ITEM + COFFEE: also found coffee - type=%s, size=%s, iced=%s, decaf=%s",
             coffee_type, coffee_size, coffee_iced, coffee_decaf
         )
 
@@ -2092,8 +2093,8 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
 
     # Build parsed_items for unified handler (Phase 8 dual-write)
     parsed_items = [
-        _build_speed_menu_parsed_item(
-            speed_menu_name=matched_item,
+        _build_signature_item_parsed_item(
+            signature_item_name=matched_item,
             bagel_type=bagel_choice,
             toasted=toasted,
             quantity=1,
@@ -2114,12 +2115,12 @@ def _parse_speed_menu_bagel_deterministic(text: str) -> OpenInputResponse | None
         ))
 
     response = OpenInputResponse(
-        new_speed_menu_bagel=True,
-        new_speed_menu_bagel_name=matched_item,
-        new_speed_menu_bagel_quantity=quantity,
-        new_speed_menu_bagel_toasted=toasted,
-        new_speed_menu_bagel_bagel_choice=bagel_choice,
-        new_speed_menu_bagel_modifications=modifications,
+        new_signature_item=True,
+        new_signature_item_name=matched_item,
+        new_signature_item_quantity=quantity,
+        new_signature_item_toasted=toasted,
+        new_signature_item_bagel_choice=bagel_choice,
+        new_signature_item_modifications=modifications,
         parsed_items=parsed_items,  # Dual-write for Phase 8
     )
 
@@ -2287,41 +2288,41 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
         parsed_items=parsed_items,  # Dual-write for Phase 8
     )
 
-    # Check if there's also a speed menu bagel mentioned in the input
+    # Check if there's also a signature item mentioned in the input
     # Look for patterns like "and a bec", "and a classic", "and the leo"
-    speed_menu_bagels = get_speed_menu_bagels()
-    for key in sorted(speed_menu_bagels.keys(), key=len, reverse=True):
-        # Check for speed menu item after "and"
+    signature_items = get_signature_item_aliases()
+    for key in sorted(signature_items.keys(), key=len, reverse=True):
+        # Check for signature item after "and"
         and_pattern = rf'\band\s+(?:a\s+|an\s+|the\s+)?{re.escape(key)}\b'
         if re.search(and_pattern, text_lower):
-            matched_item = speed_menu_bagels[key]
+            matched_item = signature_items[key]
             logger.info(
-                "COFFEE + SPEED MENU: also found speed menu item '%s' -> %s",
+                "COFFEE + SIGNATURE ITEM: also found signature item '%s' -> %s",
                 key, matched_item
             )
-            response.new_speed_menu_bagel = True
-            response.new_speed_menu_bagel_name = matched_item
-            response.new_speed_menu_bagel_quantity = 1
-            speed_menu_toasted = None
-            speed_menu_bagel_choice = None
+            response.new_signature_item = True
+            response.new_signature_item_name = matched_item
+            response.new_signature_item_quantity = 1
+            signature_item_toasted = None
+            signature_item_bagel_choice = None
             # Extract toasted/bagel choice from the remainder after "and"
             and_match = re.search(rf'\band\s+(.+)$', text_lower)
             if and_match:
                 remainder = and_match.group(1)
-                speed_menu_toasted = _extract_toasted(remainder)
-                response.new_speed_menu_bagel_toasted = speed_menu_toasted
+                signature_item_toasted = _extract_toasted(remainder)
+                response.new_signature_item_toasted = signature_item_toasted
                 # Check for bagel choice (use \b word boundary to prevent "bacon" matching "bac-ON")
                 for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
                     bagel_pattern = rf'\b(?:on|with)\s+(?:a\s+|an\s+)?{re.escape(bagel_type)}'
                     if re.search(bagel_pattern, remainder):
-                        speed_menu_bagel_choice = bagel_type
-                        response.new_speed_menu_bagel_bagel_choice = speed_menu_bagel_choice
+                        signature_item_bagel_choice = bagel_type
+                        response.new_signature_item_bagel_choice = signature_item_bagel_choice
                         break
-            # Add speed menu bagel to parsed_items
-            response.parsed_items.append(_build_speed_menu_parsed_item(
-                speed_menu_name=matched_item,
-                bagel_type=speed_menu_bagel_choice,
-                toasted=speed_menu_toasted,
+            # Add signature item to parsed_items
+            response.parsed_items.append(_build_signature_item_parsed_item(
+                signature_item_name=matched_item,
+                bagel_type=signature_item_bagel_choice,
+                toasted=signature_item_toasted,
                 quantity=1,
             ))
             break
@@ -2833,11 +2834,11 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         logger.info("ADD MORE: parsed as coffee '%s' (qty=1)", coffee_result.new_coffee_type)
         return coffee_result
 
-    # Try speed menu bagel
-    speed_result = _parse_speed_menu_bagel_deterministic(item_text)
-    if speed_result and speed_result.new_speed_menu_bagel:
-        speed_result.new_speed_menu_bagel_quantity = 1
-        logger.info("ADD MORE: parsed as speed menu '%s' (qty=1)", speed_result.new_speed_menu_bagel_name)
+    # Try signature item
+    speed_result = _parse_signature_item_deterministic(item_text)
+    if speed_result and speed_result.new_signature_item:
+        speed_result.new_signature_item_quantity = 1
+        logger.info("ADD MORE: parsed as signature item '%s' (qty=1)", speed_result.new_signature_item_name)
         return speed_result
 
     # Try menu item
@@ -3032,13 +3033,13 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     bagel_spread_type = None
     side_item = None
     side_item_qty = 1
-    # Speed menu bagel tracking
-    speed_menu_bagel = False
-    speed_menu_bagel_name = None
-    speed_menu_bagel_qty = 1
-    speed_menu_bagel_toasted = None
-    speed_menu_bagel_bagel_choice = None
-    speed_menu_bagel_modifications = None
+    # Signature item tracking
+    signature_item = False
+    signature_item_name = None
+    signature_item_qty = 1
+    signature_item_toasted = None
+    signature_item_bagel_choice = None
+    signature_item_modifications = None
     # NEW: parsed_items list for generic multi-item handling
     parsed_items: list = []
     # By-the-pound items collection
@@ -3063,26 +3064,26 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         if not part:
             continue
 
-        # Try speed menu bagel FIRST - important because "bacon egg and cheese"
+        # Try signature item FIRST - important because "bacon egg and cheese"
         # would otherwise be matched as a menu item "Bacon"
-        speed_result = _parse_speed_menu_bagel_deterministic(part)
-        if speed_result and speed_result.new_speed_menu_bagel:
-            speed_menu_bagel = True
-            speed_menu_bagel_name = speed_result.new_speed_menu_bagel_name
-            speed_menu_bagel_qty = speed_result.new_speed_menu_bagel_quantity or 1
-            speed_menu_bagel_toasted = speed_result.new_speed_menu_bagel_toasted
-            speed_menu_bagel_bagel_choice = speed_result.new_speed_menu_bagel_bagel_choice
-            speed_menu_bagel_modifications = speed_result.new_speed_menu_bagel_modifications
+        speed_result = _parse_signature_item_deterministic(part)
+        if speed_result and speed_result.new_signature_item:
+            signature_item = True
+            signature_item_name = speed_result.new_signature_item_name
+            signature_item_qty = speed_result.new_signature_item_quantity or 1
+            signature_item_toasted = speed_result.new_signature_item_toasted
+            signature_item_bagel_choice = speed_result.new_signature_item_bagel_choice
+            signature_item_modifications = speed_result.new_signature_item_modifications
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedSpeedMenuBagelEntry(
-                speed_menu_name=speed_result.new_speed_menu_bagel_name,
-                bagel_type=speed_result.new_speed_menu_bagel_bagel_choice,
-                toasted=speed_result.new_speed_menu_bagel_toasted,
-                quantity=speed_result.new_speed_menu_bagel_quantity or 1,
-                modifiers=speed_result.new_speed_menu_bagel_modifications or [],
+            parsed_items.append(ParsedSignatureItemEntry(
+                signature_item_name=speed_result.new_signature_item_name,
+                bagel_type=speed_result.new_signature_item_bagel_choice,
+                toasted=speed_result.new_signature_item_toasted,
+                quantity=speed_result.new_signature_item_quantity or 1,
+                modifiers=speed_result.new_signature_item_modifications or [],
             ))
-            logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d) via direct parse",
-                        speed_menu_bagel_name, speed_menu_bagel_qty)
+            logger.info("Multi-item: detected signature item '%s' (qty=%d) via direct parse",
+                        signature_item_name, signature_item_qty)
             continue
 
         # Try by-pound order BEFORE menu item extraction
@@ -3323,23 +3324,23 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             ))
             logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
 
-        if parsed.new_speed_menu_bagel:
-            speed_menu_bagel = True
-            speed_menu_bagel_name = parsed.new_speed_menu_bagel_name
-            speed_menu_bagel_qty = parsed.new_speed_menu_bagel_quantity or 1
-            speed_menu_bagel_toasted = parsed.new_speed_menu_bagel_toasted
-            speed_menu_bagel_bagel_choice = parsed.new_speed_menu_bagel_bagel_choice
-            speed_menu_bagel_modifications = parsed.new_speed_menu_bagel_modifications
+        if parsed.new_signature_item:
+            signature_item = True
+            signature_item_name = parsed.new_signature_item_name
+            signature_item_qty = parsed.new_signature_item_quantity or 1
+            signature_item_toasted = parsed.new_signature_item_toasted
+            signature_item_bagel_choice = parsed.new_signature_item_bagel_choice
+            signature_item_modifications = parsed.new_signature_item_modifications
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedSpeedMenuBagelEntry(
-                speed_menu_name=parsed.new_speed_menu_bagel_name,
-                bagel_type=parsed.new_speed_menu_bagel_bagel_choice,
-                toasted=parsed.new_speed_menu_bagel_toasted,
-                quantity=speed_menu_bagel_qty,
-                modifiers=parsed.new_speed_menu_bagel_modifications or [],
+            parsed_items.append(ParsedSignatureItemEntry(
+                signature_item_name=parsed.new_signature_item_name,
+                bagel_type=parsed.new_signature_item_bagel_choice,
+                toasted=parsed.new_signature_item_toasted,
+                quantity=signature_item_qty,
+                modifiers=parsed.new_signature_item_modifications or [],
             ))
-            logger.info("Multi-item: detected speed menu bagel '%s' (qty=%d, toasted=%s, bagel=%s)",
-                        speed_menu_bagel_name, speed_menu_bagel_qty, speed_menu_bagel_toasted, speed_menu_bagel_bagel_choice)
+            logger.info("Multi-item: detected signature item '%s' (qty=%d, toasted=%s, bagel=%s)",
+                        signature_item_name, signature_item_qty, signature_item_toasted, signature_item_bagel_choice)
 
     # Get first menu item for primary fields, rest go to additional_menu_items
     first_menu_item = menu_item_list[0] if menu_item_list else None
@@ -3350,17 +3351,17 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         len(coffee_list) > 0,
         bagel,
         side_item is not None,
-        speed_menu_bagel,
+        signature_item,
         len(by_pound_items) > 0,
     ])
-    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if speed_menu_bagel else 0) + len(by_pound_items)
+    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if signature_item else 0) + len(by_pound_items)
 
     # Use parsed_items count as source of truth - it correctly tracks all items including
     # multiple bagels of different types (e.g., "plain bagel and sesame bagel")
     if items_found >= 2 or total_items >= 2 or len(parsed_items) >= 2:
         first_coffee = coffee_list[0] if coffee_list else None
-        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, speed_menu=%s, parsed_items=%d",
-                    len(menu_item_list), len(coffee_list), bagel, side_item, speed_menu_bagel_name, len(parsed_items))
+        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, signature_item=%s, parsed_items=%d",
+                    len(menu_item_list), len(coffee_list), bagel, side_item, signature_item_name, len(parsed_items))
         return OpenInputResponse(
             new_menu_item=first_menu_item.name if first_menu_item else None,
             new_menu_item_quantity=first_menu_item.quantity if first_menu_item else 1,
@@ -3385,12 +3386,12 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             new_bagel_spread_type=bagel_spread_type,
             new_side_item=side_item,
             new_side_item_quantity=side_item_qty,
-            new_speed_menu_bagel=speed_menu_bagel,
-            new_speed_menu_bagel_name=speed_menu_bagel_name,
-            new_speed_menu_bagel_quantity=speed_menu_bagel_qty,
-            new_speed_menu_bagel_toasted=speed_menu_bagel_toasted,
-            new_speed_menu_bagel_bagel_choice=speed_menu_bagel_bagel_choice,
-            new_speed_menu_bagel_modifications=speed_menu_bagel_modifications or [],
+            new_signature_item=signature_item,
+            new_signature_item_name=signature_item_name,
+            new_signature_item_quantity=signature_item_qty,
+            new_signature_item_toasted=signature_item_toasted,
+            new_signature_item_bagel_choice=signature_item_bagel_choice,
+            new_signature_item_modifications=signature_item_modifications or [],
             parsed_items=parsed_items,
             by_pound_items=by_pound_items,
         )
@@ -3565,10 +3566,10 @@ def parse_open_input_deterministic(
     if by_pound_result:
         return by_pound_result
 
-    # Check for speed menu bagels
-    speed_menu_result = _parse_speed_menu_bagel_deterministic(text)
-    if speed_menu_result:
-        return speed_menu_result
+    # Check for signature items
+    signature_item_result = _parse_signature_item_deterministic(text)
+    if signature_item_result:
+        return signature_item_result
 
     # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
     make_it_n_match = MAKE_IT_N_PATTERN.match(text)

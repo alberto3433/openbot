@@ -2494,7 +2494,7 @@ class TestRecommendationInquiry:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "signature_sandwich": [
+                "signature_items": [
                     {"name": "The Classic", "description": "A classic sandwich"},
                     {"name": "Super Deluxe", "description": "Extra toppings"},
                 ],
@@ -3450,7 +3450,7 @@ class TestPriceInquiry:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "signature_sandwich": [
+                "signature_items": [
                     {"name": "The Classic", "price": 12.99},
                     {"name": "Turkey Club", "price": 11.50},
                 ],
@@ -5294,11 +5294,9 @@ class TestSignatureMenuInquiryHandler:
         sm = OrderStateMachine()
         sm.menu_data = {
             "items_by_type": {
-                "signature_sandwich": [
+                "signature_items": [
                     {"name": "Turkey Club"},
                     {"name": "Italian Sub"},
-                ],
-                "speed_menu_bagel": [
                     {"name": "The Classic"},
                     {"name": "The Leo"},
                 ],
@@ -5322,7 +5320,7 @@ class TestSignatureMenuInquiryHandler:
         sm = OrderStateMachine()
         sm.menu_data = {
             "items_by_type": {
-                "signature_sandwich": [
+                "signature_items": [
                     {"name": "Turkey Club"},
                 ],
                 "speed_menu_bagel": [
@@ -5332,11 +5330,11 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_sandwich", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
 
         assert "turkey club" in result.message.lower()
         assert "the classic" not in result.message.lower()
-        assert "signature sandwiches" in result.message.lower()
+        assert "signature items" in result.message.lower()
 
     def test_single_item_formatted_correctly(self):
         """Test that single item is formatted without 'and'."""
@@ -5346,14 +5344,14 @@ class TestSignatureMenuInquiryHandler:
         sm = OrderStateMachine()
         sm.menu_data = {
             "items_by_type": {
-                "signature_sandwich": [
+                "signature_items": [
                     {"name": "Turkey Club"},
                 ],
             }
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_sandwich", order)
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
 
         assert "turkey club" in result.message.lower()
         assert " and " not in result.message.lower().split("are:")[1].split("would")[0]

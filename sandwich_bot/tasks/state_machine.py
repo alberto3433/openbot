@@ -19,7 +19,7 @@ from .models import (
     BagelItemTask,
     CoffeeItemTask,
     EspressoItemTask,
-    SpeedMenuBagelItemTask,
+    SignatureItemTask,
     ItemTask,
 )
 from .pricing import PricingEngine
@@ -30,7 +30,7 @@ from .checkout_handler import CheckoutHandler
 from .bagel_config_handler import BagelConfigHandler
 from .coffee_config_handler import CoffeeConfigHandler
 from .espresso_config_handler import EspressoConfigHandler
-from .speed_menu_handler import SpeedMenuBagelHandler
+from .signature_item_handler import SignatureItemHandler
 from .store_info_handler import StoreInfoHandler
 from .menu_inquiry_handler import MenuInquiryHandler
 from .by_pound_handler import ByPoundHandler
@@ -123,7 +123,7 @@ from .parsers import (
     _parse_multi_item_order,
     _parse_recommendation_inquiry,
     _parse_item_description_inquiry,
-    _parse_speed_menu_bagel_deterministic,
+    _parse_signature_item_deterministic,
     _parse_store_info_inquiry,
     _parse_price_inquiry_deterministic,
     _parse_soda_deterministic,
@@ -214,8 +214,8 @@ def _get_pending_item_description(item: "ItemTask") -> str:
         return item.drink_type or "coffee"
     elif isinstance(item, EspressoItemTask):
         return item.get_display_name()
-    elif isinstance(item, SpeedMenuBagelItemTask):
-        return item.speed_menu_name or "bagel"
+    elif isinstance(item, SignatureItemTask):
+        return item.menu_item_name or "signature item"
     return "item"
 
 
@@ -348,12 +348,12 @@ class OrderStateMachine:
         )
         # Now set the bagel callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_bagel = self.bagel_handler.configure_next_incomplete_bagel
-        # Initialize speed menu bagel handler
-        self.speed_menu_handler = SpeedMenuBagelHandler(
+        # Initialize signature item handler
+        self.signature_item_handler = SignatureItemHandler(
             config=self._handler_config,
         )
-        # Now set the speed menu bagel callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_speed_menu_bagel = self.speed_menu_handler.configure_next_incomplete_speed_menu_bagel
+        # Now set the signature item callback on checkout_utils_handler
+        self.checkout_utils_handler._configure_next_incomplete_signature_item = self.signature_item_handler.configure_next_incomplete_signature_item
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize by-the-pound handler
@@ -393,7 +393,7 @@ class OrderStateMachine:
             by_pound_handler=self.by_pound_handler,
             coffee_handler=self.coffee_handler,
             bagel_handler=self.bagel_handler,
-            speed_menu_handler=self.speed_menu_handler,
+            signature_item_handler=self.signature_item_handler,
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             modifier_change_handler=self.modifier_change_handler,
@@ -405,7 +405,7 @@ class OrderStateMachine:
             coffee_handler=self.coffee_handler,
             espresso_handler=self.espresso_handler,
             item_adder_handler=self.item_adder_handler,
-            speed_menu_handler=self.speed_menu_handler,
+            signature_item_handler=self.signature_item_handler,
             menu_inquiry_handler=self.menu_inquiry_handler,
             store_info_handler=self.store_info_handler,
             by_pound_handler=self.by_pound_handler,

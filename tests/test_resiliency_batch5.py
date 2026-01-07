@@ -7,7 +7,7 @@ in a single request.
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import (
-    OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask, SpeedMenuBagelItemTask
+    OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask, SignatureItemTask
 )
 
 
@@ -94,7 +94,7 @@ class TestMultiItemOrders:
             "bagel", "coffee", "juice", "orange"
         ]), f"Should add items or ask about them. Message: {result.message}"
 
-    def test_speed_menu_with_coffee(self):
+    def test_signature_item_with_coffee(self):
         """
         Test: User orders speed menu item with a coffee.
 
@@ -119,10 +119,10 @@ class TestMultiItemOrders:
         # Should have at least one item (The Classic)
         assert len(all_items) >= 1, f"Should have added items. Message: {result.message}"
 
-        # Check for classic (as MenuItemTask, BagelItemTask, or SpeedMenuBagelItemTask)
+        # Check for classic (as MenuItemTask, BagelItemTask, or SignatureItemTask)
         has_classic = any(
             (isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()) or
-            (isinstance(i, SpeedMenuBagelItemTask) and "classic" in (i.menu_item_name or "").lower()) or
+            (isinstance(i, SignatureItemTask) and "classic" in (i.menu_item_name or "").lower()) or
             (isinstance(i, BagelItemTask))
             for i in all_items
         )

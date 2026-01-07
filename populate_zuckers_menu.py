@@ -37,12 +37,14 @@ def clear_existing_menu(db: Session):
 # Format: {item_type_slug: {attr_slug: {'display_name': str, 'input_type': str, 'is_required': bool, 'still_ask': bool}}}
 ITEM_TYPE_ATTRIBUTE_CONFIG = {
     'egg_sandwich': {
-        'bread': {'display_name': 'Bread', 'input_type': 'single_select', 'is_required': True, 'still_ask': True},
-        'protein': {'display_name': 'Protein', 'input_type': 'single_select', 'is_required': True, 'still_ask': False},
-        'cheese': {'display_name': 'Cheese', 'input_type': 'single_select', 'is_required': False, 'still_ask': True},
-        'toppings': {'display_name': 'Toppings', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
-        'extras': {'display_name': 'Extras', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
-        'toasted': {'display_name': 'Toasted', 'input_type': 'boolean', 'is_required': True, 'still_ask': True},
+        'bread': {'display_name': 'Bread Choice', 'input_type': 'single_select', 'is_required': True, 'still_ask': True},
+        'toasted': {'display_name': 'Toasted', 'input_type': 'boolean', 'is_required': False, 'still_ask': True},
+        'scooped': {'display_name': 'Scooped Out', 'input_type': 'boolean', 'is_required': False, 'still_ask': False, 'default': False},
+        'egg_style': {'display_name': 'Egg Preparation', 'input_type': 'single_select', 'is_required': False, 'still_ask': True},
+        'protein': {'display_name': 'Breakfast Protein', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
+        'cheese': {'display_name': 'Cheese', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
+        'spread': {'display_name': 'Cream Cheese / Tofu', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
+        'toppings': {'display_name': 'Breakfast Toppings', 'input_type': 'multi_select', 'is_required': False, 'still_ask': False},
     },
     'signature_sandwich': {
         'bread': {'display_name': 'Bread', 'input_type': 'single_select', 'is_required': True, 'still_ask': True},
@@ -930,6 +932,538 @@ def ensure_salad_sandwich_attributes(db: Session, salad_sandwich_type: ItemType)
     print(f"Ensured {len(extras_options)} extras options for salad_sandwich")
 
 
+def ensure_egg_sandwich_attributes(db: Session, egg_sandwich_type: ItemType):
+    """Set up attribute definitions and options for egg sandwiches.
+
+    Based on Zucker's website egg sandwich configuration page.
+    """
+    if not egg_sandwich_type:
+        return
+
+    # 1. Bread choice
+    bread_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "bread"
+    ).first()
+    if not bread_attr:
+        bread_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="bread",
+            display_name="Bread Choice",
+            input_type="single_select",
+            is_required=True,
+            display_order=1,
+        )
+        db.add(bread_attr)
+        db.commit()
+        print("Created 'bread' attribute for egg_sandwich")
+
+    # Bread options from Zucker's website (slug, display_name, price_modifier, is_default)
+    bread_options = [
+        ("plain_bagel", "Plain Bagel", 0.0, True),
+        ("everything_bagel", "Everything Bagel", 0.0, False),
+        ("sesame_bagel", "Sesame Bagel", 0.0, False),
+        ("poppy_bagel", "Poppy Bagel", 0.0, False),
+        ("onion_bagel", "Onion Bagel", 0.0, False),
+        ("salt_bagel", "Salt Bagel", 0.0, False),
+        ("garlic_bagel", "Garlic Bagel", 0.0, False),
+        ("pumpernickel_bagel", "Pumpernickel Bagel", 0.0, False),
+        ("whole_wheat_bagel", "Whole Wheat Bagel", 0.0, False),
+        ("egg_bagel", "Egg Bagel", 0.0, False),
+        ("rainbow_bagel", "Rainbow Bagel", 0.0, False),
+        ("french_toast_bagel", "French Toast Bagel", 0.0, False),
+        ("sun_dried_tomato_bagel", "Sun Dried Tomato Bagel", 0.0, False),
+        ("multigrain_bagel", "Multigrain Bagel", 0.0, False),
+        ("cinnamon_raisin_bagel", "Cinnamon Raisin Bagel", 0.0, False),
+        ("asiago_bagel", "Asiago Bagel", 0.0, False),
+        ("jalapeno_cheddar_bagel", "Jalapeno Cheddar Bagel", 0.0, False),
+        ("bialy", "Bialy", 0.0, False),
+        ("flagel", "Flagel", 0.0, False),
+        # GF options with upcharge
+        ("gf_plain_bagel", "Gluten Free Plain Bagel", 1.85, False),
+        ("gf_everything_bagel", "Gluten Free Everything Bagel", 1.85, False),
+        ("gf_sesame_bagel", "Gluten Free Sesame Bagel", 1.85, False),
+        ("gf_cinnamon_raisin_bagel", "Gluten Free Cinnamon Raisin Bagel", 1.85, False),
+        # Other breads
+        ("croissant", "Croissant", 1.80, False),
+        ("wrap", "Wrap", 0.0, False),
+        ("gf_wrap", "Gluten Free Wrap", 1.00, False),
+        ("no_bread", "No Bread (in a bowl)", 2.00, False),
+    ]
+    for slug, display_name, price_mod, is_default in bread_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == bread_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=bread_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+                is_default=is_default,
+            ))
+        else:
+            # Update price if changed
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(bread_options)} bread options for egg_sandwich")
+
+    # 2. Toasted option
+    toasted_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "toasted"
+    ).first()
+    if not toasted_attr:
+        toasted_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="toasted",
+            display_name="Toasted",
+            input_type="boolean",
+            is_required=False,
+            display_order=2,
+        )
+        db.add(toasted_attr)
+        db.commit()
+        print("Created 'toasted' attribute for egg_sandwich")
+
+    # 3. Scooped option
+    scooped_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "scooped"
+    ).first()
+    if not scooped_attr:
+        scooped_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="scooped",
+            display_name="Scooped Out",
+            input_type="boolean",
+            is_required=False,
+            display_order=3,
+        )
+        db.add(scooped_attr)
+        db.commit()
+        print("Created 'scooped' attribute for egg_sandwich")
+
+    # 4. Egg style (preparation)
+    egg_style_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "egg_style"
+    ).first()
+    if not egg_style_attr:
+        egg_style_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="egg_style",
+            display_name="Egg Preparation",
+            input_type="single_select",
+            is_required=False,
+            display_order=4,
+        )
+        db.add(egg_style_attr)
+        db.commit()
+        print("Created 'egg_style' attribute for egg_sandwich")
+
+    # Egg style options
+    egg_style_options = [
+        ("scrambled", "Scrambled", 0.0, True),
+        ("fried", "Fried", 0.0, False),
+        ("over_easy", "Over Easy", 0.0, False),
+        ("over_medium", "Over Medium", 0.0, False),
+        ("over_hard", "Over Hard", 0.0, False),
+        ("egg_whites", "Substitute Egg Whites", 2.05, False),
+    ]
+    for slug, display_name, price_mod, is_default in egg_style_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == egg_style_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=egg_style_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+                is_default=is_default,
+            ))
+        else:
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(egg_style_options)} egg_style options for egg_sandwich")
+
+    # 5. Protein (multi-select)
+    protein_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "protein"
+    ).first()
+    if not protein_attr:
+        protein_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="protein",
+            display_name="Breakfast Protein",
+            input_type="multi_select",
+            is_required=False,
+            allow_none=True,
+            display_order=5,
+        )
+        db.add(protein_attr)
+        db.commit()
+        print("Created 'protein' attribute for egg_sandwich")
+
+    # Protein options from Zucker's website (slug, display_name, price_modifier)
+    protein_options = [
+        ("applewood_bacon", "Applewood Smoked Bacon", 2.50),
+        ("turkey_bacon", "Turkey Bacon", 2.95),
+        ("sausage", "Sausage Patty", 2.75),
+        ("chicken_sausage", "Chicken Sausage", 2.95),
+        ("smoked_turkey", "Smoked Turkey", 3.45),
+        ("ham", "Ham", 2.50),
+        ("pastrami", "Pastrami", 3.45),
+        ("corned_beef", "Corned Beef", 3.45),
+        ("roast_beef", "Roast Beef", 3.45),
+    ]
+    for slug, display_name, price_mod in protein_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == protein_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=protein_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+            ))
+        else:
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(protein_options)} protein options for egg_sandwich")
+
+    # 6. Cheese (hard cheeses only, multi-select)
+    cheese_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "cheese"
+    ).first()
+    if not cheese_attr:
+        cheese_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="cheese",
+            display_name="Cheese",
+            input_type="multi_select",
+            is_required=False,
+            allow_none=True,
+            display_order=6,
+        )
+        db.add(cheese_attr)
+        db.commit()
+        print("Created 'cheese' attribute for egg_sandwich")
+
+    # Hard cheese options - all $1.50 upcharge
+    cheese_options = [
+        ("american", "American Cheese", 1.50),
+        ("cheddar", "Cheddar", 1.50),
+        ("fresh_mozzarella", "Fresh Mozzarella", 1.50),
+        ("havarti", "Havarti", 1.50),
+        ("muenster", "Muenster", 1.50),
+        ("pepper_jack", "Pepper Jack", 1.50),
+        ("swiss", "Swiss", 1.50),
+        ("provolone", "Provolone", 1.50),
+    ]
+    for slug, display_name, price_mod in cheese_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == cheese_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=cheese_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+            ))
+        else:
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(cheese_options)} cheese options for egg_sandwich")
+
+    # 7. Spread (cream cheese + tofu, multi-select)
+    spread_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "spread"
+    ).first()
+    if not spread_attr:
+        spread_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="spread",
+            display_name="Cream Cheese / Tofu",
+            input_type="multi_select",
+            is_required=False,
+            allow_none=True,
+            display_order=7,
+        )
+        db.add(spread_attr)
+        db.commit()
+        print("Created 'spread' attribute for egg_sandwich")
+
+    # Cream cheese and tofu options
+    spread_options = [
+        ("plain_cc", "Plain Cream Cheese", 0.80),
+        ("scallion_cc", "Scallion Cream Cheese", 0.90),
+        ("veggie_cc", "Veggie Cream Cheese", 0.90),
+        ("lox_cc", "Lox Cream Cheese", 0.90),
+        ("walnut_raisin_cc", "Walnut Raisin Cream Cheese", 0.90),
+        ("jalapeno_cc", "Jalapeno Cream Cheese", 0.90),
+        ("honey_walnut_cc", "Honey Walnut Cream Cheese", 0.90),
+        ("strawberry_cc", "Strawberry Cream Cheese", 0.90),
+        ("blueberry_cc", "Blueberry Cream Cheese", 0.90),
+        ("olive_pimento_cc", "Olive Pimento Cream Cheese", 0.90),
+        # Premium cream cheeses
+        ("nova_scotia_cc", "Nova Scotia Cream Cheese", 1.85),
+        ("chipotle_cc", "Chipotle Cream Cheese", 1.85),
+        ("truffle_cc", "Truffle Cream Cheese", 1.85),
+        # Tofu
+        ("plain_tofu", "Plain Tofu", 0.90),
+        ("scallion_tofu", "Scallion Tofu", 0.90),
+        ("veggie_tofu", "Veggie Tofu", 0.90),
+    ]
+    for slug, display_name, price_mod in spread_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == spread_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=spread_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+            ))
+        else:
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(spread_options)} spread options for egg_sandwich")
+
+    # 8. Toppings (multi-select)
+    toppings_attr = db.query(AttributeDefinition).filter(
+        AttributeDefinition.item_type_id == egg_sandwich_type.id,
+        AttributeDefinition.slug == "toppings"
+    ).first()
+    if not toppings_attr:
+        toppings_attr = AttributeDefinition(
+            item_type_id=egg_sandwich_type.id,
+            slug="toppings",
+            display_name="Breakfast Toppings",
+            input_type="multi_select",
+            is_required=False,
+            allow_none=True,
+            display_order=8,
+        )
+        db.add(toppings_attr)
+        db.commit()
+        print("Created 'toppings' attribute for egg_sandwich")
+
+    # Toppings options from Zucker's website
+    toppings_options = [
+        ("butter", "Butter", 0.55),
+        ("tomatoes", "Tomatoes", 1.00),
+        ("lettuce", "Lettuce", 0.60),
+        ("onions", "Onions", 0.75),
+        ("red_onions", "Red Onions", 0.75),
+        ("capers", "Capers", 1.00),
+        ("spinach", "Spinach", 1.00),
+        ("roasted_peppers", "Roasted Peppers", 1.00),
+        ("jalapenos", "Jalapenos", 0.75),
+        ("pickles", "Pickles", 0.75),
+        ("cucumber", "Cucumber", 0.75),
+        ("sauteed_mushrooms", "Sauteed Mushrooms", 1.50),
+        ("sauteed_onions", "Sauteed Onions", 1.00),
+        ("hash_browns", "Hash Browns", 2.50),
+        ("latke", "Breakfast Potato Latke", 2.80),
+        ("avocado", "Avocado", 3.50),
+        ("extra_egg", "Extra Egg", 2.05),
+        ("hot_sauce", "Hot Sauce", 0.0),
+    ]
+    for slug, display_name, price_mod in toppings_options:
+        existing = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == toppings_attr.id,
+            AttributeOption.slug == slug
+        ).first()
+        if not existing:
+            db.add(AttributeOption(
+                attribute_definition_id=toppings_attr.id,
+                slug=slug,
+                display_name=display_name,
+                price_modifier=price_mod,
+            ))
+        else:
+            existing.price_modifier = price_mod
+    db.commit()
+    print(f"Ensured {len(toppings_options)} toppings options for egg_sandwich")
+
+
+def ensure_egg_sandwich_type_attributes(db: Session, egg_sandwich_type: ItemType):
+    """Update item_type_attributes table for egg_sandwich with new schema.
+
+    This is the consolidated schema that menu_index_builder reads from first.
+    """
+    if not egg_sandwich_type:
+        return
+
+    # Define the new attribute configuration
+    egg_sandwich_attrs = [
+        {
+            "slug": "bread",
+            "display_name": "Bread Choice",
+            "input_type": "single_select",
+            "is_required": True,
+            "ask_in_conversation": True,
+            "display_order": 1,
+            "question_text": "What kind of bread would you like?",
+        },
+        {
+            "slug": "toasted",
+            "display_name": "Toasted",
+            "input_type": "boolean",
+            "is_required": False,
+            "ask_in_conversation": True,
+            "display_order": 2,
+            "question_text": "Would you like it toasted?",
+        },
+        {
+            "slug": "scooped",
+            "display_name": "Scooped Out",
+            "input_type": "boolean",
+            "is_required": False,
+            "ask_in_conversation": False,
+            "display_order": 3,
+            "question_text": None,
+        },
+        {
+            "slug": "egg_style",
+            "display_name": "Egg Preparation",
+            "input_type": "single_select",
+            "is_required": False,
+            "ask_in_conversation": True,
+            "display_order": 4,
+            "question_text": "How would you like your eggs?",
+        },
+        {
+            "slug": "protein",
+            "display_name": "Breakfast Protein",
+            "input_type": "multi_select",
+            "is_required": False,
+            "ask_in_conversation": False,
+            "display_order": 5,
+            "question_text": None,
+        },
+        {
+            "slug": "cheese",
+            "display_name": "Cheese",
+            "input_type": "multi_select",
+            "is_required": False,
+            "ask_in_conversation": False,
+            "display_order": 6,
+            "question_text": None,
+        },
+        {
+            "slug": "spread",
+            "display_name": "Cream Cheese / Tofu",
+            "input_type": "multi_select",
+            "is_required": False,
+            "ask_in_conversation": False,
+            "display_order": 7,
+            "question_text": None,
+        },
+        {
+            "slug": "toppings",
+            "display_name": "Breakfast Toppings",
+            "input_type": "multi_select",
+            "is_required": False,
+            "ask_in_conversation": False,
+            "display_order": 8,
+            "question_text": None,
+        },
+    ]
+
+    # Remove old attributes that are no longer needed
+    old_slugs_to_remove = ["extras", "_placeholder_6"]
+    for old_slug in old_slugs_to_remove:
+        old_attr = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == egg_sandwich_type.id,
+            ItemTypeAttribute.slug == old_slug
+        ).first()
+        if old_attr:
+            db.delete(old_attr)
+            print(f"Removed old '{old_slug}' attribute from egg_sandwich item_type_attributes")
+
+    # Create/update attributes
+    for attr_config in egg_sandwich_attrs:
+        existing = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == egg_sandwich_type.id,
+            ItemTypeAttribute.slug == attr_config["slug"]
+        ).first()
+
+        if existing:
+            # Update existing attribute
+            existing.display_name = attr_config["display_name"]
+            existing.input_type = attr_config["input_type"]
+            existing.is_required = attr_config["is_required"]
+            existing.ask_in_conversation = attr_config["ask_in_conversation"]
+            existing.display_order = attr_config["display_order"]
+            existing.question_text = attr_config["question_text"]
+        else:
+            # Create new attribute
+            new_attr = ItemTypeAttribute(
+                item_type_id=egg_sandwich_type.id,
+                slug=attr_config["slug"],
+                display_name=attr_config["display_name"],
+                input_type=attr_config["input_type"],
+                is_required=attr_config["is_required"],
+                ask_in_conversation=attr_config["ask_in_conversation"],
+                display_order=attr_config["display_order"],
+                question_text=attr_config["question_text"],
+            )
+            db.add(new_attr)
+            print(f"Created '{attr_config['slug']}' in item_type_attributes for egg_sandwich")
+
+    db.commit()
+    print(f"Ensured {len(egg_sandwich_attrs)} item_type_attributes for egg_sandwich")
+
+    # Now link AttributeOptions to the ItemTypeAttribute records
+    for attr_config in egg_sandwich_attrs:
+        # Get the ItemTypeAttribute record
+        ita = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == egg_sandwich_type.id,
+            ItemTypeAttribute.slug == attr_config["slug"]
+        ).first()
+
+        if not ita:
+            continue
+
+        # Get the corresponding AttributeDefinition record
+        ad = db.query(AttributeDefinition).filter(
+            AttributeDefinition.item_type_id == egg_sandwich_type.id,
+            AttributeDefinition.slug == attr_config["slug"]
+        ).first()
+
+        if not ad:
+            continue
+
+        # Link the options from attribute_definitions to item_type_attributes
+        options = db.query(AttributeOption).filter(
+            AttributeOption.attribute_definition_id == ad.id
+        ).all()
+
+        linked_count = 0
+        for opt in options:
+            if opt.item_type_attribute_id != ita.id:
+                opt.item_type_attribute_id = ita.id
+                linked_count += 1
+
+        if linked_count > 0:
+            db.commit()
+            print(f"Linked {linked_count} options to '{attr_config['slug']}' item_type_attribute")
+
+
 def populate_menu_items(db: Session):
     """Populate the menu with Zucker's items.
 
@@ -1100,15 +1634,15 @@ def populate_menu_items(db: Session):
 
         # === EGG_SANDWICH ===
         {"name": "Scrambled Eggs on Bagel", "category": "egg_sandwich", "base_price": 6.88, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "aliases": "scrambled eggs on bagel, scrambled egg bagel, scrambled eggs bagel"},
-        {"name": "The Chelsea", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Whole Wheat Bagel", "extras": ["Egg White", "Avocado", "Tomato"]}, "aliases": "the chelsea, chelsea"},
-        {"name": "The Columbus", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "description": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese", "default_config": {"bread": "Everything Bagel", "protein": "Sausage", "cheese": "American", "extras": ["Egg"]}, "aliases": "the columbus, columbus"},
+        {"name": "The Chelsea", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Whole Wheat Bagel", "toppings": ["Egg White", "Avocado", "Tomato"]}, "aliases": "the chelsea, chelsea"},
+        {"name": "The Columbus", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "description": "Three Egg Whites, Turkey Bacon, Avocado, and Swiss Cheese", "default_config": {"bread": "Everything Bagel", "protein": "Sausage", "cheese": "American", "toppings": ["Egg"]}, "aliases": "the columbus, columbus"},
         {"name": "The Health Nut Egg Sandwich", "category": "egg_sandwich", "base_price": 12.50, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "aliases": "the health nut egg sandwich, health nut egg sandwich, health nut egg"},
-        {"name": "The Hudson", "category": "egg_sandwich", "base_price": 11.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Bagel", "protein": "Nova Scotia Salmon", "extras": ["Scrambled Eggs", "Onion"]}, "aliases": "the hudson, hudson"},
+        {"name": "The Hudson", "category": "egg_sandwich", "base_price": 11.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Bagel", "protein": "Nova Scotia Salmon", "toppings": ["Scrambled Eggs", "Onion"]}, "aliases": "the hudson, hudson"},
         {"name": "The Latke BEC", "category": "egg_sandwich", "base_price": 13.50, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "description": "Two Eggs, Applewood Smoked Bacon, Cheddar, and a Breakfast Potato Latke", "aliases": "latke bec, the latke bec"},
         {"name": "The Lexington", "category": "egg_sandwich", "base_price": 9.25, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "description": "Egg Whites, Swiss, and Spinach", "default_config": {"bread": "Bagel", "protein": "Egg White", "cheese": "Swiss", "toppings": ["Spinach"]}, "aliases": "the lexington, lexington"},
-        {"name": "The Midtown", "category": "egg_sandwich", "base_price": 10.50, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Bagel", "protein": "Bacon", "cheese": "Cheddar", "extras": ["Egg", "Jalapeño"]}, "aliases": "the midtown, midtown"},
+        {"name": "The Midtown", "category": "egg_sandwich", "base_price": 10.50, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Bagel", "protein": "Bacon", "cheese": "Cheddar", "toppings": ["Egg", "Jalapeño"]}, "aliases": "the midtown, midtown"},
         {"name": "The Truffled Egg", "category": "egg_sandwich", "base_price": 21.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "description": "Two Eggs, Swiss, Truffle Cream Cheese, and Sauteed Mushrooms", "aliases": "the truffled egg, truffled egg, truffled egg sandwich"},
-        {"name": "The Wall Street", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Everything Bagel", "protein": "Turkey Bacon", "cheese": "Swiss", "extras": ["Egg White"]}, "aliases": "the wall street, wall street"},
+        {"name": "The Wall Street", "category": "egg_sandwich", "base_price": 10.95, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "default_config": {"bread": "Everything Bagel", "protein": "Turkey Bacon", "cheese": "Swiss", "toppings": ["Egg White"]}, "aliases": "the wall street, wall street"},
         {"name": "Two Scrambled Eggs on Bagel", "category": "egg_sandwich", "base_price": 6.88, "is_signature": True, "item_type_id": egg_sandwich_type.id if egg_sandwich_type else None, "aliases": "two scrambled eggs on bagel, 2 scrambled eggs on bagel"},
 
         # === FISH_SANDWICH ===
@@ -1323,6 +1857,10 @@ def main():
         # Set up attributes for the new sandwich types
         ensure_spread_sandwich_attributes(db, spread_sandwich_type)
         ensure_salad_sandwich_attributes(db, salad_sandwich_type)
+        ensure_egg_sandwich_attributes(db, egg_sandwich_type)
+
+        # Update consolidated item_type_attributes table
+        ensure_egg_sandwich_type_attributes(db, egg_sandwich_type)
 
         populate_menu_items(db)
 

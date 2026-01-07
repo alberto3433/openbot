@@ -44,7 +44,7 @@ from .deterministic import (
     _extract_spread,
     _extract_side_item,
     _extract_menu_item_from_text,
-    _parse_speed_menu_bagel_deterministic,
+    _parse_signature_item_deterministic,
     _parse_coffee_deterministic,
     _parse_soda_deterministic,
     _parse_price_inquiry_deterministic,
@@ -92,8 +92,8 @@ from .constants import (
     get_bagel_only_types,
     get_spread_only_types,
     get_ambiguous_modifiers,
-    # Speed menu items (loaded from database via dynamic function)
-    get_speed_menu_bagels,
+    # Signature items (loaded from database via dynamic function)
+    get_signature_item_aliases,
     # By-the-pound items and categories (loaded from database via dynamic functions)
     get_by_pound_items,
     find_by_pound_item,
@@ -163,7 +163,7 @@ __all__ = [
     "_extract_spread",
     "_extract_side_item",
     "_extract_menu_item_from_text",
-    "_parse_speed_menu_bagel_deterministic",
+    "_parse_signature_item_deterministic",
     "_parse_coffee_deterministic",
     "_parse_soda_deterministic",
     "_parse_price_inquiry_deterministic",
@@ -206,8 +206,8 @@ __all__ = [
     "get_bagel_only_types",
     "get_spread_only_types",
     "get_ambiguous_modifiers",
-    # Constants - Speed menu items (loaded from database via dynamic function)
-    "get_speed_menu_bagels",
+    # Constants - Signature items (loaded from database via dynamic function)
+    "get_signature_item_aliases",
     # Constants - By-the-pound items and categories (loaded from database via dynamic functions)
     "get_by_pound_items",
     "find_by_pound_item",

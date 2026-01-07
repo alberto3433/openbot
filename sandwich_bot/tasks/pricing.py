@@ -55,6 +55,42 @@ class PricingEngine:
         """Update menu data."""
         self._menu_data = value
 
+    def _get_specialty_bagel_types(self) -> set[str]:
+        """
+        Get bagel types that have a price modifier (specialty bagels).
+
+        These are bagel types like "gluten free" that have an upcharge.
+        Derived from the database: bagel_type attribute options with price_modifier > 0.
+
+        Returns:
+            Set of specialty bagel type names (lowercase)
+        """
+        if not self._menu_data:
+            return set()
+
+        item_types = self._menu_data.get("item_types", {})
+        bagel_type_data = item_types.get("bagel", {})
+        attributes = bagel_type_data.get("attributes", [])
+
+        specialty_types = set()
+        for attr in attributes:
+            if attr.get("slug") == "bagel_type":
+                for opt in attr.get("options", []):
+                    if opt.get("price_modifier", 0) > 0:
+                        # Add both slug and display_name variations
+                        slug = opt.get("slug", "").lower().replace("_", " ")
+                        display = opt.get("display_name", "").lower()
+                        if slug:
+                            specialty_types.add(slug)
+                        if display:
+                            specialty_types.add(display)
+                        # Also add hyphenated version (e.g., "gluten-free")
+                        if " " in slug:
+                            specialty_types.add(slug.replace(" ", "-"))
+                        if " " in display:
+                            specialty_types.add(display.replace(" ", "-"))
+        return specialty_types
+
     # =========================================================================
     # By-the-Pound Pricing
     # =========================================================================
@@ -165,8 +201,8 @@ class PricingEngine:
 
         bagel_type_lower = bagel_type.lower()
 
-        # Specialty bagels that have their own menu items
-        specialty_bagels = ["gluten free", "gluten-free"]
+        # Specialty bagels are those with price_modifier > 0 in the database
+        specialty_bagels = self._get_specialty_bagel_types()
 
         if any(specialty in bagel_type_lower for specialty in specialty_bagels):
             # Look for specific specialty bagel as menu item first

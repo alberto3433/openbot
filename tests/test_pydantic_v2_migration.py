@@ -76,18 +76,22 @@ class TestPydanticV2ModelValidate:
 
     def test_menu_item_out_model_validate(self, db_session):
         """MenuItemOut.model_validate should work with MenuItem ORM object."""
-        # Create a MenuItem in the database
-        menu_item = MenuItem(
-            name="Test Sandwich",
-            category="sandwich",
-            is_signature=True,
-            base_price=9.99,
-            available_qty=10,
-            extra_metadata="{}",
-        )
-        db_session.add(menu_item)
-        db_session.commit()
-        db_session.refresh(menu_item)
+        # Get or create a MenuItem in the database (avoid duplicates)
+        menu_item = db_session.query(MenuItem).filter(
+            MenuItem.name == "Test Sandwich Pydantic"
+        ).first()
+        if not menu_item:
+            menu_item = MenuItem(
+                name="Test Sandwich Pydantic",
+                category="sandwich",
+                is_signature=True,
+                base_price=9.99,
+                available_qty=10,
+                extra_metadata="{}",
+            )
+            db_session.add(menu_item)
+            db_session.commit()
+            db_session.refresh(menu_item)
 
         # model_validate should work without warnings
         with warnings.catch_warnings(record=True) as w:
@@ -107,7 +111,7 @@ class TestPydanticV2ModelValidate:
             )
 
         assert result.id == menu_item.id
-        assert result.name == "Test Sandwich"
+        assert result.name == "Test Sandwich Pydantic"
         assert result.category == "sandwich"
         assert result.base_price == 9.99
 

@@ -12,6 +12,13 @@ import re
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+# Pagination Configuration
+# =============================================================================
+
+# Standard pagination size for all list displays (bagel types, drinks, menu items, modifiers)
+DEFAULT_PAGINATION_SIZE = 5
+
+# =============================================================================
 # Drink Type Categories
 # =============================================================================
 
@@ -82,10 +89,10 @@ WORD_TO_NUM = {
 # - get_ambiguous_modifiers() - types that are BOTH (need disambiguation)
 
 # =============================================================================
-# Speed Menu Bagels
+# Signature Items
 # =============================================================================
-# NOTE: Speed menu bagels are now loaded from the database via menu_data_cache.py.
-# Use get_speed_menu_bagels() to get the mapping from aliases to menu item names.
+# NOTE: Signature items are now loaded from the database via menu_data_cache.py.
+# Use get_signature_item_aliases() to get the mapping from aliases to menu item names.
 # The aliases are stored in the `aliases` column of menu_items table.
 
 # =============================================================================
@@ -846,13 +853,13 @@ def get_known_menu_items() -> set[str]:
     return set()
 
 
-def get_speed_menu_bagels() -> dict[str, str]:
+def get_signature_item_aliases() -> dict[str, str]:
     """
-    Get speed menu bagel alias mapping from database.
+    Get signature item alias mapping from database.
 
     Returns a dict mapping user input variations (aliases) to the actual
     menu item names in the database. This is used for recognizing orders
-    like "bec", "bacon egg and cheese", "the classic", etc.
+    like "bec", "bacon egg and cheese", "the classic", "the leo", etc.
 
     Returns:
         Dict mapping lowercase alias -> menu item name (with original casing).
@@ -863,11 +870,11 @@ def get_speed_menu_bagels() -> dict[str, str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_speed_menu_bagels()
+        cached = cache.get_signature_item_aliases()
         if cached is not None:
             return cached
     raise RuntimeError(
-        "Speed menu bagels not available. Ensure menu_data_cache is loaded from the database."
+        "Signature item aliases not available. Ensure menu_data_cache is loaded from the database."
     )
 
 

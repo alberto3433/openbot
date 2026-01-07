@@ -1,3 +1,7 @@
+import logging
+import os
+import traceback
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -10,6 +14,7 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    event,
     func,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -184,10 +189,10 @@ class AttributeOption(Base):
     __tablename__ = "attribute_options"
 
     id = Column(Integer, primary_key=True, index=True)
-    attribute_definition_id = Column(Integer, ForeignKey("attribute_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Legacy FK - nullable during transition to item_type_attributes
+    attribute_definition_id = Column(Integer, ForeignKey("attribute_definitions.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    # New FK to consolidated item_type_attributes (for transition period)
-    # After migration is complete, this will replace attribute_definition_id
+    # New FK to consolidated item_type_attributes (primary FK going forward)
     item_type_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=True, index=True)
 
     slug = Column(String, nullable=False)  # e.g., "white", "wheat", "lettuce"
@@ -823,3 +828,22 @@ class Company(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# --- MenuItem Insert Logging (for debugging duplicate inserts) ---
+# Enable with environment variable: MENU_ITEM_INSERT_LOGGING=1
+
+_menu_item_insert_logger = logging.getLogger("menu_item_inserts")
+
+
+@event.listens_for(MenuItem, "before_insert")
+def log_menu_item_insert(mapper, connection, target):
+    """Log MenuItem inserts with stack trace to help identify duplicate sources."""
+    if not os.environ.get("MENU_ITEM_INSERT_LOGGING"):
+        return
+
+    stack = "".join(traceback.format_stack()[:-1])  # Exclude this function
+    _menu_item_insert_logger.warning(
+        f"MenuItem INSERT: name='{target.name}', category='{target.category}'\n"
+        f"Stack trace:\n{stack}"
+    )

@@ -218,6 +218,193 @@
       overflow-y: auto;
       margin: 20px;
     }
+    .modal.wide {
+      max-width: 900px;
+    }
+    /* Tabs */
+    .modal-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+    }
+    .modal-tab {
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #666;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .modal-tab:hover {
+      color: #333;
+      background: #f0f0f0;
+    }
+    .modal-tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+      background: #fff;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    /* Attributes list */
+    .attributes-section {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-top: 16px;
+    }
+    .attributes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .attributes-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .attr-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .attr-row:last-child {
+      border-bottom: none;
+    }
+    .attr-row:hover {
+      background: #fafafa;
+    }
+    .attr-info {
+      flex: 1;
+    }
+    .attr-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .attr-slug {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+    }
+    .attr-meta {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .attr-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .attr-badge.type {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .attr-badge.required {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .attr-badge.ask {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .attr-badge.options {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .attr-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .attr-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .attr-btn:hover {
+      background: #f5f5f5;
+    }
+    .attr-btn.danger {
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .attr-btn.danger:hover {
+      background: #ffebee;
+    }
+    .empty-attrs {
+      padding: 20px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+    }
+    /* Attribute form */
+    .attr-form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .attr-form-row.full {
+      grid-template-columns: 1fr;
+    }
+    /* Options list in attribute form */
+    .options-list {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-top: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .option-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    .option-row:last-child {
+      border-bottom: none;
+    }
+    .option-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .option-default {
+      font-size: 10px;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .add-option-row {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #fafafa;
+    }
+    .add-option-row input {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      font-size: 13px;
+    }
     .modal-header {
       padding: 16px 20px;
       border-bottom: 1px solid #e0e0e0;
@@ -364,48 +551,164 @@
 
   <!-- Add/Edit Item Type Modal -->
   <div class="modal-overlay" id="itemTypeModal">
-    <div class="modal">
+    <div class="modal" id="itemTypeModalContent">
       <div class="modal-header">
         <h2 id="modalTitle">Add New Item Type</h2>
         <button class="modal-close" id="modalClose">&times;</button>
       </div>
+
+      <!-- Tabs (only shown when editing) -->
+      <div class="modal-tabs" id="modalTabs" style="display: none;">
+        <button class="modal-tab active" data-tab="basic">Basic Info</button>
+        <button class="modal-tab" data-tab="attributes">Attributes</button>
+      </div>
+
+      <!-- Basic Info Tab -->
+      <div class="tab-content active" id="tabBasic">
+        <div class="modal-body">
+          <form id="itemTypeForm">
+            <input type="hidden" id="itemTypeId" />
+
+            <div class="form-group">
+              <label for="displayName">Display Name *</label>
+              <input type="text" id="displayName" required placeholder="e.g., Sandwich, Beverage, Bagel" />
+              <div class="hint">Human-readable name shown in the admin UI</div>
+            </div>
+
+            <div class="form-group">
+              <label for="slug">Slug *</label>
+              <input type="text" id="slug" required placeholder="e.g., sandwich, beverage, bagel" pattern="[a-z0-9_]+" />
+              <div class="hint">Unique identifier (lowercase, underscores only). Used in code and API.</div>
+            </div>
+
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="isConfigurable" checked />
+                <label for="isConfigurable">Configurable</label>
+              </div>
+              <div class="hint">Configurable items have attributes that customers can customize (e.g., toppings, size)</div>
+            </div>
+
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="skipConfig" />
+                <label for="skipConfig">Skip Configuration</label>
+              </div>
+              <div class="hint">Skip asking configuration questions (e.g., simple beverages that don't need hot/iced choice)</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" id="cancelBtn">Cancel</button>
+          <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete</button>
+          <button type="button" class="btn primary" id="saveBtn">Save</button>
+        </div>
+      </div>
+
+      <!-- Attributes Tab -->
+      <div class="tab-content" id="tabAttributes">
+        <div class="modal-body">
+          <p style="font-size: 13px; color: #666; margin-top: 0;">
+            Attributes define what configuration options are available for this item type.
+            For example, an egg sandwich might have: bread, protein, cheese, toppings.
+          </p>
+
+          <div class="attributes-section">
+            <div class="attributes-header">
+              <h3>Attributes</h3>
+              <button class="attr-btn" id="addAttributeBtn" style="background: #4caf50; color: #fff; border-color: #4caf50;">+ Add</button>
+            </div>
+            <div id="attributesList">
+              <div class="empty-attrs">Loading attributes...</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" id="closeAttrsBtn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Attribute Modal -->
+  <div class="modal-overlay" id="attributeModal">
+    <div class="modal" style="max-width: 550px;">
+      <div class="modal-header">
+        <h2 id="attrModalTitle">Add Attribute</h2>
+        <button class="modal-close" id="attrModalClose">&times;</button>
+      </div>
       <div class="modal-body">
-        <form id="itemTypeForm">
-          <input type="hidden" id="itemTypeId" />
+        <form id="attributeForm">
+          <input type="hidden" id="attrId" />
 
-          <div class="form-group">
-            <label for="displayName">Display Name *</label>
-            <input type="text" id="displayName" required placeholder="e.g., Sandwich, Beverage, Bagel" />
-            <div class="hint">Human-readable name shown in the admin UI</div>
-          </div>
-
-          <div class="form-group">
-            <label for="slug">Slug *</label>
-            <input type="text" id="slug" required placeholder="e.g., sandwich, beverage, bagel" pattern="[a-z0-9_]+" />
-            <div class="hint">Unique identifier (lowercase, underscores only). Used in code and API.</div>
-          </div>
-
-          <div class="form-group">
-            <div class="checkbox-row">
-              <input type="checkbox" id="isConfigurable" checked />
-              <label for="isConfigurable">Configurable</label>
+          <div class="attr-form-row">
+            <div class="form-group">
+              <label for="attrSlug">Slug *</label>
+              <input type="text" id="attrSlug" required placeholder="e.g., bread, cheese" pattern="[a-z0-9_]+" />
             </div>
-            <div class="hint">Configurable items have attributes that customers can customize (e.g., toppings, size)</div>
+            <div class="form-group">
+              <label for="attrDisplayName">Display Name</label>
+              <input type="text" id="attrDisplayName" placeholder="e.g., Bread Type, Cheese" />
+            </div>
+          </div>
+
+          <div class="attr-form-row">
+            <div class="form-group">
+              <label for="attrInputType">Input Type *</label>
+              <select id="attrInputType">
+                <option value="single_select">Single Select</option>
+                <option value="multi_select">Multi Select</option>
+                <option value="boolean">Yes/No</option>
+                <option value="text">Text</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="attrDisplayOrder">Display Order</label>
+              <input type="number" id="attrDisplayOrder" value="0" min="0" />
+            </div>
+          </div>
+
+          <div class="attr-form-row">
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="attrIsRequired" />
+                <label for="attrIsRequired">Required</label>
+              </div>
+              <div class="hint">Must be filled before order completes</div>
+            </div>
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="attrAskInConversation" checked />
+                <label for="attrAskInConversation">Ask in Conversation</label>
+              </div>
+              <div class="hint">Bot will ask about this attribute</div>
+            </div>
           </div>
 
           <div class="form-group">
-            <div class="checkbox-row">
-              <input type="checkbox" id="skipConfig" />
-              <label for="skipConfig">Skip Configuration</label>
+            <label for="attrQuestionText">Question Text</label>
+            <input type="text" id="attrQuestionText" placeholder="e.g., What type of bread would you like?" />
+            <div class="hint">Question the bot asks when collecting this attribute</div>
+          </div>
+
+          <div class="form-group" id="optionsSection">
+            <label>Options (for select types)</label>
+            <div class="hint">Available choices for this attribute</div>
+            <div class="options-list" id="attrOptionsList">
+              <div class="empty-attrs" style="padding: 12px;">No options defined</div>
             </div>
-            <div class="hint">Skip asking configuration questions (e.g., simple beverages that don't need hot/iced choice)</div>
+            <div class="add-option-row">
+              <input type="text" id="newOptionSlug" placeholder="Option slug (e.g., plain)" />
+              <input type="text" id="newOptionDisplay" placeholder="Display name (optional)" />
+              <button type="button" class="attr-btn" id="addOptionBtn" style="background: #4caf50; color: #fff;">Add</button>
+            </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn" id="cancelBtn">Cancel</button>
-        <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete</button>
-        <button type="button" class="btn primary" id="saveBtn">Save</button>
+        <button type="button" class="btn" id="attrCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="attrDeleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn primary" id="attrSaveBtn">Save</button>
       </div>
     </div>
   </div>
@@ -429,8 +732,9 @@
   </div>
 
   <script>
-    // API base URL - uses existing modifiers endpoint
+    // API base URLs
     const API_BASE = "/admin/modifiers/item-types";
+    const ATTRS_API_BASE = "/admin/item-type-attributes";
 
     // Auth credentials storage
     let authCredentials = null;
@@ -479,15 +783,24 @@
     const itemTypeList = document.getElementById("itemTypeList");
     const itemTypeCount = document.getElementById("itemTypeCount");
     const itemTypeModal = document.getElementById("itemTypeModal");
+    const itemTypeModalContent = document.getElementById("itemTypeModalContent");
     const deleteModal = document.getElementById("deleteModal");
     const modalTitle = document.getElementById("modalTitle");
     const itemTypeForm = document.getElementById("itemTypeForm");
     const deleteBtn = document.getElementById("deleteBtn");
+    const modalTabs = document.getElementById("modalTabs");
+    const tabBasic = document.getElementById("tabBasic");
+    const tabAttributes = document.getElementById("tabAttributes");
+    const attributesList = document.getElementById("attributesList");
+    const attributeModal = document.getElementById("attributeModal");
 
     // Current state
     let itemTypes = [];
     let editingItemTypeId = null;
     let deletingItemTypeId = null;
+    let currentAttributes = [];
+    let editingAttributeId = null;
+    let pendingOptions = []; // Options being added to a new attribute
 
     // Load item types from API
     async function loadItemTypes() {
@@ -505,6 +818,21 @@
       }
     }
 
+    // Load attributes for an item type
+    async function loadAttributes(itemTypeId) {
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}?item_type_id=${itemTypeId}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        currentAttributes = await response.json();
+        renderAttributes();
+      } catch (error) {
+        console.error("Failed to load attributes:", error);
+        attributesList.innerHTML = '<div class="empty-attrs">Failed to load attributes</div>';
+      }
+    }
+
     // Show status message
     function showStatus(message, type = "info") {
       statusBar.textContent = message;
@@ -518,7 +846,7 @@
     // Escape HTML to prevent XSS
     function escapeHtml(text) {
       const div = document.createElement("div");
-      div.textContent = text;
+      div.textContent = text || "";
       return div.innerHTML;
     }
 
@@ -559,15 +887,91 @@
       });
     }
 
+    // Render attributes list
+    function renderAttributes() {
+      if (currentAttributes.length === 0) {
+        attributesList.innerHTML = '<div class="empty-attrs">No attributes defined. Click "+ Add" to create one.</div>';
+        return;
+      }
+
+      attributesList.innerHTML = currentAttributes.map(attr => `
+        <div class="attr-row" data-id="${attr.id}">
+          <div class="attr-info">
+            <span class="attr-name">${escapeHtml(attr.display_name || attr.slug)}</span>
+            <span class="attr-slug">${escapeHtml(attr.slug)}</span>
+            <div class="attr-meta">
+              <span class="attr-badge type">${attr.input_type.replace('_', ' ')}</span>
+              ${attr.is_required ? '<span class="attr-badge required">Required</span>' : ''}
+              ${attr.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
+              ${attr.options && attr.options.length > 0 ? `<span class="attr-badge options">${attr.options.length} options</span>` : ''}
+            </div>
+          </div>
+          <div class="attr-actions">
+            <button class="attr-btn edit-attr-btn" data-id="${attr.id}">Edit</button>
+            <button class="attr-btn danger delete-attr-btn" data-id="${attr.id}">Delete</button>
+          </div>
+        </div>
+      `).join("");
+
+      // Add click handlers
+      document.querySelectorAll(".edit-attr-btn").forEach(btn => {
+        btn.addEventListener("click", () => openAttributeModal(parseInt(btn.dataset.id)));
+      });
+      document.querySelectorAll(".delete-attr-btn").forEach(btn => {
+        btn.addEventListener("click", () => deleteAttribute(parseInt(btn.dataset.id)));
+      });
+    }
+
+    // Render pending options in attribute form
+    function renderPendingOptions() {
+      const container = document.getElementById("attrOptionsList");
+      if (pendingOptions.length === 0) {
+        container.innerHTML = '<div class="empty-attrs" style="padding: 12px;">No options defined</div>';
+        return;
+      }
+
+      container.innerHTML = pendingOptions.map((opt, idx) => `
+        <div class="option-row">
+          <div class="option-info">
+            <span>${escapeHtml(opt.display_name || opt.slug)}</span>
+            <span style="color: #888; font-size: 11px; margin-left: 8px;">(${escapeHtml(opt.slug)})</span>
+            ${opt.is_default ? '<span class="option-default">default</span>' : ''}
+          </div>
+          <button class="attr-btn danger remove-option-btn" data-idx="${idx}" type="button">&times;</button>
+        </div>
+      `).join("");
+
+      // Add remove handlers
+      document.querySelectorAll(".remove-option-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          pendingOptions.splice(parseInt(btn.dataset.idx), 1);
+          renderPendingOptions();
+        });
+      });
+    }
+
+    // Switch tabs
+    function switchTab(tabName) {
+      document.querySelectorAll(".modal-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.tab === tabName);
+      });
+      tabBasic.classList.toggle("active", tabName === "basic");
+      tabAttributes.classList.toggle("active", tabName === "attributes");
+    }
+
     // Open the modal for adding a new item type
     function openAddModal() {
       editingItemTypeId = null;
       modalTitle.textContent = "Add New Item Type";
       deleteBtn.style.display = "none";
+      modalTabs.style.display = "none";
+      itemTypeModalContent.classList.remove("wide");
       itemTypeForm.reset();
       document.getElementById("itemTypeId").value = "";
       document.getElementById("isConfigurable").checked = true;
       document.getElementById("skipConfig").checked = false;
+      document.getElementById("slug").dataset.manuallyEdited = "";
+      switchTab("basic");
       itemTypeModal.classList.add("active");
     }
 
@@ -580,8 +984,10 @@
       }
 
       editingItemTypeId = itemTypeId;
-      modalTitle.textContent = "Edit Item Type";
+      modalTitle.textContent = `Edit: ${itemType.display_name}`;
       deleteBtn.style.display = "inline-block";
+      modalTabs.style.display = "flex";
+      itemTypeModalContent.classList.add("wide");
 
       // Populate form fields
       document.getElementById("itemTypeId").value = itemType.id;
@@ -590,6 +996,11 @@
       document.getElementById("isConfigurable").checked = itemType.is_configurable;
       document.getElementById("skipConfig").checked = itemType.skip_config || false;
 
+      // Load attributes
+      attributesList.innerHTML = '<div class="empty-attrs">Loading attributes...</div>';
+      loadAttributes(itemTypeId);
+
+      switchTab("basic");
       itemTypeModal.classList.add("active");
     }
 
@@ -597,6 +1008,7 @@
     function closeModal() {
       itemTypeModal.classList.remove("active");
       editingItemTypeId = null;
+      currentAttributes = [];
     }
 
     // Close the delete modal
@@ -701,6 +1113,230 @@
       }
     }
 
+    // =====================
+    // Attribute Modal Functions
+    // =====================
+
+    function openAttributeModal(attrId = null) {
+      editingAttributeId = attrId;
+      pendingOptions = [];
+
+      const form = document.getElementById("attributeForm");
+      form.reset();
+      document.getElementById("attrId").value = "";
+
+      if (attrId) {
+        // Editing existing attribute
+        const attr = currentAttributes.find(a => a.id === attrId);
+        if (!attr) return;
+
+        document.getElementById("attrModalTitle").textContent = "Edit Attribute";
+        document.getElementById("attrDeleteBtn").style.display = "inline-block";
+        document.getElementById("attrId").value = attr.id;
+        document.getElementById("attrSlug").value = attr.slug;
+        document.getElementById("attrDisplayName").value = attr.display_name || "";
+        document.getElementById("attrInputType").value = attr.input_type;
+        document.getElementById("attrDisplayOrder").value = attr.display_order || 0;
+        document.getElementById("attrIsRequired").checked = attr.is_required;
+        document.getElementById("attrAskInConversation").checked = attr.ask_in_conversation;
+        document.getElementById("attrQuestionText").value = attr.question_text || "";
+
+        // Load existing options
+        pendingOptions = (attr.options || []).map(opt => ({
+          id: opt.id,
+          slug: opt.slug,
+          display_name: opt.display_name,
+          is_default: opt.is_default
+        }));
+      } else {
+        // Adding new attribute
+        document.getElementById("attrModalTitle").textContent = "Add Attribute";
+        document.getElementById("attrDeleteBtn").style.display = "none";
+        document.getElementById("attrAskInConversation").checked = true;
+      }
+
+      updateOptionsVisibility();
+      renderPendingOptions();
+      attributeModal.classList.add("active");
+    }
+
+    function closeAttributeModal() {
+      attributeModal.classList.remove("active");
+      editingAttributeId = null;
+      pendingOptions = [];
+    }
+
+    function updateOptionsVisibility() {
+      const inputType = document.getElementById("attrInputType").value;
+      const optionsSection = document.getElementById("optionsSection");
+      optionsSection.style.display = (inputType === "single_select" || inputType === "multi_select") ? "block" : "none";
+    }
+
+    async function saveAttribute() {
+      const slug = document.getElementById("attrSlug").value.trim().toLowerCase();
+      const displayName = document.getElementById("attrDisplayName").value.trim();
+      const inputType = document.getElementById("attrInputType").value;
+      const displayOrder = parseInt(document.getElementById("attrDisplayOrder").value) || 0;
+      const isRequired = document.getElementById("attrIsRequired").checked;
+      const askInConversation = document.getElementById("attrAskInConversation").checked;
+      const questionText = document.getElementById("attrQuestionText").value.trim();
+
+      if (!slug) {
+        showStatus("Slug is required", "error");
+        return;
+      }
+
+      if (!/^[a-z0-9_]+$/.test(slug)) {
+        showStatus("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const payload = {
+        item_type_id: editingItemTypeId,
+        slug: slug,
+        display_name: displayName || null,
+        input_type: inputType,
+        display_order: displayOrder,
+        is_required: isRequired,
+        ask_in_conversation: askInConversation,
+        question_text: questionText || null
+      };
+
+      try {
+        let response;
+        let attrId = editingAttributeId;
+
+        if (editingAttributeId) {
+          response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(ATTRS_API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        // Get the attribute ID from response for new attributes
+        const savedAttr = await response.json();
+        attrId = savedAttr.id;
+
+        // Sync options if this is a select type
+        if (inputType === "single_select" || inputType === "multi_select") {
+          await syncOptions(attrId);
+        }
+
+        showStatus(`Attribute "${slug}" saved`, "success");
+        closeAttributeModal();
+        await loadAttributes(editingItemTypeId);
+      } catch (error) {
+        console.error("Failed to save attribute:", error);
+        showStatus(`Failed to save attribute: ${error.message}`, "error");
+      }
+    }
+
+    async function syncOptions(attrId) {
+      // Get current options from server
+      const currentOptions = editingAttributeId
+        ? (currentAttributes.find(a => a.id === editingAttributeId)?.options || [])
+        : [];
+
+      // Find options to delete (in currentOptions but not in pendingOptions)
+      const pendingSlugs = new Set(pendingOptions.map(o => o.slug));
+      const optionsToDelete = currentOptions.filter(o => !pendingSlugs.has(o.slug));
+
+      // Find options to create (in pendingOptions but have no id)
+      const optionsToCreate = pendingOptions.filter(o => !o.id);
+
+      // Delete removed options
+      for (const opt of optionsToDelete) {
+        try {
+          await authFetch(`${ATTRS_API_BASE}/${attrId}/options/${opt.id}`, {
+            method: "DELETE"
+          });
+        } catch (e) {
+          console.error("Failed to delete option:", opt.slug, e);
+        }
+      }
+
+      // Create new options
+      for (let i = 0; i < optionsToCreate.length; i++) {
+        const opt = optionsToCreate[i];
+        try {
+          await authFetch(`${ATTRS_API_BASE}/${attrId}/options`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              slug: opt.slug,
+              display_name: opt.display_name || opt.slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              is_default: opt.is_default || false,
+              display_order: i
+            })
+          });
+        } catch (e) {
+          console.error("Failed to create option:", opt.slug, e);
+        }
+      }
+    }
+
+    async function deleteAttribute(attrId) {
+      const attr = currentAttributes.find(a => a.id === attrId);
+      if (!attr) return;
+
+      if (!confirm(`Delete attribute "${attr.display_name || attr.slug}"?`)) return;
+
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}/${attrId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        showStatus(`Attribute deleted`, "success");
+        await loadAttributes(editingItemTypeId);
+      } catch (error) {
+        console.error("Failed to delete attribute:", error);
+        showStatus(`Failed to delete attribute: ${error.message}`, "error");
+      }
+    }
+
+    function addPendingOption() {
+      const slugInput = document.getElementById("newOptionSlug");
+      const displayInput = document.getElementById("newOptionDisplay");
+      const slug = slugInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+      if (!slug) {
+        showStatus("Option slug is required", "error");
+        return;
+      }
+
+      if (pendingOptions.some(o => o.slug === slug)) {
+        showStatus("Option with this slug already exists", "error");
+        return;
+      }
+
+      pendingOptions.push({
+        slug: slug,
+        display_name: displayInput.value.trim() || null,
+        is_default: false
+      });
+
+      slugInput.value = "";
+      displayInput.value = "";
+      renderPendingOptions();
+    }
+
     // Event listeners
     document.getElementById("addItemTypeBtn").addEventListener("click", openAddModal);
     document.getElementById("modalClose").addEventListener("click", closeModal);
@@ -710,6 +1346,24 @@
     document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
     document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
     document.getElementById("deleteConfirmBtn").addEventListener("click", deleteItemType);
+    document.getElementById("closeAttrsBtn").addEventListener("click", closeModal);
+
+    // Tab switching
+    document.querySelectorAll(".modal-tab").forEach(tab => {
+      tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    });
+
+    // Attribute modal events
+    document.getElementById("addAttributeBtn").addEventListener("click", () => openAttributeModal());
+    document.getElementById("attrModalClose").addEventListener("click", closeAttributeModal);
+    document.getElementById("attrCancelBtn").addEventListener("click", closeAttributeModal);
+    document.getElementById("attrSaveBtn").addEventListener("click", saveAttribute);
+    document.getElementById("attrDeleteBtn").addEventListener("click", () => {
+      if (editingAttributeId) deleteAttribute(editingAttributeId);
+      closeAttributeModal();
+    });
+    document.getElementById("attrInputType").addEventListener("change", updateOptionsVisibility);
+    document.getElementById("addOptionBtn").addEventListener("click", addPendingOption);
 
     // Close modals when clicking outside
     itemTypeModal.addEventListener("click", (e) => {
@@ -718,12 +1372,19 @@
     deleteModal.addEventListener("click", (e) => {
       if (e.target === deleteModal) closeDeleteModal();
     });
+    attributeModal.addEventListener("click", (e) => {
+      if (e.target === attributeModal) closeAttributeModal();
+    });
 
     // Close modals on Escape key
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        closeModal();
-        closeDeleteModal();
+        if (attributeModal.classList.contains("active")) {
+          closeAttributeModal();
+        } else {
+          closeModal();
+          closeDeleteModal();
+        }
       }
     });
 
@@ -750,6 +1411,17 @@
     // Mark slug as manually edited
     document.getElementById("slug").addEventListener("input", () => {
       document.getElementById("slug").dataset.manuallyEdited = "true";
+    });
+
+    // Auto-generate attribute slug from display name
+    document.getElementById("attrDisplayName").addEventListener("input", (e) => {
+      const slugField = document.getElementById("attrSlug");
+      if (!editingAttributeId && !slugField.value) {
+        slugField.value = e.target.value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '');
+      }
     });
 
     // Initial load

@@ -499,16 +499,17 @@ class EspressoItemTask(ItemTask):
         return self.get_summary()
 
 
-class SpeedMenuBagelItemTask(ItemTask):
-    """Task for a pre-configured speed menu bagel (e.g., 'The Classic', 'The Leo').
+class SignatureItemTask(ItemTask):
+    """Task for a signature item (e.g., 'The Classic BEC', 'The Leo', 'The Max Zucker').
 
-    These items only need a toasted preference - no other configuration.
+    Signature items are pre-configured menu items with is_signature=true in the database.
+    They need bagel type selection, toasted preference, and sometimes cheese selection.
     """
 
-    item_type: Literal["speed_menu_bagel"] = "speed_menu_bagel"
+    item_type: Literal["signature_item"] = "signature_item"
 
-    # Speed menu bagel fields
-    menu_item_name: str  # The name of the item (e.g., "The Classic")
+    # Signature item fields
+    menu_item_name: str  # The name of the item (e.g., "The Classic BEC")
     menu_item_id: int | None = None  # Database ID if matched
     toasted: bool | None = None  # True=toasted, False=not toasted, None=not specified
     bagel_choice: str | None = None  # Custom bagel choice (e.g., "wheat" for "Classic BEC on wheat")
@@ -554,6 +555,10 @@ class SpeedMenuBagelItemTask(ItemTask):
         if self.toasted is None:
             return "Would you like that toasted?"
         return None
+
+
+# Backwards compatibility alias
+SpeedMenuBagelItemTask = SignatureItemTask
 
 
 class MenuItemTask(ItemTask):
@@ -990,7 +995,7 @@ class OrderTask(BaseTask):
 
         Args:
             item_id: The item's unique ID
-            item_type: Type of item (bagel, coffee, speed_menu_bagel, etc.)
+            item_type: Type of item (bagel, coffee, signature_item, etc.)
             item_name: Display name for abbreviated follow-up questions
             pending_field: The field to configure (toasted, bagel_type, etc.)
         """

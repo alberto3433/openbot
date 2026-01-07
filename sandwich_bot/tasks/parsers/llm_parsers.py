@@ -448,9 +448,9 @@ def parse_open_input(
 The user said: "{user_input}"
 
 Determine what they want:
-- If ordering a SPEED MENU BAGEL (The Classic, The Leo, The Traditional, The Max Zucker,
+- If ordering a SIGNATURE ITEM (The Classic, The Leo, The Traditional, The Max Zucker,
   The Classic BEC, The Avocado Toast, The Chelsea Club, The Flatiron Traditional,
-  The Old School Tuna Sandwich), use new_speed_menu_bagel fields (see examples below)
+  The Old School Tuna Sandwich), use new_signature_item fields (see examples below)
 - If ordering a different menu item by name (e.g., "the chipotle egg omelette", omelettes, sandwiches),
   set new_menu_item to the item name and new_menu_item_quantity to the number ordered
 - If ordering bagels:
@@ -545,29 +545,29 @@ Side orders (IMPORTANT - these are SEPARATE items, not toppings on bagels!):
 - "same as last time" -> wants_repeat_order: true
 - "my usual" -> wants_repeat_order: true
 
-Speed menu bagel orders (pre-configured sandwiches):
+Signature item orders (pre-configured sandwiches):
 - These are specific named menu items that come pre-configured: "The Classic", "The Classic BEC",
   "The Traditional", "The Leo", "The Max Zucker", "The Avocado Toast", "The Chelsea Club",
   "The Flatiron Traditional", "The Old School Tuna Sandwich"
 - "bacon egg and cheese" / "BEC" / "bacon egg cheese" are ALL "The Classic BEC"
 - "ham egg and cheese" / "HEC" are The Classic with ham instead of bacon
-- When user orders these by name, set new_speed_menu_bagel=true and new_speed_menu_bagel_name to the item name
-- "3 Classics" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic", new_speed_menu_bagel_quantity: 3
-- "The Leo please" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Leo"
-- "two Traditionals toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Traditional", new_speed_menu_bagel_quantity: 2, new_speed_menu_bagel_toasted: true
-- "a Max Zucker" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Max Zucker"
-- "Classic BEC" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC"
-- "bacon egg and cheese bagel" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC" (DO NOT set bagel_choice to "egg" - the "egg" is part of the item name, not the bagel type!)
-- "bacon egg and cheese on everything" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC", new_speed_menu_bagel_bagel_choice: "everything"
-- "ham egg and cheese bagel" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC" (ham variant, but map to BEC)
-- "the avocado toast" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Avocado Toast"
-- "Chelsea Club toasted" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Chelsea Club", new_speed_menu_bagel_toasted: true
+- When user orders these by name, set new_signature_item=true and new_signature_item_name to the item name
+- "3 Classics" -> new_signature_item: true, new_signature_item_name: "The Classic", new_signature_item_quantity: 3
+- "The Leo please" -> new_signature_item: true, new_signature_item_name: "The Leo"
+- "two Traditionals toasted" -> new_signature_item: true, new_signature_item_name: "The Traditional", new_signature_item_quantity: 2, new_signature_item_toasted: true
+- "a Max Zucker" -> new_signature_item: true, new_signature_item_name: "The Max Zucker"
+- "Classic BEC" -> new_signature_item: true, new_signature_item_name: "The Classic BEC"
+- "bacon egg and cheese bagel" -> new_signature_item: true, new_signature_item_name: "The Classic BEC" (DO NOT set bagel_choice to "egg" - the "egg" is part of the item name, not the bagel type!)
+- "bacon egg and cheese on everything" -> new_signature_item: true, new_signature_item_name: "The Classic BEC", new_signature_item_bagel_choice: "everything"
+- "ham egg and cheese bagel" -> new_signature_item: true, new_signature_item_name: "The Classic BEC" (ham variant, but map to BEC)
+- "the avocado toast" -> new_signature_item: true, new_signature_item_name: "The Avocado Toast"
+- "Chelsea Club toasted" -> new_signature_item: true, new_signature_item_name: "The Chelsea Club", new_signature_item_toasted: true
 
 MULTI-ITEM ORDERS (IMPORTANT - extract ALL items!):
 - When user orders MULTIPLE different items in one message, you MUST extract ALL of them
 - If ordering a sandwich/menu item AND a drink together, set BOTH new_menu_item AND new_coffee fields
 - "The Lexington and an orange juice" -> new_menu_item: "The Lexington", new_coffee: true, new_coffee_type: "orange juice"
-- "Classic BEC with a coffee" -> new_speed_menu_bagel: true, new_speed_menu_bagel_name: "The Classic BEC", new_coffee: true, new_coffee_type: "coffee"
+- "Classic BEC with a coffee" -> new_signature_item: true, new_signature_item_name: "The Classic BEC", new_coffee: true, new_coffee_type: "coffee"
 - "Delancey and a latte" -> new_menu_item: "The Delancey", new_coffee: true, new_coffee_type: "latte"
 - "two bagels and a coffee" -> new_bagel: true, new_bagel_quantity: 2, new_coffee: true, new_coffee_type: "coffee"
 - "plain bagel and orange juice" -> new_bagel: true, new_bagel_type: "plain", new_coffee: true, new_coffee_type: "orange juice"
@@ -593,17 +593,17 @@ Menu queries (asking what items are available):
   - "what snacks do you have" -> menu_query: true, menu_query_type: "snack"
 - Do NOT use asking_signature_menu for general menu queries - only for signature/speed menu items
 
-Signature/Speed menu inquiries:
-- If user asks about signature items, speed menu, or pre-made options -> asking_signature_menu: true
+Signature item inquiries:
+- If user asks about signature items, signature menu, or pre-made options -> asking_signature_menu: true
 - Also set signature_menu_type to the specific type if mentioned:
-  - "what are your signature sandwiches" -> asking_signature_menu: true, signature_menu_type: "signature_sandwich"
-  - "what signature sandwiches do you have" -> asking_signature_menu: true, signature_menu_type: "signature_sandwich"
-  - "what are your speed menu bagels" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
-  - "what speed menu options do you have" -> asking_signature_menu: true (no specific type)
-  - "what signature bagels do you have" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
+  - "what are your signature sandwiches" -> asking_signature_menu: true, signature_menu_type: "signature_items"
+  - "what signature sandwiches do you have" -> asking_signature_menu: true, signature_menu_type: "signature_items"
+  - "what are your signature bagels" -> asking_signature_menu: true, signature_menu_type: "signature_item"
+  - "what signature menu options do you have" -> asking_signature_menu: true (no specific type)
+  - "what signature bagels do you have" -> asking_signature_menu: true, signature_menu_type: "signature_item"
   - "what are the signature items" -> asking_signature_menu: true (no specific type)
-  - "tell me about the speed menu" -> asking_signature_menu: true (no specific type)
-  - "what pre-made bagels do you have" -> asking_signature_menu: true, signature_menu_type: "speed_menu_bagel"
+  - "tell me about the signature menu" -> asking_signature_menu: true (no specific type)
+  - "what pre-made bagels do you have" -> asking_signature_menu: true, signature_menu_type: "signature_item"
 
 By-the-pound inquiries:
 - If user asks "what do you sell by the pound" or "do you have anything by the pound" -> asking_by_pound: true

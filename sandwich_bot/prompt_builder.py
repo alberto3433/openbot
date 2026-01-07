@@ -49,7 +49,7 @@ When the user asks about a specific item type (e.g., "what egg sandwiches do you
    - "fish sandwiches" → items_by_type["fish_sandwich"]
    - "bagels" → items_by_type["bagel"]
    - "sandwiches" → items_by_type["sandwich"] (for regular deli sandwiches)
-   - "signature sandwiches" → items_by_type["signature_sandwich"]
+   - "signature sandwiches" → items_by_type["signature_items"]
 2. List the item names and prices from that category
 3. If the type doesn't exist or is empty, let the user know and suggest what you do have
 

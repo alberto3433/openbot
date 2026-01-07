@@ -51,56 +51,65 @@ def client():
     # Create tables (including ChatSession)
     Base.metadata.create_all(bind=engine)
 
-    # Seed minimal menu
+    # Seed minimal menu (using get-or-create to avoid duplicates)
     session = TestingSessionLocal()
-    session.add(MenuItem(
-        name="Turkey Club",
-        category="sandwich",
-        is_signature=True,
-        base_price=8.0,
-        available_qty=5,
-        extra_metadata="{}",
-    ))
-    session.add(MenuItem(
-        name="Veggie Delight",
-        category="sandwich",
-        is_signature=True,
-        base_price=7.99,
-        available_qty=10,
-        extra_metadata="{}",
-    ))
-    session.add(MenuItem(
-        name="Italian Stallion",
-        category="sandwich",
-        is_signature=True,
-        base_price=9.49,
-        available_qty=10,
-        extra_metadata="{}",
-    ))
-    session.add(MenuItem(
-        name="Custom Sandwich",
-        category="sandwich",
-        is_signature=False,
-        base_price=5.99,
-        available_qty=100,
-        extra_metadata='{"is_custom": true}',
-    ))
-    session.add(MenuItem(
-        name="soda",
-        category="drink",
-        is_signature=False,
-        base_price=2.5,
-        available_qty=10,
-        extra_metadata="{}",
-    ))
-    session.add(MenuItem(
-        name="Chips",
-        category="side",
-        is_signature=False,
-        base_price=1.29,
-        available_qty=40,
-        extra_metadata="{}",
-    ))
+
+    test_menu_items = [
+        {
+            "name": "Turkey Club",
+            "category": "sandwich",
+            "is_signature": True,
+            "base_price": 8.0,
+            "available_qty": 5,
+            "extra_metadata": "{}",
+        },
+        {
+            "name": "Veggie Delight",
+            "category": "sandwich",
+            "is_signature": True,
+            "base_price": 7.99,
+            "available_qty": 10,
+            "extra_metadata": "{}",
+        },
+        {
+            "name": "Italian Stallion",
+            "category": "sandwich",
+            "is_signature": True,
+            "base_price": 9.49,
+            "available_qty": 10,
+            "extra_metadata": "{}",
+        },
+        {
+            "name": "Custom Sandwich",
+            "category": "sandwich",
+            "is_signature": False,
+            "base_price": 5.99,
+            "available_qty": 100,
+            "extra_metadata": '{"is_custom": true}',
+        },
+        {
+            "name": "soda",
+            "category": "drink",
+            "is_signature": False,
+            "base_price": 2.5,
+            "available_qty": 10,
+            "extra_metadata": "{}",
+        },
+        {
+            "name": "Chips",
+            "category": "side",
+            "is_signature": False,
+            "base_price": 1.29,
+            "available_qty": 40,
+            "extra_metadata": "{}",
+        },
+    ]
+
+    for item_data in test_menu_items:
+        existing = session.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
+        if not existing:
+            session.add(MenuItem(**item_data))
+
     session.commit()
     session.close()
 

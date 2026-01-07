@@ -505,7 +505,7 @@ class QueryHandler:
             "spread sandwich": ("spread_sandwich", "spread sandwiches"),
             "salad sandwich": ("salad_sandwich", "salad sandwiches"),
             "deli sandwich": ("deli_sandwich", "deli sandwiches"),
-            "signature sandwich": ("signature_sandwich", "signature sandwiches"),
+            "signature sandwich": ("signature_items", "signature sandwiches"),
         }
 
         if query_lower in sandwich_type_map:
@@ -623,7 +623,7 @@ class QueryHandler:
 
     def _recommend_sandwiches(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """Recommend popular sandwich options."""
-        signature = items_by_type.get("signature_sandwich", [])
+        signature = items_by_type.get("signature_items", [])
         egg_sandwiches = items_by_type.get("egg_sandwich", [])
 
         recommendations = []
@@ -659,11 +659,11 @@ class QueryHandler:
 
     def _recommend_breakfast(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """Recommend breakfast options."""
-        speed_menu = items_by_type.get("speed_menu_bagel", [])
+        signature_items = items_by_type.get("signature_item", [])
         omelettes = items_by_type.get("omelette", [])
 
         recommendations = []
-        for item in speed_menu[:1]:
+        for item in signature_items[:1]:
             name = item.get("name", "")
             if name:
                 recommendations.append(name)
@@ -685,7 +685,7 @@ class QueryHandler:
 
     def _recommend_lunch(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """Recommend lunch options."""
-        signature = items_by_type.get("signature_sandwich", [])
+        signature = items_by_type.get("signature_items", [])
         salad = items_by_type.get("salad_sandwich", [])
 
         recommendations = []
@@ -709,12 +709,12 @@ class QueryHandler:
 
     def _recommend_general(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """General recommendation when no specific category is asked."""
-        speed_menu = items_by_type.get("speed_menu_bagel", [])
-        speed_item = speed_menu[0].get("name", "") if speed_menu else None
+        signature_items = items_by_type.get("signature_item", [])
+        signature_item_name = signature_items[0].get("name", "") if signature_items else None
 
-        if speed_item:
+        if signature_item_name:
             message = (
-                f"Our {speed_item} is really popular! "
+                f"Our {signature_item_name} is really popular! "
                 "We're also known for our everything bagels with cream cheese, and our lattes are great too. "
                 "What are you in the mood for?"
             )
@@ -807,9 +807,8 @@ class QueryHandler:
             else:
                 type_display_name = type_name + "s"
         else:
-            items = []
-            items.extend(items_by_type.get("signature_sandwich", []))
-            items.extend(items_by_type.get("speed_menu_bagel", []))
+            # Get all signature items (already aggregated with is_signature=true)
+            items = items_by_type.get("signature_items", [])
             type_display_name = "signature menu options"
 
         if not items:
@@ -914,7 +913,7 @@ class QueryHandler:
                     "sides": ["side"],
                     "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
                     "desserts": ["dessert", "pastry", "snack"],
-                    "signature_bagels": ["speed_menu_bagel"],
+                    "signature_bagels": ["signature_item"],
                     "signature_omelettes": ["omelette"],
                 }
                 items_by_type = self._menu_data.get("items_by_type", {})

@@ -37,6 +37,7 @@ from .parsers.deterministic import (
     extract_spread_with_disambiguation,
 )
 from .parsers.constants import (
+    DEFAULT_PAGINATION_SIZE,
     MORE_MENU_ITEMS_PATTERNS,
     get_spread_types,
     get_bagel_types,
@@ -44,14 +45,14 @@ from .parsers.constants import (
 )
 from .message_builder import MessageBuilder
 from .handler_config import HandlerConfig
+from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
-# Batch size for paginating bagel types
-BAGEL_TYPE_BATCH_SIZE = 4
+# NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 # NOTE: get_bagel_types_list() is now loaded from the database via get_bagel_types_list()
 # from parsers.constants, which delegates to menu_data_cache.
@@ -173,6 +174,45 @@ class BagelConfigHandler:
         self._get_item_by_id = get_item_by_id or kwargs.get("get_item_by_id")
         self._configure_coffee = configure_coffee or kwargs.get("configure_coffee")
 
+    def _get_bagel_question(self, field_name: str, fallback: str) -> str:
+        """
+        Get the question text for a bagel field from the database configuration.
+
+        Uses the item_type_attributes table (via menu_cache) to get the question
+        configured in the admin UI. Falls back to the provided default if not found.
+
+        Args:
+            field_name: The attribute slug (e.g., "bagel_type", "toasted", "spread")
+            fallback: Default question text if not found in database
+
+        Returns:
+            The question text from the database, or the fallback if not found.
+        """
+        question = menu_cache.get_question_for_field("bagel", field_name)
+        if question and question.strip():
+            return question
+        return fallback
+
+    def _should_ask_bagel_field(self, field_name: str) -> bool:
+        """
+        Check if a bagel field should be asked based on database configuration.
+
+        Checks the ask_in_conversation flag from item_type_attributes table.
+
+        Args:
+            field_name: The attribute slug (e.g., "bagel_type", "toasted", "spread")
+
+        Returns:
+            True if the field should be asked, False otherwise.
+            Returns True by default if field not found (fail-safe).
+        """
+        fields = menu_cache.get_item_type_fields("bagel")
+        for field in fields:
+            if field["field_name"] == field_name:
+                return field.get("ask", True)
+        # Field not found in DB - default to asking (fail-safe)
+        return True
+
     def _resolve_spread_disambiguation(
         self,
         user_input: str,
@@ -248,9 +288,9 @@ class BagelConfigHandler:
             if pagination and pagination.get("category") == "bagel_types":
                 offset = pagination.get("offset", 0)
                 # Get next batch of bagel types
-                batch = get_bagel_types_list()[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                batch = get_bagel_types_list()[offset:offset + DEFAULT_PAGINATION_SIZE]
                 if batch:
-                    new_offset = offset + BAGEL_TYPE_BATCH_SIZE
+                    new_offset = offset + DEFAULT_PAGINATION_SIZE
                     has_more = new_offset < len(get_bagel_types_list())
                     if has_more:
                         order.set_menu_pagination("bagel_types", new_offset, len(get_bagel_types_list()))
@@ -274,9 +314,9 @@ class BagelConfigHandler:
                     )
             # No pagination state - show first batch
             else:
-                batch = get_bagel_types_list()[:BAGEL_TYPE_BATCH_SIZE]
+                batch = get_bagel_types_list()[:DEFAULT_PAGINATION_SIZE]
                 types_str = ", ".join(batch)
-                order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(get_bagel_types_list()))
+                order.set_menu_pagination("bagel_types", DEFAULT_PAGINATION_SIZE, len(get_bagel_types_list()))
                 return StateMachineResult(
                     message=f"We have {types_str}, and more.",
                     order=order,
@@ -320,9 +360,9 @@ class BagelConfigHandler:
 
         if not bagel_type:
             # Show first batch of bagel types and set up pagination
-            batch = get_bagel_types_list()[:BAGEL_TYPE_BATCH_SIZE]
+            batch = get_bagel_types_list()[:DEFAULT_PAGINATION_SIZE]
             types_str = ", ".join(batch)
-            order.set_menu_pagination("bagel_types", BAGEL_TYPE_BATCH_SIZE, len(get_bagel_types_list()))
+            order.set_menu_pagination("bagel_types", DEFAULT_PAGINATION_SIZE, len(get_bagel_types_list()))
             return StateMachineResult(
                 message=f"What kind of bagel? We have {types_str}, and more.",
                 order=order,
@@ -425,12 +465,11 @@ class BagelConfigHandler:
 
         if is_asking_for_options:
             # Show cream cheese options with pagination
-            batch_size = 6  # Show more cream cheese types per batch
-            batch = _get_cream_cheese_types_list()[:batch_size]
+            batch = _get_cream_cheese_types_list()[:DEFAULT_PAGINATION_SIZE]
             types_str = ", ".join(batch)
-            has_more = len(_get_cream_cheese_types_list()) > batch_size
+            has_more = len(_get_cream_cheese_types_list()) > DEFAULT_PAGINATION_SIZE
             if has_more:
-                order.set_menu_pagination("cream_cheese_types", batch_size, len(_get_cream_cheese_types_list()))
+                order.set_menu_pagination("cream_cheese_types", DEFAULT_PAGINATION_SIZE, len(_get_cream_cheese_types_list()))
                 return StateMachineResult(
                     message=f"We have {types_str}, and more. Which would you like?",
                     order=order,
@@ -446,9 +485,9 @@ class BagelConfigHandler:
             pagination = order.get_menu_pagination()
             if pagination and pagination.get("category") == "cream_cheese_types":
                 offset = pagination.get("offset", 0)
-                batch = _get_cream_cheese_types_list()[offset:offset + BAGEL_TYPE_BATCH_SIZE]
+                batch = _get_cream_cheese_types_list()[offset:offset + DEFAULT_PAGINATION_SIZE]
                 if batch:
-                    new_offset = offset + BAGEL_TYPE_BATCH_SIZE
+                    new_offset = offset + DEFAULT_PAGINATION_SIZE
                     has_more = new_offset < len(_get_cream_cheese_types_list())
                     if has_more:
                         order.set_menu_pagination("cream_cheese_types", new_offset, len(_get_cream_cheese_types_list()))
@@ -1042,36 +1081,46 @@ class BagelConfigHandler:
             # Handle BagelItemTask
             bagel = item
 
-            # Ask about type first
-            if not bagel.bagel_type:
+            # Ask about type first (if configured to ask in conversation)
+            if not bagel.bagel_type and self._should_ask_bagel_field("bagel_type"):
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "bagel_choice"
+                # Get question from database, with fallback
+                base_question = self._get_bagel_question(
+                    "bagel_type",
+                    "What kind of bagel would you like?"
+                )
                 if total_items > 1:
                     return StateMachineResult(
-                        message=f"For {bagel_desc}, what kind of bagel would you like that on?",
+                        message=f"For {bagel_desc}, {base_question.lower()}",
                         order=order,
                     )
                 else:
                     return StateMachineResult(
-                        message="What kind of bagel would you like that on?",
+                        message=base_question,
                         order=order,
                     )
 
-            # Then ask about toasted (with bagel type confirmation)
-            if bagel.toasted is None:
+            # Then ask about toasted (if configured to ask in conversation)
+            if bagel.toasted is None and self._should_ask_bagel_field("toasted"):
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "toasted"
                 bagel_type_desc = f"{bagel.bagel_type} bagel" if bagel.bagel_type else "bagel"
+                # Get question from database, with fallback
+                base_question = self._get_bagel_question(
+                    "toasted",
+                    "Would you like it toasted?"
+                )
                 if total_items > 1:
                     return StateMachineResult(
-                        message=f"Ok, {bagel_type_desc}. For {bagel_desc}, would you like that toasted?",
+                        message=f"Ok, {bagel_type_desc}. For {bagel_desc}, {base_question.lower()}",
                         order=order,
                     )
                 else:
                     return StateMachineResult(
-                        message=f"Ok, {bagel_type_desc}. Would you like that toasted?",
+                        message=f"Ok, {bagel_type_desc}. {base_question}",
                         order=order,
                     )
 
@@ -1092,18 +1141,25 @@ class BagelConfigHandler:
                     )
 
             # Then ask about spread (skip if bagel already has toppings)
-            if bagel.spread is None and not bagel.extras and not bagel.sandwich_protein:
+            # Business rule: skip spread if bagel has extras or protein (still in code)
+            if (bagel.spread is None and not bagel.extras and not bagel.sandwich_protein
+                    and self._should_ask_bagel_field("spread")):
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = bagel.id
                 order.pending_field = "spread"
+                # Get question from database, with fallback
+                base_question = self._get_bagel_question(
+                    "spread",
+                    "Any spread on that?"
+                )
                 if total_items > 1:
                     return StateMachineResult(
-                        message=f"For {bagel_desc}, would you like cream cheese or butter?",
+                        message=f"For {bagel_desc}, {base_question.lower()}",
                         order=order,
                     )
                 else:
                     return StateMachineResult(
-                        message="Would you like cream cheese or butter on that?",
+                        message=base_question,
                         order=order,
                     )
 

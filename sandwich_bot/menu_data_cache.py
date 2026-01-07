@@ -74,7 +74,7 @@ class MenuDataCache:
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
         self._coffee_alias_to_canonical: dict[str, str] = {}
         self._soda_alias_to_canonical: dict[str, str] = {}
-        self._speed_menu_bagels: dict[str, str] = {}  # alias -> menu item name
+        self._signature_item_aliases: dict[str, str] = {}  # alias -> menu item name
         self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
         self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
@@ -93,10 +93,19 @@ class MenuDataCache:
         self._by_pound_aliases: dict[str, tuple[str, str]] = {}  # alias -> (canonical_name, category)
         self._by_pound_category_names: dict[str, str] = {}  # slug -> display_name
 
+        # Item type field configurations
+        self._item_type_fields: dict[str, list[dict]] = {}  # item_type_slug -> list of field configs
+
+        # Response patterns for recognizing user intent
+        self._response_patterns: dict[str, set[str]] = {}  # pattern_type -> set of patterns
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
         self._menu_item_keyword_index: dict[str, list[str]] = {}
+
+        # Cached menu index (expensive to build, loaded once at startup)
+        self._menu_index: dict[str, Any] = {}
 
         # Metadata
         self._last_refresh: datetime | None = None
@@ -144,13 +153,16 @@ class MenuDataCache:
                 self._load_coffee_types(db)
                 self._load_soda_types(db)
                 self._load_known_menu_items(db)
-                self._load_speed_menu_bagels(db)
+                self._load_signature_item_aliases(db)
                 self._load_by_pound_items(db)
                 self._load_by_pound_category_names(db)
                 self._load_modifier_aliases(db)
                 self._load_side_items(db)
                 self._load_category_keywords(db)
                 self._load_abbreviations(db)
+                self._load_item_type_fields(db)
+                self._load_response_patterns(db)
+                self._load_menu_index(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -161,7 +173,7 @@ class MenuDataCache:
                 logger.info(
                     "Menu data cache loaded: %d spread_types, %d bagel_types, "
                     "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
-                    "%d soda_types, %d menu_items, %d speed_menu_aliases, "
+                    "%d soda_types, %d menu_items, %d signature_item_aliases,"
                     "%d by_pound_categories, %d abbreviations",
                     len(self._spread_types),
                     len(self._bagel_types),
@@ -171,7 +183,7 @@ class MenuDataCache:
                     len(self._coffee_types),
                     len(self._soda_types),
                     len(self._known_menu_items),
-                    len(self._speed_menu_bagels),
+                    len(self._signature_item_aliases),
                     len(self._by_pound_items),
                     len(self._abbreviations),
                 )
@@ -611,22 +623,21 @@ class MenuDataCache:
             len(alias_to_canonical),
         )
 
-    def _load_speed_menu_bagels(self, db: Session) -> None:
-        """Load speed menu bagel aliases from signature items.
+    def _load_signature_item_aliases(self, db: Session) -> None:
+        """Load signature item aliases from database.
 
         Builds a mapping from user input variations (aliases) to the actual
-        menu item names in the database. This replaces the hardcoded
-        SPEED_MENU_BAGELS constant.
+        menu item names in the database.
 
         The mapping is used for recognizing orders like "bec", "bacon egg and cheese",
-        "the classic", etc. and resolving them to actual menu items.
+        "the classic", "the leo", etc. and resolving them to actual menu items.
         """
         from .models import MenuItem
 
-        speed_menu_bagels: dict[str, str] = {}
+        signature_item_aliases: dict[str, str] = {}
 
         # Query signature items with aliases
-        # Only signature items should be in the speed menu mapping
+        # Only signature items should be in this mapping
         # (non-signature items like "Coffee" have their own parsing flow)
         items_with_aliases = (
             db.query(MenuItem)
@@ -643,21 +654,21 @@ class MenuDataCache:
             for alias in item.aliases.split(","):
                 alias = alias.strip().lower()
                 if alias:
-                    speed_menu_bagels[alias] = canonical_name
+                    signature_item_aliases[alias] = canonical_name
 
             # Also add variations of the item name itself
             name_lower = item.name.lower()
-            speed_menu_bagels[name_lower] = canonical_name
+            signature_item_aliases[name_lower] = canonical_name
 
             # Add without "The " prefix if present
             if name_lower.startswith("the "):
-                speed_menu_bagels[name_lower[4:]] = canonical_name
+                signature_item_aliases[name_lower[4:]] = canonical_name
 
-        self._speed_menu_bagels = speed_menu_bagels
+        self._signature_item_aliases = signature_item_aliases
 
         logger.debug(
-            "Loaded %d speed menu bagel aliases from %d items",
-            len(speed_menu_bagels),
+            "Loaded %d signature item aliases from %d items",
+            len(signature_item_aliases),
             len(items_with_aliases),
         )
 
@@ -976,6 +987,105 @@ class MenuDataCache:
             len(menu_items),
         )
 
+    def _load_item_type_fields(self, db: Session) -> None:
+        """Load item type attribute configurations from the database.
+
+        Loads attribute definitions (required, ask_in_conversation, question_text)
+        from the item_type_attributes table. This is the consolidated table that
+        replaces the old item_type_field table.
+
+        Attributes are organized by item_type_slug for easy lookup.
+        """
+        from .models import ItemType, ItemTypeAttribute
+
+        item_type_fields: dict[str, list[dict]] = {}
+
+        # Query all attributes with their item type from the NEW table
+        attributes = (
+            db.query(ItemTypeAttribute)
+            .join(ItemType)
+            .order_by(ItemType.slug, ItemTypeAttribute.display_order)
+            .all()
+        )
+
+        for attr in attributes:
+            slug = attr.item_type.slug
+            if slug not in item_type_fields:
+                item_type_fields[slug] = []
+
+            item_type_fields[slug].append({
+                "field_name": attr.slug,  # Use 'slug' as field_name for compatibility
+                "display_order": attr.display_order,
+                "required": attr.is_required,
+                "ask": attr.ask_in_conversation,
+                "question_text": attr.question_text,
+                "input_type": attr.input_type,
+                "display_name": attr.display_name,
+            })
+
+        self._item_type_fields = item_type_fields
+
+        logger.debug(
+            "Loaded item type attributes for %d item types (%d total attributes)",
+            len(item_type_fields),
+            sum(len(fields) for fields in item_type_fields.values()),
+        )
+
+    def _load_response_patterns(self, db: Session) -> None:
+        """Load response patterns from the database.
+
+        Loads patterns for recognizing user response types:
+        - affirmative: yes, yeah, yep, sure, ok, etc.
+        - negative: no, nope, nah, no thanks, etc.
+        - cancel: cancel, never mind, forget it, etc.
+        - done: that's all, that's it, nothing else, etc.
+
+        Patterns are organized by type for efficient lookup.
+        """
+        from .models import ResponsePattern
+
+        response_patterns: dict[str, set[str]] = {}
+
+        # Query all response patterns
+        patterns = db.query(ResponsePattern).all()
+
+        for pattern in patterns:
+            pattern_type = pattern.pattern_type
+            if pattern_type not in response_patterns:
+                response_patterns[pattern_type] = set()
+            response_patterns[pattern_type].add(pattern.pattern.lower())
+
+        self._response_patterns = response_patterns
+
+        total_patterns = sum(len(p) for p in response_patterns.values())
+        logger.debug(
+            "Loaded %d response patterns across %d types: %s",
+            total_patterns,
+            len(response_patterns),
+            ", ".join(f"{k}({len(v)})" for k, v in response_patterns.items()),
+        )
+
+    def _load_menu_index(self, db: Session) -> None:
+        """Load and cache the menu index.
+
+        The menu index is expensive to build (many DB queries) so we cache it
+        at startup and refresh it along with the rest of the cache.
+
+        This is called once at server startup and on manual refresh.
+        """
+        from .menu_index_builder import build_menu_index
+
+        logger.info("Building menu index (this may take a moment)...")
+        import time
+        start = time.time()
+        self._menu_index = build_menu_index(db)
+        elapsed = time.time() - start
+        logger.info(
+            "Menu index built in %.1f seconds with %d total items",
+            elapsed,
+            sum(len(v) for k, v in self._menu_index.items() if isinstance(v, list)),
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1067,18 +1177,18 @@ class MenuDataCache:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
 
-    def get_speed_menu_bagels(self) -> dict[str, str]:
-        """Get speed menu bagel alias mapping.
+    def get_signature_item_aliases(self) -> dict[str, str]:
+        """Get signature item alias mapping.
 
         Returns a dict mapping user input variations (aliases) to the actual
         menu item names in the database. This is used for recognizing orders
-        like "bec", "bacon egg and cheese", "the classic", etc.
+        like "bec", "bacon egg and cheese", "the classic", "the leo", etc.
 
         Returns:
             Dict mapping lowercase alias -> menu item name (with original casing).
             Returns empty dict if cache not loaded.
         """
-        return self._speed_menu_bagels.copy() if self._is_loaded else {}
+        return self._signature_item_aliases.copy() if self._is_loaded else {}
 
     def get_by_pound_items(self) -> dict[str, list[str]]:
         """Get by-the-pound items organized by category.
@@ -1574,6 +1684,211 @@ class MenuDataCache:
     # Cache Status and Refresh
     # =========================================================================
 
+    # =========================================================================
+    # Item Type Field Methods
+    # =========================================================================
+
+    def get_item_type_fields(self, item_type_slug: str) -> list[dict]:
+        """
+        Get all field configurations for an item type.
+
+        Fields are ordered by display_order and include:
+        - field_name: The field identifier (e.g., "bagel_type", "toasted")
+        - display_order: Order in which to ask questions
+        - required: Whether the field must have a value for item to be complete
+        - ask: Whether to prompt user for this field
+        - question_text: The question to ask for this field
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            List of field config dicts, ordered by display_order.
+            Returns empty list if item type not found or cache not loaded.
+
+        Examples:
+            >>> cache.get_item_type_fields("bagel")
+            [
+                {"field_name": "bagel_type", "display_order": 1, "required": True, ...},
+                {"field_name": "toasted", "display_order": 2, "required": True, ...},
+                ...
+            ]
+        """
+        if not self._is_loaded:
+            return []
+        return self._item_type_fields.get(item_type_slug, [])
+
+    def get_question_for_field(self, item_type_slug: str, field_name: str) -> str | None:
+        """
+        Get the question text for a specific field of an item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage")
+            field_name: The field name (e.g., "toasted", "size")
+
+        Returns:
+            The question_text for the field, or None if not found.
+
+        Examples:
+            >>> cache.get_question_for_field("bagel", "toasted")
+            "Would you like it toasted?"
+            >>> cache.get_question_for_field("sized_beverage", "size")
+            "What size?"
+        """
+        if not self._is_loaded:
+            return None
+        fields = self._item_type_fields.get(item_type_slug, [])
+        for field in fields:
+            if field["field_name"] == field_name:
+                return field.get("question_text")
+        return None
+
+    # =========================================================================
+    # Menu Index Methods
+    # =========================================================================
+
+    def get_menu_index(self, store_id: str | None = None) -> dict[str, Any]:
+        """
+        Get the cached menu index.
+
+        The menu index is built once at server startup and cached for
+        performance. It contains all menu items organized by category.
+
+        Args:
+            store_id: Optional store ID (currently not used, for future
+                     store-specific filtering)
+
+        Returns:
+            The cached menu index dict, or empty dict if not loaded.
+
+        Note:
+            This returns the cached index built at startup. The index is
+            expensive to build (~55 seconds with N+1 queries) so we cache
+            it rather than building on every request.
+        """
+        if not self._is_loaded:
+            return {}
+        return self._menu_index
+
+    # =========================================================================
+    # Response Pattern Methods
+    # =========================================================================
+
+    def get_response_patterns(self, pattern_type: str) -> set[str]:
+        """
+        Get all patterns for a response type.
+
+        Args:
+            pattern_type: The type of response (affirmative, negative, cancel, done)
+
+        Returns:
+            Set of patterns for the type, or empty set if not found.
+
+        Examples:
+            >>> cache.get_response_patterns("affirmative")
+            {"yes", "yeah", "yep", "sure", "ok", ...}
+        """
+        if not self._is_loaded:
+            return set()
+        return self._response_patterns.get(pattern_type, set()).copy()
+
+    def is_response_type(self, text: str, pattern_type: str) -> bool:
+        """
+        Check if text matches a response pattern type.
+
+        Performs exact match against patterns after normalizing the text
+        (lowercase, stripped).
+
+        Args:
+            text: User input to check
+            pattern_type: The type of response to check (affirmative, negative, cancel, done)
+
+        Returns:
+            True if text matches any pattern of the given type.
+
+        Examples:
+            >>> cache.is_response_type("yes", "affirmative")
+            True
+            >>> cache.is_response_type("no thanks", "negative")
+            True
+        """
+        if not self._is_loaded:
+            return False
+        patterns = self._response_patterns.get(pattern_type, set())
+        return text.lower().strip() in patterns
+
+    def is_affirmative(self, text: str) -> bool:
+        """
+        Check if text is an affirmative response (yes, yeah, sure, ok, etc.).
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text matches an affirmative pattern.
+
+        Examples:
+            >>> cache.is_affirmative("yes")
+            True
+            >>> cache.is_affirmative("sounds good")
+            True
+        """
+        return self.is_response_type(text, "affirmative")
+
+    def is_negative(self, text: str) -> bool:
+        """
+        Check if text is a negative response (no, nope, no thanks, etc.).
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text matches a negative pattern.
+
+        Examples:
+            >>> cache.is_negative("no")
+            True
+            >>> cache.is_negative("no thanks")
+            True
+        """
+        return self.is_response_type(text, "negative")
+
+    def is_cancel(self, text: str) -> bool:
+        """
+        Check if text is a cancel response (cancel, never mind, forget it, etc.).
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text matches a cancel pattern.
+
+        Examples:
+            >>> cache.is_cancel("cancel")
+            True
+            >>> cache.is_cancel("never mind")
+            True
+        """
+        return self.is_response_type(text, "cancel")
+
+    def is_done(self, text: str) -> bool:
+        """
+        Check if text is a done response (that's all, nothing else, etc.).
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text matches a done pattern.
+
+        Examples:
+            >>> cache.is_done("that's all")
+            True
+            >>> cache.is_done("nothing else")
+            True
+        """
+        return self.is_response_type(text, "done")
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {
@@ -1592,6 +1907,8 @@ class MenuDataCache:
                 "known_menu_items": len(self._known_menu_items),
                 "by_pound_categories": len(self._by_pound_items),
                 "by_pound_aliases": len(self._by_pound_aliases),
+                "item_type_fields": sum(len(fields) for fields in self._item_type_fields.values()),
+                "response_patterns": sum(len(p) for p in self._response_patterns.values()),
             },
             "keyword_indices": {
                 "spread_keywords": len(self._spread_keyword_index),

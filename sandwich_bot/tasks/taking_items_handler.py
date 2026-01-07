@@ -39,7 +39,7 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input
-from .parsers.constants import get_bagel_types, get_bagel_spreads
+from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_bagel_types, get_bagel_spreads
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from .coffee_config_handler import CoffeeConfigHandler
     from .espresso_config_handler import EspressoConfigHandler
     from .item_adder_handler import ItemAdderHandler
-    from .speed_menu_handler import SpeedMenuBagelHandler
+    from .signature_item_handler import SignatureItemHandler
     from .menu_inquiry_handler import MenuInquiryHandler
     from .store_info_handler import StoreInfoHandler
     from .by_pound_handler import ByPoundHandler
@@ -71,7 +71,7 @@ class TakingItemsHandler:
         coffee_handler: "CoffeeConfigHandler | None" = None,
         espresso_handler: "EspressoConfigHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
-        speed_menu_handler: "SpeedMenuBagelHandler | None" = None,
+        signature_item_handler: "SignatureItemHandler | None" = None,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
         store_info_handler: "StoreInfoHandler | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
@@ -87,7 +87,7 @@ class TakingItemsHandler:
             coffee_handler: Handler for coffee items.
             espresso_handler: Handler for espresso items.
             item_adder_handler: Handler for adding items.
-            speed_menu_handler: Handler for speed menu items.
+            signature_item_handler: Handler for signature items.
             menu_inquiry_handler: Handler for menu inquiries.
             store_info_handler: Handler for store info inquiries.
             by_pound_handler: Handler for by-pound items.
@@ -109,7 +109,7 @@ class TakingItemsHandler:
         self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
         self.espresso_handler = espresso_handler or kwargs.get("espresso_handler")
         self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
-        self.speed_menu_handler = speed_menu_handler or kwargs.get("speed_menu_handler")
+        self.signature_item_handler = signature_item_handler or kwargs.get("signature_item_handler")
         self.menu_inquiry_handler = menu_inquiry_handler or kwargs.get("menu_inquiry_handler")
         self.store_info_handler = store_info_handler or kwargs.get("store_info_handler")
         self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
@@ -590,7 +590,7 @@ class TakingItemsHandler:
                 # Check if parsed result has any valid new items
                 has_new_items = (
                     parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
-                    parsed.new_speed_menu_bagel or parsed.new_side_item or parsed.by_pound_items
+                    parsed.new_signature_item or parsed.new_side_item or parsed.by_pound_items
                 )
 
                 # Special case: If last item is a bagel and the "menu item" is a cream cheese sandwich,
@@ -1282,7 +1282,7 @@ class TakingItemsHandler:
             order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
             # Check if they also ordered items in the same message
             has_items = (parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
-                        parsed.new_speed_menu_bagel or parsed.new_side_item or parsed.by_pound_items)
+                        parsed.new_signature_item or parsed.new_side_item or parsed.by_pound_items)
             if not has_items:
                 # Just the order type, no items yet - acknowledge and ask what they want
                 return StateMachineResult(
@@ -1374,11 +1374,11 @@ class TakingItemsHandler:
 
         Returns tuple of (updated_order, item_summary_string).
         """
-        if isinstance(item, ParsedSpeedMenuBagelEntry):
+        if isinstance(item, ParsedSignatureItemEntry):
             # Track item count before to detect if item was actually added
             items_before = len(order.items.items)
-            result = self.speed_menu_handler.add_speed_menu_bagel(
-                item_name=item.speed_menu_name,
+            result = self.signature_item_handler.add_signature_item(
+                item_name=item.signature_item_name,
                 quantity=item.quantity,
                 toasted=item.toasted,
                 order=order,
@@ -1391,14 +1391,14 @@ class TakingItemsHandler:
             # Check if item was actually added (validation may have rejected it)
             if items_after > items_before:
                 # Build summary from the added item
-                summary = item.speed_menu_name
+                summary = item.signature_item_name
                 if item.bagel_type:
                     summary += f" on {item.bagel_type}"
                 if item.quantity > 1:
                     summary = f"{item.quantity} {summary}s"
             else:
                 # Item not found - store the error message for the caller
-                logger.info("Speed menu item '%s' not found - storing error result", item.speed_menu_name)
+                logger.info("Signature item '%s' not found - storing error result", item.signature_item_name)
                 order.last_add_error = result  # Store error for _process_multi_item_order
                 summary = ""  # Don't add to summaries
 
@@ -1603,9 +1603,9 @@ class TakingItemsHandler:
                 last_item = order.items.items[-1] if order.items.items else None
                 if last_item:
                     # Determine item type for config handler
-                    if isinstance(parsed_item, ParsedSpeedMenuBagelEntry):
-                        item_type = "speed_menu_bagel"
-                        display_name = parsed_item.speed_menu_name
+                    if isinstance(parsed_item, ParsedSignatureItemEntry):
+                        item_type = "signature_item"
+                        display_name = parsed_item.signature_item_name
                     elif isinstance(parsed_item, ParsedMenuItemEntry):
                         item_type = "menu_item"
                         display_name = parsed_item.menu_item_name
@@ -1641,9 +1641,8 @@ class TakingItemsHandler:
 
             if all_drinks:
                 # Show first batch of drinks with pagination
-                batch_size = 5
-                batch = all_drinks[:batch_size]
-                remaining = len(all_drinks) - batch_size
+                batch = all_drinks[:DEFAULT_PAGINATION_SIZE]
+                remaining = len(all_drinks) - DEFAULT_PAGINATION_SIZE
 
                 drink_names = [item.get("name", "Unknown") for item in batch]
 
@@ -1661,7 +1660,7 @@ class TakingItemsHandler:
                         drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
                     message = f"{unknown_prefix}We have {drinks_str}, and more. What type of drink would you like?"
                     # Set pagination for "what else" follow-up
-                    order.set_menu_pagination("drink", batch_size, len(all_drinks))
+                    order.set_menu_pagination("drink", DEFAULT_PAGINATION_SIZE, len(all_drinks))
                 else:
                     # All drinks fit in one batch
                     if len(drink_names) == 1:
@@ -1728,12 +1727,12 @@ class TakingItemsHandler:
         # Handler groups:
         # - "bagel_handler": BagelItemTask, MenuItemTask with bagel config (sandwiches, omelette sides)
         # - "coffee_handler": CoffeeItemTask
-        # - "speed_menu_handler": SpeedMenuBagelItemTask
+        # - "signature_item_handler": SignatureItemTask
         # - Individual items: MenuItemTask needing side_choice (no internal loop)
 
         bagel_handler_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
         coffee_handler_items: list[tuple[str, str, str, str]] = []
-        speed_menu_handler_items: list[tuple[str, str, str, str]] = []
+        signature_item_handler_items: list[tuple[str, str, str, str]] = []
         individual_items: list[tuple[str, str, str, str]] = []  # Items that don't share a handler loop
 
         for item in order.items.items:
@@ -1783,18 +1782,18 @@ class TakingItemsHandler:
                     elif item.spread is None and not item.extras and not item.sandwich_protein:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
-                elif isinstance(item, SpeedMenuBagelItemTask):
-                    # Check in same order as speed_menu_handler: cheese → bagel type → toasted
+                elif isinstance(item, SignatureItemTask):
+                    # Check in same order as signature_item_handler: cheese → bagel type → toasted
                     # Check if item has cheese (BEC, egg and cheese, etc.)
                     item_name_lower = item.menu_item_name.lower()
                     has_cheese = any(ind in item_name_lower for ind in ["bec", "egg and cheese", "egg & cheese", " cheese"])
 
                     if has_cheese and item.cheese_choice is None:
-                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_cheese_choice"))
+                        signature_item_handler_items.append((item.id, item.menu_item_name, "signature_item", "signature_item_cheese_choice"))
                     elif item.bagel_choice is None:
-                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_type"))
+                        signature_item_handler_items.append((item.id, item.menu_item_name, "signature_item", "signature_item_bagel_type"))
                     elif item.toasted is None:
-                        speed_menu_handler_items.append((item.id, item.menu_item_name, "speed_menu_bagel", "speed_menu_bagel_toasted"))
+                        signature_item_handler_items.append((item.id, item.menu_item_name, "signature_item", "signature_item_toasted"))
                 elif isinstance(item, CoffeeItemTask):
                     # Coffee items: check size first, then hot/iced
                     if item.size is None:
@@ -1822,13 +1821,13 @@ class TakingItemsHandler:
                            len(coffee_handler_items) - 1,
                            [(n, f) for _, n, _, f in coffee_handler_items[1:]])
 
-        # Add first speed-menu-handler item (if any)
-        if speed_menu_handler_items:
-            items_needing_config.append(speed_menu_handler_items[0])
-            if len(speed_menu_handler_items) > 1:
-                logger.info("Speed menu handler will process %d items via internal loop (not queued): %s",
-                           len(speed_menu_handler_items) - 1,
-                           [(n, f) for _, n, _, f in speed_menu_handler_items[1:]])
+        # Add first signature-item-handler item (if any)
+        if signature_item_handler_items:
+            items_needing_config.append(signature_item_handler_items[0])
+            if len(signature_item_handler_items) > 1:
+                logger.info("Signature item handler will process %d items via internal loop (not queued): %s",
+                           len(signature_item_handler_items) - 1,
+                           [(n, f) for _, n, _, f in signature_item_handler_items[1:]])
 
         # Add all individual items (no internal loops for these)
         items_needing_config.extend(individual_items)
@@ -1916,11 +1915,11 @@ class TakingItemsHandler:
                 question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
             else:
                 question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
-        elif first_field == "speed_menu_cheese_choice":
+        elif first_field == "signature_item_cheese_choice":
             question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
-        elif first_field == "speed_menu_bagel_type":
+        elif first_field == "signature_item_bagel_type":
             question = f"Got it, {first_item_name}! What type of bagel would you like?"
-        elif first_field == "speed_menu_bagel_toasted":
+        elif first_field == "signature_item_toasted":
             question = f"Got it, {first_item_name}! Would you like that toasted?"
         else:
             question = f"Got it! {first_item_name} - any preferences?"

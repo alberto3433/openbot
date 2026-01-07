@@ -580,6 +580,57 @@ class TakingItemsHandler:
                             order=order,
                         )
 
+            # Handle "add [spread]" for bagels - e.g., "add scallion cream cheese"
+            # This should modify an existing bagel, not add a new "Scallion Cream Cheese Sandwich"
+            if is_add_modifier_request and active_items:
+                # Check if input contains a spread pattern (longer matches first)
+                detected_spread = None
+                for spread in sorted(get_bagel_spreads(), key=len, reverse=True):
+                    if spread in input_lower:
+                        detected_spread = spread
+                        break
+
+                if detected_spread:
+                    # Find a bagel to add the spread to
+                    # Prefer: 1) bagel without spread, 2) most recent bagel
+                    bagels_in_cart = [i for i in active_items if isinstance(i, BagelItemTask)]
+                    target_bagel = None
+
+                    # First, look for a bagel without a spread
+                    for bagel in reversed(bagels_in_cart):
+                        if bagel.spread is None:
+                            target_bagel = bagel
+                            break
+
+                    # If all bagels have spreads, use the most recent one
+                    if target_bagel is None and bagels_in_cart:
+                        target_bagel = bagels_in_cart[-1]
+
+                    if target_bagel:
+                        # Normalize the spread name
+                        normalized_spread = menu_cache.normalize_modifier(detected_spread)
+                        old_spread = target_bagel.spread
+
+                        # Set the spread on the bagel
+                        target_bagel.spread = normalized_spread
+
+                        # Recalculate price
+                        self.pricing.recalculate_bagel_price(target_bagel)
+                        updated_summary = target_bagel.get_summary()
+
+                        if old_spread:
+                            logger.info("Add spread: changed spread from '%s' to '%s' on bagel", old_spread, normalized_spread)
+                            return StateMachineResult(
+                                message=f"Sure, I've changed the spread to {normalized_spread}. Your order is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
+                        else:
+                            logger.info("Add spread: added '%s' to bagel", normalized_spread)
+                            return StateMachineResult(
+                                message=f"Sure, I've added {normalized_spread} to your bagel. Your order is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
+
         # Handle modification to an existing item in the cart
         # e.g., "can I have scallion cream cheese on the cinnamon raisin bagel"
         # or "make the bagel with scallion cream cheese" (implicit target)

@@ -3305,6 +3305,76 @@ class TestBagelModifierRemoval:
         assert len(active_items) == 1, "Bagel should NOT be removed"
         assert bagel.spread is None, "Spread should be removed"
 
+    def test_add_scallion_cream_cheese_adds_spread_not_sandwich(self):
+        """Test that 'add scallion cream cheese' adds spread to bagel, not a new sandwich.
+
+        Regression test for bug where 'add scallion cream cheese' would add a new
+        'Scallion Cream Cheese Sandwich' item instead of adding the spread to the
+        existing bagel in the cart.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Bagel without spread (user removed cream cheese earlier)
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            toasted=True,
+            spread=None,  # No spread
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # User says "add scallion cream cheese"
+        result = sm.process("add scallion cream cheese", order)
+
+        # Should still have only 1 item (the bagel), not 2 items
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, \
+            f"Should have 1 item (bagel with spread), not 2. Got: {[i.get_summary() for i in active_items]}"
+
+        # The bagel should now have the spread
+        assert isinstance(active_items[0], BagelItemTask)
+        assert active_items[0].spread is not None, "Bagel should have spread added"
+        assert "scallion" in active_items[0].spread.lower() or "cream cheese" in active_items[0].spread.lower(), \
+            f"Spread should be scallion cream cheese, got: {active_items[0].spread}"
+
+        # Response should confirm the spread was added
+        assert "scallion" in result.message.lower() or "cream cheese" in result.message.lower()
+
+    def test_add_spread_to_bagel_with_existing_spread_replaces(self):
+        """Test that 'add X cream cheese' replaces existing spread on bagel."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.schemas.phases import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS
+
+        # Bagel with plain cream cheese
+        bagel = BagelItemTask(
+            bagel_type="everything",
+            toasted=True,
+            spread="cream cheese",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # User says "add veggie cream cheese"
+        result = sm.process("add veggie cream cheese", order)
+
+        # Should still have only 1 item
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1
+
+        # Spread should be updated
+        assert "veggie" in active_items[0].spread.lower() or "cream cheese" in active_items[0].spread.lower()
+
 
 # =============================================================================
 # Side Choice Handler Tests

@@ -414,6 +414,19 @@ class PricingEngine:
                 "Using spread upcharge: %s = $%.2f",
                 spread, spread_price
             )
+            return spread_price
+
+        # For cream cheese without a type, try "plain_cream_cheese" (database canonical name)
+        spread_normalized = spread.lower().replace(" ", "_")
+        if spread_normalized == "cream_cheese":
+            spread_price = self.lookup_modifier_price("plain_cream_cheese", "bagel")
+            if spread_price > 0:
+                logger.debug(
+                    "Using plain cream cheese upcharge: $%.2f",
+                    spread_price
+                )
+                return spread_price
+
         return spread_price
 
     def calculate_bagel_price_with_modifiers(

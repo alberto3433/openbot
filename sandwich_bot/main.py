@@ -186,7 +186,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sandwich Bot API",
     description="API for the Sandwich Bot ordering system",
-    version="2.2.0",
+    version="2.3.0",
     openapi_tags=[
         {"name": "Health", "description": "Health check endpoints"},
         {"name": "Chat", "description": "Chat endpoints for customer ordering"},

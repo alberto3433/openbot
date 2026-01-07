@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from .schemas import OrderPhase
 from .parsers.constants import (
+    DEFAULT_PAGINATION_SIZE,
     get_by_pound_items,
     get_by_pound_category_names,
     get_item_type_display_name,
@@ -801,15 +802,20 @@ class QueryHandler:
 
         if menu_type:
             items = items_by_type.get(menu_type, [])
+            category_key = menu_type
             type_name = menu_type.replace("_", " ")
-            if type_name.endswith("ch") or type_name.endswith("s"):
+            # Check if already plural (ends with "s" but not "ss" like "grass")
+            if type_name.endswith("s") and not type_name.endswith("ss"):
+                type_display_name = type_name  # Already plural
+            elif type_name.endswith("ch"):
                 type_display_name = type_name + "es"
             else:
                 type_display_name = type_name + "s"
         else:
             # Get all signature items (already aggregated with is_signature=true)
             items = items_by_type.get("signature_items", [])
-            type_display_name = "signature menu options"
+            category_key = "signature_items"
+            type_display_name = "signature items"
 
         if not items:
             return StateMachineResult(
@@ -817,13 +823,86 @@ class QueryHandler:
                 order=order,
             )
 
-        item_descriptions = [item.get("name", "Unknown") for item in items]
-        items_list = self._format_item_list(item_descriptions)
+        # Paginate: show only DEFAULT_PAGINATION_SIZE items at a time
+        batch = items[:DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - len(batch)
+        has_more = remaining > 0
+
+        # Build list of item names
+        item_names = [item.get("name", "Unknown") for item in batch]
+
+        # Format the response with pagination
+        if has_more:
+            # Add "...and X more" indicator
+            if len(item_names) == 1:
+                items_list = f"{item_names[0]}, and {remaining} more"
+            else:
+                items_list = ", ".join(item_names) + f", and {remaining} more"
+
+            # Save pagination state for "what else" / "more" follow-ups
+            order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
+        else:
+            # All items fit in one response
+            items_list = self._format_item_list(item_names)
+            order.clear_menu_pagination()
 
         return StateMachineResult(
             message=f"Our {type_display_name} are: {items_list}. Would you like any of these?",
             order=order,
         )
+
+    def handle_more_menu_items(self, order: "OrderTask") -> StateMachineResult:
+        """Handle 'show more' menu requests.
+
+        Continues listing items from where the previous menu query left off.
+        """
+        pagination = order.get_menu_pagination()
+
+        if not pagination:
+            return StateMachineResult(
+                message="More of what? What would you like me to list?",
+                order=order,
+            )
+
+        category = pagination.get("category")
+        offset = pagination.get("offset", 0)
+        total_items = pagination.get("total_items", 0)
+
+        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
+        items = items_by_type.get(category, [])
+
+        if not items or offset >= len(items):
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like to order anything?",
+                order=order,
+            )
+
+        # Get next batch
+        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - (offset + len(batch))
+        has_more = remaining > 0
+
+        # Build list of item names
+        item_names = [item.get("name", "Unknown") for item in batch]
+
+        # Format the response
+        if has_more:
+            if len(item_names) == 1:
+                items_str = f"{item_names[0]}, and {remaining} more"
+            else:
+                items_str = ", ".join(item_names) + f", and {remaining} more"
+
+            # Update pagination for next "what else"
+            new_offset = offset + DEFAULT_PAGINATION_SIZE
+            order.set_menu_pagination(category, new_offset, len(items))
+            message = f"We also have: {items_str}. Would you like any of these?"
+        else:
+            items_str = self._format_item_list(item_names)
+            order.clear_menu_pagination()
+            message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
+
+        return StateMachineResult(message=message, order=order)
 
     # =========================================================================
     # By-the-Pound Handlers

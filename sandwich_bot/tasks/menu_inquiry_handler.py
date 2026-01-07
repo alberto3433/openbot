@@ -197,8 +197,14 @@ class MenuInquiryHandler:
         """Handle 'show more' menu requests.
 
         Continues listing items from where the previous menu query left off.
-        Supports both menu item categories and modifier categories (toppings, proteins, etc.).
+        Supports both menu item categories, modifier categories (toppings, proteins, etc.),
+        and ingredient search results.
         """
+        # Check for ingredient search pagination first
+        ingredient_search = order.pending_ingredient_search
+        if ingredient_search:
+            return self._handle_more_ingredient_search_items(order, ingredient_search)
+
         pagination = order.get_menu_pagination()
 
         if not pagination:
@@ -249,6 +255,58 @@ class MenuInquiryHandler:
             message = f"We also have: {items_str}. Would you like any of these?"
         else:
             message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
+
+        return StateMachineResult(
+            message=message,
+            order=order,
+        )
+
+    def _handle_more_ingredient_search_items(
+        self,
+        order: OrderTask,
+        ingredient_search: dict,
+    ) -> StateMachineResult:
+        """Handle 'show more' for ingredient search results.
+
+        Shows the next batch of items that contain the searched ingredient.
+        """
+        ingredient = ingredient_search.get("ingredient", "that ingredient")
+        matches = ingredient_search.get("matches", [])
+        offset = ingredient_search.get("offset", 0)
+
+        if offset >= len(matches):
+            # No more items to show
+            order.pending_ingredient_search = None
+            return StateMachineResult(
+                message=f"That's all the items we have with {ingredient}. Which would you like?",
+                order=order,
+            )
+
+        # Get next batch of items (show 6 at a time)
+        batch_size = 6
+        next_items = matches[offset:offset + batch_size]
+        item_names = [m.get("name", "item") for m in next_items]
+        remaining = len(matches) - (offset + len(next_items))
+
+        # Format the list
+        if len(item_names) == 1:
+            items_list = item_names[0]
+        elif len(item_names) == 2:
+            items_list = f"{item_names[0]} and {item_names[1]}"
+        else:
+            items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+
+        # Update or clear pagination state
+        if remaining > 0:
+            order.pending_ingredient_search = {
+                "ingredient": ingredient,
+                "matches": matches,
+                "offset": offset + batch_size,
+            }
+            message = f"We also have: {items_list}, and {remaining} more. Which would you like?"
+        else:
+            order.pending_ingredient_search = None
+            message = f"We also have: {items_list}. That's all the items with {ingredient}. Which would you like?"
 
         return StateMachineResult(
             message=message,
@@ -758,16 +816,21 @@ class MenuInquiryHandler:
         # If a specific type is requested, look it up directly
         if menu_type:
             items = items_by_type.get(menu_type, [])
+            category_key = menu_type
             # Get the display name from the type slug (proper pluralization)
             type_name = menu_type.replace("_", " ")
-            if type_name.endswith("ch") or type_name.endswith("s"):
+            # Check if already plural (ends with "s" but not "ss" like "grass")
+            if type_name.endswith("s") and not type_name.endswith("ss"):
+                type_display_name = type_name  # Already plural
+            elif type_name.endswith("ch"):
                 type_display_name = type_name + "es"
             else:
                 type_display_name = type_name + "s"
         else:
             # No specific type - get all signature items
             items = items_by_type.get("signature_items", [])
-            type_display_name = "signature menu options"
+            category_key = "signature_items"
+            type_display_name = "signature items"
 
         if not items:
             return StateMachineResult(
@@ -775,16 +838,34 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Build a nice list of items (without prices - prices only shown when specifically asked)
-        item_descriptions = [item.get("name", "Unknown") for item in items]
+        # Paginate: show only DEFAULT_PAGINATION_SIZE items at a time
+        batch = items[:DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - len(batch)
+        has_more = remaining > 0
 
-        # Format the response
-        if len(item_descriptions) == 1:
-            items_list = item_descriptions[0]
-        elif len(item_descriptions) == 2:
-            items_list = f"{item_descriptions[0]} and {item_descriptions[1]}"
+        # Build list of item names
+        item_names = [item.get("name", "Unknown") for item in batch]
+
+        # Format the response with pagination
+        if has_more:
+            # Add "...and X more" indicator
+            if len(item_names) == 1:
+                items_list = f"{item_names[0]}, and {remaining} more"
+            else:
+                items_list = ", ".join(item_names) + f", and {remaining} more"
+
+            # Save pagination state for "what else" / "more" follow-ups
+            order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
         else:
-            items_list = ", ".join(item_descriptions[:-1]) + f", and {item_descriptions[-1]}"
+            # All items fit in one response
+            if len(item_names) == 1:
+                items_list = item_names[0]
+            elif len(item_names) == 2:
+                items_list = f"{item_names[0]} and {item_names[1]}"
+            else:
+                items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+
+            order.clear_menu_pagination()
 
         message = f"Our {type_display_name} are: {items_list}. Would you like any of these?"
 

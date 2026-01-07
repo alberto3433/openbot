@@ -5310,7 +5310,7 @@ class TestSignatureMenuInquiryHandler:
         assert "italian sub" in result.message.lower()
         assert "the classic" in result.message.lower()
         assert "the leo" in result.message.lower()
-        assert "signature menu options" in result.message.lower()
+        assert "signature items" in result.message.lower()
 
     def test_specific_type_lists_only_that_type(self):
         """Test that specific type only lists items of that type."""
@@ -5393,4 +5393,106 @@ class TestSignatureMenuInquiryHandler:
 
         result = sm.query_handler.handle_signature_menu_inquiry("signature_item", order)
 
-        assert "speed menu bagels" in result.message.lower()
+        # "signature_item" should be pluralized to "signature items"
+        assert "signature items" in result.message.lower()
+
+    def test_signature_menu_pagination_shows_first_five(self):
+        """Test that signature menu shows first 5 items with 'and X more'."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_items": [
+                    {"name": "Item 1"},
+                    {"name": "Item 2"},
+                    {"name": "Item 3"},
+                    {"name": "Item 4"},
+                    {"name": "Item 5"},
+                    {"name": "Item 6"},
+                    {"name": "Item 7"},
+                    {"name": "Item 8"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+
+        # Should show first 5 items plus "and 3 more"
+        assert "item 1" in result.message.lower()
+        assert "item 5" in result.message.lower()
+        assert "item 6" not in result.message.lower()
+        assert "and 3 more" in result.message.lower()
+
+        # Should set pagination state
+        pagination = result.order.get_menu_pagination()
+        assert pagination is not None
+        assert pagination["category"] == "signature_items"
+        assert pagination["offset"] == 5
+        assert pagination["total_items"] == 8
+
+    def test_signature_menu_pagination_what_else_shows_remaining(self):
+        """Test that 'what else' shows remaining items after first batch."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_items": [
+                    {"name": "Item 1"},
+                    {"name": "Item 2"},
+                    {"name": "Item 3"},
+                    {"name": "Item 4"},
+                    {"name": "Item 5"},
+                    {"name": "Item 6"},
+                    {"name": "Item 7"},
+                    {"name": "Item 8"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        # First request - shows first 5
+        result1 = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+
+        # Second request - "what else" shows remaining
+        result2 = sm.query_handler.handle_more_menu_items(result1.order)
+
+        assert "item 6" in result2.message.lower()
+        assert "item 7" in result2.message.lower()
+        assert "item 8" in result2.message.lower()
+        assert "that's all we have" in result2.message.lower()
+
+        # Pagination should be cleared
+        assert result2.order.get_menu_pagination() is None
+
+    def test_signature_menu_no_pagination_when_fewer_than_five(self):
+        """Test that fewer than 5 items shows all without pagination."""
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        sm.menu_data = {
+            "items_by_type": {
+                "signature_items": [
+                    {"name": "Item 1"},
+                    {"name": "Item 2"},
+                    {"name": "Item 3"},
+                ],
+            }
+        }
+        order = OrderTask()
+
+        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+
+        # Should show all 3 items
+        assert "item 1" in result.message.lower()
+        assert "item 2" in result.message.lower()
+        assert "item 3" in result.message.lower()
+        assert "more" not in result.message.lower()
+
+        # No pagination state
+        assert result.order.get_menu_pagination() is None

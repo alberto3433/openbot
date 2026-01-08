@@ -316,6 +316,176 @@ with engine.connect() as conn:
             'protein': ['Applewood Smoked Bacon'],
             'cheese': ['Cheddar'],
         },
+
+        # 9861: The Classic Omelette - "Create your own" - skip, no defaults
+
+        # 9862: The Classic BEC Omelette (matches Classic BEC: Bacon, Egg, Cheddar)
+        9862: {
+            'item_type': 'omelette',
+            'protein': ['Applewood Smoked Bacon'],
+            'cheese': ['Cheddar'],
+        },
+
+        # 9863: The Columbus BEC Omelette (matches Columbus: Egg Whites, Turkey Bacon, Swiss, Avocado)
+        9863: {
+            'item_type': 'omelette',
+            'egg_style': 'Egg White',
+            'protein': ['Turkey Bacon'],
+            'cheese': ['Swiss'],
+            'extras': ['Avocado'],
+        },
+
+        # 9864: The Leo Omelette (matches Leo: Nova Scotia Salmon, Sauteed Onions)
+        9864: {
+            'item_type': 'omelette',
+            'protein': ['Nova Scotia Salmon'],
+            'extras': ['Sautéed Onions'],
+        },
+
+        # === ADDITIONAL EGG SANDWICHES ===
+
+        # 364: Nova Scotia Salmon on Bagel
+        364: {
+            'item_type': 'egg_sandwich',
+            'protein': ['Nova Scotia Salmon'],
+        },
+
+        # 571: The Health Nut Egg Sandwich (same as 363)
+        571: {
+            'item_type': 'egg_sandwich',
+            'egg_style': 'Substitute Egg Whites',
+            'toppings': ['Sauteed Mushrooms', 'Spinach', 'Roasted Peppers', 'Tomatoes'],
+        },
+
+        # === ADDITIONAL DELI SANDWICHES ===
+
+        # 366: Hot Pastrami Sandwich
+        366: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Pastrami'],
+        },
+
+        # 532: Hot Corned Beef Sandwich
+        532: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Corned Beef'],
+        },
+
+        # 534: Top Round Roast Beef Sandwich
+        534: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Roast Beef'],
+        },
+
+        # 535: Homemade Roast Turkey Sandwich
+        535: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Smoked Turkey'],
+        },
+
+        # 536: All-Natural Smoked Turkey Sandwich
+        536: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Smoked Turkey'],
+        },
+
+        # 537: Black Forest Ham Sandwich
+        537: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Ham'],
+        },
+
+        # === ADDITIONAL FISH SANDWICHES ===
+
+        # 541: Everything Seeded Salmon Sandwich
+        541: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Everything Seeded Salmon',
+        },
+
+        # 547: Smoked Trout Sandwich
+        547: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Smoked Trout',
+        },
+
+        # 548: Lake Sturgeon Sandwich
+        548: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Lake Sturgeon',
+        },
+
+        # 549: Whitefish Sandwich
+        549: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Whitefish Salad',
+        },
+
+        # 9845: Open Face Traditional (same as Traditional but open face)
+        9845: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Nova Scotia Salmon',
+            'spread': 'Plain Cream Cheese',
+            'extras': ['Beefsteak Tomatoes', 'Red Onion', 'Capers'],
+        },
+
+        # === REMAINING DELI SANDWICHES ===
+
+        # 533: Kosher Beef Salami Sandwich
+        533: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Kosher Beef Salami'],
+        },
+
+        # 538: Chicken Cutlet Sandwich
+        538: {
+            'item_type': 'deli_sandwich',
+            'extra_proteins': ['Chicken Cutlet'],
+        },
+
+        # === REMAINING FISH SANDWICHES ===
+
+        # 540: Belly Lox Sandwich
+        540: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Belly Lox',
+        },
+
+        # 542: Pastrami Salmon Sandwich
+        542: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Pastrami Salmon',
+        },
+
+        # 543: Scottish Salmon Sandwich
+        543: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Scottish Salmon',
+        },
+
+        # 544: Wild Pacific Salmon Sandwich
+        544: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Wild Pacific Salmon',
+        },
+
+        # 545: Wild Coho Salmon Sandwich
+        545: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Wild Coho Salmon',
+        },
+
+        # 546: Baked Kippered Salmon Sandwich
+        546: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Kippered Salmon',
+        },
+
+        # 550: Herring Tidbits on Bagel
+        550: {
+            'item_type': 'fish_sandwich',
+            'fish': 'Herring',
+        },
     }
 
     # Clear existing attribute values for these items

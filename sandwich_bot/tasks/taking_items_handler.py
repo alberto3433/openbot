@@ -41,7 +41,12 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input
-from .modifier_operations import find_modifier_on_any_item, remove_modifier_from_item
+from .modifier_operations import (
+    find_modifier_on_any_item,
+    remove_modifier_from_item,
+    find_default_ingredient_on_any_item,
+    remove_default_ingredient_from_item,
+)
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_bagel_types,
@@ -49,6 +54,8 @@ from .parsers.constants import (
     get_proteins,
     get_cheeses,
     get_toppings,
+    resolve_soda_alias,
+    resolve_coffee_alias,
 )
 
 if TYPE_CHECKING:
@@ -65,6 +72,120 @@ if TYPE_CHECKING:
     from .checkout_handler import CheckoutHandler
 
 logger = logging.getLogger(__name__)
+
+
+# Ordinal reference mapping for "remove the second bagel", "cancel the 3rd coffee", etc.
+ORDINAL_WORDS = {
+    "first": 1, "1st": 1,
+    "second": 2, "2nd": 2,
+    "third": 3, "3rd": 3,
+    "fourth": 4, "4th": 4,
+    "fifth": 5, "5th": 5,
+    "sixth": 6, "6th": 6,
+    "seventh": 7, "7th": 7,
+    "eighth": 8, "8th": 8,
+    "ninth": 9, "9th": 9,
+    "tenth": 10, "10th": 10,
+}
+
+
+def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
+    """
+    Extract ordinal reference from a cancellation description.
+
+    Args:
+        cancel_desc: The cancellation description (e.g., "second bagel", "3rd coffee")
+
+    Returns:
+        Tuple of (ordinal_index, item_type) where ordinal_index is 1-based (or None if no ordinal),
+        and item_type is the cleaned item type string (e.g., "bagel", "coffee").
+    """
+    words = cancel_desc.lower().split()
+
+    # Check if first word is an ordinal
+    if words and words[0] in ORDINAL_WORDS:
+        ordinal_index = ORDINAL_WORDS[words[0]]
+        item_type = " ".join(words[1:])  # e.g., "second bagel" -> "bagel"
+        return ordinal_index, item_type
+
+    # Check for patterns like "bagel 2" or "coffee #3"
+    if len(words) >= 2:
+        last_word = words[-1].lstrip("#")
+        if last_word.isdigit():
+            ordinal_index = int(last_word)
+            item_type = " ".join(words[:-1])  # e.g., "bagel 2" -> "bagel"
+            return ordinal_index, item_type
+
+    return None, cancel_desc
+
+
+def find_nth_item_of_type(
+    items: list,
+    item_type_keyword: str,
+    n: int,
+) -> tuple | None:
+    """
+    Find the Nth item of a given type from a list.
+
+    Args:
+        items: List of items to search
+        item_type_keyword: The type keyword to match (e.g., "bagel", "coffee", "item")
+        n: 1-based index (1 = first, 2 = second, etc.)
+
+    Returns:
+        Tuple of (item, original_index) if found, None otherwise.
+
+    Special cases:
+        - "item" matches any item (position-based removal)
+        - Synonyms are resolved (e.g., "coke" -> "Coca-Cola")
+    """
+    if n < 1:
+        return None
+
+    # Handle generic "item" keyword - match any item by position
+    if item_type_keyword.lower() in ("item", "items", "one", "thing"):
+        if n <= len(items):
+            return (items[n - 1], n - 1)
+        return None
+
+    # Resolve synonyms to canonical names
+    keyword_lower = item_type_keyword.lower()
+    canonical_soda = resolve_soda_alias(keyword_lower)
+    canonical_coffee = resolve_coffee_alias(keyword_lower)
+
+    matching_items = []
+    for idx, item in enumerate(items):
+        item_summary = item.get_summary().lower()
+        item_type = getattr(item, 'item_type', '') or ''
+        item_name = getattr(item, 'menu_item_name', '') or ''
+        item_name_lower = item_name.lower()
+
+        # Check if this item matches the type keyword
+        matches = False
+
+        # Direct keyword match in summary or type
+        if (keyword_lower in item_summary or
+            keyword_lower == item_type or
+            (item_type and item_type in keyword_lower)):
+            matches = True
+        # Check canonical soda name match (e.g., "coke" -> "Coca-Cola")
+        elif canonical_soda != keyword_lower and canonical_soda.lower() in item_name_lower:
+            matches = True
+        # Check canonical coffee name match
+        elif canonical_coffee != keyword_lower and canonical_coffee.lower() in item_name_lower:
+            matches = True
+        # Check if menu_item_name contains keyword
+        elif keyword_lower in item_name_lower:
+            matches = True
+
+        if matches:
+            matching_items.append((item, idx))
+
+    # Return the Nth match (1-based index)
+    if n <= len(matching_items):
+        return matching_items[n - 1]
+
+    return None
 
 
 class TakingItemsHandler:
@@ -1027,6 +1148,19 @@ class TakingItemsHandler:
                             message=f"{result.message} Your order is now {updated_summary}. Anything else?",
                             order=order,
                         )
+                else:
+                    # No modifier found - check if it's a default ingredient of a signature/menu item
+                    default_match = find_default_ingredient_on_any_item(active_items, parsed.cancel_item)
+                    if default_match:
+                        # Found a default ingredient - add to removed_ingredients list
+                        result = remove_default_ingredient_from_item(default_match.item, default_match)
+                        if result.success:
+                            # Note: No price recalculation needed - removing default doesn't change price
+                            updated_summary = default_match.item.get_summary()
+                            return StateMachineResult(
+                                message=f"{result.message} Your order is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
 
         # Handle item cancellation: "cancel the coke", "remove the bagel", etc.
         if parsed.cancel_item:
@@ -1072,12 +1206,141 @@ class TakingItemsHandler:
                         order=order,
                     )
 
+            # Handle special "__reduce_to_one__" value for "just one bagel", "only one", etc.
+            # This reduces quantity by removing all but the first item of the specified type
+            if parsed.cancel_item and parsed.cancel_item.startswith("__reduce_to_one"):
+                if active_items:
+                    # Extract item type from cancel_item (e.g., "__reduce_to_one_bagel__" -> "bagel")
+                    item_type = None
+                    if parsed.cancel_item != "__reduce_to_one__":
+                        # Extract the type between "__reduce_to_one_" and "__"
+                        parts = parsed.cancel_item.replace("__", "").replace("reduce_to_one_", "")
+                        if parts:
+                            item_type = parts.strip()
+
+                    # Find items to remove (keep first, remove rest)
+                    items_to_check = active_items
+                    if item_type:
+                        # Filter by item type
+                        from .models import BagelItemTask, CoffeeItemTask, MenuItemTask, SignatureItemTask
+                        type_map = {
+                            "bagel": BagelItemTask,
+                            "coffee": CoffeeItemTask,
+                            "drink": CoffeeItemTask,
+                            "sandwich": (MenuItemTask, SignatureItemTask),
+                        }
+                        target_types = type_map.get(item_type)
+                        if target_types:
+                            if isinstance(target_types, tuple):
+                                items_to_check = [i for i in active_items if isinstance(i, target_types)]
+                            else:
+                                items_to_check = [i for i in active_items if isinstance(i, target_types)]
+
+                    if len(items_to_check) > 1:
+                        # Keep the first item, remove the rest
+                        items_to_remove = items_to_check[1:]
+                        removed_count = 0
+                        removed_names = []
+                        for item in items_to_remove:
+                            removed_name = item.get_summary()
+                            idx = order.items.items.index(item)
+                            order.items.remove_item(idx)
+                            removed_count += 1
+                            removed_names.append(removed_name)
+
+                        kept_item = items_to_check[0].get_summary()
+                        logger.info(
+                            "Reduce to one: kept '%s', removed %d items: %s",
+                            kept_item, removed_count, removed_names
+                        )
+
+                        if removed_count == 1:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the extra {item_type or 'item'}. You have {kept_item}. Anything else?",
+                                order=order,
+                            )
+                        else:
+                            return StateMachineResult(
+                                message=f"OK, I've removed {removed_count} items. You have {kept_item}. Anything else?",
+                                order=order,
+                            )
+                    elif len(items_to_check) == 1:
+                        # Already just one item
+                        kept_item = items_to_check[0].get_summary()
+                        return StateMachineResult(
+                            message=f"You already have just one {item_type or 'item'}: {kept_item}. Anything else?",
+                            order=order,
+                        )
+                    else:
+                        # No items of that type
+                        return StateMachineResult(
+                            message=f"I don't see any {item_type or 'items'} in your order. What would you like?",
+                            order=order,
+                        )
+                else:
+                    return StateMachineResult(
+                        message="Your order is empty. What would you like to order?",
+                        order=order,
+                    )
+
             if active_items:
+                # First, check for ordinal reference (e.g., "second bagel", "3rd coffee")
+                ordinal_index, item_type_keyword = extract_ordinal_reference(cancel_item_desc)
+
+                if ordinal_index is not None and item_type_keyword:
+                    # User wants to remove a specific Nth item
+                    result = find_nth_item_of_type(active_items, item_type_keyword, ordinal_index)
+                    if result:
+                        item_to_remove, _ = result
+                        removed_name = item_to_remove.get_summary()
+                        idx = order.items.items.index(item_to_remove)
+                        order.items.remove_item(idx)
+
+                        logger.info(
+                            "Cancellation: removed %s #%d from cart: %s",
+                            item_type_keyword, ordinal_index, removed_name
+                        )
+
+                        remaining_items = order.items.get_active_items()
+                        if remaining_items:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_name}. Anything else?",
+                                order=order,
+                            )
+                        else:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                                order=order,
+                            )
+                    else:
+                        # Ordinal item not found
+                        logger.info(
+                            "Cancellation: couldn't find %s #%d in cart",
+                            item_type_keyword, ordinal_index
+                        )
+                        # Build appropriate error message
+                        if item_type_keyword.lower() in ("item", "items", "one", "thing"):
+                            not_found_msg = f"I couldn't find item #{ordinal_index} in your order."
+                        else:
+                            not_found_msg = f"I couldn't find a {item_type_keyword} #{ordinal_index} in your order."
+                        return StateMachineResult(
+                            message=f"{not_found_msg} What would you like to do?",
+                            order=order,
+                        )
+
                 # Check if plural removal (e.g., "coffees", "bagels")
                 is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
                 singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
 
-                # Find matching items
+                # Resolve aliases to canonical names (e.g., "coke" -> "Coca-Cola")
+                # Try both soda and coffee alias resolution
+                canonical_name = resolve_soda_alias(singular_desc)
+                if canonical_name == singular_desc:
+                    # Soda alias didn't resolve, try coffee alias
+                    canonical_name = resolve_coffee_alias(singular_desc)
+                canonical_name_lower = canonical_name.lower() if canonical_name != singular_desc else None
+
+                # Find matching items (fallback for non-ordinal cancellations)
                 items_to_remove = []
                 for item in reversed(active_items):  # Search from most recent
                     item_summary = item.get_summary().lower()
@@ -1101,6 +1364,9 @@ class TakingItemsHandler:
                     elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
                         matches = True
                     elif any(word in item_summary for word in cancel_item_desc.split() if word):
+                        matches = True
+                    # Check canonical name from alias resolution (e.g., "coke" -> "Coca-Cola")
+                    elif canonical_name_lower and canonical_name_lower == item_name_lower:
                         matches = True
 
                     if matches:

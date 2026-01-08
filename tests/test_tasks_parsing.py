@@ -1078,6 +1078,254 @@ class TestCancellationPatternDetection:
         assert result.cancel_item == "__all_items__", \
             f"Expected cancel_item='__all_items__' but got '{result.cancel_item}' for: {text}"
 
+    @pytest.mark.parametrize("text,expected_item", [
+        # "delete X" patterns (new verb)
+        ("delete the bagel", "bagel"),
+        ("delete the coke", "coke"),
+        ("delete the coffee", "coffee"),
+        ("delete my order", "__all_items__"),
+    ])
+    def test_delete_pattern_detected(self, text, expected_item):
+        """Test that 'delete X' patterns are properly detected as cancellation."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item is not None, f"Expected cancel_item for: {text}"
+        assert result.cancel_item.lower() == expected_item.lower(), \
+            f"Expected cancel_item='{expected_item}' but got '{result.cancel_item}' for: {text}"
+
+    @pytest.mark.parametrize("text,expected_item", [
+        # Ordinal removal patterns
+        ("remove the first bagel", "first bagel"),
+        # Note: "second bagel" conflicts with "SEC" abbreviation parsing (Sausage Egg Cheese)
+        # so we use "2nd bagel" instead
+        ("remove the 2nd bagel", "2nd bagel"),
+        ("cancel the third coffee", "third coffee"),
+        ("delete the 1st item", "1st item"),
+        ("delete the 2nd coke", "2nd coke"),
+        ("scratch the 3rd item", "3rd item"),
+        ("forget the first one", "first one"),
+        # Ordinal with numbers
+        ("remove bagel 2", "bagel 2"),
+        ("cancel coffee #3", "coffee #3"),
+    ])
+    def test_ordinal_removal_patterns_detected(self, text, expected_item):
+        """Test that ordinal removal patterns are properly parsed.
+
+        These patterns like 'remove the first bagel' or 'delete the 3rd item'
+        should capture the ordinal + item type for position-based removal.
+        """
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item is not None, f"Expected cancel_item for: {text}"
+        assert result.cancel_item.lower() == expected_item.lower(), \
+            f"Expected cancel_item='{expected_item}' but got '{result.cancel_item}' for: {text}"
+
+
+class TestReduceToOnePatternDetection:
+    """Tests for 'just one bagel', 'only one', etc. - reducing quantity to 1."""
+
+    @pytest.mark.parametrize("text,expected_type", [
+        # "actually just one bagel"
+        ("actually just one bagel", "__reduce_to_one_bagel__"),
+        ("actually only one bagel", "__reduce_to_one_bagel__"),
+        ("actually just one coffee", "__reduce_to_one_coffee__"),
+        ("actually just 1 bagel", "__reduce_to_one_bagel__"),
+        # "just one bagel"
+        ("just one bagel", "__reduce_to_one_bagel__"),
+        ("only one bagel", "__reduce_to_one_bagel__"),
+        ("just one coffee", "__reduce_to_one_coffee__"),
+        ("only one coffee", "__reduce_to_one_coffee__"),
+        # "just one" / "only one" (no item type)
+        ("just one", "__reduce_to_one__"),
+        ("only one", "__reduce_to_one__"),
+        ("just 1", "__reduce_to_one__"),
+        # "make it just one"
+        ("make it just one", "__reduce_to_one__"),
+        ("make it only one bagel", "__reduce_to_one_bagel__"),
+        ("make that just one", "__reduce_to_one__"),
+        # "i only want one"
+        ("i only want one", "__reduce_to_one__"),
+        ("i just want one bagel", "__reduce_to_one_bagel__"),
+        ("i only need one", "__reduce_to_one__"),
+        # "one is enough"
+        ("one is enough", "__reduce_to_one__"),
+        ("one bagel is enough", "__reduce_to_one_bagel__"),
+        ("one is fine", "__reduce_to_one__"),
+        ("one is good", "__reduce_to_one__"),
+    ])
+    def test_reduce_to_one_patterns_detected(self, text, expected_type):
+        """Test that 'just one' / 'only one' patterns are parsed as reduce-to-one."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.cancel_item is not None, f"Expected cancel_item for: {text}"
+        assert result.cancel_item == expected_type, \
+            f"Expected cancel_item='{expected_type}' but got '{result.cancel_item}' for: {text}"
+
+    @pytest.mark.parametrize("text", [
+        # These should NOT match reduce-to-one
+        "one plain bagel",  # ordering one bagel
+        "I want one coffee",  # ordering one coffee
+        "give me one",  # ordering
+        "can I get one bagel",  # ordering
+        "one more bagel",  # adding more
+        "just a bagel",  # no quantity specified
+        "only a coffee",  # no quantity specified
+    ])
+    def test_non_reduce_to_one_patterns_not_detected(self, text):
+        """Test that ordering patterns are not matched as reduce-to-one."""
+        result = parse_open_input_deterministic(text)
+        if result is not None and result.cancel_item:
+            assert not result.cancel_item.startswith("__reduce_to_one"), \
+                f"Unexpected reduce-to-one match for: {text}"
+
+
+class TestOrdinalExtractionFromCancelItem:
+    """Tests for extracting ordinal references from cancellation descriptions."""
+
+    def test_extract_ordinal_first_bagel(self):
+        """Test extracting ordinal from 'first bagel'."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("first bagel")
+        assert ordinal == 1
+        assert item_type == "bagel"
+
+    def test_extract_ordinal_second_coffee(self):
+        """Test extracting ordinal from 'second coffee'."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("second coffee")
+        assert ordinal == 2
+        assert item_type == "coffee"
+
+    def test_extract_ordinal_3rd_item(self):
+        """Test extracting ordinal from '3rd item'."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("3rd item")
+        assert ordinal == 3
+        assert item_type == "item"
+
+    def test_extract_ordinal_bagel_2(self):
+        """Test extracting ordinal from 'bagel 2' (reversed format)."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("bagel 2")
+        assert ordinal == 2
+        assert item_type == "bagel"
+
+    def test_extract_ordinal_coffee_hash_3(self):
+        """Test extracting ordinal from 'coffee #3' (hash format)."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("coffee #3")
+        assert ordinal == 3
+        assert item_type == "coffee"
+
+    def test_no_ordinal_plain_bagel(self):
+        """Test that plain item descriptions return no ordinal."""
+        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        ordinal, item_type = extract_ordinal_reference("plain bagel")
+        assert ordinal is None
+        assert item_type == "plain bagel"
+
+
+class TestFindNthItemOfType:
+    """Tests for finding the Nth item of a given type."""
+
+    def test_find_first_bagel(self):
+        """Test finding the first bagel in a list."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+
+        items = [
+            BagelItemTask(bagel_type="plain"),
+            CoffeeItemTask(drink_type="latte"),
+            BagelItemTask(bagel_type="everything"),
+        ]
+
+        result = find_nth_item_of_type(items, "bagel", 1)
+        assert result is not None
+        item, idx = result
+        assert item.bagel_type == "plain"
+        assert idx == 0
+
+    def test_find_second_bagel(self):
+        """Test finding the second bagel in a list."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+
+        items = [
+            BagelItemTask(bagel_type="plain"),
+            CoffeeItemTask(drink_type="latte"),
+            BagelItemTask(bagel_type="everything"),
+        ]
+
+        result = find_nth_item_of_type(items, "bagel", 2)
+        assert result is not None
+        item, idx = result
+        assert item.bagel_type == "everything"
+        assert idx == 2
+
+    def test_find_nth_item_generic(self):
+        """Test finding the Nth item regardless of type using 'item' keyword."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+
+        items = [
+            BagelItemTask(bagel_type="plain"),
+            CoffeeItemTask(drink_type="latte"),
+            BagelItemTask(bagel_type="everything"),
+        ]
+
+        # "2nd item" should return the coffee (index 1)
+        result = find_nth_item_of_type(items, "item", 2)
+        assert result is not None
+        item, idx = result
+        assert isinstance(item, CoffeeItemTask)
+        assert idx == 1
+
+    def test_find_nth_item_out_of_range(self):
+        """Test that out-of-range ordinal returns None."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import BagelItemTask
+
+        items = [
+            BagelItemTask(bagel_type="plain"),
+            BagelItemTask(bagel_type="everything"),
+        ]
+
+        # Asking for 5th bagel when only 2 exist
+        result = find_nth_item_of_type(items, "bagel", 5)
+        assert result is None
+
+    def test_find_item_by_menu_item_name(self):
+        """Test finding item by menu_item_name field."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import MenuItemTask
+
+        # MenuItemTask has menu_item_name field
+        item = MenuItemTask(menu_item_name="Coca-Cola")
+        items = [item]
+
+        # Search by canonical name should find it
+        result = find_nth_item_of_type(items, "coca-cola", 1)
+        assert result is not None
+        found_item, idx = result
+        assert found_item.menu_item_name == "Coca-Cola"
+        assert idx == 0
+
+    def test_find_item_by_summary(self):
+        """Test finding item by get_summary() content."""
+        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from sandwich_bot.tasks.models import CoffeeItemTask
+
+        # CoffeeItemTask summary includes drink_type
+        item = CoffeeItemTask(drink_type="latte", size="large")
+        items = [item]
+
+        # Search by drink type should find it
+        result = find_nth_item_of_type(items, "latte", 1)
+        assert result is not None
+        found_item, idx = result
+        assert found_item.drink_type == "latte"
+        assert idx == 0
+
 
 class TestTaxQuestionPatternDetection:
     """Tests for tax question pattern detection."""

@@ -229,6 +229,8 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"|"
     r"remove\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
+    r"delete\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
     r"clear\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
     r"take\s+(?:off\s+)?(?:the\s+)?(.+?)(?:\s+off)?[\s!.,]*$"
@@ -316,6 +318,29 @@ MAKE_IT_N_PATTERN = re.compile(
     # Just a number by itself when we have context (e.g., "2" after adding item) - handled differently
     # "2 of those", "2 of them"
     r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "just one" / "only one" pattern - reduces quantity to 1 (removes extras)
+# e.g., "actually just one bagel", "only one", "just one", "make it just one"
+REDUCE_TO_ONE_PATTERN = re.compile(
+    r"^(?:"
+    # "actually just one bagel", "actually only one coffee"
+    r"actually\s+(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"|"
+    # "just one bagel", "only one coffee", "just one", "only one"
+    r"(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"|"
+    # "make it just one", "make it only one"
+    r"make\s+(?:it|that)\s+(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"|"
+    # "i only want one", "i just want one bagel", "i only need one"
+    r"i\s+(?:only|just)\s+(?:want|need|wanted)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"|"
+    # "one is enough", "one bagel is enough"
+    r"(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?\s+is\s+(?:enough|fine|good)"
     r")"
     r"[\s!.,?]*$",
     re.IGNORECASE
@@ -3954,6 +3979,31 @@ def parse_open_input_deterministic(
                 logger.info("Deterministic parse: 'make it N' detected, target=%d, adding %d more", target_qty, additional)
                 return OpenInputResponse(duplicate_last_item=additional)
 
+    # Check for "just one" / "only one" patterns - reduces quantity to 1
+    # e.g., "actually just one bagel", "only one", "just one"
+    reduce_to_one_match = REDUCE_TO_ONE_PATTERN.match(text)
+    if reduce_to_one_match:
+        # Extract item type if specified (any of the capture groups)
+        item_type = None
+        for i in range(1, 6):  # Check all capture groups
+            if reduce_to_one_match.group(i):
+                item_type = reduce_to_one_match.group(i).lower()
+                # Normalize plurals
+                if item_type.endswith('s') and item_type not in ('drinks',):
+                    item_type = item_type[:-1]  # bagels -> bagel
+                if item_type == 'drinks':
+                    item_type = 'drink'
+                break
+
+        # Return special cancel_item value to signal quantity reduction
+        if item_type:
+            cancel_value = f"__reduce_to_one_{item_type}__"
+        else:
+            cancel_value = "__reduce_to_one__"
+
+        logger.info("Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)", item_type or "any")
+        return OpenInputResponse(cancel_item=cancel_value)
+
     # Check for "another bagel" / "one more coffee" patterns (with item type specified)
     # This must be checked BEFORE ONE_MORE_PATTERN since it's more specific
     another_item_match = ANOTHER_ITEM_TYPE_PATTERN.match(text)
@@ -3999,7 +4049,7 @@ def parse_open_input_deterministic(
     cancel_match = CANCEL_ITEM_PATTERN.match(text)
     if cancel_match:
         cancel_item = None
-        for i in range(1, 10):  # 9 capture groups in pattern
+        for i in range(1, 11):  # 10 capture groups in pattern
             if cancel_match.group(i):
                 cancel_item = cancel_match.group(i)
                 break

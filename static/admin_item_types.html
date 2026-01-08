@@ -324,6 +324,10 @@
       background: #fff3e0;
       color: #e65100;
     }
+    .attr-badge.ingredient-based {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
     .attr-actions {
       display: flex;
       gap: 6px;
@@ -403,6 +407,79 @@
       padding: 6px 10px;
       border: 1px solid #ccc;
       border-radius: 3px;
+      font-size: 13px;
+    }
+    /* Ingredient search/filter styles */
+    .ingredient-search-container {
+      padding: 8px 12px;
+      background: #fafafa;
+      border-top: 1px solid #e0e0e0;
+    }
+    .ingredient-search-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .ingredient-search-input:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .ingredient-results {
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      background: #fff;
+      display: none;
+    }
+    .ingredient-results.active {
+      display: block;
+    }
+    .ingredient-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .ingredient-result-item:last-child {
+      border-bottom: none;
+    }
+    .ingredient-result-item:hover {
+      background: #e3f2fd;
+    }
+    .ingredient-result-item .category {
+      font-size: 11px;
+      color: #888;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .ingredient-result-item.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: #f5f5f5;
+    }
+    .ingredient-result-item.disabled:hover {
+      background: #f5f5f5;
+    }
+    .no-results {
+      padding: 12px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+    }
+    .loading-indicator {
+      padding: 12px;
+      text-align: center;
+      color: #666;
       font-size: 13px;
     }
     .modal-header {
@@ -697,10 +774,16 @@
             <div class="options-list" id="attrOptionsList">
               <div class="empty-attrs" style="padding: 12px;">No options defined</div>
             </div>
-            <div class="add-option-row">
+            <!-- Regular options add row -->
+            <div class="add-option-row" id="regularOptionRow">
               <input type="text" id="newOptionSlug" placeholder="Option slug (e.g., plain)" />
               <input type="text" id="newOptionDisplay" placeholder="Display name (optional)" />
               <button type="button" class="attr-btn" id="addOptionBtn" style="background: #4caf50; color: #fff;">Add</button>
+            </div>
+            <!-- Ingredient search/add row (for ingredient-based attributes) -->
+            <div class="ingredient-search-container" id="ingredientSearchContainer" style="display: none;">
+              <input type="text" class="ingredient-search-input" id="ingredientSearchInput" placeholder="Search ingredients to add..." />
+              <div class="ingredient-results" id="ingredientResults"></div>
             </div>
           </div>
         </form>
@@ -801,6 +884,8 @@
     let currentAttributes = [];
     let editingAttributeId = null;
     let pendingOptions = []; // Options being added to a new attribute
+    let availableIngredients = []; // Ingredients available to link
+    let ingredientSearchTimeout = null; // Debounce for search
 
     // Load item types from API
     async function loadItemTypes() {
@@ -903,6 +988,7 @@
               <span class="attr-badge type">${attr.input_type.replace('_', ' ')}</span>
               ${attr.is_required ? '<span class="attr-badge required">Required</span>' : ''}
               ${attr.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
+              ${attr.loads_from_ingredients ? '<span class="attr-badge ingredient-based">Ingredients</span>' : ''}
               ${attr.options && attr.options.length > 0 ? `<span class="attr-badge options">${attr.options.length} options</span>` : ''}
             </div>
           </div>
@@ -923,8 +1009,49 @@
     }
 
     // Render pending options in attribute form
-    function renderPendingOptions() {
+    function renderPendingOptions(isIngredientBased = false) {
       const container = document.getElementById("attrOptionsList");
+      const regularOptionRow = document.getElementById("regularOptionRow");
+      const ingredientSearchContainer = document.getElementById("ingredientSearchContainer");
+
+      if (isIngredientBased) {
+        // For ingredient-based attributes, show list with remove buttons
+        if (pendingOptions.length === 0) {
+          container.innerHTML = '<div class="empty-attrs" style="padding: 12px;">No ingredients linked. Search below to add ingredients.</div>';
+        } else {
+          container.innerHTML = pendingOptions.map((opt) => `
+            <div class="option-row">
+              <div class="option-info">
+                <span>${escapeHtml(opt.display_name || opt.slug)}</span>
+                <span style="color: #888; font-size: 11px; margin-left: 8px;">(${escapeHtml(opt.slug)})</span>
+                ${opt.is_default ? '<span class="option-default">default</span>' : ''}
+                ${opt.ingredient_name ? '<span style="color: #2e7d32; font-size: 10px; margin-left: 6px;">🔗 ' + escapeHtml(opt.ingredient_name) + '</span>' : ''}
+              </div>
+              <button class="attr-btn danger remove-ingredient-btn" data-link-id="${opt.id}" data-name="${escapeHtml(opt.display_name || opt.slug)}" type="button">&times;</button>
+            </div>
+          `).join("");
+        }
+        // Hide regular option row, show ingredient search
+        if (regularOptionRow) regularOptionRow.style.display = 'none';
+        if (ingredientSearchContainer) ingredientSearchContainer.style.display = 'block';
+
+        // Add remove handlers for ingredient links
+        document.querySelectorAll(".remove-ingredient-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const linkId = btn.dataset.linkId;
+            const name = btn.dataset.name;
+            if (confirm(`Remove "${name}" from this attribute?`)) {
+              await removeIngredientLink(linkId);
+            }
+          });
+        });
+        return;
+      }
+
+      // Show regular option row, hide ingredient search for non-ingredient-based
+      if (regularOptionRow) regularOptionRow.style.display = 'flex';
+      if (ingredientSearchContainer) ingredientSearchContainer.style.display = 'none';
+
       if (pendingOptions.length === 0) {
         container.innerHTML = '<div class="empty-attrs" style="padding: 12px;">No options defined</div>';
         return;
@@ -1117,9 +1244,13 @@
     // Attribute Modal Functions
     // =====================
 
+    // Track if current attribute is ingredient-based
+    let currentAttrIsIngredientBased = false;
+
     function openAttributeModal(attrId = null) {
       editingAttributeId = attrId;
       pendingOptions = [];
+      currentAttrIsIngredientBased = false;
 
       const form = document.getElementById("attributeForm");
       form.reset();
@@ -1129,6 +1260,8 @@
         // Editing existing attribute
         const attr = currentAttributes.find(a => a.id === attrId);
         if (!attr) return;
+
+        currentAttrIsIngredientBased = attr.loads_from_ingredients || false;
 
         document.getElementById("attrModalTitle").textContent = "Edit Attribute";
         document.getElementById("attrDeleteBtn").style.display = "inline-block";
@@ -1141,12 +1274,14 @@
         document.getElementById("attrAskInConversation").checked = attr.ask_in_conversation;
         document.getElementById("attrQuestionText").value = attr.question_text || "";
 
-        // Load existing options
+        // Load existing options (include ingredient_name for ingredient-based)
         pendingOptions = (attr.options || []).map(opt => ({
           id: opt.id,
           slug: opt.slug,
           display_name: opt.display_name,
-          is_default: opt.is_default
+          is_default: opt.is_default,
+          ingredient_id: opt.ingredient_id,
+          ingredient_name: opt.ingredient_name
         }));
       } else {
         // Adding new attribute
@@ -1156,7 +1291,17 @@
       }
 
       updateOptionsVisibility();
-      renderPendingOptions();
+      renderPendingOptions(currentAttrIsIngredientBased);
+
+      // Load available ingredients if this is ingredient-based
+      if (currentAttrIsIngredientBased && attrId) {
+        loadAvailableIngredients();
+      }
+
+      // Clear search input
+      document.getElementById("ingredientSearchInput").value = "";
+      document.getElementById("ingredientResults").classList.remove("active");
+
       attributeModal.classList.add("active");
     }
 
@@ -1164,12 +1309,27 @@
       attributeModal.classList.remove("active");
       editingAttributeId = null;
       pendingOptions = [];
+      availableIngredients = [];
+      currentAttrIsIngredientBased = false;
+      document.getElementById("ingredientResults").classList.remove("active");
     }
 
     function updateOptionsVisibility() {
       const inputType = document.getElementById("attrInputType").value;
       const optionsSection = document.getElementById("optionsSection");
-      optionsSection.style.display = (inputType === "single_select" || inputType === "multi_select") ? "block" : "none";
+      const isSelectType = (inputType === "single_select" || inputType === "multi_select");
+      optionsSection.style.display = isSelectType ? "block" : "none";
+
+      // Update label and hint for ingredient-based attributes
+      const optionsLabel = optionsSection.querySelector("label");
+      const optionsHint = optionsSection.querySelector(".hint");
+      if (currentAttrIsIngredientBased) {
+        optionsLabel.textContent = "Options (from Ingredients)";
+        optionsHint.innerHTML = 'Options are linked from the <a href="/static/admin_ingredients.html" style="color: #1976d2;">Ingredients</a> table. Manage ingredients there to add/remove options.';
+      } else {
+        optionsLabel.textContent = "Options (for select types)";
+        optionsHint.textContent = "Available choices for this attribute";
+      }
     }
 
     async function saveAttribute() {
@@ -1229,8 +1389,9 @@
         const savedAttr = await response.json();
         attrId = savedAttr.id;
 
-        // Sync options if this is a select type
-        if (inputType === "single_select" || inputType === "multi_select") {
+        // Sync options if this is a select type and NOT ingredient-based
+        // (Ingredient-based options are managed via Ingredients page, not here)
+        if ((inputType === "single_select" || inputType === "multi_select") && !currentAttrIsIngredientBased) {
           await syncOptions(attrId);
         }
 
@@ -1337,6 +1498,190 @@
       renderPendingOptions();
     }
 
+    // =====================
+    // Ingredient Link Functions
+    // =====================
+
+    async function loadAvailableIngredients() {
+      if (!editingAttributeId || !currentAttrIsIngredientBased) return;
+
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/available-ingredients`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        availableIngredients = await response.json();
+      } catch (error) {
+        console.error("Failed to load available ingredients:", error);
+        availableIngredients = [];
+      }
+    }
+
+    function filterIngredients(searchTerm) {
+      const term = searchTerm.toLowerCase().trim();
+      if (!term) return availableIngredients.slice(0, 20); // Show first 20 if no search
+
+      return availableIngredients.filter(ing =>
+        ing.name.toLowerCase().includes(term) ||
+        ing.slug.toLowerCase().includes(term) ||
+        ing.category.toLowerCase().includes(term)
+      ).slice(0, 20); // Limit to 20 results
+    }
+
+    function renderIngredientResults(ingredients) {
+      const resultsContainer = document.getElementById("ingredientResults");
+
+      if (ingredients.length === 0) {
+        resultsContainer.innerHTML = '<div class="no-results">No matching ingredients found</div>';
+        resultsContainer.classList.add("active");
+        return;
+      }
+
+      resultsContainer.innerHTML = ingredients.map(ing => `
+        <div class="ingredient-result-item" data-ingredient-id="${ing.id}" data-ingredient-name="${escapeHtml(ing.name)}">
+          <span>${escapeHtml(ing.name)}</span>
+          <span class="category">${escapeHtml(ing.category)}</span>
+        </div>
+      `).join("");
+
+      resultsContainer.classList.add("active");
+
+      // Add click handlers
+      document.querySelectorAll(".ingredient-result-item").forEach(item => {
+        item.addEventListener("click", async () => {
+          const ingredientId = parseInt(item.dataset.ingredientId);
+          const ingredientName = item.dataset.ingredientName;
+          await addIngredientLink(ingredientId, ingredientName);
+        });
+      });
+    }
+
+    async function addIngredientLink(ingredientId, ingredientName) {
+      if (!editingAttributeId) return;
+
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/ingredient-links`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ingredient_id: ingredientId,
+            price_modifier: 0,
+            is_default: false,
+            is_available: true,
+            display_order: pendingOptions.length
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        showStatus(`Added "${ingredientName}"`, "success");
+
+        // Refresh the attribute options
+        await refreshAttributeOptions();
+
+        // Clear search input and hide results
+        document.getElementById("ingredientSearchInput").value = "";
+        document.getElementById("ingredientResults").classList.remove("active");
+
+        // Reload available ingredients (the added one should no longer be available)
+        await loadAvailableIngredients();
+      } catch (error) {
+        console.error("Failed to add ingredient link:", error);
+        showStatus(`Failed to add ingredient: ${error.message}`, "error");
+      }
+    }
+
+    async function removeIngredientLink(linkId) {
+      if (!editingAttributeId) return;
+
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/ingredient-links/${linkId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        showStatus("Ingredient removed", "success");
+
+        // Refresh the attribute options
+        await refreshAttributeOptions();
+
+        // Reload available ingredients (the removed one should now be available)
+        await loadAvailableIngredients();
+      } catch (error) {
+        console.error("Failed to remove ingredient link:", error);
+        showStatus(`Failed to remove ingredient: ${error.message}`, "error");
+      }
+    }
+
+    async function refreshAttributeOptions() {
+      if (!editingAttributeId) return;
+
+      try {
+        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}`);
+        if (!response.ok) throw new Error("Failed to refresh");
+
+        const attr = await response.json();
+        pendingOptions = (attr.options || []).map(opt => ({
+          id: opt.id,
+          slug: opt.slug,
+          display_name: opt.display_name,
+          is_default: opt.is_default,
+          ingredient_id: opt.ingredient_id,
+          ingredient_name: opt.ingredient_name
+        }));
+
+        // Also update the attribute in currentAttributes so the count badge updates
+        const idx = currentAttributes.findIndex(a => a.id === editingAttributeId);
+        if (idx !== -1) {
+          currentAttributes[idx] = attr;
+          renderAttributes();
+        }
+
+        renderPendingOptions(currentAttrIsIngredientBased);
+      } catch (error) {
+        console.error("Failed to refresh attribute options:", error);
+      }
+    }
+
+    function handleIngredientSearch(e) {
+      const searchTerm = e.target.value;
+
+      // Debounce the search
+      if (ingredientSearchTimeout) {
+        clearTimeout(ingredientSearchTimeout);
+      }
+
+      if (!searchTerm.trim()) {
+        document.getElementById("ingredientResults").classList.remove("active");
+        return;
+      }
+
+      ingredientSearchTimeout = setTimeout(() => {
+        const filtered = filterIngredients(searchTerm);
+        renderIngredientResults(filtered);
+      }, 150);
+    }
+
+    function handleIngredientSearchFocus() {
+      const searchInput = document.getElementById("ingredientSearchInput");
+      const searchTerm = searchInput.value.trim();
+
+      if (searchTerm) {
+        const filtered = filterIngredients(searchTerm);
+        renderIngredientResults(filtered);
+      } else if (availableIngredients.length > 0) {
+        // Show some suggestions even without typing
+        renderIngredientResults(availableIngredients.slice(0, 10));
+      }
+    }
+
     // Event listeners
     document.getElementById("addItemTypeBtn").addEventListener("click", openAddModal);
     document.getElementById("modalClose").addEventListener("click", closeModal);
@@ -1364,6 +1709,19 @@
     });
     document.getElementById("attrInputType").addEventListener("change", updateOptionsVisibility);
     document.getElementById("addOptionBtn").addEventListener("click", addPendingOption);
+
+    // Ingredient search event listeners
+    document.getElementById("ingredientSearchInput").addEventListener("input", handleIngredientSearch);
+    document.getElementById("ingredientSearchInput").addEventListener("focus", handleIngredientSearchFocus);
+
+    // Hide ingredient results when clicking outside
+    document.addEventListener("click", (e) => {
+      const searchContainer = document.getElementById("ingredientSearchContainer");
+      const resultsContainer = document.getElementById("ingredientResults");
+      if (searchContainer && !searchContainer.contains(e.target)) {
+        resultsContainer.classList.remove("active");
+      }
+    });
 
     // Close modals when clicking outside
     itemTypeModal.addEventListener("click", (e) => {

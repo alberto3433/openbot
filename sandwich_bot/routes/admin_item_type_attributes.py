@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, ItemTypeAttribute, AttributeOption
+from ..models import ItemType, ItemTypeAttribute, AttributeOption, ItemTypeIngredient, Ingredient
 from ..schemas.item_type_attributes import (
     ItemTypeAttributeOut,
     ItemTypeAttributeCreate,
@@ -52,6 +52,9 @@ from ..schemas.item_type_attributes import (
     AttributeOptionOut,
     AttributeOptionCreate,
     AttributeOptionUpdate,
+    IngredientLinkCreate,
+    IngredientLinkUpdate,
+    AvailableIngredientOut,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,14 +67,57 @@ admin_item_type_attributes_router = APIRouter(
 
 
 def _serialize_attribute(attr: ItemTypeAttribute, db: Session) -> ItemTypeAttributeOut:
-    """Convert ItemTypeAttribute model to response schema with options."""
-    # Get options linked via item_type_attribute_id
-    options = (
-        db.query(AttributeOption)
-        .filter(AttributeOption.item_type_attribute_id == attr.id)
-        .order_by(AttributeOption.display_order)
-        .all()
-    )
+    """Convert ItemTypeAttribute model to response schema with options.
+
+    If loads_from_ingredients=True, options come from item_type_ingredients table
+    joined to ingredients, instead of from attribute_options.
+    """
+    options_out = []
+
+    if attr.loads_from_ingredients and attr.ingredient_group:
+        # Load options from item_type_ingredients -> ingredients
+        ingredient_links = (
+            db.query(ItemTypeIngredient)
+            .join(Ingredient)
+            .filter(
+                ItemTypeIngredient.item_type_id == attr.item_type_id,
+                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+            )
+            .order_by(ItemTypeIngredient.display_order)
+            .all()
+        )
+
+        for link in ingredient_links:
+            options_out.append(AttributeOptionOut(
+                id=link.id,  # Use ItemTypeIngredient.id as the option ID
+                slug=link.ingredient.slug,
+                display_name=link.display_name_override or link.ingredient.name,
+                price_modifier=float(link.price_modifier or 0),
+                is_default=link.is_default,
+                is_available=link.is_available and link.ingredient.is_available,
+                display_order=link.display_order,
+                ingredient_id=link.ingredient_id,
+                ingredient_name=link.ingredient.name,
+            ))
+    else:
+        # Get options linked via item_type_attribute_id (original behavior)
+        options = (
+            db.query(AttributeOption)
+            .filter(AttributeOption.item_type_attribute_id == attr.id)
+            .order_by(AttributeOption.display_order)
+            .all()
+        )
+
+        for opt in options:
+            options_out.append(AttributeOptionOut(
+                id=opt.id,
+                slug=opt.slug,
+                display_name=opt.display_name,
+                price_modifier=float(opt.price_modifier or 0),
+                is_default=opt.is_default,
+                is_available=opt.is_available,
+                display_order=opt.display_order,
+            ))
 
     return ItemTypeAttributeOut(
         id=attr.id,
@@ -87,18 +133,9 @@ def _serialize_attribute(attr: ItemTypeAttribute, db: Session) -> ItemTypeAttrib
         display_order=attr.display_order,
         ask_in_conversation=attr.ask_in_conversation,
         question_text=attr.question_text,
-        options=[
-            AttributeOptionOut(
-                id=opt.id,
-                slug=opt.slug,
-                display_name=opt.display_name,
-                price_modifier=float(opt.price_modifier or 0),
-                is_default=opt.is_default,
-                is_available=opt.is_available,
-                display_order=opt.display_order,
-            )
-            for opt in options
-        ],
+        loads_from_ingredients=attr.loads_from_ingredients,
+        ingredient_group=attr.ingredient_group,
+        options=options_out,
         created_at=attr.created_at,
         updated_at=attr.updated_at,
     )
@@ -279,12 +316,45 @@ def list_attribute_options(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> List[AttributeOptionOut]:
-    """List all options for a specific item type attribute."""
+    """List all options for a specific item type attribute.
+
+    If loads_from_ingredients=True, returns options from item_type_ingredients
+    joined to ingredients. Otherwise returns options from attribute_options.
+    """
     # Verify attribute exists
     attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
     if not attr:
         raise HTTPException(status_code=404, detail="Item type attribute not found")
 
+    if attr.loads_from_ingredients and attr.ingredient_group:
+        # Load options from item_type_ingredients -> ingredients
+        ingredient_links = (
+            db.query(ItemTypeIngredient)
+            .join(Ingredient)
+            .filter(
+                ItemTypeIngredient.item_type_id == attr.item_type_id,
+                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+            )
+            .order_by(ItemTypeIngredient.display_order)
+            .all()
+        )
+
+        return [
+            AttributeOptionOut(
+                id=link.id,
+                slug=link.ingredient.slug,
+                display_name=link.display_name_override or link.ingredient.name,
+                price_modifier=float(link.price_modifier or 0),
+                is_default=link.is_default,
+                is_available=link.is_available and link.ingredient.is_available,
+                display_order=link.display_order,
+                ingredient_id=link.ingredient_id,
+                ingredient_name=link.ingredient.name,
+            )
+            for link in ingredient_links
+        ]
+
+    # Original behavior: load from attribute_options
     options = (
         db.query(AttributeOption)
         .filter(AttributeOption.item_type_attribute_id == attr_id)
@@ -466,5 +536,244 @@ def delete_attribute_option(
         option.id
     )
     db.delete(option)
+    db.commit()
+    return None
+
+
+# =============================================================================
+# Ingredient Link Endpoints (for loads_from_ingredients=True attributes)
+# =============================================================================
+
+@admin_item_type_attributes_router.get(
+    "/{attr_id}/available-ingredients",
+    response_model=List[AvailableIngredientOut],
+    summary="List ingredients available to link"
+)
+def list_available_ingredients(
+    attr_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[AvailableIngredientOut]:
+    """List ingredients that can be linked to this attribute.
+
+    Returns ingredients that are NOT already linked to this attribute's
+    ingredient_group for this item type.
+    """
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    if not attr.loads_from_ingredients:
+        raise HTTPException(
+            status_code=400,
+            detail="This attribute does not use ingredient-based options"
+        )
+
+    # Get IDs of already-linked ingredients
+    linked_ids = (
+        db.query(ItemTypeIngredient.ingredient_id)
+        .filter(
+            ItemTypeIngredient.item_type_id == attr.item_type_id,
+            ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+        )
+        .all()
+    )
+    linked_ingredient_ids = {row[0] for row in linked_ids}
+
+    # Get all ingredients not already linked
+    ingredients = (
+        db.query(Ingredient)
+        .filter(~Ingredient.id.in_(linked_ingredient_ids) if linked_ingredient_ids else True)
+        .order_by(Ingredient.category, Ingredient.name)
+        .all()
+    )
+
+    return [
+        AvailableIngredientOut(
+            id=ing.id,
+            name=ing.name,
+            slug=ing.slug,
+            category=ing.category,
+            is_available=ing.is_available,
+        )
+        for ing in ingredients
+    ]
+
+
+@admin_item_type_attributes_router.post(
+    "/{attr_id}/ingredient-links",
+    response_model=AttributeOptionOut,
+    status_code=201,
+    summary="Link an ingredient to an attribute"
+)
+def create_ingredient_link(
+    attr_id: int,
+    payload: IngredientLinkCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Link an ingredient to an attribute (creates ItemTypeIngredient row)."""
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    if not attr.loads_from_ingredients or not attr.ingredient_group:
+        raise HTTPException(
+            status_code=400,
+            detail="This attribute does not use ingredient-based options"
+        )
+
+    # Verify ingredient exists
+    ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    # Check if already linked
+    existing = db.query(ItemTypeIngredient).filter(
+        ItemTypeIngredient.item_type_id == attr.item_type_id,
+        ItemTypeIngredient.ingredient_id == payload.ingredient_id,
+        ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ingredient '{ingredient.name}' is already linked to this attribute"
+        )
+
+    # Create the link
+    link = ItemTypeIngredient(
+        item_type_id=attr.item_type_id,
+        ingredient_id=payload.ingredient_id,
+        ingredient_group=attr.ingredient_group,
+        price_modifier=payload.price_modifier,
+        display_name_override=payload.display_name_override,
+        is_default=payload.is_default,
+        is_available=payload.is_available,
+        display_order=payload.display_order,
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+
+    logger.info(
+        "Linked ingredient %s to attribute %s (link_id=%d)",
+        ingredient.name,
+        attr.slug,
+        link.id
+    )
+
+    return AttributeOptionOut(
+        id=link.id,
+        slug=ingredient.slug,
+        display_name=link.display_name_override or ingredient.name,
+        price_modifier=float(link.price_modifier or 0),
+        is_default=link.is_default,
+        is_available=link.is_available and ingredient.is_available,
+        display_order=link.display_order,
+        ingredient_id=ingredient.id,
+        ingredient_name=ingredient.name,
+    )
+
+
+@admin_item_type_attributes_router.put(
+    "/{attr_id}/ingredient-links/{link_id}",
+    response_model=AttributeOptionOut,
+    summary="Update an ingredient link"
+)
+def update_ingredient_link(
+    attr_id: int,
+    link_id: int,
+    payload: IngredientLinkUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> AttributeOptionOut:
+    """Update an ingredient link's settings (price, display name, etc.)."""
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    if not attr.loads_from_ingredients:
+        raise HTTPException(
+            status_code=400,
+            detail="This attribute does not use ingredient-based options"
+        )
+
+    # Find the link
+    link = db.query(ItemTypeIngredient).filter(
+        ItemTypeIngredient.id == link_id,
+        ItemTypeIngredient.item_type_id == attr.item_type_id,
+        ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Ingredient link not found")
+
+    # Apply updates
+    if payload.price_modifier is not None:
+        link.price_modifier = payload.price_modifier
+    if payload.display_name_override is not None:
+        link.display_name_override = payload.display_name_override
+    if payload.is_default is not None:
+        link.is_default = payload.is_default
+    if payload.is_available is not None:
+        link.is_available = payload.is_available
+    if payload.display_order is not None:
+        link.display_order = payload.display_order
+
+    db.commit()
+    db.refresh(link)
+
+    logger.info("Updated ingredient link: %s (id=%d)", link.ingredient.name, link.id)
+
+    return AttributeOptionOut(
+        id=link.id,
+        slug=link.ingredient.slug,
+        display_name=link.display_name_override or link.ingredient.name,
+        price_modifier=float(link.price_modifier or 0),
+        is_default=link.is_default,
+        is_available=link.is_available and link.ingredient.is_available,
+        display_order=link.display_order,
+        ingredient_id=link.ingredient_id,
+        ingredient_name=link.ingredient.name,
+    )
+
+
+@admin_item_type_attributes_router.delete(
+    "/{attr_id}/ingredient-links/{link_id}",
+    status_code=204,
+    summary="Remove an ingredient link"
+)
+def delete_ingredient_link(
+    attr_id: int,
+    link_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
+    """Remove an ingredient from an attribute (deletes ItemTypeIngredient row)."""
+    attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Item type attribute not found")
+
+    if not attr.loads_from_ingredients:
+        raise HTTPException(
+            status_code=400,
+            detail="This attribute does not use ingredient-based options"
+        )
+
+    # Find the link
+    link = db.query(ItemTypeIngredient).filter(
+        ItemTypeIngredient.id == link_id,
+        ItemTypeIngredient.item_type_id == attr.item_type_id,
+        ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Ingredient link not found")
+
+    logger.info(
+        "Removing ingredient link: %s from attribute %s (id=%d)",
+        link.ingredient.name,
+        attr.slug,
+        link.id
+    )
+    db.delete(link)
     db.commit()
     return None

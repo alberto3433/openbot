@@ -423,13 +423,7 @@
         <div class="form-group">
           <label for="editIngredientCategory">Category</label>
           <select id="editIngredientCategory">
-            <option value="bread">Bread</option>
-            <option value="protein">Protein</option>
-            <option value="cheese">Cheese</option>
-            <option value="topping">Topping</option>
-            <option value="sauce">Sauce</option>
-            <option value="spread">Spread</option>
-            <option value="bagel">Bagel</option>
+            <!-- Populated dynamically from existing categories -->
           </select>
         </div>
         <div class="form-group">
@@ -610,7 +604,7 @@
               <li class="ingredient-item">
                 <div class="ingredient-info">
                   <span class="ingredient-name">${ing.name}</span>
-                  <span class="ingredient-meta">Unit: ${ing.unit}${ing.aliases ? ' | Aliases: ' + ing.aliases : ''}</span>
+                  <span class="ingredient-meta">${ing.category || 'uncategorized'}${ing.unit ? ' | Unit: ' + ing.unit : ''}${ing.aliases ? ' | Aliases: ' + ing.aliases : ''}</span>
                 </div>
                 <div class="ingredient-actions">
                   <button class="edit-btn" data-id="${ing.id}">Edit</button>
@@ -684,10 +678,16 @@
         return;
       }
 
+      // Populate category dropdown with all existing categories
+      const categories = [...new Set(allIngredients.map(i => i.category).filter(Boolean))].sort();
+      editCategoryEl.innerHTML = categories.map(cat =>
+        `<option value="${cat}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</option>`
+      ).join("");
+
       editIdEl.value = ingredient.id;
       editNameEl.value = ingredient.name;
       editCategoryEl.value = ingredient.category;
-      editUnitEl.value = ingredient.unit;
+      editUnitEl.value = ingredient.unit || "";
       editAliasesEl.value = ingredient.aliases || "";
 
       editModal.classList.add("active");

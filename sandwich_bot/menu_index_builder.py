@@ -633,7 +633,7 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         "ingredient_group": ita.ingredient_group,
                         "options": [
                             {
-                                "slug": link.ingredient.name.lower().replace(" ", "_"),
+                                "slug": link.ingredient.slug,  # Use ingredient slug column
                                 "display_name": link.display_name_override or link.ingredient.name,
                                 "ingredient_id": link.ingredient_id,
                                 "ingredient_name": link.ingredient.name,

@@ -550,6 +550,7 @@ class Ingredient(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier (e.g., "oat_milk")
     category = Column(String, nullable=False)   # 'bread', 'protein', 'cheese', 'topping', 'sauce', 'side', 'drink', etc.
     unit = Column(String, nullable=False)       # 'slice', 'piece', 'oz', 'bag', 'ml', etc.
     track_inventory = Column(Boolean, nullable=False, default=True)

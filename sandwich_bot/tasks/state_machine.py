@@ -340,6 +340,8 @@ class OrderStateMachine:
         self.espresso_handler = EspressoConfigHandler(
             config=self._handler_config,
         )
+        # Now set the espresso callback on checkout_utils_handler
+        self.checkout_utils_handler._configure_next_incomplete_espresso = self.espresso_handler.configure_next_incomplete_espresso
         # Initialize bagel config handler
         self.bagel_handler = BagelConfigHandler(
             config=self._handler_config,
@@ -392,6 +394,7 @@ class OrderStateMachine:
             config=self._handler_config,
             by_pound_handler=self.by_pound_handler,
             coffee_handler=self.coffee_handler,
+            espresso_handler=self.espresso_handler,
             bagel_handler=self.bagel_handler,
             signature_item_handler=self.signature_item_handler,
             config_helper_handler=self.config_helper_handler,

@@ -382,3 +382,144 @@ def find_modifier_on_any_item(
             return match
 
     return None
+
+
+@dataclass
+class DefaultIngredientMatch:
+    """Result of matching user input to a default ingredient."""
+    ingredient_name: str  # The display name of the ingredient
+    attribute_slug: str  # The attribute slug (e.g., "extra_protein")
+    item: ItemTask  # The item this belongs to
+
+
+@dataclass
+class DefaultIngredientRemovalResult:
+    """Result of removing a default ingredient."""
+    success: bool
+    removed_value: str | None
+    message: str
+
+
+def find_default_ingredient_match(
+    item: ItemTask,
+    user_input: str,
+) -> DefaultIngredientMatch | None:
+    """
+    Find if user input matches a default ingredient of a menu item.
+
+    This checks the menu_item_attribute_selections table for ingredients
+    that are part of the menu item's default configuration.
+
+    Args:
+        item: The item to check (must be SignatureItemTask or MenuItemTask with menu_item_id)
+        user_input: What the user said (e.g., "bacon", "the bacon")
+
+    Returns:
+        DefaultIngredientMatch if found, None otherwise
+    """
+    # Only SignatureItemTask and MenuItemTask have menu_item_id
+    menu_item_id = getattr(item, 'menu_item_id', None)
+    if not menu_item_id:
+        return None
+
+    # Check if already in removed_ingredients (can't remove twice)
+    removed_ingredients = getattr(item, 'removed_ingredients', [])
+    normalized_input = _normalize_modifier_name(user_input)
+    if normalized_input.startswith("the "):
+        normalized_input = normalized_input[4:]
+
+    for removed in removed_ingredients:
+        if normalized_input in removed.lower() or removed.lower() in normalized_input:
+            logger.debug("Ingredient '%s' already removed from item", removed)
+            return None
+
+    # Look up default ingredients from database
+    from ..services.menu_item_utils import find_default_ingredient_match as find_db_match
+
+    match = find_db_match(menu_item_id, user_input)
+    if match:
+        return DefaultIngredientMatch(
+            ingredient_name=match['name'],
+            attribute_slug=match['attribute_slug'],
+            item=item,
+        )
+
+    return None
+
+
+def remove_default_ingredient_from_item(
+    item: ItemTask,
+    match: DefaultIngredientMatch,
+) -> DefaultIngredientRemovalResult:
+    """
+    Remove a default ingredient from an item.
+
+    This adds the ingredient to the item's removed_ingredients list.
+    The removal does NOT affect price (default ingredients are already included).
+
+    Args:
+        item: The item to modify
+        match: The default ingredient match result
+
+    Returns:
+        DefaultIngredientRemovalResult with success status and message
+    """
+    # Get or create removed_ingredients list
+    if not hasattr(item, 'removed_ingredients'):
+        logger.warning("Item %s does not have removed_ingredients field", type(item).__name__)
+        return DefaultIngredientRemovalResult(
+            success=False,
+            removed_value=None,
+            message="This item type doesn't support ingredient removal."
+        )
+
+    # Check if already removed
+    for removed in item.removed_ingredients:
+        if removed.lower() == match.ingredient_name.lower():
+            return DefaultIngredientRemovalResult(
+                success=False,
+                removed_value=None,
+                message=f"{match.ingredient_name} has already been removed."
+            )
+
+    # Add to removed_ingredients
+    item.removed_ingredients.append(match.ingredient_name)
+
+    logger.info(
+        "Removed default ingredient '%s' from %s (menu_item_id=%s)",
+        match.ingredient_name,
+        type(item).__name__,
+        getattr(item, 'menu_item_id', None)
+    )
+
+    return DefaultIngredientRemovalResult(
+        success=True,
+        removed_value=match.ingredient_name,
+        message=f"OK, I've removed the {match.ingredient_name}."
+    )
+
+
+def find_default_ingredient_on_any_item(
+    items: list[ItemTask],
+    user_input: str,
+    prefer_last: bool = True,
+) -> DefaultIngredientMatch | None:
+    """
+    Find if user input matches a default ingredient on any item.
+
+    Args:
+        items: List of items to check
+        user_input: What the user said
+        prefer_last: If True, check items from last to first (default)
+
+    Returns:
+        DefaultIngredientMatch if found, None otherwise
+    """
+    search_order = reversed(items) if prefer_last else items
+
+    for item in search_order:
+        match = find_default_ingredient_match(item, user_input)
+        if match:
+            return match
+
+    return None

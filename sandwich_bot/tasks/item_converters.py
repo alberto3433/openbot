@@ -111,11 +111,13 @@ class MenuItemConverter(ItemConverter):
                 spread_price = mod.get("price")
                 break
 
+        item_config = item_dict.get("item_config") or {}
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
             menu_item_id=item_dict.get("menu_item_id"),
             menu_item_type=item_dict.get("menu_item_type"),
             modifications=item_dict.get("modifications") or [],
+            removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             side_choice=item_dict.get("side_choice"),
             bagel_choice=item_dict.get("bagel_choice"),
             toasted=item_dict.get("toasted"),
@@ -139,6 +141,7 @@ class MenuItemConverter(ItemConverter):
         spread = getattr(item, 'spread', None)
         menu_item_name = item.menu_item_name
         menu_item_type = getattr(item, 'menu_item_type', None)
+        removed_ingredients = getattr(item, 'removed_ingredients', []) or []
 
         # Build display name with bagel choice and side choice
         display_name = menu_item_name
@@ -199,6 +202,7 @@ class MenuItemConverter(ItemConverter):
             "spread": spread,
             "side_bagel_config": side_bagel_config,
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
+            "removed_ingredients": removed_ingredients,
             "item_config": {
                 "menu_item_type": menu_item_type,
                 "side_choice": side_choice,
@@ -206,6 +210,7 @@ class MenuItemConverter(ItemConverter):
                 "toasted": toasted,
                 "spread": spread,
                 "modifications": getattr(item, 'modifications', []),
+                "removed_ingredients": removed_ingredients,
                 "modifiers": modifiers,
             },
         })
@@ -540,13 +545,19 @@ class EspressoConverter(ItemConverter):
 
     def from_dict(self, item_dict: Dict[str, Any]) -> EspressoItemTask:
         item_config = item_dict.get("item_config") or {}
+
+        # Restore drink_modifiers from item_config
+        drink_modifiers = item_config.get("drink_modifiers", [])
+
         espresso = EspressoItemTask(
             shots=item_config.get("shots", 1),
             decaf=item_config.get("decaf"),
+            drink_modifiers=drink_modifiers,
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
         self._restore_common_fields(espresso, item_dict)
         espresso.extra_shots_upcharge = item_config.get("extra_shots_upcharge", 0.0)
+        espresso.modifiers_upcharge = item_config.get("modifiers_upcharge", 0.0)
         espresso.mark_complete()
         return espresso
 
@@ -557,11 +568,13 @@ class EspressoConverter(ItemConverter):
     ) -> Dict[str, Any]:
         shots = getattr(item, 'shots', 1)
         decaf = getattr(item, 'decaf', None)
+        drink_modifiers = getattr(item, 'drink_modifiers', []) or []
         extra_shots_upcharge = getattr(item, 'extra_shots_upcharge', 0.0) or 0.0
+        modifiers_upcharge = getattr(item, 'modifiers_upcharge', 0.0) or 0.0
 
         logger.info(
-            "ADAPTER ESPRESSO: shots=%d, extra_shots_upcharge=%.2f, unit_price=%.2f",
-            shots, extra_shots_upcharge, item.unit_price or 0
+            "ADAPTER ESPRESSO: shots=%d, extra_shots_upcharge=%.2f, modifiers_upcharge=%.2f, unit_price=%.2f",
+            shots, extra_shots_upcharge, modifiers_upcharge, item.unit_price or 0
         )
 
         display_name = "Espresso"
@@ -582,8 +595,20 @@ class EspressoConverter(ItemConverter):
         if decaf is True:
             free_details.append("decaf")
 
+        # Add drink modifiers (milk, sweeteners, syrups)
+        for mod in drink_modifiers:
+            mod_display = mod.get("display_name") or mod.get("slug", "").replace("_", " ")
+            mod_price = mod.get("price", 0.0)
+            mod_qty = mod.get("quantity", 1)
+            if mod_qty > 1:
+                mod_display = f"{mod_qty} {mod_display}"
+            if mod_price > 0:
+                modifiers.append({"name": mod_display, "price": mod_price})
+            else:
+                free_details.append(mod_display)
+
         total_price = item.unit_price or 0
-        base_price = total_price - extra_shots_upcharge
+        base_price = total_price - extra_shots_upcharge - modifiers_upcharge
 
         logger.info(
             "ADAPTER ESPRESSO RESULT: modifiers=%s, free_details=%s, base_price=%.2f",
@@ -601,7 +626,9 @@ class EspressoConverter(ItemConverter):
             "item_config": {
                 "shots": shots,
                 "decaf": decaf,
+                "drink_modifiers": drink_modifiers,
                 "extra_shots_upcharge": extra_shots_upcharge,
+                "modifiers_upcharge": modifiers_upcharge,
             },
         })
         return result
@@ -624,6 +651,7 @@ class SignatureItemConverter(ItemConverter):
             bagel_choice_upcharge=item_dict.get("bagel_choice_upcharge", 0.0),
             cheese_choice=item_dict.get("cheese_choice"),
             modifications=item_config.get("modifications") or item_dict.get("modifications") or [],
+            removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
@@ -641,6 +669,7 @@ class SignatureItemConverter(ItemConverter):
         cheese_choice = getattr(item, 'cheese_choice', None)
         menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
         modifications = getattr(item, 'modifications', []) or []
+        removed_ingredients = getattr(item, 'removed_ingredients', []) or []
 
         display_name = menu_item_name
         modifiers = []
@@ -678,12 +707,14 @@ class SignatureItemConverter(ItemConverter):
             "base_price": base_price,
             "modifiers": modifiers,
             "free_details": [],
+            "removed_ingredients": removed_ingredients,
             "item_config": {
                 "toasted": toasted,
                 "bagel_choice": bagel_choice,
                 "bagel_choice_upcharge": bagel_choice_upcharge,
                 "cheese_choice": cheese_choice,
                 "modifications": modifications,
+                "removed_ingredients": removed_ingredients,
                 "base_price": base_price,
                 "modifiers": modifiers,
             },

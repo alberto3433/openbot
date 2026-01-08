@@ -453,6 +453,7 @@ class EspressoItemTask(ItemTask):
     - No size options (espresso is a fixed size)
     - Always hot (no iced option)
     - Main configuration is number of shots (single, double, triple)
+    - Can have drink modifiers (milk, sweeteners, syrups) - data-driven from DB
     """
 
     item_type: Literal["espresso"] = "espresso"
@@ -462,8 +463,17 @@ class EspressoItemTask(ItemTask):
     shots: int = 1  # 1=single, 2=double, 3=triple
     decaf: bool | None = None  # True=decaf, None=regular
 
+    # Data-driven drink modifiers from item_type_attributes
+    # Each entry: {"slug": "oat_milk", "quantity": 1, "display_name": "Oat Milk", "price": 0.50}
+    drink_modifiers: list[dict] = Field(default_factory=list)
+
+    # Pending modifier state (for syrup flavor follow-up)
+    pending_modifier_slug: str | None = None  # e.g., "syrup" when user said "with syrup" but no flavor
+    pending_modifier_quantity: int = 1  # Quantity from "2 syrups" before flavor is specified
+
     # Upcharge tracking (set by pricing engine)
     extra_shots_upcharge: float = 0.0  # Upcharge for double/triple
+    modifiers_upcharge: float = 0.0  # Total upcharge for all drink modifiers
 
     def get_display_name(self) -> str:
         """Get display name for this espresso."""
@@ -475,6 +485,11 @@ class EspressoItemTask(ItemTask):
         elif self.shots >= 3:
             parts.append("triple")
         parts.append("espresso")
+        # Add first modifier if specified (usually milk)
+        if self.drink_modifiers:
+            first_mod = self.drink_modifiers[0]
+            display = first_mod.get("display_name") or first_mod.get("slug", "").replace("_", " ")
+            parts.append(f"with {display}")
         return " ".join(parts)
 
     def get_summary(self) -> str:
@@ -487,6 +502,19 @@ class EspressoItemTask(ItemTask):
         elif self.shots >= 3:
             parts.append("triple")
         parts.append("espresso")
+
+        # Add modifiers from data-driven drink_modifiers list
+        modifier_strs = []
+        for mod in self.drink_modifiers:
+            qty = mod.get("quantity", 1)
+            display = mod.get("display_name") or mod.get("slug", "").replace("_", " ")
+            if qty > 1:
+                modifier_strs.append(f"{qty} {display}")
+            else:
+                modifier_strs.append(display)
+
+        if modifier_strs:
+            parts.append(f"with {', '.join(modifier_strs)}")
 
         # Add special instructions if present
         if self.special_instructions:
@@ -516,6 +544,7 @@ class SignatureItemTask(ItemTask):
     bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
     cheese_choice: str | None = None  # Cheese type for items with cheese (e.g., "american", "swiss")
     modifications: list[str] = Field(default_factory=list)  # Extra modifiers (e.g., ["mayo", "no onions"])
+    removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed (e.g., ["bacon"])
 
     def get_display_name(self) -> str:
         """Get display name for this item."""
@@ -544,6 +573,11 @@ class SignatureItemTask(ItemTask):
         if self.modifications:
             parts.append(f"({', '.join(self.modifications)})")
 
+        # Add removed ingredients if present (e.g., "no bacon")
+        if self.removed_ingredients:
+            removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
+            parts.append(f"({', '.join(removed_parts)})")
+
         # Add special instructions if present
         if self.special_instructions:
             parts.append(f"(Special Instructions: {self.special_instructions})")
@@ -571,6 +605,7 @@ class MenuItemTask(ItemTask):
     menu_item_id: int | None = None  # Database ID if matched
     menu_item_type: str | None = None  # Type slug (e.g., "omelette", "sandwich")
     modifications: list[str] = Field(default_factory=list)  # User modifications
+    removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed
 
     # Customization fields for configurable items (e.g., omelettes, sandwiches)
     side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
@@ -611,6 +646,11 @@ class MenuItemTask(ItemTask):
 
         if self.modifications:
             parts.append(f"({', '.join(self.modifications)})")
+
+        # Add removed ingredients if present (e.g., "no bacon")
+        if self.removed_ingredients:
+            removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
+            parts.append(f"({', '.join(removed_parts)})")
 
         # Add special instructions if present
         if self.special_instructions:

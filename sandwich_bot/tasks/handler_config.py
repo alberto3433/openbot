@@ -47,7 +47,7 @@ class HandlerConfig:
     # Common callbacks
     get_next_question: Callable[["OrderTask"], "StateMachineResult"] | None = None
     check_redirect: Callable[
-        [str, "ItemTask", "OrderTask", str], "StateMachineResult | None"
+        [str, "ItemTask", "OrderTask", str, "set[str] | None"], "StateMachineResult | None"
     ] | None = None
 
     def with_overrides(self, **kwargs) -> "HandlerConfig":

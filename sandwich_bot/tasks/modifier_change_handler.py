@@ -22,6 +22,9 @@ from .parsers.constants import (
     get_bagel_only_types,
     get_spread_only_types,
     get_ambiguous_modifiers,
+    normalize_bagel_type,
+    normalize_spread,
+    normalize_coffee_size,
 )
 
 if TYPE_CHECKING:
@@ -334,10 +337,14 @@ class ModifierChangeHandler:
         new_value_lower = new_value.lower().strip()
 
         if category == ModifierCategory.BAGEL_TYPE:
-            # Extract just the bagel type if it ends with "bagel"
-            bagel_type = new_value_lower
-            if bagel_type.endswith(" bagel"):
-                bagel_type = bagel_type[:-6].strip()
+            # Normalize the bagel type - extracts valid type from messy input
+            # e.g., "make that a sesame bagel" -> "sesame"
+            bagel_type = normalize_bagel_type(new_value_lower)
+            if not bagel_type:
+                # Fallback: try simple suffix stripping
+                bagel_type = new_value_lower
+                if bagel_type.endswith(" bagel"):
+                    bagel_type = bagel_type[:-6].strip()
 
             old_value = getattr(item, 'bagel_type', None) or getattr(item, 'bagel_choice', None)
 
@@ -364,12 +371,23 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.SPREAD_TYPE:
-            # Extract spread type (remove "cream cheese" suffix if present)
-            spread_type = new_value_lower
-            for suffix in [" cream cheese", " spread"]:
-                if spread_type.endswith(suffix):
-                    spread_type = spread_type[:-len(suffix)].strip()
-                    break
+            # Normalize the spread - extracts valid spread from messy input
+            # e.g., "actually scallion cream cheese" -> "scallion cream cheese"
+            normalized = normalize_spread(new_value_lower)
+            if normalized:
+                spread_type = normalized
+                # Extract just the type part if it's a compound (e.g., "scallion" from "scallion cream cheese")
+                for suffix in [" cream cheese", " spread"]:
+                    if spread_type.endswith(suffix):
+                        spread_type = spread_type[:-len(suffix)].strip()
+                        break
+            else:
+                # Fallback: try simple suffix stripping
+                spread_type = new_value_lower
+                for suffix in [" cream cheese", " spread"]:
+                    if spread_type.endswith(suffix):
+                        spread_type = spread_type[:-len(suffix)].strip()
+                        break
 
             old_value = getattr(item, 'spread_type', None)
 
@@ -424,9 +442,12 @@ class ModifierChangeHandler:
                     message="I can only change the size of a coffee drink.",
                 )
 
+            # Normalize the size - extracts valid size from messy input
+            # e.g., "make that a large instead" -> "large"
+            size = normalize_coffee_size(new_value_lower) or new_value_lower
             old_value = item.size
-            item.size = new_value_lower
-            logger.info("Changed coffee size from '%s' to '%s'", old_value, new_value_lower)
+            item.size = size
+            logger.info("Changed coffee size from '%s' to '%s'", old_value, size)
 
             # Recalculate price with new size
             if self.pricing:

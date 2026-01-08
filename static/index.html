@@ -710,6 +710,27 @@
       white-space: nowrap;
     }
 
+    /* Removed Ingredients */
+    .order-item-removed {
+      margin-top: 6px;
+      padding-left: 14px;
+    }
+
+    .order-item-removed-item {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      color: #dc3545;
+      padding: 3px 0;
+      text-decoration: line-through;
+    }
+
+    .order-item-removed-item::before {
+      content: "−";
+      margin-right: 6px;
+      font-weight: 600;
+    }
+
     /* Order Totals */
     .order-totals {
       font-size: 14px;
@@ -1127,16 +1148,16 @@
         Your Order
       </div>
       <div class="order-panel-body" id="order-panel-body">
+        <div class="order-type-badge" id="order-type-badge" style="display: none;">
+          <span class="icon">🏪</span>
+          <span id="order-type-text">Pickup</span>
+        </div>
         <div class="order-empty" id="order-empty">
           <div class="icon">🥯</div>
           <p>Your cart is empty</p>
           <p style="font-size: 12px; margin-top: 10px; color: var(--text-tertiary);">Items will appear here as you order</p>
         </div>
         <div id="order-items-container" style="display: none;">
-          <div class="order-type-badge" id="order-type-badge" style="display: none;">
-            <span class="icon">🏪</span>
-            <span id="order-type-text">Pickup</span>
-          </div>
           <div id="order-items-list"></div>
         </div>
       </div>
@@ -1938,11 +1959,12 @@
       const name = item.display_name || item.menu_item_name || item.name || "Item";
       const hasModifiers = item.modifiers && item.modifiers.length > 0;
       const hasFreeDetails = item.free_details && item.free_details.length > 0;
+      const hasRemovedIngredients = item.removed_ingredients && item.removed_ingredients.length > 0;
 
       let html = "";
 
       // Decide rendering mode based on DATA presence, not item_type
-      if (hasModifiers || hasFreeDetails) {
+      if (hasModifiers || hasFreeDetails || hasRemovedIngredients) {
         // Itemized view: show base price, free details, then priced modifiers
         const basePrice = item.base_price || item.unit_price || 0;
         html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(basePrice)}</span></div>`;
@@ -1958,6 +1980,15 @@
           for (const mod of item.modifiers) {
             const priceHtml = mod.price > 0 ? formatCurrency(mod.price) : '';
             html += `<div class="order-item-modifier"><span class="order-item-modifier-name">${mod.name}</span><span class="order-item-modifier-price">${priceHtml}</span></div>`;
+          }
+          html += `</div>`;
+        }
+
+        // Removed ingredients (strikethrough, red)
+        if (hasRemovedIngredients) {
+          html += `<div class="order-item-removed">`;
+          for (const ingredient of item.removed_ingredients) {
+            html += `<div class="order-item-removed-item">${ingredient}</div>`;
           }
           html += `</div>`;
         }
@@ -1984,15 +2015,7 @@
       orderItemsContainer.style.display = hasItems ? "block" : "none";
       orderPanelFooter.style.display = hasItems ? "block" : "none";
 
-      if (!hasItems) {
-        mobileCartSummary.textContent = "Cart empty";
-        mobileCartTotal.textContent = "$0.00";
-        return;
-      }
-
-      orderItemsList.innerHTML = "";
-      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item)));
-
+      // Show order type badge regardless of whether items exist
       const orderType = state.order_type;
       if (orderType) {
         orderTypeBadge.style.display = "inline-flex";
@@ -2008,6 +2031,15 @@
       } else {
         orderTypeBadge.style.display = "none";
       }
+
+      if (!hasItems) {
+        mobileCartSummary.textContent = "Cart empty";
+        mobileCartTotal.textContent = "$0.00";
+        return;
+      }
+
+      orderItemsList.innerHTML = "";
+      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item)));
 
       const checkout = state.checkout_state || {};
       const subtotal = checkout.subtotal || state.total_price || items.reduce((sum, i) => sum + (i.line_total || i.price || 0), 0);

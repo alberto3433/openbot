@@ -596,7 +596,7 @@ class CoffeeConfigHandler:
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_modifiers"
                 return StateMachineResult(
-                    message="Would you like any milk, sugar or syrup?",
+                    message="Any milk, sweetener, or syrup?",
                     order=order,
                 )
 
@@ -744,7 +744,7 @@ class CoffeeConfigHandler:
         """Handle milk/sugar/syrup preferences for coffee."""
         if self._check_redirect:
             redirect = self._check_redirect(
-                user_input, item, order, "Would you like any milk, sugar or syrup?"
+                user_input, item, order, "Any milk, sweetener, or syrup?"
             )
             if redirect:
                 return redirect

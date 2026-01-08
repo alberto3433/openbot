@@ -56,6 +56,8 @@ from .parsers.constants import (
     get_toppings,
     resolve_soda_alias,
     resolve_coffee_alias,
+    resolve_side_alias,
+    resolve_menu_item_alias,
 )
 
 if TYPE_CHECKING:
@@ -1333,11 +1335,13 @@ class TakingItemsHandler:
                 singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
 
                 # Resolve aliases to canonical names (e.g., "coke" -> "Coca-Cola")
-                # Try both soda and coffee alias resolution
-                canonical_name = resolve_soda_alias(singular_desc)
-                if canonical_name == singular_desc:
-                    # Soda alias didn't resolve, try coffee alias
-                    canonical_name = resolve_coffee_alias(singular_desc)
+                # Try all alias resolution functions in order
+                canonical_name = singular_desc
+                for resolve_fn in [resolve_soda_alias, resolve_coffee_alias, resolve_side_alias, resolve_menu_item_alias]:
+                    resolved = resolve_fn(singular_desc)
+                    if resolved and resolved != singular_desc:
+                        canonical_name = resolved
+                        break
                 canonical_name_lower = canonical_name.lower() if canonical_name != singular_desc else None
 
                 # Find matching items (fallback for non-ordinal cancellations)
@@ -1816,12 +1820,44 @@ class TakingItemsHandler:
             if is_espresso and self.espresso_handler:
                 # Calculate shots: 1 + extra_shots (0=single, 1=double, 2=triple)
                 shots = 1 + item.extra_shots
+
+                # Convert parsed modifiers to drink_modifiers format
+                drink_modifiers: list[dict] = []
+
+                # Add milk if specified
+                if item.milk:
+                    milk_slug = item.milk.lower().replace(" ", "_")
+                    drink_modifiers.append({
+                        "slug": milk_slug,
+                        "display_name": item.milk.title(),
+                        "quantity": 1,
+                    })
+
+                # Add sweeteners
+                for sweetener in item.sweeteners:
+                    sweetener_slug = sweetener.type.lower().replace(" ", "_")
+                    drink_modifiers.append({
+                        "slug": sweetener_slug,
+                        "display_name": sweetener.type.title(),
+                        "quantity": sweetener.quantity,
+                    })
+
+                # Add syrups
+                for syrup in item.syrups:
+                    syrup_slug = syrup.type.lower().replace(" ", "_")
+                    drink_modifiers.append({
+                        "slug": syrup_slug,
+                        "display_name": syrup.type.title(),
+                        "quantity": syrup.quantity,
+                    })
+
                 result = self.espresso_handler.add_espresso(
                     shots=shots,
                     quantity=item.quantity,
                     order=order,
                     decaf=item.decaf,
                     special_instructions=item.special_instructions,
+                    drink_modifiers=drink_modifiers if drink_modifiers else None,
                 )
                 order = result.order
                 # Build summary based on shots
@@ -2066,6 +2102,7 @@ class TakingItemsHandler:
 
         bagel_handler_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
         coffee_handler_items: list[tuple[str, str, str, str]] = []
+        espresso_handler_items: list[tuple[str, str, str, str]] = []
         signature_item_handler_items: list[tuple[str, str, str, str]] = []
         individual_items: list[tuple[str, str, str, str]] = []  # Items that don't share a handler loop
 
@@ -2136,6 +2173,11 @@ class TakingItemsHandler:
                         coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
                     elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
                         coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_modifiers"))
+                elif isinstance(item, EspressoItemTask):
+                    # Espresso items: only need modifiers (no size/style questions)
+                    # Data-driven: check if drink_modifiers is empty
+                    if not item.drink_modifiers:
+                        espresso_handler_items.append((item.id, "espresso", "espresso", "espresso_modifiers"))
 
         # Build final list: only FIRST item from each handler group + all individual items
         # Handlers with internal loops will find subsequent items of their type automatically
@@ -2156,6 +2198,14 @@ class TakingItemsHandler:
                 logger.info("Coffee handler will process %d items via internal loop (not queued): %s",
                            len(coffee_handler_items) - 1,
                            [(n, f) for _, n, _, f in coffee_handler_items[1:]])
+
+        # Add first espresso-handler item (if any) - configure_next_incomplete_espresso will find the rest
+        if espresso_handler_items:
+            items_needing_config.append(espresso_handler_items[0])
+            if len(espresso_handler_items) > 1:
+                logger.info("Espresso handler will process %d items via internal loop (not queued): %s",
+                           len(espresso_handler_items) - 1,
+                           [(n, f) for _, n, _, f in espresso_handler_items[1:]])
 
         # Add first signature-item-handler item (if any)
         if signature_item_handler_items:
@@ -2244,7 +2294,9 @@ class TakingItemsHandler:
         elif first_field == "coffee_style":
             question = f"Got it! Would you like the {first_item_name} hot or iced?"
         elif first_field == "coffee_modifiers":
-            question = f"Got it, {first_item_name}! Would you like any milk, sugar or syrup?"
+            question = f"Got it, {first_item_name}! Any milk, sweetener, or syrup?"
+        elif first_field == "espresso_modifiers":
+            question = f"Got it, {first_item_name}! Any milk, sweetener, or syrup?"
         elif first_field == "cheese_choice":
             # Regular bagel with generic "cheese" - ask for type
             item = next((i for i in order.items.items if i.id == first_item_id), None)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .by_pound_handler import ByPoundHandler
     from .coffee_config_handler import CoffeeConfigHandler
+    from .espresso_config_handler import EspressoConfigHandler
     from .bagel_config_handler import BagelConfigHandler
     from .signature_item_handler import SignatureItemHandler
     from .config_helper_handler import ConfigHelperHandler
@@ -146,8 +147,8 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             if any(kw in input_lower for kw in style_keywords):
                 return False  # Let them ask about style options
 
-        # Asking about milk/sugar/syrup when being asked about coffee modifiers → relevant
-        if pending_field == "coffee_modifiers":
+        # Asking about milk/sugar/syrup when being asked about coffee/espresso modifiers → relevant
+        if pending_field in ("coffee_modifiers", "espresso_modifiers"):
             modifier_keywords = ["milk", "sugar", "syrup", "sweetener", "cream", "flavor"]
             if any(kw in input_lower for kw in modifier_keywords):
                 return False  # Let them ask about modifier options
@@ -177,6 +178,7 @@ class ConfiguringItemHandler:
         config: "HandlerConfig | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
+        espresso_handler: "EspressoConfigHandler | None" = None,
         bagel_handler: "BagelConfigHandler | None" = None,
         signature_item_handler: "SignatureItemHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
@@ -193,6 +195,7 @@ class ConfiguringItemHandler:
                     but accepted for consistency with other handlers).
             by_pound_handler: Handler for by-pound items.
             coffee_handler: Handler for coffee configuration.
+            espresso_handler: Handler for espresso configuration.
             bagel_handler: Handler for bagel configuration.
             signature_item_handler: Handler for signature items.
             config_helper_handler: Handler for config helpers (side choice, etc.).
@@ -207,6 +210,7 @@ class ConfiguringItemHandler:
 
         self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
         self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
+        self.espresso_handler = espresso_handler or kwargs.get("espresso_handler")
         self.bagel_handler = bagel_handler or kwargs.get("bagel_handler")
         self.signature_item_handler = signature_item_handler or kwargs.get("signature_item_handler")
         self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
@@ -318,6 +322,10 @@ class ConfiguringItemHandler:
             return self.coffee_handler.handle_coffee_modifiers(user_input, item, order)
         elif order.pending_field == "syrup_flavor":
             return self.coffee_handler.handle_syrup_flavor(user_input, item, order)
+        elif order.pending_field == "espresso_modifiers":
+            return self.espresso_handler.handle_espresso_modifiers(user_input, item, order)
+        elif order.pending_field == "espresso_syrup_flavor":
+            return self.espresso_handler.handle_espresso_syrup_flavor(user_input, item, order)
         elif order.pending_field == "signature_item_cheese_choice":
             return self.signature_item_handler.handle_signature_item_cheese_choice(user_input, item, order)
         elif order.pending_field == "signature_item_bagel_type":

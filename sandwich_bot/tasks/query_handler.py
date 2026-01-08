@@ -405,7 +405,10 @@ class QueryHandler:
 
         # Format the items list
         type_name = menu_query_type.replace("_", " ")
-        if type_name.endswith("ch") or type_name.endswith("s"):
+        # Proper pluralization - check if already plural first
+        if type_name.endswith("s") and not type_name.endswith("ss"):
+            type_display = type_name  # Already plural (e.g., "signature items")
+        elif type_name.endswith("ch") or type_name.endswith("sh") or type_name.endswith("x"):
             type_display = type_name + "es"
         else:
             type_display = type_name + "s"

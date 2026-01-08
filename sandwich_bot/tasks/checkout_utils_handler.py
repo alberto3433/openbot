@@ -36,6 +36,7 @@ class CheckoutUtilsHandler:
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_signature_item: Callable[[OrderTask], StateMachineResult] | None = None,
+        configure_next_incomplete_espresso: Callable[[OrderTask], StateMachineResult] | None = None,
         **kwargs,
     ):
         """
@@ -47,6 +48,7 @@ class CheckoutUtilsHandler:
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
             configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
             configure_next_incomplete_signature_item: Callback to configure next incomplete signature item.
+            configure_next_incomplete_espresso: Callback to configure next incomplete espresso.
             **kwargs: Legacy parameter support.
         """
         if config:
@@ -60,6 +62,7 @@ class CheckoutUtilsHandler:
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
         self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
         self._configure_next_incomplete_signature_item = configure_next_incomplete_signature_item or kwargs.get("configure_next_incomplete_signature_item")
+        self._configure_next_incomplete_espresso = configure_next_incomplete_espresso or kwargs.get("configure_next_incomplete_espresso")
 
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -94,6 +97,11 @@ class CheckoutUtilsHandler:
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
+                # Handle espresso that needs configuration
+                elif isinstance(item, EspressoItemTask):
+                    logger.info("Found incomplete espresso, starting configuration")
+                    if self._configure_next_incomplete_espresso:
+                        return self._configure_next_incomplete_espresso(order)
                 # Handle menu items with bagel sides that need toasted question
                 elif isinstance(item, MenuItemTask):
                     if item.side_choice == "bagel" and item.toasted is None:
@@ -195,6 +203,10 @@ class CheckoutUtilsHandler:
                     # Start coffee configuration
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
+                elif item_type == "espresso" and isinstance(target_item, EspressoItemTask):
+                    # Start espresso configuration
+                    if self._configure_next_incomplete_espresso:
+                        return self._configure_next_incomplete_espresso(order)
                 elif item_type == "menu_item" and isinstance(target_item, MenuItemTask):
                     # Start menu item configuration (for toasted question)
                     if self._configure_next_incomplete_bagel:

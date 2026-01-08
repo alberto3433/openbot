@@ -39,6 +39,9 @@ class AttributeOptionOut(BaseModel):
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
+    # For ingredient-based options
+    ingredient_id: Optional[int] = None
+    ingredient_name: Optional[str] = None
 
 
 class AttributeOptionCreate(BaseModel):
@@ -67,6 +70,9 @@ class ItemTypeAttributeOut(BaseModel):
 
     Attributes define what configuration options are available for an item type.
     For example, 'egg_sandwich' might have attributes: bread, protein, cheese, toppings.
+
+    When loads_from_ingredients=True, options come from the item_type_ingredients table
+    joined to ingredients, instead of from attribute_options.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +89,9 @@ class ItemTypeAttributeOut(BaseModel):
     display_order: int = 0
     ask_in_conversation: bool = True
     question_text: Optional[str] = None
+    # Ingredient integration
+    loads_from_ingredients: bool = False
+    ingredient_group: Optional[str] = None
     options: List[AttributeOptionOut] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -243,3 +252,35 @@ class MenuItemEditForm(BaseModel):
     item_type_id: Optional[int] = None
     item_type_slug: Optional[str] = None
     fields: List[AttributeFormField] = []
+
+
+# =============================================================================
+# Ingredient Link Schemas (for loads_from_ingredients=True attributes)
+# =============================================================================
+
+class IngredientLinkCreate(BaseModel):
+    """Request model for linking an ingredient to an attribute."""
+    ingredient_id: int
+    price_modifier: float = 0.0
+    display_name_override: Optional[str] = None
+    is_default: bool = False
+    is_available: bool = True
+    display_order: int = 0
+
+
+class IngredientLinkUpdate(BaseModel):
+    """Request model for updating an ingredient link."""
+    price_modifier: Optional[float] = None
+    display_name_override: Optional[str] = None
+    is_default: Optional[bool] = None
+    is_available: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class AvailableIngredientOut(BaseModel):
+    """Response model for ingredients available to link."""
+    id: int
+    name: str
+    slug: str
+    category: str
+    is_available: bool = True

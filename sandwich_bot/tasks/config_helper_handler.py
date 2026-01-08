@@ -16,6 +16,7 @@ from .models import OrderTask, MenuItemTask, ItemTask, BagelItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
 from .handler_config import HandlerConfig
+from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -228,12 +229,51 @@ class ConfigHelperHandler:
                 order=order,
             )
 
+        # First, check for ordinal reference (e.g., "second bagel", "3rd coffee")
+        ordinal_index, item_type_keyword = extract_ordinal_reference(cancel_desc)
+
+        if ordinal_index is not None and item_type_keyword:
+            # User wants to remove a specific Nth item
+            result = find_nth_item_of_type(active_items, item_type_keyword, ordinal_index)
+            if result:
+                item_to_remove, _ = result
+                removed_name = item_to_remove.get_summary()
+                idx = order.items.items.index(item_to_remove)
+                order.items.remove_item(idx)
+
+                # Clear pending state since we're leaving config phase
+                order.clear_pending()
+                order.phase = OrderPhase.TAKING_ITEMS.value
+
+                logger.info(
+                    "Removed %s #%d during config: %s",
+                    item_type_keyword, ordinal_index, removed_name
+                )
+
+                remaining = order.items.get_active_items()
+                if remaining:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                        order=order,
+                    )
+            else:
+                # Ordinal item not found
+                return StateMachineResult(
+                    message=f"I couldn't find a {item_type_keyword} #{ordinal_index} in your order. What would you like to do?",
+                    order=order,
+                )
+
         # Check if this is a plural removal (e.g., "coffees", "bagels")
         # If plural, we remove ALL matching items
         is_plural = cancel_desc.endswith('s') and len(cancel_desc) > 2
         singular_desc = cancel_desc[:-1] if is_plural else cancel_desc
 
-        # Find matching items
+        # Find matching items (fallback for non-ordinal cancellations)
         items_to_remove = []
         for item in active_items:
             item_summary = item.get_summary().lower()

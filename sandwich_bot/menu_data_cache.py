@@ -559,8 +559,10 @@ class MenuDataCache:
     def _load_beverage_modifiers(self, db: Session) -> None:
         """Load beverage modifier options (milk, sweetener, syrup) from the database.
 
-        Queries the item_type_ingredients table for sized_beverage modifiers,
-        grouped by ingredient_group (milk, sweetener, syrup).
+        Queries the item_type_ingredients table for sized_beverage modifiers.
+        The ingredient_group may be 'drink_modifier' (consolidated) or the legacy
+        individual groups (milk, sweetener, syrup). We categorize by ingredient.category
+        to properly split modifiers into milks, sweeteners, and syrups.
 
         Results are ordered by display_order and store display names for user-facing text.
         """
@@ -572,31 +574,41 @@ class MenuDataCache:
             logger.warning("No sized_beverage item type found - beverage modifiers not loaded")
             return
 
-        # Load modifiers for each group
-        for group, target_list in [
-            ("milk", self._beverage_milks),
-            ("sweetener", self._beverage_sweeteners),
-            ("syrup", self._beverage_syrups),
-        ]:
-            # Query ingredients linked to sized_beverage with this group
-            modifiers = (
-                db.query(ItemTypeIngredient, Ingredient)
-                .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
-                .filter(ItemTypeIngredient.item_type_id == sized_beverage.id)
-                .filter(ItemTypeIngredient.ingredient_group == group)
-                .filter(ItemTypeIngredient.is_available == True)
-                .order_by(ItemTypeIngredient.display_order)
-                .all()
-            )
+        # Query all drink modifiers (both consolidated 'drink_modifier' group
+        # and legacy individual groups)
+        modifiers = (
+            db.query(ItemTypeIngredient, Ingredient)
+            .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
+            .filter(ItemTypeIngredient.item_type_id == sized_beverage.id)
+            .filter(ItemTypeIngredient.ingredient_group.in_(
+                ['drink_modifier', 'milk', 'sweetener', 'syrup']
+            ))
+            .filter(ItemTypeIngredient.is_available == True)
+            .order_by(ItemTypeIngredient.display_order)
+            .all()
+        )
 
-            # Build the list of display names
-            target_list.clear()
-            for link, ingredient in modifiers:
-                # Use display_name_override if set, otherwise use ingredient name
-                display_name = link.display_name_override or ingredient.name
-                target_list.append(display_name)
+        # Clear existing lists
+        self._beverage_milks.clear()
+        self._beverage_sweeteners.clear()
+        self._beverage_syrups.clear()
 
-            logger.debug("Loaded %d %s options: %s", len(target_list), group, target_list)
+        # Categorize by ingredient.category (the source of truth)
+        for link, ingredient in modifiers:
+            display_name = link.display_name_override or ingredient.name
+            category = ingredient.category
+
+            if category == 'milk':
+                self._beverage_milks.append(display_name)
+            elif category == 'sweetener':
+                self._beverage_sweeteners.append(display_name)
+            elif category == 'syrup':
+                self._beverage_syrups.append(display_name)
+            # Skip other categories (they may be linked but not beverage modifiers)
+
+        logger.debug("Loaded beverage modifiers: %d milks, %d sweeteners, %d syrups",
+                    len(self._beverage_milks), len(self._beverage_sweeteners),
+                    len(self._beverage_syrups))
 
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names and aliases for recognition.
@@ -791,19 +803,32 @@ class MenuDataCache:
         Loads the mapping from category slugs (cheese, cold_cut, fish, etc.)
         to human-readable display names (cheeses, cold cuts, smoked fish, etc.).
 
-        This replaces the hardcoded BY_POUND_CATEGORY_NAMES constant.
+        Falls back to hardcoded values if the by_pound_categories table doesn't exist.
         """
         category_names: dict[str, str] = {}
 
-        # Query the by_pound_categories table
-        result = db.execute(
-            __import__("sqlalchemy").text(
-                "SELECT slug, display_name FROM by_pound_categories"
+        try:
+            # Query the by_pound_categories table
+            result = db.execute(
+                __import__("sqlalchemy").text(
+                    "SELECT slug, display_name FROM by_pound_categories"
+                )
             )
-        )
 
-        for row in result:
-            category_names[row.slug] = row.display_name
+            for row in result:
+                category_names[row.slug] = row.display_name
+        except Exception as e:
+            # Table may not exist (dropped in migration), use hardcoded fallback
+            # Rollback to clear the failed transaction state
+            db.rollback()
+            logger.debug("by_pound_categories table not available, using fallback: %s", e)
+            category_names = {
+                "fish": "smoked fish",
+                "spread": "spreads",
+                "cheese": "cheeses",
+                "cold_cut": "cold cuts",
+                "salad": "salads",
+            }
 
         self._by_pound_category_names = category_names
 

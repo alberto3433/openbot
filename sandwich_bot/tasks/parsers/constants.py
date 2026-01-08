@@ -1010,6 +1010,38 @@ def resolve_soda_alias(name: str) -> str:
     return name
 
 
+def resolve_side_alias(name: str) -> str | None:
+    """
+    Resolve a side item name or alias to its canonical menu item name.
+
+    Args:
+        name: User input like "chips" or "fruit"
+
+    Returns:
+        Canonical menu item name if found, or None if no mapping found.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.resolve_side_alias(name)
+    return None
+
+
+def resolve_menu_item_alias(name: str) -> str | None:
+    """
+    Resolve a menu item name or alias to its canonical menu item name.
+
+    Args:
+        name: User input like "bec" or "tuna salad"
+
+    Returns:
+        Canonical menu item name if found, or None if no mapping found.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.resolve_menu_item_alias(name)
+    return None
+
+
 def find_spread_matches(query: str) -> list[str]:
     """
     Find spread types that match a partial query.
@@ -1055,3 +1087,184 @@ def find_bagel_matches(query: str) -> list[str]:
     if cache:
         return cache.find_bagel_matches(query)
     return []
+
+
+# =============================================================================
+# Value Normalization Functions
+# =============================================================================
+# These functions extract valid values from messy user input that may contain
+# conversational phrases like "make that a sesame bagel" -> "sesame"
+
+
+def normalize_bagel_type(value: str) -> str | None:
+    """
+    Extract a valid bagel type from a potentially messy input string.
+
+    Searches for known bagel types within the input, handling cases like:
+    - "make that a sesame bagel" -> "sesame"
+    - "actually sesame" -> "sesame"
+    - "change it to everything" -> "everything"
+
+    Args:
+        value: Raw input string that may contain a bagel type
+
+    Returns:
+        Normalized bagel type if found, None otherwise
+    """
+    if not value:
+        return None
+
+    value_lower = value.lower().strip()
+
+    # Quick check: if the value is already a valid bagel type, return it
+    try:
+        bagel_types = get_bagel_types()
+        if value_lower in bagel_types:
+            return value_lower
+
+        # Strip common suffixes first
+        if value_lower.endswith(" bagel"):
+            stripped = value_lower[:-6].strip()
+            if stripped in bagel_types:
+                return stripped
+
+        # Search for any valid bagel type within the string
+        # Sort by length descending to match longer types first (e.g., "everything" before "every")
+        for bagel_type in sorted(bagel_types, key=len, reverse=True):
+            # Use word boundary matching to avoid partial matches
+            # e.g., "plain" should match in "make that a plain bagel" but not in "explain"
+            pattern = r'\b' + re.escape(bagel_type) + r'\b'
+            if re.search(pattern, value_lower):
+                return bagel_type
+
+    except RuntimeError:
+        # Cache not loaded - can't normalize
+        pass
+
+    return None
+
+
+def normalize_spread(value: str) -> str | None:
+    """
+    Extract a valid spread from a potentially messy input string.
+
+    Searches for known spreads within the input, handling cases like:
+    - "actually cream cheese" -> "cream cheese"
+    - "make it scallion cream cheese" -> "scallion cream cheese"
+
+    Args:
+        value: Raw input string that may contain a spread
+
+    Returns:
+        Normalized spread if found, None otherwise
+    """
+    if not value:
+        return None
+
+    value_lower = value.lower().strip()
+
+    try:
+        # Get all spread-related terms
+        spreads = get_spreads()
+        spread_types = get_spread_types()
+        bagel_spreads = get_bagel_spreads()
+
+        # Quick check: if the value is already valid
+        if value_lower in bagel_spreads:
+            return value_lower
+
+        # Check for compound spreads first (e.g., "scallion cream cheese")
+        # Sort by length descending to match longer phrases first
+        all_spreads = bagel_spreads | spreads | spread_types
+        for spread in sorted(all_spreads, key=len, reverse=True):
+            pattern = r'\b' + re.escape(spread) + r'\b'
+            if re.search(pattern, value_lower):
+                return spread
+
+    except RuntimeError:
+        # Cache not loaded - can't normalize
+        pass
+
+    return None
+
+
+def normalize_toasted(value: str) -> bool | None:
+    """
+    Extract toasted preference from a potentially messy input string.
+
+    Handles cases like:
+    - "yeah make it toasted" -> True
+    - "not toasted please" -> False
+    - "toasted" -> True
+
+    Args:
+        value: Raw input string that may contain toasted preference
+
+    Returns:
+        True if toasted, False if not toasted, None if unclear
+    """
+    if not value:
+        return None
+
+    value_lower = value.lower().strip()
+
+    # Check for negative patterns first (order matters)
+    negative_patterns = [
+        r'\bnot\s+toasted\b',
+        r'\bun-?toasted\b',
+        r'\bno\s+toast\b',
+        r'\bdon\'?t\s+toast\b',
+        r'\bwithout\s+toast',
+        r'\bskip\s+(?:the\s+)?toast',
+    ]
+    for pattern in negative_patterns:
+        if re.search(pattern, value_lower):
+            return False
+
+    # Check for positive patterns
+    positive_patterns = [
+        r'\btoasted\b',
+        r'\btoast(?:ed)?\s+(?:it|that|please)?\b',
+        r'\byes\b.*\btoast',
+        r'\btoast\b',
+    ]
+    for pattern in positive_patterns:
+        if re.search(pattern, value_lower):
+            return True
+
+    return None
+
+
+def normalize_coffee_size(value: str) -> str | None:
+    """
+    Extract a valid coffee size from a potentially messy input string.
+
+    Handles cases like:
+    - "make that a large instead" -> "large"
+    - "actually small" -> "small"
+
+    Args:
+        value: Raw input string that may contain a size
+
+    Returns:
+        Normalized size if found, None otherwise
+    """
+    if not value:
+        return None
+
+    value_lower = value.lower().strip()
+
+    # Valid sizes
+    sizes = {"small", "medium", "large"}
+
+    # Quick check
+    if value_lower in sizes:
+        return value_lower
+
+    # Search for size within string
+    for size in sizes:
+        pattern = r'\b' + re.escape(size) + r'\b'
+        if re.search(pattern, value_lower):
+            return size
+
+    return None

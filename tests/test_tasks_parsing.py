@@ -715,7 +715,7 @@ class TestDeterministicParserFallback:
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),
         ("The Leo", "signature_item"),
-        ("the chipotle egg omelette", "signature_item"),  # Signature item
+        ("the chipotle egg omelette", "menu_item"),  # Omelettes are menu items (not signature)
     ])
     def test_deterministic_handles_coffee_and_menu_items(self, text, expected_type):
         """Test that coffee and menu items are now handled deterministically."""
@@ -727,6 +727,8 @@ class TestDeterministicParserFallback:
         elif expected_type == "signature_item":
             assert result.new_signature_item is True
             assert result.new_signature_item_name is not None
+        elif expected_type == "menu_item":
+            assert result.new_menu_item is not None
         else:
             assert result.new_menu_item is not None
 

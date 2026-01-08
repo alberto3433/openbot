@@ -806,6 +806,61 @@ class PricingEngine:
 
         return total
 
+    def recalculate_menu_item_price(self, item) -> float:
+        """
+        Recalculate and update a menu item's price based on its current modifiers.
+
+        For menu items like omelettes, the base price is the menu item price
+        plus any spread upcharge for the side bagel.
+
+        Args:
+            item: The MenuItemTask to recalculate
+
+        Returns:
+            The new calculated price
+        """
+        # Get base price from menu item
+        menu_item_data = None
+        if hasattr(item, 'menu_item_id') and item.menu_item_id:
+            from sandwich_bot.menu_data_cache import menu_cache
+            menu_data = menu_cache.get_menu_data()
+            if menu_data:
+                for mi in menu_data.get("menu_items", []):
+                    if mi.get("id") == item.menu_item_id:
+                        menu_item_data = mi
+                        break
+
+        base_price = menu_item_data.get("base_price", 0.0) if menu_item_data else 0.0
+
+        # Fallback: if we don't have menu data, calculate base from current price minus spread
+        if base_price == 0 and item.unit_price:
+            base_price = item.unit_price
+            if item.spread_price:
+                base_price -= item.spread_price
+
+        total = base_price
+
+        # Add spread upcharge if spread is set
+        if item.spread:
+            spread_price = self.lookup_spread_price(item.spread)
+            item.spread_price = spread_price if spread_price > 0 else None
+            total += spread_price
+        else:
+            item.spread_price = None
+
+        # Update the item's price
+        item.unit_price = total
+
+        logger.info(
+            "Recalculated menu item price: %s base=$%.2f + spread=$%.2f -> total=$%.2f",
+            getattr(item, 'menu_item_name', 'unknown'),
+            base_price,
+            item.spread_price or 0.0,
+            total
+        )
+
+        return total
+
     # =========================================================================
     # Category Pricing
     # =========================================================================

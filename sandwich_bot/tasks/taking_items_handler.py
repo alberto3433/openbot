@@ -41,6 +41,7 @@ from .schemas import (
     ParsedItem,
 )
 from .parsers import parse_open_input, extract_modifiers_from_input
+from .modifier_operations import find_modifier_on_any_item, remove_modifier_from_item
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_bagel_types,
@@ -1003,137 +1004,27 @@ class TakingItemsHandler:
                 logger.info("Replacement requested but no items in cart to replace")
 
         # Handle modifier removal: "remove the bacon", "no cheese", etc.
-        # Check if cancel_item is actually a modifier on the last item
+        # Use unified modifier operations to handle ALL item types (bagels, coffee, menu items)
         if parsed.cancel_item:
-            # Normalize: lowercase, strip, and collapse multiple spaces to single space
-            cancel_item_desc = ' '.join(parsed.cancel_item.lower().split())
             active_items = order.items.get_active_items()
+            if active_items:
+                # Try to find a matching modifier on any item (checks most recent first)
+                modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
+                if modifier_match:
+                    # Found a modifier match - remove it
+                    result = remove_modifier_from_item(modifier_match.item, modifier_match)
+                    if result.success:
+                        # Recalculate price based on item type
+                        if isinstance(modifier_match.item, BagelItemTask):
+                            self.pricing.recalculate_bagel_price(modifier_match.item)
+                        elif isinstance(modifier_match.item, CoffeeItemTask):
+                            self.pricing.recalculate_coffee_price(modifier_match.item)
+                        elif isinstance(modifier_match.item, MenuItemTask):
+                            self.pricing.recalculate_menu_item_price(modifier_match.item)
 
-            # Known modifiers that can be removed from bagels
-            removable_modifiers = {
-                # Proteins
-                "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
-                "lox", "nova", "salmon", "whitefish", "tuna",
-                # Eggs
-                "egg", "eggs", "fried egg", "scrambled egg",
-                # Cheeses
-                "cheese", "american", "american cheese", "swiss", "swiss cheese",
-                "cheddar", "cheddar cheese", "muenster", "muenster cheese",
-                "provolone", "provolone cheese",
-                # Spreads
-                "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
-                # Toppings
-                "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
-                "avocado", "capers",
-            }
-
-            # Check if this is a modifier removal on a bagel
-            if active_items and cancel_item_desc in removable_modifiers:
-                last_item = active_items[-1]
-                if isinstance(last_item, BagelItemTask):
-                    modifier_removed = False
-                    removed_modifier_name = cancel_item_desc
-
-                    # Check sandwich_protein
-                    if last_item.sandwich_protein and cancel_item_desc in last_item.sandwich_protein.lower():
-                        last_item.sandwich_protein = None
-                        modifier_removed = True
-                        logger.info("Modifier removal: removed protein '%s' from bagel", cancel_item_desc)
-
-                    # Check extras list
-                    if last_item.extras:
-                        new_extras = []
-                        for extra in last_item.extras:
-                            if cancel_item_desc not in extra.lower():
-                                new_extras.append(extra)
-                            else:
-                                modifier_removed = True
-                                logger.info("Modifier removal: removed extra '%s' from bagel", extra)
-                        last_item.extras = new_extras
-
-                    # Check spread
-                    if last_item.spread and cancel_item_desc in last_item.spread.lower():
-                        last_item.spread = None
-                        last_item.spread_type = None
-                        modifier_removed = True
-                        logger.info("Modifier removal: removed spread '%s' from bagel", cancel_item_desc)
-
-                    if modifier_removed:
-                        # Recalculate price
-                        self.pricing.recalculate_bagel_price(last_item)
-                        updated_summary = last_item.get_summary()
+                        updated_summary = modifier_match.item.get_summary()
                         return StateMachineResult(
-                            message=f"OK, I've removed the {removed_modifier_name}. Your order is now {updated_summary}. Anything else?",
-                            order=order,
-                        )
-
-            # Check if this is a modifier removal on a coffee item
-            # Handle "make it without milk", "no sugar", "remove the syrup", etc.
-            coffee_removable_modifiers = {
-                # Milk
-                "milk", "whole milk", "oat milk", "almond milk", "coconut milk",
-                "soy milk", "skim milk", "2% milk", "cream", "half and half",
-                # Sweeteners
-                "sugar", "sweetener", "splenda", "stevia", "equal", "honey",
-                # Syrups
-                "syrup", "vanilla", "vanilla syrup", "caramel", "caramel syrup",
-                "hazelnut", "hazelnut syrup", "mocha", "mocha syrup",
-            }
-
-            if active_items and cancel_item_desc in coffee_removable_modifiers:
-                last_item = active_items[-1]
-                if isinstance(last_item, CoffeeItemTask):
-                    modifier_removed = False
-                    removed_modifier_name = cancel_item_desc
-
-                    # Check milk
-                    if last_item.milk and (cancel_item_desc == "milk" or
-                            "milk" in cancel_item_desc or cancel_item_desc == last_item.milk):
-                        last_item.milk = None
-                        last_item.milk_upcharge = 0.0
-                        modifier_removed = True
-                        logger.info("Modifier removal: removed milk '%s' from coffee", cancel_item_desc)
-
-                    # Check sweeteners (array)
-                    if last_item.sweeteners:
-                        if cancel_item_desc in ("sugar", "sweetener"):
-                            # Remove all sweeteners
-                            old_sweeteners = [s.get("type") for s in last_item.sweeteners]
-                            last_item.sweeteners = []
-                            modifier_removed = True
-                            logger.info("Modifier removal: removed all sweeteners %s from coffee", old_sweeteners)
-                        else:
-                            # Try to remove specific sweetener type
-                            new_sweeteners = [s for s in last_item.sweeteners if s.get("type") != cancel_item_desc]
-                            if len(new_sweeteners) < len(last_item.sweeteners):
-                                last_item.sweeteners = new_sweeteners
-                                modifier_removed = True
-                                logger.info("Modifier removal: removed sweetener '%s' from coffee", cancel_item_desc)
-
-                    # Check flavor syrups (array)
-                    if last_item.flavor_syrups:
-                        if cancel_item_desc == "syrup":
-                            # Remove all syrups
-                            old_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
-                            last_item.flavor_syrups = []
-                            modifier_removed = True
-                            logger.info("Modifier removal: removed all syrups %s from coffee", old_syrups)
-                        else:
-                            # Try to remove specific syrup flavor
-                            # Match "vanilla", "vanilla syrup", etc.
-                            flavor_to_remove = cancel_item_desc.replace(" syrup", "")
-                            new_syrups = [s for s in last_item.flavor_syrups if s.get("flavor") != flavor_to_remove]
-                            if len(new_syrups) < len(last_item.flavor_syrups):
-                                last_item.flavor_syrups = new_syrups
-                                modifier_removed = True
-                                logger.info("Modifier removal: removed syrup '%s' from coffee", flavor_to_remove)
-
-                    if modifier_removed:
-                        # Recalculate price
-                        self.pricing.recalculate_coffee_price(last_item)
-                        updated_summary = last_item.get_summary()
-                        return StateMachineResult(
-                            message=f"OK, I've removed the {removed_modifier_name}. Your order is now {updated_summary}. Anything else?",
+                            message=f"{result.message} Your order is now {updated_summary}. Anything else?",
                             order=order,
                         )
 

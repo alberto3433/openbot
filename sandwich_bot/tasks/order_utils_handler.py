@@ -16,8 +16,6 @@ from .models import (
     MenuItemTask,
     BagelItemTask,
     CoffeeItemTask,
-    EspressoItemTask,
-    SignatureItemTask,
 )
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
@@ -183,17 +181,6 @@ class OrderUtilsHandler:
                 new_item.mark_complete()
                 order.items.add_item(new_item)
                 logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.drink_type)
-            elif isinstance(template_item, EspressoItemTask):
-                new_item = EspressoItemTask(
-                    shots=template_item.shots,
-                    decaf=template_item.decaf,
-                    unit_price=template_item.unit_price,
-                    extra_shots_upcharge=template_item.extra_shots_upcharge,
-                    special_instructions=template_item.special_instructions,
-                )
-                new_item.mark_complete()
-                order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of espresso (%d shots)", template_item.shots)
             elif isinstance(template_item, BagelItemTask):
                 new_item = BagelItemTask(
                     bagel_type=template_item.bagel_type,
@@ -210,31 +197,29 @@ class OrderUtilsHandler:
             elif isinstance(template_item, MenuItemTask):
                 new_item = MenuItemTask(
                     menu_item_name=template_item.menu_item_name,
+                    menu_item_id=template_item.menu_item_id,
+                    menu_item_type=template_item.menu_item_type,
                     unit_price=template_item.unit_price,
                     toasted=template_item.toasted,
                     bagel_choice=template_item.bagel_choice,
                     side_choice=template_item.side_choice,
+                    spread=template_item.spread,
+                    spread_price=template_item.spread_price,
+                    modifications=list(template_item.modifications) if template_item.modifications else [],
+                    removed_ingredients=list(template_item.removed_ingredients) if template_item.removed_ingredients else [],
+                    special_instructions=template_item.special_instructions,
+                    # Copy attribute_values (deep copy for nested dicts/lists)
+                    attribute_values={k: (list(v) if isinstance(v, list) else v) for k, v in template_item.attribute_values.items()} if template_item.attribute_values else {},
+                    customization_offered=template_item.customization_offered,
                 )
                 new_item.mark_complete()
                 order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.menu_item_name)
-            elif isinstance(template_item, SignatureItemTask):
-                new_item = SignatureItemTask(
-                    menu_item_name=template_item.menu_item_name,
-                    toasted=template_item.toasted,
-                    bagel_choice=template_item.bagel_choice,
-                    unit_price=template_item.unit_price,
-                )
-                new_item.mark_complete()
-                order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.menu_item_name)
+                logger.info("QUANTITY_CHANGE: Added copy of '%s' (type: %s)", template_item.menu_item_name, template_item.menu_item_type)
 
         # Build updated summary
         summary = self._build_order_summary(order) if self._build_order_summary else ""
         if isinstance(template_item, CoffeeItemTask):
             item_display = template_item.drink_type
-        elif isinstance(template_item, EspressoItemTask):
-            item_display = template_item.get_display_name()
         else:
             item_display = template_item.get_summary()
         return StateMachineResult(

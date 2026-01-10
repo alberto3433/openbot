@@ -18,7 +18,6 @@ from .models import (
     BagelItemTask,
     CoffeeItemTask,
     MenuItemTask,
-    SignatureItemTask,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,7 @@ class ModifierMatch:
     field: ModifierField
     matched_value: str | None  # The specific value matched (for lists)
     item: ItemTask
+    attribute_key: str | None = None  # For MenuItemTask attribute_values (e.g., "condiments")
 
 
 @dataclass
@@ -118,16 +118,6 @@ MENU_ITEM_MODIFIER_FIELDS = [
     ),
 ]
 
-SIGNATURE_ITEM_MODIFIER_FIELDS = [
-    ModifierField(
-        field_name="modifications",
-        display_name="modification",
-        aliases=[],
-        is_list=True,
-    ),
-]
-
-
 def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type."""
     if isinstance(item, BagelItemTask):
@@ -136,8 +126,6 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
         return COFFEE_MODIFIER_FIELDS
     elif isinstance(item, MenuItemTask):
         return MENU_ITEM_MODIFIER_FIELDS
-    elif isinstance(item, SignatureItemTask):
-        return SIGNATURE_ITEM_MODIFIER_FIELDS
     else:
         return []
 
@@ -166,6 +154,30 @@ def get_item_modifiers(item: ItemTask) -> list[tuple[str, Any, ModifierField]]:
 def _normalize_modifier_name(name: str) -> str:
     """Normalize a modifier name for matching."""
     return ' '.join(name.lower().strip().split())
+
+
+def _get_singular_plural_variants(name: str) -> list[str]:
+    """Get singular and plural variants of a name for matching.
+
+    Returns a list containing the original name plus singular/plural variants.
+    E.g., "eggs" -> ["eggs", "egg"], "egg" -> ["egg", "eggs"]
+    """
+    name = name.lower().strip()
+    variants = [name]
+
+    # Handle plural -> singular (eggs -> egg)
+    if name.endswith('s') and len(name) > 2:
+        singular = name[:-1]  # Remove trailing 's'
+        if singular not in variants:
+            variants.append(singular)
+
+    # Handle singular -> plural (egg -> eggs)
+    if not name.endswith('s'):
+        plural = name + 's'
+        if plural not in variants:
+            variants.append(plural)
+
+    return variants
 
 
 def _extract_cream_cheese_flavor(user_input: str) -> str | None:
@@ -246,6 +258,83 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                 if normalized_input in item_value.lower() or item_value.lower() in normalized_input:
                     return ModifierMatch(field=field, matched_value=item_value, item=item)
 
+    # For MenuItemTask, also check attribute_values dictionary
+    if isinstance(item, MenuItemTask):
+        attribute_values = getattr(item, 'attribute_values', None)
+        if attribute_values and isinstance(attribute_values, dict):
+            # Get singular/plural variants for matching (e.g., "eggs" -> ["eggs", "egg"])
+            input_variants = _get_singular_plural_variants(normalized_input)
+
+            # First, check _selections keys which have structured data with display_name
+            # This is more reliable than checking raw attribute values
+            for attr_key, attr_value in attribute_values.items():
+                if attr_key.endswith("_selections") and isinstance(attr_value, list):
+                    base_attr_key = attr_key.replace("_selections", "")
+                    for sel in attr_value:
+                        if isinstance(sel, dict):
+                            sel_display = sel.get("display_name", "").lower()
+                            sel_slug = sel.get("slug", "").lower()
+
+                            # Check if any input variant matches the display_name or slug
+                            for variant in input_variants:
+                                if variant in sel_display or variant in sel_slug:
+                                    logger.info(
+                                        "Found modifier match in %s: variant '%s' matches selection '%s'",
+                                        attr_key, variant, sel.get("display_name")
+                                    )
+                                    synthetic_field = ModifierField(
+                                        field_name="attribute_values",
+                                        display_name=sel.get("display_name", attr_key.replace("_", " ")),
+                                        aliases=[],
+                                        is_list=True,
+                                    )
+                                    return ModifierMatch(
+                                        field=synthetic_field,
+                                        matched_value=sel.get("display_name") or str(sel),
+                                        item=item,
+                                        attribute_key=base_attr_key,
+                                    )
+
+            # Fallback: check non-selections attributes
+            for attr_key, attr_value in attribute_values.items():
+                # Skip metadata fields (already checked _selections above)
+                if attr_key.endswith("_selections") or attr_key.endswith("_price"):
+                    continue
+
+                if isinstance(attr_value, list):
+                    for list_item in attr_value:
+                        item_value = str(list_item).lower()
+                        for variant in input_variants:
+                            if variant in item_value or item_value in variant:
+                                synthetic_field = ModifierField(
+                                    field_name="attribute_values",
+                                    display_name=attr_key.replace("_", " "),
+                                    aliases=[],
+                                    is_list=True,
+                                )
+                                return ModifierMatch(
+                                    field=synthetic_field,
+                                    matched_value=str(list_item),
+                                    item=item,
+                                    attribute_key=attr_key,
+                                )
+                elif attr_value:
+                    value_str = str(attr_value).lower()
+                    for variant in input_variants:
+                        if variant in value_str or value_str in variant:
+                            synthetic_field = ModifierField(
+                                field_name="attribute_values",
+                                display_name=attr_key.replace("_", " "),
+                                aliases=[],
+                                is_list=False,
+                            )
+                            return ModifierMatch(
+                                field=synthetic_field,
+                                matched_value=str(attr_value),
+                                item=item,
+                                attribute_key=attr_key,
+                            )
+
     return None
 
 
@@ -264,6 +353,135 @@ def remove_modifier_from_item(
         ModifierRemovalResult with success status and message
     """
     field = match.field
+
+    # Special handling for MenuItemTask attribute_values
+    if match.attribute_key and isinstance(item, MenuItemTask):
+        attribute_values = getattr(item, 'attribute_values', None)
+        if not attribute_values:
+            return ModifierRemovalResult(
+                success=False,
+                removed_value=None,
+                message=f"There's no {field.display_name} to remove."
+            )
+
+        # Handle _selections format (e.g., add_egg_selections)
+        selections_key = f"{match.attribute_key}_selections"
+        if selections_key in attribute_values:
+            selections = attribute_values[selections_key]
+            if isinstance(selections, list) and match.matched_value:
+                # Find and remove the matching selection
+                new_selections = []
+                removed_display_name = match.matched_value
+                found = False
+
+                for sel in selections:
+                    if isinstance(sel, dict):
+                        sel_display = sel.get("display_name", "")
+                        # Match by display_name (case-insensitive)
+                        if sel_display.lower() == match.matched_value.lower():
+                            found = True
+                            removed_display_name = sel_display
+                            logger.info(
+                                "Removed selection '%s' from attribute_values['%s'] for MenuItemTask",
+                                sel_display, selections_key
+                            )
+                        else:
+                            new_selections.append(sel)
+                    else:
+                        # Non-dict item, keep it unless it matches
+                        if str(sel).lower() != match.matched_value.lower():
+                            new_selections.append(sel)
+                        else:
+                            found = True
+
+                if found:
+                    # Update selections
+                    if new_selections:
+                        attribute_values[selections_key] = new_selections
+                        # Also update the base attribute (for compatibility)
+                        attribute_values[match.attribute_key] = [s.get("slug") if isinstance(s, dict) else s for s in new_selections]
+                    else:
+                        # No selections left - clear both
+                        del attribute_values[selections_key]
+                        if match.attribute_key in attribute_values:
+                            del attribute_values[match.attribute_key]
+                        # Also clear the price if it exists
+                        price_key = f"{match.attribute_key}_price"
+                        if price_key in attribute_values:
+                            del attribute_values[price_key]
+
+                    return ModifierRemovalResult(
+                        success=True,
+                        removed_value=removed_display_name,
+                        message=f"OK, I've removed the {removed_display_name}."
+                    )
+                else:
+                    return ModifierRemovalResult(
+                        success=False,
+                        removed_value=None,
+                        message=f"I couldn't find {match.matched_value} to remove."
+                    )
+
+        # Fallback: handle non-_selections format
+        if match.attribute_key not in attribute_values:
+            return ModifierRemovalResult(
+                success=False,
+                removed_value=None,
+                message=f"There's no {field.display_name} to remove."
+            )
+
+        attr_value = attribute_values[match.attribute_key]
+
+        if isinstance(attr_value, list):
+            # Remove specific item from list
+            if match.matched_value:
+                new_list = [v for v in attr_value if str(v).lower() != match.matched_value.lower()]
+                if len(new_list) < len(attr_value):
+                    attribute_values[match.attribute_key] = new_list
+                    logger.info(
+                        "Removed '%s' from attribute_values['%s'] for %s",
+                        match.matched_value, match.attribute_key, type(item).__name__
+                    )
+                    return ModifierRemovalResult(
+                        success=True,
+                        removed_value=match.matched_value,
+                        message=f"OK, I've removed the {match.matched_value}."
+                    )
+                else:
+                    return ModifierRemovalResult(
+                        success=False,
+                        removed_value=None,
+                        message=f"I couldn't find {match.matched_value} to remove."
+                    )
+            else:
+                # Remove all - shouldn't normally happen but handle it
+                removed = attr_value.copy() if attr_value else []
+                attribute_values[match.attribute_key] = []
+                return ModifierRemovalResult(
+                    success=True,
+                    removed_value=", ".join(str(v) for v in removed),
+                    message=f"OK, I've removed all {field.display_name}."
+                )
+        else:
+            # Single value - remove it
+            removed_value = str(attr_value)
+            attribute_values[match.attribute_key] = None
+            # Also clear the _selections and _price if they exist
+            if selections_key in attribute_values:
+                del attribute_values[selections_key]
+            price_key = f"{match.attribute_key}_price"
+            if price_key in attribute_values:
+                del attribute_values[price_key]
+            logger.info(
+                "Removed '%s' from attribute_values['%s'] for %s",
+                removed_value, match.attribute_key, type(item).__name__
+            )
+            return ModifierRemovalResult(
+                success=True,
+                removed_value=removed_value,
+                message=f"OK, I've removed the {removed_value}."
+            )
+
     current_value = getattr(item, field.field_name, None)
 
     if current_value is None:
@@ -411,13 +629,13 @@ def find_default_ingredient_match(
     that are part of the menu item's default configuration.
 
     Args:
-        item: The item to check (must be SignatureItemTask or MenuItemTask with menu_item_id)
+        item: The item to check (must be MenuItemTask with menu_item_id)
         user_input: What the user said (e.g., "bacon", "the bacon")
 
     Returns:
         DefaultIngredientMatch if found, None otherwise
     """
-    # Only SignatureItemTask and MenuItemTask have menu_item_id
+    # Only MenuItemTask has menu_item_id
     menu_item_id = getattr(item, 'menu_item_id', None)
     if not menu_item_id:
         return None

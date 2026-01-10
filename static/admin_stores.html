@@ -385,9 +385,72 @@
     .payment-badge.cash { background: #e8f5e9; color: #2e7d32; }
     .payment-badge.credit { background: #e3f2fd; color: #1565c0; }
     .payment-badge.bitcoin { background: #fff3e0; color: #e65100; }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <div class="app-header">
     <div>Store Management</div>
     <div>
@@ -396,8 +459,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html"><strong>Stores</strong></a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -619,6 +684,48 @@
     // DOM elements
     const statusBar = document.getElementById("statusBar");
     const storeList = document.getElementById("storeList");
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification system
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save Store") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
     const storeCount = document.getElementById("storeCount");
     const storeModal = document.getElementById("storeModal");
     const deleteModal = document.getElementById("deleteModal");
@@ -861,6 +968,7 @@
 
     // Save the store (add or update)
     async function saveStore() {
+      const saveBtn = document.getElementById("saveBtn");
       // Validate form
       const name = document.getElementById("storeName").value.trim();
       const address = document.getElementById("storeAddress").value.trim();
@@ -882,6 +990,7 @@
 
       if (!name || !address || !city || !state || !zip || !phone) {
         showStatus("Please fill in all required fields", "error");
+        showToast("Please fill in all required fields", "error");
         return;
       }
 
@@ -889,6 +998,7 @@
       if (paymentMethods.length === 0) {
         showPaymentError();
         showStatus("Please select at least one payment method", "error");
+        showToast("Please select at least one payment method", "error");
         return;
       }
       hidePaymentError();
@@ -910,6 +1020,7 @@
         payment_methods: paymentMethods
       };
 
+      setSaveButtonState(saveBtn, "saving");
       try {
         let response;
         if (editingStoreId) {
@@ -933,11 +1044,15 @@
           throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
+        setSaveButtonState(saveBtn, "saved", "Save Store");
+        showToast(editingStoreId ? `"${name}" has been updated` : `"${name}" has been added`, "success");
         showStatus(editingStoreId ? `"${name}" has been updated` : `"${name}" has been added`, "success");
         closeModal();
         await loadStores(); // Reload from server
       } catch (error) {
         console.error("Failed to save store:", error);
+        setSaveButtonState(saveBtn, "error", "Save Store");
+        showToast(`Failed to save store: ${error.message}`, "error");
         showStatus(`Failed to save store: ${error.message}`, "error");
       }
     }

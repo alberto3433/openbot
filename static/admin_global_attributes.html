@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Global Attributes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .page-description {
+      background: #e3f2fd;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #1565c0;
+    }
+    .master-detail {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .master-detail {
+        grid-template-columns: 1fr;
+      }
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .item-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .item-row:last-child {
+      border-bottom: none;
+    }
+    .item-row:hover {
+      background: #f5f5f5;
+    }
+    .item-row.selected {
+      background: #e3f2fd;
+      border-left: 3px solid #1976d2;
+    }
+    .item-info {
+      flex: 1;
+    }
+    .item-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: #333;
+    }
+    .item-slug {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+    }
+    .item-meta {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .badge.type {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .badge.count {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .badge.linked {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+    .add-btn {
+      padding: 8px 16px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .add-btn:hover {
+      background: #43a047;
+    }
+    /* Detail panel */
+    .detail-panel {
+      min-height: 400px;
+    }
+    .detail-header {
+      padding: 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .detail-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .detail-subtitle {
+      font-size: 13px;
+      color: #666;
+      font-family: monospace;
+    }
+    .detail-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .detail-body {
+      padding: 20px;
+    }
+    .detail-section {
+      margin-bottom: 24px;
+    }
+    .detail-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .info-item {
+      background: #f9f9f9;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    .info-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    /* Options list */
+    .options-list {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+    .option-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .option-row:last-child {
+      border-bottom: none;
+    }
+    .option-row:hover {
+      background: #fafafa;
+    }
+    .option-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+    .option-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .option-slug {
+      font-size: 12px;
+      color: #888;
+      font-family: monospace;
+    }
+    .option-price {
+      font-size: 12px;
+      color: #2e7d32;
+      background: #e8f5e9;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .option-default {
+      font-size: 10px;
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .option-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-sm:hover {
+      background: #f5f5f5;
+    }
+    .btn-sm.danger {
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .btn-sm.danger:hover {
+      background: #ffebee;
+    }
+    .empty-options {
+      padding: 30px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+    }
+    /* Linked item types */
+    .linked-types {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .linked-type-badge {
+      background: #e3f2fd;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1565c0;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .linked-type-badge:hover {
+      background: #1976d2;
+      color: #fff;
+    }
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .checkbox-row label {
+      margin: 0;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #c62828;
+      color: #fff;
+      border-color: #c62828;
+    }
+    .btn.danger:hover {
+      background: #b71c1c;
+    }
+    /* Toast notifications */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Global Attributes</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html"><strong>Global Attrs</strong></a>
+      <a href="/static/admin_item_types.html">Item Types</a>
+      <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="page-description">
+      Global attributes are shared option groups used across multiple item types.
+      For example, create a "Spread" attribute with all cream cheese flavors once,
+      then link it to bagels, sandwiches, etc. Changes here apply everywhere.
+    </div>
+
+    <div class="master-detail">
+      <!-- Master list (left) -->
+      <div class="section">
+        <div class="section-header">
+          <span>Attributes <span class="count" id="attrCount">0</span></span>
+          <button class="add-btn" id="addAttrBtn">+ Add</button>
+        </div>
+        <ul class="item-list" id="attrList">
+          <li class="empty-state">Loading...</li>
+        </ul>
+      </div>
+
+      <!-- Detail panel (right) -->
+      <div class="section detail-panel" id="detailPanel">
+        <div class="empty-state" id="noSelection">
+          Select an attribute from the list to view details
+        </div>
+        <div id="detailContent" style="display: none;">
+          <div class="detail-header">
+            <h1 class="detail-title" id="detailTitle">--</h1>
+            <div class="detail-subtitle" id="detailSlug">--</div>
+            <div class="detail-actions">
+              <button class="btn" id="editAttrBtn">Edit</button>
+              <button class="btn danger" id="deleteAttrBtn">Delete</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div class="detail-section">
+              <div class="detail-section-title">Info</div>
+              <div class="info-grid">
+                <div class="info-item">
+                  <div class="info-label">Input Type</div>
+                  <div class="info-value" id="detailInputType">--</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Options</div>
+                  <div class="info-value" id="detailOptionCount">--</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Used By</div>
+                  <div class="info-value" id="detailItemTypeCount">--</div>
+                </div>
+              </div>
+              <div class="info-item" style="margin-top: 12px;" id="descriptionRow">
+                <div class="info-label">Description</div>
+                <div class="info-value" id="detailDescription">--</div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-section-title">
+                <span>Options</span>
+                <button class="add-btn" id="addOptionBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Option</button>
+              </div>
+              <div class="options-list" id="optionsList">
+                <div class="empty-options">No options defined</div>
+              </div>
+            </div>
+
+            <div class="detail-section" id="linkedTypesSection">
+              <div class="detail-section-title">Item Types Using This Attribute</div>
+              <div class="linked-types" id="linkedTypes">
+                <span style="color: #888; font-size: 13px;">Not linked to any item types yet</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Attribute Modal -->
+  <div class="modal-overlay" id="attrModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="attrModalTitle">Add Global Attribute</h2>
+        <button class="modal-close" id="attrModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="attrForm">
+          <input type="hidden" id="attrId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="attrSlug">Slug *</label>
+              <input type="text" id="attrSlug" required placeholder="e.g., spread" pattern="[a-z0-9_]+" />
+              <div class="hint">Unique identifier (lowercase, underscores)</div>
+            </div>
+            <div class="form-group">
+              <label for="attrDisplayName">Display Name *</label>
+              <input type="text" id="attrDisplayName" required placeholder="e.g., Spread" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="attrInputType">Input Type *</label>
+            <select id="attrInputType">
+              <option value="single_select">Single Select</option>
+              <option value="multi_select">Multi Select</option>
+              <option value="boolean">Yes/No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="attrDescription">Description</label>
+            <textarea id="attrDescription" rows="2" placeholder="Optional description of this attribute"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="attrCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="attrSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Option Modal -->
+  <div class="modal-overlay" id="optionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="optionModalTitle">Add Option</h2>
+        <button class="modal-close" id="optionModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="optionForm">
+          <input type="hidden" id="optionId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="optionSlug">Slug *</label>
+              <input type="text" id="optionSlug" required placeholder="e.g., plain_cc" pattern="[a-z0-9_]+" />
+            </div>
+            <div class="form-group">
+              <label for="optionDisplayName">Display Name *</label>
+              <input type="text" id="optionDisplayName" required placeholder="e.g., Plain Cream Cheese" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="optionPrice">Price Modifier ($)</label>
+              <input type="number" id="optionPrice" step="0.01" value="0.00" />
+              <div class="hint">Extra charge for this option</div>
+            </div>
+            <div class="form-group">
+              <label for="optionIcedPrice">Iced Price Modifier ($)</label>
+              <input type="number" id="optionIcedPrice" step="0.01" value="0.00" />
+              <div class="hint">Extra charge when iced (drinks)</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="optionOrder">Display Order</label>
+              <input type="number" id="optionOrder" value="0" min="0" />
+            </div>
+            <div class="form-group">
+              <div class="checkbox-row" style="margin-top: 24px;">
+                <input type="checkbox" id="optionIsDefault" />
+                <label for="optionIsDefault">Default Option</label>
+              </div>
+            </div>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="optionIsAvailable" checked />
+            <label for="optionIsAvailable">Available</label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="optionCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="optionDeleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn primary" id="optionSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Attribute</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteAttrName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">This will remove all options and unlink from all item types. This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "/admin/global-attributes";
+    let authCredentials = null;
+
+    // State
+    let attributes = [];
+    let selectedAttrId = null;
+    let editingOptionId = null;
+
+    // Auth fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+      }
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+        authCredentials = btoa(username + ':' + password);
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+      return response;
+    }
+
+    // Toast notification
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span>${icons[type] || icons.info}</span><span>${message}</span>`;
+      document.getElementById("toastContainer").appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      return div.innerHTML;
+    }
+
+    // Load all attributes
+    async function loadAttributes() {
+      try {
+        const response = await authFetch(API_BASE);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        attributes = await response.json();
+        renderAttributeList();
+        if (selectedAttrId) {
+          const attr = attributes.find(a => a.id === selectedAttrId);
+          if (attr) renderDetail(attr);
+          else clearDetail();
+        }
+      } catch (error) {
+        console.error("Failed to load attributes:", error);
+        showToast("Failed to load attributes", "error");
+      }
+    }
+
+    // Render attribute list
+    function renderAttributeList() {
+      const list = document.getElementById("attrList");
+      document.getElementById("attrCount").textContent = attributes.length;
+
+      if (attributes.length === 0) {
+        list.innerHTML = '<li class="empty-state">No global attributes yet. Click "+ Add" to create one.</li>';
+        return;
+      }
+
+      list.innerHTML = attributes.map(attr => `
+        <li class="item-row ${attr.id === selectedAttrId ? 'selected' : ''}" data-id="${attr.id}">
+          <div class="item-info">
+            <div class="item-name">${escapeHtml(attr.display_name)}</div>
+            <div class="item-slug">${escapeHtml(attr.slug)}</div>
+            <div class="item-meta">
+              <span class="badge type">${attr.input_type.replace('_', ' ')}</span>
+              <span class="badge count">${attr.option_count || 0} options</span>
+              ${attr.item_type_count > 0 ? `<span class="badge linked">${attr.item_type_count} types</span>` : ''}
+            </div>
+          </div>
+        </li>
+      `).join("");
+
+      // Click handlers
+      document.querySelectorAll("#attrList .item-row").forEach(row => {
+        row.addEventListener("click", () => selectAttribute(parseInt(row.dataset.id)));
+      });
+    }
+
+    // Select an attribute
+    async function selectAttribute(attrId) {
+      selectedAttrId = attrId;
+      document.querySelectorAll("#attrList .item-row").forEach(row => {
+        row.classList.toggle("selected", parseInt(row.dataset.id) === attrId);
+      });
+
+      // Load full attribute with options
+      try {
+        const response = await authFetch(`${API_BASE}/${attrId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const attr = await response.json();
+        renderDetail(attr);
+      } catch (error) {
+        console.error("Failed to load attribute:", error);
+        showToast("Failed to load attribute details", "error");
+      }
+    }
+
+    // Render detail panel
+    function renderDetail(attr) {
+      document.getElementById("noSelection").style.display = "none";
+      document.getElementById("detailContent").style.display = "block";
+
+      document.getElementById("detailTitle").textContent = attr.display_name;
+      document.getElementById("detailSlug").textContent = attr.slug;
+      document.getElementById("detailInputType").textContent = attr.input_type.replace('_', ' ');
+      document.getElementById("detailOptionCount").textContent = (attr.options || []).length;
+      document.getElementById("detailItemTypeCount").textContent = attr.item_type_count || 0;
+
+      if (attr.description) {
+        document.getElementById("descriptionRow").style.display = "block";
+        document.getElementById("detailDescription").textContent = attr.description;
+      } else {
+        document.getElementById("descriptionRow").style.display = "none";
+      }
+
+      // Render options
+      const optionsList = document.getElementById("optionsList");
+      if (!attr.options || attr.options.length === 0) {
+        optionsList.innerHTML = '<div class="empty-options">No options defined. Click "+ Add Option" to create one.</div>';
+      } else {
+        optionsList.innerHTML = attr.options.map(opt => `
+          <div class="option-row" data-id="${opt.id}">
+            <div class="option-info">
+              <span class="option-name">${escapeHtml(opt.display_name)}</span>
+              <span class="option-slug">${escapeHtml(opt.slug)}</span>
+              ${opt.price_modifier > 0 ? `<span class="option-price">+$${opt.price_modifier.toFixed(2)}</span>` : ''}
+              ${opt.is_default ? '<span class="option-default">default</span>' : ''}
+            </div>
+            <div class="option-actions">
+              <button class="btn-sm edit-option-btn" data-id="${opt.id}">Edit</button>
+              <button class="btn-sm danger delete-option-btn" data-id="${opt.id}">Delete</button>
+            </div>
+          </div>
+        `).join("");
+
+        // Option button handlers
+        document.querySelectorAll(".edit-option-btn").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const opt = attr.options.find(o => o.id === parseInt(btn.dataset.id));
+            if (opt) openOptionModal(opt);
+          });
+        });
+        document.querySelectorAll(".delete-option-btn").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteOption(parseInt(btn.dataset.id));
+          });
+        });
+      }
+
+      // Render linked item types
+      renderLinkedItemTypes(attr.linked_item_types || []);
+    }
+
+    // Render item types linked to this attribute
+    function renderLinkedItemTypes(linkedTypes) {
+      const container = document.getElementById("linkedTypes");
+      if (!linkedTypes || linkedTypes.length === 0) {
+        container.innerHTML = `<span style="color: #888; font-size: 13px;">Not linked to any item types yet. Link in <a href="/static/admin_item_types.html" style="color: #1976d2;">Item Types</a>.</span>`;
+        return;
+      }
+
+      container.innerHTML = linkedTypes.map(itemType => `
+        <a href="/static/admin_item_types.html?id=${itemType.id}" class="linked-type-badge" title="View ${escapeHtml(itemType.display_name)}">
+          ${escapeHtml(itemType.display_name)}
+        </a>
+      `).join("");
+    }
+
+    function clearDetail() {
+      selectedAttrId = null;
+      document.getElementById("noSelection").style.display = "block";
+      document.getElementById("detailContent").style.display = "none";
+    }
+
+    // ==================
+    // Attribute Modal
+    // ==================
+
+    function openAttrModal(attr = null) {
+      const modal = document.getElementById("attrModal");
+      const form = document.getElementById("attrForm");
+      form.reset();
+
+      if (attr) {
+        document.getElementById("attrModalTitle").textContent = "Edit Global Attribute";
+        document.getElementById("attrId").value = attr.id;
+        document.getElementById("attrSlug").value = attr.slug;
+        document.getElementById("attrDisplayName").value = attr.display_name;
+        document.getElementById("attrInputType").value = attr.input_type;
+        document.getElementById("attrDescription").value = attr.description || "";
+      } else {
+        document.getElementById("attrModalTitle").textContent = "Add Global Attribute";
+        document.getElementById("attrId").value = "";
+      }
+
+      modal.classList.add("active");
+    }
+
+    function closeAttrModal() {
+      document.getElementById("attrModal").classList.remove("active");
+    }
+
+    async function saveAttribute() {
+      const id = document.getElementById("attrId").value;
+      const slug = document.getElementById("attrSlug").value.trim().toLowerCase();
+      const displayName = document.getElementById("attrDisplayName").value.trim();
+      const inputType = document.getElementById("attrInputType").value;
+      const description = document.getElementById("attrDescription").value.trim();
+
+      if (!slug || !displayName) {
+        showToast("Slug and display name are required", "error");
+        return;
+      }
+
+      if (!/^[a-z0-9_]+$/.test(slug)) {
+        showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const payload = { slug, display_name: displayName, input_type: inputType, description: description || null };
+      const saveBtn = document.getElementById("attrSaveBtn");
+      saveBtn.classList.add("saving");
+      saveBtn.disabled = true;
+
+      try {
+        let response;
+        if (id) {
+          response = await authFetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        const saved = await response.json();
+        showToast(`Attribute "${displayName}" saved`, "success");
+        closeAttrModal();
+        await loadAttributes();
+        selectAttribute(saved.id);
+      } catch (error) {
+        showToast(`Failed to save: ${error.message}`, "error");
+      } finally {
+        saveBtn.classList.remove("saving");
+        saveBtn.disabled = false;
+      }
+    }
+
+    // ==================
+    // Delete Attribute
+    // ==================
+
+    function openDeleteModal() {
+      if (!selectedAttrId) return;
+      const attr = attributes.find(a => a.id === selectedAttrId);
+      if (!attr) return;
+
+      document.getElementById("deleteAttrName").textContent = attr.display_name;
+      document.getElementById("deleteModal").classList.add("active");
+    }
+
+    function closeDeleteModal() {
+      document.getElementById("deleteModal").classList.remove("active");
+    }
+
+    async function confirmDelete() {
+      if (!selectedAttrId) return;
+
+      try {
+        const response = await authFetch(`${API_BASE}/${selectedAttrId}`, { method: "DELETE" });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Attribute deleted", "success");
+        closeDeleteModal();
+        clearDetail();
+        await loadAttributes();
+      } catch (error) {
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // ==================
+    // Option Modal
+    // ==================
+
+    function openOptionModal(opt = null) {
+      const modal = document.getElementById("optionModal");
+      const form = document.getElementById("optionForm");
+      form.reset();
+      editingOptionId = null;
+
+      if (opt) {
+        document.getElementById("optionModalTitle").textContent = "Edit Option";
+        document.getElementById("optionId").value = opt.id;
+        document.getElementById("optionSlug").value = opt.slug;
+        document.getElementById("optionDisplayName").value = opt.display_name;
+        document.getElementById("optionPrice").value = opt.price_modifier || 0;
+        document.getElementById("optionIcedPrice").value = opt.iced_price_modifier || 0;
+        document.getElementById("optionOrder").value = opt.display_order || 0;
+        document.getElementById("optionIsDefault").checked = opt.is_default || false;
+        document.getElementById("optionIsAvailable").checked = opt.is_available !== false;
+        document.getElementById("optionDeleteBtn").style.display = "inline-block";
+        editingOptionId = opt.id;
+      } else {
+        document.getElementById("optionModalTitle").textContent = "Add Option";
+        document.getElementById("optionId").value = "";
+        document.getElementById("optionIsAvailable").checked = true;
+        document.getElementById("optionDeleteBtn").style.display = "none";
+      }
+
+      modal.classList.add("active");
+    }
+
+    function closeOptionModal() {
+      document.getElementById("optionModal").classList.remove("active");
+      editingOptionId = null;
+    }
+
+    async function saveOption() {
+      if (!selectedAttrId) return;
+
+      const id = document.getElementById("optionId").value;
+      const slug = document.getElementById("optionSlug").value.trim().toLowerCase();
+      const displayName = document.getElementById("optionDisplayName").value.trim();
+      const priceModifier = parseFloat(document.getElementById("optionPrice").value) || 0;
+      const icedPriceModifier = parseFloat(document.getElementById("optionIcedPrice").value) || 0;
+      const displayOrder = parseInt(document.getElementById("optionOrder").value) || 0;
+      const isDefault = document.getElementById("optionIsDefault").checked;
+      const isAvailable = document.getElementById("optionIsAvailable").checked;
+
+      if (!slug || !displayName) {
+        showToast("Slug and display name are required", "error");
+        return;
+      }
+
+      if (!/^[a-z0-9_]+$/.test(slug)) {
+        showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const payload = {
+        slug,
+        display_name: displayName,
+        price_modifier: priceModifier,
+        iced_price_modifier: icedPriceModifier,
+        display_order: displayOrder,
+        is_default: isDefault,
+        is_available: isAvailable
+      };
+
+      const saveBtn = document.getElementById("optionSaveBtn");
+      saveBtn.classList.add("saving");
+      saveBtn.disabled = true;
+
+      try {
+        let response;
+        if (id) {
+          response = await authFetch(`${API_BASE}/${selectedAttrId}/options/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(`${API_BASE}/${selectedAttrId}/options`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast(`Option "${displayName}" saved`, "success");
+        closeOptionModal();
+        selectAttribute(selectedAttrId);
+      } catch (error) {
+        showToast(`Failed to save: ${error.message}`, "error");
+      } finally {
+        saveBtn.classList.remove("saving");
+        saveBtn.disabled = false;
+      }
+    }
+
+    async function deleteOption(optionId) {
+      if (!selectedAttrId || !optionId) return;
+      if (!confirm("Delete this option?")) return;
+
+      try {
+        const response = await authFetch(`${API_BASE}/${selectedAttrId}/options/${optionId}`, { method: "DELETE" });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Option deleted", "success");
+        closeOptionModal();
+        selectAttribute(selectedAttrId);
+      } catch (error) {
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // ==================
+    // Event Listeners
+    // ==================
+
+    document.getElementById("addAttrBtn").addEventListener("click", () => openAttrModal());
+    document.getElementById("attrModalClose").addEventListener("click", closeAttrModal);
+    document.getElementById("attrCancelBtn").addEventListener("click", closeAttrModal);
+    document.getElementById("attrSaveBtn").addEventListener("click", saveAttribute);
+
+    document.getElementById("editAttrBtn").addEventListener("click", () => {
+      const attr = attributes.find(a => a.id === selectedAttrId);
+      if (attr) openAttrModal(attr);
+    });
+    document.getElementById("deleteAttrBtn").addEventListener("click", openDeleteModal);
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", confirmDelete);
+
+    document.getElementById("addOptionBtn").addEventListener("click", () => openOptionModal());
+    document.getElementById("optionModalClose").addEventListener("click", closeOptionModal);
+    document.getElementById("optionCancelBtn").addEventListener("click", closeOptionModal);
+    document.getElementById("optionSaveBtn").addEventListener("click", saveOption);
+    document.getElementById("optionDeleteBtn").addEventListener("click", () => {
+      if (editingOptionId) deleteOption(editingOptionId);
+    });
+
+    // Close modals on overlay click
+    document.getElementById("attrModal").addEventListener("click", (e) => {
+      if (e.target.id === "attrModal") closeAttrModal();
+    });
+    document.getElementById("optionModal").addEventListener("click", (e) => {
+      if (e.target.id === "optionModal") closeOptionModal();
+    });
+    document.getElementById("deleteModal").addEventListener("click", (e) => {
+      if (e.target.id === "deleteModal") closeDeleteModal();
+    });
+
+    // Escape key closes modals
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeAttrModal();
+        closeOptionModal();
+        closeDeleteModal();
+      }
+    });
+
+    // Auto-generate slug from display name
+    document.getElementById("attrDisplayName").addEventListener("input", (e) => {
+      const slugField = document.getElementById("attrSlug");
+      if (!document.getElementById("attrId").value && !slugField.dataset.edited) {
+        slugField.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      }
+    });
+    document.getElementById("attrSlug").addEventListener("input", (e) => {
+      e.target.dataset.edited = "true";
+    });
+
+    document.getElementById("optionDisplayName").addEventListener("input", (e) => {
+      const slugField = document.getElementById("optionSlug");
+      if (!document.getElementById("optionId").value && !slugField.dataset.edited) {
+        slugField.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      }
+    });
+    document.getElementById("optionSlug").addEventListener("input", (e) => {
+      e.target.dataset.edited = "true";
+    });
+
+    // Initial load
+    loadAttributes();
+  </script>
+</body>
+</html>

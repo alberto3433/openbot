@@ -10,6 +10,8 @@ from .parser_responses import (
     # Helper types for coffee modifiers
     SweetenerItem,
     SyrupItem,
+    # Qualifier conflict model
+    QualifierConflict,
     # ParsedItem types for multi-item handling
     ParsedMenuItemEntry,
     ParsedBagelEntry,
@@ -54,6 +56,8 @@ __all__ = [
     # Helper types for coffee modifiers
     "SweetenerItem",
     "SyrupItem",
+    # Qualifier conflict model
+    "QualifierConflict",
     # ParsedItem types for multi-item handling
     "ParsedMenuItemEntry",
     "ParsedBagelEntry",

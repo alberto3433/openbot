@@ -17,7 +17,6 @@ from .models import (
     ItemTask,
     BagelItemTask,
     CoffeeItemTask,
-    SpeedMenuBagelItemTask,
     MenuItemTask,
 )
 
@@ -270,10 +269,6 @@ COFFEE_SLOTS: list[ItemSlotDefinition] = [
     ItemSlotDefinition("sweetener", "Any sweetener?", required=False),
 ]
 
-SPEED_MENU_BAGEL_SLOTS: list[ItemSlotDefinition] = [
-    ItemSlotDefinition("toasted", "Would you like that toasted?", required=True),
-]
-
 MENU_ITEM_SLOTS: list[ItemSlotDefinition] = [
     ItemSlotDefinition(
         "side_choice",
@@ -296,8 +291,6 @@ def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
         return BAGEL_SLOTS
     elif isinstance(item, CoffeeItemTask):
         return COFFEE_SLOTS
-    elif isinstance(item, SpeedMenuBagelItemTask):
-        return SPEED_MENU_BAGEL_SLOTS
     elif isinstance(item, MenuItemTask):
         return MENU_ITEM_SLOTS
     else:

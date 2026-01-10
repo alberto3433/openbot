@@ -85,8 +85,8 @@ class TestStateMachineMultiBagel:
 class TestMixedItemBagelChoice:
     """Tests for bagel type assignment - one item at a time (sequential flow)."""
 
-    def test_butter_sandwich_configured_first(self):
-        """Test that bagel choice for Butter Sandwich is set, then asks toasted."""
+    def test_omelette_with_bagel_configured_first(self):
+        """Test that omelette with bagel side is configured via legacy flow."""
         from sandwich_bot.tasks.state_machine import (
             OrderStateMachine,
             OrderPhase,
@@ -95,42 +95,43 @@ class TestMixedItemBagelChoice:
         from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
 
         # Create order with:
-        # - MenuItemTask "Butter Sandwich" (spread_sandwich) needing bagel_choice
+        # - MenuItemTask omelette with bagel side needing bagel_choice
         # - BagelItemTask with cream cheese spread needing bagel_type
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "bagel_choice"
 
-        butter_sandwich = MenuItemTask(
-            menu_item_name="Butter Sandwich",
-            menu_item_type="spread_sandwich",
+        omelette = MenuItemTask(
+            menu_item_name="Western Omelette",
+            menu_item_type="omelette",
+            side_choice="bagel",
             bagel_choice=None,
-            unit_price=3.50,
+            unit_price=12.50,
         )
-        butter_sandwich.mark_in_progress()
-        order.items.add_item(butter_sandwich)
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
 
         cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
         cc_bagel.mark_in_progress()
         order.items.add_item(cc_bagel)
 
-        order.pending_item_id = butter_sandwich.id
+        order.pending_item_id = omelette.id
         sm = OrderStateMachine()
 
         # Mock the parser to return "plain"
         with patch("sandwich_bot.tasks.bagel_config_handler.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
 
-            result = sm.bagel_handler.handle_bagel_choice("plain", butter_sandwich, order)
+            result = sm.bagel_handler.handle_bagel_choice("plain", omelette, order)
 
-            # Verify ONLY the Butter Sandwich has bagel_choice set (one-at-a-time)
-            assert butter_sandwich.bagel_choice == "plain", \
-                f"Butter Sandwich should have bagel_choice=plain, got {butter_sandwich.bagel_choice}"
+            # Verify ONLY the omelette has bagel_choice set (one-at-a-time)
+            assert omelette.bagel_choice == "plain", \
+                f"Omelette should have bagel_choice=plain, got {omelette.bagel_choice}"
             # The cream cheese bagel should NOT be configured yet
             assert cc_bagel.bagel_type is None, \
                 f"CC bagel should not have bagel_type yet, got {cc_bagel.bagel_type}"
 
-            # Should ask about toasted for the Butter Sandwich next
+            # Should ask about toasted for the omelette's bagel next
             assert result.order.pending_field == "toasted"
 
     def test_sequential_configuration_flow(self):
@@ -146,30 +147,31 @@ class TestMixedItemBagelChoice:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "bagel_choice"
 
-        butter_sandwich = MenuItemTask(
-            menu_item_name="Butter Sandwich",
-            menu_item_type="spread_sandwich",
+        omelette = MenuItemTask(
+            menu_item_name="Western Omelette",
+            menu_item_type="omelette",
+            side_choice="bagel",
             bagel_choice=None,
-            unit_price=3.50,
+            unit_price=12.50,
         )
-        butter_sandwich.mark_in_progress()
-        order.items.add_item(butter_sandwich)
+        omelette.mark_in_progress()
+        order.items.add_item(omelette)
 
         cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
         cc_bagel.mark_in_progress()
         order.items.add_item(cc_bagel)
 
-        order.pending_item_id = butter_sandwich.id
+        order.pending_item_id = omelette.id
         sm = OrderStateMachine()
 
-        # Step 1: Set bagel type for Butter Sandwich
+        # Step 1: Set bagel type for omelette's bagel side
         with patch("sandwich_bot.tasks.bagel_config_handler.parse_bagel_choice") as mock_parse:
             mock_parse.return_value = BagelChoiceResponse(bagel_type="plain", quantity=1)
-            result = sm.bagel_handler.handle_bagel_choice("plain", butter_sandwich, order)
+            result = sm.bagel_handler.handle_bagel_choice("plain", omelette, order)
 
-        assert butter_sandwich.bagel_choice == "plain"
+        assert omelette.bagel_choice == "plain"
         assert cc_bagel.bagel_type is None  # Not configured yet
-        assert result.order.pending_field == "toasted"  # Asks toasted for Butter Sandwich
+        assert result.order.pending_field == "toasted"  # Asks toasted for omelette's bagel
 
 
 # =============================================================================
@@ -1765,7 +1767,7 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_menu_item(self):
         """Test ordering a bagel and a menu item (like The Classic BEC) together."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import BagelItemTask, SignatureItemTask
+        from sandwich_bot.tasks.models import BagelItemTask, MenuItemTask
 
         # Use global menu data which has all pricing info
         sm = OrderStateMachine()
@@ -1777,7 +1779,8 @@ class TestBagelWithCoffeeConfig:
 
         # Should have both items in the order
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        signature_items = [i for i in order.items.items if isinstance(i, SignatureItemTask)]
+        # Signature items are now MenuItemTask with is_signature=True
+        signature_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
         assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
         assert len(signature_items) == 1, f"Expected 1 speed menu item, got: {len(signature_items)}"
 
@@ -4895,6 +4898,97 @@ class TestTakingItemsHandler:
             bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
             assert len(bagels) == 3
 
+    def test_another_espresso_creates_menu_item_task(self):
+        """Test that 'another espresso' creates MenuItemTask, not CoffeeItemTask.
+
+        Espresso uses the data-driven MenuItemTask flow with global attributes,
+        not the CoffeeItemTask flow. This test ensures the handler routing is correct.
+        """
+        from sandwich_bot.tasks.state_machine import OrderStateMachine
+        from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask, CoffeeItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # First, add an espresso to the order
+        first_espresso = MenuItemTask(
+            menu_item_name="Espresso",
+            menu_item_type="espresso",
+            unit_price=3.50,
+        )
+        first_espresso.mark_complete()
+        order.items.add_item(first_espresso)
+
+        with patch("sandwich_bot.tasks.taking_items_handler.parse_open_input") as mock_parse:
+            mock_parse.return_value = OpenInputResponse(
+                new_bagel=False, new_coffee=False, new_signature_item=False,
+                duplicate_new_item_type="espresso",  # "another espresso" detected
+            )
+
+            result = sm._handle_taking_items("another espresso", order)
+
+            # Should have 2 espressos now, both as MenuItemTask
+            espressos = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type == "espresso"]
+            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+
+            # Verify espresso was added as MenuItemTask, not CoffeeItemTask
+            assert len(espressos) == 2, f"Expected 2 espressos, got {len(espressos)}"
+            assert len(coffees) == 0, f"Espresso should not create CoffeeItemTask, got {len(coffees)}"
+
+
+class TestEspressoItemTypeConsistency:
+    """Tests to ensure espresso is handled consistently as MenuItemTask throughout the system."""
+
+    def test_espresso_keyword_maps_to_espresso_not_coffee(self):
+        """Verify ANOTHER_ITEM_TYPE_KEYWORDS maps espresso -> espresso (not coffee)."""
+        from sandwich_bot.tasks.parsers.deterministic import ANOTHER_ITEM_TYPE_KEYWORDS
+
+        assert ANOTHER_ITEM_TYPE_KEYWORDS.get("espresso") == "espresso", \
+            "espresso should map to 'espresso', not 'coffee'"
+        assert ANOTHER_ITEM_TYPE_KEYWORDS.get("espressos") == "espresso", \
+            "espressos should map to 'espresso', not 'coffee'"
+
+    def test_parse_open_input_detects_another_espresso_as_espresso_type(self):
+        """Verify parse_open_input returns duplicate_new_item_type='espresso' for 'another espresso'."""
+        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("another espresso")
+        assert result is not None
+        assert result.duplicate_new_item_type == "espresso", \
+            f"Expected 'espresso', got '{result.duplicate_new_item_type}'"
+
+    def test_global_attribute_options_include_must_match(self):
+        """Verify menu_cache.get_global_attribute_options includes must_match field.
+
+        This ensures data schema consistency - options loaded from cache have all
+        required fields for proper option matching (must_match filters like "oat milk").
+        """
+        from sandwich_bot.menu_data_cache import menu_cache
+
+        # Get milk_sweetener_syrup options (used for espresso)
+        options = menu_cache.get_global_attribute_options("milk_sweetener_syrup")
+
+        if not options:
+            pytest.skip("milk_sweetener_syrup options not loaded in cache")
+
+        # Check that options have the expected fields including must_match
+        # (must_match may be None for default options, but the key should exist in the data)
+        for opt in options:
+            # All options should have these base fields
+            assert "slug" in opt, f"Option missing 'slug': {opt}"
+            assert "display_name" in opt, f"Option missing 'display_name': {opt}"
+
+        # Verify at least some non-default milks have must_match set
+        # (e.g., oat_milk should have must_match="oat milk")
+        oat_milk_opts = [o for o in options if "oat" in o.get("slug", "").lower()]
+        if oat_milk_opts:
+            oat_milk = oat_milk_opts[0]
+            # must_match key should exist in the cache data
+            assert "must_match" in oat_milk, \
+                "Cache should include must_match field for options (even if None)"
+
 
 class TestPaymentMethodHandler:
     """Tests for _handle_payment_method."""
@@ -5166,120 +5260,6 @@ class TestEmailHandler:
             assert result.is_complete
             # email-validator normalizes the domain to lowercase
             assert order.customer_info.email == "John@example.com"
-
-
-class TestSpeedMenuBagelToastedHandler:
-    """Tests for _handle_signature_item_toasted."""
-
-    def test_yes_toasted_completes_item(self):
-        """Test that 'yes' sets toasted=True and completes item."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-        item = SignatureItemTask(menu_item_name="The Classic")
-        item.mark_in_progress()
-        order.items.add_item(item)
-        order.pending_item_id = item.id
-        order.pending_field = "toasted"
-
-        result = sm.signature_item_handler.handle_signature_item_toasted("yes please", item, order)
-
-        assert item.toasted is True
-        assert item.status == TaskStatus.COMPLETE
-        assert order.pending_item_id is None
-
-    def test_no_toasted_completes_item(self):
-        """Test that 'no' sets toasted=False and completes item."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-        item = SignatureItemTask(menu_item_name="The Leo")
-        item.mark_in_progress()
-        order.items.add_item(item)
-        order.pending_item_id = item.id
-        order.pending_field = "toasted"
-
-        result = sm.signature_item_handler.handle_signature_item_toasted("no thanks", item, order)
-
-        assert item.toasted is False
-        assert item.status == TaskStatus.COMPLETE
-
-    def test_unclear_response_asks_again(self):
-        """Test that unclear input asks for toasted preference again."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase, ToastedChoiceResponse
-        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-        item = SignatureItemTask(menu_item_name="The Classic")
-        item.mark_in_progress()
-        order.items.add_item(item)
-        order.pending_item_id = item.id
-        order.pending_field = "toasted"
-
-        with patch("sandwich_bot.tasks.bagel_config_handler.parse_toasted_choice") as mock_parse:
-            mock_parse.return_value = ToastedChoiceResponse(toasted=None)
-
-            result = sm.signature_item_handler.handle_signature_item_toasted("what?", item, order)
-
-            assert "toasted" in result.message.lower()
-            assert item.toasted is None
-
-    def test_deterministic_toasted_works(self):
-        """Test that 'toasted' is parsed deterministically without LLM."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-        item = SignatureItemTask(menu_item_name="The Classic")
-        item.mark_in_progress()
-        order.items.add_item(item)
-        order.pending_item_id = item.id
-        order.pending_field = "toasted"
-
-        # "toasted" should be parsed deterministically
-        result = sm.signature_item_handler.handle_signature_item_toasted("toasted", item, order)
-
-        assert item.toasted is True
-        assert item.status == TaskStatus.COMPLETE
-
-    def test_not_toasted_deterministic(self):
-        """Test that 'not toasted' is parsed deterministically."""
-        from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, SignatureItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-        item = SignatureItemTask(menu_item_name="The Leo")
-        item.mark_in_progress()
-        order.items.add_item(item)
-        order.pending_item_id = item.id
-        order.pending_field = "toasted"
-
-        result = sm.signature_item_handler.handle_signature_item_toasted("not toasted", item, order)
-
-        assert item.toasted is False
-        assert item.status == TaskStatus.COMPLETE
 
 
 class TestDrinkSelectionHandler:

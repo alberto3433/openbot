@@ -15,6 +15,7 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
 from .models import Company, ItemType, AttributeDefinition, AttributeOption
+from .services.item_type_helpers import has_linked_attributes
 
 
 # =============================================================================
@@ -251,6 +252,7 @@ WRONG - Just saying "I added it" without the action does NOTHING:
 def build_item_type_section(
     item_type: ItemType,
     attributes: List[Dict[str, Any]],
+    db: Session,
     is_primary: bool = False
 ) -> str:
     """
@@ -259,12 +261,14 @@ def build_item_type_section(
     Args:
         item_type: The ItemType model instance
         attributes: List of attribute dicts with options
+        db: Database session for checking configurability
         is_primary: Whether this is the primary configurable item
 
     Returns:
         Formatted prompt section for this item type
     """
-    if not item_type.is_configurable:
+    # Derive configurability from linked global attributes
+    if not has_linked_attributes(item_type.id, db):
         return ""
 
     type_name = item_type.display_name.upper()
@@ -325,15 +329,16 @@ def build_item_types_prompt_section(db: Session) -> str:
 
     item_types = db.query(ItemType).all()
 
-    # Find the primary configurable item type (first configurable one)
+    # Find the primary configurable item type (first one with linked global attributes)
     primary_type = None
     for it in item_types:
-        if it.is_configurable:
+        if has_linked_attributes(it.id, db):
             primary_type = it
             break
 
     for item_type in item_types:
-        if not item_type.is_configurable:
+        # Derive configurability from linked global attributes
+        if not has_linked_attributes(item_type.id, db):
             continue
 
         # Get attributes for this item type
@@ -368,7 +373,7 @@ def build_item_types_prompt_section(db: Session) -> str:
             })
 
         is_primary = (item_type == primary_type)
-        section = build_item_type_section(item_type, attributes, is_primary)
+        section = build_item_type_section(item_type, attributes, db, is_primary)
         if section:
             sections.append(section)
 

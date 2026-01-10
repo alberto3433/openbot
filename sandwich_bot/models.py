@@ -29,9 +29,11 @@ class ItemType(Base):
     """
     Defines a type of menu item (sandwich, pizza, taco, drink, etc.).
 
-    An ItemType with is_configurable=True has attribute definitions that allow
-    customization (e.g., sandwiches have bread, protein, toppings).
-    Items with is_configurable=False are simple items (e.g., chips, soda).
+    Configurability is derived from linked global attributes:
+    - is_configurable = True if has ANY linked global attributes
+    - skip_config = True if has NO attributes with ask_in_conversation=True
+
+    Use services.item_type_helpers for these derived values.
     """
     __tablename__ = "item_types"
 
@@ -39,8 +41,6 @@ class ItemType(Base):
     slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sandwich", "pizza", "drink"
     display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
     display_name_plural = Column(String, nullable=True)  # e.g., "coffees and teas" for sized_beverage (if irregular)
-    is_configurable = Column(Boolean, nullable=False, default=True)  # True = has attributes to customize
-    skip_config = Column(Boolean, nullable=False, default=False)  # True = skip config questions (e.g., sodas don't need hot/iced)
 
     # Category keyword support (replaces MENU_CATEGORY_KEYWORDS constant)
     aliases = Column(String, nullable=True)  # Comma-separated keywords that map to this type (e.g., "bagels" for "bagel")
@@ -54,6 +54,7 @@ class ItemType(Base):
     fields = relationship("ItemTypeField", back_populates="item_type", cascade="all, delete-orphan")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
     type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
+    global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type", cascade="all, delete-orphan")
 
 
 class ItemTypeField(Base):
@@ -386,6 +387,133 @@ class AttributeOptionIngredient(Base):
     ingredient = relationship("Ingredient", back_populates="attribute_option_links")
 
 
+# =============================================================================
+# Normalized Attribute System
+# =============================================================================
+# These tables provide a shared attribute system where attribute definitions
+# and their options are defined globally, and item types reference them.
+# This solves the problem where different item types have different subsets
+# of the same attribute options (e.g., fish_sandwich having 2 spreads while
+# egg_sandwich has 25).
+
+class GlobalAttribute(Base):
+    """
+    Global attribute definition shared across item types.
+
+    For example, a 'spread' attribute with all cream cheese options.
+    Item types reference this global attribute instead of defining their own.
+
+    This normalizes the data so all item types share the same option lists.
+    """
+    __tablename__ = "global_attributes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "spread", "topping", "bread"
+    display_name = Column(String(100), nullable=False)  # e.g., "Spread", "Topping", "Bread"
+
+    # Input type determines UI and validation
+    # "single_select": Pick exactly one
+    # "multi_select": Pick multiple
+    # "boolean": Yes/no
+    input_type = Column(String(20), nullable=False, default="single_select")
+
+    # Description for admin UI
+    description = Column(Text, nullable=True)  # e.g., "Cream cheese and other spread options"
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    options = relationship("GlobalAttributeOption", back_populates="attribute", cascade="all, delete-orphan", order_by="GlobalAttributeOption.display_order")
+    item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute", cascade="all, delete-orphan")
+
+
+class GlobalAttributeOption(Base):
+    """
+    An option for a global attribute.
+
+    For example, "Plain Cream Cheese", "Scallion Cream Cheese" are options
+    for the "spread" global attribute.
+    """
+    __tablename__ = "global_attribute_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    slug = Column(String(100), nullable=False)  # e.g., "plain_cream_cheese", "scallion_cream_cheese"
+    display_name = Column(String(100), nullable=False)  # e.g., "Plain Cream Cheese", "Scallion Cream Cheese"
+    aliases = Column(String(255), nullable=True)  # Pipe-separated aliases for parsing, e.g., "2|two|double shot"
+
+    price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
+    iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
+    is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
+    is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
+
+    # Must match phrases - input must contain one of these to match this option
+    # E.g., "oat milk" has must_match="oat milk" - only matches "oat milk", not plain "milk"
+    # If None/empty, option matches when input contains the slug or display name
+    must_match = Column(Text, nullable=True)
+
+    # Display order (lower = shown first)
+    display_order = Column(Integer, nullable=False, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint: one option per slug per global attribute
+    __table_args__ = (
+        UniqueConstraint("global_attribute_id", "slug", name="uq_global_attr_option_slug"),
+    )
+
+    # Relationships
+    attribute = relationship("GlobalAttribute", back_populates="options")
+
+
+class ItemTypeGlobalAttribute(Base):
+    """
+    Links an item type to a global attribute.
+
+    Contains item-type-specific settings like question_text and is_required.
+    The actual options come from the GlobalAttribute, not duplicated here.
+
+    For example, both fish_sandwich and egg_sandwich can link to the "spread"
+    global attribute, but each can have different question_text and is_required.
+    """
+    __tablename__ = "item_type_global_attributes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Item-type-specific settings
+    display_order = Column(Integer, nullable=False, default=0)  # Order in which to ask
+    is_required = Column(Boolean, nullable=False, default=False)  # Must be specified
+    allow_none = Column(Boolean, nullable=False, default=True)  # Can select "none" option
+    ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user
+    question_text = Column(Text, nullable=True)  # Question to ask user for this field
+
+    # For multi_select types
+    min_selections = Column(Integer, nullable=True)
+    max_selections = Column(Integer, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint: one link per item type per global attribute
+    __table_args__ = (
+        UniqueConstraint("item_type_id", "global_attribute_id", name="uq_item_type_global_attr"),
+        Index("idx_item_type_global_attr_item_type", "item_type_id"),
+        Index("idx_item_type_global_attr_global_attr", "global_attribute_id"),
+    )
+
+    # Relationships
+    item_type = relationship("ItemType", back_populates="global_attribute_links")
+    global_attribute = relationship("GlobalAttribute", back_populates="item_type_links")
+
+
 class Order(Base):
     __tablename__ = "orders"
 
@@ -572,6 +700,11 @@ class Ingredient(Base):
 
     # Aliases for matching (comma-separated, e.g., "wheat" for "Whole Wheat Bagel")
     aliases = Column(Text, nullable=True)
+
+    # Must-match strings (comma-separated) - at least one must be present in input for this to match
+    # E.g., "Gluten Free Everything, GF Everything" for "Gluten Free Everything Bagel"
+    # Prevents "everything" alone from matching gluten-free variant
+    must_match = Column(Text, nullable=True)
 
     # Abbreviation for text expansion (e.g., "cc" expands to "cream cheese" before parsing)
     abbreviation = Column(String, nullable=True)
@@ -927,6 +1060,51 @@ class Company(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# --- Modifier Qualifiers (company-wide settings for parsing qualifiers like "extra", "light") ---
+
+class ModifierQualifier(Base):
+    """
+    Stores modifier qualifier patterns and their normalized forms.
+
+    These patterns are used to detect qualifiers in user input like "extra mayo",
+    "light cream cheese", "on the side", etc. The normalized_form is what gets
+    displayed in parentheses after the modifier, e.g., "Mayo (extra)".
+
+    Categories:
+    - amount: Quantity modifiers (extra, light, double, etc.)
+    - position: Location modifiers (on the side, on top)
+    - preparation: How to prepare (crispy, well done, etc.)
+
+    This is a company-wide table - all stores share the same qualifier definitions.
+    """
+    __tablename__ = "modifier_qualifiers"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # The pattern to match (e.g., "extra", "lots of", "a little bit of")
+    # Matched as whole words, case-insensitive
+    pattern = Column(String(100), nullable=False, unique=True, index=True)
+
+    # The normalized form to display (e.g., "extra", "light", "on the side")
+    normalized_form = Column(String(50), nullable=False)
+
+    # Category for grouping and conflict detection
+    # amount: extra, light, double, etc. - these can conflict with each other
+    # position: on the side, on top - no conflict with amount
+    # preparation: crispy, well done - no conflict with amount
+    category = Column(String(50), nullable=False, default="amount")
+
+    # Whether this qualifier is active
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<ModifierQualifier(pattern='{self.pattern}', normalized='{self.normalized_form}', category='{self.category}')>"
 
 
 # --- MenuItem Insert Logging (for debugging duplicate inserts) ---

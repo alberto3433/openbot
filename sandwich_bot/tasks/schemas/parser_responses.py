@@ -26,18 +26,30 @@ class SyrupItem(BaseModel):
     quantity: int = 1
 
 
+class QualifierConflict(BaseModel):
+    """A conflict between two qualifiers for the same modifier."""
+    modifier: str  # The modifier with conflicting qualifiers (e.g., "mayo")
+    qualifier1: str  # First qualifier (e.g., "light")
+    qualifier2: str  # Second qualifier (e.g., "extra")
+
+
 # =============================================================================
 # ParsedItem Types for Multi-Item Order Handling
 # =============================================================================
 
 class ParsedMenuItemEntry(BaseModel):
-    """A parsed menu item from multi-item detection."""
+    """A parsed menu item from multi-item detection.
+
+    This handles both regular menu items and signature items (is_signature=True).
+    Signature items are pre-configured items like 'The Classic BEC', 'The Leo', etc.
+    """
     type: Literal["menu_item"] = "menu_item"
     menu_item_name: str
     quantity: int = 1
     bagel_type: str | None = None
     toasted: bool | None = None
     modifiers: list[str] = Field(default_factory=list)
+    is_signature: bool = False  # True for signature items like "The Classic BEC"
 
 
 class ParsedBagelEntry(BaseModel):
@@ -111,31 +123,12 @@ class ParsedCoffeeEntry(BaseModel):
     modifiers: list[str] = Field(default_factory=list)
 
 
-class ParsedSignatureItemEntry(BaseModel):
-    """A parsed signature item from multi-item detection."""
-    type: Literal["signature_item"] = "signature_item"
-    signature_item_name: str
-    bagel_type: str | None = None
-    toasted: bool | None = None
-    quantity: int = 1
-    modifiers: list[str] = Field(default_factory=list)
 
 
-class ParsedSignatureItemEntry(BaseModel):
-    """A parsed signature item from multi-item detection.
-
-    Signature items are pre-configured items like 'The Classic BEC', 'The Leo', etc.
-    """
-    type: Literal["signature_item"] = "signature_item"
-    signature_item_name: str  # The name of the signature item (e.g., "The Classic BEC")
-    bagel_type: str | None = None  # Custom bagel choice (e.g., "wheat")
-    toasted: bool | None = None
-    quantity: int = 1
-    modifiers: list[str] = Field(default_factory=list)
-
-
-# Backwards compatibility alias
-ParsedSpeedMenuBagelEntry = ParsedSignatureItemEntry
+# Legacy aliases for backwards compatibility (deprecated - use ParsedMenuItemEntry with is_signature=True)
+# These are kept temporarily for any code still referencing them
+ParsedSignatureItemEntry = ParsedMenuItemEntry
+ParsedSpeedMenuBagelEntry = ParsedMenuItemEntry
 
 
 class ParsedSideItemEntry(BaseModel):
@@ -154,11 +147,11 @@ class ParsedByPoundEntry(BaseModel):
 
 
 # Union type for dispatcher
+# Note: ParsedSignatureItemEntry was removed - signature items now use ParsedMenuItemEntry with is_signature=True
 ParsedItem = Union[
     ParsedMenuItemEntry,
     ParsedBagelEntry,
     ParsedCoffeeEntry,
-    ParsedSignatureItemEntry,
     ParsedSideItemEntry,
     ParsedByPoundEntry,
 ]
@@ -734,7 +727,11 @@ class OpenInputResponse(BaseModel):
     )
     modify_add_modifiers: list[str] = Field(
         default_factory=list,
-        description="Modifiers to add to existing item (e.g., ['bacon', 'cheese'] for 'add bacon and cheese')"
+        description="Modifiers to add to existing item (e.g., ['bacon', 'cheese'] for 'add bacon and cheese'). May include qualifiers in parentheses: 'Mayo (extra)', 'Bacon (crispy, on the side)'"
+    )
+    modify_qualifier_conflicts: list[QualifierConflict] | None = Field(
+        default=None,
+        description="Conflicting qualifiers detected for modifiers. When present, handler should ask user for clarification."
     )
 
     # Multi-item order handling - list of parsed items for generic processing
@@ -807,12 +804,13 @@ class OpenInputResponse(BaseModel):
         # Add signature item from boolean flags
         if self.new_signature_item:
             for _ in range(self.new_signature_item_quantity):
-                items.append(ParsedSignatureItemEntry(
-                    signature_item_name=self.new_signature_item_name or "",
+                items.append(ParsedMenuItemEntry(
+                    menu_item_name=self.new_signature_item_name or "",
                     bagel_type=self.new_signature_item_bagel_choice,
                     toasted=self.new_signature_item_toasted,
                     quantity=1,
                     modifiers=list(self.new_signature_item_modifications) if self.new_signature_item_modifications else [],
+                    is_signature=True,
                 ))
 
         # Add menu item from boolean flags

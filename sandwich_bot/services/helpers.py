@@ -58,6 +58,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..models import Company, ItemType, MenuItem, Order, Store
 from ..schemas.menu import MenuItemOut
+from .item_type_helpers import has_linked_attributes
 
 
 logger = logging.getLogger(__name__)
@@ -278,14 +279,20 @@ def get_primary_item_type_name(db: Session) -> str:
     This is used for dynamic greeting messages (e.g., "Would you like
     a signature sandwich?" vs "Would you like a signature pizza?").
 
+    Configurability is derived from linked global attributes.
+
     Args:
         db: Database session
 
     Returns:
         Display name of the first configurable item type, or "Sandwich" as default
     """
-    primary = db.query(ItemType).filter(ItemType.is_configurable == True).first()
-    return primary.display_name if primary else "Sandwich"
+    # Find the first item type with linked global attributes (configurable)
+    item_types = db.query(ItemType).all()
+    for it in item_types:
+        if has_linked_attributes(it.id, db):
+            return it.display_name
+    return "Sandwich"
 
 
 def serialize_menu_item(item: MenuItem) -> MenuItemOut:

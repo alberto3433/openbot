@@ -34,7 +34,7 @@ def create_test_menu_data():
             "bagel": {
                 "attributes": [
                     {
-                        "slug": "bagel_type",
+                        "slug": "bread",  # was bagel_type, renamed to match deli_sandwich
                         "options": [
                             {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
                             {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},

@@ -18,14 +18,13 @@ if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .by_pound_handler import ByPoundHandler
     from .coffee_config_handler import CoffeeConfigHandler
-    from .espresso_config_handler import EspressoConfigHandler
     from .bagel_config_handler import BagelConfigHandler
-    from .signature_item_handler import SignatureItemHandler
     from .config_helper_handler import ConfigHelperHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .modifier_change_handler import ModifierChangeHandler
     from .item_adder_handler import ItemAdderHandler
     from .taking_items_handler import TakingItemsHandler
+    from .menu_item_config_handler import MenuItemConfigHandler
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +152,31 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             if any(kw in input_lower for kw in modifier_keywords):
                 return False  # Let them ask about modifier options
 
+        # Asking about menu item attributes (menu_item_attr_*) → check if question is about that attribute
+        # e.g., pending_field="menu_item_attr_bread" should allow "what kind of bread do you have?"
+        if pending_field and pending_field.startswith("menu_item_attr_"):
+            attr_name = pending_field.replace("menu_item_attr_", "").replace("_", " ")
+            # Allow questions containing the attribute name or generic "what" questions
+            if attr_name in input_lower:
+                return False  # Question is about the current attribute
+            # Also allow generic "what kind" questions for any menu item attribute
+            if "what kind" in input_lower or "what type" in input_lower:
+                return False
+
+        # During customization_checkpoint or customization_selection, "add X" commands are valid
+        # The bot is specifically offering options like "Add Egg, Extra Cheese, Toppings"
+        if pending_field in ("customization_checkpoint", "customization_selection"):
+            # Allow "add X" commands since the bot offered these as valid choices
+            if input_lower.startswith("add "):
+                return False
+            # Allow standalone attribute names like "egg", "cheese", "toppings"
+            customization_keywords = [
+                "scooped", "spread", "egg", "cheese", "topping", "toppings",
+                "condiment", "condiments", "extra", "protein",
+            ]
+            if any(kw in input_lower for kw in customization_keywords):
+                return False
+
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:
         if pattern.search(user_input):
@@ -178,13 +202,12 @@ class ConfiguringItemHandler:
         config: "HandlerConfig | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         coffee_handler: "CoffeeConfigHandler | None" = None,
-        espresso_handler: "EspressoConfigHandler | None" = None,
         bagel_handler: "BagelConfigHandler | None" = None,
-        signature_item_handler: "SignatureItemHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
+        menu_item_handler: "MenuItemConfigHandler | None" = None,
         **kwargs,
     ) -> None:
         """
@@ -195,13 +218,12 @@ class ConfiguringItemHandler:
                     but accepted for consistency with other handlers).
             by_pound_handler: Handler for by-pound items.
             coffee_handler: Handler for coffee configuration.
-            espresso_handler: Handler for espresso configuration.
             bagel_handler: Handler for bagel configuration.
-            signature_item_handler: Handler for signature items.
             config_helper_handler: Handler for config helpers (side choice, etc.).
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
             item_adder_handler: Handler for adding items.
+            menu_item_handler: Handler for menu item configuration (deli sandwiches, espresso, etc.).
             **kwargs: Legacy parameter support.
         """
         # This handler primarily composes other handlers, so config is not directly used
@@ -210,13 +232,12 @@ class ConfiguringItemHandler:
 
         self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
         self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
-        self.espresso_handler = espresso_handler or kwargs.get("espresso_handler")
         self.bagel_handler = bagel_handler or kwargs.get("bagel_handler")
-        self.signature_item_handler = signature_item_handler or kwargs.get("signature_item_handler")
         self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
         self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
         self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
         self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
+        self.menu_item_handler = menu_item_handler or kwargs.get("menu_item_handler")
         # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
         self.taking_items_handler: "TakingItemsHandler | None" = None
 
@@ -322,23 +343,47 @@ class ConfiguringItemHandler:
             return self.coffee_handler.handle_coffee_modifiers(user_input, item, order)
         elif order.pending_field == "syrup_flavor":
             return self.coffee_handler.handle_syrup_flavor(user_input, item, order)
-        elif order.pending_field == "espresso_modifiers":
-            return self.espresso_handler.handle_espresso_modifiers(user_input, item, order)
-        elif order.pending_field == "espresso_syrup_flavor":
-            return self.espresso_handler.handle_espresso_syrup_flavor(user_input, item, order)
-        elif order.pending_field == "signature_item_cheese_choice":
-            return self.signature_item_handler.handle_signature_item_cheese_choice(user_input, item, order)
-        elif order.pending_field == "signature_item_bagel_type":
-            return self.signature_item_handler.handle_signature_item_bagel_type(user_input, item, order)
-        elif order.pending_field == "signature_item_toasted":
-            return self.signature_item_handler.handle_signature_item_toasted(user_input, item, order)
+        # Note: espresso_modifiers and espresso_syrup_flavor are legacy fields
+        # Espresso now uses menu_item_handler with global attributes (shots, milk_sweetener_syrup)
+        elif order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):
+            # Route to menu_item_handler for espresso configuration
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.get_first_question(item, order)
+            # Fallback: advance to next question
+            order.clear_pending()
+            return self.checkout_utils_handler.get_next_question(order)
         elif order.pending_field == "spread_sandwich_toasted":
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
         elif order.pending_field == "menu_item_bagel_toasted":
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
-        else:
-            order.clear_pending()
-            return self.checkout_utils_handler.get_next_question(order)
+
+        # Handle menu item configuration (deli sandwiches, etc.)
+        elif order.pending_field == "customization_checkpoint":
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
+        elif order.pending_field == "customization_selection":
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.handle_customization_selection(user_input, item, order)
+        elif order.pending_field and order.pending_field.startswith("menu_item_attr_"):
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                attr_slug = order.pending_field.replace("menu_item_attr_", "")
+                return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
+
+        # Handle queued menu item configuration (abbreviated flow from checkout_utils_handler)
+        # This is set when a menu item is in the config queue and asked an abbreviated question
+        # like "And what type of bread for the {item_name}?" - we need to capture the answer
+        # and continue with the full configuration flow
+        elif order.pending_field == "menu_item_config":
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                # Capture any attributes mentioned in user input (e.g., bread type)
+                self.menu_item_handler.capture_attributes_from_input(user_input, item)
+                # Continue with full configuration flow - this will ask the next
+                # unanswered mandatory attribute (e.g., toasted) or move to checkout
+                return self.menu_item_handler.get_first_question(item, order)
+
+        # Default: unknown pending_field, advance to next question
+        order.clear_pending()
+        return self.checkout_utils_handler.get_next_question(order)
 
     def _handle_item_selection(
         self,

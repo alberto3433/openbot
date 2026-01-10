@@ -17,9 +17,7 @@ from .models import (
     ItemTask,
     BagelItemTask,
     CoffeeItemTask,
-    EspressoItemTask,
     MenuItemTask,
-    SignatureItemTask,
 )
 
 if TYPE_CHECKING:
@@ -126,6 +124,9 @@ class MenuItemConverter(ItemConverter):
             requires_side_choice=item_dict.get("requires_side_choice", False),
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
+            # DB-driven attribute values for deli sandwiches, etc.
+            attribute_values=item_dict.get("attribute_values") or item_config.get("attribute_values") or {},
+            customization_offered=item_dict.get("customization_offered", False),
         )
         self._restore_common_fields(menu_item, item_dict)
         return menu_item
@@ -143,10 +144,19 @@ class MenuItemConverter(ItemConverter):
         menu_item_type = getattr(item, 'menu_item_type', None)
         removed_ingredients = getattr(item, 'removed_ingredients', []) or []
 
+        # Get DB-driven attribute values early (needed for display_name)
+        attribute_values = getattr(item, 'attribute_values', {}) or {}
+
         # Build display name with bagel choice and side choice
+        # For beverages (espresso, coffee), use the base menu item name
+        # All attributes (shots, decaf, milk, etc.) become modifier line items
         display_name = menu_item_name
-        if menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich") and bagel_choice:
-            display_name = f"{menu_item_name} on {bagel_choice} bagel"
+
+        # Handle DB-driven bread attribute for deli_sandwich, etc.
+        bread_attr = attribute_values.get("bread")
+        if bread_attr:
+            bread_display = bread_attr.replace("_", " ").title()
+            display_name = f"{menu_item_name} on {bread_display}"
         elif side_choice == "fruit_salad":
             display_name = f"{display_name} with fruit salad"
         elif side_choice == "bagel":
@@ -172,10 +182,7 @@ class MenuItemConverter(ItemConverter):
 
         # Build modifiers list with prices
         modifiers = []
-        if toasted is True and (
-            side_choice == "bagel" or
-            menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich")
-        ):
+        if toasted is True and side_choice == "bagel":
             modifiers.append({"name": "Toasted", "price": 0})
 
         # Add spread to modifiers if set (show even if price is 0 or not set)
@@ -186,6 +193,56 @@ class MenuItemConverter(ItemConverter):
         item_modifications = getattr(item, 'modifications', []) or []
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
+
+        # Convert DB-driven attribute_values to modifiers for cart display
+        # (attribute_values was loaded earlier for display_name)
+        for attr_slug, attr_value in attribute_values.items():
+            # Skip fields that shouldn't be modifiers
+            if attr_slug in ("bread",) or attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
+                continue  # bread is in display_name, price and selections fields are metadata
+            if attr_value is None or attr_value is False:
+                continue  # Skip empty/false values
+
+            # Check if this is a multi-select attribute with _selections data
+            selections = attribute_values.get(f"{attr_slug}_selections")
+            if selections and isinstance(selections, list):
+                # Multi-select: create a modifier for each selection, respecting quantity and qualifier
+                for sel in selections:
+                    sel_display = sel.get("display_name") or sel.get("slug", "").replace("_", " ").title()
+                    sel_price = sel.get("price", 0) or 0
+                    sel_quantity = sel.get("quantity", 1) or 1
+                    sel_qualifier = sel.get("qualifier")
+
+                    # Include qualifier (extra, light, on the side, etc.) in display
+                    if sel_qualifier:
+                        sel_display = f"{sel_display} ({sel_qualifier})"
+
+                    # Show quantity in display name and multiply price
+                    if sel_quantity > 1:
+                        sel_display = f"{sel_display} (x{sel_quantity})"
+                        sel_price = sel_price * sel_quantity
+
+                    modifiers.append({"name": sel_display, "price": sel_price})
+                continue
+
+            # Get associated price if any (for single-select)
+            price = attribute_values.get(f"{attr_slug}_price", 0) or 0
+
+            if attr_value is True:
+                # Boolean attribute (e.g., toasted, scooped)
+                display_name_mod = attr_slug.replace("_", " ").title()
+                modifiers.append({"name": display_name_mod, "price": price})
+            elif isinstance(attr_value, list):
+                # List attribute without _selections data (fallback)
+                for val in attr_value:
+                    value_display = str(val).replace("_", " ").title()
+                    modifiers.append({"name": value_display, "price": 0})
+            else:
+                # String attribute (e.g., extra_protein: "turkey_bacon")
+                value_display = str(attr_value).replace("_", " ").title()
+                modifiers.append({"name": value_display, "price": price})
+
+        customization_offered = getattr(item, 'customization_offered', False)
 
         result = self._build_common_dict_fields(item)
         result.update({
@@ -203,6 +260,9 @@ class MenuItemConverter(ItemConverter):
             "side_bagel_config": side_bagel_config,
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
+            # DB-driven attribute values for deli sandwiches, etc.
+            "attribute_values": attribute_values,
+            "customization_offered": customization_offered,
             "item_config": {
                 "menu_item_type": menu_item_type,
                 "side_choice": side_choice,
@@ -212,6 +272,7 @@ class MenuItemConverter(ItemConverter):
                 "modifications": getattr(item, 'modifications', []),
                 "removed_ingredients": removed_ingredients,
                 "modifiers": modifiers,
+                "attribute_values": attribute_values,
             },
         })
         return result
@@ -456,18 +517,23 @@ class CoffeeConverter(ItemConverter):
         free_details = []
 
         if size:
+            # Get display name from database via pricing engine
+            size_label = pricing.lookup_size_display_name(size) if pricing else size
             if size_upcharge > 0:
-                modifiers.append({"name": size, "price": size_upcharge})
+                modifiers.append({"name": size_label, "price": size_upcharge})
             else:
-                free_details.append(size)
+                free_details.append(size_label)
 
         if iced is True:
+            # Get display name from database via pricing engine
+            iced_label = pricing.lookup_temperature_display_name(True) if pricing else "iced"
             if iced_upcharge > 0:
-                modifiers.append({"name": "iced", "price": iced_upcharge})
+                modifiers.append({"name": iced_label, "price": iced_upcharge})
             else:
-                free_details.append("iced")
+                free_details.append(iced_label)
         elif iced is False:
-            free_details.append("hot")
+            hot_label = pricing.lookup_temperature_display_name(False) if pricing else "hot"
+            free_details.append(hot_label)
 
         if decaf is True:
             free_details.append("decaf")
@@ -483,10 +549,12 @@ class CoffeeConverter(ItemConverter):
         for syrup_entry in flavor_syrups:
             flavor = syrup_entry.get("flavor", "")
             qty = syrup_entry.get("quantity", 1)
+            # Use individual syrup price stored by pricing engine, fall back to total upcharge
+            entry_price = syrup_entry.get("price", 0.0)
             if flavor:
                 syrup_name = f"{qty} {flavor} syrups" if qty > 1 else f"{flavor} syrup"
-                if syrup_upcharge > 0:
-                    modifiers.append({"name": syrup_name, "price": syrup_upcharge})
+                if entry_price > 0:
+                    modifiers.append({"name": syrup_name, "price": entry_price})
                 else:
                     free_details.append(syrup_name)
 
@@ -536,192 +604,6 @@ class CoffeeConverter(ItemConverter):
         return result
 
 
-class EspressoConverter(ItemConverter):
-    """Converter for EspressoItemTask."""
-
-    @property
-    def item_type(self) -> str:
-        return "espresso"
-
-    def from_dict(self, item_dict: Dict[str, Any]) -> EspressoItemTask:
-        item_config = item_dict.get("item_config") or {}
-
-        # Restore drink_modifiers from item_config
-        drink_modifiers = item_config.get("drink_modifiers", [])
-
-        espresso = EspressoItemTask(
-            shots=item_config.get("shots", 1),
-            decaf=item_config.get("decaf"),
-            drink_modifiers=drink_modifiers,
-            special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-        )
-        self._restore_common_fields(espresso, item_dict)
-        espresso.extra_shots_upcharge = item_config.get("extra_shots_upcharge", 0.0)
-        espresso.modifiers_upcharge = item_config.get("modifiers_upcharge", 0.0)
-        espresso.mark_complete()
-        return espresso
-
-    def to_dict(
-        self,
-        item: ItemTask,
-        pricing: "PricingEngine | None" = None,
-    ) -> Dict[str, Any]:
-        shots = getattr(item, 'shots', 1)
-        decaf = getattr(item, 'decaf', None)
-        drink_modifiers = getattr(item, 'drink_modifiers', []) or []
-        extra_shots_upcharge = getattr(item, 'extra_shots_upcharge', 0.0) or 0.0
-        modifiers_upcharge = getattr(item, 'modifiers_upcharge', 0.0) or 0.0
-
-        logger.info(
-            "ADAPTER ESPRESSO: shots=%d, extra_shots_upcharge=%.2f, modifiers_upcharge=%.2f, unit_price=%.2f",
-            shots, extra_shots_upcharge, modifiers_upcharge, item.unit_price or 0
-        )
-
-        display_name = "Espresso"
-        modifiers = []
-        free_details = []
-
-        if shots == 2:
-            if extra_shots_upcharge > 0:
-                modifiers.append({"name": "double", "price": extra_shots_upcharge})
-            else:
-                free_details.append("double")
-        elif shots >= 3:
-            if extra_shots_upcharge > 0:
-                modifiers.append({"name": "triple", "price": extra_shots_upcharge})
-            else:
-                free_details.append("triple")
-
-        if decaf is True:
-            free_details.append("decaf")
-
-        # Add drink modifiers (milk, sweeteners, syrups)
-        for mod in drink_modifiers:
-            mod_display = mod.get("display_name") or mod.get("slug", "").replace("_", " ")
-            mod_price = mod.get("price", 0.0)
-            mod_qty = mod.get("quantity", 1)
-            if mod_qty > 1:
-                mod_display = f"{mod_qty} {mod_display}"
-            if mod_price > 0:
-                modifiers.append({"name": mod_display, "price": mod_price})
-            else:
-                free_details.append(mod_display)
-
-        total_price = item.unit_price or 0
-        base_price = total_price - extra_shots_upcharge - modifiers_upcharge
-
-        logger.info(
-            "ADAPTER ESPRESSO RESULT: modifiers=%s, free_details=%s, base_price=%.2f",
-            modifiers, free_details, base_price
-        )
-
-        result = self._build_common_dict_fields(item)
-        result["quantity"] = 1
-        result["line_total"] = item.unit_price if item.unit_price else 0
-        result.update({
-            "menu_item_name": display_name,
-            "base_price": base_price,
-            "modifiers": modifiers,
-            "free_details": free_details,
-            "item_config": {
-                "shots": shots,
-                "decaf": decaf,
-                "drink_modifiers": drink_modifiers,
-                "extra_shots_upcharge": extra_shots_upcharge,
-                "modifiers_upcharge": modifiers_upcharge,
-            },
-        })
-        return result
-
-
-class SignatureItemConverter(ItemConverter):
-    """Converter for SignatureItemTask."""
-
-    @property
-    def item_type(self) -> str:
-        return "signature_item"
-
-    def from_dict(self, item_dict: Dict[str, Any]) -> SignatureItemTask:
-        item_config = item_dict.get("item_config") or {}
-        signature_item = SignatureItemTask(
-            menu_item_name=item_dict.get("menu_item_name") or "Unknown",
-            menu_item_id=item_dict.get("menu_item_id"),
-            toasted=item_dict.get("toasted"),
-            bagel_choice=item_dict.get("bagel_choice"),
-            bagel_choice_upcharge=item_dict.get("bagel_choice_upcharge", 0.0),
-            cheese_choice=item_dict.get("cheese_choice"),
-            modifications=item_config.get("modifications") or item_dict.get("modifications") or [],
-            removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
-            quantity=item_dict.get("quantity", 1),
-            special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-        )
-        self._restore_common_fields(signature_item, item_dict)
-        return signature_item
-
-    def to_dict(
-        self,
-        item: ItemTask,
-        pricing: "PricingEngine | None" = None,
-    ) -> Dict[str, Any]:
-        toasted = getattr(item, 'toasted', None)
-        bagel_choice = getattr(item, 'bagel_choice', None)
-        bagel_choice_upcharge = getattr(item, 'bagel_choice_upcharge', 0.0) or 0.0
-        cheese_choice = getattr(item, 'cheese_choice', None)
-        menu_item_name = getattr(item, 'menu_item_name', 'Unknown')
-        modifications = getattr(item, 'modifications', []) or []
-        removed_ingredients = getattr(item, 'removed_ingredients', []) or []
-
-        display_name = menu_item_name
-        modifiers = []
-
-        if bagel_choice:
-            modifiers.append({
-                "name": f"{bagel_choice.title()} Bagel",
-                "price": bagel_choice_upcharge,
-            })
-
-        if cheese_choice:
-            modifiers.append({
-                "name": f"{cheese_choice.title()} Cheese",
-                "price": 0,
-            })
-
-        if toasted is True:
-            modifiers.append({"name": "Toasted", "price": 0})
-
-        for mod in modifications:
-            modifiers.append({"name": mod, "price": 0})
-
-        total_price = item.unit_price or 0
-        base_price = total_price - bagel_choice_upcharge
-
-        result = self._build_common_dict_fields(item)
-        result.update({
-            "menu_item_name": menu_item_name,
-            "display_name": display_name,
-            "menu_item_id": getattr(item, 'menu_item_id', None),
-            "toasted": toasted,
-            "bagel_choice": bagel_choice,
-            "bagel_choice_upcharge": bagel_choice_upcharge,
-            "cheese_choice": cheese_choice,
-            "base_price": base_price,
-            "modifiers": modifiers,
-            "free_details": [],
-            "removed_ingredients": removed_ingredients,
-            "item_config": {
-                "toasted": toasted,
-                "bagel_choice": bagel_choice,
-                "bagel_choice_upcharge": bagel_choice_upcharge,
-                "cheese_choice": cheese_choice,
-                "modifications": modifications,
-                "removed_ingredients": removed_ingredients,
-                "base_price": base_price,
-                "modifiers": modifiers,
-            },
-        })
-        return result
-
-
 # -----------------------------------------------------------------------------
 # Converter Registry
 # -----------------------------------------------------------------------------
@@ -761,11 +643,14 @@ ItemConverterRegistry.register(MenuItemConverter())
 ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
 ItemConverterRegistry.register(CoffeeConverter())
-ItemConverterRegistry.register(EspressoConverter())
-ItemConverterRegistry.register(SignatureItemConverter())
 
 # Register CoffeeConverter under "drink" as well (for dict input compatibility)
 ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["coffee"]
 
-# Register SignatureItemConverter under "speed_menu_bagel" for backwards compatibility
-ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._converters["signature_item"]
+# For backwards compatibility, treat signature_item as menu_item
+# (signature items are now MenuItemTask with is_signature=True)
+ItemConverterRegistry._converters["signature_item"] = ItemConverterRegistry._converters["menu_item"]
+ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._converters["menu_item"]
+
+# Espresso now uses MenuItemConverter (data-driven via MenuItemTask)
+ItemConverterRegistry._converters["espresso"] = ItemConverterRegistry._converters["menu_item"]

@@ -77,6 +77,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from . import __version__
 from .auth import verify_admin_credentials
 from .config import (
     CORS_ORIGINS,
@@ -100,6 +101,9 @@ from .routes import (
     admin_item_type_fields_router,
     admin_item_type_attributes_router,
     admin_response_patterns_router,
+    admin_modifier_qualifiers_router,
+    admin_global_attributes_router,
+    admin_item_type_global_attrs_router,
     public_stores_router,
     public_company_router,
     tts_router,
@@ -186,7 +190,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sandwich Bot API",
     description="API for the Sandwich Bot ordering system",
-    version="2.3.0",
+    version=__version__,
     openapi_tags=[
         {"name": "Health", "description": "Health check endpoints"},
         {"name": "Chat", "description": "Chat endpoints for customer ordering"},
@@ -285,7 +289,7 @@ def root(request: Request):
 @app.get("/health", tags=["Health"])
 def health() -> Dict[str, str]:
     """Health check endpoint. Returns ok if the service is running."""
-    return {"status": "ok"}
+    return {"status": "ok", "version": __version__}
 
 
 # =============================================================================
@@ -332,6 +336,9 @@ api_v1_router.include_router(admin_testing_router)
 api_v1_router.include_router(admin_item_type_fields_router)
 api_v1_router.include_router(admin_item_type_attributes_router)
 api_v1_router.include_router(admin_response_patterns_router)
+api_v1_router.include_router(admin_modifier_qualifiers_router)
+api_v1_router.include_router(admin_global_attributes_router)
+api_v1_router.include_router(admin_item_type_global_attrs_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
@@ -355,6 +362,9 @@ app.include_router(admin_testing_router)
 app.include_router(admin_item_type_fields_router)
 app.include_router(admin_item_type_attributes_router)
 app.include_router(admin_response_patterns_router)
+app.include_router(admin_modifier_qualifiers_router)
+app.include_router(admin_global_attributes_router)
+app.include_router(admin_item_type_global_attrs_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)

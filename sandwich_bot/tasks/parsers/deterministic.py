@@ -21,6 +21,8 @@ from ..schemas import (
     # Helper types for coffee modifiers
     SweetenerItem,
     SyrupItem,
+    # Qualifier conflict model
+    QualifierConflict,
     # ParsedItem types for multi-item handling
     ParsedMenuItemEntry,
     ParsedBagelEntry,
@@ -71,6 +73,81 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Database-Driven Beverage Options
+# =============================================================================
+
+def _get_parser_syrup_options() -> list[str]:
+    """Get syrup options from database for parsing.
+
+    Returns list of syrup names in lowercase like ["vanilla", "caramel", ...].
+    Falls back to hardcoded list if database not loaded.
+    """
+    db_syrups = menu_cache.get_beverage_syrups()
+    if db_syrups:
+        return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
+    return ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
+            "cinnamon", "lavender", "almond"]
+
+
+def _get_parser_sweetener_options() -> list[str]:
+    """Get sweetener options from database for parsing.
+
+    Returns list of sweetener names in lowercase.
+    Falls back to hardcoded list if database not loaded.
+
+    Note: Always includes generic "sugar" for common user phrases like
+    "coffee with sugar" even if database only has brand names like "Domino Sugar".
+    """
+    db_sweeteners = menu_cache.get_beverage_sweeteners()
+    if db_sweeteners:
+        # Include common variations
+        options = []
+        for s in db_sweeteners:
+            name = s.lower().replace("'", "").strip()
+            options.append(name)
+            # Add apostrophe variant for "sweet n low"
+            if "sweet n low" in name:
+                options.append("sweet'n low")
+        # Always add generic "sugar" as a parsing pattern
+        # Users often say "coffee with sugar" rather than brand names
+        if "sugar" not in options:
+            options.append("sugar")
+        return options
+    return ["splenda", "sugar", "stevia", "equal", "sweet n low", "sweet'n low", "honey"]
+
+
+def _get_parser_milk_options() -> list[str]:
+    """Get milk options from database for parsing.
+
+    Returns list of milk type patterns in lowercase.
+    Falls back to hardcoded list if database not loaded.
+    """
+    db_milks = menu_cache.get_beverage_milks()
+    if db_milks:
+        options = []
+        for milk in db_milks:
+            milk_lower = milk.lower()
+            # Add the value without "milk" suffix
+            value = milk_lower.replace(" milk", "").replace("&", "and").strip()
+            if value not in options:
+                options.append(value)
+            # Add "X%" pattern handling
+            if "%" in value:
+                # Already has correct format
+                pass
+        # Add standard parsing patterns that may not be in database
+        extra_patterns = ["nonfat", "two percent", "half & half", "cream"]
+        for p in extra_patterns:
+            if p not in options:
+                options.append(p)
+        return options
+    return [
+        "oat", "almond", "coconut", "soy", "whole", "skim", "nonfat",
+        "2%", "two percent", "half and half", "half & half", "cream"
+    ]
 
 
 # =============================================================================
@@ -143,14 +220,15 @@ def _build_signature_item_parsed_item(
     toasted: bool | None = None,
     quantity: int = 1,
     modifiers: list[str] | None = None,
-) -> ParsedSignatureItemEntry:
-    """Build a ParsedSignatureItemEntry from boolean flag data."""
-    return ParsedSignatureItemEntry(
-        signature_item_name=signature_item_name,
+) -> ParsedMenuItemEntry:
+    """Build a ParsedMenuItemEntry for a signature item (is_signature=True)."""
+    return ParsedMenuItemEntry(
+        menu_item_name=signature_item_name,
         bagel_type=bagel_type,
         toasted=toasted,
         quantity=quantity,
         modifiers=modifiers or [],
+        is_signature=True,
     )
 
 
@@ -372,8 +450,8 @@ ANOTHER_ITEM_TYPE_KEYWORDS = {
     "lattes": "coffee",
     "cappuccino": "coffee",
     "cappuccinos": "coffee",
-    "espresso": "coffee",
-    "espressos": "coffee",
+    "espresso": "espresso",  # Espresso uses MenuItemTask, not CoffeeItemTask
+    "espressos": "espresso",
     "americano": "coffee",
     "americanos": "coffee",
     "macchiato": "coffee",
@@ -556,6 +634,134 @@ COFFEE_ORDER_PATTERN = None  # Will be set lazily; use _get_coffee_order_pattern
 
 
 # =============================================================================
+# Modifier Qualifier Extraction Functions
+# =============================================================================
+
+def extract_modifiers_with_qualifiers(
+    text: str,
+    known_modifiers: set[str]
+) -> tuple[list[str], list[tuple[str, str, str]] | None]:
+    """
+    Extract modifiers and their associated qualifiers from text.
+
+    Scans the text for qualifier patterns (extra, light, on the side, etc.)
+    from the database and associates them with adjacent modifiers.
+
+    Args:
+        text: The text to parse (e.g., "extra mayo and bacon on the side")
+        known_modifiers: Set of valid modifiers to look for
+
+    Returns:
+        Tuple of:
+        - List of formatted modifiers with qualifiers (e.g., ["Mayo (extra)", "Bacon (on the side)"])
+        - List of conflicts if any (modifier, qualifier1, qualifier2 tuples), or None if no conflicts
+
+    Examples:
+        >>> extract_modifiers_with_qualifiers("extra mayo", {"mayo", "bacon"})
+        (["Mayo (extra)"], None)
+
+        >>> extract_modifiers_with_qualifiers("mayo on the side, crispy bacon", {"mayo", "bacon"})
+        (["Mayo (on the side)", "Bacon (crispy)"], None)
+
+        >>> extract_modifiers_with_qualifiers("light extra mayo", {"mayo"})
+        ([], [("mayo", "light", "extra")])  # Conflict detected
+    """
+    text_lower = text.lower().strip()
+
+    # Get qualifier patterns from database (sorted by length for longest match first)
+    qualifier_patterns = menu_cache.get_qualifier_patterns()
+
+    if not qualifier_patterns:
+        # No qualifiers in database, fall back to simple modifier extraction
+        formatted = []
+        for modifier in sorted(known_modifiers, key=len, reverse=True):
+            if re.search(rf'\b{re.escape(modifier)}\b', text_lower):
+                normalized = menu_cache.normalize_modifier(modifier)
+                if normalized not in formatted:
+                    formatted.append(normalized)
+        return (formatted, None)
+
+    # Track found qualifiers with their positions
+    # Format: [(start, end, pattern, normalized_form, category), ...]
+    found_qualifiers: list[tuple[int, int, str, str, str]] = []
+
+    for pattern in qualifier_patterns:
+        # Find all occurrences of this qualifier pattern
+        pattern_re = re.compile(rf'\b{re.escape(pattern)}\b', re.IGNORECASE)
+        for match in pattern_re.finditer(text_lower):
+            info = menu_cache.get_qualifier_info(pattern)
+            if info:
+                found_qualifiers.append((
+                    match.start(),
+                    match.end(),
+                    pattern,
+                    info["normalized_form"],
+                    info["category"],
+                ))
+
+    # Track found modifiers with their positions
+    # Format: [(start, end, modifier, normalized), ...]
+    found_modifiers: list[tuple[int, int, str, str]] = []
+    matched_spans: list[tuple[int, int]] = []
+
+    # Mark qualifier spans to avoid matching modifiers inside them
+    for start, end, _, _, _ in found_qualifiers:
+        matched_spans.append((start, end))
+
+    for modifier in sorted(known_modifiers, key=len, reverse=True):
+        pattern_re = re.compile(rf'\b{re.escape(modifier)}\b', re.IGNORECASE)
+        for match in pattern_re.finditer(text_lower):
+            start, end = match.start(), match.end()
+            # Check for overlap with existing spans
+            overlaps = any(not (end <= s or start >= e) for s, e in matched_spans)
+            if not overlaps:
+                normalized = menu_cache.normalize_modifier(modifier)
+                found_modifiers.append((start, end, modifier, normalized))
+                matched_spans.append((start, end))
+
+    # Associate qualifiers with modifiers
+    # A qualifier applies to a modifier if it's adjacent (before or after)
+    modifier_qualifiers: dict[str, list[tuple[str, str]]] = {}  # normalized_modifier -> [(normalized_qual, category), ...]
+    conflicts: list[tuple[str, str, str]] = []
+
+    for mod_start, mod_end, _, normalized_mod in found_modifiers:
+        if normalized_mod not in modifier_qualifiers:
+            modifier_qualifiers[normalized_mod] = []
+
+        # Find qualifiers adjacent to this modifier
+        for qual_start, qual_end, _, qual_normalized, qual_category in found_qualifiers:
+            # Check if qualifier is adjacent (within 20 chars, accounting for spaces)
+            # Qualifier before modifier: "extra mayo" -> qual_end near mod_start
+            # Qualifier after modifier: "mayo on the side" -> mod_end near qual_start
+            is_before = qual_end <= mod_start and mod_start - qual_end <= 15
+            is_after = qual_start >= mod_end and qual_start - mod_end <= 15
+
+            if is_before or is_after:
+                # Check for conflicts in same category
+                existing_categories = [cat for _, cat in modifier_qualifiers[normalized_mod]]
+                if qual_category == "amount" and "amount" in existing_categories:
+                    # Conflict: multiple amount qualifiers for same modifier
+                    existing_amount = next(q for q, c in modifier_qualifiers[normalized_mod] if c == "amount")
+                    conflicts.append((normalized_mod, existing_amount, qual_normalized))
+                else:
+                    modifier_qualifiers[normalized_mod].append((qual_normalized, qual_category))
+
+    # Build formatted output
+    formatted: list[str] = []
+
+    for mod_start, mod_end, _, normalized_mod in found_modifiers:
+        qualifiers = modifier_qualifiers.get(normalized_mod, [])
+        if qualifiers:
+            # Sort qualifiers for consistent output
+            qual_strs = sorted(set(q for q, _ in qualifiers))
+            formatted.append(f"{normalized_mod} ({', '.join(qual_strs)})")
+        else:
+            formatted.append(normalized_mod)
+
+    return (formatted, conflicts if conflicts else None)
+
+
+# =============================================================================
 # Modifier Extraction Functions
 # =============================================================================
 
@@ -677,12 +883,10 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
     result = ExtractedCoffeeModifiers()
     input_lower = user_input.lower()
 
-    sweeteners = ["splenda", "sugar", "stevia", "equal", "sweet n low", "sweet'n low", "honey"]
-    syrups = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice", "cinnamon", "lavender", "almond"]
-    milk_types = [
-        "oat", "almond", "coconut", "soy", "whole", "skim", "nonfat",
-        "2%", "two percent", "half and half", "half & half", "cream"
-    ]
+    # Get options from database (with fallbacks)
+    sweeteners = _get_parser_sweetener_options()
+    syrups = _get_parser_syrup_options()
+    milk_types = _get_parser_milk_options()
 
     # Extract milk type
     for milk in milk_types:
@@ -1380,15 +1584,8 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     if not modifier_text:
         return None
 
-    # === Parse modifier_text to extract individual modifiers ===
-    # Handle "bacon and cheese", "bacon, cheese, and tomato", etc.
-    modifiers_found = []
-
-    # Split by "and" and commas
-    # "bacon and cheese" -> ["bacon", "cheese"]
-    # "bacon, cheese, and tomato" -> ["bacon", "cheese", "tomato"]
-    modifier_text_clean = modifier_text.replace(",", " ").replace(" and ", " ")
-    potential_modifiers = modifier_text_clean.split()
+    # === Parse modifier_text to extract individual modifiers with qualifiers ===
+    # Handle "extra bacon and cheese on the side", "bacon, cheese, and tomato", etc.
 
     # Pre-process: Mask out spread patterns to prevent "cheese" from matching
     # inside "cream cheese" (since "cheese" is an alias for American Cheese)
@@ -1402,14 +1599,11 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     for pattern in spread_patterns:
         modifier_text_for_matching = re.sub(pattern, '___SPREAD___', modifier_text_for_matching)
 
-    # Match against known modifiers (handle multi-word modifiers like "turkey bacon")
-    # Sort by length to match longer phrases first
-    # Use word boundary matching to prevent partial matches
-    for modifier in sorted(all_modifiers, key=len, reverse=True):
-        if re.search(rf'\b{re.escape(modifier)}\b', modifier_text_for_matching):
-            normalized = menu_cache.normalize_modifier(modifier)
-            if normalized not in modifiers_found:
-                modifiers_found.append(normalized)
+    # Extract modifiers with qualifiers (e.g., "extra mayo" -> "mayo (extra)")
+    modifiers_found, conflicts = extract_modifiers_with_qualifiers(
+        modifier_text_for_matching,
+        all_modifiers
+    )
 
     # If no known modifiers found, this isn't an add-modifier request
     if not modifiers_found:
@@ -1420,14 +1614,23 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
         target_item = re.sub(r"\s*(please|thanks|thank you)$", "", target_item).strip()
 
     logger.info(
-        "ADD MODIFIER TO ITEM: '%s' -> modifiers=%s, target=%s",
-        text[:50], modifiers_found, target_item
+        "ADD MODIFIER TO ITEM: '%s' -> modifiers=%s, target=%s, conflicts=%s",
+        text[:50], modifiers_found, target_item, conflicts
     )
+
+    # Convert conflict tuples to QualifierConflict objects
+    conflict_objects = None
+    if conflicts:
+        conflict_objects = [
+            QualifierConflict(modifier=mod, qualifier1=q1, qualifier2=q2)
+            for mod, q1, q2 in conflicts
+        ]
 
     return OpenInputResponse(
         modify_existing_item=True,
         modify_target_description=target_item,
         modify_add_modifiers=modifiers_found,
+        modify_qualifier_conflicts=conflict_objects,
     )
 
 
@@ -3245,9 +3448,10 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         # Check if this looks like a single coffee order with multiple modifiers
         coffee_keywords = ["coffee", "latte", "cappuccino", "espresso", "americano",
                           "macchiato", "mocha", "tea", "chai", "matcha", "cold brew"]
-        sweeteners = ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
-        syrups = ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin", "cinnamon", "lavender", "syrup"]
-        milks = ["oat", "almond", "soy", "coconut", "skim", "whole", "2%", "milk", "half and half"]
+        # Get modifier options from database (with fallbacks)
+        sweeteners = _get_parser_sweetener_options()
+        syrups = _get_parser_syrup_options() + ["syrup"]  # Add generic "syrup" keyword
+        milks = _get_parser_milk_options() + ["milk"]  # Add generic "milk" keyword
         # Note: "cream" is intentionally omitted from milks to avoid matching "cream cheese"
 
         # Item keywords that indicate a separate item, not just modifiers
@@ -3427,12 +3631,13 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             signature_item_bagel_choice = speed_result.new_signature_item_bagel_choice
             signature_item_modifications = speed_result.new_signature_item_modifications
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedSignatureItemEntry(
-                signature_item_name=speed_result.new_signature_item_name,
+            parsed_items.append(ParsedMenuItemEntry(
+                menu_item_name=speed_result.new_signature_item_name,
                 bagel_type=speed_result.new_signature_item_bagel_choice,
                 toasted=speed_result.new_signature_item_toasted,
                 quantity=speed_result.new_signature_item_quantity or 1,
                 modifiers=speed_result.new_signature_item_modifications or [],
+                is_signature=True,
             ))
             logger.info("Multi-item: detected signature item '%s' (qty=%d) via direct parse",
                         signature_item_name, signature_item_qty)
@@ -3686,12 +3891,13 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             signature_item_bagel_choice = parsed.new_signature_item_bagel_choice
             signature_item_modifications = parsed.new_signature_item_modifications
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedSignatureItemEntry(
-                signature_item_name=parsed.new_signature_item_name,
+            parsed_items.append(ParsedMenuItemEntry(
+                menu_item_name=parsed.new_signature_item_name,
                 bagel_type=parsed.new_signature_item_bagel_choice,
                 toasted=parsed.new_signature_item_toasted,
                 quantity=signature_item_qty,
                 modifiers=parsed.new_signature_item_modifications or [],
+                is_signature=True,
             ))
             logger.info("Multi-item: detected signature item '%s' (qty=%d, toasted=%s, bagel=%s)",
                         signature_item_name, signature_item_qty, signature_item_toasted, signature_item_bagel_choice)

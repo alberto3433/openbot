@@ -2,9 +2,12 @@
 
 import hashlib
 import json
+import logging
 from typing import Dict, Any, List, Optional
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     MenuItem,
@@ -22,6 +25,15 @@ from .models import (
     MenuItemAttributeValue,
     MenuItemAttributeSelection,
     Company,
+    # Global attribute normalization tables
+    GlobalAttribute,
+    GlobalAttributeOption,
+    ItemTypeGlobalAttribute,
+)
+from .services.item_type_helpers import (
+    has_linked_attributes,
+    has_askable_attributes,
+    should_skip_config,
 )
 
 
@@ -189,7 +201,13 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     preloaded_configs = _preload_menu_item_configs(db)
 
     # Determine the primary configurable item type for dynamic category naming
-    primary_item_type = db.query(ItemType).filter(ItemType.is_configurable == True).first()
+    # A configurable item type has linked global attributes
+    all_item_types = db.query(ItemType).all()
+    primary_item_type = None
+    for it in all_item_types:
+        if has_linked_attributes(it.id, db):
+            primary_item_type = it
+            break
     primary_type_slug = primary_item_type.slug if primary_item_type else "sandwich"
 
     # Build dynamic category names (handle pluralization correctly)
@@ -212,7 +230,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     }
 
     # Pre-populate items_by_type with all item types from database
-    all_item_types = db.query(ItemType).all()
+    # (all_item_types was already queried above for primary type detection)
     for it in all_item_types:
         index["items_by_type"][it.slug] = []
 
@@ -248,7 +266,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         item_type_skip_config = False
         if item.item_type:
             item_type_slug = item.item_type.slug
-            item_type_skip_config = bool(item.item_type.skip_config)
+            # Derive skip_config from linked global attributes
+            item_type_skip_config = should_skip_config(item.item_type, db)
 
         item_json = {
             "id": item.id,
@@ -582,12 +601,16 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
 
     item_types = db.query(ItemType).all()
     for it in item_types:
-        if not it.is_configurable:
+        # Derive configurability from linked global attributes
+        it_is_configurable = has_linked_attributes(it.id, db)
+        it_skip_config = not has_askable_attributes(it.id, db) if it_is_configurable else True
+
+        if not it_is_configurable:
             # Non-configurable items don't need attribute data
             result[it.slug] = {
                 "display_name": it.display_name,
                 "is_configurable": False,
-                "skip_config": bool(it.skip_config),  # Skip configuration questions (e.g., sodas don't need hot/iced)
+                "skip_config": it_skip_config,  # Skip configuration questions (e.g., sodas don't need hot/iced)
                 "attributes": [],
             }
             continue
@@ -645,7 +668,7 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         ],
                     }
                 else:
-                    # Get options linked to this attribute via item_type_attribute_id (original behavior)
+                    # Get options linked to this attribute via item_type_attribute_id (new FK)
                     options = (
                         db.query(AttributeOption)
                         .filter(
@@ -655,6 +678,33 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         .order_by(AttributeOption.display_order)
                         .all()
                     )
+
+                    # Fallback: check for options via old attribute_definition_id FK
+                    # This handles cases where options were created via legacy migrations
+                    if not options:
+                        # Find matching AttributeDefinition by slug and item_type
+                        legacy_attr_def = (
+                            db.query(AttributeDefinition)
+                            .filter(
+                                AttributeDefinition.item_type_id == it.id,
+                                AttributeDefinition.slug == ita.slug
+                            )
+                            .first()
+                        )
+                        if legacy_attr_def:
+                            options = (
+                                db.query(AttributeOption)
+                                .filter(
+                                    AttributeOption.attribute_definition_id == legacy_attr_def.id,
+                                    AttributeOption.is_available == True
+                                )
+                                .order_by(AttributeOption.display_order)
+                                .all()
+                            )
+                            logger.debug(
+                                "Fallback options for %s.%s: found %d options via legacy attr_def_id=%d",
+                                it.slug, ita.slug, len(options), legacy_attr_def.id
+                            )
 
                     attr_data = {
                         "slug": ita.slug,
@@ -726,10 +776,62 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
 
                 attributes.append(attr_data)
 
+        # Also load global attributes linked to this item type
+        # Global attributes are shared across item types with normalized options
+        global_attr_links = (
+            db.query(ItemTypeGlobalAttribute)
+            .filter(ItemTypeGlobalAttribute.item_type_id == it.id)
+            .order_by(ItemTypeGlobalAttribute.display_order)
+            .all()
+        )
+
+        for link in global_attr_links:
+            global_attr = link.global_attribute
+            if not global_attr:
+                continue
+
+            # Get options from global_attribute_options table
+            options = (
+                db.query(GlobalAttributeOption)
+                .filter(
+                    GlobalAttributeOption.global_attribute_id == global_attr.id,
+                    GlobalAttributeOption.is_available == True
+                )
+                .order_by(GlobalAttributeOption.display_order)
+                .all()
+            )
+
+            attr_data = {
+                "slug": global_attr.slug,
+                "display_name": global_attr.display_name,
+                "input_type": global_attr.input_type,
+                "is_required": link.is_required,
+                "allow_none": link.allow_none,
+                "ask_in_conversation": link.ask_in_conversation,
+                "question_text": link.question_text,
+                "is_global": True,  # Flag to indicate this is from global attributes
+                "options": [
+                    {
+                        "slug": opt.slug,
+                        "display_name": opt.display_name,
+                        "price_modifier": opt.price_modifier,
+                        "iced_price_modifier": opt.iced_price_modifier or 0.0,
+                        "is_default": opt.is_default,
+                    }
+                    for opt in options
+                ],
+            }
+
+            if global_attr.input_type == "multi_select":
+                attr_data["min_selections"] = link.min_selections
+                attr_data["max_selections"] = link.max_selections
+
+            attributes.append(attr_data)
+
         result[it.slug] = {
             "display_name": it.display_name,
             "is_configurable": True,
-            "skip_config": bool(it.skip_config),  # Skip configuration questions (e.g., sodas don't need hot/iced)
+            "skip_config": it_skip_config,  # Skip config if no attributes have ask_in_conversation=True
             "attributes": attributes,
         }
 

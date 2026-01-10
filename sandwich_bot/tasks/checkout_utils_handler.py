@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, EspressoItemTask, SignatureItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, CoffeeItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -35,8 +35,7 @@ class CheckoutUtilsHandler:
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_signature_item: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_espresso: Callable[[OrderTask], StateMachineResult] | None = None,
+        configure_next_incomplete_menu_item: Callable[[OrderTask], StateMachineResult] | None = None,
         **kwargs,
     ):
         """
@@ -47,8 +46,7 @@ class CheckoutUtilsHandler:
             transition_to_next_slot: Callback to transition to the next slot.
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
             configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
-            configure_next_incomplete_signature_item: Callback to configure next incomplete signature item.
-            configure_next_incomplete_espresso: Callback to configure next incomplete espresso.
+            configure_next_incomplete_menu_item: Callback to configure next incomplete menu item.
             **kwargs: Legacy parameter support.
         """
         if config:
@@ -61,8 +59,7 @@ class CheckoutUtilsHandler:
         self._transition_to_next_slot = transition_to_next_slot or kwargs.get("transition_to_next_slot")
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
         self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
-        self._configure_next_incomplete_signature_item = configure_next_incomplete_signature_item or kwargs.get("configure_next_incomplete_signature_item")
-        self._configure_next_incomplete_espresso = configure_next_incomplete_espresso or kwargs.get("configure_next_incomplete_espresso")
+        self._configure_next_incomplete_menu_item = configure_next_incomplete_menu_item or kwargs.get("configure_next_incomplete_menu_item")
 
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -86,22 +83,11 @@ class CheckoutUtilsHandler:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
                             return self._configure_next_incomplete_bagel(order)
-                # Handle signature items that need configuration
-                elif isinstance(item, SignatureItemTask):
-                    if item.bagel_choice is None or item.toasted is None:
-                        logger.info("Found incomplete signature item, starting configuration")
-                        if self._configure_next_incomplete_signature_item:
-                            return self._configure_next_incomplete_signature_item(order)
                 # Handle coffee that needs configuration
                 elif isinstance(item, CoffeeItemTask):
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
-                # Handle espresso that needs configuration
-                elif isinstance(item, EspressoItemTask):
-                    logger.info("Found incomplete espresso, starting configuration")
-                    if self._configure_next_incomplete_espresso:
-                        return self._configure_next_incomplete_espresso(order)
                 # Handle menu items with bagel sides that need toasted question
                 elif isinstance(item, MenuItemTask):
                     if item.side_choice == "bagel" and item.toasted is None:
@@ -177,13 +163,20 @@ class CheckoutUtilsHandler:
 
                 # Build abbreviated question based on the pending field
                 if pending_field in ("toasted", "signature_item_toasted", "menu_item_bagel_toasted"):
-                    question = f"And the {item_name}?"
+                    question = f"And the {item_name} - would you like it toasted?"
                 elif pending_field in ("bagel_choice", "bagel_type", "signature_item_bagel_type"):
-                    question = f"And what bagel for the {item_name}?"
+                    question = f"And what type of bagel for the {item_name}?"
+                elif pending_field == "signature_item_cheese_choice":
+                    question = f"And what type of cheese for the {item_name}?"
                 elif pending_field == "coffee_size":
                     question = f"And what size for the {item_name}? Small or Large?"
                 elif pending_field == "coffee_style":
                     question = f"Would you like the {item_name} hot or iced?"
+                elif pending_field in ("spread", "menu_item_spread"):
+                    question = f"Would you like cream cheese or butter on the {item_name}?"
+                elif pending_field == "menu_item_config":
+                    # Menu items with DB-driven config - ask about bread type first
+                    question = f"And what type of bread for the {item_name}?"
                 else:
                     question = f"And the {item_name}?"
 
@@ -195,22 +188,18 @@ class CheckoutUtilsHandler:
                     # Start bagel configuration
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)
-                elif item_type == "signature_item" and isinstance(target_item, SignatureItemTask):
-                    # Start signature item configuration
-                    if self._configure_next_incomplete_signature_item:
-                        return self._configure_next_incomplete_signature_item(order)
                 elif item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
                     # Start coffee configuration
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
-                elif item_type == "espresso" and isinstance(target_item, EspressoItemTask):
-                    # Start espresso configuration
-                    if self._configure_next_incomplete_espresso:
-                        return self._configure_next_incomplete_espresso(order)
+                elif item_type == "espresso" and isinstance(target_item, MenuItemTask):
+                    # Start espresso configuration (espresso uses MenuItemTask)
+                    if self._configure_next_incomplete_menu_item:
+                        return self._configure_next_incomplete_menu_item(order)
                 elif item_type == "menu_item" and isinstance(target_item, MenuItemTask):
                     # Start menu item configuration (for toasted question)
-                    if self._configure_next_incomplete_bagel:
-                        return self._configure_next_incomplete_bagel(order)
+                    if self._configure_next_incomplete_menu_item:
+                        return self._configure_next_incomplete_menu_item(order)
 
             # If we get here, item wasn't handled - log and continue to next
             logger.warning("Queued config item not handled: id=%s, type=%s",
@@ -248,7 +237,7 @@ class CheckoutUtilsHandler:
             # Use formal summary for counting identical items
             last_formal_summary = last_item.get_summary()
             # Use natural spoken summary for coffee items, formal summary for others
-            if isinstance(last_item, (CoffeeItemTask, EspressoItemTask)) and hasattr(last_item, "get_spoken_summary"):
+            if isinstance(last_item, CoffeeItemTask) and hasattr(last_item, "get_spoken_summary"):
                 last_summary = last_item.get_spoken_summary()
             else:
                 last_summary = last_formal_summary

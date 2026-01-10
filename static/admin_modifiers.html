@@ -344,6 +344,23 @@
     .checkbox-group input {
       width: auto;
     }
+    .config-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px;
+      background: #f0f7ff;
+      border: 1px solid #cce5ff;
+      border-radius: 6px;
+      color: #0056b3;
+      font-size: 13px;
+    }
+    .config-note .note-icon {
+      flex-shrink: 0;
+    }
+    .config-note .note-text {
+      line-height: 1.4;
+    }
     .type-info {
       background: #f5f5f5;
       padding: 16px;
@@ -385,9 +402,73 @@
       width: 80px;
       text-align: right;
     }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+      color: white !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <div class="app-header">
     <div>Modifiers Admin</div>
     <div>
@@ -396,8 +477,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html"><strong>Modifiers</strong></a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -440,9 +523,9 @@
           <input type="text" id="itemTypeDisplayName" placeholder="e.g., Coffee, Sandwich">
         </div>
         <div class="form-group">
-          <div class="checkbox-group">
-            <input type="checkbox" id="itemTypeConfigurable" checked>
-            <label for="itemTypeConfigurable">Is Configurable (has customizable attributes)</label>
+          <div class="config-note">
+            <span class="note-icon">ℹ️</span>
+            <span class="note-text">Configurability is automatically determined by linked global attributes with "Ask Customer" enabled.</span>
           </div>
         </div>
       </div>
@@ -555,12 +638,56 @@
 
   <script>
     const API_BASE = window.location.origin;
+    const GLOBAL_ATTRS_API = "/admin/item-types"; // + /{id}/global-attributes
     let itemTypes = [];
     let selectedItemType = null;
+    let linkedGlobalAttributes = []; // Global attributes linked to selected item type
     let editingItemTypeId = null;
     let editingAttributeId = null;
     let editingOptionId = null;
     let currentAttributeId = null; // For adding options
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification system
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
 
     // Fetch all item types
     async function loadItemTypes() {
@@ -598,17 +725,34 @@
             onclick="selectItemType(${JSON.stringify(it).replace(/"/g, '&quot;')})">
           <div>
             <div class="item-type-name">${it.display_name}</div>
-            <div class="item-type-meta">${it.attribute_definitions.length} attributes</div>
+            <div class="item-type-meta">${it.global_attribute_count || 0} attributes</div>
           </div>
           <div class="item-type-meta">${it.menu_item_count} items</div>
         </li>
       `).join('');
     }
 
-    function selectItemType(itemType) {
+    async function selectItemType(itemType) {
       selectedItemType = itemType;
       renderItemTypeList();
+      // Load linked global attributes for this item type
+      await loadLinkedGlobalAttributes(itemType.id);
       renderMainContent();
+    }
+
+    async function loadLinkedGlobalAttributes(itemTypeId) {
+      try {
+        const resp = await fetch(`${API_BASE}${GLOBAL_ATTRS_API}/${itemTypeId}/global-attributes`, {
+          credentials: 'include'
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        linkedGlobalAttributes = await resp.json();
+        // Sort by display_order
+        linkedGlobalAttributes.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      } catch (err) {
+        console.error("Error loading linked global attributes:", err);
+        linkedGlobalAttributes = [];
+      }
     }
 
     function renderMainContent() {
@@ -645,11 +789,85 @@
 
         <div class="section">
           <div class="section-header">
-            <span>Attributes & Options</span>
-            <button class="btn primary small" onclick="showAddAttributeModal(${it.id})">+ Add Attribute</button>
+            <span>Linked Global Attributes</span>
+            <a href="/static/admin_global_attributes.html" class="btn small" style="text-decoration: none;">Manage Global Attrs</a>
           </div>
-          ${renderAttributes(it.attribute_definitions)}
+          ${renderGlobalAttributes(linkedGlobalAttributes)}
         </div>
+      `;
+    }
+
+    function renderGlobalAttributes(linkedAttrs) {
+      if (linkedAttrs.length === 0) {
+        return `
+          <div style="padding: 40px; text-align: center; color: #666;">
+            <p>No global attributes linked yet.</p>
+            <p style="font-size: 13px;">Link global attributes in <a href="/static/admin_item_types.html" style="color: #1976d2;">Item Types</a> to configure modifiers for this item type.</p>
+          </div>
+        `;
+      }
+
+      return linkedAttrs.map(link => `
+        <div class="attribute-card">
+          <div class="attribute-header">
+            <div>
+              <span class="attribute-title">${link.global_attribute_display_name || link.global_attribute_slug}</span>
+              <span class="attribute-slug">${link.global_attribute_slug}</span>
+            </div>
+            <div class="btn-group">
+              <a href="/static/admin_global_attributes.html" class="btn small" style="text-decoration: none;">View Options</a>
+            </div>
+          </div>
+          <div class="attribute-meta" style="margin-bottom: 12px;">
+            <span class="badge ${link.is_required ? 'required' : 'optional'}">${link.is_required ? 'Required' : 'Optional'}</span>
+            <span class="badge ${link.input_type === 'multi_select' ? 'multi' : 'single'}">${formatInputType(link.input_type)}</span>
+            ${link.ask_in_conversation ? '<span class="badge" style="background:#e8f5e9;color:#2e7d32;">Asks</span>' : ''}
+          </div>
+          ${renderGlobalOptionsTable(link)}
+        </div>
+      `).join('');
+    }
+
+    function renderGlobalOptionsTable(link) {
+      const options = link.options || [];
+      return `
+        <table class="options-table">
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Slug</th>
+              <th>Price Modifier</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${options.length === 0 ? `
+              <tr>
+                <td colspan="4" style="text-align: center; color: #666; padding: 20px;">
+                  No options configured. <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Manage options</a>
+                </td>
+              </tr>
+            ` : options.map(opt => `
+              <tr>
+                <td>
+                  <strong>${opt.display_name}</strong>
+                  ${opt.is_default ? '<span class="badge" style="background:#e3f2fd;color:#1565c0;margin-left:6px;">Default</span>' : ''}
+                </td>
+                <td><code style="font-size: 12px; background: #f5f5f5; padding: 2px 4px; border-radius: 2px;">${opt.slug}</code></td>
+                <td>
+                  <span class="price-modifier ${opt.price_modifier > 0 ? 'positive' : opt.price_modifier < 0 ? 'negative' : 'zero'}">
+                    ${opt.price_modifier > 0 ? '+' : ''}$${(opt.price_modifier || 0).toFixed(2)}
+                  </span>
+                </td>
+                <td>
+                  <span class="availability-badge ${opt.is_available ? 'available' : 'unavailable'}">
+                    ${opt.is_available ? 'Available' : '86\'d'}
+                  </span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       `;
     }
 
@@ -766,7 +984,6 @@
       document.getElementById('itemTypeModalTitle').textContent = 'Add Item Type';
       document.getElementById('itemTypeSlug').value = '';
       document.getElementById('itemTypeDisplayName').value = '';
-      document.getElementById('itemTypeConfigurable').checked = true;
       showModal('addItemTypeModal');
     }
 
@@ -778,34 +995,35 @@
       document.getElementById('itemTypeModalTitle').textContent = 'Edit Item Type';
       document.getElementById('itemTypeSlug').value = it.slug;
       document.getElementById('itemTypeDisplayName').value = it.display_name;
-      document.getElementById('itemTypeConfigurable').checked = it.is_configurable;
+      // Note: is_configurable and skip_config are now derived from linked global attributes
       showModal('addItemTypeModal');
     }
 
     async function saveItemType() {
+      const saveBtn = document.querySelector('#addItemTypeModal .modal-footer .btn.primary');
       const slug = document.getElementById('itemTypeSlug').value.trim();
       const displayName = document.getElementById('itemTypeDisplayName').value.trim();
-      const isConfigurable = document.getElementById('itemTypeConfigurable').checked;
 
       if (!slug || !displayName) {
-        alert('Please fill in all required fields.');
+        showToast('Please fill in all required fields.', 'error');
         return;
       }
 
+      setSaveButtonState(saveBtn, 'saving');
       try {
         const url = editingItemTypeId
           ? `${API_BASE}/admin/modifiers/item-types/${editingItemTypeId}`
           : `${API_BASE}/admin/modifiers/item-types`;
         const method = editingItemTypeId ? 'PUT' : 'POST';
 
+        // Note: is_configurable and skip_config are derived from linked global attributes
         const resp = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
             slug,
-            display_name: displayName,
-            is_configurable: isConfigurable
+            display_name: displayName
           })
         });
 
@@ -814,10 +1032,13 @@
           throw new Error(err.detail || 'Failed to save');
         }
 
+        setSaveButtonState(saveBtn, 'saved', 'Save');
+        showToast(`Item type "${displayName}" saved successfully!`, 'success');
         closeModal('addItemTypeModal');
         await loadItemTypes();
       } catch (err) {
-        alert(err.message);
+        setSaveButtonState(saveBtn, 'error', 'Save');
+        showToast(err.message, 'error');
       }
     }
 
@@ -876,6 +1097,7 @@
     }
 
     async function saveAttribute() {
+      const saveBtn = document.querySelector('#addAttributeModal .modal-footer .btn.primary');
       const slug = document.getElementById('attrSlug').value.trim();
       const displayName = document.getElementById('attrDisplayName').value.trim();
       const inputType = document.getElementById('attrInputType').value;
@@ -884,10 +1106,11 @@
       const allowNone = document.getElementById('attrAllowNone').checked;
 
       if (!slug || !displayName) {
-        alert('Please fill in all required fields.');
+        showToast('Please fill in all required fields.', 'error');
         return;
       }
 
+      setSaveButtonState(saveBtn, 'saving');
       try {
         const url = editingAttributeId
           ? `${API_BASE}/admin/modifiers/attributes/${editingAttributeId}`
@@ -913,10 +1136,13 @@
           throw new Error(err.detail || 'Failed to save');
         }
 
+        setSaveButtonState(saveBtn, 'saved', 'Save');
+        showToast(`Attribute "${displayName}" saved successfully!`, 'success');
         closeModal('addAttributeModal');
         await loadItemTypes();
       } catch (err) {
-        alert(err.message);
+        setSaveButtonState(saveBtn, 'error', 'Save');
+        showToast(err.message, 'error');
       }
     }
 
@@ -983,6 +1209,7 @@
     }
 
     async function saveOption() {
+      const saveBtn = document.querySelector('#addOptionModal .modal-footer .btn.primary');
       const slug = document.getElementById('optSlug').value.trim();
       const displayName = document.getElementById('optDisplayName').value.trim();
       const priceModifier = parseFloat(document.getElementById('optPriceModifier').value) || 0;
@@ -991,10 +1218,11 @@
       const isAvailable = document.getElementById('optIsAvailable').checked;
 
       if (!slug || !displayName) {
-        alert('Please fill in all required fields.');
+        showToast('Please fill in all required fields.', 'error');
         return;
       }
 
+      setSaveButtonState(saveBtn, 'saving');
       try {
         const url = editingOptionId
           ? `${API_BASE}/admin/modifiers/options/${editingOptionId}`
@@ -1020,10 +1248,13 @@
           throw new Error(err.detail || 'Failed to save');
         }
 
+        setSaveButtonState(saveBtn, 'saved', 'Save');
+        showToast(`Option "${displayName}" saved successfully!`, 'success');
         closeModal('addOptionModal');
         await loadItemTypes();
       } catch (err) {
-        alert(err.message);
+        setSaveButtonState(saveBtn, 'error', 'Save');
+        showToast(err.message, 'error');
       }
     }
 

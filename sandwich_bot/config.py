@@ -187,4 +187,6 @@ ADMIN_PAGES = {
     "modifiers": "admin_modifiers.html",
     "item_types": "admin_item_types.html",
     "modifier_categories": "admin_modifier_categories.html",
+    "modifier_qualifiers": "admin_modifier_qualifiers.html",
+    "global_attributes": "admin_global_attributes.html",
 }

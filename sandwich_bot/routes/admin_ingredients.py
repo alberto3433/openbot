@@ -144,10 +144,14 @@ def create_ingredient(
 
     ingredient = Ingredient(
         name=payload.name,
+        slug=payload.name.lower().replace(" ", "_"),
         category=payload.category.lower(),
         unit=payload.unit,
         track_inventory=payload.track_inventory,
         is_available=payload.is_available,
+        aliases=payload.aliases,
+        must_match=payload.must_match,
+        abbreviation=payload.abbreviation,
     )
     db.add(ingredient)
     db.commit()
@@ -324,6 +328,12 @@ def update_ingredient(
         ingredient.track_inventory = payload.track_inventory
     if payload.is_available is not None:
         ingredient.is_available = payload.is_available
+    if payload.aliases is not None:
+        ingredient.aliases = payload.aliases
+    if payload.must_match is not None:
+        ingredient.must_match = payload.must_match
+    if payload.abbreviation is not None:
+        ingredient.abbreviation = payload.abbreviation
 
     db.commit()
     db.refresh(ingredient)

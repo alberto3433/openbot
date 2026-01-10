@@ -220,6 +220,74 @@ class ConfigHelperHandler:
                         order=order,
                     )
 
+        # Handle modifier removal for MenuItemTask (deli sandwiches, etc.)
+        # Modifiers are stored in attribute_values with _selections format
+        if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask):
+            modifier_removed = False
+            removed_modifier_name = cancel_desc
+
+            # Normalize cancel_desc for matching - handle singular/plural
+            # "eggs" -> also check "egg", "cheeses" -> also check "cheese"
+            cancel_desc_singular = cancel_desc.rstrip('s') if cancel_desc.endswith('s') and len(cancel_desc) > 2 else cancel_desc
+            # Also handle the reverse: "egg" -> also check "eggs"
+            cancel_desc_plural = cancel_desc + 's' if not cancel_desc.endswith('s') else cancel_desc
+
+            # Check all attribute_values for selections that match the cancel description
+            attrs_to_clear = []
+            for attr_slug, attr_value in list(current_item.attribute_values.items()):
+                # Skip metadata fields
+                if attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
+                    continue
+
+                # Check _selections data for this attribute
+                selections_key = f"{attr_slug}_selections"
+                selections = current_item.attribute_values.get(selections_key, [])
+                if selections and isinstance(selections, list):
+                    new_selections = []
+                    for sel in selections:
+                        sel_display = sel.get("display_name", "").lower()
+                        sel_slug = sel.get("slug", "").lower()
+                        # Check if this selection matches the cancel description (singular or plural)
+                        if (cancel_desc in sel_display or cancel_desc_singular in sel_display or
+                            cancel_desc in sel_slug or cancel_desc_singular in sel_slug):
+                            modifier_removed = True
+                            removed_modifier_name = sel.get("display_name", cancel_desc)
+                            logger.info("Modifier removal during config: removed '%s' from menu item", removed_modifier_name)
+                        else:
+                            new_selections.append(sel)
+
+                    if len(new_selections) != len(selections):
+                        # Some selections were removed
+                        if new_selections:
+                            current_item.attribute_values[selections_key] = new_selections
+                            # Update the main attribute value too
+                            current_item.attribute_values[attr_slug] = [s["slug"] for s in new_selections]
+                        else:
+                            # All selections removed - clear the attribute
+                            attrs_to_clear.append(attr_slug)
+                            attrs_to_clear.append(selections_key)
+
+            # Clear any attributes that had all selections removed
+            for attr_key in attrs_to_clear:
+                if attr_key in current_item.attribute_values:
+                    del current_item.attribute_values[attr_key]
+
+            if modifier_removed:
+                updated_summary = current_item.get_summary()
+
+                # Return to customization checkpoint or continue
+                question = self.get_current_config_question(order, current_item)
+                if question:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_modifier_name}. {question}",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                        order=order,
+                    )
+
         # Get all active items to search through
         active_items = order.items.get_active_items()
         if not active_items:

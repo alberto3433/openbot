@@ -375,9 +375,70 @@
       background: #f9f9f9;
       border-radius: 4px;
     }
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn-primary.saving, .btn-secondary.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn-primary.saving::after, .btn-secondary.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn-primary.saved {
+      background: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <div class="app-header">
     <div>Menu Admin</div>
     <div>
@@ -386,8 +447,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -505,6 +568,48 @@
     const searchInputEl = document.getElementById("searchInput");
     const detailTitleEl = document.getElementById("detailTitle");
     const statusTextEl = document.getElementById("statusText");
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification system
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
 
     const itemIdEl = document.getElementById("itemId");
     const itemNameEl = document.getElementById("itemName");
@@ -748,6 +853,7 @@
     }
 
     async function saveCurrentItem() {
+      const saveBtn = document.getElementById("saveBtn");
       const id = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
       const selectedItemTypeId = itemCategoryEl.value ? parseInt(itemCategoryEl.value, 10) : null;
       // Get the display_name from the selected option for category field
@@ -767,12 +873,14 @@
 
       if (!payload.name) {
         setStatus("Name is required.", true);
+        showToast("Name is required.", "error");
         return;
       }
 
       const method = id ? "PUT" : "POST";
       const url = id ? `${API_BASE}/admin/menu/${id}` : `${API_BASE}/admin/menu`;
 
+      setSaveButtonState(saveBtn, "saving");
       setStatus("Saving item...");
       try {
         const resp = await fetch(url, {
@@ -783,6 +891,8 @@
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const saved = await resp.json();
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast("Menu item saved successfully!", "success");
         setStatus("Saved.");
         await loadMenuItems();
         const idx = filteredItems.findIndex(i => i.id === saved.id);
@@ -791,6 +901,8 @@
         }
       } catch (err) {
         console.error("Error saving item:", err);
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast("Error saving item. See console.", "error");
         setStatus("Error saving item. See console.", true);
       }
     }
@@ -954,9 +1066,11 @@
     }
 
     async function saveAttributes() {
+      const saveAttrBtn = document.getElementById("saveAttributesBtn");
       const itemId = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
       if (!itemId || !currentAttributeFormData) {
         setStatus("No item selected.", true);
+        showToast("No item selected.", "error");
         return;
       }
 
@@ -1009,6 +1123,7 @@
 
       const payload = { attributes };
 
+      setSaveButtonState(saveAttrBtn, "saving");
       setStatus("Saving attributes...");
       try {
         const resp = await fetch(`${API_BASE}/admin/menu/${itemId}/attributes`, {
@@ -1021,11 +1136,15 @@
           const errData = await resp.json().catch(() => ({}));
           throw new Error(errData.detail || `HTTP ${resp.status}`);
         }
+        setSaveButtonState(saveAttrBtn, "saved", "Save Attributes");
+        showToast("Attributes saved successfully!", "success");
         setStatus("Attributes saved.");
         // Reload attribute form to show updated state
         await loadAttributeForm(itemId);
       } catch (err) {
         console.error("Error saving attributes:", err);
+        setSaveButtonState(saveAttrBtn, "error", "Save Attributes");
+        showToast("Error saving attributes: " + err.message, "error");
         setStatus("Error saving attributes: " + err.message, true);
       }
     }

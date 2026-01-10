@@ -2351,17 +2351,17 @@ class TestParsedItemsMultiItem:
         assert result is not None, "Failed to parse multi-item order"
         assert len(result.parsed_items) == 2, f"Expected 2 parsed_items, got {len(result.parsed_items)}"
 
-        # Check the parsed_items list contains both items
+        # Check the parsed_items list contains both items (both should be menu_item now)
         types = [item.type for item in result.parsed_items]
-        assert "signature_item" in types, "Speed menu bagel should be in parsed_items"
-        assert "menu_item" in types, "Menu item should be in parsed_items"
+        # Signature items are now consolidated as menu_items with is_signature=True
+        assert types.count("menu_item") == 2, f"Expected 2 menu_items, got: {types}"
 
-        # Verify The Leo details
-        speed_items = [i for i in result.parsed_items if i.type == "signature_item"]
-        assert len(speed_items) == 1
-        assert speed_items[0].signature_item_name == "The Leo"
-        assert speed_items[0].bagel_type == "wheat"
-        assert speed_items[0].toasted is True
+        # Verify The Leo details (look for menu_item with is_signature=True or menu_item_name="The Leo")
+        leo_items = [i for i in result.parsed_items if getattr(i, 'menu_item_name', '').lower() == 'the leo' or getattr(i, 'is_signature', False)]
+        assert len(leo_items) >= 1, "The Leo should be in parsed_items"
+        leo = leo_items[0]
+        assert leo.bagel_type == "wheat"
+        assert leo.toasted is True
 
     def test_bagel_and_coffee_both_in_parsed_items(self):
         """Test that bagel + coffee both appear in parsed_items."""
@@ -2413,12 +2413,15 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) >= 2
 
         types = [item.type for item in result.parsed_items]
-        # All should be menu_item or signature_item
+        # All should be menu_item (signature_item is now consolidated into menu_item)
         for t in types:
-            assert t in ["menu_item", "signature_item"]
+            assert t == "menu_item", f"Expected menu_item, got: {t}"
 
     def test_signature_item_and_coffee_both_in_parsed_items(self):
-        """Test that speed menu bagel + coffee both appear in parsed_items."""
+        """Test that speed menu bagel + coffee both appear in parsed_items.
+
+        Note: Signature items are now consolidated as menu_item with is_signature=True.
+        """
         from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
 
         result = _parse_multi_item_order("the classic bec and a coffee")
@@ -2426,8 +2429,9 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) == 2
 
         types = [item.type for item in result.parsed_items]
-        assert "signature_item" in types
-        assert "coffee" in types
+        # Signature items are now menu_item type
+        assert "menu_item" in types, f"Expected menu_item in types, got: {types}"
+        assert "coffee" in types, f"Expected coffee in types, got: {types}"
 
 
 class TestDuplicatePatterns:
@@ -2442,7 +2446,7 @@ class TestDuplicatePatterns:
         ("another latte", "coffee"),
         ("one more latte", "coffee"),
         ("another cappuccino", "coffee"),
-        ("another espresso", "coffee"),
+        ("another espresso", "espresso"),  # Espresso uses MenuItemTask, not CoffeeItemTask
         ("another americano", "coffee"),
         ("another mocha", "coffee"),
         ("another tea", "coffee"),  # Tea treated as coffee for ordering flow

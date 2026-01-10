@@ -18,8 +18,6 @@ from .models import (
     MenuItemTask,
     BagelItemTask,
     CoffeeItemTask,
-    EspressoItemTask,
-    SignatureItemTask,
     ItemTask,
 )
 from .pricing import PricingEngine
@@ -29,8 +27,7 @@ from .message_builder import MessageBuilder
 from .checkout_handler import CheckoutHandler
 from .bagel_config_handler import BagelConfigHandler
 from .coffee_config_handler import CoffeeConfigHandler
-from .espresso_config_handler import EspressoConfigHandler
-from .signature_item_handler import SignatureItemHandler
+from .menu_item_config_handler import MenuItemConfigHandler
 from .store_info_handler import StoreInfoHandler
 from .menu_inquiry_handler import MenuInquiryHandler
 from .by_pound_handler import ByPoundHandler
@@ -209,13 +206,10 @@ def _get_pending_item_description(item: "ItemTask") -> str:
             return " ".join(parts) + " bagel"
         return "bagel"
     elif isinstance(item, MenuItemTask):
+        # For espresso and other menu items, use the menu_item_name
         return item.menu_item_name or "item"
     elif isinstance(item, CoffeeItemTask):
         return item.drink_type or "coffee"
-    elif isinstance(item, EspressoItemTask):
-        return item.get_display_name()
-    elif isinstance(item, SignatureItemTask):
-        return item.menu_item_name or "signature item"
     return "item"
 
 
@@ -336,12 +330,7 @@ class OrderStateMachine:
         )
         # Now set the coffee callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_coffee = self.coffee_handler.configure_next_incomplete_coffee
-        # Initialize espresso config handler
-        self.espresso_handler = EspressoConfigHandler(
-            config=self._handler_config,
-        )
-        # Now set the espresso callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_espresso = self.espresso_handler.configure_next_incomplete_espresso
+        # Note: Espresso now uses MenuItemConfigHandler (data-driven) instead of dedicated EspressoConfigHandler
         # Initialize bagel config handler
         self.bagel_handler = BagelConfigHandler(
             config=self._handler_config,
@@ -350,12 +339,6 @@ class OrderStateMachine:
         )
         # Now set the bagel callback on checkout_utils_handler
         self.checkout_utils_handler._configure_next_incomplete_bagel = self.bagel_handler.configure_next_incomplete_bagel
-        # Initialize signature item handler
-        self.signature_item_handler = SignatureItemHandler(
-            config=self._handler_config,
-        )
-        # Now set the signature item callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_signature_item = self.signature_item_handler.configure_next_incomplete_signature_item
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize by-the-pound handler
@@ -389,26 +372,31 @@ class OrderStateMachine:
         self.checkout_handler.order_utils_handler = self.order_utils_handler
         self.checkout_handler.checkout_utils_handler = self.checkout_utils_handler
         self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
+        # Initialize menu item config handler (for deli sandwiches, etc.)
+        self.menu_item_handler = MenuItemConfigHandler(
+            config=self._handler_config,
+        )
+        # Set menu_item_handler on item_adder_handler (created earlier)
+        self.item_adder_handler.menu_item_handler = self.menu_item_handler
+        # Set menu_item callback on checkout_utils_handler (for espresso and other MenuItemTask config)
+        self.checkout_utils_handler._configure_next_incomplete_menu_item = self._configure_next_incomplete_menu_item
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
             config=self._handler_config,
             by_pound_handler=self.by_pound_handler,
             coffee_handler=self.coffee_handler,
-            espresso_handler=self.espresso_handler,
             bagel_handler=self.bagel_handler,
-            signature_item_handler=self.signature_item_handler,
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             modifier_change_handler=self.modifier_change_handler,
             item_adder_handler=self.item_adder_handler,
+            menu_item_handler=self.menu_item_handler,
         )
         # Initialize taking items handler
         self.taking_items_handler = TakingItemsHandler(
             config=self._handler_config,
             coffee_handler=self.coffee_handler,
-            espresso_handler=self.espresso_handler,
             item_adder_handler=self.item_adder_handler,
-            signature_item_handler=self.signature_item_handler,
             menu_inquiry_handler=self.menu_inquiry_handler,
             store_info_handler=self.store_info_handler,
             by_pound_handler=self.by_pound_handler,
@@ -664,6 +652,24 @@ class OrderStateMachine:
     def _transition_to_next_slot(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""
         self.slot_orchestration_handler.transition_to_next_slot(order)
+
+    def _configure_next_incomplete_menu_item(self, order: OrderTask) -> StateMachineResult:
+        """Configure the next incomplete MenuItemTask (espresso, deli sandwich, etc.)."""
+        from .models import MenuItemTask
+        from .schemas import OrderPhase
+
+        # Find the first incomplete MenuItemTask
+        for item in order.items.items:
+            if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                # Use menu_item_handler to get the first question
+                result = self.menu_item_handler.get_first_question(item, order)
+                if result:
+                    return result
+                # If no question needed, mark complete and continue
+                item.mark_complete()
+
+        # No incomplete menu items found - return to checkout flow
+        return self.checkout_utils_handler.get_next_question(order)
 
     def _handle_greeting(
         self,

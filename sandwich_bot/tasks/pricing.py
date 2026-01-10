@@ -26,7 +26,7 @@ class PricingEngine:
     # and looked up via the item_types structure in menu_data.
     # See migration m7n8o9p0q1r2_populate_modifier_prices.py for initial data.
     #
-    # Bagel type upcharges are also stored in the database under the "bagel_type"
+    # Bagel type upcharges are also stored in the database under the "bread"
     # attribute definition (e.g., gluten_free has price_modifier=0.80).
 
     def __init__(
@@ -74,7 +74,7 @@ class PricingEngine:
 
         specialty_types = set()
         for attr in attributes:
-            if attr.get("slug") == "bagel_type":
+            if attr.get("slug") == "bread":
                 for opt in attr.get("options", []):
                     if opt.get("price_modifier", 0) > 0:
                         # Add both slug and display_name variations
@@ -263,7 +263,7 @@ class PricingEngine:
         Regular bagels (plain, everything, sesame, etc.) have no upcharge.
         Specialty bagels like gluten free have an upcharge.
 
-        Bagel type upcharges are stored in the database under the "bagel_type"
+        Bagel type upcharges are stored in the database under the "bread"
         attribute definition (e.g., gluten_free has price_modifier=0.80).
 
         Args:
@@ -290,9 +290,9 @@ class PricingEngine:
         bagel_type_data = item_types.get("bagel", {})
         attributes = bagel_type_data.get("attributes", [])
 
-        # Look for the bagel_type attribute
+        # Look for the bread attribute (was bagel_type, renamed to match deli_sandwich)
         for attr in attributes:
-            if attr.get("slug") == "bagel_type":
+            if attr.get("slug") == "bread":
                 options = attr.get("options", [])
                 for opt in options:
                     opt_slug = opt.get("slug", "").lower().replace("-", "_")
@@ -351,10 +351,10 @@ class PricingEngine:
             attributes = type_data.get("attributes", [])
 
             # Search through modifier attributes (protein, cheese, toppings, spread, etc.)
-            # Skip bagel_type attribute - it's for bagel variety upcharges, not add-on modifiers
+            # Skip bread attribute - it's for bagel variety upcharges, not add-on modifiers
             # (e.g., "egg bagel" is a bagel type, "egg" protein is a modifier)
             for attr in attributes:
-                if attr.get("slug") == "bagel_type":
+                if attr.get("slug") == "bread":
                     continue  # Skip - bagel types are handled by get_bagel_type_upcharge()
                 options = attr.get("options", [])
                 for opt in options:
@@ -561,7 +561,7 @@ class PricingEngine:
 
         Searches the attribute_options in the database for matching modifier prices.
         Modifier prices are stored under the sized_beverage item type with
-        attributes like "milk", "syrup", and "size".
+        attributes like "milk", "syrup", "size", or consolidated under "milk_sweetener_syrup".
 
         Args:
             modifier_name: Name of the modifier (e.g., "oat", "vanilla", "large")
@@ -592,8 +592,14 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Try sized_beverage first, then any item type
-        types_to_check = ["sized_beverage"] + [t for t in item_types.keys() if t != "sized_beverage"]
+        # Try sized_beverage first, then espresso, then any item type
+        types_to_check = ["sized_beverage", "espresso"] + [
+            t for t in item_types.keys() if t not in ("sized_beverage", "espresso")
+        ]
+
+        # Attribute slugs to check for drink modifiers (consolidated under milk_sweetener_syrup)
+        # Also check legacy attribute names for backwards compatibility
+        drink_modifier_attrs = {"milk_sweetener_syrup", "syrup", "milk", "sweetener"}
 
         for type_slug in types_to_check:
             type_data = item_types.get(type_slug, {})
@@ -604,8 +610,15 @@ class PricingEngine:
                 if not isinstance(attr, dict):
                     continue
                 attr_slug = attr.get("slug", "")
-                # Match by modifier type (syrup, milk, size)
-                if modifier_type in attr_slug or attr_slug == modifier_type:
+
+                # Match by modifier type OR check milk_sweetener_syrup for consolidated options
+                is_target_attr = (
+                    modifier_type in attr_slug or
+                    attr_slug == modifier_type or
+                    (modifier_type in ("syrup", "milk", "sweetener") and attr_slug in drink_modifier_attrs)
+                )
+
+                if is_target_attr:
                     options = attr.get("options", [])
                     for opt in options:
                         if not isinstance(opt, dict):
@@ -659,8 +672,12 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
+        # Prioritize sized_beverage for iced upcharge lookup (drinks have iced upcharges)
+        types_to_check = ["sized_beverage"] + [t for t in item_types.keys() if t != "sized_beverage"]
+
         # Search through item types for size attribute with iced_price_modifier
-        for type_slug, type_data in item_types.items():
+        for type_slug in types_to_check:
+            type_data = item_types.get(type_slug)
             if not isinstance(type_data, dict):
                 continue
             attrs = type_data.get("attributes", [])
@@ -689,6 +706,80 @@ class PricingEngine:
             size
         )
         return 0.0
+
+    def lookup_temperature_display_name(self, is_iced: bool) -> str:
+        """
+        Look up the display name for temperature (hot/iced) from the database.
+
+        Args:
+            is_iced: True for iced, False for hot
+
+        Returns:
+            The display name from the database (e.g., "Iced", "Hot"),
+            or fallback to "iced"/"hot" if not found.
+        """
+        target_slug = "iced" if is_iced else "hot"
+        fallback = target_slug  # lowercase fallback
+
+        if not self._menu_data:
+            return fallback
+
+        item_types = self._menu_data.get("item_types", {})
+
+        # Check sized_beverage first, then espresso
+        for type_slug in ["sized_beverage", "espresso"]:
+            type_data = item_types.get(type_slug)
+            if not type_data:
+                continue
+
+            for attr in type_data.get("attributes", []):
+                if attr.get("slug") == "temperature":
+                    for opt in attr.get("options", []):
+                        if opt.get("slug") == target_slug:
+                            display_name = opt.get("display_name")
+                            if display_name:
+                                return display_name
+
+        return fallback
+
+    def lookup_size_display_name(self, size_slug: str) -> str:
+        """
+        Look up the display name for a size from the database.
+
+        Args:
+            size_slug: The size slug (e.g., "small", "medium", "large")
+
+        Returns:
+            The display name from the database (e.g., "Small", "Medium", "Large"),
+            or the original slug if not found.
+        """
+        if not size_slug:
+            return size_slug
+
+        size_lower = size_slug.lower().strip()
+        fallback = size_slug  # Return original if not found
+
+        if not self._menu_data:
+            return fallback
+
+        item_types = self._menu_data.get("item_types", {})
+
+        # Check sized_beverage first, then espresso
+        for type_slug in ["sized_beverage", "espresso"]:
+            type_data = item_types.get(type_slug)
+            if not type_data:
+                continue
+
+            for attr in type_data.get("attributes", []):
+                if attr.get("slug") == "size":
+                    for opt in attr.get("options", []):
+                        opt_slug = opt.get("slug", "").lower()
+                        if opt_slug == size_lower or size_lower in opt_slug:
+                            display_name = opt.get("display_name")
+                            if display_name:
+                                return display_name
+
+        return fallback
 
     def calculate_coffee_price_with_modifiers(
         self,
@@ -764,13 +855,17 @@ class PricingEngine:
         item.milk_upcharge = milk_upcharge
 
         # Flavor syrups upcharge (sum of all syrups * quantities)
+        # Also store individual prices on each syrup entry for adapter display
         syrup_upcharge = 0.0
         if item.flavor_syrups:
             for syrup in item.flavor_syrups:
                 flavor = syrup.get("flavor", "")
                 qty = syrup.get("quantity", 1) or 1
                 single_syrup_price = self.lookup_coffee_modifier_price(flavor, "syrup")
-                syrup_upcharge += single_syrup_price * qty
+                entry_upcharge = single_syrup_price * qty
+                syrup_upcharge += entry_upcharge
+                # Store the price on the syrup entry for the adapter
+                syrup["price"] = entry_upcharge
             total += syrup_upcharge
         item.syrup_upcharge = syrup_upcharge
 
@@ -823,11 +918,15 @@ class PricingEngine:
         menu_item_data = None
         if hasattr(item, 'menu_item_id') and item.menu_item_id:
             from sandwich_bot.menu_data_cache import menu_cache
-            menu_data = menu_cache.get_menu_data()
-            if menu_data:
-                for mi in menu_data.get("menu_items", []):
-                    if mi.get("id") == item.menu_item_id:
-                        menu_item_data = mi
+            menu_index = menu_cache.get_menu_index()
+            if menu_index:
+                # Search through all categories for the menu item
+                for category_data in menu_index.get("categories", {}).values():
+                    for mi in category_data.get("items", []):
+                        if mi.get("id") == item.menu_item_id:
+                            menu_item_data = mi
+                            break
+                    if menu_item_data:
                         break
 
         base_price = menu_item_data.get("base_price", 0.0) if menu_item_data else 0.0

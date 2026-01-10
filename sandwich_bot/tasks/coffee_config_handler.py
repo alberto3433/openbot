@@ -29,6 +29,41 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Word-to-number mapping for quantity extraction
+WORD_TO_NUM = {
+    "one": 1, "a": 1, "an": 1,
+    "two": 2, "double": 2,
+    "three": 3, "triple": 3,
+    "four": 4, "quad": 4, "quadruple": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+def _extract_quantity(user_input: str, pattern: str) -> int:
+    """Extract quantity from user input for a given pattern.
+
+    Handles both numeric ("2 vanilla") and word ("two vanilla") quantities.
+    """
+    escaped_pattern = re.escape(pattern)
+
+    # Try digit match first: "2 vanilla syrups"
+    digit_match = re.search(rf'(\d+)\s*{escaped_pattern}s?', user_input)
+    if digit_match:
+        return int(digit_match.group(1))
+
+    # Try word match: "two vanilla syrups"
+    word_pattern = r'(one|two|three|four|five|six|seven|eight|nine|ten|double|triple|quad|quadruple)\s+' + escaped_pattern + r's?'
+    word_match = re.search(word_pattern, user_input)
+    if word_match:
+        return WORD_TO_NUM.get(word_match.group(1).lower(), 1)
+
+    return 1
+
 
 def _check_redirect_to_pending_item(
     user_input: str,
@@ -72,6 +107,323 @@ class CoffeeConfigHandler:
             self.menu_lookup = kwargs.get("menu_lookup")
             self._get_next_question = kwargs.get("get_next_question")
             self._check_redirect = kwargs.get("check_redirect")
+
+        # Cache for item type attributes (loaded on first use)
+        self._sized_beverage_attributes_cache: dict | None = None
+
+    def _get_sized_beverage_attributes(self) -> dict:
+        """Load sized_beverage item type attributes from database.
+
+        Returns dict with structure:
+        {
+            "size": {
+                "question_text": "What size?",
+                "options": [{"slug": "small", "display_name": "Small", "price": 0}, ...]
+            },
+            "temperature": {
+                "question_text": "Hot or iced?",
+                "options": [{"slug": "hot", "display_name": "Hot"}, {"slug": "iced", "display_name": "Iced"}]
+            },
+            "drink_modifier": {
+                "question_text": "Any milk, sweetener, or syrup?",
+                "options": [{"slug": "oat_milk", "display_name": "Oat Milk", "price": 0.50, "category": "milk"}, ...]
+            },
+            ...
+        }
+        """
+        if self._sized_beverage_attributes_cache is not None:
+            return self._sized_beverage_attributes_cache
+
+        from ..db import SessionLocal
+        from ..models import (
+            ItemType, ItemTypeAttribute, AttributeOption,
+            ItemTypeIngredient, Ingredient
+        )
+
+        db = SessionLocal()
+        try:
+            sized_beverage_type = db.query(ItemType).filter(ItemType.slug == "sized_beverage").first()
+            if not sized_beverage_type:
+                logger.warning("sized_beverage item type not found in database")
+                self._sized_beverage_attributes_cache = {}
+                return {}
+
+            attrs = db.query(ItemTypeAttribute).filter(
+                ItemTypeAttribute.item_type_id == sized_beverage_type.id
+            ).all()
+
+            result = {}
+            for attr in attrs:
+                opts_data = []
+
+                # Check if options should come from ingredients (data-driven approach)
+                if attr.loads_from_ingredients and attr.ingredient_group:
+                    # Load options from item_type_ingredients + ingredients
+                    ingredient_links = (
+                        db.query(ItemTypeIngredient)
+                        .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
+                        .filter(
+                            ItemTypeIngredient.item_type_id == sized_beverage_type.id,
+                            ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+                            ItemTypeIngredient.is_available == True,
+                        )
+                        .order_by(ItemTypeIngredient.display_order)
+                        .all()
+                    )
+
+                    for link in ingredient_links:
+                        ingredient = link.ingredient
+                        opt_data = {
+                            "slug": ingredient.slug or ingredient.name.lower().replace(" ", "_"),
+                            "display_name": link.display_name_override or ingredient.name,
+                            "price": float(link.price_modifier or 0),
+                            "category": ingredient.category,  # For filtering by type (milk/sweetener/syrup)
+                        }
+                        # Include ingredient aliases for matching
+                        if ingredient.aliases:
+                            opt_data["ingredient_aliases"] = ingredient.aliases
+                        opts_data.append(opt_data)
+                else:
+                    # Fall back to attribute_options table
+                    options = db.query(AttributeOption).filter(
+                        AttributeOption.item_type_attribute_id == attr.id
+                    ).order_by(AttributeOption.display_order).all()
+
+                    for opt in options:
+                        opts_data.append({
+                            "slug": opt.slug,
+                            "display_name": opt.display_name or opt.slug.replace("_", " ").title(),
+                            "price": float(opt.price_modifier or 0),
+                        })
+
+                result[attr.slug] = {
+                    "question_text": attr.question_text,
+                    "ask_in_conversation": attr.ask_in_conversation,
+                    "options": opts_data,
+                }
+
+            self._sized_beverage_attributes_cache = result
+            logger.info("Loaded sized_beverage attributes from DB: %s", list(result.keys()))
+            return result
+
+        finally:
+            db.close()
+
+    def _get_size_question(self) -> str:
+        """Get the size question from DB, with fallback."""
+        attrs = self._get_sized_beverage_attributes()
+        size_attr = attrs.get("size", {})
+        question = size_attr.get("question_text")
+        if question and question != "None":
+            return question
+        # Fallback with options
+        options = self._get_size_options()
+        if options:
+            option_names = [opt.get("display_name", opt.get("slug", "")).title() for opt in options]
+            return f"What size would you like? {self._format_options_list(option_names, 'or')}?"
+        return "What size would you like?"
+
+    def _get_size_options(self) -> list[dict]:
+        """Get valid size options from DB."""
+        attrs = self._get_sized_beverage_attributes()
+        size_attr = attrs.get("size", {})
+        return size_attr.get("options", [])
+
+    def _get_temperature_question(self) -> str:
+        """Get the hot/iced question from DB, with fallback."""
+        attrs = self._get_sized_beverage_attributes()
+        temp_attr = attrs.get("temperature", {})
+        question = temp_attr.get("question_text")
+        if question and question != "None":
+            return question
+        return "Hot or iced?"
+
+    def _get_temperature_options(self) -> list[dict]:
+        """Get valid temperature options from DB."""
+        attrs = self._get_sized_beverage_attributes()
+        temp_attr = attrs.get("temperature", {})
+        return temp_attr.get("options", [])
+
+    def _get_drink_modifier_question(self) -> str:
+        """Get the drink modifier question from DB, with fallback."""
+        attrs = self._get_sized_beverage_attributes()
+        mod_attr = attrs.get("drink_modifier", {})
+        question = mod_attr.get("question_text")
+        if question and question != "None":
+            return question
+        return "Any milk, sweetener, or syrup?"
+
+    def _get_drink_modifier_options(self) -> list[dict]:
+        """Get valid drink modifier options from DB."""
+        attrs = self._get_sized_beverage_attributes()
+        mod_attr = attrs.get("drink_modifier", {})
+        return mod_attr.get("options", [])
+
+    def _get_valid_modifier_names(self, category: str | None = None) -> set[str]:
+        """Get valid modifier names for use as valid_answers in redirect checking.
+
+        Returns a set of lowercase names that should NOT trigger a new order redirect.
+        Includes display names, slugs (with underscores replaced), and ingredient aliases.
+
+        Args:
+            category: Optional category to filter by ('syrup', 'milk', 'sweetener')
+        """
+        options = self._get_drink_modifier_options()
+        if category:
+            options = [opt for opt in options if opt.get("category") == category]
+
+        valid_names = set()
+        for opt in options:
+            # Add display name
+            display = opt.get("display_name", "")
+            if display:
+                valid_names.add(display.lower())
+                # Also add without "Syrup" suffix for matching just "peppermint"
+                if display.lower().endswith(" syrup"):
+                    valid_names.add(display.lower().replace(" syrup", ""))
+
+            # Add slug (with underscores replaced by spaces)
+            slug = opt.get("slug", "")
+            if slug:
+                valid_names.add(slug.lower().replace("_", " "))
+                # Also just the flavor name without _syrup
+                if slug.endswith("_syrup"):
+                    valid_names.add(slug.replace("_syrup", "").replace("_", " "))
+
+            # Add ingredient aliases
+            aliases = opt.get("ingredient_aliases", "")
+            if aliases:
+                for alias in aliases.split(","):
+                    alias = alias.strip().lower()
+                    if alias:
+                        valid_names.add(alias)
+                        # Handle pipe-separated alternatives
+                        for alt in alias.split("|"):
+                            valid_names.add(alt.strip())
+
+        # Also add size and temperature options as valid answers
+        for opt in self._get_size_options():
+            display = opt.get("display_name", "")
+            slug = opt.get("slug", "")
+            if display:
+                valid_names.add(display.lower())
+            if slug:
+                valid_names.add(slug.lower())
+
+        for opt in self._get_temperature_options():
+            display = opt.get("display_name", "")
+            slug = opt.get("slug", "")
+            if display:
+                valid_names.add(display.lower())
+            if slug:
+                valid_names.add(slug.lower())
+
+        return valid_names
+
+    def _match_modifier_from_input(self, user_input: str) -> list[dict]:
+        """Match user input against valid drink modifier options from DB.
+
+        Uses ingredient aliases for smart matching (same logic as espresso handler).
+        Returns list of matched modifiers with structure:
+        [{"slug": "vanilla", "display_name": "Vanilla Syrup", "price": 0.75, "quantity": 2}, ...]
+        """
+        options = self._get_drink_modifier_options()
+        user_lower = user_input.lower()
+        matched = []
+        matched_slugs = set()
+        used_phrases = []
+
+        # PASS 1: Check must-match aliases first (longer, more specific phrases)
+        for opt in options:
+            slug = opt.get("slug", "")
+            display = opt.get("display_name", "")
+            ingredient_aliases = opt.get("ingredient_aliases", "")
+
+            if not ingredient_aliases or "|" not in ingredient_aliases:
+                continue
+
+            alias_patterns = [p.strip() for p in ingredient_aliases.split("|")]
+            for alias in alias_patterns:
+                if alias and re.search(rf'\b{re.escape(alias)}\b', user_lower):
+                    quantity = _extract_quantity(user_lower, alias)
+                    matched.append({
+                        "slug": slug,
+                        "display_name": display or slug.replace("_", " ").title(),
+                        "price": opt.get("price", 0),
+                        "category": opt.get("category", ""),
+                        "quantity": quantity,
+                    })
+                    matched_slugs.add(slug)
+                    used_phrases.append(alias)
+                    break
+
+        # PASS 2: Check simple aliases (only if words not already used)
+        for opt in options:
+            slug = opt.get("slug", "")
+            if slug in matched_slugs:
+                continue
+
+            display = opt.get("display_name", "")
+            ingredient_aliases = opt.get("ingredient_aliases", "")
+
+            if not ingredient_aliases or "|" in ingredient_aliases:
+                continue
+
+            alias = ingredient_aliases.strip()
+            alias_used = any(alias in phrase for phrase in used_phrases)
+            if alias_used:
+                continue
+
+            if alias and re.search(rf'\b{re.escape(alias)}s?\b', user_lower):
+                quantity = _extract_quantity(user_lower, alias)
+                matched.append({
+                    "slug": slug,
+                    "display_name": display or slug.replace("_", " ").title(),
+                    "price": opt.get("price", 0),
+                    "category": opt.get("category", ""),
+                    "quantity": quantity,
+                })
+                matched_slugs.add(slug)
+
+        # PASS 3: Fallback to slug-based matching (no ingredient aliases)
+        for opt in options:
+            slug = opt.get("slug", "")
+            if slug in matched_slugs:
+                continue
+
+            display = opt.get("display_name", "")
+            ingredient_aliases = opt.get("ingredient_aliases", "")
+
+            if ingredient_aliases:
+                continue
+
+            slug_pattern = slug.replace("_", " ")
+            slug_no_space = slug.replace("_", "")
+
+            patterns = [
+                slug_pattern,
+                slug_no_space,
+                display.lower(),
+            ]
+
+            first_word = slug.split("_")[0]
+            if len(first_word) > 3:
+                patterns.append(first_word)
+
+            for pattern in patterns:
+                if pattern and re.search(rf'\b{re.escape(pattern)}s?\b', user_lower):
+                    quantity = _extract_quantity(user_lower, pattern)
+                    matched.append({
+                        "slug": slug,
+                        "display_name": display or slug.replace("_", " ").title(),
+                        "price": opt.get("price", 0),
+                        "category": opt.get("category", ""),
+                        "quantity": quantity,
+                    })
+                    matched_slugs.add(slug)
+                    break
+
+        return matched
 
     def _get_beverage_options(self, attribute_slug: str) -> list[str]:
         """Get available options for a beverage attribute from the database cache.
@@ -458,7 +810,7 @@ class CoffeeConfigHandler:
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Note: Espresso is now handled by EspressoConfigHandler in taking_items_handler.py
+        # Note: Espresso is now handled by MenuItemConfigHandler (data-driven)
         # This add_coffee method only handles regular coffee/tea drinks
 
         # Regular coffee/tea - needs configuration
@@ -617,9 +969,16 @@ class CoffeeConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle coffee size selection."""
+        # Get question and options from DB
+        question = self._get_size_question()
+        size_options = self._get_size_options()
+        size_names = [opt.get("display_name", opt.get("slug", "")).lower() for opt in size_options]
+
         if self._check_redirect:
+            # Pass valid size names so they don't trigger redirect
+            valid_answers = set(size_names) | self._get_valid_modifier_names()
             redirect = self._check_redirect(
-                user_input, item, order, "What size would you like? Small or large?"
+                user_input, item, order, question, valid_answers
             )
             if redirect:
                 return redirect
@@ -628,8 +987,10 @@ class CoffeeConfigHandler:
 
         if not parsed.size:
             drink_name = item.drink_type or "drink"
+            # Build options string from DB
+            options_str = self._format_options_list([s.title() for s in size_names], "or")
             return StateMachineResult(
-                message=f"What size would you like for your {drink_name}? Small or large?",
+                message=f"What size would you like for your {drink_name}? {options_str}?",
                 order=order,
             )
 
@@ -692,9 +1053,14 @@ class CoffeeConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle hot/iced preference for coffee."""
+        # Get question from DB
+        question = self._get_temperature_question()
+
         if self._check_redirect:
+            # Pass valid temperature and modifier names so they don't trigger redirect
+            valid_answers = self._get_valid_modifier_names()
             redirect = self._check_redirect(
-                user_input, item, order, "Would you like it hot or iced?"
+                user_input, item, order, question, valid_answers
             )
             if redirect:
                 return redirect
@@ -707,7 +1073,7 @@ class CoffeeConfigHandler:
 
         if iced is None:
             return StateMachineResult(
-                message="Would you like that hot or iced?",
+                message=question,
                 order=order,
             )
 
@@ -742,9 +1108,14 @@ class CoffeeConfigHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle milk/sugar/syrup preferences for coffee."""
+        # Get question from DB
+        question = self._get_drink_modifier_question()
+
         if self._check_redirect:
+            # Pass valid modifier names so they don't trigger redirect
+            valid_answers = self._get_valid_modifier_names()
             redirect = self._check_redirect(
-                user_input, item, order, "Any milk, sweetener, or syrup?"
+                user_input, item, order, question, valid_answers
             )
             if redirect:
                 return redirect
@@ -798,14 +1169,24 @@ class CoffeeConfigHandler:
         ]
         is_negative = any(re.search(p, user_lower) for p in negative_patterns)
 
-        # Extract any modifiers mentioned
+        # First try DB-driven matching (handles ingredient aliases like "peppermint")
+        db_matched_modifiers = self._match_modifier_from_input(user_input)
+
+        # Separate DB matches by category
+        db_syrups = [m for m in db_matched_modifiers if m.get("category") == "syrup" or "syrup" in m.get("slug", "").lower()]
+        db_milks = [m for m in db_matched_modifiers if m.get("category") == "milk" or "milk" in m.get("slug", "").lower()]
+        db_sweeteners = [m for m in db_matched_modifiers if m.get("category") == "sweetener" or "sweetener" in m.get("slug", "").lower() or "sugar" in m.get("slug", "").lower() or "splenda" in m.get("slug", "").lower()]
+
+        # Fall back to parser-based extraction for anything not matched by DB
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
 
         # Check if user said "syrup" without specifying a flavor
         # This handles responses like "syrup", "yes syrup", "with syrup" etc.
+        # But if DB matching found a specific syrup flavor, we don't need to ask
         syrup_requested_no_flavor = (
             re.search(r'\bsyrups?\b', user_lower)
             and not coffee_mods.flavor_syrup
+            and not db_syrups  # DB didn't find a specific syrup either
             and not is_negative
         )
 
@@ -832,20 +1213,47 @@ class CoffeeConfigHandler:
                 order=order,
             )
 
-        # If negative response and no modifiers extracted, skip
-        if is_negative and not (coffee_mods.milk or coffee_mods.sweetener or coffee_mods.flavor_syrup):
+        # If negative response and no modifiers extracted (from either DB or parser), skip
+        has_db_modifiers = bool(db_syrups or db_milks or db_sweeteners)
+        has_parser_modifiers = bool(coffee_mods.milk or coffee_mods.sweetener or coffee_mods.flavor_syrup)
+        if is_negative and not has_db_modifiers and not has_parser_modifiers:
             logger.info("User declined coffee modifiers")
         else:
-            # Apply any extracted modifiers
+            # Apply DB-matched modifiers first (more accurate for aliases like "peppermint")
+            if db_syrups and not item.flavor_syrups:
+                for syrup in db_syrups:
+                    # Extract flavor name from slug or display_name
+                    flavor = syrup.get("display_name", syrup.get("slug", "")).replace("_", " ")
+                    # Remove " Syrup" suffix if present for cleaner display
+                    if flavor.lower().endswith(" syrup"):
+                        flavor = flavor[:-6]
+                    quantity = syrup.get("quantity", 1)
+                    item.flavor_syrups.append({"flavor": flavor, "quantity": quantity})
+                    logger.info(f"Set coffee syrup from DB: {quantity} {flavor}")
+
+            if db_milks and not item.milk:
+                milk = db_milks[0]
+                milk_name = milk.get("display_name", milk.get("slug", "")).replace("_", " ")
+                item.milk = milk_name
+                logger.info(f"Set coffee milk from DB: {milk_name}")
+
+            if db_sweeteners and not item.sweeteners:
+                for sweetener in db_sweeteners:
+                    sweetener_name = sweetener.get("display_name", sweetener.get("slug", "")).replace("_", " ")
+                    quantity = sweetener.get("quantity", 1)
+                    item.sweeteners.append({"type": sweetener_name, "quantity": quantity})
+                    logger.info(f"Set coffee sweetener from DB: {quantity} {sweetener_name}")
+
+            # Fall back to parser-extracted modifiers if not already set
             if coffee_mods.milk and not item.milk:
                 item.milk = coffee_mods.milk
-                logger.info(f"Set coffee milk: {coffee_mods.milk}")
+                logger.info(f"Set coffee milk from parser: {coffee_mods.milk}")
             if coffee_mods.sweetener and not item.sweeteners:
                 item.sweeteners.append({"type": coffee_mods.sweetener, "quantity": coffee_mods.sweetener_quantity})
-                logger.info(f"Set coffee sweetener: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
+                logger.info(f"Set coffee sweetener from parser: {coffee_mods.sweetener_quantity} {coffee_mods.sweetener}")
             if coffee_mods.flavor_syrup and not item.flavor_syrups:
                 item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": coffee_mods.syrup_quantity})
-                logger.info(f"Set coffee syrup: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
+                logger.info(f"Set coffee syrup from parser: {coffee_mods.syrup_quantity} {coffee_mods.flavor_syrup}")
 
             # Apply special instructions (e.g., "splash of milk", "light sugar")
             if coffee_mods.has_special_instructions():
@@ -873,8 +1281,10 @@ class CoffeeConfigHandler:
     ) -> StateMachineResult:
         """Handle syrup flavor selection after user said 'syrup' without specifying flavor."""
         if self._check_redirect:
+            # Pass syrup names so flavor answers don't trigger redirect
+            valid_answers = self._get_valid_modifier_names(category="syrup")
             redirect = self._check_redirect(
-                user_input, item, order, "Which flavor syrup would you like?"
+                user_input, item, order, "Which flavor syrup would you like?", valid_answers
             )
             if redirect:
                 return redirect
@@ -898,7 +1308,30 @@ class CoffeeConfigHandler:
             order.clear_pending()
             return self.configure_next_incomplete_coffee(order)
 
-        # Try to extract the syrup flavor from the response
+        # First try DB-driven matching for syrup flavors (handles aliases like "peppermint")
+        db_matched = self._match_modifier_from_input(user_input)
+        db_syrups = [m for m in db_matched if m.get("category") == "syrup" or "syrup" in m.get("slug", "").lower()]
+
+        if db_syrups:
+            syrup = db_syrups[0]
+            # Extract flavor name from slug or display_name
+            flavor = syrup.get("display_name", syrup.get("slug", "")).replace("_", " ")
+            # Remove " Syrup" suffix if present for cleaner display
+            if flavor.lower().endswith(" syrup"):
+                flavor = flavor[:-6]
+            # Use the maximum of: pending quantity (from "2 syrups") and flavor response quantity
+            syrup_quantity = max(item.pending_syrup_quantity, syrup.get("quantity", 1))
+            item.flavor_syrups.append({"flavor": flavor, "quantity": syrup_quantity})
+            logger.info(f"Set coffee syrup from DB flavor selection: {syrup_quantity} {flavor} (pending_qty={item.pending_syrup_quantity}, response_qty={syrup.get('quantity', 1)})")
+
+            # Complete the coffee
+            if self.pricing:
+                self.pricing.recalculate_coffee_price(item)
+            item.mark_complete()
+            order.clear_pending()
+            return self.configure_next_incomplete_coffee(order)
+
+        # Fall back to parser-based extraction
         coffee_mods = extract_coffee_modifiers_from_input(user_input)
 
         if coffee_mods.flavor_syrup:
@@ -907,7 +1340,7 @@ class CoffeeConfigHandler:
             # Also handles: user says "2 syrups" then "3 caramel" -> should be 3 caramel syrups
             syrup_quantity = max(item.pending_syrup_quantity, coffee_mods.syrup_quantity)
             item.flavor_syrups.append({"flavor": coffee_mods.flavor_syrup, "quantity": syrup_quantity})
-            logger.info(f"Set coffee syrup from flavor selection: {syrup_quantity} {coffee_mods.flavor_syrup} (pending_qty={item.pending_syrup_quantity}, response_qty={coffee_mods.syrup_quantity})")
+            logger.info(f"Set coffee syrup from parser flavor selection: {syrup_quantity} {coffee_mods.flavor_syrup} (pending_qty={item.pending_syrup_quantity}, response_qty={coffee_mods.syrup_quantity})")
 
             # Complete the coffee
             if self.pricing:

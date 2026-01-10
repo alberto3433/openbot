@@ -104,6 +104,13 @@ class MenuDataCache:
         # Response patterns for recognizing user intent
         self._response_patterns: dict[str, set[str]] = {}  # pattern_type -> set of patterns
 
+        # Modifier qualifiers (extra, light, on the side, etc.)
+        self._modifier_qualifiers: dict[str, dict] = {}  # pattern -> {normalized_form, category}
+        self._qualifier_patterns_by_category: dict[str, set[str]] = {}  # category -> set of patterns
+
+        # Global attribute options cache (for shots, size, temperature, etc.)
+        self._global_attribute_options: dict[str, list[dict]] = {}  # attr_slug -> list of options
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
@@ -168,6 +175,8 @@ class MenuDataCache:
                 self._load_abbreviations(db)
                 self._load_item_type_fields(db)
                 self._load_response_patterns(db)
+                self._load_modifier_qualifiers(db)
+                self._load_global_attribute_options(db)
                 self._load_menu_index(db)
 
                 # Build keyword indices for partial matching
@@ -560,7 +569,7 @@ class MenuDataCache:
         """Load beverage modifier options (milk, sweetener, syrup) from the database.
 
         Queries the item_type_ingredients table for sized_beverage modifiers.
-        The ingredient_group may be 'drink_modifier' (consolidated) or the legacy
+        The ingredient_group may be 'milk_sweetener_syrup' (consolidated) or the legacy
         individual groups (milk, sweetener, syrup). We categorize by ingredient.category
         to properly split modifiers into milks, sweeteners, and syrups.
 
@@ -574,14 +583,14 @@ class MenuDataCache:
             logger.warning("No sized_beverage item type found - beverage modifiers not loaded")
             return
 
-        # Query all drink modifiers (both consolidated 'drink_modifier' group
+        # Query all drink modifiers (both consolidated 'milk_sweetener_syrup' group
         # and legacy individual groups)
         modifiers = (
             db.query(ItemTypeIngredient, Ingredient)
             .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
             .filter(ItemTypeIngredient.item_type_id == sized_beverage.id)
             .filter(ItemTypeIngredient.ingredient_group.in_(
-                ['drink_modifier', 'milk', 'sweetener', 'syrup']
+                ['milk_sweetener_syrup', 'milk', 'sweetener', 'syrup']
             ))
             .filter(ItemTypeIngredient.is_available == True)
             .order_by(ItemTypeIngredient.display_order)
@@ -1138,6 +1147,107 @@ class MenuDataCache:
             ", ".join(f"{k}({len(v)})" for k, v in response_patterns.items()),
         )
 
+    def _load_modifier_qualifiers(self, db: Session) -> None:
+        """Load modifier qualifier patterns from the database.
+
+        Loads patterns for recognizing modifier qualifiers:
+        - amount: extra, light, double, lots of, etc.
+        - position: on the side, on top
+        - preparation: crispy, well done, etc.
+
+        Qualifiers are organized by pattern and by category for efficient lookup.
+        """
+        from .models import ModifierQualifier
+
+        modifier_qualifiers: dict[str, dict] = {}
+        qualifier_patterns_by_category: dict[str, set[str]] = {}
+
+        # Query all active modifier qualifiers
+        # Handle case where table doesn't exist yet (migration not run)
+        try:
+            qualifiers = (
+                db.query(ModifierQualifier)
+                .filter(ModifierQualifier.is_active == True)  # noqa: E712
+                .order_by(ModifierQualifier.category, ModifierQualifier.pattern)
+                .all()
+            )
+        except Exception as e:
+            logger.warning("Could not load modifier qualifiers (table may not exist): %s", e)
+            self._modifier_qualifiers = {}
+            self._qualifier_patterns_by_category = {}
+            return
+
+        for qualifier in qualifiers:
+            pattern = qualifier.pattern.lower()
+            category = qualifier.category
+
+            # Store pattern -> info mapping
+            modifier_qualifiers[pattern] = {
+                "normalized_form": qualifier.normalized_form,
+                "category": category,
+            }
+
+            # Store by category for conflict detection
+            if category not in qualifier_patterns_by_category:
+                qualifier_patterns_by_category[category] = set()
+            qualifier_patterns_by_category[category].add(pattern)
+
+        self._modifier_qualifiers = modifier_qualifiers
+        self._qualifier_patterns_by_category = qualifier_patterns_by_category
+
+        logger.debug(
+            "Loaded %d modifier qualifiers across %d categories: %s",
+            len(modifier_qualifiers),
+            len(qualifier_patterns_by_category),
+            ", ".join(f"{k}({len(v)})" for k, v in qualifier_patterns_by_category.items()),
+        )
+
+    def _load_global_attribute_options(self, db: Session) -> None:
+        """Load global attribute options from the database.
+
+        Loads options for global attributes like shots, size, temperature, etc.
+        These are used for data-driven pricing and display.
+        """
+        from .models import GlobalAttribute, GlobalAttributeOption
+
+        global_attribute_options: dict[str, list[dict]] = {}
+
+        try:
+            # Query all global attributes with their options
+            attributes = db.query(GlobalAttribute).all()
+
+            for attr in attributes:
+                options = (
+                    db.query(GlobalAttributeOption)
+                    .filter(GlobalAttributeOption.global_attribute_id == attr.id)
+                    .order_by(GlobalAttributeOption.display_order)
+                    .all()
+                )
+
+                global_attribute_options[attr.slug] = [
+                    {
+                        "slug": opt.slug,
+                        "display_name": opt.display_name,
+                        "price_modifier": opt.price_modifier,
+                        "iced_price_modifier": opt.iced_price_modifier,
+                        "is_default": opt.is_default,
+                        "is_available": opt.is_available,
+                        "aliases": opt.aliases,  # Pipe-separated aliases for parsing
+                        "must_match": opt.must_match,  # Required phrases for matching
+                    }
+                    for opt in options
+                ]
+
+            self._global_attribute_options = global_attribute_options
+
+            logger.debug(
+                "Loaded global attribute options for %d attributes",
+                len(global_attribute_options),
+            )
+        except Exception as e:
+            logger.warning("Could not load global attribute options: %s", e)
+            self._global_attribute_options = {}
+
     def _load_menu_index(self, db: Session) -> None:
         """Load and cache the menu index.
 
@@ -1270,6 +1380,76 @@ class MenuDataCache:
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
+
+    def get_global_attribute_options(self, attr_slug: str) -> list[dict]:
+        """Get options for a global attribute by slug.
+
+        Args:
+            attr_slug: The attribute slug (e.g., "shots", "size", "temperature")
+
+        Returns:
+            List of option dicts with keys: slug, display_name, price_modifier,
+            iced_price_modifier, is_default, is_available, aliases.
+            Returns empty list if attribute not found or cache not loaded.
+
+        Example:
+            >>> cache.get_global_attribute_options("shots")
+            [
+                {"slug": "single", "display_name": "Single", "price_modifier": 0.0, ...},
+                {"slug": "double", "display_name": "Double", "price_modifier": 0.75, ...},
+                ...
+            ]
+        """
+        if not self._is_loaded:
+            return []
+        return self._global_attribute_options.get(attr_slug, [])
+
+    def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
+        """Resolve an option by alias or slug for a global attribute.
+
+        This method looks up an option by:
+        1. Exact slug match
+        2. Match against pipe-separated aliases
+
+        Args:
+            attr_slug: The attribute slug (e.g., "shots", "size")
+            input_value: User input to resolve (e.g., "2", "double", "two")
+
+        Returns:
+            Option dict with keys: slug, display_name, price_modifier,
+            iced_price_modifier, is_default, is_available, aliases.
+            Returns None if no match found.
+
+        Example:
+            >>> cache.resolve_option_by_alias("shots", "2")
+            {"slug": "double", "display_name": "Double", "price_modifier": 0.75, ...}
+            >>> cache.resolve_option_by_alias("shots", "double")
+            {"slug": "double", "display_name": "Double", "price_modifier": 0.75, ...}
+            >>> cache.resolve_option_by_alias("shots", "two")
+            {"slug": "double", "display_name": "Double", "price_modifier": 0.75, ...}
+        """
+        if not self._is_loaded:
+            return None
+
+        options = self._global_attribute_options.get(attr_slug, [])
+        if not options:
+            return None
+
+        input_lower = input_value.lower().strip()
+
+        for opt in options:
+            # Check exact slug match
+            if opt["slug"].lower() == input_lower:
+                return opt
+
+            # Check aliases (pipe-separated)
+            aliases = opt.get("aliases")
+            if aliases:
+                alias_list = [a.strip().lower() for a in aliases.split("|")]
+                if input_lower in alias_list:
+                    return opt
+
+        return None
 
     def get_signature_item_aliases(self) -> dict[str, str]:
         """Get signature item alias mapping.
@@ -1983,6 +2163,105 @@ class MenuDataCache:
         """
         return self.is_response_type(text, "done")
 
+    # =========================================================================
+    # Modifier Qualifier Methods
+    # =========================================================================
+
+    def get_modifier_qualifiers(self) -> dict[str, dict]:
+        """
+        Get all modifier qualifier patterns and their info.
+
+        Returns:
+            Dict mapping pattern (lowercase) to {normalized_form, category}.
+            Returns empty dict if cache not loaded.
+
+        Example:
+            {
+                "extra": {"normalized_form": "extra", "category": "amount"},
+                "lots of": {"normalized_form": "extra", "category": "amount"},
+                "on the side": {"normalized_form": "on the side", "category": "position"},
+            }
+        """
+        if not self._is_loaded:
+            return {}
+        return self._modifier_qualifiers.copy()
+
+    def get_qualifier_patterns(self) -> list[str]:
+        """
+        Get all qualifier patterns sorted by length (longest first).
+
+        This ordering is important for matching - longer patterns like
+        "a little bit of" should be matched before shorter patterns like "little".
+
+        Returns:
+            List of patterns sorted by length descending.
+        """
+        if not self._is_loaded:
+            return []
+        return sorted(self._modifier_qualifiers.keys(), key=len, reverse=True)
+
+    def get_qualifier_patterns_by_category(self, category: str) -> set[str]:
+        """
+        Get all qualifier patterns for a specific category.
+
+        Args:
+            category: The category (amount, position, preparation)
+
+        Returns:
+            Set of patterns for the category.
+        """
+        if not self._is_loaded:
+            return set()
+        return self._qualifier_patterns_by_category.get(category, set()).copy()
+
+    def get_qualifier_info(self, pattern: str) -> dict | None:
+        """
+        Get info for a specific qualifier pattern.
+
+        Args:
+            pattern: The pattern to look up (e.g., "extra", "on the side")
+
+        Returns:
+            Dict with {normalized_form, category} or None if not found.
+        """
+        if not self._is_loaded:
+            return None
+        return self._modifier_qualifiers.get(pattern.lower())
+
+    def normalize_qualifier(self, pattern: str) -> str | None:
+        """
+        Get the normalized form for a qualifier pattern.
+
+        Args:
+            pattern: The pattern to normalize (e.g., "lots of", "a little bit of")
+
+        Returns:
+            Normalized form (e.g., "extra", "light") or None if not found.
+
+        Examples:
+            >>> cache.normalize_qualifier("lots of")
+            "extra"
+            >>> cache.normalize_qualifier("a little bit of")
+            "light"
+            >>> cache.normalize_qualifier("on the side")
+            "on the side"
+        """
+        info = self.get_qualifier_info(pattern)
+        return info["normalized_form"] if info else None
+
+    def get_qualifier_category(self, pattern: str) -> str | None:
+        """
+        Get the category for a qualifier pattern.
+
+        Args:
+            pattern: The pattern to look up (e.g., "extra", "on the side")
+
+        Returns:
+            Category (amount, position, preparation) or None if not found.
+        """
+        info = self.get_qualifier_info(pattern)
+        return info["category"] if info else None
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {
@@ -2003,6 +2282,7 @@ class MenuDataCache:
                 "by_pound_aliases": len(self._by_pound_aliases),
                 "item_type_fields": sum(len(fields) for fields in self._item_type_fields.values()),
                 "response_patterns": sum(len(p) for p in self._response_patterns.values()),
+                "modifier_qualifiers": len(self._modifier_qualifiers),
             },
             "keyword_indices": {
                 "spread_keywords": len(self._spread_keyword_index),

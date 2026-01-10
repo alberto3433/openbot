@@ -306,7 +306,6 @@ def ensure_item_types(db: Session):
         bagel_type = ItemType(
             slug="bagel",
             display_name="Bagel",
-            is_configurable=True,
         )
         db.add(bagel_type)
         db.commit()
@@ -318,7 +317,6 @@ def ensure_item_types(db: Session):
         sandwich_type = ItemType(
             slug="signature_sandwich",
             display_name="Signature Sandwich",
-            is_configurable=True,
         )
         db.add(sandwich_type)
         db.commit()
@@ -330,7 +328,6 @@ def ensure_item_types(db: Session):
         omelette_type = ItemType(
             slug="omelette",
             display_name="Omelette",
-            is_configurable=True,
         )
         db.add(omelette_type)
         db.commit()
@@ -342,7 +339,6 @@ def ensure_item_types(db: Session):
         spread_sandwich_type = ItemType(
             slug="spread_sandwich",
             display_name="Spread Sandwich",
-            is_configurable=True,
         )
         db.add(spread_sandwich_type)
         db.commit()
@@ -354,7 +350,6 @@ def ensure_item_types(db: Session):
         salad_sandwich_type = ItemType(
             slug="salad_sandwich",
             display_name="Salad Sandwich",
-            is_configurable=True,
         )
         db.add(salad_sandwich_type)
         db.commit()
@@ -366,7 +361,6 @@ def ensure_item_types(db: Session):
         sized_beverage_type = ItemType(
             slug="sized_beverage",
             display_name="Coffee and Tea",
-            is_configurable=True,
         )
         db.add(sized_beverage_type)
         db.commit()
@@ -378,8 +372,6 @@ def ensure_item_types(db: Session):
         beverage_type = ItemType(
             slug="beverage",
             display_name="Cold Beverage",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(beverage_type)
         db.commit()
@@ -391,7 +383,6 @@ def ensure_item_types(db: Session):
         fish_sandwich_type = ItemType(
             slug="fish_sandwich",
             display_name="Fish Sandwich",
-            is_configurable=True,
         )
         db.add(fish_sandwich_type)
         db.commit()
@@ -403,8 +394,6 @@ def ensure_item_types(db: Session):
         by_the_lb_type = ItemType(
             slug="by_the_lb",
             display_name="By the Pound",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(by_the_lb_type)
         db.commit()
@@ -416,8 +405,6 @@ def ensure_item_types(db: Session):
         cream_cheese_type = ItemType(
             slug="cream_cheese",
             display_name="Cream Cheese",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(cream_cheese_type)
         db.commit()
@@ -429,8 +416,6 @@ def ensure_item_types(db: Session):
         snack_type = ItemType(
             slug="snack",
             display_name="Snack",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(snack_type)
         db.commit()
@@ -442,8 +427,6 @@ def ensure_item_types(db: Session):
         pastry_type = ItemType(
             slug="pastry",
             display_name="Desserts & Pastries",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(pastry_type)
         db.commit()
@@ -455,8 +438,6 @@ def ensure_item_types(db: Session):
         side_type = ItemType(
             slug="side",
             display_name="Side",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(side_type)
         db.commit()
@@ -468,8 +449,6 @@ def ensure_item_types(db: Session):
         breakfast_type = ItemType(
             slug="breakfast",
             display_name="Breakfast",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(breakfast_type)
         db.commit()
@@ -481,7 +460,6 @@ def ensure_item_types(db: Session):
         deli_classic_type = ItemType(
             slug="deli_classic",
             display_name="Deli Classic",
-            is_configurable=True,
         )
         db.add(deli_classic_type)
         db.commit()
@@ -493,7 +471,6 @@ def ensure_item_types(db: Session):
         egg_sandwich_type = ItemType(
             slug="egg_sandwich",
             display_name="Egg Sandwich",
-            is_configurable=True,
         )
         db.add(egg_sandwich_type)
         db.commit()
@@ -505,7 +482,6 @@ def ensure_item_types(db: Session):
         espresso_type = ItemType(
             slug="espresso",
             display_name="Espresso",
-            is_configurable=True,
         )
         db.add(espresso_type)
         db.commit()
@@ -517,8 +493,6 @@ def ensure_item_types(db: Session):
         salad_type = ItemType(
             slug="salad",
             display_name="Salad",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(salad_type)
         db.commit()
@@ -530,8 +504,6 @@ def ensure_item_types(db: Session):
         soup_type = ItemType(
             slug="soup",
             display_name="Soup",
-            is_configurable=False,
-            skip_config=True,
         )
         db.add(soup_type)
         db.commit()

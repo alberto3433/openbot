@@ -76,7 +76,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, AttributeDefinition, AttributeOption, MenuItem
+from ..models import ItemType, AttributeDefinition, AttributeOption, MenuItem, ItemTypeGlobalAttribute
+from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..schemas.modifiers import (
     ItemTypeOut,
     ItemTypeCreate,
@@ -109,6 +110,15 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         MenuItem.item_type_id == item_type.id
     ).count()
 
+    # Count linked global attributes
+    global_attribute_count = db.query(ItemTypeGlobalAttribute).filter(
+        ItemTypeGlobalAttribute.item_type_id == item_type.id
+    ).count()
+
+    # Derive configurability from linked global attributes
+    is_configurable = has_linked_attributes(item_type.id, db)
+    skip_config = not has_askable_attributes(item_type.id, db) if is_configurable else True
+
     attributes = []
     for attr in item_type.attribute_definitions:
         options = [AttributeOptionOut.model_validate(opt) for opt in attr.options]
@@ -129,10 +139,11 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         id=item_type.id,
         slug=item_type.slug,
         display_name=item_type.display_name,
-        is_configurable=item_type.is_configurable,
-        skip_config=item_type.skip_config,
+        is_configurable=is_configurable,
+        skip_config=skip_config,
         attribute_definitions=attributes,
         menu_item_count=menu_item_count,
+        global_attribute_count=global_attribute_count,
     )
 
 
@@ -161,11 +172,11 @@ def create_item_type(
     if existing:
         raise HTTPException(status_code=400, detail=f"Item type '{payload.slug}' already exists")
 
+    # Note: is_configurable and skip_config are derived from linked global attributes
+    # so we don't set them from the payload anymore
     item_type = ItemType(
         slug=payload.slug,
         display_name=payload.display_name,
-        is_configurable=payload.is_configurable,
-        skip_config=payload.skip_config,
     )
     db.add(item_type)
     db.commit()
@@ -203,10 +214,8 @@ def update_item_type(
         item_type.slug = payload.slug
     if payload.display_name is not None:
         item_type.display_name = payload.display_name
-    if payload.is_configurable is not None:
-        item_type.is_configurable = payload.is_configurable
-    if payload.skip_config is not None:
-        item_type.skip_config = payload.skip_config
+    # Note: is_configurable and skip_config are derived from linked global attributes
+    # so we ignore any values provided in the payload
 
     db.commit()
     db.refresh(item_type)

@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Modifier Qualifiers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-body {
+      padding: 20px;
+    }
+    .status-bar {
+      padding: 10px 16px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+      border-radius: 4px;
+    }
+    .status-bar.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-bar.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #d32f2f;
+      color: #fff;
+      border-color: #d32f2f;
+    }
+    .btn.danger:hover {
+      background: #c62828;
+    }
+    .btn.small {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    th {
+      background: #fafafa;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #666;
+    }
+    tr:hover {
+      background: #f9f9f9;
+    }
+    .category-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .category-amount { background: #e3f2fd; color: #1565c0; }
+    .category-position { background: #fff3e0; color: #e65100; }
+    .category-preparation { background: #f3e5f5; color: #7b1fa2; }
+    .status-active { color: #2e7d32; }
+    .status-inactive { color: #9e9e9e; }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header .close-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-header .close-btn:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+    }
+    .search-box {
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 250px;
+    }
+    .search-box:focus {
+      outline: none;
+      border-color: #1976d2;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .category-filter {
+      display: flex;
+      gap: 8px;
+    }
+    .category-filter button {
+      padding: 6px 12px;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      border-radius: 16px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .category-filter button:hover {
+      background: #f5f5f5;
+    }
+    .category-filter button.active {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Modifier Qualifiers</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
+      <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html"><strong>Qualifiers</strong></a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="statusBar" class="status-bar" style="display: none;"></div>
+
+    <div class="section">
+      <div class="section-header">
+        <span>Modifier Qualifiers</span>
+        <button class="btn primary" onclick="openCreateModal()">+ Add Qualifier</button>
+      </div>
+      <div class="section-body">
+        <div class="toolbar">
+          <input type="text" id="searchBox" class="search-box" placeholder="Search patterns..." oninput="filterQualifiers()" />
+          <div class="category-filter">
+            <button class="active" data-category="all" onclick="filterByCategory('all', this)">All</button>
+            <button data-category="amount" onclick="filterByCategory('amount', this)">Amount</button>
+            <button data-category="position" onclick="filterByCategory('position', this)">Position</button>
+            <button data-category="preparation" onclick="filterByCategory('preparation', this)">Preparation</button>
+          </div>
+        </div>
+
+        <div id="loadingState" class="loading">Loading qualifiers...</div>
+        <div id="emptyState" class="empty-state" style="display: none;">
+          No qualifiers found. Click "Add Qualifier" to create one.
+        </div>
+        <table id="qualifiersTable" style="display: none;">
+          <thead>
+            <tr>
+              <th>Pattern</th>
+              <th>Normalized Form</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th style="width: 120px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="qualifiersBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="section">
+      <div class="section-header">How Qualifiers Work</div>
+      <div class="section-body" style="font-size: 13px; color: #666;">
+        <p><strong>Pattern:</strong> The phrase to match in user input (e.g., "extra", "a little bit of"). Matched as whole words, case-insensitive.</p>
+        <p><strong>Normalized Form:</strong> What displays in parentheses after the modifier (e.g., "Mayo (extra)").</p>
+        <p><strong>Categories:</strong></p>
+        <ul>
+          <li><strong>Amount:</strong> Quantity modifiers like "extra", "light", "double". These can conflict with each other.</li>
+          <li><strong>Position:</strong> Location modifiers like "on the side". Don't conflict with amount.</li>
+          <li><strong>Preparation:</strong> How to prepare, like "crispy", "well done". Don't conflict with amount.</li>
+        </ul>
+        <p>When conflicting qualifiers from the same category are detected (e.g., "light extra mayo"), the system asks the user for clarification.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Modal -->
+  <div id="qualifierModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="modalTitle">Add Qualifier</span>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="qualifierForm">
+          <input type="hidden" id="qualifierId" />
+          <div class="form-group">
+            <label for="patternInput">Pattern *</label>
+            <input type="text" id="patternInput" required placeholder="e.g., extra, a little bit of" />
+            <div class="hint">The phrase to match in user input (whole words, case-insensitive)</div>
+          </div>
+          <div class="form-group">
+            <label for="normalizedInput">Normalized Form *</label>
+            <input type="text" id="normalizedInput" required placeholder="e.g., extra, light" />
+            <div class="hint">What displays in parentheses: "Mayo (extra)"</div>
+          </div>
+          <div class="form-group">
+            <label for="categoryInput">Category *</label>
+            <select id="categoryInput" required>
+              <option value="amount">Amount (extra, light, double)</option>
+              <option value="position">Position (on the side)</option>
+              <option value="preparation">Preparation (crispy, well done)</option>
+            </select>
+            <div class="hint">Amount qualifiers can conflict with each other</div>
+          </div>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="isActiveInput" checked />
+              <label for="isActiveInput">Active</label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deleteQualifier()">Delete</button>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="saveQualifier()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "/admin/modifier-qualifiers";
+    let qualifiers = [];
+    let currentFilter = "all";
+
+    // Toast container reference
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification function
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
+
+    // Show status message
+    function showStatus(message, type = "info") {
+      const statusBar = document.getElementById("statusBar");
+      statusBar.textContent = message;
+      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
+      statusBar.style.display = "block";
+      if (type !== "error") {
+        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+      }
+    }
+
+    // Load qualifiers from API
+    async function loadQualifiers() {
+      try {
+        const response = await fetch(API_BASE, { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        qualifiers = data.qualifiers;
+        renderQualifiers();
+      } catch (error) {
+        console.error("Failed to load qualifiers:", error);
+        showStatus("Failed to load qualifiers", "error");
+        document.getElementById("loadingState").textContent = "Failed to load. Please refresh.";
+      }
+    }
+
+    // Render qualifiers table
+    function renderQualifiers() {
+      const tbody = document.getElementById("qualifiersBody");
+      const table = document.getElementById("qualifiersTable");
+      const loading = document.getElementById("loadingState");
+      const empty = document.getElementById("emptyState");
+
+      loading.style.display = "none";
+
+      // Apply filters
+      const searchTerm = document.getElementById("searchBox").value.toLowerCase();
+      let filtered = qualifiers;
+
+      if (currentFilter !== "all") {
+        filtered = filtered.filter(q => q.category === currentFilter);
+      }
+      if (searchTerm) {
+        filtered = filtered.filter(q =>
+          q.pattern.toLowerCase().includes(searchTerm) ||
+          q.normalized_form.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      if (filtered.length === 0) {
+        table.style.display = "none";
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+      table.style.display = "table";
+
+      tbody.innerHTML = filtered.map(q => `
+        <tr>
+          <td><code>${escapeHtml(q.pattern)}</code></td>
+          <td>${escapeHtml(q.normalized_form)}</td>
+          <td><span class="category-badge category-${q.category}">${q.category}</span></td>
+          <td class="${q.is_active ? 'status-active' : 'status-inactive'}">
+            ${q.is_active ? 'Active' : 'Inactive'}
+          </td>
+          <td>
+            <button class="btn small" onclick="openEditModal(${q.id})">Edit</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // Filter by category
+    function filterByCategory(category, btn) {
+      currentFilter = category;
+      document.querySelectorAll(".category-filter button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderQualifiers();
+    }
+
+    // Filter by search
+    function filterQualifiers() {
+      renderQualifiers();
+    }
+
+    // Open create modal
+    function openCreateModal() {
+      document.getElementById("modalTitle").textContent = "Add Qualifier";
+      document.getElementById("qualifierId").value = "";
+      document.getElementById("patternInput").value = "";
+      document.getElementById("normalizedInput").value = "";
+      document.getElementById("categoryInput").value = "amount";
+      document.getElementById("isActiveInput").checked = true;
+      document.getElementById("deleteBtn").style.display = "none";
+      document.getElementById("qualifierModal").classList.add("active");
+    }
+
+    // Open edit modal
+    function openEditModal(id) {
+      const qualifier = qualifiers.find(q => q.id === id);
+      if (!qualifier) return;
+
+      document.getElementById("modalTitle").textContent = "Edit Qualifier";
+      document.getElementById("qualifierId").value = qualifier.id;
+      document.getElementById("patternInput").value = qualifier.pattern;
+      document.getElementById("normalizedInput").value = qualifier.normalized_form;
+      document.getElementById("categoryInput").value = qualifier.category;
+      document.getElementById("isActiveInput").checked = qualifier.is_active;
+      document.getElementById("deleteBtn").style.display = "block";
+      document.getElementById("qualifierModal").classList.add("active");
+    }
+
+    // Close modal
+    function closeModal() {
+      document.getElementById("qualifierModal").classList.remove("active");
+    }
+
+    // Save qualifier
+    async function saveQualifier() {
+      const saveBtn = document.querySelector('#qualifierModal .modal-footer .btn.primary');
+      const id = document.getElementById("qualifierId").value;
+      const pattern = document.getElementById("patternInput").value.trim();
+      const normalized_form = document.getElementById("normalizedInput").value.trim();
+      const category = document.getElementById("categoryInput").value;
+      const is_active = document.getElementById("isActiveInput").checked;
+
+      if (!pattern || !normalized_form) {
+        showToast("Pattern and Normalized Form are required", "error");
+        return;
+      }
+
+      const payload = { pattern, normalized_form, category, is_active };
+
+      setSaveButtonState(saveBtn, "saving");
+      try {
+        let response;
+        if (id) {
+          // Update
+          response = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+        } else {
+          // Create
+          response = await fetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast(`Qualifier "${pattern}" saved successfully!`, "success");
+        closeModal();
+        loadQualifiers();
+      } catch (error) {
+        console.error("Failed to save:", error);
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    // Delete qualifier
+    async function deleteQualifier() {
+      const id = document.getElementById("qualifierId").value;
+      if (!id) return;
+
+      if (!confirm("Are you sure you want to delete this qualifier?")) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/${id}`, {
+          method: "DELETE",
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        showStatus("Qualifier deleted", "success");
+        closeModal();
+        loadQualifiers();
+      } catch (error) {
+        console.error("Failed to delete:", error);
+        showStatus(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Close modal on outside click
+    document.getElementById("qualifierModal").addEventListener("click", function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") closeModal();
+    });
+
+    // Initial load
+    loadQualifiers();
+  </script>
+</body>
+</html>

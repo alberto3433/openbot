@@ -6,7 +6,7 @@ verifying the gluten free upcharge is properly applied and displayed.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, SignatureItemTask
+from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
 from sandwich_bot.tasks.adapter import order_task_to_dict
 from sandwich_bot.tasks.pricing import PricingEngine
 
@@ -40,7 +40,7 @@ def create_test_menu_data():
             "bagel": {
                 "attributes": [
                     {
-                        "slug": "bagel_type",
+                        "slug": "bread",  # was bagel_type, renamed to match deli_sandwich
                         "options": [
                             {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
                             {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
@@ -256,8 +256,8 @@ class TestGlutenFreeSpeedMenuE2E:
         # User orders BEC
         result = sm.process("I want a classic BEC", order)
 
-        # Find the speed menu item
-        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
+        # Find the speed menu item (now MenuItemTask with is_signature=True)
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
         assert len(speed_items) == 1, f"Should have 1 speed menu item, got {len(speed_items)}"
 
         # Answer cheese question if asked
@@ -273,7 +273,7 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify gluten free upcharge applied
-        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
         assert len(speed_items) == 1
 
         item = speed_items[0]
@@ -304,7 +304,7 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify no upcharge for plain bagel
-        speed_items = [i for i in result.order.items.items if isinstance(i, SignatureItemTask)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
         assert len(speed_items) == 1
 
         item = speed_items[0]
@@ -317,16 +317,18 @@ class TestGlutenFreeSpeedMenuE2E:
         """
         order = OrderTask()
 
-        # Create a completed speed menu item with gluten free
-        item = SignatureItemTask(
+        # Create a completed speed menu item with gluten free (now MenuItemTask with is_signature=True)
+        item = MenuItemTask(
             menu_item_name="The Classic BEC",
             menu_item_id=123,  # Integer ID
             toasted=True,
             bagel_choice="gluten free",
             bagel_choice_upcharge=0.80,
-            cheese_choice="american",
+            is_signature=True,
             unit_price=10.80,  # $10.00 base + $0.80 gluten free
         )
+        # Set cheese via attribute_values (how MenuItemTask stores attribute selections)
+        item.attribute_values["cheese"] = "american"
         item.mark_complete()
         order.items.add_item(item)
 
@@ -350,7 +352,7 @@ class TestPricingEngineGlutenFreeFromDatabase:
                 "bagel": {
                     "attributes": [
                         {
-                            "slug": "bagel_type",
+                            "slug": "bread",  # was bagel_type, renamed to match deli_sandwich
                             "options": [
                                 {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
                                 {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},

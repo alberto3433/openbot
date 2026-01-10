@@ -309,29 +309,28 @@ class ItemTypeOut(BaseModel):
     skip_config: bool = False
     attribute_definitions: List[AttributeDefinitionOut] = []
     menu_item_count: int = 0
+    global_attribute_count: int = 0
 
 
 class ItemTypeCreate(BaseModel):
     """
     Request model for creating an item type.
 
+    Note: is_configurable and skip_config are derived from linked global
+    attributes and cannot be set directly.
+
     Attributes:
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
-        is_configurable: Enable configuration (default: True)
-        skip_config: Skip config dialog (default: False)
 
     Example:
         {
             "slug": "specialty_drink",
-            "display_name": "Specialty Drink",
-            "is_configurable": true
+            "display_name": "Specialty Drink"
         }
     """
     slug: str
     display_name: str
-    is_configurable: bool = True
-    skip_config: bool = False
 
 
 class ItemTypeUpdate(BaseModel):
@@ -340,16 +339,15 @@ class ItemTypeUpdate(BaseModel):
 
     All fields optional - only provided fields are updated.
 
+    Note: is_configurable and skip_config are derived from linked global
+    attributes and cannot be set directly.
+
     Attributes:
         slug: New slug
         display_name: New display name
-        is_configurable: Update configurability
-        skip_config: Update skip_config flag
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
-    is_configurable: Optional[bool] = None
-    skip_config: Optional[bool] = None
 
 
 # =============================================================================

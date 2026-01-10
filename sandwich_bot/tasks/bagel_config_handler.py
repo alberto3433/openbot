@@ -209,6 +209,25 @@ class BagelConfigHandler:
         self._get_item_by_id = get_item_by_id or kwargs.get("get_item_by_id")
         self._configure_coffee = configure_coffee or kwargs.get("configure_coffee")
 
+    def _map_field_name_to_db(self, field_name: str) -> str:
+        """
+        Map code field names to database attribute slugs.
+
+        The code uses 'bagel_type' but the database attribute is now 'bread'
+        to match deli_sandwich item type.
+
+        Args:
+            field_name: The code field name (e.g., "bagel_type", "toasted")
+
+        Returns:
+            The database attribute slug (e.g., "bread", "toasted")
+        """
+        # Map code field names to database attribute slugs
+        field_mapping = {
+            "bagel_type": "bread",  # Code uses bagel_type, DB uses bread
+        }
+        return field_mapping.get(field_name, field_name)
+
     def _get_bagel_question(self, field_name: str, fallback: str) -> str:
         """
         Get the question text for a bagel field from the database configuration.
@@ -223,7 +242,8 @@ class BagelConfigHandler:
         Returns:
             The question text from the database, or the fallback if not found.
         """
-        question = menu_cache.get_question_for_field("bagel", field_name)
+        db_field_name = self._map_field_name_to_db(field_name)
+        question = menu_cache.get_question_for_field("bagel", db_field_name)
         if question and question.strip():
             return question
         return fallback
@@ -241,9 +261,10 @@ class BagelConfigHandler:
             True if the field should be asked, False otherwise.
             Returns True by default if field not found (fail-safe).
         """
+        db_field_name = self._map_field_name_to_db(field_name)
         fields = menu_cache.get_item_type_fields("bagel")
         for field in fields:
-            if field["field_name"] == field_name:
+            if field["field_name"] == db_field_name:
                 return field.get("ask", True)
         # Field not found in DB - default to asking (fail-safe)
         return True
@@ -467,11 +488,6 @@ class BagelConfigHandler:
         # Apply to the current pending item
         if isinstance(item, MenuItemTask):
             item.bagel_choice = bagel_type
-
-            # For spread/salad sandwiches, use unified config flow for toasted question
-            if item.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich"):
-                order.clear_pending()
-                return self.configure_next_incomplete_bagel(order)
 
             # For omelettes with bagel side, use unified config flow for toasted/spread questions
             if item.side_choice == "bagel":
@@ -1075,7 +1091,6 @@ class BagelConfigHandler:
 
         This handles:
         - BagelItemTask (bagels with spreads/toppings)
-        - MenuItemTask for spread_sandwich/salad_sandwich (Butter Sandwich, etc.)
         - MenuItemTask for omelettes with side_choice == "bagel"
 
         Each item is fully configured (type -> toasted -> spread) before
@@ -1085,8 +1100,6 @@ class BagelConfigHandler:
         all_bagel_items = []
         for item in order.items.items:
             if isinstance(item, BagelItemTask):
-                all_bagel_items.append(item)
-            elif isinstance(item, MenuItemTask) and item.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich"):
                 all_bagel_items.append(item)
             elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
                 # Omelettes with bagel side need bagel configuration
@@ -1110,7 +1123,7 @@ class BagelConfigHandler:
                 bagel_desc = "your bagel"
                 your_bagel_desc = "your bagel"
 
-            # Handle MenuItemTask (spread_sandwich, salad_sandwich, omelette with bagel side)
+            # Handle MenuItemTask (omelette with bagel side)
             if isinstance(item, MenuItemTask):
                 is_omelette_side = item.side_choice == "bagel"
 

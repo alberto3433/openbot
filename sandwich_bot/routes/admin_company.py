@@ -111,6 +111,56 @@ def update_company(
     if payload.signature_item_label is not None:
         company.signature_item_label = payload.signature_item_label
 
+    # Payment Methods
+    if payload.accepts_credit_cards is not None:
+        company.accepts_credit_cards = payload.accepts_credit_cards
+    if payload.accepts_debit_cards is not None:
+        company.accepts_debit_cards = payload.accepts_debit_cards
+    if payload.accepts_cash is not None:
+        company.accepts_cash = payload.accepts_cash
+    if payload.accepts_apple_pay is not None:
+        company.accepts_apple_pay = payload.accepts_apple_pay
+    if payload.accepts_google_pay is not None:
+        company.accepts_google_pay = payload.accepts_google_pay
+    if payload.accepts_venmo is not None:
+        company.accepts_venmo = payload.accepts_venmo
+    if payload.accepts_paypal is not None:
+        company.accepts_paypal = payload.accepts_paypal
+
+    # Dietary & Certification Info
+    if payload.is_kosher is not None:
+        company.is_kosher = payload.is_kosher
+    if payload.kosher_certification is not None:
+        company.kosher_certification = payload.kosher_certification
+    if payload.is_halal is not None:
+        company.is_halal = payload.is_halal
+    if payload.has_vegetarian_options is not None:
+        company.has_vegetarian_options = payload.has_vegetarian_options
+    if payload.has_vegan_options is not None:
+        company.has_vegan_options = payload.has_vegan_options
+    if payload.has_gluten_free_options is not None:
+        company.has_gluten_free_options = payload.has_gluten_free_options
+
+    # Amenities
+    if payload.wifi_available is not None:
+        company.wifi_available = payload.wifi_available
+    if payload.wheelchair_accessible is not None:
+        company.wheelchair_accessible = payload.wheelchair_accessible
+    if payload.outdoor_seating is not None:
+        company.outdoor_seating = payload.outdoor_seating
+
+    # Catering
+    if payload.offers_catering is not None:
+        company.offers_catering = payload.offers_catering
+    if payload.catering_minimum_order is not None:
+        company.catering_minimum_order = payload.catering_minimum_order
+    if payload.catering_advance_notice_hours is not None:
+        company.catering_advance_notice_hours = payload.catering_advance_notice_hours
+    if payload.catering_phone is not None:
+        company.catering_phone = payload.catering_phone
+    if payload.catering_email is not None:
+        company.catering_email = payload.catering_email
+
     db.commit()
     db.refresh(company)
     logger.info("Updated company settings: %s", company.name)

@@ -591,9 +591,73 @@
     .btn.danger:hover {
       background: #b71c1c;
     }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
   <div class="app-header">
     <div>Item Type Management</div>
     <div>
@@ -602,8 +666,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html"><strong>Item Types</strong></a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -659,19 +725,13 @@
             </div>
 
             <div class="form-group">
-              <div class="checkbox-row">
-                <input type="checkbox" id="isConfigurable" checked />
-                <label for="isConfigurable">Configurable</label>
+              <div class="config-note">
+                <span class="note-icon">ℹ️</span>
+                <span class="note-text">
+                  <strong>Configurability is automatic:</strong> Item types become configurable when they have
+                  linked global attributes. Configuration questions are asked when attributes have "Ask Customer" enabled.
+                </span>
               </div>
-              <div class="hint">Configurable items have attributes that customers can customize (e.g., toppings, size)</div>
-            </div>
-
-            <div class="form-group">
-              <div class="checkbox-row">
-                <input type="checkbox" id="skipConfig" />
-                <label for="skipConfig">Skip Configuration</label>
-              </div>
-              <div class="hint">Skip asking configuration questions (e.g., simple beverages that don't need hot/iced choice)</div>
             </div>
           </form>
         </div>
@@ -686,17 +746,29 @@
       <div class="tab-content" id="tabAttributes">
         <div class="modal-body">
           <p style="font-size: 13px; color: #666; margin-top: 0;">
-            Attributes define what configuration options are available for this item type.
-            For example, an egg sandwich might have: bread, protein, cheese, toppings.
+            Link global attributes to this item type. Options are managed in
+            <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Global Attributes</a>.
           </p>
+
+          <!-- Link new attribute section -->
+          <div class="form-group" style="margin-bottom: 20px;">
+            <label>Link Global Attribute</label>
+            <div style="display: flex; gap: 8px;">
+              <select id="globalAttrSelect" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="">-- Select attribute to link --</option>
+              </select>
+              <button class="attr-btn" id="linkAttributeBtn" style="background: #4caf50; color: #fff; border-color: #4caf50; padding: 8px 16px;">Link</button>
+            </div>
+            <div class="hint">Select from available global attributes to add to this item type</div>
+          </div>
 
           <div class="attributes-section">
             <div class="attributes-header">
-              <h3>Attributes</h3>
-              <button class="attr-btn" id="addAttributeBtn" style="background: #4caf50; color: #fff; border-color: #4caf50;">+ Add</button>
+              <h3>Linked Attributes</h3>
+              <span class="count" id="linkedAttrCount">0</span>
             </div>
             <div id="attributesList">
-              <div class="empty-attrs">Loading attributes...</div>
+              <div class="empty-attrs">No attributes linked yet</div>
             </div>
           </div>
         </div>
@@ -707,51 +779,52 @@
     </div>
   </div>
 
-  <!-- Add/Edit Attribute Modal -->
+  <!-- Edit Global Attribute Link Modal -->
   <div class="modal-overlay" id="attributeModal">
-    <div class="modal" style="max-width: 550px;">
+    <div class="modal" style="max-width: 500px;">
       <div class="modal-header">
-        <h2 id="attrModalTitle">Add Attribute</h2>
+        <h2 id="attrModalTitle">Edit Attribute Settings</h2>
         <button class="modal-close" id="attrModalClose">&times;</button>
       </div>
       <div class="modal-body">
         <form id="attributeForm">
-          <input type="hidden" id="attrId" />
+          <input type="hidden" id="attrLinkId" />
 
-          <div class="attr-form-row">
-            <div class="form-group">
-              <label for="attrSlug">Slug *</label>
-              <input type="text" id="attrSlug" required placeholder="e.g., bread, cheese" pattern="[a-z0-9_]+" />
-            </div>
-            <div class="form-group">
-              <label for="attrDisplayName">Display Name</label>
-              <input type="text" id="attrDisplayName" placeholder="e.g., Bread Type, Cheese" />
-            </div>
+          <!-- Show global attribute info (read-only) -->
+          <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+            <div style="font-weight: 600; font-size: 14px;" id="attrDisplayName">--</div>
+            <div style="font-size: 12px; color: #666; font-family: monospace;" id="attrSlug">--</div>
+            <div style="font-size: 12px; color: #1976d2; margin-top: 4px;" id="attrInputType">--</div>
+            <div style="font-size: 12px; color: #888; margin-top: 4px;" id="attrOptionsCount">-- options</div>
           </div>
 
+          <p style="font-size: 12px; color: #888; margin-bottom: 16px;">
+            Options are managed in <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Global Attributes</a>.
+            Below are settings specific to this item type.
+          </p>
+
           <div class="attr-form-row">
-            <div class="form-group">
-              <label for="attrInputType">Input Type *</label>
-              <select id="attrInputType">
-                <option value="single_select">Single Select</option>
-                <option value="multi_select">Multi Select</option>
-                <option value="boolean">Yes/No</option>
-                <option value="text">Text</option>
-              </select>
-            </div>
             <div class="form-group">
               <label for="attrDisplayOrder">Display Order</label>
               <input type="number" id="attrDisplayOrder" value="0" min="0" />
+              <div class="hint">Order in which questions are asked</div>
+            </div>
+            <div class="form-group">
+              <div class="checkbox-row" style="margin-top: 24px;">
+                <input type="checkbox" id="attrIsRequired" />
+                <label for="attrIsRequired">Required</label>
+              </div>
+              <div class="hint">Must be filled before order completes</div>
             </div>
           </div>
 
           <div class="attr-form-row">
             <div class="form-group">
               <div class="checkbox-row">
-                <input type="checkbox" id="attrIsRequired" />
-                <label for="attrIsRequired">Required</label>
+                <input type="checkbox" id="attrAllowNone" checked />
+                <label for="attrAllowNone">Allow "None"</label>
               </div>
-              <div class="hint">Must be filled before order completes</div>
+              <div class="hint">User can skip this attribute</div>
             </div>
             <div class="form-group">
               <div class="checkbox-row">
@@ -764,33 +837,25 @@
 
           <div class="form-group">
             <label for="attrQuestionText">Question Text</label>
-            <input type="text" id="attrQuestionText" placeholder="e.g., What type of bread would you like?" />
-            <div class="hint">Question the bot asks when collecting this attribute</div>
+            <input type="text" id="attrQuestionText" placeholder="e.g., What type of spread would you like?" />
+            <div class="hint">Custom question text for this item type (leave blank to use default)</div>
           </div>
 
-          <div class="form-group" id="optionsSection">
-            <label>Options (for select types)</label>
-            <div class="hint">Available choices for this attribute</div>
-            <div class="options-list" id="attrOptionsList">
-              <div class="empty-attrs" style="padding: 12px;">No options defined</div>
+          <div class="attr-form-row" id="multiSelectOptions" style="display: none;">
+            <div class="form-group">
+              <label for="attrMinSelections">Min Selections</label>
+              <input type="number" id="attrMinSelections" min="0" placeholder="e.g., 0" />
             </div>
-            <!-- Regular options add row -->
-            <div class="add-option-row" id="regularOptionRow">
-              <input type="text" id="newOptionSlug" placeholder="Option slug (e.g., plain)" />
-              <input type="text" id="newOptionDisplay" placeholder="Display name (optional)" />
-              <button type="button" class="attr-btn" id="addOptionBtn" style="background: #4caf50; color: #fff;">Add</button>
-            </div>
-            <!-- Ingredient search/add row (for ingredient-based attributes) -->
-            <div class="ingredient-search-container" id="ingredientSearchContainer" style="display: none;">
-              <input type="text" class="ingredient-search-input" id="ingredientSearchInput" placeholder="Search ingredients to add..." />
-              <div class="ingredient-results" id="ingredientResults"></div>
+            <div class="form-group">
+              <label for="attrMaxSelections">Max Selections</label>
+              <input type="number" id="attrMaxSelections" min="1" placeholder="e.g., 3" />
             </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="attrCancelBtn">Cancel</button>
-        <button type="button" class="btn danger" id="attrDeleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn danger" id="attrUnlinkBtn">Unlink</button>
         <button type="button" class="btn primary" id="attrSaveBtn">Save</button>
       </div>
     </div>
@@ -817,7 +882,8 @@
   <script>
     // API base URLs
     const API_BASE = "/admin/modifiers/item-types";
-    const ATTRS_API_BASE = "/admin/item-type-attributes";
+    const GLOBAL_ATTRS_API = "/admin/global-attributes";
+    const ITEM_TYPE_GLOBAL_ATTRS_API = "/admin/item-types"; // + /{id}/global-attributes
 
     // Auth credentials storage
     let authCredentials = null;
@@ -877,15 +943,58 @@
     const attributesList = document.getElementById("attributesList");
     const attributeModal = document.getElementById("attributeModal");
 
+    // Toast container reference
+    const toastContainer = document.getElementById("toastContainer");
+
     // Current state
     let itemTypes = [];
     let editingItemTypeId = null;
     let deletingItemTypeId = null;
-    let currentAttributes = [];
-    let editingAttributeId = null;
-    let pendingOptions = []; // Options being added to a new attribute
-    let availableIngredients = []; // Ingredients available to link
-    let ingredientSearchTimeout = null; // Debounce for search
+    let linkedAttributes = []; // Global attributes linked to current item type
+    let allGlobalAttributes = []; // All available global attributes
+    let editingLinkId = null; // ID of the item_type_global_attribute link being edited
+    let editingGlobalAttrId = null; // ID of the global attribute being viewed
+
+    // Toast notification function
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
 
     // Load item types from API
     async function loadItemTypes() {
@@ -903,17 +1012,47 @@
       }
     }
 
-    // Load attributes for an item type
-    async function loadAttributes(itemTypeId) {
+    // Load all global attributes for the dropdown
+    async function loadAllGlobalAttributes() {
       try {
-        const response = await authFetch(`${ATTRS_API_BASE}?item_type_id=${itemTypeId}`);
+        const response = await authFetch(GLOBAL_ATTRS_API);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        currentAttributes = await response.json();
-        renderAttributes();
+        allGlobalAttributes = await response.json();
+        populateGlobalAttrDropdown();
       } catch (error) {
-        console.error("Failed to load attributes:", error);
+        console.error("Failed to load global attributes:", error);
+        allGlobalAttributes = [];
+      }
+    }
+
+    // Populate the global attribute dropdown
+    function populateGlobalAttrDropdown() {
+      const select = document.getElementById("globalAttrSelect");
+      const linkedIds = new Set(linkedAttributes.map(la => la.global_attribute_id));
+
+      // Filter out already linked attributes
+      const available = allGlobalAttributes.filter(ga => !linkedIds.has(ga.id));
+
+      select.innerHTML = '<option value="">-- Select attribute to link --</option>' +
+        available.map(ga => `
+          <option value="${ga.id}">${escapeHtml(ga.display_name)} (${ga.options_count || 0} options)</option>
+        `).join("");
+    }
+
+    // Load linked global attributes for an item type
+    async function loadAttributes(itemTypeId) {
+      try {
+        const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${itemTypeId}/global-attributes`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        linkedAttributes = await response.json();
+        renderAttributes();
+        populateGlobalAttrDropdown();
+      } catch (error) {
+        console.error("Failed to load linked attributes:", error);
         attributesList.innerHTML = '<div class="empty-attrs">Failed to load attributes</div>';
       }
     }
@@ -972,108 +1111,43 @@
       });
     }
 
-    // Render attributes list
+    // Render linked attributes list
     function renderAttributes() {
-      if (currentAttributes.length === 0) {
-        attributesList.innerHTML = '<div class="empty-attrs">No attributes defined. Click "+ Add" to create one.</div>';
+      document.getElementById("linkedAttrCount").textContent = linkedAttributes.length;
+
+      if (linkedAttributes.length === 0) {
+        attributesList.innerHTML = '<div class="empty-attrs">No attributes linked yet</div>';
         return;
       }
 
-      attributesList.innerHTML = currentAttributes.map(attr => `
-        <div class="attr-row" data-id="${attr.id}">
+      // Sort by display_order
+      const sorted = [...linkedAttributes].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+      attributesList.innerHTML = sorted.map(link => `
+        <div class="attr-row" data-link-id="${link.id}" data-global-attr-id="${link.global_attribute_id}">
           <div class="attr-info">
-            <span class="attr-name">${escapeHtml(attr.display_name || attr.slug)}</span>
-            <span class="attr-slug">${escapeHtml(attr.slug)}</span>
+            <span class="attr-name">${escapeHtml(link.global_attribute_display_name || link.global_attribute_slug || 'Unknown')}</span>
+            <span class="attr-slug">${escapeHtml(link.global_attribute_slug || '')}</span>
             <div class="attr-meta">
-              <span class="attr-badge type">${attr.input_type.replace('_', ' ')}</span>
-              ${attr.is_required ? '<span class="attr-badge required">Required</span>' : ''}
-              ${attr.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
-              ${attr.loads_from_ingredients ? '<span class="attr-badge ingredient-based">Ingredients</span>' : ''}
-              ${attr.options && attr.options.length > 0 ? `<span class="attr-badge options">${attr.options.length} options</span>` : ''}
+              <span class="attr-badge type">${(link.input_type || 'single_select').replace('_', ' ')}</span>
+              ${link.is_required ? '<span class="attr-badge required">Required</span>' : ''}
+              ${link.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
+              <span class="attr-badge options">${(link.options || []).length} options</span>
             </div>
           </div>
           <div class="attr-actions">
-            <button class="attr-btn edit-attr-btn" data-id="${attr.id}">Edit</button>
-            <button class="attr-btn danger delete-attr-btn" data-id="${attr.id}">Delete</button>
+            <button class="attr-btn edit-attr-btn" data-link-id="${link.id}">Settings</button>
+            <button class="attr-btn danger unlink-attr-btn" data-link-id="${link.id}" data-name="${escapeHtml(link.global_attribute_display_name || '')}">Unlink</button>
           </div>
         </div>
       `).join("");
 
       // Add click handlers
       document.querySelectorAll(".edit-attr-btn").forEach(btn => {
-        btn.addEventListener("click", () => openAttributeModal(parseInt(btn.dataset.id)));
+        btn.addEventListener("click", () => openAttributeModal(parseInt(btn.dataset.linkId)));
       });
-      document.querySelectorAll(".delete-attr-btn").forEach(btn => {
-        btn.addEventListener("click", () => deleteAttribute(parseInt(btn.dataset.id)));
-      });
-    }
-
-    // Render pending options in attribute form
-    function renderPendingOptions(isIngredientBased = false) {
-      const container = document.getElementById("attrOptionsList");
-      const regularOptionRow = document.getElementById("regularOptionRow");
-      const ingredientSearchContainer = document.getElementById("ingredientSearchContainer");
-
-      if (isIngredientBased) {
-        // For ingredient-based attributes, show list with remove buttons
-        if (pendingOptions.length === 0) {
-          container.innerHTML = '<div class="empty-attrs" style="padding: 12px;">No ingredients linked. Search below to add ingredients.</div>';
-        } else {
-          container.innerHTML = pendingOptions.map((opt) => `
-            <div class="option-row">
-              <div class="option-info">
-                <span>${escapeHtml(opt.display_name || opt.slug)}</span>
-                <span style="color: #888; font-size: 11px; margin-left: 8px;">(${escapeHtml(opt.slug)})</span>
-                ${opt.is_default ? '<span class="option-default">default</span>' : ''}
-                ${opt.ingredient_name ? '<span style="color: #2e7d32; font-size: 10px; margin-left: 6px;">🔗 ' + escapeHtml(opt.ingredient_name) + '</span>' : ''}
-              </div>
-              <button class="attr-btn danger remove-ingredient-btn" data-link-id="${opt.id}" data-name="${escapeHtml(opt.display_name || opt.slug)}" type="button">&times;</button>
-            </div>
-          `).join("");
-        }
-        // Hide regular option row, show ingredient search
-        if (regularOptionRow) regularOptionRow.style.display = 'none';
-        if (ingredientSearchContainer) ingredientSearchContainer.style.display = 'block';
-
-        // Add remove handlers for ingredient links
-        document.querySelectorAll(".remove-ingredient-btn").forEach(btn => {
-          btn.addEventListener("click", async () => {
-            const linkId = btn.dataset.linkId;
-            const name = btn.dataset.name;
-            if (confirm(`Remove "${name}" from this attribute?`)) {
-              await removeIngredientLink(linkId);
-            }
-          });
-        });
-        return;
-      }
-
-      // Show regular option row, hide ingredient search for non-ingredient-based
-      if (regularOptionRow) regularOptionRow.style.display = 'flex';
-      if (ingredientSearchContainer) ingredientSearchContainer.style.display = 'none';
-
-      if (pendingOptions.length === 0) {
-        container.innerHTML = '<div class="empty-attrs" style="padding: 12px;">No options defined</div>';
-        return;
-      }
-
-      container.innerHTML = pendingOptions.map((opt, idx) => `
-        <div class="option-row">
-          <div class="option-info">
-            <span>${escapeHtml(opt.display_name || opt.slug)}</span>
-            <span style="color: #888; font-size: 11px; margin-left: 8px;">(${escapeHtml(opt.slug)})</span>
-            ${opt.is_default ? '<span class="option-default">default</span>' : ''}
-          </div>
-          <button class="attr-btn danger remove-option-btn" data-idx="${idx}" type="button">&times;</button>
-        </div>
-      `).join("");
-
-      // Add remove handlers
-      document.querySelectorAll(".remove-option-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-          pendingOptions.splice(parseInt(btn.dataset.idx), 1);
-          renderPendingOptions();
-        });
+      document.querySelectorAll(".unlink-attr-btn").forEach(btn => {
+        btn.addEventListener("click", () => unlinkAttribute(parseInt(btn.dataset.linkId), btn.dataset.name));
       });
     }
 
@@ -1095,15 +1169,13 @@
       itemTypeModalContent.classList.remove("wide");
       itemTypeForm.reset();
       document.getElementById("itemTypeId").value = "";
-      document.getElementById("isConfigurable").checked = true;
-      document.getElementById("skipConfig").checked = false;
       document.getElementById("slug").dataset.manuallyEdited = "";
       switchTab("basic");
       itemTypeModal.classList.add("active");
     }
 
     // Open the modal for editing an existing item type
-    function openEditModal(itemTypeId) {
+    async function openEditModal(itemTypeId) {
       const itemType = itemTypes.find(it => it.id === itemTypeId);
       if (!itemType) {
         showStatus("Item type not found", "error");
@@ -1120,12 +1192,11 @@
       document.getElementById("itemTypeId").value = itemType.id;
       document.getElementById("displayName").value = itemType.display_name;
       document.getElementById("slug").value = itemType.slug;
-      document.getElementById("isConfigurable").checked = itemType.is_configurable;
-      document.getElementById("skipConfig").checked = itemType.skip_config || false;
 
-      // Load attributes
+      // Load global attributes and linked attributes
       attributesList.innerHTML = '<div class="empty-attrs">Loading attributes...</div>';
-      loadAttributes(itemTypeId);
+      await loadAllGlobalAttributes();
+      await loadAttributes(itemTypeId);
 
       switchTab("basic");
       itemTypeModal.classList.add("active");
@@ -1135,7 +1206,7 @@
     function closeModal() {
       itemTypeModal.classList.remove("active");
       editingItemTypeId = null;
-      currentAttributes = [];
+      linkedAttributes = [];
     }
 
     // Close the delete modal
@@ -1146,29 +1217,28 @@
 
     // Save the item type (add or update)
     async function saveItemType() {
+      const saveBtn = document.getElementById("saveBtn");
       const displayName = document.getElementById("displayName").value.trim();
       const slug = document.getElementById("slug").value.trim().toLowerCase();
-      const isConfigurable = document.getElementById("isConfigurable").checked;
-      const skipConfig = document.getElementById("skipConfig").checked;
 
       if (!displayName || !slug) {
-        showStatus("Please fill in all required fields", "error");
+        showToast("Please fill in all required fields", "error");
         return;
       }
 
       // Validate slug format
       if (!/^[a-z0-9_]+$/.test(slug)) {
-        showStatus("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
         return;
       }
 
+      // Note: is_configurable and skip_config are derived from linked global attributes
       const payload = {
         display_name: displayName,
-        slug: slug,
-        is_configurable: isConfigurable,
-        skip_config: skipConfig
+        slug: slug
       };
 
+      setSaveButtonState(saveBtn, "saving");
       try {
         let response;
         if (editingItemTypeId) {
@@ -1192,12 +1262,14 @@
           throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
-        showStatus(editingItemTypeId ? `"${displayName}" has been updated` : `"${displayName}" has been added`, "success");
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast(`Item type "${displayName}" saved successfully!`, "success");
         closeModal();
         await loadItemTypes();
       } catch (error) {
         console.error("Failed to save item type:", error);
-        showStatus(`Failed to save item type: ${error.message}`, "error");
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast(`Failed to save item type: ${error.message}`, "error");
       }
     }
 
@@ -1241,334 +1313,29 @@
     }
 
     // =====================
-    // Attribute Modal Functions
+    // Global Attribute Link Functions
     // =====================
 
-    // Track if current attribute is ingredient-based
-    let currentAttrIsIngredientBased = false;
+    // Link a global attribute to the current item type
+    async function linkAttribute() {
+      const select = document.getElementById("globalAttrSelect");
+      const globalAttrId = parseInt(select.value);
 
-    function openAttributeModal(attrId = null) {
-      editingAttributeId = attrId;
-      pendingOptions = [];
-      currentAttrIsIngredientBased = false;
-
-      const form = document.getElementById("attributeForm");
-      form.reset();
-      document.getElementById("attrId").value = "";
-
-      if (attrId) {
-        // Editing existing attribute
-        const attr = currentAttributes.find(a => a.id === attrId);
-        if (!attr) return;
-
-        currentAttrIsIngredientBased = attr.loads_from_ingredients || false;
-
-        document.getElementById("attrModalTitle").textContent = "Edit Attribute";
-        document.getElementById("attrDeleteBtn").style.display = "inline-block";
-        document.getElementById("attrId").value = attr.id;
-        document.getElementById("attrSlug").value = attr.slug;
-        document.getElementById("attrDisplayName").value = attr.display_name || "";
-        document.getElementById("attrInputType").value = attr.input_type;
-        document.getElementById("attrDisplayOrder").value = attr.display_order || 0;
-        document.getElementById("attrIsRequired").checked = attr.is_required;
-        document.getElementById("attrAskInConversation").checked = attr.ask_in_conversation;
-        document.getElementById("attrQuestionText").value = attr.question_text || "";
-
-        // Load existing options (include ingredient_name for ingredient-based)
-        pendingOptions = (attr.options || []).map(opt => ({
-          id: opt.id,
-          slug: opt.slug,
-          display_name: opt.display_name,
-          is_default: opt.is_default,
-          ingredient_id: opt.ingredient_id,
-          ingredient_name: opt.ingredient_name
-        }));
-      } else {
-        // Adding new attribute
-        document.getElementById("attrModalTitle").textContent = "Add Attribute";
-        document.getElementById("attrDeleteBtn").style.display = "none";
-        document.getElementById("attrAskInConversation").checked = true;
-      }
-
-      updateOptionsVisibility();
-      renderPendingOptions(currentAttrIsIngredientBased);
-
-      // Load available ingredients if this is ingredient-based
-      if (currentAttrIsIngredientBased && attrId) {
-        loadAvailableIngredients();
-      }
-
-      // Clear search input
-      document.getElementById("ingredientSearchInput").value = "";
-      document.getElementById("ingredientResults").classList.remove("active");
-
-      attributeModal.classList.add("active");
-    }
-
-    function closeAttributeModal() {
-      attributeModal.classList.remove("active");
-      editingAttributeId = null;
-      pendingOptions = [];
-      availableIngredients = [];
-      currentAttrIsIngredientBased = false;
-      document.getElementById("ingredientResults").classList.remove("active");
-    }
-
-    function updateOptionsVisibility() {
-      const inputType = document.getElementById("attrInputType").value;
-      const optionsSection = document.getElementById("optionsSection");
-      const isSelectType = (inputType === "single_select" || inputType === "multi_select");
-      optionsSection.style.display = isSelectType ? "block" : "none";
-
-      // Update label and hint for ingredient-based attributes
-      const optionsLabel = optionsSection.querySelector("label");
-      const optionsHint = optionsSection.querySelector(".hint");
-      if (currentAttrIsIngredientBased) {
-        optionsLabel.textContent = "Options (from Ingredients)";
-        optionsHint.innerHTML = 'Options are linked from the <a href="/static/admin_ingredients.html" style="color: #1976d2;">Ingredients</a> table. Manage ingredients there to add/remove options.';
-      } else {
-        optionsLabel.textContent = "Options (for select types)";
-        optionsHint.textContent = "Available choices for this attribute";
-      }
-    }
-
-    async function saveAttribute() {
-      const slug = document.getElementById("attrSlug").value.trim().toLowerCase();
-      const displayName = document.getElementById("attrDisplayName").value.trim();
-      const inputType = document.getElementById("attrInputType").value;
-      const displayOrder = parseInt(document.getElementById("attrDisplayOrder").value) || 0;
-      const isRequired = document.getElementById("attrIsRequired").checked;
-      const askInConversation = document.getElementById("attrAskInConversation").checked;
-      const questionText = document.getElementById("attrQuestionText").value.trim();
-
-      if (!slug) {
-        showStatus("Slug is required", "error");
+      if (!globalAttrId || !editingItemTypeId) {
+        showToast("Please select an attribute to link", "error");
         return;
       }
-
-      if (!/^[a-z0-9_]+$/.test(slug)) {
-        showStatus("Slug must contain only lowercase letters, numbers, and underscores", "error");
-        return;
-      }
-
-      const payload = {
-        item_type_id: editingItemTypeId,
-        slug: slug,
-        display_name: displayName || null,
-        input_type: inputType,
-        display_order: displayOrder,
-        is_required: isRequired,
-        ask_in_conversation: askInConversation,
-        question_text: questionText || null
-      };
 
       try {
-        let response;
-        let attrId = editingAttributeId;
-
-        if (editingAttributeId) {
-          response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
-        } else {
-          response = await authFetch(ATTRS_API_BASE, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-        }
-
-        // Get the attribute ID from response for new attributes
-        const savedAttr = await response.json();
-        attrId = savedAttr.id;
-
-        // Sync options if this is a select type and NOT ingredient-based
-        // (Ingredient-based options are managed via Ingredients page, not here)
-        if ((inputType === "single_select" || inputType === "multi_select") && !currentAttrIsIngredientBased) {
-          await syncOptions(attrId);
-        }
-
-        showStatus(`Attribute "${slug}" saved`, "success");
-        closeAttributeModal();
-        await loadAttributes(editingItemTypeId);
-      } catch (error) {
-        console.error("Failed to save attribute:", error);
-        showStatus(`Failed to save attribute: ${error.message}`, "error");
-      }
-    }
-
-    async function syncOptions(attrId) {
-      // Get current options from server
-      const currentOptions = editingAttributeId
-        ? (currentAttributes.find(a => a.id === editingAttributeId)?.options || [])
-        : [];
-
-      // Find options to delete (in currentOptions but not in pendingOptions)
-      const pendingSlugs = new Set(pendingOptions.map(o => o.slug));
-      const optionsToDelete = currentOptions.filter(o => !pendingSlugs.has(o.slug));
-
-      // Find options to create (in pendingOptions but have no id)
-      const optionsToCreate = pendingOptions.filter(o => !o.id);
-
-      // Delete removed options
-      for (const opt of optionsToDelete) {
-        try {
-          await authFetch(`${ATTRS_API_BASE}/${attrId}/options/${opt.id}`, {
-            method: "DELETE"
-          });
-        } catch (e) {
-          console.error("Failed to delete option:", opt.slug, e);
-        }
-      }
-
-      // Create new options
-      for (let i = 0; i < optionsToCreate.length; i++) {
-        const opt = optionsToCreate[i];
-        try {
-          await authFetch(`${ATTRS_API_BASE}/${attrId}/options`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              slug: opt.slug,
-              display_name: opt.display_name || opt.slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-              is_default: opt.is_default || false,
-              display_order: i
-            })
-          });
-        } catch (e) {
-          console.error("Failed to create option:", opt.slug, e);
-        }
-      }
-    }
-
-    async function deleteAttribute(attrId) {
-      const attr = currentAttributes.find(a => a.id === attrId);
-      if (!attr) return;
-
-      if (!confirm(`Delete attribute "${attr.display_name || attr.slug}"?`)) return;
-
-      try {
-        const response = await authFetch(`${ATTRS_API_BASE}/${attrId}`, {
-          method: "DELETE"
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-        }
-
-        showStatus(`Attribute deleted`, "success");
-        await loadAttributes(editingItemTypeId);
-      } catch (error) {
-        console.error("Failed to delete attribute:", error);
-        showStatus(`Failed to delete attribute: ${error.message}`, "error");
-      }
-    }
-
-    function addPendingOption() {
-      const slugInput = document.getElementById("newOptionSlug");
-      const displayInput = document.getElementById("newOptionDisplay");
-      const slug = slugInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-
-      if (!slug) {
-        showStatus("Option slug is required", "error");
-        return;
-      }
-
-      if (pendingOptions.some(o => o.slug === slug)) {
-        showStatus("Option with this slug already exists", "error");
-        return;
-      }
-
-      pendingOptions.push({
-        slug: slug,
-        display_name: displayInput.value.trim() || null,
-        is_default: false
-      });
-
-      slugInput.value = "";
-      displayInput.value = "";
-      renderPendingOptions();
-    }
-
-    // =====================
-    // Ingredient Link Functions
-    // =====================
-
-    async function loadAvailableIngredients() {
-      if (!editingAttributeId || !currentAttrIsIngredientBased) return;
-
-      try {
-        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/available-ingredients`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        availableIngredients = await response.json();
-      } catch (error) {
-        console.error("Failed to load available ingredients:", error);
-        availableIngredients = [];
-      }
-    }
-
-    function filterIngredients(searchTerm) {
-      const term = searchTerm.toLowerCase().trim();
-      if (!term) return availableIngredients.slice(0, 20); // Show first 20 if no search
-
-      return availableIngredients.filter(ing =>
-        ing.name.toLowerCase().includes(term) ||
-        ing.slug.toLowerCase().includes(term) ||
-        ing.category.toLowerCase().includes(term)
-      ).slice(0, 20); // Limit to 20 results
-    }
-
-    function renderIngredientResults(ingredients) {
-      const resultsContainer = document.getElementById("ingredientResults");
-
-      if (ingredients.length === 0) {
-        resultsContainer.innerHTML = '<div class="no-results">No matching ingredients found</div>';
-        resultsContainer.classList.add("active");
-        return;
-      }
-
-      resultsContainer.innerHTML = ingredients.map(ing => `
-        <div class="ingredient-result-item" data-ingredient-id="${ing.id}" data-ingredient-name="${escapeHtml(ing.name)}">
-          <span>${escapeHtml(ing.name)}</span>
-          <span class="category">${escapeHtml(ing.category)}</span>
-        </div>
-      `).join("");
-
-      resultsContainer.classList.add("active");
-
-      // Add click handlers
-      document.querySelectorAll(".ingredient-result-item").forEach(item => {
-        item.addEventListener("click", async () => {
-          const ingredientId = parseInt(item.dataset.ingredientId);
-          const ingredientName = item.dataset.ingredientName;
-          await addIngredientLink(ingredientId, ingredientName);
-        });
-      });
-    }
-
-    async function addIngredientLink(ingredientId, ingredientName) {
-      if (!editingAttributeId) return;
-
-      try {
-        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/ingredient-links`, {
+        const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${editingItemTypeId}/global-attributes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ingredient_id: ingredientId,
-            price_modifier: 0,
-            is_default: false,
-            is_available: true,
-            display_order: pendingOptions.length
+            global_attribute_id: globalAttrId,
+            display_order: linkedAttributes.length,
+            is_required: false,
+            allow_none: true,
+            ask_in_conversation: true
           })
         });
 
@@ -1577,28 +1344,20 @@
           throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
-        showStatus(`Added "${ingredientName}"`, "success");
-
-        // Refresh the attribute options
-        await refreshAttributeOptions();
-
-        // Clear search input and hide results
-        document.getElementById("ingredientSearchInput").value = "";
-        document.getElementById("ingredientResults").classList.remove("active");
-
-        // Reload available ingredients (the added one should no longer be available)
-        await loadAvailableIngredients();
+        showToast("Attribute linked successfully", "success");
+        await loadAttributes(editingItemTypeId);
       } catch (error) {
-        console.error("Failed to add ingredient link:", error);
-        showStatus(`Failed to add ingredient: ${error.message}`, "error");
+        console.error("Failed to link attribute:", error);
+        showToast(`Failed to link attribute: ${error.message}`, "error");
       }
     }
 
-    async function removeIngredientLink(linkId) {
-      if (!editingAttributeId) return;
+    // Unlink a global attribute from the current item type
+    async function unlinkAttribute(linkId, attrName) {
+      if (!confirm(`Unlink "${attrName}" from this item type?`)) return;
 
       try {
-        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}/ingredient-links/${linkId}`, {
+        const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${editingItemTypeId}/global-attributes/${linkId}`, {
           method: "DELETE"
         });
 
@@ -1607,78 +1366,94 @@
           throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
-        showStatus("Ingredient removed", "success");
-
-        // Refresh the attribute options
-        await refreshAttributeOptions();
-
-        // Reload available ingredients (the removed one should now be available)
-        await loadAvailableIngredients();
+        showToast("Attribute unlinked", "success");
+        await loadAttributes(editingItemTypeId);
       } catch (error) {
-        console.error("Failed to remove ingredient link:", error);
-        showStatus(`Failed to remove ingredient: ${error.message}`, "error");
+        console.error("Failed to unlink attribute:", error);
+        showToast(`Failed to unlink attribute: ${error.message}`, "error");
       }
     }
 
-    async function refreshAttributeOptions() {
-      if (!editingAttributeId) return;
+    // Open modal to edit per-item-type settings for a linked attribute
+    function openAttributeModal(linkId) {
+      const link = linkedAttributes.find(la => la.id === linkId);
+      if (!link) return;
 
+      editingLinkId = linkId;
+      editingGlobalAttrId = link.global_attribute_id;
+
+      // Set modal title and global attribute info
+      document.getElementById("attrModalTitle").textContent = "Edit Attribute Settings";
+      document.getElementById("attrLinkId").value = linkId;
+
+      // Display global attribute info (read-only)
+      document.getElementById("attrDisplayName").textContent = link.global_attribute_display_name || link.global_attribute_slug || 'Unknown';
+      document.getElementById("attrSlug").textContent = link.global_attribute_slug || '';
+      document.getElementById("attrInputType").textContent = (link.input_type || 'single_select').replace('_', ' ');
+      document.getElementById("attrOptionsCount").textContent = `${(link.options || []).length} options`;
+
+      // Show/hide multi-select options based on input type
+      const multiSelectOptions = document.getElementById("multiSelectOptions");
+      if (link.input_type === 'multi_select') {
+        multiSelectOptions.style.display = 'grid';
+      } else {
+        multiSelectOptions.style.display = 'none';
+      }
+
+      // Populate per-item-type settings
+      document.getElementById("attrDisplayOrder").value = link.display_order || 0;
+      document.getElementById("attrIsRequired").checked = link.is_required || false;
+      document.getElementById("attrAllowNone").checked = link.allow_none !== false;
+      document.getElementById("attrAskInConversation").checked = link.ask_in_conversation !== false;
+      document.getElementById("attrQuestionText").value = link.question_text || '';
+      document.getElementById("attrMinSelections").value = link.min_selections || '';
+      document.getElementById("attrMaxSelections").value = link.max_selections || '';
+
+      attributeModal.classList.add("active");
+    }
+
+    function closeAttributeModal() {
+      attributeModal.classList.remove("active");
+      editingLinkId = null;
+      editingGlobalAttrId = null;
+    }
+
+    // Save per-item-type settings for a linked attribute
+    async function saveAttribute() {
+      const saveBtn = document.getElementById("attrSaveBtn");
+      if (!editingLinkId || !editingItemTypeId) return;
+
+      const payload = {
+        display_order: parseInt(document.getElementById("attrDisplayOrder").value) || 0,
+        is_required: document.getElementById("attrIsRequired").checked,
+        allow_none: document.getElementById("attrAllowNone").checked,
+        ask_in_conversation: document.getElementById("attrAskInConversation").checked,
+        question_text: document.getElementById("attrQuestionText").value.trim() || null,
+        min_selections: parseInt(document.getElementById("attrMinSelections").value) || null,
+        max_selections: parseInt(document.getElementById("attrMaxSelections").value) || null
+      };
+
+      setSaveButtonState(saveBtn, "saving");
       try {
-        const response = await authFetch(`${ATTRS_API_BASE}/${editingAttributeId}`);
-        if (!response.ok) throw new Error("Failed to refresh");
+        const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${editingItemTypeId}/global-attributes/${editingLinkId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
 
-        const attr = await response.json();
-        pendingOptions = (attr.options || []).map(opt => ({
-          id: opt.id,
-          slug: opt.slug,
-          display_name: opt.display_name,
-          is_default: opt.is_default,
-          ingredient_id: opt.ingredient_id,
-          ingredient_name: opt.ingredient_name
-        }));
-
-        // Also update the attribute in currentAttributes so the count badge updates
-        const idx = currentAttributes.findIndex(a => a.id === editingAttributeId);
-        if (idx !== -1) {
-          currentAttributes[idx] = attr;
-          renderAttributes();
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
-        renderPendingOptions(currentAttrIsIngredientBased);
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast("Attribute settings saved", "success");
+        closeAttributeModal();
+        await loadAttributes(editingItemTypeId);
       } catch (error) {
-        console.error("Failed to refresh attribute options:", error);
-      }
-    }
-
-    function handleIngredientSearch(e) {
-      const searchTerm = e.target.value;
-
-      // Debounce the search
-      if (ingredientSearchTimeout) {
-        clearTimeout(ingredientSearchTimeout);
-      }
-
-      if (!searchTerm.trim()) {
-        document.getElementById("ingredientResults").classList.remove("active");
-        return;
-      }
-
-      ingredientSearchTimeout = setTimeout(() => {
-        const filtered = filterIngredients(searchTerm);
-        renderIngredientResults(filtered);
-      }, 150);
-    }
-
-    function handleIngredientSearchFocus() {
-      const searchInput = document.getElementById("ingredientSearchInput");
-      const searchTerm = searchInput.value.trim();
-
-      if (searchTerm) {
-        const filtered = filterIngredients(searchTerm);
-        renderIngredientResults(filtered);
-      } else if (availableIngredients.length > 0) {
-        // Show some suggestions even without typing
-        renderIngredientResults(availableIngredients.slice(0, 10));
+        console.error("Failed to save attribute settings:", error);
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast(`Failed to save: ${error.message}`, "error");
       }
     }
 
@@ -1698,28 +1473,17 @@
       tab.addEventListener("click", () => switchTab(tab.dataset.tab));
     });
 
-    // Attribute modal events
-    document.getElementById("addAttributeBtn").addEventListener("click", () => openAttributeModal());
+    // Global attribute link events
+    document.getElementById("linkAttributeBtn").addEventListener("click", linkAttribute);
     document.getElementById("attrModalClose").addEventListener("click", closeAttributeModal);
     document.getElementById("attrCancelBtn").addEventListener("click", closeAttributeModal);
     document.getElementById("attrSaveBtn").addEventListener("click", saveAttribute);
-    document.getElementById("attrDeleteBtn").addEventListener("click", () => {
-      if (editingAttributeId) deleteAttribute(editingAttributeId);
-      closeAttributeModal();
-    });
-    document.getElementById("attrInputType").addEventListener("change", updateOptionsVisibility);
-    document.getElementById("addOptionBtn").addEventListener("click", addPendingOption);
-
-    // Ingredient search event listeners
-    document.getElementById("ingredientSearchInput").addEventListener("input", handleIngredientSearch);
-    document.getElementById("ingredientSearchInput").addEventListener("focus", handleIngredientSearchFocus);
-
-    // Hide ingredient results when clicking outside
-    document.addEventListener("click", (e) => {
-      const searchContainer = document.getElementById("ingredientSearchContainer");
-      const resultsContainer = document.getElementById("ingredientResults");
-      if (searchContainer && !searchContainer.contains(e.target)) {
-        resultsContainer.classList.remove("active");
+    document.getElementById("attrUnlinkBtn").addEventListener("click", async () => {
+      if (editingLinkId) {
+        const link = linkedAttributes.find(la => la.id === editingLinkId);
+        const attrName = link?.global_attribute_display_name || link?.global_attribute_slug || 'this attribute';
+        await unlinkAttribute(editingLinkId, attrName);
+        closeAttributeModal();
       }
     });
 
@@ -1769,17 +1533,6 @@
     // Mark slug as manually edited
     document.getElementById("slug").addEventListener("input", () => {
       document.getElementById("slug").dataset.manuallyEdited = "true";
-    });
-
-    // Auto-generate attribute slug from display name
-    document.getElementById("attrDisplayName").addEventListener("input", (e) => {
-      const slugField = document.getElementById("attrSlug");
-      if (!editingAttributeId && !slugField.value) {
-        slugField.value = e.target.value
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '_')
-          .replace(/^_|_$/g, '');
-      }
     });
 
     // Initial load

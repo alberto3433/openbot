@@ -318,9 +318,88 @@
     .btn-secondary:hover {
       background: #d0d0d0;
     }
+    .btn-danger {
+      background: #c62828;
+      color: #fff;
+    }
+    .btn-danger:hover {
+      background: #b71c1c;
+    }
+    .modal-footer-left {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .modal-footer-right {
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving, .btn-primary.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after, .btn-primary.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved, .btn-primary.saved {
+      background: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <div class="app-header">
     <div>Availability Manager (86 System)</div>
     <div>
@@ -329,8 +408,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html"><strong>Ingredients</strong></a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -435,10 +516,20 @@
           <input type="text" id="editIngredientAliases" placeholder="e.g., swiss, swisscheese" />
           <small>Comma-separated alternative names that customers might use when ordering</small>
         </div>
+        <div class="form-group">
+          <label for="editIngredientMustMatch">Must Match (required strings)</label>
+          <input type="text" id="editIngredientMustMatch" placeholder="e.g., Gluten Free Everything, GF Everything" />
+          <small>Comma-separated strings - at least one must be in input for this to match. Use for disambiguation (e.g., "GF Everything" prevents matching on just "everything")</small>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
-        <button class="btn btn-primary" id="saveIngredientBtn">Save Changes</button>
+        <div class="modal-footer-left">
+          <button class="btn btn-danger" id="deleteIngredientBtn">Delete Ingredient</button>
+          <div class="modal-footer-right">
+            <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
+            <button class="btn btn-primary" id="saveIngredientBtn">Save Changes</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -451,6 +542,49 @@
     let filteredMenuItems = [];
 
     const statusBar = document.getElementById("statusBar");
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification system
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save Changes") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
+
     const outOfStockList = document.getElementById("outOfStockList");
     const outOfStockCount = document.getElementById("outOfStockCount");
     const outOfStockMenuItemsList = document.getElementById("outOfStockMenuItemsList");
@@ -472,6 +606,7 @@
     const editCategoryEl = document.getElementById("editIngredientCategory");
     const editUnitEl = document.getElementById("editIngredientUnit");
     const editAliasesEl = document.getElementById("editIngredientAliases");
+    const editMustMatchEl = document.getElementById("editIngredientMustMatch");
 
     // Store name mapping - loaded dynamically from API
     let STORE_NAMES = {};
@@ -689,6 +824,7 @@
       editCategoryEl.value = ingredient.category;
       editUnitEl.value = ingredient.unit || "";
       editAliasesEl.value = ingredient.aliases || "";
+      editMustMatchEl.value = ingredient.must_match || "";
 
       editModal.classList.add("active");
     }
@@ -700,12 +836,15 @@
       editCategoryEl.value = "bread";
       editUnitEl.value = "";
       editAliasesEl.value = "";
+      editMustMatchEl.value = "";
     }
 
     async function saveIngredient() {
+      const saveBtn = document.getElementById("saveIngredientBtn");
       const id = editIdEl.value;
       if (!id) {
         showStatus("No ingredient selected", "error");
+        showToast("No ingredient selected", "error");
         return;
       }
 
@@ -713,14 +852,17 @@
         name: editNameEl.value.trim(),
         category: editCategoryEl.value,
         unit: editUnitEl.value.trim(),
-        aliases: editAliasesEl.value.trim() || null
+        aliases: editAliasesEl.value.trim() || null,
+        must_match: editMustMatchEl.value.trim() || null
       };
 
       if (!payload.name || !payload.unit) {
         showStatus("Name and unit are required", "error");
+        showToast("Name and unit are required", "error");
         return;
       }
 
+      setSaveButtonState(saveBtn, "saving");
       try {
         const resp = await fetch(`${API_BASE}/admin/ingredients/${id}`, {
           method: "PUT",
@@ -732,6 +874,8 @@
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
         const updated = await resp.json();
+        setSaveButtonState(saveBtn, "saved", "Save Changes");
+        showToast(`${updated.name} updated successfully`, "success");
         showStatus(`${updated.name} updated successfully`, "success");
 
         // Update local data
@@ -745,7 +889,45 @@
 
       } catch (err) {
         console.error("Error updating ingredient:", err);
+        setSaveButtonState(saveBtn, "error", "Save Changes");
+        showToast("Error updating ingredient. See console.", "error");
         showStatus("Error updating ingredient. See console.", "error");
+      }
+    }
+
+    async function deleteIngredient() {
+      const id = editIdEl.value;
+      if (!id) {
+        showStatus("No ingredient selected", "error");
+        return;
+      }
+
+      const ingredientName = editNameEl.value;
+      const confirmed = confirm(`Are you sure you want to delete "${ingredientName}"?\n\nThis action cannot be undone.`);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients/${id}`, {
+          method: "DELETE",
+          credentials: 'include'
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        showStatus(`${ingredientName} deleted successfully`, "success");
+
+        // Remove from local data
+        allIngredients = allIngredients.filter(i => i.id !== parseInt(id));
+
+        closeEditModal();
+        applyFilters();
+        renderOutOfStock();
+
+      } catch (err) {
+        console.error("Error deleting ingredient:", err);
+        showStatus("Error deleting ingredient. See console.", "error");
       }
     }
 
@@ -924,6 +1106,7 @@
     document.getElementById("closeModal").addEventListener("click", closeEditModal);
     document.getElementById("cancelEditBtn").addEventListener("click", closeEditModal);
     document.getElementById("saveIngredientBtn").addEventListener("click", saveIngredient);
+    document.getElementById("deleteIngredientBtn").addEventListener("click", deleteIngredient);
     editModal.addEventListener("click", (e) => {
       if (e.target === editModal) closeEditModal();
     });

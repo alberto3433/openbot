@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from . import __version__
 from .middleware import TenantMiddleware
 from .tenant import get_tenant_manager, TenantManager
 
@@ -64,7 +65,7 @@ def create_app(
     app = FastAPI(
         title="Restaurant Order Bot API",
         description="Multi-tenant restaurant ordering chatbot API",
-        version="2.3.0",
+        version=__version__,
     )
 
     # Add tenant middleware
@@ -120,6 +121,7 @@ def create_app(
     def health_check():
         return {
             "status": "healthy",
+            "version": __version__,
             "mode": mode,
             "tenant": tenant_slug,
         }

@@ -446,155 +446,6 @@ class CoffeeItemTask(ItemTask):
         return " ".join(parts)
 
 
-class EspressoItemTask(ItemTask):
-    """Task for capturing an espresso order.
-
-    Espresso drinks are simpler than regular coffee:
-    - No size options (espresso is a fixed size)
-    - Always hot (no iced option)
-    - Main configuration is number of shots (single, double, triple)
-    - Can have drink modifiers (milk, sweeteners, syrups) - data-driven from DB
-    """
-
-    item_type: Literal["espresso"] = "espresso"
-
-    # Espresso-specific fields
-    drink_type: str = "Espresso"  # Always "Espresso" for display
-    shots: int = 1  # 1=single, 2=double, 3=triple
-    decaf: bool | None = None  # True=decaf, None=regular
-
-    # Data-driven drink modifiers from item_type_attributes
-    # Each entry: {"slug": "oat_milk", "quantity": 1, "display_name": "Oat Milk", "price": 0.50}
-    drink_modifiers: list[dict] = Field(default_factory=list)
-
-    # Pending modifier state (for syrup flavor follow-up)
-    pending_modifier_slug: str | None = None  # e.g., "syrup" when user said "with syrup" but no flavor
-    pending_modifier_quantity: int = 1  # Quantity from "2 syrups" before flavor is specified
-
-    # Upcharge tracking (set by pricing engine)
-    extra_shots_upcharge: float = 0.0  # Upcharge for double/triple
-    modifiers_upcharge: float = 0.0  # Total upcharge for all drink modifiers
-
-    def get_display_name(self) -> str:
-        """Get display name for this espresso."""
-        parts = []
-        if self.decaf is True:
-            parts.append("decaf")
-        if self.shots == 2:
-            parts.append("double")
-        elif self.shots >= 3:
-            parts.append("triple")
-        parts.append("espresso")
-        # Add first modifier if specified (usually milk)
-        if self.drink_modifiers:
-            first_mod = self.drink_modifiers[0]
-            display = first_mod.get("display_name") or first_mod.get("slug", "").replace("_", " ")
-            parts.append(f"with {display}")
-        return " ".join(parts)
-
-    def get_summary(self) -> str:
-        """Get a summary description of this espresso for bot responses."""
-        parts = []
-        if self.decaf is True:
-            parts.append("decaf")
-        if self.shots == 2:
-            parts.append("double")
-        elif self.shots >= 3:
-            parts.append("triple")
-        parts.append("espresso")
-
-        # Add modifiers from data-driven drink_modifiers list
-        modifier_strs = []
-        for mod in self.drink_modifiers:
-            qty = mod.get("quantity", 1)
-            display = mod.get("display_name") or mod.get("slug", "").replace("_", " ")
-            if qty > 1:
-                modifier_strs.append(f"{qty} {display}")
-            else:
-                modifier_strs.append(display)
-
-        if modifier_strs:
-            parts.append(f"with {', '.join(modifier_strs)}")
-
-        # Add special instructions if present
-        if self.special_instructions:
-            parts.append(f"(Special Instructions: {self.special_instructions})")
-
-        return " ".join(parts)
-
-    def get_spoken_summary(self) -> str:
-        """Get a natural-sounding summary for bot responses."""
-        return self.get_summary()
-
-
-class SignatureItemTask(ItemTask):
-    """Task for a signature item (e.g., 'The Classic BEC', 'The Leo', 'The Max Zucker').
-
-    Signature items are pre-configured menu items with is_signature=true in the database.
-    They need bagel type selection, toasted preference, and sometimes cheese selection.
-    """
-
-    item_type: Literal["signature_item"] = "signature_item"
-
-    # Signature item fields
-    menu_item_name: str  # The name of the item (e.g., "The Classic BEC")
-    menu_item_id: int | None = None  # Database ID if matched
-    toasted: bool | None = None  # True=toasted, False=not toasted, None=not specified
-    bagel_choice: str | None = None  # Custom bagel choice (e.g., "wheat" for "Classic BEC on wheat")
-    bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
-    cheese_choice: str | None = None  # Cheese type for items with cheese (e.g., "american", "swiss")
-    modifications: list[str] = Field(default_factory=list)  # Extra modifiers (e.g., ["mayo", "no onions"])
-    removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed (e.g., ["bacon"])
-
-    def get_display_name(self) -> str:
-        """Get display name for this item."""
-        return self.menu_item_name
-
-    def get_summary(self) -> str:
-        """Get a summary description of this item."""
-        parts = []
-
-        parts.append(self.menu_item_name)
-
-        # Add cheese choice if specified
-        if self.cheese_choice:
-            parts.append(f"with {self.cheese_choice} cheese")
-
-        # Add bagel choice if specified
-        if self.bagel_choice:
-            parts.append(f"on {self.bagel_choice} bagel")
-
-        if self.toasted is True:
-            parts.append("toasted")
-        elif self.toasted is False:
-            parts.append("not toasted")
-
-        # Add modifications if present (e.g., "with mayo", "no onions")
-        if self.modifications:
-            parts.append(f"({', '.join(self.modifications)})")
-
-        # Add removed ingredients if present (e.g., "no bacon")
-        if self.removed_ingredients:
-            removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
-            parts.append(f"({', '.join(removed_parts)})")
-
-        # Add special instructions if present
-        if self.special_instructions:
-            parts.append(f"(Special Instructions: {self.special_instructions})")
-
-        return " ".join(parts)
-
-    def get_next_question(self) -> str | None:
-        """Get the next question to ask for this item."""
-        if self.toasted is None:
-            return "Would you like that toasted?"
-        return None
-
-
-# Backwards compatibility alias
-SpeedMenuBagelItemTask = SignatureItemTask
-
-
 class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette')."""
 
@@ -610,13 +461,40 @@ class MenuItemTask(ItemTask):
     # Customization fields for configurable items (e.g., omelettes, sandwiches)
     side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
     bagel_choice: str | None = None  # Which bagel if side is bagel, or bagel for sandwiches
+    bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
     toasted: bool | None = None  # Whether sandwich/bagel should be toasted
     spread: str | None = None  # Spread for side bagel (butter, cream cheese, etc.)
     spread_price: float | None = None  # Price of spread for itemized display
     requires_side_choice: bool = False  # Whether this item needs side selection
+    is_signature: bool = False  # Whether this is a signature/featured menu item
+
+    # Dynamic attribute values from DB-driven configuration
+    # Stores answers for attributes defined in item_type_attributes table
+    # e.g., {"bread": "plain", "add_egg": "scrambled_egg", "scooped": True}
+    attribute_values: dict[str, Any] = Field(default_factory=dict)
+
+    # Track if customization checkpoint has been offered
+    customization_offered: bool = False
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
+        # Handle espresso display name (shots and decaf info)
+        if self.menu_item_type == "espresso":
+            shots_slug = self.attribute_values.get("shots", "single_shot")
+            decaf = self.attribute_values.get("decaf", False)
+
+            shots_display_map = {
+                "single_shot": "",
+                "double_shot_espresso": "Double ",
+                "triple_shot_espresso": "Triple ",
+                "quad_shot": "Quad ",
+            }
+            shots_prefix = shots_display_map.get(shots_slug, "")
+            display_name = f"{shots_prefix}Espresso"
+            if decaf:
+                display_name = f"Decaf {display_name}"
+            return display_name
+
         return self.menu_item_name
 
     def get_summary(self) -> str:
@@ -626,13 +504,53 @@ class MenuItemTask(ItemTask):
         if self.quantity > 1:
             parts.append(f"{self.quantity}x")
 
-        parts.append(self.menu_item_name)
+        # Use display name (handles espresso shots/decaf)
+        parts.append(self.get_display_name())
 
-        # Add bagel choice for spread/salad/fish sandwiches
-        if self.menu_item_type in ("spread_sandwich", "salad_sandwich", "fish_sandwich") and self.bagel_choice:
-            parts.append(f"on {self.bagel_choice} bagel")
-            if self.toasted:
+        # Add DB-driven attribute values (for deli_sandwich, etc.)
+        if self.attribute_values:
+            # Handle bread selection
+            bread = self.attribute_values.get("bread")
+            if bread:
+                # Convert slug to display name (e.g., "plain_bagel" -> "Plain Bagel")
+                bread_display = bread.replace("_", " ").title()
+                parts.append(f"on {bread_display}")
+
+            # Handle toasted
+            toasted = self.attribute_values.get("toasted")
+            if toasted is True:
                 parts.append("toasted")
+            elif toasted is False and bread:
+                parts.append("not toasted")
+
+            # Handle other customizations (extra protein, toppings, etc.)
+            extra_customizations = []
+            for key, value in self.attribute_values.items():
+                # Skip already handled fields and internal data fields
+                if key in ("bread", "toasted", "scooped"):
+                    continue  # Already handled above
+                if key.endswith("_price") or key.endswith("_selections"):
+                    continue  # Internal price/selection data, not for display
+                # Skip espresso-specific fields that are in the display name
+                if self.menu_item_type == "espresso" and key in ("shots", "decaf"):
+                    continue  # Already handled in get_display_name()
+                if value is True:
+                    extra_customizations.append(key.replace("_", " ").title())
+                elif value and value is not False:
+                    # Handle list values (multi-select attributes like extra proteins)
+                    if isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, str):
+                                display_value = item.replace("_", " ").title()
+                                extra_customizations.append(display_value)
+                            # Skip dict items (they're selection metadata)
+                    else:
+                        # Convert slug to display name
+                        display_value = str(value).replace("_", " ").title()
+                        extra_customizations.append(display_value)
+            if extra_customizations:
+                parts.append(f"with {', '.join(extra_customizations)}")
+
         # Add side choice info for omelettes
         elif self.side_choice == "bagel" and self.bagel_choice:
             bagel_parts = [self.bagel_choice, "bagel"]

@@ -22,6 +22,7 @@ from .handler_config import HandlerConfig
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
     from .pricing import PricingEngine
+    from .menu_item_config_handler import MenuItemConfigHandler
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class ItemAdderHandler:
         self,
         config: HandlerConfig | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
+        menu_item_handler: "MenuItemConfigHandler | None" = None,
         **kwargs,
     ):
         """
@@ -46,6 +48,7 @@ class ItemAdderHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             configure_next_incomplete_bagel: Callback to configure bagels.
+            menu_item_handler: Handler for menu item configuration (deli sandwiches, etc.).
             **kwargs: Legacy parameter support.
         """
         if config:
@@ -60,6 +63,7 @@ class ItemAdderHandler:
 
         # Handler-specific callback
         self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
+        self.menu_item_handler = menu_item_handler or kwargs.get("menu_item_handler")
         self._menu_data: dict = {}
 
     @property
@@ -298,23 +302,29 @@ class ItemAdderHandler:
         # Check if it's an omelette (requires side choice)
         is_omelette = "omelette" in canonical_name.lower() or "omelet" in canonical_name.lower()
 
-        # Check if it's a spread or salad sandwich (requires toasted question)
-        is_spread_or_salad_sandwich = category in ("spread_sandwich", "salad_sandwich", "fish_sandwich")
+        # Check if it's a spread sandwich (now uses DB-driven config)
+        is_spread_sandwich = category == "spread_sandwich"
 
         logger.info(
-            "Menu item check: canonical_name='%s', category='%s', is_omelette=%s, is_spread_salad=%s, quantity=%d",
+            "Menu item check: canonical_name='%s', category='%s', is_omelette=%s, is_spread_sandwich=%s, quantity=%d",
             canonical_name,
             category,
             is_omelette,
-            is_spread_or_salad_sandwich,
+            is_spread_sandwich,
             quantity,
         )
+
+        # Check if it uses DB-driven configuration (deli, egg, fish, spread sandwiches)
+        is_deli_sandwich = category == "deli_sandwich"
+        is_egg_sandwich = category == "egg_sandwich"
+        is_fish_sandwich = category == "fish_sandwich"
+        uses_db_config = is_deli_sandwich or is_egg_sandwich or is_fish_sandwich or is_spread_sandwich
 
         # Determine the menu item type for tracking
         if is_omelette:
             item_type = "omelette"
-        elif is_spread_or_salad_sandwich:
-            item_type = category  # "spread_sandwich" or "salad_sandwich"
+        elif uses_db_config:
+            item_type = category  # "deli_sandwich", "egg_sandwich", "fish_sandwich", or "spread_sandwich"
         else:
             item_type = None
 
@@ -347,15 +357,13 @@ class ItemAdderHandler:
                 message=f"Would you like a bagel or fruit salad with your {canonical_name}?",
                 order=order,
             )
-        elif is_spread_or_salad_sandwich:
-            # For spread/salad sandwiches, ask for bagel choice first, then toasted
-            if bagel_choice and toasted is not None:
-                # Both bagel and toasted specified - mark complete
-                first_item.mark_complete()
-                return self._get_next_question(order)
-            else:
-                # Use unified configuration flow (handles ordinals for multiple items)
-                return self._configure_next_incomplete_bagel(order)
+        elif uses_db_config and self.menu_item_handler:
+            # For deli/egg sandwiches, use DB-driven configuration with customization checkpoint
+            # Capture any attributes mentioned in the initial order
+            # Note: item_name contains the item + any modifiers the user mentioned
+            self.menu_item_handler.capture_attributes_from_input(item_name, first_item)
+            # Start the configuration flow
+            return self.menu_item_handler.get_first_question(first_item, order)
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:

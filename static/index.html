@@ -1273,7 +1273,19 @@
 
     let STORE_NAMES = {};
     const USE_STREAMING = true;
-    const APP_VERSION = "0.1.1";
+    let appVersion = "...";
+
+    async function loadAppVersion() {
+      try {
+        const resp = await fetch("/health");
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.version) appVersion = data.version;
+        }
+      } catch (err) {
+        console.warn("Could not fetch app version:", err);
+      }
+    }
 
     let companyInfo = {
       name: "Zucker's Bagels",
@@ -1403,7 +1415,7 @@
         connected = true;
         sessionStartTime = Date.now();
 
-        let headerText = `v${APP_VERSION} | ` + sessionId.substring(0, 8);
+        let headerText = `v${appVersion} | ` + sessionId.substring(0, 8);
         if (storeId && STORE_NAMES[storeId]) headerText += ` | ${STORE_NAMES[storeId]}`;
         if (callerId) headerText += ` | ${callerId}`;
         if (data.returning_customer && data.returning_customer.name) {
@@ -1570,6 +1582,7 @@
     });
 
     window.addEventListener("load", async () => {
+      await loadAppVersion();
       await loadCompanyInfo();
       await loadTTSVoices();
       const availableStores = await loadStoresAndPopulateDropdown();

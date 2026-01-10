@@ -192,6 +192,75 @@
       padding: 40px;
       color: #666;
     }
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success {
+      background: #10b981;
+      color: white;
+    }
+    .toast.error {
+      background: #ef4444;
+      color: white;
+    }
+    .toast.info {
+      background: #3b82f6;
+      color: white;
+    }
+    .toast-icon {
+      font-size: 18px;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     /* Checkbox group styles */
     .checkbox-grid {
       display: grid;
@@ -234,9 +303,47 @@
         grid-template-columns: 1fr;
       }
     }
+    /* Tab styles */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e0e0e0;
+      padding-bottom: 0;
+    }
+    .tab-btn {
+      padding: 12px 24px;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: #1976d2;
+      background: #f5f5f5;
+    }
+    .tab-btn.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+      background: transparent;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <div class="app-header">
     <div>Company Settings</div>
     <div>
@@ -245,8 +352,10 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
       <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html"><strong>Company</strong></a>
@@ -263,12 +372,19 @@
       <div class="tagline-display" id="previewTagline"></div>
     </div>
 
-    <div class="section">
-      <div class="section-header">Company Information</div>
-      <div class="section-body">
-        <div id="loadingState" class="loading">Loading company settings...</div>
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="company-info">Company Info</button>
+      <button class="tab-btn" data-tab="business-settings">Business Settings</button>
+    </div>
 
-        <form id="companyForm" style="display: none;">
+    <div id="loadingState" class="loading">Loading company settings...</div>
+
+    <!-- Tab 1: Company Info -->
+    <div id="tab-company-info" class="tab-content">
+      <div class="section">
+        <div class="section-header">Company Information</div>
+        <div class="section-body">
           <div class="form-row">
             <div class="form-group" style="flex: 2;">
               <label for="companyName">Company Name *</label>
@@ -337,132 +453,145 @@
           </div>
 
           <div class="form-actions">
-            <button type="button" class="btn" id="resetBtn">Reset</button>
-            <button type="button" class="btn primary" id="saveBtn">Save Changes</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Payment Methods Section -->
-    <div class="section">
-      <div class="section-header"><span class="section-icon">💳</span>Payment Methods</div>
-      <div class="section-body">
-        <div class="checkbox-grid">
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsCreditCards" />
-            <label for="acceptsCreditCards">Credit Cards</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsDebitCards" />
-            <label for="acceptsDebitCards">Debit Cards</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsCash" />
-            <label for="acceptsCash">Cash</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsApplePay" />
-            <label for="acceptsApplePay">Apple Pay</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsGooglePay" />
-            <label for="acceptsGooglePay">Google Pay</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsVenmo" />
-            <label for="acceptsVenmo">Venmo</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="acceptsPaypal" />
-            <label for="acceptsPaypal">PayPal</label>
-          </div>
-        </div>
-        <div class="hint" style="margin-top: 12px;">Select all payment methods your business accepts</div>
-      </div>
-    </div>
-
-    <!-- Dietary & Certification Section -->
-    <div class="section">
-      <div class="section-header"><span class="section-icon">🥗</span>Dietary & Certifications</div>
-      <div class="section-body">
-        <div class="checkbox-grid">
-          <div class="checkbox-item">
-            <input type="checkbox" id="isKosher" />
-            <label for="isKosher">Kosher</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="isHalal" />
-            <label for="isHalal">Halal</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="hasVegetarianOptions" />
-            <label for="hasVegetarianOptions">Vegetarian Options</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="hasVeganOptions" />
-            <label for="hasVeganOptions">Vegan Options</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="hasGlutenFreeOptions" />
-            <label for="hasGlutenFreeOptions">Gluten-Free Options</label>
-          </div>
-        </div>
-        <div class="form-group" style="margin-top: 16px;">
-          <label for="kosherCertification">Kosher Certification</label>
-          <input type="text" id="kosherCertification" placeholder="e.g., Tablet K, OU, OK Kosher" />
-          <div class="hint">If kosher, specify the certifying organization</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Amenities Section -->
-    <div class="section">
-      <div class="section-header"><span class="section-icon">🏪</span>Amenities</div>
-      <div class="section-body">
-        <div class="checkbox-grid">
-          <div class="checkbox-item">
-            <input type="checkbox" id="wifiAvailable" />
-            <label for="wifiAvailable">Free WiFi</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="wheelchairAccessible" />
-            <label for="wheelchairAccessible">Wheelchair Accessible</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="outdoorSeating" />
-            <label for="outdoorSeating">Outdoor Seating</label>
+            <button type="button" class="btn" id="resetBtnCompany">Reset</button>
+            <button type="button" class="btn primary" id="saveBtnCompany">Save Changes</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Catering Section -->
-    <div class="section">
-      <div class="section-header"><span class="section-icon">🍽️</span>Catering</div>
-      <div class="section-body">
-        <div class="checkbox-grid" style="margin-bottom: 16px;">
-          <div class="checkbox-item">
-            <input type="checkbox" id="offersCatering" />
-            <label for="offersCatering">Offers Catering Services</label>
+    <!-- Tab 2: Business Settings -->
+    <div id="tab-business-settings" class="tab-content">
+      <!-- Payment Methods Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon">💳</span>Payment Methods</div>
+        <div class="section-body">
+          <div class="checkbox-grid">
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsCreditCards" />
+              <label for="acceptsCreditCards">Credit Cards</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsDebitCards" />
+              <label for="acceptsDebitCards">Debit Cards</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsCash" />
+              <label for="acceptsCash">Cash</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsApplePay" />
+              <label for="acceptsApplePay">Apple Pay</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsGooglePay" />
+              <label for="acceptsGooglePay">Google Pay</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsVenmo" />
+              <label for="acceptsVenmo">Venmo</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="acceptsPaypal" />
+              <label for="acceptsPaypal">PayPal</label>
+            </div>
+          </div>
+          <div class="hint" style="margin-top: 12px;">Select all payment methods your business accepts</div>
+        </div>
+      </div>
+
+      <!-- Dietary & Certification Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon">🥗</span>Dietary & Certifications</div>
+        <div class="section-body">
+          <div class="checkbox-grid">
+            <div class="checkbox-item">
+              <input type="checkbox" id="isKosher" />
+              <label for="isKosher">Kosher</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="isHalal" />
+              <label for="isHalal">Halal</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="hasVegetarianOptions" />
+              <label for="hasVegetarianOptions">Vegetarian Options</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="hasVeganOptions" />
+              <label for="hasVeganOptions">Vegan Options</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="hasGlutenFreeOptions" />
+              <label for="hasGlutenFreeOptions">Gluten-Free Options</label>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 16px;">
+            <label for="kosherCertification">Kosher Certification</label>
+            <input type="text" id="kosherCertification" placeholder="e.g., Tablet K, OU, OK Kosher" />
+            <div class="hint">If kosher, specify the certifying organization</div>
           </div>
         </div>
-        <div class="catering-fields">
-          <div class="form-group">
-            <label for="cateringMinimumOrder">Minimum Order ($)</label>
-            <input type="number" id="cateringMinimumOrder" min="0" step="0.01" placeholder="e.g., 50.00" />
+      </div>
+
+      <!-- Amenities Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon">🏪</span>Amenities</div>
+        <div class="section-body">
+          <div class="checkbox-grid">
+            <div class="checkbox-item">
+              <input type="checkbox" id="wifiAvailable" />
+              <label for="wifiAvailable">Free WiFi</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="wheelchairAccessible" />
+              <label for="wheelchairAccessible">Wheelchair Accessible</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="outdoorSeating" />
+              <label for="outdoorSeating">Outdoor Seating</label>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="cateringAdvanceNoticeHours">Advance Notice (hours)</label>
-            <input type="number" id="cateringAdvanceNoticeHours" min="0" placeholder="e.g., 24" />
+        </div>
+      </div>
+
+      <!-- Catering Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon">🍽️</span>Catering</div>
+        <div class="section-body">
+          <div class="checkbox-grid" style="margin-bottom: 16px;">
+            <div class="checkbox-item">
+              <input type="checkbox" id="offersCatering" />
+              <label for="offersCatering">Offers Catering Services</label>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="cateringPhone">Catering Phone</label>
-            <input type="tel" id="cateringPhone" placeholder="e.g., (212) 555-0000" />
+          <div class="catering-fields">
+            <div class="form-group">
+              <label for="cateringMinimumOrder">Minimum Order ($)</label>
+              <input type="number" id="cateringMinimumOrder" min="0" step="0.01" placeholder="e.g., 50.00" />
+            </div>
+            <div class="form-group">
+              <label for="cateringAdvanceNoticeHours">Advance Notice (hours)</label>
+              <input type="number" id="cateringAdvanceNoticeHours" min="0" placeholder="e.g., 24" />
+            </div>
+            <div class="form-group">
+              <label for="cateringPhone">Catering Phone</label>
+              <input type="tel" id="cateringPhone" placeholder="e.g., (212) 555-0000" />
+            </div>
+            <div class="form-group">
+              <label for="cateringEmail">Catering Email</label>
+              <input type="email" id="cateringEmail" placeholder="e.g., catering@company.com" />
+            </div>
           </div>
-          <div class="form-group">
-            <label for="cateringEmail">Catering Email</label>
-            <input type="email" id="cateringEmail" placeholder="e.g., catering@company.com" />
+        </div>
+      </div>
+
+      <!-- Save button for Business Settings tab -->
+      <div class="section">
+        <div class="section-body">
+          <div class="form-actions" style="margin-top: 0; padding-top: 0; border-top: none;">
+            <button type="button" class="btn" id="resetBtnSettings">Reset</button>
+            <button type="button" class="btn primary" id="saveBtnSettings">Save Changes</button>
           </div>
         </div>
       </div>
@@ -476,13 +605,70 @@
     // DOM elements
     const statusBar = document.getElementById("statusBar");
     const loadingState = document.getElementById("loadingState");
-    const companyForm = document.getElementById("companyForm");
     const previewCard = document.getElementById("previewCard");
+    const toastContainer = document.getElementById("toastContainer");
 
     // Original company data (for reset)
     let originalData = null;
 
-    // Show status message
+    // Toast notification system
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+
+      const icons = {
+        success: "✓",
+        error: "✕",
+        info: "ℹ"
+      };
+
+      toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || icons.info}</span>
+        <span>${message}</span>
+      `;
+
+      toastContainer.appendChild(toast);
+
+      // Auto-remove after 3 seconds
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save Changes") {
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          // Revert to normal after 2 seconds
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+          break;
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
+
+    // Show status message (legacy, kept for compatibility)
     function showStatus(message, type = "info") {
       statusBar.textContent = message;
       statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
@@ -491,6 +677,22 @@
         setTimeout(() => { statusBar.style.display = "none"; }, 3000);
       }
     }
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Update button states
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update tab content visibility
+        const tabId = btn.dataset.tab;
+        document.querySelectorAll('.tab-content').forEach(tab => {
+          tab.classList.remove('active');
+        });
+        document.getElementById('tab-' + tabId).classList.add('active');
+      });
+    });
 
     // Update preview card
     function updatePreview() {
@@ -581,7 +783,8 @@
         populateForm(data);
 
         loadingState.style.display = "none";
-        companyForm.style.display = "block";
+        // Show the active tab content by adding the active class
+        document.getElementById("tab-company-info").classList.add("active");
       } catch (error) {
         console.error("Failed to load company settings:", error);
         showStatus("Failed to load company settings from server", "error");
@@ -590,18 +793,30 @@
     }
 
     // Save company data to API
-    async function saveCompany() {
+    async function saveCompany(clickedButton) {
       const name = document.getElementById("companyName").value.trim();
       const botPersonaName = document.getElementById("botPersonaName").value.trim();
 
+      // Get both save buttons to update their states
+      const saveBtnCompany = document.getElementById("saveBtnCompany");
+      const saveBtnSettings = document.getElementById("saveBtnSettings");
+      const activeButton = clickedButton || saveBtnCompany;
+
       if (!name) {
-        showStatus("Company name is required", "error");
+        showToast("Company name is required", "error");
+        // Switch to Company Info tab if not there
+        document.querySelector('[data-tab="company-info"]').click();
         return;
       }
       if (!botPersonaName) {
-        showStatus("Bot persona name is required", "error");
+        showToast("Bot persona name is required", "error");
+        // Switch to Company Info tab if not there
+        document.querySelector('[data-tab="company-info"]').click();
         return;
       }
+
+      // Set button to saving state
+      setSaveButtonState(activeButton, "saving");
 
       // Get catering values (convert empty strings to null)
       const cateringMinOrder = document.getElementById("cateringMinimumOrder").value;
@@ -666,10 +881,12 @@
 
         const data = await response.json();
         originalData = data;
-        showStatus("Company settings saved successfully", "success");
+        setSaveButtonState(activeButton, "saved");
+        showToast("Settings saved successfully", "success");
       } catch (error) {
         console.error("Failed to save company settings:", error);
-        showStatus(`Failed to save: ${error.message}`, "error");
+        setSaveButtonState(activeButton, "error");
+        showToast(`Failed to save: ${error.message}`, "error");
       }
     }
 
@@ -681,9 +898,15 @@
       }
     }
 
-    // Event listeners
-    document.getElementById("saveBtn").addEventListener("click", saveCompany);
-    document.getElementById("resetBtn").addEventListener("click", resetForm);
+    // Event listeners - both save buttons call the same function
+    document.getElementById("saveBtnCompany").addEventListener("click", function() {
+      saveCompany(this);
+    });
+    document.getElementById("saveBtnSettings").addEventListener("click", function() {
+      saveCompany(this);
+    });
+    document.getElementById("resetBtnCompany").addEventListener("click", resetForm);
+    document.getElementById("resetBtnSettings").addEventListener("click", resetForm);
 
     // Live preview updates
     document.getElementById("companyName").addEventListener("input", updatePreview);
@@ -691,14 +914,6 @@
     document.getElementById("tagline").addEventListener("input", updatePreview);
     document.getElementById("logoUrl").addEventListener("input", updateLogoPreview);
     document.getElementById("logoUrl").addEventListener("change", updateLogoPreview);
-
-    // Handle form submission with Enter key
-    companyForm.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
-        e.preventDefault();
-        saveCompany();
-      }
-    });
 
     // Initial load
     loadCompany();

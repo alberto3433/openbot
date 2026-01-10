@@ -21,7 +21,6 @@ from .models import (
     OrderTask,
     MenuItemTask,
     BagelItemTask,
-    CoffeeItemTask,
     TaskStatus,
 )
 from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers, OpenInputResponse
@@ -862,16 +861,29 @@ class CheckoutHandler:
         flavor_syrup = prev_item.get("flavor_syrup")
         price = prev_item.get("price", 0)
 
-        coffee = CoffeeItemTask(
-            drink_type=drink_type,
-            size=size,
-            iced=iced,
-            milk=milk,
-            sweetener=sweetener,
-            sweetener_quantity=prev_item.get("sweetener_quantity", 1),
-            flavor_syrup=flavor_syrup,
+        # Create MenuItemTask with sized_beverage type
+        coffee = MenuItemTask(
+            menu_item_name=drink_type or "coffee",
+            menu_item_type="sized_beverage",
             unit_price=price,
         )
+        if size:
+            coffee.size = size
+        if iced is not None:
+            coffee.iced = iced
+        if milk:
+            coffee.milk = milk
+        if sweetener:
+            coffee.attribute_values["sweetener_selections"] = [{
+                "type": sweetener,
+                "quantity": prev_item.get("sweetener_quantity", 1)
+            }]
+        if flavor_syrup:
+            coffee.attribute_values["syrup_selections"] = [{
+                "flavor": flavor_syrup,
+                "quantity": 1
+            }]
+
         coffee.status = TaskStatus.COMPLETE
         for _ in range(quantity):
             order.items.add_item(coffee)

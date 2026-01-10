@@ -17,7 +17,6 @@ from sandwich_bot.menu_data_cache import menu_cache
 from .models import (
     OrderTask,
     BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
     TaskStatus,
 )
@@ -100,7 +99,7 @@ def _get_syrup_options() -> list[str]:
 
 
 def _get_milk_options_coffee() -> list[tuple[str, str]]:
-    """Get milk options for CoffeeItemTask from database.
+    """Get milk options for sized_beverage MenuItemTask from database.
 
     Returns list of (pattern, value) tuples like [("oat milk", "oat"), ...].
     Falls back to hardcoded list if database not loaded.
@@ -544,8 +543,9 @@ class TakingItemsHandler:
         is_pure_modifier_input = False
         if has_coffee_modifier and active_items:
             last_item = active_items[-1]
-            is_beverage = isinstance(last_item, CoffeeItemTask) or (
-                isinstance(last_item, MenuItemTask) and last_item.menu_item_type == "espresso"
+            is_beverage = (
+                isinstance(last_item, MenuItemTask) and
+                (last_item.is_sized_beverage or last_item.menu_item_type == "espresso")
             )
             if is_beverage:
                 # Check if input is ONLY a modifier (no other item keywords)
@@ -561,7 +561,7 @@ class TakingItemsHandler:
         # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
         if (is_add_modifier_request or is_pure_modifier_input) and has_coffee_modifier and active_items:
             last_item = active_items[-1]
-            if isinstance(last_item, CoffeeItemTask):
+            if isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage:
                 made_change = False
 
                 # Check for syrup - add to array if not already present
@@ -831,8 +831,9 @@ class TakingItemsHandler:
             is_pure_modifier_input = False
             if has_coffee_modifier and active_items:
                 last_item_check = active_items[-1]
-                is_beverage = isinstance(last_item_check, CoffeeItemTask) or (
-                    isinstance(last_item_check, MenuItemTask) and last_item_check.menu_item_type == "espresso"
+                is_beverage = (
+                    isinstance(last_item_check, MenuItemTask) and
+                    (last_item_check.is_sized_beverage or last_item_check.menu_item_type == "espresso")
                 )
                 if is_beverage:
                     # Check if input is ONLY a modifier (no other item keywords)
@@ -848,7 +849,7 @@ class TakingItemsHandler:
             # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
             if (is_add_modifier_request or is_pure_modifier_input) and has_coffee_modifier and active_items:
                 last_item = active_items[-1]
-                if isinstance(last_item, CoffeeItemTask):
+                if isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage:
                     made_change = False
 
                     # Check for syrup - add to array if not already present
@@ -1369,7 +1370,7 @@ class TakingItemsHandler:
                             )
 
                 # If no new items parsed and last item is a coffee, check for size/style/milk changes
-                if not has_new_items and isinstance(last_item, CoffeeItemTask) and raw_user_input:
+                if not has_new_items and isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage and raw_user_input:
                     input_lower = raw_user_input.lower()
                     made_change = False
 
@@ -1499,10 +1500,11 @@ class TakingItemsHandler:
                         # Recalculate price based on item type
                         if isinstance(modifier_match.item, BagelItemTask):
                             self.pricing.recalculate_bagel_price(modifier_match.item)
-                        elif isinstance(modifier_match.item, CoffeeItemTask):
-                            self.pricing.recalculate_coffee_price(modifier_match.item)
                         elif isinstance(modifier_match.item, MenuItemTask):
-                            self.pricing.recalculate_menu_item_price(modifier_match.item)
+                            if modifier_match.item.is_sized_beverage:
+                                self.pricing.recalculate_coffee_price(modifier_match.item)
+                            else:
+                                self.pricing.recalculate_menu_item_price(modifier_match.item)
 
                         updated_summary = modifier_match.item.get_summary()
                         return StateMachineResult(
@@ -1583,18 +1585,15 @@ class TakingItemsHandler:
                     items_to_check = active_items
                     if item_type:
                         # Filter by item type (use module-level imports)
-                        type_map = {
-                            "bagel": BagelItemTask,
-                            "coffee": CoffeeItemTask,
-                            "drink": CoffeeItemTask,
-                            "sandwich": MenuItemTask,
-                        }
-                        target_types = type_map.get(item_type)
-                        if target_types:
-                            if isinstance(target_types, tuple):
-                                items_to_check = [i for i in active_items if isinstance(i, target_types)]
-                            else:
-                                items_to_check = [i for i in active_items if isinstance(i, target_types)]
+                        if item_type == "bagel":
+                            items_to_check = [i for i in active_items if isinstance(i, BagelItemTask)]
+                        elif item_type in ("coffee", "drink"):
+                            items_to_check = [
+                                i for i in active_items
+                                if isinstance(i, MenuItemTask) and i.is_sized_beverage
+                            ]
+                        elif item_type == "sandwich":
+                            items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
 
                     if len(items_to_check) > 1:
                         # Keep the first item, remove the rest
@@ -2197,8 +2196,8 @@ class TakingItemsHandler:
                 if active_items:
                     last_item = active_items[-1]
 
-                    # Add to CoffeeItemTask
-                    if isinstance(last_item, CoffeeItemTask):
+                    # Add to sized_beverage MenuItemTask (was CoffeeItemTask)
+                    if isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage:
                         modifier_summary_parts = []
 
                         # Add syrups
@@ -2655,7 +2654,7 @@ class TakingItemsHandler:
         #
         # Handler groups:
         # - "bagel_handler": BagelItemTask, MenuItemTask with bagel config (sandwiches, omelette sides)
-        # - "coffee_handler": CoffeeItemTask
+        # - "coffee_handler": MenuItemTask with is_sized_beverage (coffee, latte, etc.)
         # - Individual items: MenuItemTask needing side_choice (no internal loop)
 
         bagel_handler_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
@@ -2714,14 +2713,14 @@ class TakingItemsHandler:
                     elif item.spread is None and not item.extras and not item.sandwich_protein:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
-                elif isinstance(item, CoffeeItemTask):
+                elif isinstance(item, MenuItemTask) and item.is_sized_beverage:
                     # Coffee items: check size first, then hot/iced, then modifiers
                     if item.size is None:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_size"))
+                        coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_size"))
                     elif item.iced is None:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
+                        coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_style"))
                     elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_modifiers"))
+                        coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_modifiers"))
 
         # Build final list: only FIRST item from each handler group + all individual items
         # Handlers with internal loops will find subsequent items of their type automatically

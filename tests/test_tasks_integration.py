@@ -4990,6 +4990,95 @@ class TestEspressoItemTypeConsistency:
                 "Cache should include must_match field for options (even if None)"
 
 
+class TestMultiSelectTokenization:
+    """Tests for tokenized multi-select input matching."""
+
+    def test_tokenize_multi_input_and(self):
+        """Test tokenization splits on 'and'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        tokens = handler._tokenize_multi_input("milk and sugar")
+        assert tokens == ["milk", "sugar"]
+
+    def test_tokenize_multi_input_comma(self):
+        """Test tokenization splits on comma."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        tokens = handler._tokenize_multi_input("bacon, cheese, tomato")
+        assert tokens == ["bacon", "cheese", "tomato"]
+
+    def test_tokenize_multi_input_preserves_multiword(self):
+        """Test tokenization preserves multi-word items."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        tokens = handler._tokenize_multi_input("oat milk and vanilla syrup")
+        assert tokens == ["oat milk", "vanilla syrup"]
+
+    def test_match_multiple_options_milk_and_sugar(self):
+        """Test that 'milk and sugar' matches both Whole Milk and Sugar options."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        # Simulate options like espresso milk_sweetener_syrup
+        options = [
+            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
+            {"slug": "oat_milk", "display_name": "Oat Milk", "must_match": "oat milk"},
+            {"slug": "skim_milk", "display_name": "Skim Milk", "must_match": "skim milk"},
+            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
+            {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "must_match": "vanilla"},
+        ]
+
+        matched = handler._match_multiple_options_from_input("milk and sugar", options)
+        matched_slugs = [m["slug"] for m in matched]
+
+        # Should match Whole Milk (default, must_match=None) and Sugar
+        assert "whole_milk" in matched_slugs, "Should match Whole Milk for 'milk'"
+        assert "sugar" in matched_slugs, "Should match Sugar for 'sugar'"
+        # Should NOT match oat_milk or skim_milk (must_match filters them out)
+        assert "oat_milk" not in matched_slugs, "Should not match Oat Milk without 'oat'"
+        assert "skim_milk" not in matched_slugs, "Should not match Skim Milk without 'skim'"
+
+    def test_match_multiple_options_oat_milk_and_vanilla(self):
+        """Test that 'oat milk and vanilla' matches Oat Milk and Vanilla Syrup."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        options = [
+            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
+            {"slug": "oat_milk", "display_name": "Oat Milk", "must_match": "oat milk"},
+            {"slug": "skim_milk", "display_name": "Skim Milk", "must_match": "skim milk"},
+            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
+            {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "must_match": "vanilla"},
+        ]
+
+        matched = handler._match_multiple_options_from_input("oat milk and vanilla", options)
+        matched_slugs = [m["slug"] for m in matched]
+
+        assert "oat_milk" in matched_slugs, "Should match Oat Milk"
+        assert "vanilla_syrup" in matched_slugs, "Should match Vanilla Syrup"
+        # Should NOT match whole_milk even though "milk" is in the input
+        # because "oat milk" is a more specific match
+        assert len(matched) == 2, f"Should match exactly 2 options, got {matched_slugs}"
+
+    def test_match_multiple_options_single_item(self):
+        """Test that single item input still works."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        options = [
+            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
+            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
+        ]
+
+        matched = handler._match_multiple_options_from_input("sugar", options)
+        matched_slugs = [m["slug"] for m in matched]
+
+        assert matched_slugs == ["sugar"], f"Should match only Sugar, got {matched_slugs}"
+
+
 class TestPaymentMethodHandler:
     """Tests for _handle_payment_method."""
 

@@ -476,6 +476,213 @@ class MenuItemTask(ItemTask):
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
+    # -------------------------------------------------------------------------
+    # Beverage helper properties (for sized_beverage items like coffee)
+    # These provide a CoffeeItemTask-compatible interface using attribute_values
+    # -------------------------------------------------------------------------
+
+    @property
+    def drink_type(self) -> str | None:
+        """Get drink type (alias for menu_item_name for beverages)."""
+        return self.menu_item_name if self.menu_item_type == "sized_beverage" else None
+
+    @drink_type.setter
+    def drink_type(self, value: str | None) -> None:
+        """Set drink type (updates menu_item_name for beverages)."""
+        if value is not None:
+            self.menu_item_name = value
+
+    @property
+    def size(self) -> str | None:
+        """Get beverage size from attribute_values."""
+        return self.attribute_values.get("size")
+
+    @size.setter
+    def size(self, value: str | None) -> None:
+        """Set beverage size in attribute_values."""
+        if value is not None:
+            self.attribute_values["size"] = value
+        elif "size" in self.attribute_values:
+            del self.attribute_values["size"]
+
+    @property
+    def iced(self) -> bool | None:
+        """Get iced flag from attribute_values."""
+        return self.attribute_values.get("iced")
+
+    @iced.setter
+    def iced(self, value: bool | None) -> None:
+        """Set iced flag in attribute_values."""
+        if value is not None:
+            self.attribute_values["iced"] = value
+        elif "iced" in self.attribute_values:
+            del self.attribute_values["iced"]
+
+    @property
+    def decaf(self) -> bool | None:
+        """Get decaf flag from attribute_values."""
+        return self.attribute_values.get("decaf")
+
+    @decaf.setter
+    def decaf(self, value: bool | None) -> None:
+        """Set decaf flag in attribute_values."""
+        if value is not None:
+            self.attribute_values["decaf"] = value
+        elif "decaf" in self.attribute_values:
+            del self.attribute_values["decaf"]
+
+    @property
+    def milk(self) -> str | None:
+        """Get milk type from attribute_values."""
+        return self.attribute_values.get("milk")
+
+    @milk.setter
+    def milk(self, value: str | None) -> None:
+        """Set milk type in attribute_values."""
+        if value is not None:
+            self.attribute_values["milk"] = value
+        elif "milk" in self.attribute_values:
+            del self.attribute_values["milk"]
+
+    @property
+    def cream_level(self) -> str | None:
+        """Get cream level from attribute_values."""
+        return self.attribute_values.get("cream_level")
+
+    @cream_level.setter
+    def cream_level(self, value: str | None) -> None:
+        """Set cream level in attribute_values."""
+        if value is not None:
+            self.attribute_values["cream_level"] = value
+        elif "cream_level" in self.attribute_values:
+            del self.attribute_values["cream_level"]
+
+    @property
+    def sweeteners(self) -> list[dict]:
+        """Get sweeteners list from attribute_values.
+
+        Creates the list if it doesn't exist, so .append() works correctly.
+        """
+        if "sweetener_selections" not in self.attribute_values:
+            self.attribute_values["sweetener_selections"] = []
+        return self.attribute_values["sweetener_selections"]
+
+    @sweeteners.setter
+    def sweeteners(self, value: list[dict]) -> None:
+        """Set sweeteners list in attribute_values."""
+        self.attribute_values["sweetener_selections"] = value or []
+
+    @property
+    def flavor_syrups(self) -> list[dict]:
+        """Get flavor syrups list from attribute_values.
+
+        Creates the list if it doesn't exist, so .append() works correctly.
+        """
+        if "syrup_selections" not in self.attribute_values:
+            self.attribute_values["syrup_selections"] = []
+        return self.attribute_values["syrup_selections"]
+
+    @flavor_syrups.setter
+    def flavor_syrups(self, value: list[dict]) -> None:
+        """Set flavor syrups list in attribute_values."""
+        self.attribute_values["syrup_selections"] = value or []
+
+    @property
+    def wants_syrup(self) -> bool:
+        """Get wants_syrup flag from attribute_values."""
+        return self.attribute_values.get("wants_syrup", False)
+
+    @wants_syrup.setter
+    def wants_syrup(self, value: bool) -> None:
+        """Set wants_syrup flag in attribute_values."""
+        self.attribute_values["wants_syrup"] = value
+
+    @property
+    def pending_syrup_quantity(self) -> int:
+        """Get pending_syrup_quantity from attribute_values."""
+        return self.attribute_values.get("pending_syrup_quantity", 1)
+
+    @pending_syrup_quantity.setter
+    def pending_syrup_quantity(self, value: int) -> None:
+        """Set pending_syrup_quantity in attribute_values."""
+        self.attribute_values["pending_syrup_quantity"] = value
+
+    @property
+    def extra_shots(self) -> int:
+        """Get extra_shots from attribute_values."""
+        return self.attribute_values.get("extra_shots", 0)
+
+    @extra_shots.setter
+    def extra_shots(self, value: int) -> None:
+        """Set extra_shots in attribute_values."""
+        self.attribute_values["extra_shots"] = value
+
+    # Upcharge properties for beverages
+    @property
+    def size_upcharge(self) -> float:
+        """Get size upcharge from attribute_values."""
+        return self.attribute_values.get("size_upcharge", 0.0)
+
+    @size_upcharge.setter
+    def size_upcharge(self, value: float) -> None:
+        """Set size upcharge in attribute_values."""
+        self.attribute_values["size_upcharge"] = value
+
+    @property
+    def milk_upcharge(self) -> float:
+        """Get milk upcharge from attribute_values."""
+        return self.attribute_values.get("milk_upcharge", 0.0)
+
+    @milk_upcharge.setter
+    def milk_upcharge(self, value: float) -> None:
+        """Set milk upcharge in attribute_values."""
+        self.attribute_values["milk_upcharge"] = value
+
+    @property
+    def syrup_upcharge(self) -> float:
+        """Get syrup upcharge from attribute_values."""
+        return self.attribute_values.get("syrup_upcharge", 0.0)
+
+    @syrup_upcharge.setter
+    def syrup_upcharge(self, value: float) -> None:
+        """Set syrup upcharge in attribute_values."""
+        self.attribute_values["syrup_upcharge"] = value
+
+    @property
+    def iced_upcharge(self) -> float:
+        """Get iced upcharge from attribute_values."""
+        return self.attribute_values.get("iced_upcharge", 0.0)
+
+    @iced_upcharge.setter
+    def iced_upcharge(self, value: float) -> None:
+        """Set iced upcharge in attribute_values."""
+        self.attribute_values["iced_upcharge"] = value
+
+    @property
+    def extra_shots_upcharge(self) -> float:
+        """Get extra shots upcharge from attribute_values."""
+        return self.attribute_values.get("extra_shots_upcharge", 0.0)
+
+    @extra_shots_upcharge.setter
+    def extra_shots_upcharge(self, value: float) -> None:
+        """Set extra shots upcharge in attribute_values."""
+        self.attribute_values["extra_shots_upcharge"] = value
+
+    @property
+    def is_espresso(self) -> bool:
+        """Check if this is an espresso drink (no size, always hot)."""
+        if self.menu_item_type == "espresso":
+            return True
+        if self.menu_item_type == "sized_beverage":
+            drink_type = self.menu_item_name.lower() if self.menu_item_name else ""
+            return drink_type == "espresso"
+        return False
+
+    @property
+    def is_sized_beverage(self) -> bool:
+        """Check if this is a sized beverage (coffee, latte, etc.)."""
+        return self.menu_item_type == "sized_beverage"
+
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
         # Handle espresso display name (shots and decaf info)
@@ -494,6 +701,24 @@ class MenuItemTask(ItemTask):
             if decaf:
                 display_name = f"Decaf {display_name}"
             return display_name
+
+        # Handle sized_beverage display name (coffee, latte, etc.)
+        if self.menu_item_type == "sized_beverage":
+            parts = []
+            if self.size:
+                parts.append(self.size)
+            if self.iced is True:
+                parts.append("iced")
+            elif self.iced is False:
+                parts.append("hot")
+            if self.decaf:
+                parts.append("decaf")
+            if self.extra_shots == 1:
+                parts.append("double")
+            elif self.extra_shots >= 2:
+                parts.append("triple")
+            parts.append(self.menu_item_name or "coffee")
+            return " ".join(parts)
 
         return self.menu_item_name
 

@@ -15,7 +15,6 @@ from .models import (
     OrderTask,
     MenuItemTask,
     BagelItemTask,
-    CoffeeItemTask,
 )
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
@@ -167,21 +166,7 @@ class OrderUtilsHandler:
         template_item = matching_items[0]
         for _ in range(to_add):
             # Create a copy of the item
-            if isinstance(template_item, CoffeeItemTask):
-                new_item = CoffeeItemTask(
-                    drink_type=template_item.drink_type,
-                    size=template_item.size,
-                    iced=template_item.iced,
-                    milk=template_item.milk,
-                    sweeteners=list(template_item.sweeteners) if template_item.sweeteners else [],
-                    flavor_syrups=list(template_item.flavor_syrups) if template_item.flavor_syrups else [],
-                    unit_price=template_item.unit_price,
-                    special_instructions=template_item.special_instructions,
-                )
-                new_item.mark_complete()
-                order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of '%s'", template_item.drink_type)
-            elif isinstance(template_item, BagelItemTask):
+            if isinstance(template_item, BagelItemTask):
                 new_item = BagelItemTask(
                     bagel_type=template_item.bagel_type,
                     toasted=template_item.toasted,
@@ -218,10 +203,7 @@ class OrderUtilsHandler:
 
         # Build updated summary
         summary = self._build_order_summary(order) if self._build_order_summary else ""
-        if isinstance(template_item, CoffeeItemTask):
-            item_display = template_item.drink_type
-        else:
-            item_display = template_item.get_summary()
+        item_display = template_item.get_summary()
         return StateMachineResult(
             message=f"Got it, {target_quantity} {item_display}.\n\n{summary}\n\nDoes that look right?",
             order=order,

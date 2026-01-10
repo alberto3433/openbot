@@ -16,7 +16,6 @@ from typing import Any
 from .models import (
     ItemTask,
     BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
 )
 
@@ -122,9 +121,10 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type."""
     if isinstance(item, BagelItemTask):
         return BAGEL_MODIFIER_FIELDS
-    elif isinstance(item, CoffeeItemTask):
-        return COFFEE_MODIFIER_FIELDS
     elif isinstance(item, MenuItemTask):
+        # sized_beverage items use coffee modifier fields
+        if item.is_sized_beverage:
+            return COFFEE_MODIFIER_FIELDS
         return MENU_ITEM_MODIFIER_FIELDS
     else:
         return []

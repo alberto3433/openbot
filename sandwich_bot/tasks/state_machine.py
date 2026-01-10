@@ -17,7 +17,6 @@ from .models import (
     OrderTask,
     MenuItemTask,
     BagelItemTask,
-    CoffeeItemTask,
     ItemTask,
 )
 from .pricing import PricingEngine
@@ -206,10 +205,8 @@ def _get_pending_item_description(item: "ItemTask") -> str:
             return " ".join(parts) + " bagel"
         return "bagel"
     elif isinstance(item, MenuItemTask):
-        # For espresso and other menu items, use the menu_item_name
+        # For espresso, sized_beverage, and other menu items, use the menu_item_name
         return item.menu_item_name or "item"
-    elif isinstance(item, CoffeeItemTask):
-        return item.drink_type or "coffee"
     return "item"
 
 

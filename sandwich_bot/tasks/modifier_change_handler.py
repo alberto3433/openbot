@@ -14,7 +14,7 @@ from enum import Enum
 
 from typing import TYPE_CHECKING
 
-from .models import CoffeeItemTask
+from .models import MenuItemTask
 from .parsers.constants import (
     CHANGE_REQUEST_PATTERNS,
     get_spread_types,
@@ -436,7 +436,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_SIZE:
-            if not isinstance(item, CoffeeItemTask):
+            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
                 return ChangeResult(
                     success=False,
                     message="I can only change the size of a coffee drink.",
@@ -461,7 +461,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_MILK:
-            if not isinstance(item, CoffeeItemTask):
+            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
                 return ChangeResult(
                     success=False,
                     message="I can only change the milk for a coffee drink.",
@@ -492,7 +492,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_STYLE:
-            if not isinstance(item, CoffeeItemTask):
+            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
                 return ChangeResult(
                     success=False,
                     message="I can only change hot/iced for a coffee drink.",
@@ -511,7 +511,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_DECAF:
-            if not isinstance(item, CoffeeItemTask):
+            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
                 return ChangeResult(
                     success=False,
                     message="I can only change decaf for a coffee drink.",

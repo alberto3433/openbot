@@ -61,16 +61,19 @@ class TestSyrupToExistingBeverage:
         - User orders: coffee
         - User says: "vanilla syrup"
         - Expected: syrup added to coffee, NOT new coffee created
+
+        Note: Coffee is now a data-driven MenuItemTask with menu_item_type="sized_beverage".
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        # Add coffee to the order
-        coffee = CoffeeItemTask(
-            drink_type="coffee",
-            size="medium",
-            iced=False,
+        # Add coffee to the order (as MenuItemTask with sized_beverage type)
+        coffee = MenuItemTask(
+            menu_item_name="coffee",
+            menu_item_type="sized_beverage",
         )
+        coffee.size = "medium"
+        coffee.iced = False
         coffee.mark_complete()
         order.items.add_item(coffee)
 
@@ -84,9 +87,10 @@ class TestSyrupToExistingBeverage:
         # Should still have 1 item
         assert len(result.order.items.items) == 1, f"Expected 1 item, got {len(result.order.items.items)}"
 
-        # The item should be a coffee with vanilla syrup
+        # The item should be a sized_beverage MenuItemTask
         item = result.order.items.items[0]
-        assert isinstance(item, CoffeeItemTask), f"Expected CoffeeItemTask, got {type(item).__name__}"
+        assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
+        assert item.is_sized_beverage, "Expected is_sized_beverage to be True"
 
         # Check that vanilla syrup was added
         syrup_flavors = [s.get("flavor") for s in item.flavor_syrups]

@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, CoffeeItemTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -83,8 +83,8 @@ class CheckoutUtilsHandler:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
                             return self._configure_next_incomplete_bagel(order)
-                # Handle coffee that needs configuration
-                elif isinstance(item, CoffeeItemTask):
+                # Handle coffee that needs configuration (sized_beverage)
+                elif isinstance(item, MenuItemTask) and item.is_sized_beverage:
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
@@ -188,7 +188,7 @@ class CheckoutUtilsHandler:
                     # Start bagel configuration
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)
-                elif item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
+                elif item_type == "coffee" and isinstance(target_item, MenuItemTask) and target_item.is_sized_beverage:
                     # Start coffee configuration
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
@@ -236,8 +236,8 @@ class CheckoutUtilsHandler:
             last_item = items[-1]
             # Use formal summary for counting identical items
             last_formal_summary = last_item.get_summary()
-            # Use natural spoken summary for coffee items, formal summary for others
-            if isinstance(last_item, CoffeeItemTask) and hasattr(last_item, "get_spoken_summary"):
+            # Use natural spoken summary for sized_beverage items, formal summary for others
+            if isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage and hasattr(last_item, "get_spoken_summary"):
                 last_summary = last_item.get_spoken_summary()
             else:
                 last_summary = last_formal_summary

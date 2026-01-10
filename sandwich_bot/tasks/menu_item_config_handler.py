@@ -471,6 +471,29 @@ class MenuItemConfigHandler:
 
         return (None, [])
 
+    def _tokenize_multi_input(self, user_input: str) -> list[str]:
+        """
+        Tokenize compound input into individual items.
+
+        E.g., "milk and sugar" -> ["milk", "sugar"]
+              "bacon, cheese, tomato" -> ["bacon", "cheese", "tomato"]
+              "oat milk and vanilla syrup" -> ["oat milk", "vanilla syrup"]
+        """
+        import re
+        # Split on common separators, preserving multi-word items
+        # Order matters: check longer patterns first
+        separators = [
+            r'\s+and\s+',      # " and "
+            r'\s*,\s*',        # ", " or ","
+            r'\s+&\s+',        # " & "
+            r'\s+with\s+',     # " with "
+            r'\s+plus\s+',     # " plus "
+        ]
+        pattern = '|'.join(separators)
+        tokens = re.split(pattern, user_input, flags=re.IGNORECASE)
+        # Clean up tokens
+        return [t.strip() for t in tokens if t.strip()]
+
     def _match_multiple_options_from_input(
         self, user_input: str, options: list[dict]
     ) -> list[dict]:
@@ -480,7 +503,15 @@ class MenuItemConfigHandler:
         Returns list of matched options (may be empty if none found).
         Unlike _match_option_from_input, this finds ALL matches, not just one.
 
-        E.g., "mayo mustard" -> [mayo_option, mustard_option]
+        E.g., "milk and sugar" -> [whole_milk_option, sugar_option]
+              "mayo mustard" -> [mayo_option, mustard_option]
+
+        Supports tokenized input: splits on "and", ",", "&", etc. to match
+        multiple items like "milk and sugar" -> ["milk", "sugar"].
+
+        Matching is bidirectional:
+        1. Option name in user input (e.g., "sugar" in "milk and sugar")
+        2. User token in option name (e.g., "milk" in "whole milk")
 
         Note: Options with must_match are only matched if user input contains at least
         one of the must_match strings.
@@ -488,6 +519,7 @@ class MenuItemConfigHandler:
         # Normalize input to handle quantities and plurals
         user_lower = self._normalize_for_matching(user_input)
         matched = []
+        matched_slugs = set()  # Track slugs to avoid duplicates
 
         def get_aliases(opt: dict) -> list[str]:
             aliases_raw = opt.get("aliases", [])
@@ -498,6 +530,19 @@ class MenuItemConfigHandler:
                 return [a.strip() for a in aliases_raw.split(",") if a.strip()]
             return aliases_raw or []
 
+        def add_match(opt: dict) -> bool:
+            """Add option to matches if not already present. Returns True if added."""
+            if opt["slug"] not in matched_slugs:
+                matched_slugs.add(opt["slug"])
+                matched.append(opt)
+                return True
+            return False
+
+        # Tokenize input for compound inputs like "milk and sugar"
+        tokens = self._tokenize_multi_input(user_input)
+        # Also include the full input for single-item matching
+        all_inputs = [user_lower] + [self._normalize_for_matching(t) for t in tokens if t.lower() != user_lower]
+
         for opt in options:
             if not self._passes_must_match(user_input, opt):
                 continue  # Skip options that don't pass must_match
@@ -505,20 +550,46 @@ class MenuItemConfigHandler:
             display_lower = opt["display_name"].lower()
             slug_readable = opt["slug"].replace("_", " ")
 
-            # Check exact word match in user input
+            # === Direction 1: Option name/alias appears in user input ===
+            # E.g., "sugar" (option) in "milk and sugar" (input)
             if self._is_whole_word_match(display_lower, user_lower):
-                matched.append(opt)
+                add_match(opt)
                 continue
             if self._is_whole_word_match(slug_readable, user_lower):
-                matched.append(opt)
+                add_match(opt)
                 continue
 
-            # Check aliases
+            # Check aliases in user input
+            alias_matched = False
             for alias in get_aliases(opt):
                 alias_lower = alias.lower()
                 if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_lower):
-                    matched.append(opt)
+                    add_match(opt)
+                    alias_matched = True
                     break
+            if alias_matched:
+                continue
+
+            # === Direction 2: User token appears in option name ===
+            # E.g., "milk" (token) in "whole milk" (option)
+            # This handles cases like "milk" matching "Whole Milk"
+            for token in all_inputs:
+                if not token or len(token) < 2:
+                    continue
+                # Check if token is in display name
+                if self._is_whole_word_match(token, display_lower):
+                    add_match(opt)
+                    break
+                # Check if token is in slug
+                if self._is_whole_word_match(token, slug_readable):
+                    add_match(opt)
+                    break
+                # Check if token matches an alias
+                for alias in get_aliases(opt):
+                    alias_lower = alias.lower()
+                    if len(alias_lower) >= 2 and self._is_whole_word_match(token, alias_lower):
+                        add_match(opt)
+                        break
 
         return matched
 
@@ -654,9 +725,17 @@ class MenuItemConfigHandler:
     # Options Inquiry and Pagination
     # =========================================================================
 
-    def _is_options_inquiry(self, user_input: str) -> bool:
-        """Check if user is asking about available options."""
+    def _is_options_inquiry(self, user_input: str, topic: str | None = None) -> bool:
+        """Check if user is asking about available options.
+
+        Args:
+            user_input: The user's input text
+            topic: Optional topic word (e.g., "bread", "cheese") to check for
+                   context-specific patterns like "what bread do you have"
+        """
         input_lower = user_input.lower().strip()
+
+        # Generic option inquiry phrases (always match)
         inquiry_phrases = [
             "what do you have",
             "what kind do you have",
@@ -681,6 +760,36 @@ class MenuItemConfigHandler:
         flexible_pattern = r"what\s+kind(s)?\s+of\s+\w+\s+do\s+you\s+have"
         if re.search(flexible_pattern, input_lower):
             return True
+
+        # Context-aware patterns: check if user is asking about the specific topic
+        # e.g., "what bread do you have" when we're asking about bread
+        if topic:
+            topic_lower = topic.lower().strip()
+            # Handle plural forms (bread -> breads)
+            topic_plural = topic_lower + "s" if not topic_lower.endswith("s") else topic_lower
+
+            # Build patterns for this specific topic
+            # "what bread do you have", "what breads do you have"
+            # "what bread options", "what breads are there"
+            # "what types of bread", "what kinds of bread"
+            # "which bread", "which breads"
+            topic_patterns = [
+                # "what bread do you have" / "what breads do you have"
+                rf"what\s+{re.escape(topic_lower)}s?\s+do\s+you\s+have",
+                rf"what\s+{re.escape(topic_lower)}s?\s+(?:are\s+there|have\s+you\s+got|you\s+got)",
+                # "what types/kinds of bread"
+                rf"what\s+(?:types?|kinds?)\s+of\s+{re.escape(topic_lower)}",
+                # "what bread options" / "bread options"
+                rf"(?:what\s+)?{re.escape(topic_lower)}s?\s+(?:options?|choices?)",
+                # "which bread" / "which breads"
+                rf"which\s+{re.escape(topic_lower)}s?",
+                # "any bread options" / "any breads"
+                rf"(?:any|some)\s+{re.escape(topic_lower)}s?(?:\s+options?)?",
+            ]
+
+            for pattern in topic_patterns:
+                if re.search(pattern, input_lower):
+                    return True
 
         return False
 
@@ -901,7 +1010,10 @@ class MenuItemConfigHandler:
                 return self._handle_options_inquiry(item, order, attr, options, is_show_more=True)
 
             # Check if user is asking about available options
-            if self._is_options_inquiry(user_input):
+            # Pass the attribute display name as topic for context-aware detection
+            # e.g., "what bread do you have" when asking about bread
+            topic = attr.get("display_name", "")
+            if self._is_options_inquiry(user_input, topic=topic):
                 return self._handle_options_inquiry(item, order, attr, options, is_show_more=False)
 
         # Reset options page when user provides an actual answer

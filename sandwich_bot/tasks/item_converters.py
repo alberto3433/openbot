@@ -16,7 +16,6 @@ from .models import (
     TaskStatus,
     ItemTask,
     BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
 )
 
@@ -433,7 +432,7 @@ class SandwichConverter(ItemConverter):
 
 
 class CoffeeConverter(ItemConverter):
-    """Converter for CoffeeItemTask."""
+    """Converter for sized_beverage MenuItemTask (coffee, latte, etc.)."""
 
     @property
     def item_type(self) -> str:
@@ -444,7 +443,8 @@ class CoffeeConverter(ItemConverter):
         """The item_type to use in dict output (for backwards compatibility)."""
         return "drink"
 
-    def from_dict(self, item_dict: Dict[str, Any]) -> CoffeeItemTask:
+    def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
+        """Convert dict to MenuItemTask with menu_item_type='sized_beverage'."""
         item_config = item_dict.get("item_config") or {}
 
         # Determine iced value from style
@@ -472,25 +472,48 @@ class CoffeeConverter(ItemConverter):
                 "quantity": item_config.get("syrup_quantity", 1)
             }]
 
-        coffee = CoffeeItemTask(
-            drink_type=item_dict.get("menu_item_name") or "coffee",
-            size=item_dict.get("size") or item_config.get("size"),
-            milk=item_config.get("milk"),
-            cream_level=item_config.get("cream_level"),
-            sweeteners=sweeteners,
-            flavor_syrups=flavor_syrups,
-            iced=iced_value,
-            decaf=item_config.get("decaf"),
-            size_upcharge=item_config.get("size_upcharge", 0.0),
-            milk_upcharge=item_config.get("milk_upcharge", 0.0),
-            syrup_upcharge=item_config.get("syrup_upcharge", 0.0),
-            iced_upcharge=item_config.get("iced_upcharge", 0.0),
-            wants_syrup=item_config.get("wants_syrup", False),
-            pending_syrup_quantity=item_config.get("pending_syrup_quantity", 1),
+        # Create MenuItemTask with sized_beverage type
+        coffee = MenuItemTask(
+            menu_item_name=item_dict.get("menu_item_name") or "coffee",
+            menu_item_type="sized_beverage",
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
+
+        # Set beverage-specific fields via property setters
+        size = item_dict.get("size") or item_config.get("size")
+        if size:
+            coffee.size = size
+        if iced_value is not None:
+            coffee.iced = iced_value
+        if item_config.get("decaf"):
+            coffee.decaf = item_config.get("decaf")
+        if item_config.get("milk"):
+            coffee.milk = item_config.get("milk")
+        if item_config.get("cream_level"):
+            coffee.cream_level = item_config.get("cream_level")
+
+        # Set sweeteners and syrups
+        if sweeteners:
+            coffee.attribute_values["sweetener_selections"] = sweeteners
+        if flavor_syrups:
+            coffee.attribute_values["syrup_selections"] = flavor_syrups
+
+        # Set upcharge values
+        if item_config.get("size_upcharge"):
+            coffee.size_upcharge = item_config.get("size_upcharge", 0.0)
+        if item_config.get("milk_upcharge"):
+            coffee.milk_upcharge = item_config.get("milk_upcharge", 0.0)
+        if item_config.get("syrup_upcharge"):
+            coffee.syrup_upcharge = item_config.get("syrup_upcharge", 0.0)
+        if item_config.get("iced_upcharge"):
+            coffee.iced_upcharge = item_config.get("iced_upcharge", 0.0)
+        if item_config.get("wants_syrup"):
+            coffee.wants_syrup = item_config.get("wants_syrup", False)
+        if item_config.get("pending_syrup_quantity"):
+            coffee.pending_syrup_quantity = item_config.get("pending_syrup_quantity", 1)
+
         self._restore_common_fields(coffee, item_dict)
-        if coffee.drink_type and coffee.iced is not None:
+        if coffee.menu_item_name and coffee.iced is not None:
             coffee.mark_complete()
         return coffee
 

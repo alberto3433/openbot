@@ -18,7 +18,6 @@ from .models import (
     OrderTask,
     BagelItemTask,
     MenuItemTask,
-    CoffeeItemTask,
     ItemTask,
     TaskStatus,
 )
@@ -1349,8 +1348,8 @@ class BagelConfigHandler:
                         logger.info("Skipping already-complete item in queue: id=%s, type=%s", item_id[:8] if item_id else None, item_type)
                         continue  # Pop next item from queue
 
-                    # Handle coffee items
-                    if item_type == "coffee" and isinstance(target_item, CoffeeItemTask):
+                    # Handle coffee items (sized_beverage MenuItemTask)
+                    if item_type == "coffee" and isinstance(target_item, MenuItemTask) and target_item.is_sized_beverage:
                         if self._configure_coffee:
                             return self._configure_coffee(order)
 

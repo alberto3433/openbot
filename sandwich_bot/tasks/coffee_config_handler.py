@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
-from .models import CoffeeItemTask, OrderTask, ItemTask, TaskStatus
+from .models import MenuItemTask, OrderTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import (
     parse_coffee_size,
@@ -577,13 +577,9 @@ class CoffeeConfigHandler:
 
                 if skip_config:
                     # Add directly as complete (no size/iced questions)
-                    drink = CoffeeItemTask(
-                        drink_type=matched_name,
-                        size=None,
-                        iced=None,
-                        milk=None,
-                        sweeteners=[],
-                        flavor_syrups=[],
+                    drink = MenuItemTask(
+                        menu_item_name=matched_name,
+                        menu_item_type="sized_beverage",
                         unit_price=matched_price,
                     )
                     drink.mark_complete()
@@ -685,7 +681,7 @@ class CoffeeConfigHandler:
                 # Before asking for clarification, check if user already has a matching
                 # drink in their cart - if so, add another of the same type
                 for cart_item in order.items.items:
-                    # Use drink_type for CoffeeItemTask, get_display_name() for others
+                    # Use menu_item_name for beverages, get_display_name() for others
                     if hasattr(cart_item, 'drink_type') and cart_item.drink_type:
                         cart_name = cart_item.drink_type.lower()
                     elif hasattr(cart_item, 'get_display_name'):
@@ -790,19 +786,18 @@ class CoffeeConfigHandler:
             # This drink doesn't need size or hot/iced questions - add directly as complete
             # Create the requested quantity of drinks
             for _ in range(quantity):
-                drink = CoffeeItemTask(
-                    drink_type=coffee_type,
-                    size=None,  # No size options for skip_config drinks
-                    iced=None,  # No hot/iced label needed for sodas/bottled drinks
-                    decaf=decaf,
-                    milk=None,
-                    cream_level=cream_level,
-                    sweeteners=[],
-                    flavor_syrups=[],
-                    extra_shots=extra_shots,
+                drink = MenuItemTask(
+                    menu_item_name=coffee_type,
+                    menu_item_type="sized_beverage",
                     unit_price=price,
                     special_instructions=special_instructions,
                 )
+                if decaf:
+                    drink.decaf = decaf
+                if cream_level:
+                    drink.cream_level = cream_level
+                if extra_shots:
+                    drink.extra_shots = extra_shots
                 drink.mark_complete()  # No configuration needed
                 order.items.add_item(drink)
 
@@ -826,21 +821,33 @@ class CoffeeConfigHandler:
 
         # Create the requested quantity of drinks
         for _ in range(quantity):
-            coffee = CoffeeItemTask(
-                drink_type=coffee_type or "coffee",
-                size=size,
-                iced=iced,
-                decaf=decaf,
-                milk=milk,
-                cream_level=cream_level,
-                sweeteners=sweeteners_list.copy(),
-                flavor_syrups=flavor_syrups_list.copy(),
-                wants_syrup=wants_syrup,
-                pending_syrup_quantity=syrup_quantity,  # Store quantity from "2 syrups" for later
-                extra_shots=extra_shots,
+            coffee = MenuItemTask(
+                menu_item_name=coffee_type or "coffee",
+                menu_item_type="sized_beverage",
                 unit_price=price,
                 special_instructions=special_instructions,
             )
+            # Set beverage properties via attribute_values
+            if size:
+                coffee.size = size
+            if iced is not None:
+                coffee.iced = iced
+            if decaf:
+                coffee.decaf = decaf
+            if milk:
+                coffee.milk = milk
+            if cream_level:
+                coffee.cream_level = cream_level
+            if sweeteners_list:
+                coffee.sweeteners = sweeteners_list.copy()
+            if flavor_syrups_list:
+                coffee.flavor_syrups = flavor_syrups_list.copy()
+            if wants_syrup:
+                coffee.wants_syrup = wants_syrup
+            if syrup_quantity > 1:
+                coffee.pending_syrup_quantity = syrup_quantity  # Store quantity from "2 syrups" for later
+            if extra_shots:
+                coffee.extra_shots = extra_shots
             # Calculate upcharges immediately so cart shows correct price
             if self.pricing:
                 self.pricing.recalculate_coffee_price(coffee)
@@ -858,7 +865,7 @@ class CoffeeConfigHandler:
         # Find all coffee items (both complete and incomplete) to determine total count
         all_coffees = [
             item for item in order.items.items
-            if isinstance(item, CoffeeItemTask)
+            if isinstance(item, MenuItemTask) and item.is_sized_beverage
         ]
         total_coffees = len(all_coffees)
 
@@ -965,7 +972,7 @@ class CoffeeConfigHandler:
     def handle_coffee_size(
         self,
         user_input: str,
-        item: CoffeeItemTask,
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle coffee size selection."""
@@ -1024,12 +1031,12 @@ class CoffeeConfigHandler:
         order.pending_field = "coffee_style"
 
         # Count items of the SAME drink type to determine if ordinals needed
-        drink_name = item.drink_type or "coffee"
+        drink_name = item.menu_item_name if isinstance(item, MenuItemTask) else "coffee"
         all_coffees = [
             c for c in order.items.items
-            if isinstance(c, CoffeeItemTask)
+            if isinstance(c, MenuItemTask) and c.is_sized_beverage
         ]
-        same_type_items = [c for c in all_coffees if (c.drink_type or "coffee") == drink_name]
+        same_type_items = [c for c in all_coffees if (c.menu_item_name or "coffee") == drink_name]
         same_type_count = len(same_type_items)
 
         if same_type_count > 1:
@@ -1049,7 +1056,7 @@ class CoffeeConfigHandler:
     def handle_coffee_style(
         self,
         user_input: str,
-        item: CoffeeItemTask,
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle hot/iced preference for coffee."""
@@ -1104,7 +1111,7 @@ class CoffeeConfigHandler:
     def handle_coffee_modifiers(
         self,
         user_input: str,
-        item: CoffeeItemTask,
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle milk/sugar/syrup preferences for coffee."""
@@ -1276,7 +1283,7 @@ class CoffeeConfigHandler:
     def handle_syrup_flavor(
         self,
         user_input: str,
-        item: CoffeeItemTask,
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle syrup flavor selection after user said 'syrup' without specifying flavor."""
@@ -1488,13 +1495,9 @@ class CoffeeConfigHandler:
 
         if should_skip_config or not is_configurable_coffee:
             # Add directly as complete (no size/iced questions)
-            drink = CoffeeItemTask(
-                drink_type=selected_name,
-                size=None,
-                iced=None,
-                milk=None,
-                sweeteners=[],
-                flavor_syrups=[],
+            drink = MenuItemTask(
+                menu_item_name=selected_name,
+                menu_item_type="sized_beverage",
                 unit_price=selected_price,
             )
             drink.mark_complete()
@@ -1524,19 +1527,29 @@ class CoffeeConfigHandler:
 
             # Create drinks with stored modifiers
             for _ in range(stored_quantity):
-                drink = CoffeeItemTask(
-                    drink_type=selected_name,
-                    size=stored_size,
-                    iced=stored_iced,
-                    decaf=stored_decaf,
-                    milk=stored_milk,
-                    cream_level=stored_cream,
-                    sweeteners=sweeteners_list.copy(),
-                    flavor_syrups=syrups_list.copy(),
-                    extra_shots=stored_shots,
+                drink = MenuItemTask(
+                    menu_item_name=selected_name,
+                    menu_item_type="sized_beverage",
                     unit_price=selected_price,
                     special_instructions=stored_instructions,
                 )
+                # Set beverage properties via attribute_values
+                if stored_size:
+                    drink.size = stored_size
+                if stored_iced is not None:
+                    drink.iced = stored_iced
+                if stored_decaf:
+                    drink.decaf = stored_decaf
+                if stored_milk:
+                    drink.milk = stored_milk
+                if stored_cream:
+                    drink.cream_level = stored_cream
+                if sweeteners_list:
+                    drink.sweeteners = sweeteners_list.copy()
+                if syrups_list:
+                    drink.flavor_syrups = syrups_list.copy()
+                if stored_shots:
+                    drink.extra_shots = stored_shots
 
                 # Calculate price with modifiers
                 if self.pricing:
@@ -1551,7 +1564,7 @@ class CoffeeConfigHandler:
                 order.items.add_item(drink)
 
             # If still needs configuration, ask the next question
-            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if isinstance(d, CoffeeItemTask)):
+            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if isinstance(d, MenuItemTask) and d.is_sized_beverage):
                 return self.configure_next_incomplete_coffee(order)
             else:
                 # Build summary for confirmation
@@ -1697,13 +1710,9 @@ class CoffeeConfigHandler:
 
                 if should_skip_config or not is_configurable_coffee:
                     # Add directly as complete (no size/iced questions)
-                    drink = CoffeeItemTask(
-                        drink_type=selected_name,
-                        size=None,
-                        iced=None,
-                        milk=None,
-                        sweeteners=[],
-                        flavor_syrups=[],
+                    drink = MenuItemTask(
+                        menu_item_name=selected_name,
+                        menu_item_type="sized_beverage",
                         unit_price=selected_price,
                     )
                     drink.mark_complete()
@@ -1731,37 +1740,57 @@ class CoffeeConfigHandler:
                             "quantity": stored_syrup_qty or 1,
                         })
 
-                    drink = CoffeeItemTask(
-                        drink_type=selected_name,
-                        size=stored_size,
-                        iced=stored_iced,
-                        milk=stored_milk,
-                        sweeteners=sweeteners_list,
-                        flavor_syrups=syrups_list,
-                        decaf=stored_decaf,
-                        cream_level=stored_cream,
-                        extra_shots=stored_shots,
-                        special_instructions=stored_instructions,
+                    drink = MenuItemTask(
+                        menu_item_name=selected_name,
+                        menu_item_type="sized_beverage",
                         unit_price=selected_price,
+                        special_instructions=stored_instructions,
                     )
+                    # Set beverage properties via attribute_values
+                    if stored_size:
+                        drink.size = stored_size
+                    if stored_iced is not None:
+                        drink.iced = stored_iced
+                    if stored_milk:
+                        drink.milk = stored_milk
+                    if sweeteners_list:
+                        drink.sweeteners = sweeteners_list
+                    if syrups_list:
+                        drink.flavor_syrups = syrups_list
+                    if stored_decaf:
+                        drink.decaf = stored_decaf
+                    if stored_cream:
+                        drink.cream_level = stored_cream
+                    if stored_shots:
+                        drink.extra_shots = stored_shots
                     drink.mark_in_progress()
                     order.items.add_item(drink)
 
                     # Add multiple drinks if quantity > 1
                     for _ in range(stored_quantity - 1):
-                        extra_drink = CoffeeItemTask(
-                            drink_type=selected_name,
-                            size=stored_size,
-                            iced=stored_iced,
-                            milk=stored_milk,
-                            sweeteners=sweeteners_list.copy(),
-                            flavor_syrups=syrups_list.copy(),
-                            decaf=stored_decaf,
-                            cream_level=stored_cream,
-                            extra_shots=stored_shots,
-                            special_instructions=stored_instructions,
+                        extra_drink = MenuItemTask(
+                            menu_item_name=selected_name,
+                            menu_item_type="sized_beverage",
                             unit_price=selected_price,
+                            special_instructions=stored_instructions,
                         )
+                        # Set beverage properties via attribute_values
+                        if stored_size:
+                            extra_drink.size = stored_size
+                        if stored_iced is not None:
+                            extra_drink.iced = stored_iced
+                        if stored_milk:
+                            extra_drink.milk = stored_milk
+                        if sweeteners_list:
+                            extra_drink.sweeteners = sweeteners_list.copy()
+                        if syrups_list:
+                            extra_drink.flavor_syrups = syrups_list.copy()
+                        if stored_decaf:
+                            extra_drink.decaf = stored_decaf
+                        if stored_cream:
+                            extra_drink.cream_level = stored_cream
+                        if stored_shots:
+                            extra_drink.extra_shots = stored_shots
                         extra_drink.mark_in_progress()
                         order.items.add_item(extra_drink)
 

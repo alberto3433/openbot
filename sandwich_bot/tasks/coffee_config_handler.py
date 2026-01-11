@@ -1,6 +1,18 @@
 """
 Coffee Configuration Handler for Order State Machine.
 
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Use MenuItemConfigHandler instead, which provides a unified, DB-driven approach
+for all item types including beverages.
+
+The following methods are deprecated:
+- handle_coffee_size() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_coffee_style() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_coffee_modifiers() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_syrup_flavor() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_drink_selection() -> Use item selection in TakingItemsHandler
+- handle_drink_type_selection() -> Use item selection in TakingItemsHandler
+
 This module handles the coffee ordering and configuration flow,
 including size selection and hot/iced preference.
 
@@ -8,6 +20,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import warnings
 import re
 from typing import TYPE_CHECKING
 
@@ -852,7 +865,18 @@ class CoffeeConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle coffee size selection."""
+        """Handle coffee size selection.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_coffee_size() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_coffee_size called for item %s", getattr(item, 'id', 'unknown'))
         # Get question and options from DB
         question = self._get_size_question()
         size_options = self._get_size_options()
@@ -937,7 +961,18 @@ class CoffeeConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle hot/iced preference for coffee."""
+        """Handle hot/iced preference for coffee.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_coffee_style() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_coffee_style called for item %s", getattr(item, 'id', 'unknown'))
         # Get question from DB
         question = self._get_temperature_question()
 
@@ -992,7 +1027,18 @@ class CoffeeConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle milk/sugar/syrup preferences for coffee."""
+        """Handle milk/sugar/syrup preferences for coffee.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_coffee_modifiers() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_coffee_modifiers called for item %s", getattr(item, 'id', 'unknown'))
         # Get question from DB
         question = self._get_drink_modifier_question()
 
@@ -1164,7 +1210,18 @@ class CoffeeConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle syrup flavor selection after user said 'syrup' without specifying flavor."""
+        """Handle syrup flavor selection after user said 'syrup' without specifying flavor.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_syrup_flavor() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_syrup_flavor called for item %s", getattr(item, 'id', 'unknown'))
         if self._check_redirect:
             # Pass syrup names so flavor answers don't trigger redirect
             valid_answers = self._get_valid_modifier_names(category="syrup")
@@ -1247,7 +1304,18 @@ class CoffeeConfigHandler(BaseHandler):
         user_input: str,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle user selecting from multiple drink options."""
+        """Handle user selecting from multiple drink options.
+
+        DEPRECATED: This method will be moved to a unified item selection handler.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_drink_selection() is deprecated. "
+            "This will be moved to a unified item selection handler.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_drink_selection called")
         if not order.pending_drink_options:
             order.clear_pending()
             return StateMachineResult(
@@ -1459,9 +1527,19 @@ class CoffeeConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle user specifying a drink type after asking for a generic 'drink'.
 
+        DEPRECATED: This method will be moved to a unified item selection handler.
+        This method will be removed in a future version.
+
         This is called when the user said something like "drink" and we asked
         "What type of drink would you like?" and now they're responding.
         """
+        warnings.warn(
+            "CoffeeConfigHandler.handle_drink_type_selection() is deprecated. "
+            "This will be moved to a unified item selection handler.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_drink_type_selection called")
         user_lower = user_input.lower().strip()
 
         # Check for "what else" / "more options" pagination requests

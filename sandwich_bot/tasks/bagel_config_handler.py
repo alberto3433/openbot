@@ -1,6 +1,16 @@
 """
 Bagel Configuration Handler for Order State Machine.
 
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Use MenuItemConfigHandler instead, which provides a unified, DB-driven approach
+for all item types including bagels.
+
+The following methods are deprecated:
+- handle_bagel_choice() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_spread_choice() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_toasted_choice() -> Use MenuItemConfigHandler.handle_attribute_input()
+- handle_cheese_choice() -> Use MenuItemConfigHandler.handle_attribute_input()
+
 This module handles all bagel configuration flow including:
 - Bagel type selection
 - Spread selection
@@ -12,6 +22,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Callable
 
 from .models import (
@@ -321,9 +332,19 @@ class BagelConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle bagel type selection for the CURRENT pending item only.
 
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+
         This handles one item at a time. After configuring this item,
         configure_next_incomplete_bagel will move to the next item.
         """
+        warnings.warn(
+            "BagelConfigHandler.handle_bagel_choice() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_bagel_choice called for item %s", getattr(item, 'id', 'unknown'))
         input_lower = user_input.lower().strip()
 
         # Check for pagination request ("what else", "more", etc.)
@@ -508,7 +529,18 @@ class BagelConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle spread selection for bagel or omelette side bagel."""
+        """Handle spread selection for bagel or omelette side bagel.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "BagelConfigHandler.handle_spread_choice() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_spread_choice called for item %s", getattr(item, 'id', 'unknown'))
         input_lower = user_input.lower().strip()
 
         # Check if user is asking for cream cheese options
@@ -821,7 +853,18 @@ class BagelConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle toasted preference for bagel or sandwich."""
+        """Handle toasted preference for bagel or sandwich.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "BagelConfigHandler.handle_toasted_choice() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_toasted_choice called for item %s", getattr(item, 'id', 'unknown'))
         # Before redirect check, see if user is adding modifiers to the current item
         # e.g., "add blueberry cream cheese" should acknowledge and stay on track
         modifiers_for_acknowledgment = None
@@ -976,7 +1019,18 @@ class BagelConfigHandler(BaseHandler):
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle cheese type selection when user said generic 'cheese'."""
+        """Handle cheese type selection when user said generic 'cheese'.
+
+        DEPRECATED: Use MenuItemConfigHandler.handle_attribute_input() instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "BagelConfigHandler.handle_cheese_choice() is deprecated. "
+            "Use MenuItemConfigHandler.handle_attribute_input() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.debug("DEPRECATED: handle_cheese_choice called for item %s", getattr(item, 'id', 'unknown'))
         # Before redirect check, see if user is adding modifiers to the current item
         modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
 

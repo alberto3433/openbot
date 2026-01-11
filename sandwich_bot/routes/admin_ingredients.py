@@ -171,6 +171,8 @@ def list_ingredients(
             unit=ing.unit,
             track_inventory=ing.track_inventory,
             is_available=is_available,
+            aliases=ing.aliases,
+            must_match=ing.must_match,
         ))
     return result
 

@@ -194,6 +194,8 @@ class IngredientStoreAvailabilityOut(BaseModel):
         unit: Unit of measurement
         track_inventory: Whether inventory counting is enabled
         is_available: Availability at the queried store (or global)
+        aliases: List of synonyms for matching
+        must_match: List of strings - at least one must be in input for this to match
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -203,6 +205,8 @@ class IngredientStoreAvailabilityOut(BaseModel):
     unit: str
     track_inventory: bool
     is_available: bool
+    aliases: list[str] = []
+    must_match: list[str] = []
 
 
 class MenuItemStoreAvailabilityOut(BaseModel):

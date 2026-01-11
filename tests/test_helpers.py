@@ -5,7 +5,7 @@ Provides factory functions for creating MenuItemTask instances configured
 as bagels or coffee items (replacing the removed BagelItemTask and CoffeeItemTask classes).
 """
 
-from sandwich_bot.tasks.models import MenuItemTask
+from sandwich_bot.tasks.models import MenuItemTask, TaskStatus
 
 
 def create_bagel_task(
@@ -48,10 +48,12 @@ def create_coffee_task(
     drink_type: str = None,
     size: str = None,
     iced: bool = None,
+    style: str = None,
     decaf: bool = False,
     milk: str = None,
     milk_upcharge: float = 0.0,
     sweeteners: list = None,
+    flavor_syrups: list = None,
     extra_shots: int = 0,
     quantity: int = 1,
     unit_price: float = 0.0,
@@ -59,6 +61,10 @@ def create_coffee_task(
     """Create a MenuItemTask configured as a sized beverage (coffee).
 
     This is a replacement for the removed CoffeeItemTask class.
+
+    Args:
+        style: "hot" or "iced" - alternative to using iced bool directly.
+               If both style and iced are provided, iced takes precedence.
     """
     coffee = MenuItemTask(
         menu_item_name=drink_type or "Coffee",
@@ -68,7 +74,10 @@ def create_coffee_task(
     )
     if size:
         coffee.size = size
-    if iced is not None:
+    # Handle style parameter (converts to iced bool)
+    if style is not None and iced is None:
+        coffee.iced = style.lower() == "iced"
+    elif iced is not None:
         coffee.iced = iced
     if decaf:
         coffee.decaf = decaf
@@ -78,6 +87,8 @@ def create_coffee_task(
         coffee.milk_upcharge = milk_upcharge
     if sweeteners:
         coffee.sweeteners = sweeteners
+    if flavor_syrups:
+        coffee.flavor_syrups = flavor_syrups
     if extra_shots:
         coffee.extra_shots = extra_shots
     return coffee

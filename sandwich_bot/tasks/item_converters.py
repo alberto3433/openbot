@@ -649,6 +649,54 @@ class CoffeeConverter(ItemConverter):
 
 
 # -----------------------------------------------------------------------------
+# Unified Converter
+# -----------------------------------------------------------------------------
+
+class UnifiedItemConverter(ItemConverter):
+    """
+    Unified converter that dispatches to specialized converters based on item type.
+
+    This provides a single entry point for item conversion while maintaining
+    specialized logic for different item types. Use this class when you want
+    automatic dispatch based on item type.
+    """
+
+    @property
+    def item_type(self) -> str:
+        return "unified"
+
+    def from_dict(self, item_dict: Dict[str, Any]) -> ItemTask:
+        """Convert dict to appropriate ItemTask based on item_type."""
+        item_type = item_dict.get("item_type") or item_dict.get("menu_item_type") or "menu_item"
+
+        # Route to specialized converter
+        if item_type == "bagel":
+            return BagelConverter().from_dict(item_dict)
+        elif item_type in ("coffee", "drink", "sized_beverage"):
+            return CoffeeConverter().from_dict(item_dict)
+        elif item_type == "sandwich":
+            return SandwichConverter().from_dict(item_dict)
+        else:
+            return MenuItemConverter().from_dict(item_dict)
+
+    def to_dict(
+        self,
+        item: ItemTask,
+        pricing: "PricingEngine | None" = None,
+    ) -> Dict[str, Any]:
+        """Convert ItemTask to dict based on its type."""
+        # Check menu_item_type for MenuItemTask
+        menu_item_type = getattr(item, 'menu_item_type', None)
+
+        if menu_item_type == "bagel":
+            return BagelConverter().to_dict(item, pricing)
+        elif menu_item_type in ("sized_beverage", "espresso"):
+            return CoffeeConverter().to_dict(item, pricing)
+        else:
+            return MenuItemConverter().to_dict(item, pricing)
+
+
+# -----------------------------------------------------------------------------
 # Converter Registry
 # -----------------------------------------------------------------------------
 
@@ -703,6 +751,7 @@ ItemConverterRegistry.register(MenuItemConverter())
 ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
 ItemConverterRegistry.register(CoffeeConverter())
+ItemConverterRegistry.register(UnifiedItemConverter())
 
 # Register CoffeeConverter under "drink" as well (for dict input compatibility)
 ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["coffee"]
@@ -714,3 +763,6 @@ ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._c
 
 # Espresso now uses MenuItemConverter (data-driven via MenuItemTask)
 ItemConverterRegistry._converters["espresso"] = ItemConverterRegistry._converters["menu_item"]
+
+# Sized_beverage uses CoffeeConverter (same as coffee/drink)
+ItemConverterRegistry._converters["sized_beverage"] = ItemConverterRegistry._converters["coffee"]

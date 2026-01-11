@@ -1145,8 +1145,9 @@ class MenuItemConfigHandler(BaseHandler):
         Recalculate and update an item's price based on its current state.
 
         This method provides a generic price recalculation that works with any
-        item type. For bagels and beverages, it delegates to existing specialized
-        methods. For other items, it calculates from base price + attribute selections.
+        item type. It delegates to PricingEngine.recalculate_item_price when
+        available (which routes to specialized methods for bagels/beverages).
+        Falls back to local calculation for items without specialized pricing.
 
         Args:
             item: The menu item to recalculate price for
@@ -1154,16 +1155,11 @@ class MenuItemConfigHandler(BaseHandler):
         Returns:
             The new calculated price
         """
-        item_type = item.menu_item_type
+        # Use unified pricing method when available
+        if self.pricing:
+            return self.pricing.recalculate_item_price(item)
 
-        # Delegate to specialized pricing methods for bagels and beverages
-        if item_type == "bagel" and self.pricing:
-            return self.pricing.recalculate_bagel_price(item)
-
-        if item_type in ("sized_beverage", "espresso") and self.pricing:
-            return self.pricing.recalculate_coffee_price(item)
-
-        # Generic pricing for DB-driven item types
+        # Fallback: generic pricing for DB-driven item types
         return self._calculate_generic_item_price(item)
 
     def _calculate_generic_item_price(self, item: MenuItemTask) -> float:

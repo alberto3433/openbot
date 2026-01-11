@@ -467,6 +467,40 @@ class PricingEngine:
 
         return round(total, 2)
 
+    # =========================================================================
+    # Unified Price Recalculation
+    # =========================================================================
+
+    def recalculate_item_price(self, item) -> float:
+        """
+        Unified price recalculation that dispatches to the appropriate method based on item type.
+
+        This is the preferred entry point for price recalculation. It determines the item
+        type and routes to the appropriate specialized method.
+
+        Args:
+            item: Any item task (MenuItemTask with various menu_item_type values)
+
+        Returns:
+            The new calculated price
+        """
+        item_type = getattr(item, 'menu_item_type', None)
+
+        # Route to specialized methods based on item type
+        if item_type == "bagel":
+            return self.recalculate_bagel_price(item)
+
+        if item_type in ("sized_beverage", "espresso"):
+            return self.recalculate_coffee_price(item)
+
+        # For other menu items (sandwiches, omelettes, etc.)
+        if hasattr(item, 'menu_item_type'):
+            return self.recalculate_menu_item_price(item)
+
+        # Fallback: return current price if item type is unknown
+        logger.warning("Unknown item type for price recalculation: %s", type(item).__name__)
+        return getattr(item, 'unit_price', 0.0)
+
     def recalculate_bagel_price(self, item) -> float:
         """
         Recalculate and update a bagel item's price based on its current modifiers.

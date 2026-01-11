@@ -197,6 +197,25 @@ class ConfiguringItemHandler:
     on the pending_field in the order.
     """
 
+    # Legacy pending_field names that can be routed through the unified MenuItemConfigHandler.
+    # Maps legacy field -> (item_type, attr_slug) for validation and routing.
+    # If the current item's menu_item_type matches, route through handle_legacy_field_input.
+    LEGACY_TO_UNIFIED_MAPPING = {
+        # Bagel fields -> route to unified handler when item is "bagel" type
+        "bagel_choice": ("bagel", "bread"),
+        "spread": ("bagel", "spread_type"),
+        "toasted": ("bagel", "toasted"),
+        "cheese_choice": ("bagel", "cheese"),
+        # Coffee/beverage fields -> route to unified handler when item is "sized_beverage" type
+        "coffee_size": ("sized_beverage", "size"),
+        "coffee_style": ("sized_beverage", "iced"),
+        "coffee_modifiers": ("sized_beverage", "milk_sweetener_syrup"),
+        "syrup_flavor": ("sized_beverage", "syrup"),
+        # Sandwich/spread_sandwich toasted fields (same attr, different item types)
+        "spread_sandwich_toasted": ("spread_sandwich", "toasted"),
+        "menu_item_bagel_toasted": ("bagel", "toasted"),
+    }
+
     def __init__(
         self,
         config: "HandlerConfig | None" = None,
@@ -327,9 +346,26 @@ class ConfiguringItemHandler:
         # Route to field-specific handler
         if order.pending_field == "side_choice":
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
-        # Bagel configuration fields - use specialized handler for now
-        # (Phase 6 migration: these will eventually route through MenuItemConfigHandler)
-        elif order.pending_field == "bagel_choice":
+
+        # Registry-based routing for legacy fields through unified MenuItemConfigHandler
+        # This routes bagel/coffee config fields through the generic handler when item type matches
+        if order.pending_field in self.LEGACY_TO_UNIFIED_MAPPING:
+            expected_type, attr_slug = self.LEGACY_TO_UNIFIED_MAPPING[order.pending_field]
+            # Route through unified handler if item type matches and handler is available
+            if (isinstance(item, MenuItemTask) and
+                item.menu_item_type == expected_type and
+                self.menu_item_handler):
+                logger.debug(
+                    "Routing legacy field '%s' through unified handler for %s",
+                    order.pending_field, item.menu_item_type
+                )
+                return self.menu_item_handler.handle_legacy_field_input(
+                    user_input, item, order, order.pending_field
+                )
+
+        # Fallback to specialized handlers for items that don't use the unified handler
+        # (e.g., BagelItemTask, CoffeeItemTask from older code paths, or items with different types)
+        if order.pending_field == "bagel_choice":
             return self.bagel_handler.handle_bagel_choice(user_input, item, order)
         elif order.pending_field == "spread":
             return self.bagel_handler.handle_spread_choice(user_input, item, order)
@@ -337,8 +373,6 @@ class ConfiguringItemHandler:
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
         elif order.pending_field == "cheese_choice":
             return self.bagel_handler.handle_cheese_choice(user_input, item, order)
-        # Coffee configuration fields - use specialized handler for now
-        # (Phase 6 migration: these will eventually route through MenuItemConfigHandler)
         elif order.pending_field == "coffee_size":
             return self.coffee_handler.handle_coffee_size(user_input, item, order)
         elif order.pending_field == "coffee_style":

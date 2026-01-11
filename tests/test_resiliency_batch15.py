@@ -5,7 +5,8 @@ Tests the system's ability to handle corrections and clarifications.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestCorrectionsAfterMisunderstanding:
@@ -31,7 +32,7 @@ class TestCorrectionsAfterMisunderstanding:
         result = sm.process("no, I said plain", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
 
         # Should have plain bagel or acknowledge correction
         if bagels:
@@ -48,7 +49,7 @@ class TestCorrectionsAfterMisunderstanding:
         - User says: "I meant the small one"
         - Expected: Changes to small
         """
-        from sandwich_bot.tasks.models import CoffeeItemTask
+        # CoffeeItemTask imported from test_helpers at top of file
 
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value

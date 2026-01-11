@@ -10,7 +10,31 @@ import logging
 from unittest.mock import patch, MagicMock
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+from sandwich_bot.tasks.models import OrderTask, MenuItemTask, TaskStatus
+
+
+def create_bagel_task(
+    bagel_type: str = None,
+    toasted: bool = None,
+    spread: str = None,
+    extras: list = None,
+    quantity: int = 1,
+    unit_price: float = 0.0,
+) -> MenuItemTask:
+    """Create a MenuItemTask configured as a bagel."""
+    bagel = MenuItemTask(
+        menu_item_name="Bagel",
+        menu_item_type="bagel",
+        toasted=toasted,
+        spread=spread,
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    if bagel_type:
+        bagel.bagel_type = bagel_type
+    if extras:
+        bagel.extras = extras
+    return bagel
 
 
 class TestSlotComparisonLogging:
@@ -77,7 +101,7 @@ class TestSlotComparisonLogging:
         order = OrderTask()
 
         # Simulate adding a complete item
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
@@ -110,7 +134,7 @@ class TestSlotPhaseAlignment:
         from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
@@ -123,7 +147,7 @@ class TestSlotPhaseAlignment:
         from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -137,7 +161,7 @@ class TestSlotPhaseAlignment:
         from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -152,7 +176,7 @@ class TestSlotPhaseAlignment:
         from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -184,7 +208,7 @@ class TestEndToEndFlowWithSlots:
         order = OrderTask()
 
         # Simulate a completed flow
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -210,7 +234,7 @@ class TestEndToEndFlowWithSlots:
         order = OrderTask()
 
         # Add complete item
-        bagel = BagelItemTask(bagel_type="everything", toasted=False)
+        bagel = create_bagel_task(bagel_type="everything", toasted=False)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 

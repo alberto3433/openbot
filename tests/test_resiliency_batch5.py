@@ -6,9 +6,8 @@ in a single request.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import (
-    OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask
-)
+from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestMultiItemOrders:
@@ -32,7 +31,7 @@ class TestMultiItemOrders:
         assert result.message is not None
 
         # Should have added both items
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
@@ -59,7 +58,7 @@ class TestMultiItemOrders:
         # Should have added at least one bagel
         # Note: Current parser limitation - only one bagel tracked in multi-item orders
         # The second bagel type may need a follow-up interaction
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity >= 1, f"Should have at least 1 bagel, got {total_quantity}"
@@ -122,7 +121,7 @@ class TestMultiItemOrders:
         # Check for classic (as MenuItemTask or BagelItemTask)
         has_classic = any(
             (isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()) or
-            (isinstance(i, BagelItemTask))
+            (getattr(i, 'is_bagel', False))
             for i in all_items
         )
 
@@ -157,7 +156,7 @@ class TestMultiItemOrders:
         assert result.message is not None
 
         # Check quantities
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         bagel_qty = sum(b.quantity for b in bagels)

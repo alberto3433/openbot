@@ -14,7 +14,6 @@ from typing import Callable, TYPE_CHECKING
 from .models import (
     OrderTask,
     MenuItemTask,
-    BagelItemTask,
 )
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
@@ -166,16 +165,24 @@ class OrderUtilsHandler:
         template_item = matching_items[0]
         for _ in range(to_add):
             # Create a copy of the item
-            if isinstance(template_item, BagelItemTask):
-                new_item = BagelItemTask(
-                    bagel_type=template_item.bagel_type,
+            if getattr(template_item, 'is_bagel', False):
+                # Create bagel using MenuItemTask with menu_item_type="bagel"
+                new_item = MenuItemTask(
+                    menu_item_name="Bagel",
+                    menu_item_type="bagel",
                     toasted=template_item.toasted,
                     spread=template_item.spread,
-                    spread_type=template_item.spread_type,
-                    sandwich_protein=template_item.sandwich_protein,
-                    extras=list(template_item.extras) if template_item.extras else [],
                     unit_price=template_item.unit_price,
                 )
+                # Copy bagel-specific fields via property setters
+                if template_item.bagel_type:
+                    new_item.bagel_type = template_item.bagel_type
+                if template_item.spread_type:
+                    new_item.spread_type = template_item.spread_type
+                if template_item.sandwich_protein:
+                    new_item.sandwich_protein = template_item.sandwich_protein
+                if template_item.extras:
+                    new_item.extras = list(template_item.extras)
                 new_item.mark_complete()
                 order.items.add_item(new_item)
                 logger.info("QUANTITY_CHANGE: Added copy of bagel")

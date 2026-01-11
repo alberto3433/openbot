@@ -5,7 +5,8 @@ Tests the system's ability to handle specific preparation requests.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask
 
 
 class TestPreparationPreferences:
@@ -26,7 +27,7 @@ class TestPreparationPreferences:
         result = sm.process("plain bagel extra toasted", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
 
         # Should have a bagel that's toasted
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
@@ -48,7 +49,7 @@ class TestPreparationPreferences:
         result = sm.process("everything bagel lightly toasted", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
 
         # Should have a bagel
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
@@ -68,7 +69,7 @@ class TestPreparationPreferences:
         result = sm.process("plain bagel with extra cream cheese", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
 
         # Should have a bagel with cream cheese
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"

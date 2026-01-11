@@ -739,7 +739,7 @@ class CoffeeConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Configure the next incomplete coffee item."""
         # Find all coffee items (both complete and incomplete) to determine total count
-        # Supports both MenuItemTask with is_sized_beverage and legacy CoffeeItemTask
+        # MenuItemTask with is_sized_beverage
         all_coffees = [
             item for item in order.items.items
             if getattr(item, 'is_sized_beverage', False)
@@ -908,7 +908,7 @@ class CoffeeConfigHandler(BaseHandler):
         order.pending_field = "coffee_style"
 
         # Count items of the SAME drink type to determine if ordinals needed
-        # Handle both MenuItemTask (menu_item_name) and CoffeeItemTask (drink_type)
+        # Handle MenuItemTask (menu_item_name)
         drink_name = getattr(item, 'menu_item_name', None) or getattr(item, 'drink_type', None) or "coffee"
         all_coffees = [
             c for c in order.items.items

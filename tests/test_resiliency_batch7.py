@@ -5,7 +5,8 @@ Tests the system's ability to handle order completion and checkout flows.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestOrderConfirmationCheckout:
@@ -129,7 +130,7 @@ class TestOrderConfirmationCheckout:
         assert result.message is not None
 
         # Should not add another bagel and should proceed
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, f"Should still have just 1 bagel. Got: {len(bagels)}"
 
     def test_thats_it_for_now(self):

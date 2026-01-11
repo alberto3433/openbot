@@ -6,7 +6,8 @@ including words, large numbers, and quantity changes.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestEdgeCaseQuantities:
@@ -30,7 +31,7 @@ class TestEdgeCaseQuantities:
         assert result.message is not None
 
         # Should have added bagels with quantity 6
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity == 6, f"Should have 6 bagels, got {total_quantity}"
@@ -53,7 +54,7 @@ class TestEdgeCaseQuantities:
         assert result.message is not None
 
         # Should have added bagels with quantity 12
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity == 12, f"Should have 12 bagels, got {total_quantity}"
@@ -102,7 +103,7 @@ class TestEdgeCaseQuantities:
         # Should either:
         # 1. Add bagels with reasonable quantity (3), OR
         # 2. Ask how many
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         asks_quantity = any(word in result.message.lower() for word in [
@@ -139,7 +140,7 @@ class TestEdgeCaseQuantities:
         assert result.message is not None
 
         # Should have 2 bagels total
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"

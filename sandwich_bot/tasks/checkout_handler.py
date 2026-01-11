@@ -20,7 +20,6 @@ from .checkout_messages import CheckoutMessages
 from .models import (
     OrderTask,
     MenuItemTask,
-    BagelItemTask,
     TaskStatus,
 )
 from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers, OpenInputResponse
@@ -806,13 +805,19 @@ class CheckoutHandler(BaseHandler):
         spread_type = prev_item.get("spread_type")
         price = prev_item.get("price", 0)
 
-        bagel = BagelItemTask(
-            bagel_type=bagel_type,
+        # Create bagel using MenuItemTask with menu_item_type="bagel"
+        bagel = MenuItemTask(
+            menu_item_name="Bagel",
+            menu_item_type="bagel",
             toasted=toasted,
             spread=spread,
-            spread_type=spread_type,
             unit_price=price,
         )
+        # Set bagel-specific fields via property setters
+        if bagel_type:
+            bagel.bagel_type = bagel_type
+        if spread_type:
+            bagel.spread_type = spread_type
         bagel.status = TaskStatus.COMPLETE
         for _ in range(quantity):
             order.items.add_item(bagel)

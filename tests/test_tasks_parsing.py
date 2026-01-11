@@ -1231,7 +1231,7 @@ class TestFindNthItemOfType:
     def test_find_first_bagel(self):
         """Test finding the first bagel in a list."""
         from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bagel_type="plain"),
@@ -1248,7 +1248,7 @@ class TestFindNthItemOfType:
     def test_find_second_bagel(self):
         """Test finding the second bagel in a list."""
         from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bagel_type="plain"),
@@ -1265,7 +1265,7 @@ class TestFindNthItemOfType:
     def test_find_nth_item_generic(self):
         """Test finding the Nth item regardless of type using 'item' keyword."""
         from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import BagelItemTask, CoffeeItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bagel_type="plain"),
@@ -1277,13 +1277,13 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "item", 2)
         assert result is not None
         item, idx = result
-        assert isinstance(item, CoffeeItemTask)
+        assert item.is_sized_beverage  # Created as sized_beverage via CoffeeItemTask helper
         assert idx == 1
 
     def test_find_nth_item_out_of_range(self):
         """Test that out-of-range ordinal returns None."""
         from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import BagelItemTask
+        from tests.test_helpers import BagelItemTask
 
         items = [
             BagelItemTask(bagel_type="plain"),
@@ -1313,9 +1313,9 @@ class TestFindNthItemOfType:
     def test_find_item_by_summary(self):
         """Test finding item by get_summary() content."""
         from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import CoffeeItemTask
+        from tests.test_helpers import CoffeeItemTask
 
-        # CoffeeItemTask summary includes drink_type
+        # CoffeeItemTask helper creates MenuItemTask with drink_type stored in menu_item_name
         item = CoffeeItemTask(drink_type="latte", size="large")
         items = [item]
 
@@ -1323,7 +1323,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "latte", 1)
         assert result is not None
         found_item, idx = result
-        assert found_item.drink_type == "latte"
+        assert found_item.menu_item_name == "latte"
         assert idx == 0
 
 

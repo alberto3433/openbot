@@ -5,7 +5,8 @@ Tests the system's ability to handle incomplete or multi-turn orders.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestPartialIncompleteOrders:

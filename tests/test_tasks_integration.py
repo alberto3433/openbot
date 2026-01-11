@@ -23,7 +23,8 @@ class TestStateMachineMultiBagel:
             OrderStateMachine,
         )
         from sandwich_bot.tasks.schemas import OrderPhase, BagelChoiceResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         # Create order with 3 bagels that don't have types yet
         order = OrderTask()
@@ -46,7 +47,7 @@ class TestStateMachineMultiBagel:
             result = sm.bagel_handler.handle_bagel_choice("plain", order.items.items[0], order)
 
             # Verify ONLY the first bagel has type set (one-at-a-time approach)
-            bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+            bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
             assert bagels[0].bagel_type == "plain", "First bagel should be plain"
             assert bagels[1].bagel_type is None, "Second bagel should not have type yet"
             assert bagels[2].bagel_type is None, "Third bagel should not have type yet"
@@ -60,7 +61,8 @@ class TestStateMachineMultiBagel:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         # Create order with 2 bagels - first has type, second doesn't
         order = OrderTask()
@@ -92,7 +94,8 @@ class TestMixedItemBagelChoice:
             OrderPhase,
             BagelChoiceResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, MenuItemTask
 
         # Create order with:
         # - MenuItemTask omelette with bagel side needing bagel_choice
@@ -141,7 +144,8 @@ class TestMixedItemBagelChoice:
             OrderPhase,
             BagelChoiceResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, MenuItemTask
 
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
@@ -184,7 +188,8 @@ class TestPriceRecalculationInvariants:
     def test_state_machine_spread_choice_updates_price(self):
         """Test that state machine's spread choice handler recalculates price."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", toasted=True, spread=None, unit_price=2.50)
@@ -214,7 +219,8 @@ class TestPriceRecalculationInvariants:
             OrderPhase,
             ExtractedModifiers,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -235,7 +241,7 @@ class TestPriceRecalculationInvariants:
         )
 
         # Find the bagel that was added
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1
 
         bagel = bagels[0]
@@ -284,7 +290,8 @@ class TestAdditionalItemsAfterBagel:
         parsing the user's new item order.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         # Create order with a completed bagel
         order = OrderTask()
@@ -323,7 +330,8 @@ class TestAdditionalItemsAfterBagel:
     def test_done_ordering_triggers_checkout(self):
         """Test that saying 'no' after items are complete goes to checkout."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         # Create order with a completed bagel
         order = OrderTask()
@@ -358,7 +366,8 @@ class TestAdditionalItemsAfterBagel:
         check in process() didn't apply.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         # Start with a bagel that needs toasted and spread configuration
         order = OrderTask()
@@ -546,7 +555,8 @@ class TestSpreadQuestionSkip:
         should NOT ask 'Would you like cream cheese or butter?'
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -575,7 +585,8 @@ class TestSpreadQuestionSkip:
     def test_ask_spread_for_plain_bagel(self):
         """Test that spread question IS asked for plain bagel without toppings."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -652,7 +663,8 @@ class TestOrderTypeUpfront:
             OrderStateMachine,
             OpenInputResponse,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -668,7 +680,7 @@ class TestOrderTypeUpfront:
         # Should set delivery method
         assert order.delivery_method.order_type == "pickup"
         # Should have added the bagel
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1
         assert bagels[0].bagel_type == "plain"
 
@@ -682,7 +694,8 @@ class TestOrderTypeUpfront:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, TaskStatus
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -714,7 +727,8 @@ class TestOrderTypeUpfront:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, TaskStatus
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -749,7 +763,8 @@ class TestOrderTypeUpfront:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, TaskStatus
 
         order = OrderTask()
         sm = OrderStateMachine()
@@ -789,7 +804,8 @@ class TestOrderTypeUpfront:
             OrderStateMachine,
             OrderPhase,
         )
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, TaskStatus
 
         sm = OrderStateMachine()
 
@@ -1490,7 +1506,7 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_latte_queues_coffee(self):
         """Test that ordering bagel + latte queues coffee for config after bagel."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1550,7 +1566,7 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_latte_complete_with_coffee_config(self):
         """Test that coffee configuration completes properly after bagel."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1587,7 +1603,7 @@ class TestBagelWithCoffeeConfig:
         assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
 
         # Verify both items are complete
-        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 1
         assert len(coffees) == 1
@@ -1618,7 +1634,7 @@ class TestBagelWithCoffeeConfig:
         are preserved. This test uses the first disambiguation option for each.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1688,7 +1704,7 @@ class TestBagelWithCoffeeConfig:
         # Should eventually ask "Anything else?" or be in checkout
         # (Flexible check since flow varies based on disambiguation)
         final_coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
-        final_bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        final_bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
 
         assert len(final_bagels) >= 1, f"Expected at least 1 bagel, got: {len(final_bagels)}"
         assert len(final_coffees) >= 1, f"Expected at least 1 coffee, got: {len(final_coffees)}"
@@ -1696,7 +1712,7 @@ class TestBagelWithCoffeeConfig:
     def test_two_coffees_and_two_bagels(self):
         """Test plural forms: 2 coffees and 2 bagels - all get configured."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import CoffeeItemTask, BagelItemTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         sm = OrderStateMachine()  # Use global menu data for pricing
         order = OrderTask()
@@ -1711,7 +1727,7 @@ class TestBagelWithCoffeeConfig:
         assert order.has_queued_config_items(), "Expected coffees to be queued for config"
 
         # Verify items were created
-        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 2, f"Expected 2 bagels, got: {len(bagels)}"
         assert len(coffees) == 2, f"Expected 2 coffees, got: {len(coffees)}"
@@ -1757,7 +1773,7 @@ class TestBagelWithCoffeeConfig:
         assert "anything else" in result.message.lower(), f"Expected 'Anything else?', got: {result.message}"
 
         # Verify all 4 items are complete
-        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 2
         assert len(coffees) == 2
@@ -1767,7 +1783,8 @@ class TestBagelWithCoffeeConfig:
     def test_bagel_and_menu_item(self):
         """Test ordering a bagel and a menu item (like The Classic BEC) together."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
-        from sandwich_bot.tasks.models import BagelItemTask, MenuItemTask
+        from sandwich_bot.tasks.models import MenuItemTask
+        from tests.test_helpers import BagelItemTask
 
         # Use global menu data which has all pricing info
         sm = OrderStateMachine()
@@ -1778,7 +1795,7 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("one bagel and one classic BEC", order)
 
         # Should have both items in the order
-        bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
         # Signature items are now MenuItemTask with is_signature=True
         signature_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
         assert len(bagels) == 1, f"Expected 1 bagel, got: {len(bagels)}"
@@ -1839,7 +1856,8 @@ class TestDrinkClarification:
     def test_drink_selection_by_number(self):
         """Test selecting a drink by number."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         menu_data = {
@@ -1872,7 +1890,8 @@ class TestDrinkClarification:
     def test_drink_selection_by_name(self):
         """Test selecting a drink by name."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         menu_data = {
@@ -1932,7 +1951,8 @@ class TestDrinkClarification:
     def test_single_match_adds_directly(self):
         """Test that a unique match adds the drink directly without asking."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         # The coffee handler looks in items_by_type -> beverage, not in "drinks"
         menu_data = {
@@ -1977,7 +1997,8 @@ class TestQuantityChange:
     def test_make_it_two_drinks(self):
         """Test 'make it two orange juices' adds another drink."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2004,7 +2025,8 @@ class TestQuantityChange:
     def test_can_you_make_it_two(self):
         """Test 'can you make it two' pattern."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2024,7 +2046,8 @@ class TestQuantityChange:
     def test_already_has_enough(self):
         """Test when user already has the requested quantity."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2048,7 +2071,8 @@ class TestQuantityChange:
     def test_no_match_returns_none(self):
         """Test that non-matching item returns None (lets other handlers try)."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2076,7 +2100,8 @@ class TestCheeseChoice:
     def test_american_cheese_selected(self):
         """Test selecting American cheese."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2098,7 +2123,8 @@ class TestCheeseChoice:
     def test_cheddar_cheese_selected(self):
         """Test selecting cheddar cheese."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2118,7 +2144,8 @@ class TestCheeseChoice:
     def test_swiss_cheese_selected(self):
         """Test selecting Swiss cheese."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2135,7 +2162,8 @@ class TestCheeseChoice:
     def test_muenster_cheese_selected(self):
         """Test selecting muenster cheese (with alternate spelling)."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2153,7 +2181,8 @@ class TestCheeseChoice:
     def test_invalid_cheese_prompts_again(self):
         """Test that invalid cheese type re-prompts user."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2289,7 +2318,8 @@ class TestTaxAndOrderStatus:
     def test_tax_question_with_tax_rates(self):
         """Test tax calculation with configured rates."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         sm.order_utils_handler.set_store_info({
@@ -2312,7 +2342,8 @@ class TestTaxAndOrderStatus:
     def test_tax_question_no_tax_configured(self):
         """Test tax question when no tax rates configured."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         sm.order_utils_handler.set_store_info({})  # No tax rates
@@ -2342,7 +2373,8 @@ class TestTaxAndOrderStatus:
     def test_order_status_with_items(self):
         """Test order status shows current items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2364,7 +2396,8 @@ class TestTaxAndOrderStatus:
     def test_order_status_consolidates_duplicates(self):
         """Test that identical items are consolidated with count."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2688,7 +2721,8 @@ class TestCoffeeSize:
     def test_small_size_selected(self, mock_parse):
         """Test selecting small size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
 
         # Mock the parser to return small size
@@ -2712,7 +2746,8 @@ class TestCoffeeSize:
     def test_large_size_selected(self, mock_parse):
         """Test selecting large size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
 
         # Mock the parser to return large size
@@ -2735,7 +2770,8 @@ class TestCoffeeSize:
     def test_invalid_size_reprompts(self, mock_parse):
         """Test that invalid size re-prompts user."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
 
         # Mock the parser to return no size (invalid)
@@ -2760,7 +2796,8 @@ class TestCoffeeSize:
     def test_size_with_drink_name_in_prompt(self, mock_parse):
         """Test that reprompt includes drink name."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
 
         # Mock the parser to return no size (unclear)
@@ -2782,7 +2819,8 @@ class TestCoffeeSize:
     def test_cancel_coffee_during_size_config(self):
         """Test canceling coffee during size configuration via _handle_configuring_item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2808,7 +2846,8 @@ class TestCoffeeSize:
     def test_cancel_this_during_size_config(self):
         """Test canceling 'this' during size configuration."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2832,7 +2871,8 @@ class TestCoffeeSize:
     def test_cancel_plural_coffees_during_config(self):
         """Test 'remove the coffees' removes all coffee items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -2875,7 +2915,8 @@ class TestCoffeeStyle:
     def test_hot_selected(self):
         """Test selecting hot."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2895,7 +2936,8 @@ class TestCoffeeStyle:
     def test_iced_selected(self):
         """Test selecting iced."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2915,7 +2957,8 @@ class TestCoffeeStyle:
     def test_cold_maps_to_iced(self):
         """Test that 'cold' maps to iced."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2932,7 +2975,8 @@ class TestCoffeeStyle:
     def test_invalid_style_reprompts(self):
         """Test that invalid style re-prompts user."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2953,7 +2997,8 @@ class TestCoffeeStyle:
     def test_style_with_sweetener_extracts_both(self):
         """Test that sweetener mentioned with style is extracted."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2973,7 +3018,8 @@ class TestCoffeeStyle:
     def test_style_with_syrup_extracts_both(self):
         """Test that syrup mentioned with style is extracted."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -2992,7 +3038,8 @@ class TestCoffeeStyle:
     def test_completes_coffee_and_clears_pending(self):
         """Test that coffee is marked complete and pending is cleared after full flow."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3021,7 +3068,8 @@ class TestCoffeeModifiers:
     def test_modifiers_question_asked_when_no_modifiers(self):
         """Test that modifiers question is asked when no modifiers are set."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3043,7 +3091,8 @@ class TestCoffeeModifiers:
     def test_modifiers_question_skipped_when_milk_set(self):
         """Test that modifiers question is skipped when milk is already set."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3063,7 +3112,8 @@ class TestCoffeeModifiers:
     def test_handle_modifiers_with_milk(self):
         """Test handling modifiers response with milk."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3082,7 +3132,8 @@ class TestCoffeeModifiers:
     def test_handle_modifiers_with_sugar(self):
         """Test handling modifiers response with sugar."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3103,7 +3154,8 @@ class TestCoffeeModifiers:
     def test_handle_modifiers_no_thanks(self):
         """Test handling modifiers response with 'no thanks'."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3124,7 +3176,8 @@ class TestCoffeeModifiers:
     def test_handle_modifiers_with_multiple(self):
         """Test handling modifiers response with milk and sugar."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, TaskStatus
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask, TaskStatus
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3178,7 +3231,8 @@ class TestCoffeeModifierRemoval:
     def test_without_milk_removes_milk(self):
         """Test that 'without milk' removes milk from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3200,7 +3254,8 @@ class TestCoffeeModifierRemoval:
     def test_without_sugar_removes_sweetener(self):
         """Test that 'without sugar' removes sweetener from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3222,7 +3277,8 @@ class TestCoffeeModifierRemoval:
     def test_without_syrup_removes_syrup(self):
         """Test that 'without syrup' removes syrup from coffee."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3252,7 +3308,8 @@ class TestBagelModifierRemoval:
         because 'cream cheese' was found in the item summary.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3285,7 +3342,8 @@ class TestBagelModifierRemoval:
     def test_remove_cream_cheese_with_double_space(self):
         """Test that input with double spaces still works (voice input artifact)."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3316,7 +3374,8 @@ class TestBagelModifierRemoval:
         existing bagel in the cart.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3352,7 +3411,8 @@ class TestBagelModifierRemoval:
     def test_add_spread_to_bagel_with_existing_spread_replaces(self):
         """Test that 'add X cream cheese' replaces existing spread on bagel."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -3386,7 +3446,8 @@ class TestBagelModifierRemoval:
         spread extraction logic could run.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas.phases import OrderPhase
 
         sm = OrderStateMachine()
@@ -4008,7 +4069,8 @@ class TestDeliveryHandler:
         """Test that selecting delivery without address asks for address."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4281,7 +4343,8 @@ class TestNameHandler:
         """Test that valid name is saved to customer_info."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4321,7 +4384,8 @@ class TestNameHandler:
         """Test that after name is set, order summary is shown."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4344,7 +4408,8 @@ class TestNameHandler:
         """Test that 'My name is John' extracts just 'John'."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4365,7 +4430,8 @@ class TestNameHandler:
         """Test that after name, phase transitions correctly."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, NameResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4395,7 +4461,8 @@ class TestConfirmationHandler:
         """Test that confirming marks order_reviewed and asks text/email."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4420,7 +4487,8 @@ class TestConfirmationHandler:
         """Test that wants_changes response asks what to change."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4450,7 +4518,8 @@ class TestConfirmationHandler:
         """Test that tax question triggers tax calculation."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         # Set store info for tax calculation
@@ -4472,7 +4541,8 @@ class TestConfirmationHandler:
         """Test that 'make it 2' duplicates the last item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4494,7 +4564,8 @@ class TestConfirmationHandler:
         """Test that unclear response asks if order is correct."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4518,7 +4589,8 @@ class TestConfirmationHandler:
         """Test that 'make it 3' adds 2 more items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4540,7 +4612,8 @@ class TestConfirmationHandler:
         """Test that order_reviewed stays False until user confirms."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, ConfirmationResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4613,7 +4686,8 @@ class TestGreetingHandler:
         """Test that greeting with bagel order adds bagel to cart."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4630,7 +4704,7 @@ class TestGreetingHandler:
             result = sm._handle_greeting("can I get a plain bagel toasted with cream cheese", order)
 
             # Should have added a bagel
-            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) >= 1
             assert bagels[0].bagel_type == "plain"
 
@@ -4638,7 +4712,8 @@ class TestGreetingHandler:
         """Test that greeting with coffee order adds coffee to cart."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4672,7 +4747,8 @@ class TestTakingItemsHandler:
         """Test that ordering a bagel adds it to the cart."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4687,7 +4763,7 @@ class TestTakingItemsHandler:
 
             result = sm._handle_taking_items("an everything bagel toasted with butter", order)
 
-            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) >= 1
             assert bagels[0].bagel_type == "everything"
             assert "anything else" in result.message.lower() or "else" in result.message.lower()
@@ -4696,7 +4772,8 @@ class TestTakingItemsHandler:
         """Test that ordering coffee adds it to the cart."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4720,7 +4797,8 @@ class TestTakingItemsHandler:
         """Test that 'done ordering' transitions to checkout."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4745,7 +4823,8 @@ class TestTakingItemsHandler:
         """Test that canceling an item removes it from cart."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4772,7 +4851,8 @@ class TestTakingItemsHandler:
         """Test that 'remove the coffees' removes all coffee items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, CoffeeItemTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4813,7 +4893,8 @@ class TestTakingItemsHandler:
         """Test that 'make it 2' duplicates the last item."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4880,7 +4961,8 @@ class TestTakingItemsHandler:
         """Test that ordering multiple bagels adds correct quantity."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -4895,7 +4977,7 @@ class TestTakingItemsHandler:
 
             result = sm._handle_taking_items("3 plain bagels toasted with cream cheese", order)
 
-            bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
+            bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) == 3
 
     def test_another_espresso_creates_menu_item_task(self):
@@ -4906,7 +4988,8 @@ class TestTakingItemsHandler:
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, OpenInputResponse
-        from sandwich_bot.tasks.models import OrderTask, MenuItemTask, CoffeeItemTask
+        from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+        from tests.test_helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5147,7 +5230,8 @@ class TestPaymentMethodHandler:
         """Test that unclear input asks for clarification."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5168,7 +5252,8 @@ class TestPaymentMethodHandler:
         """Test that selecting text without phone asks for phone number."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5190,7 +5275,8 @@ class TestPaymentMethodHandler:
         """Test that selecting text with phone completes order."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5216,7 +5302,8 @@ class TestPaymentMethodHandler:
         """Test that selecting text with already-set phone completes order."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5240,7 +5327,8 @@ class TestPaymentMethodHandler:
         """Test that selecting email without address asks for email."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5262,7 +5350,8 @@ class TestPaymentMethodHandler:
         """Test that selecting email with address completes order."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5290,7 +5379,8 @@ class TestPaymentMethodHandler:
         """Test that invalid phone number returns error message."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5318,7 +5408,8 @@ class TestEmailHandler:
         """Test that no email extracted asks for email again."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5340,7 +5431,8 @@ class TestEmailHandler:
         """Test that valid email completes order."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5367,7 +5459,8 @@ class TestEmailHandler:
         """Test that invalid email returns validation error."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5389,7 +5482,8 @@ class TestEmailHandler:
         """Test that email is normalized before storing."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.schemas import OrderPhase, EmailResponse
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -6028,7 +6122,8 @@ class TestModifierRemovalDuringConfig:
         would remove the entire bagel item instead of just the bacon modifier.
         """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -6075,7 +6170,8 @@ class TestModifierRemovalDuringConfig:
     def test_remove_egg_during_config_removes_from_extras(self):
         """Test removing an extra (egg) during config removes it from extras list."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
@@ -6112,7 +6208,8 @@ class TestModifierRemovalDuringConfig:
     def test_remove_nonexistent_modifier_falls_through_to_item_search(self):
         """Test that removing a modifier not on the item falls through to item search logic."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
-        from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+        from sandwich_bot.tasks.models import OrderTask
+        from tests.test_helpers import BagelItemTask
         from sandwich_bot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()

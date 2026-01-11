@@ -5,7 +5,8 @@ Tests the system's ability to handle removal and cancellation requests.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
+from sandwich_bot.tasks.models import OrderTask, TaskStatus
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestCancellationRemoval:
@@ -39,7 +40,7 @@ class TestCancellationRemoval:
         # Bagel should be cancelled (status = SKIPPED)
         active_bagels = [
             i for i in result.order.items.items
-            if isinstance(i, BagelItemTask) and i.status != TaskStatus.SKIPPED
+            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 0, \
             f"Bagel should be removed. Active bagels: {len(active_bagels)}"
@@ -122,7 +123,7 @@ class TestCancellationRemoval:
         # Bagel should still be active
         active_bagels = [
             i for i in result.order.items.items
-            if isinstance(i, BagelItemTask) and i.status != TaskStatus.SKIPPED
+            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 1, \
             f"Bagel should be preserved. Active bagels: {len(active_bagels)}"
@@ -155,7 +156,7 @@ class TestCancellationRemoval:
         # Bagel should be cancelled (status = SKIPPED)
         active_bagels = [
             i for i in result.order.items.items
-            if isinstance(i, BagelItemTask) and i.status != TaskStatus.SKIPPED
+            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 0, \
             f"Last item should be removed. Active bagels: {len(active_bagels)}"

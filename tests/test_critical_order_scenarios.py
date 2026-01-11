@@ -8,7 +8,8 @@ especially multi-item orders and edge cases that have caused bugs.
 from unittest.mock import MagicMock, patch
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 def create_full_menu_data():
@@ -199,7 +200,7 @@ class TestCriticalOrderScenarios:
 
         # Check that we have both items
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Items in cart: {len(active_items)} (bagels: {len(bagels)}, coffees: {len(coffees)})")
@@ -275,7 +276,7 @@ class TestCriticalOrderScenarios:
 
         # Verify both items in cart
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Final cart: {len(bagels)} bagel(s), {len(coffees)} coffee(s)")
@@ -316,7 +317,7 @@ class TestCriticalOrderScenarios:
 
         # Should either confirm both or ask minimal questions
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
 
         print(f"Bagels in cart: {len(bagels)}")
         for i, bagel in enumerate(bagels):
@@ -443,7 +444,7 @@ class TestCriticalOrderScenarios:
 
         # Check the bagel config
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
 
         if bagels:
             bagel = bagels[0]
@@ -538,7 +539,7 @@ class TestCriticalOrderScenarios:
                 print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
 
         if bagels:
             bagel = bagels[0]
@@ -627,7 +628,7 @@ class TestCriticalOrderScenarios:
 
         # Check cart - should have coffee, not bagel
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
         coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Cart after cancellation: {len(bagels)} bagels, {len(coffees)} coffees")

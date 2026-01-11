@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, BagelItemTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ class CheckoutUtilsHandler:
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
                 # Handle bagels that need configuration
-                if isinstance(item, BagelItemTask):
+                if getattr(item, 'is_bagel', False):
                     if item.bagel_type is None or item.toasted is None:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
@@ -184,7 +184,7 @@ class CheckoutUtilsHandler:
 
             # Fall back to full config handlers for legacy queued items without names
             if target_item:
-                if item_type == "bagel" and isinstance(target_item, BagelItemTask):
+                if item_type == "bagel" and getattr(target_item, 'is_bagel', False):
                     # Start bagel configuration
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)

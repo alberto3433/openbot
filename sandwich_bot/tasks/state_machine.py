@@ -16,7 +16,6 @@ import uuid
 from .models import (
     OrderTask,
     MenuItemTask,
-    BagelItemTask,
     ItemTask,
 )
 from .pricing import PricingEngine
@@ -194,7 +193,7 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
 
 def _get_pending_item_description(item: "ItemTask") -> str:
     """Get a short description of the pending item for redirect messages."""
-    if isinstance(item, BagelItemTask):
+    if getattr(item, 'is_bagel', False):
         # Describe based on what's been specified
         parts = []
         if item.sandwich_protein:

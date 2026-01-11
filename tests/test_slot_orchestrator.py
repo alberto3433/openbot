@@ -7,8 +7,6 @@ without involving the full state machine.
 
 from sandwich_bot.tasks.models import (
     OrderTask,
-    BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
     TaskStatus,
 )
@@ -19,6 +17,64 @@ from sandwich_bot.tasks.slot_orchestrator import (
     ItemSlotOrchestrator,
     sync_db_order_to_task,
 )
+
+
+# =============================================================================
+# Helper functions to create bagel and coffee tasks
+# =============================================================================
+
+def create_bagel_task(
+    bagel_type: str = None,
+    toasted: bool = None,
+    spread: str = None,
+    extras: list = None,
+    quantity: int = 1,
+    unit_price: float = 0.0,
+) -> MenuItemTask:
+    """Create a MenuItemTask configured as a bagel."""
+    bagel = MenuItemTask(
+        menu_item_name="Bagel",
+        menu_item_type="bagel",
+        toasted=toasted,
+        spread=spread,
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    if bagel_type:
+        bagel.bagel_type = bagel_type
+    if extras:
+        bagel.extras = extras
+    return bagel
+
+
+def create_coffee_task(
+    drink_type: str = None,
+    size: str = None,
+    iced: bool = None,
+    milk: str = None,
+    sweeteners: list = None,
+    extra_shots: int = 0,
+    quantity: int = 1,
+    unit_price: float = 0.0,
+) -> MenuItemTask:
+    """Create a MenuItemTask configured as a sized beverage (coffee)."""
+    coffee = MenuItemTask(
+        menu_item_name=drink_type or "Coffee",
+        menu_item_type="sized_beverage",
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    if size:
+        coffee.size = size
+    if iced is not None:
+        coffee.iced = iced
+    if milk:
+        coffee.milk = milk
+    if sweeteners:
+        coffee.sweeteners = sweeteners
+    if extra_shots:
+        coffee.extra_shots = extra_shots
+    return coffee
 
 
 class TestSlotOrchestratorBasics:
@@ -37,7 +93,7 @@ class TestSlotOrchestratorBasics:
         """Items slot not filled until items are complete."""
         order = OrderTask()
         # Add bagel without toasted preference
-        bagel = BagelItemTask(bagel_type="plain", toasted=None)
+        bagel = create_bagel_task(bagel_type="plain", toasted=None)
         bagel.status = TaskStatus.IN_PROGRESS
         order.items.add_item(bagel)
 
@@ -50,7 +106,7 @@ class TestSlotOrchestratorBasics:
     def test_with_complete_item_needs_delivery(self):
         """After complete items, should ask delivery method."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
@@ -63,7 +119,7 @@ class TestSlotOrchestratorBasics:
     def test_pickup_skips_address(self):
         """Pickup orders should skip address slot."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -77,7 +133,7 @@ class TestSlotOrchestratorBasics:
     def test_delivery_needs_address(self):
         """Delivery orders should ask for address."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "delivery"
@@ -91,7 +147,7 @@ class TestSlotOrchestratorBasics:
     def test_after_address_needs_name(self):
         """After address, should ask for name."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "delivery"
@@ -106,7 +162,7 @@ class TestSlotOrchestratorBasics:
     def test_after_name_needs_confirm(self):
         """After name, should ask for confirmation."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -121,7 +177,7 @@ class TestSlotOrchestratorBasics:
     def test_after_confirm_needs_payment(self):
         """After order reviewed (user said 'yes'), should ask for payment method."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -137,7 +193,7 @@ class TestSlotOrchestratorBasics:
     def test_in_store_payment_completes_order(self):
         """In-store payment should complete the order (no notification needed)."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -154,7 +210,7 @@ class TestSlotOrchestratorBasics:
     def test_card_link_needs_notification(self):
         """Card link payment should require notification method."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -171,7 +227,7 @@ class TestSlotOrchestratorBasics:
     def test_notification_with_phone_completes(self):
         """Providing phone for notification completes order."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -186,7 +242,7 @@ class TestSlotOrchestratorBasics:
     def test_notification_with_email_completes(self):
         """Providing email for notification completes order."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -209,7 +265,7 @@ class TestSlotOrchestratorPhaseDerivation:
 
     def test_with_items_phase_is_checkout_delivery(self):
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
@@ -218,7 +274,7 @@ class TestSlotOrchestratorPhaseDerivation:
 
     def test_delivery_phase_is_checkout_address(self):
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "delivery"
@@ -228,7 +284,7 @@ class TestSlotOrchestratorPhaseDerivation:
 
     def test_pickup_phase_is_checkout_name(self):
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -238,7 +294,7 @@ class TestSlotOrchestratorPhaseDerivation:
 
     def test_complete_order_phase_is_complete(self):
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -252,7 +308,7 @@ class TestSlotOrchestratorPhaseDerivation:
     def test_configuring_item_phase(self):
         """When an item is in_progress, phase should be configuring_item."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=None)
+        bagel = create_bagel_task(bagel_type="plain", toasted=None)
         bagel.status = TaskStatus.IN_PROGRESS
         order.items.add_item(bagel)
 
@@ -274,7 +330,7 @@ class TestSlotOrchestratorProgress:
 
     def test_partial_progress(self):
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -293,7 +349,7 @@ class TestItemSlotOrchestrator:
     """Test item-level slot orchestration."""
 
     def test_bagel_needs_type_first(self):
-        bagel = BagelItemTask()
+        bagel = create_bagel_task()
         orch = ItemSlotOrchestrator(bagel)
         slot = orch.get_next_slot()
 
@@ -301,7 +357,7 @@ class TestItemSlotOrchestrator:
         assert slot.field_name == "bagel_type"
 
     def test_bagel_needs_toasted_after_type(self):
-        bagel = BagelItemTask(bagel_type="plain")
+        bagel = create_bagel_task(bagel_type="plain")
         orch = ItemSlotOrchestrator(bagel)
         slot = orch.get_next_slot()
 
@@ -309,14 +365,14 @@ class TestItemSlotOrchestrator:
         assert slot.field_name == "toasted"
 
     def test_bagel_complete_with_type_and_toasted(self):
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         orch = ItemSlotOrchestrator(bagel)
 
         # No more required slots
         assert orch.is_complete()
 
     def test_coffee_needs_size_first(self):
-        coffee = CoffeeItemTask(drink_type="latte")
+        coffee = create_coffee_task(drink_type="latte")
         orch = ItemSlotOrchestrator(coffee)
         slot = orch.get_next_slot()
 
@@ -324,7 +380,7 @@ class TestItemSlotOrchestrator:
         assert slot.field_name == "size"
 
     def test_coffee_needs_iced_after_size(self):
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
+        coffee = create_coffee_task(drink_type="latte", size="medium")
         orch = ItemSlotOrchestrator(coffee)
         slot = orch.get_next_slot()
 
@@ -332,7 +388,7 @@ class TestItemSlotOrchestrator:
         assert slot.field_name == "iced"
 
     def test_coffee_complete_with_size_and_iced(self):
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True)
+        coffee = create_coffee_task(drink_type="latte", size="medium", iced=True)
         orch = ItemSlotOrchestrator(coffee)
 
         assert orch.is_complete()
@@ -401,7 +457,7 @@ class TestFillSlot:
         assert order.delivery_method.address.street == "123 Main St"
 
     def test_fill_item_slot(self):
-        bagel = BagelItemTask()
+        bagel = create_bagel_task()
         orch = ItemSlotOrchestrator(bagel)
 
         slot = orch.get_next_slot()  # bagel_type
@@ -485,11 +541,11 @@ class TestMultipleItems:
     def test_multiple_items_all_must_complete(self):
         order = OrderTask()
 
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=None)
+        coffee = create_coffee_task(drink_type="latte", size="medium", iced=None)
         coffee.status = TaskStatus.IN_PROGRESS
         order.items.add_item(coffee)
 
@@ -503,11 +559,11 @@ class TestMultipleItems:
     def test_multiple_items_all_complete_moves_to_delivery(self):
         order = OrderTask()
 
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True)
+        coffee = create_coffee_task(drink_type="latte", size="medium", iced=True)
         coffee.status = TaskStatus.COMPLETE
         order.items.add_item(coffee)
 

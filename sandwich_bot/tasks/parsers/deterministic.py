@@ -450,7 +450,7 @@ ANOTHER_ITEM_TYPE_KEYWORDS = {
     "lattes": "coffee",
     "cappuccino": "coffee",
     "cappuccinos": "coffee",
-    "espresso": "espresso",  # Espresso uses MenuItemTask, not CoffeeItemTask
+    "espresso": "espresso",  # Espresso uses MenuItemTask
     "espressos": "espresso",
     "americano": "coffee",
     "americanos": "coffee",

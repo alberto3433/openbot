@@ -15,8 +15,6 @@ import logging
 from .models import (
     OrderTask,
     ItemTask,
-    BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
 )
 
@@ -287,15 +285,12 @@ MENU_ITEM_SLOTS: list[ItemSlotDefinition] = [
 
 def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
     """Get slot definitions for an item based on its type."""
-    if isinstance(item, BagelItemTask):
+    if getattr(item, 'is_bagel', False):
         return BAGEL_SLOTS
-    elif isinstance(item, CoffeeItemTask):
-        # Legacy CoffeeItemTask uses coffee slots
+    elif getattr(item, 'is_sized_beverage', False):
+        # MenuItemTask with is_sized_beverage uses coffee slots
         return COFFEE_SLOTS
     elif isinstance(item, MenuItemTask):
-        # sized_beverage items use coffee slots
-        if item.is_sized_beverage:
-            return COFFEE_SLOTS
         return MENU_ITEM_SLOTS
     else:
         return []

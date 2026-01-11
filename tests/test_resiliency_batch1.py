@@ -6,7 +6,8 @@ where the user wants to change something about an item already in their order.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, TaskStatus
+from sandwich_bot.tasks.models import OrderTask, TaskStatus
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestReplacementModificationScenarios:
@@ -36,7 +37,7 @@ class TestReplacementModificationScenarios:
         result = sm.process("actually make it veggie cream cheese", order)
 
         # Get the bagel from the result
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
@@ -240,7 +241,7 @@ class TestReplacementModificationScenarios:
         result = sm.process("actually, make that two", order)
 
         # Should either have 2 bagels OR 1 bagel with quantity 2
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity == 2, f"Should have 2 bagels total, got {total_quantity}"
@@ -273,7 +274,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("remove the bacon", order)
 
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]

@@ -12,11 +12,10 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING, Callable, Union
+from typing import TYPE_CHECKING, Callable
 
 from .models import (
     OrderTask,
-    BagelItemTask,
     MenuItemTask,
     ItemTask,
     TaskStatus,
@@ -119,7 +118,7 @@ def _build_modifier_acknowledgment(modifiers: ExtractedModifiers) -> str:
 
 
 def apply_modifiers_to_bagel(
-    item: BagelItemTask,
+    item: MenuItemTask,
     modifiers: ExtractedModifiers,
     skip_cheeses: bool = False,
 ) -> None:
@@ -130,7 +129,7 @@ def apply_modifiers_to_bagel(
     multiple handlers (handle_bagel_choice, handle_toasted_choice, etc.).
 
     Args:
-        item: The BagelItemTask to modify
+        item: The bagel item (MenuItemTask with menu_item_type='bagel') to modify
         modifiers: Extracted modifiers from user input
         skip_cheeses: If True, don't add cheeses to extras (used when
                       cheese was already handled, e.g., in cheese choice handler)
@@ -384,7 +383,7 @@ class BagelConfigHandler(BaseHandler):
         # Before redirect check, see if user is adding modifiers to the current item
         # e.g., "add american cheese" or "and cheese" should acknowledge and stay on track
         modifiers_for_acknowledgment = None
-        if not bagel_type and isinstance(item, BagelItemTask):
+        if not bagel_type and getattr(item, 'is_bagel', False):
             modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
 
         # If no bagel type found AND no modifiers detected, check if user is trying to order a new item
@@ -488,7 +487,7 @@ class BagelConfigHandler(BaseHandler):
             order.clear_pending()
             return self._get_next_question(order)
 
-        elif isinstance(item, BagelItemTask):
+        elif getattr(item, 'is_bagel', False):
             item.bagel_type = bagel_type
 
             # Apply any additional modifiers from the input
@@ -506,7 +505,7 @@ class BagelConfigHandler(BaseHandler):
     def handle_spread_choice(
         self,
         user_input: str,
-        item: Union[BagelItemTask, MenuItemTask],
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle spread selection for bagel or omelette side bagel."""
@@ -693,7 +692,7 @@ class BagelConfigHandler(BaseHandler):
             order.clear_pending()
             return self.configure_next_incomplete_bagel(order)
 
-        # For BagelItemTask - full handling with modifiers
+        # For MenuItemTask bagels - full handling with modifiers
         # First check if the user is requesting modifiers instead of a spread
         # e.g., "make it bacon egg and cheese" when asked about spread
         modifiers = extract_modifiers_from_input(user_input)
@@ -819,14 +818,14 @@ class BagelConfigHandler(BaseHandler):
     def handle_toasted_choice(
         self,
         user_input: str,
-        item: Union[BagelItemTask, MenuItemTask],
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle toasted preference for bagel or sandwich."""
         # Before redirect check, see if user is adding modifiers to the current item
         # e.g., "add blueberry cream cheese" should acknowledge and stay on track
         modifiers_for_acknowledgment = None
-        if isinstance(item, BagelItemTask):
+        if getattr(item, 'is_bagel', False):
             modifiers_for_acknowledgment = extract_modifiers_from_input(user_input)
 
         # If no modifiers detected, check if user is trying to order a new item
@@ -863,7 +862,7 @@ class BagelConfigHandler(BaseHandler):
         item.toasted = toasted
 
         # Extract any additional modifiers from the input (e.g., "yes with extra cheese")
-        if isinstance(item, BagelItemTask):
+        if getattr(item, 'is_bagel', False):
             extracted_modifiers = extract_modifiers_from_input(user_input)
             if extracted_modifiers.has_modifiers() or extracted_modifiers.has_special_instructions():
                 logger.info("Extracted additional modifiers from toasted choice: %s", extracted_modifiers)
@@ -943,7 +942,7 @@ class BagelConfigHandler(BaseHandler):
                 order=order,
             )
 
-        # For BagelItemTask, check if spread is already set or has sandwich toppings
+        # For bagels, check if spread is already set or has sandwich toppings
         if item.spread is not None:
             # Spread already specified, bagel is complete
             if self.pricing:
@@ -974,7 +973,7 @@ class BagelConfigHandler(BaseHandler):
     def handle_cheese_choice(
         self,
         user_input: str,
-        item: BagelItemTask,
+        item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle cheese type selection when user said generic 'cheese'."""
@@ -1064,7 +1063,7 @@ class BagelConfigHandler(BaseHandler):
         descriptions = []
         for bagel_id in bagel_ids:
             bagel = self._get_item_by_id(order, bagel_id) if self._get_item_by_id else None
-            if bagel and isinstance(bagel, BagelItemTask):
+            if bagel and getattr(bagel, 'is_bagel', False):
                 if bagel.bagel_type:
                     descriptions.append(f"{bagel.bagel_type} bagel")
                 else:
@@ -1079,7 +1078,7 @@ class BagelConfigHandler(BaseHandler):
         Find the next incomplete bagel item and configure it fully before moving on.
 
         This handles:
-        - BagelItemTask (bagels with spreads/toppings)
+        - MenuItemTask with menu_item_type='bagel' (bagels with spreads/toppings)
         - MenuItemTask for omelettes with side_choice == "bagel"
 
         Each item is fully configured (type -> toasted -> spread) before
@@ -1088,7 +1087,7 @@ class BagelConfigHandler(BaseHandler):
         # Collect all items that need bagel configuration (both types)
         all_bagel_items = []
         for item in order.items.items:
-            if isinstance(item, BagelItemTask):
+            if getattr(item, 'is_bagel', False):
                 all_bagel_items.append(item)
             elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
                 # Omelettes with bagel side need bagel configuration
@@ -1181,7 +1180,7 @@ class BagelConfigHandler(BaseHandler):
                 item.mark_complete()
                 continue
 
-            # Handle BagelItemTask
+            # Handle bagel MenuItemTask
             bagel = item
 
             # Ask about type first (if configured to ask in conversation)
@@ -1272,7 +1271,7 @@ class BagelConfigHandler(BaseHandler):
         # No incomplete bagels - generate confirmation message for the bagels
         # Get all completed bagels to summarize
         completed_bagels = [item for item in order.items.items
-                          if isinstance(item, BagelItemTask) and item.status == TaskStatus.COMPLETE]
+                          if getattr(item, 'is_bagel', False) and item.status == TaskStatus.COMPLETE]
 
         if completed_bagels:
             # Get the most recently completed bagel(s) summary
@@ -1344,7 +1343,7 @@ class BagelConfigHandler(BaseHandler):
                             return self._configure_coffee(order)
 
                     # Handle bagel items (shouldn't normally be in queue due to grouping fix, but defensive)
-                    if item_type == "bagel" and isinstance(target_item, BagelItemTask):
+                    if item_type == "bagel" and getattr(target_item, 'is_bagel', False):
                         return self.configure_next_incomplete_bagel(order)
 
                 # If we get here, item wasn't handled - log and continue to next

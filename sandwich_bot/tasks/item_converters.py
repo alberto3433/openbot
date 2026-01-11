@@ -15,7 +15,6 @@ from typing import Any, Dict, TYPE_CHECKING
 from .models import (
     TaskStatus,
     ItemTask,
-    BagelItemTask,
     MenuItemTask,
 )
 
@@ -278,25 +277,39 @@ class MenuItemConverter(ItemConverter):
 
 
 class BagelConverter(ItemConverter):
-    """Converter for BagelItemTask."""
+    """Converter for bagel items (MenuItemTask with menu_item_type='bagel')."""
 
     @property
     def item_type(self) -> str:
         return "bagel"
 
-    def from_dict(self, item_dict: Dict[str, Any]) -> BagelItemTask:
-        bagel = BagelItemTask(
-            bagel_type=item_dict.get("bagel_type"),
+    def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
+        """Convert dict to MenuItemTask with menu_item_type='bagel'."""
+        bagel = MenuItemTask(
+            menu_item_name="Bagel",
+            menu_item_type="bagel",
             quantity=item_dict.get("quantity", 1),
             toasted=item_dict.get("toasted"),
-            scooped=item_dict.get("scooped"),
             spread=item_dict.get("spread"),
-            spread_type=item_dict.get("spread_type"),
-            sandwich_protein=item_dict.get("sandwich_protein"),
-            extras=item_dict.get("extras") or [],
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-            needs_cheese_clarification=item_dict.get("needs_cheese_clarification", False),
         )
+
+        # Set bagel-specific fields via property setters (stored in attribute_values)
+        if item_dict.get("bagel_type"):
+            bagel.bagel_type = item_dict.get("bagel_type")
+        if item_dict.get("bagel_type_upcharge"):
+            bagel.bagel_type_upcharge = item_dict.get("bagel_type_upcharge", 0.0)
+        if item_dict.get("scooped") is not None:
+            bagel.scooped = item_dict.get("scooped")
+        if item_dict.get("spread_type"):
+            bagel.spread_type = item_dict.get("spread_type")
+        if item_dict.get("sandwich_protein"):
+            bagel.sandwich_protein = item_dict.get("sandwich_protein")
+        if item_dict.get("extras"):
+            bagel.extras = item_dict.get("extras") or []
+        if item_dict.get("needs_cheese_clarification"):
+            bagel.needs_cheese_clarification = item_dict.get("needs_cheese_clarification", False)
+
         self._restore_common_fields(bagel, item_dict)
         return bagel
 
@@ -408,15 +421,23 @@ class SandwichConverter(ItemConverter):
     def item_type(self) -> str:
         return "sandwich"
 
-    def from_dict(self, item_dict: Dict[str, Any]) -> BagelItemTask:
-        bagel = BagelItemTask(
-            bagel_type=item_dict.get("bread") or item_dict.get("menu_item_name") or "unknown",
+    def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
+        """Convert dict to MenuItemTask with menu_item_type='bagel'."""
+        bagel_type = item_dict.get("bread") or item_dict.get("menu_item_name") or "unknown"
+        bagel = MenuItemTask(
+            menu_item_name="Bagel",
+            menu_item_type="bagel",
             quantity=item_dict.get("quantity", 1),
             toasted=item_dict.get("toasted"),
             spread=item_dict.get("cheese"),
-            extras=item_dict.get("toppings") or [],
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
+
+        # Set bagel-specific fields via property setters
+        bagel.bagel_type = bagel_type
+        if item_dict.get("toppings"):
+            bagel.extras = item_dict.get("toppings") or []
+
         self._restore_common_fields(bagel, item_dict)
         if bagel.bagel_type and bagel.toasted is not None:
             bagel.mark_complete()
@@ -652,7 +673,23 @@ class ItemConverterRegistry:
 
     @classmethod
     def get_for_item(cls, item: ItemTask) -> ItemConverter | None:
-        """Get converter for an ItemTask based on its item_type attribute."""
+        """
+        Get converter for an ItemTask based on its type.
+
+        For MenuItemTask, routes based on menu_item_type:
+        - menu_item_type='bagel' -> BagelConverter
+        - menu_item_type='sized_beverage' -> CoffeeConverter
+        - otherwise -> MenuItemConverter
+        """
+        # Check if it's a MenuItemTask with specific menu_item_type
+        if isinstance(item, MenuItemTask):
+            menu_item_type = getattr(item, 'menu_item_type', None)
+            if menu_item_type == "bagel":
+                return cls._converters.get("bagel")
+            elif menu_item_type == "sized_beverage":
+                return cls._converters.get("coffee")
+            # Fall through to default menu_item converter
+
         return cls._converters.get(item.item_type)
 
     @classmethod

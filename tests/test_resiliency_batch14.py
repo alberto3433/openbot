@@ -5,7 +5,8 @@ Tests the system's ability to handle pronouns and contextual references.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestPronounContextReferences:
@@ -31,7 +32,7 @@ class TestPronounContextReferences:
         result = sm.process("same thing", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         total_qty = sum(b.quantity for b in bagels)
 
         # Should have 2 bagels or acknowledge the request

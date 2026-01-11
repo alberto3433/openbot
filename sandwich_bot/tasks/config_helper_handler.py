@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Optional, TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, ItemTask, BagelItemTask
+from .models import OrderTask, MenuItemTask, ItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
 from .handler_config import HandlerConfig
@@ -133,7 +133,7 @@ class ConfigHelperHandler:
             "avocado", "capers",
         }
 
-        if cancel_desc in removable_modifiers and isinstance(current_item, BagelItemTask):
+        if cancel_desc in removable_modifiers and getattr(current_item, 'is_bagel', False):
             modifier_removed = False
             removed_modifier_name = cancel_desc
 

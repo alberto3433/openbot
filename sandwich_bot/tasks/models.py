@@ -149,312 +149,6 @@ class ItemTask(BaseTask):
         raise NotImplementedError
 
 
-class BagelItemTask(ItemTask):
-    """Task for capturing a bagel order."""
-
-    item_type: Literal["bagel"] = "bagel"
-
-    # Bagel-specific fields
-    bagel_type: str | None = None  # plain, everything, sesame, etc.
-    bagel_type_upcharge: float = 0.0  # Upcharge for specialty bagels (e.g., gluten free +$0.80)
-    toasted: bool | None = None
-    scooped: bool | None = None  # True if bagel should be scooped out
-    spread: str | None = None  # cream cheese, butter, etc.
-    spread_type: str | None = None  # plain, scallion, veggie, etc.
-    extras: list[str] = Field(default_factory=list)
-    sandwich_protein: str | None = None  # egg, bacon, lox, etc.
-    needs_cheese_clarification: bool = False  # True if user said "cheese" without type
-
-    def get_display_name(self) -> str:
-        """Get display name for this bagel."""
-        if self.bagel_type:
-            return f"{self.bagel_type} bagel"
-        return "bagel"
-
-    def get_summary(self) -> str:
-        """Get a summary description of this bagel."""
-        parts = []
-
-        if self.quantity > 1:
-            parts.append(f"{self.quantity}x")
-
-        if self.bagel_type:
-            parts.append(f"{self.bagel_type} bagel")
-        else:
-            parts.append("bagel")
-
-        if self.toasted:
-            parts.append("toasted")
-
-        # Build the "with X" part - combine spread, protein, and extras
-        with_parts = []
-
-        # Add spread if it's not "none"
-        if self.spread and self.spread.lower() != "none":
-            spread_desc = self.spread
-            if self.spread_type and self.spread_type != "plain":
-                spread_desc = f"{self.spread_type} {self.spread}"
-            with_parts.append(spread_desc)
-
-        # Add protein
-        if self.sandwich_protein:
-            with_parts.append(self.sandwich_protein)
-
-        # Add extras
-        if self.extras:
-            with_parts.extend(self.extras)
-
-        # Format the with clause
-        if with_parts:
-            parts.append(f"with {', '.join(with_parts)}")
-        elif self.spread and self.spread.lower() == "none":
-            # Only say "with nothing on it" if there's truly nothing
-            parts.append("with nothing on it")
-
-        # Add special instructions if present
-        if self.special_instructions:
-            parts.append(f"(Special Instructions: {self.special_instructions})")
-
-        return " ".join(parts)
-
-
-class CoffeeItemTask(ItemTask):
-    """Task for capturing a coffee/drink order.
-
-    Note: This class is being deprecated in favor of MenuItemTask with
-    menu_item_type="sized_beverage". The is_sized_beverage attribute is
-    added for backward compatibility with code that checks this property.
-    """
-
-    item_type: Literal["coffee"] = "coffee"
-
-    # Backward compatibility: new code checks is_sized_beverage on MenuItemTask,
-    # but tests may still create CoffeeItemTask directly
-    is_sized_beverage: bool = True
-
-    # Coffee-specific fields
-    drink_type: str | None = None  # drip, latte, espresso, etc.
-    size: str | None = None  # small, medium, large
-    iced: bool | None = None  # True=iced, False=hot, None=not specified
-    decaf: bool | None = None  # True=decaf, None=regular (not specified)
-    milk: str | None = None  # whole, skim, oat, almond, etc.
-    cream_level: str | None = None  # dark, light, regular - refers to amount of cream/milk
-    # Sweeteners - list of {"type": str, "quantity": int} e.g., [{"type": "sugar", "quantity": 2}]
-    sweeteners: list[dict] = Field(default_factory=list)
-    # Flavor syrups - list of {"flavor": str, "quantity": int} e.g., [{"flavor": "vanilla", "quantity": 1}]
-    flavor_syrups: list[dict] = Field(default_factory=list)
-    wants_syrup: bool = False  # True if user said "with syrup" without specifying flavor
-    pending_syrup_quantity: int = 1  # Quantity from "2 syrups" before flavor is specified
-    extra_shots: int = 0
-
-    # Upcharge tracking (set by recalculate_coffee_price)
-    size_upcharge: float = 0.0
-    milk_upcharge: float = 0.0
-    syrup_upcharge: float = 0.0  # Total upcharge for all syrups
-    extra_shots_upcharge: float = 0.0  # Upcharge for double/triple espresso
-    iced_upcharge: float = 0.0
-
-    @property
-    def is_espresso(self) -> bool:
-        """Check if this is an espresso drink (no size, always hot)."""
-        if not self.drink_type:
-            return False
-        return self.drink_type.lower() == "espresso"
-
-    def get_display_name(self) -> str:
-        """Get display name for this drink."""
-        parts = []
-        if self.size:
-            parts.append(self.size)
-        # Don't show hot/iced for espresso (always hot)
-        if not self.is_espresso:
-            if self.iced is True:
-                parts.append("iced")
-            elif self.iced is False:
-                parts.append("hot")
-        if self.decaf is True:
-            parts.append("decaf")
-        # Show double/triple for espresso drinks
-        if self.extra_shots == 1:
-            parts.append("double")
-        elif self.extra_shots >= 2:
-            parts.append("triple")
-        if self.drink_type:
-            parts.append(self.drink_type)
-        else:
-            parts.append("coffee")
-        return " ".join(parts)
-
-    def get_summary(self) -> str:
-        """Get a summary description of this drink for bot responses.
-
-        Note: Upcharges are tracked internally but not displayed in responses
-        to sound more natural when read aloud.
-        """
-        parts = []
-
-        if self.size:
-            parts.append(self.size)
-
-        # Don't show hot/iced for espresso (always hot)
-        if not self.is_espresso:
-            if self.iced is True:
-                parts.append("iced")
-            elif self.iced is False:
-                parts.append("hot")
-
-        if self.decaf is True:
-            parts.append("decaf")
-
-        # Show double/triple for espresso drinks
-        if self.extra_shots == 1:
-            parts.append("double")
-        elif self.extra_shots >= 2:
-            parts.append("triple")
-
-        if self.drink_type:
-            parts.append(self.drink_type)
-        else:
-            parts.append("coffee")
-
-        # Add flavor syrups
-        if self.flavor_syrups:
-            syrup_parts = []
-            for syrup in self.flavor_syrups:
-                flavor = syrup.get("flavor", "")
-                qty = syrup.get("quantity", 1)
-                qty_prefix = f"{qty} " if qty > 1 else ""
-                syrup_parts.append(f"{qty_prefix}{flavor} syrup")
-            syrup_str = " and ".join(syrup_parts)
-            parts.append(f"with {syrup_str}")
-
-        if self.milk:
-            # "none" or "black" means no milk - show as "black" for clarity
-            if self.milk.lower() in ("none", "black"):
-                parts.append("black")
-            else:
-                parts.append(f"with {self.milk} milk")
-
-        # Add sweeteners with quantities
-        if self.sweeteners:
-            sweetener_parts = []
-            for sweetener in self.sweeteners:
-                s_type = sweetener.get("type", "")
-                qty = sweetener.get("quantity", 1)
-                if qty > 1:
-                    sweetener_parts.append(f"{qty} {s_type}s")
-                else:
-                    sweetener_parts.append(s_type)
-            parts.append(f"with {' and '.join(sweetener_parts)}")
-
-        # Add special instructions if present
-        if self.special_instructions:
-            parts.append(f"(Special Instructions: {self.special_instructions})")
-
-        return " ".join(parts)
-
-    def get_spoken_summary(self) -> str:
-        """Get a natural-sounding summary for bot responses.
-
-        Uses special instructions phrase when it describes a modifier,
-        e.g., 'with a splash of milk' instead of 'with whole milk'.
-
-        Note: Upcharges are tracked internally but not displayed in responses
-        to sound more natural when read aloud.
-        """
-        parts = []
-
-        # Size (upcharges tracked internally, not displayed)
-        if self.size:
-            parts.append(self.size)
-
-        # Hot/iced (skip for espresso, always hot)
-        if not self.is_espresso:
-            if self.iced is True:
-                parts.append("iced")
-            elif self.iced is False:
-                parts.append("hot")
-
-        # Show double/triple for espresso drinks
-        if self.extra_shots == 1:
-            parts.append("double")
-        elif self.extra_shots >= 2:
-            parts.append("triple")
-
-        # Drink type
-        if self.drink_type:
-            parts.append(self.drink_type)
-        else:
-            parts.append("coffee")
-
-        # Add flavor syrups (upcharges tracked internally, not displayed)
-        if self.flavor_syrups:
-            syrup_parts = []
-            for syrup in self.flavor_syrups:
-                flavor = syrup.get("flavor", "")
-                qty = syrup.get("quantity", 1)
-                qty_prefix = f"{qty} " if qty > 1 else ""
-                syrup_parts.append(f"{qty_prefix}{flavor} syrup")
-            syrup_str = " and ".join(syrup_parts)
-            parts.append(f"with {syrup_str}")
-
-        # Check if special instructions describe milk (e.g., "a splash of milk", "light cream")
-        special_describes_milk = False
-        special_used_for_milk = False
-        if self.special_instructions:
-            special_lower = self.special_instructions.lower()
-            # Check for "milk" keyword or if the milk type is mentioned in special instructions
-            if "milk" in special_lower or "cream" in special_lower:
-                special_describes_milk = True
-            # Also check if milk type itself is in special instructions (e.g., "light oat")
-            if self.milk and self.milk.lower() in special_lower:
-                special_describes_milk = True
-
-        if self.milk:
-            if self.milk.lower() in ("none", "black"):
-                parts.append("black")
-            elif special_describes_milk:
-                # Use natural phrase from special_instructions instead of formal milk type
-                parts.append(f"with {self.special_instructions}")
-                special_used_for_milk = True
-            else:
-                parts.append(f"with {self.milk} milk")
-        elif special_describes_milk:
-            # Milk mentioned in special instructions but not set as a type
-            parts.append(f"with {self.special_instructions}")
-            special_used_for_milk = True
-
-        # Check if special instructions describe sweetener
-        special_describes_sweetener = False
-        special_used_for_sweetener = False
-        if self.special_instructions:
-            sweetener_words = ["sugar", "sweet", "splenda", "stevia", "honey"]
-            if any(word in self.special_instructions.lower() for word in sweetener_words):
-                special_describes_sweetener = True
-
-        # Add sweeteners or use special instructions if they describe sweetener
-        if self.sweeteners and not special_describes_sweetener:
-            sweetener_parts = []
-            for sweetener in self.sweeteners:
-                s_type = sweetener.get("type", "")
-                qty = sweetener.get("quantity", 1)
-                if qty > 1:
-                    sweetener_parts.append(f"{qty} {s_type}s")
-                else:
-                    sweetener_parts.append(s_type)
-            parts.append(f"with {' and '.join(sweetener_parts)}")
-        elif special_describes_sweetener and not special_used_for_milk:
-            # Use special instructions for sweetener (e.g., "a little sugar")
-            parts.append(f"with {self.special_instructions}")
-            special_used_for_sweetener = True
-
-        # Only show special instructions if not already used for milk/sweetener description
-        if self.special_instructions and not special_used_for_milk and not special_used_for_sweetener:
-            parts.append(f"({self.special_instructions})")
-
-        return " ".join(parts)
-
-
 class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette')."""
 
@@ -691,6 +385,104 @@ class MenuItemTask(ItemTask):
     def is_sized_beverage(self) -> bool:
         """Check if this is a sized beverage (coffee, latte, etc.)."""
         return self.menu_item_type == "sized_beverage"
+
+    # -------------------------------------------------------------------------
+    # Bagel helper properties (for bagel items)
+    # These provide a BagelItemTask-compatible interface using attribute_values
+    # -------------------------------------------------------------------------
+
+    @property
+    def is_bagel(self) -> bool:
+        """Check if this is a bagel item."""
+        return self.menu_item_type == "bagel"
+
+    @property
+    def bagel_type(self) -> str | None:
+        """Get bagel type from attribute_values."""
+        # Check both 'bagel_type' and 'bread' for compatibility
+        return self.attribute_values.get("bagel_type") or self.attribute_values.get("bread")
+
+    @bagel_type.setter
+    def bagel_type(self, value: str | None) -> None:
+        """Set bagel type in attribute_values."""
+        if value is not None:
+            self.attribute_values["bagel_type"] = value
+        elif "bagel_type" in self.attribute_values:
+            del self.attribute_values["bagel_type"]
+
+    @property
+    def bagel_type_upcharge(self) -> float:
+        """Get bagel type upcharge from attribute_values."""
+        return self.attribute_values.get("bagel_type_upcharge", 0.0)
+
+    @bagel_type_upcharge.setter
+    def bagel_type_upcharge(self, value: float) -> None:
+        """Set bagel type upcharge in attribute_values."""
+        self.attribute_values["bagel_type_upcharge"] = value
+
+    @property
+    def scooped(self) -> bool | None:
+        """Get scooped flag from attribute_values."""
+        return self.attribute_values.get("scooped")
+
+    @scooped.setter
+    def scooped(self, value: bool | None) -> None:
+        """Set scooped flag in attribute_values."""
+        if value is not None:
+            self.attribute_values["scooped"] = value
+        elif "scooped" in self.attribute_values:
+            del self.attribute_values["scooped"]
+
+    @property
+    def spread_type(self) -> str | None:
+        """Get spread type from attribute_values."""
+        return self.attribute_values.get("spread_type")
+
+    @spread_type.setter
+    def spread_type(self, value: str | None) -> None:
+        """Set spread type in attribute_values."""
+        if value is not None:
+            self.attribute_values["spread_type"] = value
+        elif "spread_type" in self.attribute_values:
+            del self.attribute_values["spread_type"]
+
+    @property
+    def extras(self) -> list[str]:
+        """Get extras list from attribute_values.
+
+        Creates the list if it doesn't exist, so .append() works correctly.
+        """
+        if "extras" not in self.attribute_values:
+            self.attribute_values["extras"] = []
+        return self.attribute_values["extras"]
+
+    @extras.setter
+    def extras(self, value: list[str]) -> None:
+        """Set extras list in attribute_values."""
+        self.attribute_values["extras"] = value or []
+
+    @property
+    def sandwich_protein(self) -> str | None:
+        """Get sandwich protein from attribute_values."""
+        return self.attribute_values.get("sandwich_protein")
+
+    @sandwich_protein.setter
+    def sandwich_protein(self, value: str | None) -> None:
+        """Set sandwich protein in attribute_values."""
+        if value is not None:
+            self.attribute_values["sandwich_protein"] = value
+        elif "sandwich_protein" in self.attribute_values:
+            del self.attribute_values["sandwich_protein"]
+
+    @property
+    def needs_cheese_clarification(self) -> bool:
+        """Get needs_cheese_clarification flag from attribute_values."""
+        return self.attribute_values.get("needs_cheese_clarification", False)
+
+    @needs_cheese_clarification.setter
+    def needs_cheese_clarification(self, value: bool) -> None:
+        """Set needs_cheese_clarification flag in attribute_values."""
+        self.attribute_values["needs_cheese_clarification"] = value
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""

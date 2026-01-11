@@ -6,7 +6,8 @@ could match multiple items and needs clarification or disambiguation.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask, MenuItemTask
+from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 def create_menu_data():
@@ -201,7 +202,7 @@ class TestAmbiguousItemOrders:
         assert result.message is not None
 
         # Should have added a bagel or be asking about it
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
 
         # Either:
         # 1. Bagel was added (possibly asking about type or cream cheese flavor)
@@ -246,7 +247,7 @@ class TestAmbiguousItemOrders:
         if items:
             # Check if it's a speed menu item (MenuItemTask) or asking to configure
             menu_items = [i for i in items if isinstance(i, MenuItemTask)]
-            bagels = [i for i in items if isinstance(i, BagelItemTask)]
+            bagels = [i for i in items if getattr(i, 'is_bagel', False)]
 
             # Should have added The Classic as a speed menu item
             if menu_items:

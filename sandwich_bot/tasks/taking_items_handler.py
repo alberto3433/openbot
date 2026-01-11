@@ -16,8 +16,6 @@ from sandwich_bot.menu_data_cache import menu_cache
 
 from .models import (
     OrderTask,
-    BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
     TaskStatus,
 )
@@ -1000,7 +998,7 @@ class TakingItemsHandler:
                 if detected_spread:
                     # Find a bagel to add the spread to
                     # Prefer: 1) bagel without spread, 2) most recent bagel
-                    bagels_in_cart = [i for i in active_items if isinstance(i, BagelItemTask)]
+                    bagels_in_cart = [i for i in active_items if getattr(i, 'is_bagel', False)]
                     target_bagel = None
 
                     # First, look for a bagel without a spread
@@ -1064,7 +1062,7 @@ class TakingItemsHandler:
 
             # Find the item that matches the target description
             target_item = None
-            bagels_in_cart = [i for i in active_items if isinstance(i, BagelItemTask)]
+            bagels_in_cart = [i for i in active_items if getattr(i, 'is_bagel', False)]
             menu_items_in_cart = [i for i in active_items if isinstance(i, MenuItemTask)]
 
             if target_desc:
@@ -1094,7 +1092,7 @@ class TakingItemsHandler:
                     target_item = active_items[-1]
 
             if target_item:
-                # Handle MenuItemTask differently from BagelItemTask
+                # Handle MenuItemTask
                 if isinstance(target_item, MenuItemTask):
                     # For MenuItemTask, add modifiers to attribute_values
                     if parsed.modify_add_modifiers:
@@ -1151,7 +1149,7 @@ class TakingItemsHandler:
                         order=order,
                     )
 
-                # BagelItemTask handling (original logic)
+                # Bagel handling (original logic)
                 # Apply the spread modification
                 if parsed.modify_new_spread:
                     target_item.spread = parsed.modify_new_spread
@@ -1243,7 +1241,7 @@ class TakingItemsHandler:
                      and "cream cheese sandwich" in item.menu_item_name.lower()),
                     None
                 )
-                if has_new_items and cream_cheese_menu_item and isinstance(last_item, BagelItemTask):
+                if has_new_items and cream_cheese_menu_item and getattr(last_item, 'is_bagel', False):
                     # Extract the spread name from the menu item name
                     # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
                     spread_name = cream_cheese_menu_item.menu_item_name.lower().replace(" sandwich", "")
@@ -1269,7 +1267,7 @@ class TakingItemsHandler:
                      if isinstance(item, ParsedBagelEntry) and item.bagel_type),
                     None
                 )
-                if has_new_items and bagel_entry and isinstance(last_item, BagelItemTask):
+                if has_new_items and bagel_entry and getattr(last_item, 'is_bagel', False):
                     old_type = last_item.bagel_type or "plain"
                     last_item.bagel_type = bagel_entry.bagel_type
                     logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
@@ -1285,7 +1283,7 @@ class TakingItemsHandler:
                     )
 
                 # If no new items parsed and last item is a bagel, try applying as modifiers
-                if not has_new_items and isinstance(last_item, BagelItemTask) and raw_user_input:
+                if not has_new_items and getattr(last_item, 'is_bagel', False) and raw_user_input:
                     modifiers = extract_modifiers_from_input(raw_user_input)
                     has_modifiers = modifiers.proteins or modifiers.cheeses or modifiers.toppings
 
@@ -1501,7 +1499,7 @@ class TakingItemsHandler:
                     result = remove_modifier_from_item(modifier_match.item, modifier_match)
                     if result.success:
                         # Recalculate price based on item type
-                        if isinstance(modifier_match.item, BagelItemTask):
+                        if getattr(modifier_match.item, 'is_bagel', False):
                             self.pricing.recalculate_bagel_price(modifier_match.item)
                         elif isinstance(modifier_match.item, MenuItemTask):
                             if modifier_match.item.is_sized_beverage:
@@ -1589,7 +1587,7 @@ class TakingItemsHandler:
                     if item_type:
                         # Filter by item type (use module-level imports)
                         if item_type == "bagel":
-                            items_to_check = [i for i in active_items if isinstance(i, BagelItemTask)]
+                            items_to_check = [i for i in active_items if getattr(i, 'is_bagel', False)]
                         elif item_type in ("coffee", "drink"):
                             items_to_check = [
                                 i for i in active_items
@@ -1789,7 +1787,7 @@ class TakingItemsHandler:
                 # Add a new bagel and start config flow
                 return self.item_adder_handler.add_bagel(order, quantity=1)
             elif item_type == "espresso":
-                # Espresso uses MenuItemTask (data-driven flow), not CoffeeItemTask
+                # Espresso uses MenuItemTask (data-driven flow)
                 if self.item_adder_handler and self.item_adder_handler.menu_item_handler:
                     menu_lookup = self.item_adder_handler.menu_lookup
                     espresso_items = menu_lookup.lookup_menu_items("espresso") if menu_lookup else []
@@ -2198,7 +2196,7 @@ class TakingItemsHandler:
                 if active_items:
                     last_item = active_items[-1]
 
-                    # Add to sized_beverage MenuItemTask or CoffeeItemTask
+                    # Add to sized_beverage MenuItemTask
                     if getattr(last_item, 'is_sized_beverage', False):
                         modifier_summary_parts = []
 
@@ -2655,7 +2653,7 @@ class TakingItemsHandler:
         # We only need to queue ONE item per handler group - the handler will find the rest.
         #
         # Handler groups:
-        # - "bagel_handler": BagelItemTask, MenuItemTask with bagel config (sandwiches, omelette sides)
+        # - "bagel_handler": MenuItemTask with bagel config (bagels, sandwiches, omelette sides)
         # - "coffee_handler": MenuItemTask with is_sized_beverage (coffee, latte, etc.)
         # - Individual items: MenuItemTask needing side_choice (no internal loop)
 
@@ -2711,7 +2709,7 @@ class TakingItemsHandler:
                             # These are also handled by bagel config handler
                             elif item.toasted is None:
                                 bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
-                elif isinstance(item, BagelItemTask):
+                elif getattr(item, 'is_bagel', False):
                     # Check bagel_type first, then toasted, then cheese clarification, then spread
                     if item.bagel_type is None:
                         bagel_handler_items.append((item.id, "bagel", "bagel", "bagel_choice"))
@@ -2723,14 +2721,6 @@ class TakingItemsHandler:
                     elif item.spread is None and not item.extras and not item.sandwich_protein:
                         # Need spread if bagel has no toppings (plain bagel needs spread question)
                         bagel_handler_items.append((item.id, f"{item.bagel_type} bagel", "bagel", "spread"))
-                elif isinstance(item, CoffeeItemTask):
-                    # Legacy CoffeeItemTask - route to coffee handler like sized_beverage MenuItemTask
-                    if item.size is None:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_size"))
-                    elif item.iced is None:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_style"))
-                    elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
-                        coffee_handler_items.append((item.id, item.drink_type or "coffee", "coffee", "coffee_modifiers"))
 
         # Build final list: only FIRST item from each handler group + all individual items
         # Handlers with internal loops will find subsequent items of their type automatically
@@ -2817,7 +2807,7 @@ class TakingItemsHandler:
         elif first_field == "spread":
             # Find the item to check if it's toasted
             item = next((i for i in order.items.items if i.id == first_item_id), None)
-            if isinstance(item, BagelItemTask):
+            if getattr(item, 'is_bagel', False):
                 toasted_desc = " toasted" if item.toasted else ""
                 question = f"Got it, {first_item_name}{toasted_desc}! Would you like cream cheese or butter on that?"
             elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
@@ -2838,7 +2828,7 @@ class TakingItemsHandler:
         elif first_field == "cheese_choice":
             # Regular bagel with generic "cheese" - ask for type
             item = next((i for i in order.items.items if i.id == first_item_id), None)
-            if isinstance(item, BagelItemTask):
+            if getattr(item, 'is_bagel', False):
                 toasted_desc = " toasted" if item.toasted else ""
                 question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
             else:

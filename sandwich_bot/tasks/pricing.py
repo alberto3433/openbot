@@ -475,7 +475,7 @@ class PricingEngine:
         to ensure price is always in sync with the item's state.
 
         Args:
-            item: The bagel item (BagelItemTask) to update
+            item: The bagel item (MenuItemTask with menu_item_type='bagel') to update
 
         Returns:
             The new calculated price
@@ -830,7 +830,7 @@ class PricingEngine:
         Recalculate and update a coffee item's price based on its current modifiers.
 
         Args:
-            item: The CoffeeItemTask to recalculate
+            item: The coffee item (MenuItemTask with menu_item_type='sized_beverage') to recalculate
 
         Returns:
             The new calculated price

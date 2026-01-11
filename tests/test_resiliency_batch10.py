@@ -5,7 +5,8 @@ Tests the system's ability to handle thank you, sorry, and social responses.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask
 
 
 class TestGratitudeSocialResponses:
@@ -58,7 +59,7 @@ class TestGratitudeSocialResponses:
 
         assert result.message is not None
         # Should not error or misinterpret
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, "Should not add extra items"
 
     def test_sorry_response(self):
@@ -77,7 +78,7 @@ class TestGratitudeSocialResponses:
 
         assert result.message is not None
         # Should either add the bagel or ask for clarification
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         has_bagel = len(bagels) >= 1
         mentions_bagel = "bagel" in result.message.lower()
 

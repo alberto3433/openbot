@@ -6,7 +6,8 @@ verifying the gluten free upcharge is properly applied and displayed.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, MenuItemTask
+from sandwich_bot.tasks.models import OrderTask, MenuItemTask
+from tests.test_helpers import BagelItemTask
 from sandwich_bot.tasks.adapter import order_task_to_dict
 from sandwich_bot.tasks.pricing import PricingEngine
 
@@ -88,7 +89,7 @@ class TestGlutenFreeBagelE2E:
         result = sm.process("yes please", result.order)
 
         # Verify bagel was added with correct attributes
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]
@@ -114,7 +115,7 @@ class TestGlutenFreeBagelE2E:
         # User orders gluten free bagel with spread and toasted (explicit "one" to avoid quantity parsing)
         result = sm.process("one gluten free bagel with cream cheese toasted", order)
 
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, f"Should have 1 bagel, got {len(bagels)}"
 
         bagel = bagels[0]
@@ -189,7 +190,7 @@ class TestGlutenFreeBagelE2E:
 
         result = sm.process("plain bagel toasted", order)
 
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]

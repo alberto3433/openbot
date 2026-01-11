@@ -13,7 +13,6 @@ from typing import Callable, TYPE_CHECKING
 from .models import (
     OrderTask,
     MenuItemTask,
-    BagelItemTask,
     TaskStatus,
 )
 from .schemas import OrderPhase, StateMachineResult, BagelOrderDetails, ExtractedModifiers
@@ -367,7 +366,7 @@ class ItemAdderHandler:
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:
-                # Use getattr since not all item types have menu_item_name (e.g., BagelItemTask)
+                # Use getattr to safely access menu_item_name on any item type
                 if getattr(item, 'menu_item_name', None) == canonical_name and item.status == TaskStatus.IN_PROGRESS:
                     item.mark_complete()
             return self._get_next_question(order)
@@ -509,19 +508,28 @@ class ItemAdderHandler:
             needs_cheese = True
             logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
 
-        # Create bagel with all provided details
-        bagel = BagelItemTask(
-            bagel_type=bagel_type,
+        # Create bagel with all provided details (using MenuItemTask with menu_item_type="bagel")
+        bagel = MenuItemTask(
+            menu_item_name="Bagel",
+            menu_item_type="bagel",
             toasted=toasted,
-            scooped=scooped,
             spread=spread,
-            spread_type=spread_type,
-            sandwich_protein=sandwich_protein,
-            extras=extras,
             unit_price=price,
             special_instructions=special_instructions,
-            needs_cheese_clarification=needs_cheese,
         )
+        # Set bagel-specific fields via property setters
+        if bagel_type:
+            bagel.bagel_type = bagel_type
+        if scooped is not None:
+            bagel.scooped = scooped
+        if spread_type:
+            bagel.spread_type = spread_type
+        if sandwich_protein:
+            bagel.sandwich_protein = sandwich_protein
+        if extras:
+            bagel.extras = extras
+        if needs_cheese:
+            bagel.needs_cheese_clarification = needs_cheese
         bagel.mark_in_progress()
         order.items.add_item(bagel)
 
@@ -610,18 +618,29 @@ class ItemAdderHandler:
                 base_price, sandwich_protein, extras, bagel_spread, spread_type
             )
 
-            bagel = BagelItemTask(
-                bagel_type=bagel_type,
+            # Create bagel using MenuItemTask with menu_item_type="bagel"
+            bagel = MenuItemTask(
+                menu_item_name="Bagel",
+                menu_item_type="bagel",
                 toasted=toasted,
-                scooped=scooped,
                 spread=bagel_spread,
-                spread_type=spread_type,
-                sandwich_protein=sandwich_protein,
-                extras=extras,
                 unit_price=price,
                 special_instructions=special_instructions,
-                needs_cheese_clarification=needs_cheese,
             )
+            # Set bagel-specific fields via property setters
+            if bagel_type:
+                bagel.bagel_type = bagel_type
+            if scooped is not None:
+                bagel.scooped = scooped
+            if spread_type:
+                bagel.spread_type = spread_type
+            if sandwich_protein:
+                bagel.sandwich_protein = sandwich_protein
+            if extras:
+                bagel.extras = extras
+            if needs_cheese:
+                bagel.needs_cheese_clarification = needs_cheese
+
             # Mark complete if all fields provided (and no cheese clarification needed), otherwise in_progress
             if bagel_type and toasted is not None and bagel_spread is not None and not needs_cheese:
                 bagel.mark_complete()
@@ -704,17 +723,26 @@ class ItemAdderHandler:
                 base_price, sandwich_protein, extras, spread, details.spread_type
             )
 
-            bagel = BagelItemTask(
-                bagel_type=details.bagel_type,
+            # Create bagel using MenuItemTask with menu_item_type="bagel"
+            bagel = MenuItemTask(
+                menu_item_name="Bagel",
+                menu_item_type="bagel",
                 toasted=details.toasted,
                 spread=spread,
-                spread_type=details.spread_type,
-                sandwich_protein=sandwich_protein,
-                extras=extras,
                 unit_price=price,
                 special_instructions=special_instructions,
-                needs_cheese_clarification=needs_cheese,
             )
+            # Set bagel-specific fields via property setters
+            if details.bagel_type:
+                bagel.bagel_type = details.bagel_type
+            if details.spread_type:
+                bagel.spread_type = details.spread_type
+            if sandwich_protein:
+                bagel.sandwich_protein = sandwich_protein
+            if extras:
+                bagel.extras = extras
+            if needs_cheese:
+                bagel.needs_cheese_clarification = needs_cheese
 
             # Mark complete if all fields provided (and no cheese clarification needed)
             if details.bagel_type and details.toasted is not None and details.spread is not None and not needs_cheese:

@@ -6,7 +6,8 @@ various ordering syntax variations.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask, CoffeeItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestNaturalLanguageVariation:
@@ -30,7 +31,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Should have added a bagel
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
 
         # Should be a plain bagel
@@ -120,7 +121,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Should have added a bagel
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
 
         bagel = bagels[0]

@@ -11,6 +11,7 @@ Designed to be generic and work with any item type that has DB-defined attribute
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache

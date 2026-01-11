@@ -5,7 +5,8 @@ Tests the system's ability to handle yes/no and confirmation responses.
 """
 
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, BagelItemTask
+from sandwich_bot.tasks.models import OrderTask
+from tests.test_helpers import BagelItemTask
 
 
 class TestAffirmativeNegativeResponses:
@@ -36,7 +37,7 @@ class TestAffirmativeNegativeResponses:
         assert result.message is not None
 
         # Should set toasted to True
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert bagels[0].toasted is True, "Should be toasted"
 
     def test_yeah_sure_response(self):
@@ -63,7 +64,7 @@ class TestAffirmativeNegativeResponses:
 
         assert result.message is not None
         # Should set toasted to True and continue
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert bagels[0].toasted is True, "Should be toasted"
 
     def test_no_response_to_anything_else(self):
@@ -88,5 +89,5 @@ class TestAffirmativeNegativeResponses:
         assert result.message is not None
 
         # Should not add new items
-        bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
+        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1, f"Should still have 1 bagel, got {len(bagels)}"

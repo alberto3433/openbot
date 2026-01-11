@@ -12,11 +12,76 @@ from sandwich_bot.tasks.adapter import (
 from sandwich_bot.tasks.models import (
     TaskStatus,
     OrderTask,
-    BagelItemTask,
-    CoffeeItemTask,
     MenuItemTask,
 )
 from sandwich_bot.tasks.pricing import PricingEngine
+
+
+# =============================================================================
+# Helper functions to create bagel and coffee tasks
+# =============================================================================
+
+def create_bagel_task(
+    bagel_type: str = None,
+    bagel_type_upcharge: float = 0.0,
+    toasted: bool = None,
+    spread: str = None,
+    extras: list = None,
+    quantity: int = 1,
+    unit_price: float = 0.0,
+) -> MenuItemTask:
+    """Create a MenuItemTask configured as a bagel."""
+    bagel = MenuItemTask(
+        menu_item_name="Bagel",
+        menu_item_type="bagel",
+        toasted=toasted,
+        spread=spread,
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    if bagel_type:
+        bagel.bagel_type = bagel_type
+    if bagel_type_upcharge:
+        bagel.bagel_type_upcharge = bagel_type_upcharge
+    if extras:
+        bagel.extras = extras
+    return bagel
+
+
+def create_coffee_task(
+    drink_type: str = None,
+    size: str = None,
+    iced: bool = None,
+    decaf: bool = False,
+    milk: str = None,
+    milk_upcharge: float = 0.0,
+    sweeteners: list = None,
+    extra_shots: int = 0,
+    quantity: int = 1,
+    unit_price: float = 0.0,
+) -> MenuItemTask:
+    """Create a MenuItemTask configured as a sized beverage (coffee)."""
+    coffee = MenuItemTask(
+        menu_item_name=drink_type or "Coffee",
+        menu_item_type="sized_beverage",
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    if size:
+        coffee.size = size
+    if iced is not None:
+        coffee.iced = iced
+    if decaf:
+        coffee.decaf = decaf
+    if milk:
+        coffee.milk = milk
+    if milk_upcharge:
+        coffee.milk_upcharge = milk_upcharge
+    if sweeteners:
+        coffee.sweeteners = sweeteners
+    if extra_shots:
+        coffee.extra_shots = extra_shots
+    return coffee
 
 
 def create_test_menu_data():
@@ -192,7 +257,7 @@ class TestDictToOrderTask:
         assert len(order.items.items) == 1
         assert order.items.get_item_count() == 2  # quantity is 2
         item = order.items.items[0]
-        assert isinstance(item, BagelItemTask)
+        assert isinstance(item, MenuItemTask) and item.is_bagel
         assert item.bagel_type == "everything bagel"
         assert item.toasted is True
         assert item.spread == "cream cheese"
@@ -239,7 +304,7 @@ class TestDictToOrderTask:
         order = dict_to_order_task(order_dict)
 
         assert order.items.get_item_count() == 2
-        assert isinstance(order.items.items[0], BagelItemTask)
+        assert isinstance(order.items.items[0], MenuItemTask) and order.items.items[0].is_bagel
         # Coffee items are now MenuItemTask with is_sized_beverage=True
         assert isinstance(order.items.items[1], MenuItemTask)
         assert order.items.items[1].is_sized_beverage is True
@@ -305,7 +370,7 @@ class TestOrderTaskToDict:
         """Test converting bagel item to dict."""
         pricing = create_test_pricing()
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="sesame",
             toasted=True,
             spread="butter",
@@ -330,7 +395,7 @@ class TestOrderTaskToDict:
     def test_coffee_item_conversion(self):
         """Test converting coffee item to dict."""
         order = OrderTask()
-        coffee = CoffeeItemTask(
+        coffee = create_coffee_task(
             drink_type="latte",
             size="large",
             iced=True,
@@ -363,7 +428,7 @@ class TestOrderTaskToDict:
     def test_collecting_items_status(self):
         """Test status when items exist."""
         order = OrderTask()
-        order.items.add_item(BagelItemTask(bagel_type="plain"))
+        order.items.add_item(create_bagel_task(bagel_type="plain"))
 
         result = order_task_to_dict(order, pricing=create_test_pricing())
 
@@ -372,8 +437,8 @@ class TestOrderTaskToDict:
     def test_total_price_calculation(self):
         """Test total price is calculated correctly."""
         order = OrderTask()
-        order.items.add_item(BagelItemTask(bagel_type="plain", unit_price=3.99, quantity=2))
-        order.items.add_item(CoffeeItemTask(drink_type="coffee", unit_price=2.50))
+        order.items.add_item(create_bagel_task(bagel_type="plain", unit_price=3.99, quantity=2))
+        order.items.add_item(create_coffee_task(drink_type="coffee", unit_price=2.50))
 
         result = order_task_to_dict(order, pricing=create_test_pricing())
 
@@ -383,8 +448,8 @@ class TestOrderTaskToDict:
     def test_skipped_items_excluded(self):
         """Test that skipped items are excluded."""
         order = OrderTask()
-        bagel = BagelItemTask(bagel_type="plain")
-        coffee = CoffeeItemTask(drink_type="latte")
+        bagel = create_bagel_task(bagel_type="plain")
+        coffee = create_coffee_task(drink_type="latte")
         order.items.add_item(bagel)
         order.items.add_item(coffee)
         order.items.skip_item(0)  # Skip the bagel
@@ -475,7 +540,7 @@ class TestModifiersConsistency:
     def test_bagel_with_lox_has_modifiers_in_item_config(self):
         """Test that bagel with lox includes modifiers in item_config."""
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             toasted=False,
             extras=["nova scotia salmon"],  # lox
@@ -498,7 +563,7 @@ class TestModifiersConsistency:
     def test_bagel_modifiers_have_correct_prices(self):
         """Test that bagel modifiers have correct prices."""
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="multigrain",
             toasted=True,
             spread="cream cheese",
@@ -527,7 +592,7 @@ class TestModifiersConsistency:
     def test_bagel_base_price_in_item_config(self):
         """Test that base price is stored in item_config for bagels."""
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             toasted=True,
             extras=["bacon"],
@@ -546,7 +611,7 @@ class TestModifiersConsistency:
     def test_coffee_modifiers_in_item_config(self):
         """Test that coffee modifiers with upcharges are in item_config."""
         order = OrderTask()
-        coffee = CoffeeItemTask(
+        coffee = create_coffee_task(
             drink_type="latte",
             size="large",
             iced=True,
@@ -572,7 +637,7 @@ class TestModifiersConsistency:
     def test_coffee_free_details_in_item_config(self):
         """Test that free coffee details (iced/hot, sweetener) are in item_config."""
         order = OrderTask()
-        coffee = CoffeeItemTask(
+        coffee = create_coffee_task(
             drink_type="coffee",
             size="medium",
             iced=False,
@@ -593,7 +658,7 @@ class TestModifiersConsistency:
     def test_coffee_decaf_in_free_details(self):
         """Test that decaf coffee has 'decaf' in free_details."""
         order = OrderTask()
-        coffee = CoffeeItemTask(
+        coffee = create_coffee_task(
             drink_type="coffee",
             size="medium",
             iced=True,
@@ -646,7 +711,7 @@ class TestModifiersConsistency:
     def test_modifiers_preserved_through_roundtrip(self):
         """Test that modifiers are preserved when saving to/loading from database format."""
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             toasted=False,
             extras=["nova scotia salmon", "capers"],
@@ -675,7 +740,7 @@ class TestModifiersConsistency:
         order = OrderTask()
 
         # Add bagel with lox
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             extras=["nova scotia salmon"],
             unit_price=8.75,
@@ -683,7 +748,7 @@ class TestModifiersConsistency:
         order.items.add_item(bagel)
 
         # Add coffee with oat milk
-        coffee = CoffeeItemTask(
+        coffee = create_coffee_task(
             drink_type="latte",
             size="large",
             milk="oat",
@@ -702,7 +767,7 @@ class TestModifiersConsistency:
     def test_empty_modifiers_still_in_item_config(self):
         """Test that even items without modifiers have the modifiers field in item_config."""
         order = OrderTask()
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             toasted=True,
             unit_price=2.75,
@@ -726,7 +791,7 @@ class TestModifiersConsistency:
         # - nova scotia salmon: $6.00
         # - cream cheese: $1.50
         # - Total: $9.70
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="multigrain",
             toasted=True,
             extras=["nova scotia salmon"],
@@ -764,7 +829,7 @@ class TestModifiersConsistency:
         """Test that gluten free bagel upcharge is shown as a separate modifier."""
         order = OrderTask()
         # Gluten free bagel: $2.20 base + $0.80 upcharge = $3.00
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="gluten free",
             bagel_type_upcharge=0.80,  # Gluten free upcharge
             toasted=True,
@@ -795,7 +860,7 @@ class TestModifiersConsistency:
         """Test that regular bagel types are shown as modifiers with $0 upcharge."""
         order = OrderTask()
         # Plain bagel: $2.20 base + $0.00 upcharge
-        bagel = BagelItemTask(
+        bagel = create_bagel_task(
             bagel_type="plain",
             bagel_type_upcharge=0.0,  # No upcharge for plain bagel
             toasted=False,

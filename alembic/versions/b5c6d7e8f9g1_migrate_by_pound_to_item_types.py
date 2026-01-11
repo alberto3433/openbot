@@ -1,7 +1,7 @@
 """Migrate by_pound_categories to ItemType.
 
 Revision ID: b5c6d7e8f9g1
-Revises: 57a09fe179d1
+Revises: c7d8e9f0g1h3
 Create Date: 2026-01-11 01:00:00.000000
 
 This migration:
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "b5c6d7e8f9g1"
-down_revision: Union[str, None] = "57a09fe179d1"
+down_revision: Union[str, None] = "c7d8e9f0g1h3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

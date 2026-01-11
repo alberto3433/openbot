@@ -1,0 +1,52 @@
+/**
+ * Admin Common CSS
+ * Shared styles for admin pages
+ */
+
+/* Tag Input Styles */
+.tag-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  min-height: 40px;
+  align-items: center;
+  cursor: text;
+}
+.tag-input-container:focus-within {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #1565c0;
+}
+.tag-item .tag-remove {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  color: #1976d2;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tag-item .tag-remove:hover {
+  color: #d32f2f;
+}
+.tag-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  padding: 4px 0;
+}

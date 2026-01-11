@@ -622,11 +622,11 @@ class CheckoutHandler:
             modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
         )
-        logger.info("CONFIRMATION: parse_open_input result - new_menu_item=%s, new_bagel=%s, new_coffee=%s, new_coffee_type=%s, new_signature_item=%s",
-                   item_parsed.new_menu_item, item_parsed.new_bagel, item_parsed.new_coffee, item_parsed.new_coffee_type, item_parsed.new_signature_item)
+        logger.info("CONFIRMATION: parse_open_input result - parsed_items=%d",
+                   len(item_parsed.parsed_items))
 
         # If they mentioned a new item, process it
-        if item_parsed.new_menu_item or item_parsed.new_bagel or item_parsed.new_coffee or item_parsed.new_signature_item:
+        if item_parsed.parsed_items:
             logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
             extracted_modifiers = extract_modifiers_from_input(user_input)
 

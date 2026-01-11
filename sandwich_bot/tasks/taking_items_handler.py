@@ -438,11 +438,10 @@ class TakingItemsHandler:
         )
 
         logger.info(
-            "Greeting phase parsed: is_greeting=%s, unclear=%s, new_bagel=%s, quantity=%d",
+            "Greeting phase parsed: is_greeting=%s, unclear=%s, parsed_items=%d",
             parsed.is_greeting,
             parsed.unclear,
-            parsed.new_bagel,
-            parsed.new_bagel_quantity,
+            len(parsed.parsed_items),
         )
 
         if parsed.is_greeting or parsed.unclear:
@@ -728,11 +727,8 @@ class TakingItemsHandler:
     ) -> StateMachineResult:
         """Handle taking new item orders with already-parsed input."""
         logger.info(
-            "Parsed open input: new_menu_item='%s', new_bagel=%s, quantity=%d, bagel_details=%d, done_ordering=%s",
-            parsed.new_menu_item,
-            parsed.new_bagel,
-            parsed.new_bagel_quantity,
-            len(parsed.bagel_details),
+            "Parsed open input: parsed_items=%d, done_ordering=%s",
+            len(parsed.parsed_items),
             parsed.done_ordering,
         )
 
@@ -1236,23 +1232,25 @@ class TakingItemsHandler:
                 last_item = active_items[-1]
 
                 # Check if parsed result has any valid new items
-                has_new_items = (
-                    parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
-                    parsed.new_signature_item or parsed.new_side_item or parsed.by_pound_items
-                )
+                has_new_items = parsed.parsed_items or parsed.by_pound_items
 
                 # Special case: If last item is a bagel and the "menu item" is a cream cheese sandwich,
                 # treat this as a spread change, not a menu item replacement.
                 # e.g., "make it blueberry cream cheese" -> change spread, not add Blueberry Cream Cheese Sandwich
-                if (has_new_items and parsed.new_menu_item and isinstance(last_item, BagelItemTask)
-                    and "cream cheese sandwich" in parsed.new_menu_item.lower()):
+                cream_cheese_menu_item = next(
+                    (item for item in parsed.parsed_items
+                     if isinstance(item, ParsedMenuItemEntry)
+                     and "cream cheese sandwich" in item.menu_item_name.lower()),
+                    None
+                )
+                if has_new_items and cream_cheese_menu_item and isinstance(last_item, BagelItemTask):
                     # Extract the spread name from the menu item name
                     # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
-                    spread_name = parsed.new_menu_item.lower().replace(" sandwich", "")
+                    spread_name = cream_cheese_menu_item.menu_item_name.lower().replace(" sandwich", "")
                     old_spread = last_item.spread or "none"
                     last_item.spread = spread_name
                     logger.info("Replacement: interpreted '%s' as spread change from '%s' to '%s'",
-                               parsed.new_menu_item, old_spread, spread_name)
+                               cream_cheese_menu_item.menu_item_name, old_spread, spread_name)
 
                     # Recalculate price if needed
                     self.pricing.recalculate_bagel_price(last_item)
@@ -1266,12 +1264,16 @@ class TakingItemsHandler:
                 # Special case: If last item is a bagel and user wants to change to a different bagel,
                 # preserve the existing modifiers (spread, toasted, protein, etc.)
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
-                if (has_new_items and parsed.new_bagel and isinstance(last_item, BagelItemTask)
-                    and parsed.new_bagel_type):
+                bagel_entry = next(
+                    (item for item in parsed.parsed_items
+                     if isinstance(item, ParsedBagelEntry) and item.bagel_type),
+                    None
+                )
+                if has_new_items and bagel_entry and isinstance(last_item, BagelItemTask):
                     old_type = last_item.bagel_type or "plain"
-                    last_item.bagel_type = parsed.new_bagel_type
+                    last_item.bagel_type = bagel_entry.bagel_type
                     logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
-                               old_type, parsed.new_bagel_type)
+                               old_type, bagel_entry.bagel_type)
 
                     # Recalculate price if needed
                     self.pricing.recalculate_bagel_price(last_item)
@@ -2008,8 +2010,7 @@ class TakingItemsHandler:
             logger.info("Order type set from upfront mention: %s", parsed.order_type)
             order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
             # Check if they also ordered items in the same message
-            has_items = (parsed.new_bagel or parsed.new_coffee or parsed.new_menu_item or
-                        parsed.new_signature_item or parsed.new_side_item or parsed.by_pound_items)
+            has_items = parsed.parsed_items or parsed.by_pound_items
             if not has_items:
                 # Just the order type, no items yet - acknowledge and ask what they want
                 return StateMachineResult(

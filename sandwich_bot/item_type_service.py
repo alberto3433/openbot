@@ -81,20 +81,6 @@ def get_type_attributes(
     return result
 
 
-# Backward compatibility alias
-def get_attribute_definitions(
-    db: Session,
-    item_type_id: int,
-    include_options: bool = True
-) -> List[Dict[str, Any]]:
-    """
-    Get attribute definitions for an item type.
-
-    Deprecated: Use get_type_attributes instead.
-    """
-    return get_type_attributes(db, item_type_id, include_options)
-
-
 def get_attribute_option_price(
     db: Session,
     item_type_slug: str,
@@ -286,67 +272,3 @@ def get_available_options_for_attribute(
         }
         for opt in options
     ]
-
-
-def config_to_legacy_fields(item_config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert generic item_config to legacy order item fields.
-
-    This helps maintain backward compatibility during the migration period.
-
-    Args:
-        item_config: Generic configuration dict
-
-    Returns:
-        Dict with legacy field names
-    """
-    if not item_config:
-        return {}
-
-    return {
-        "size": item_config.get("size"),
-        "bread": item_config.get("bread"),
-        "protein": item_config.get("protein"),
-        "cheese": item_config.get("cheese"),
-        "toppings": item_config.get("toppings", []),
-        "sauces": item_config.get("sauces", []),
-        "toasted": item_config.get("toasted"),
-    }
-
-
-def legacy_fields_to_config(
-    size: str = None,
-    bread: str = None,
-    protein: str = None,
-    cheese: str = None,
-    toppings: List[str] = None,
-    sauces: List[str] = None,
-    toasted: bool = None
-) -> Dict[str, Any]:
-    """
-    Convert legacy order item fields to generic item_config.
-
-    Args:
-        size, bread, protein, cheese, toppings, sauces, toasted: Legacy fields
-
-    Returns:
-        Generic configuration dict
-    """
-    config = {}
-
-    if size is not None:
-        config["size"] = size
-    if bread is not None:
-        config["bread"] = bread
-    if protein is not None:
-        config["protein"] = protein
-    if cheese is not None:
-        config["cheese"] = cheese
-    if toppings is not None:
-        config["toppings"] = toppings
-    if sauces is not None:
-        config["sauces"] = sauces
-    if toasted is not None:
-        config["toasted"] = toasted
-
-    return config

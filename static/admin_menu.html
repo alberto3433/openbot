@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Menu Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/admin_common.css">
   <style>
     body {
       margin: 0;
@@ -433,53 +434,6 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    /* Tag Input Styles */
-    .tag-input-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      background: #fff;
-      min-height: 36px;
-      align-items: center;
-      cursor: text;
-    }
-    .tag-input-container:focus-within {
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .tag-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 8px;
-      background: #e3f2fd;
-      border: 1px solid #90caf9;
-      border-radius: 12px;
-      font-size: 12px;
-      color: #1565c0;
-    }
-    .tag-item .tag-remove {
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-      color: #1976d2;
-      line-height: 1;
-      padding: 0 2px;
-    }
-    .tag-item .tag-remove:hover {
-      color: #d32f2f;
-    }
-    .tag-input {
-      flex: 1;
-      min-width: 120px;
-      border: none;
-      outline: none;
-      font-size: 13px;
-      padding: 4px 0;
-    }
   </style>
 </head>
 <body>
@@ -607,6 +561,7 @@
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
     const API_BASE = "";
     let allItems = [];
@@ -669,74 +624,11 @@
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
 
-    // Tag input elements
+    // Tag input elements (functions from admin_common.js)
     const aliasesContainerEl = document.getElementById("aliasesContainer");
     const aliasInputEl = document.getElementById("aliasInput");
     const requiredPhrasesContainerEl = document.getElementById("requiredPhrasesContainer");
     const requiredPhraseInputEl = document.getElementById("requiredPhraseInput");
-
-    // Tag input helper functions
-    function createTagElement(text, container, inputEl) {
-      const tag = document.createElement("span");
-      tag.className = "tag-item";
-      tag.innerHTML = `<span class="tag-text">${escapeHtml(text)}</span><span class="tag-remove">&times;</span>`;
-      tag.querySelector(".tag-remove").addEventListener("click", (e) => {
-        e.stopPropagation();
-        tag.remove();
-      });
-      container.insertBefore(tag, inputEl);
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function getTagValues(container) {
-      return Array.from(container.querySelectorAll(".tag-text")).map(el => el.textContent);
-    }
-
-    function clearTags(container, inputEl) {
-      container.querySelectorAll(".tag-item").forEach(tag => tag.remove());
-      inputEl.value = "";
-    }
-
-    function setTags(container, inputEl, values) {
-      clearTags(container, inputEl);
-      if (Array.isArray(values)) {
-        values.forEach(v => createTagElement(v, container, inputEl));
-      } else if (typeof values === "string" && values.trim()) {
-        values.split(",").map(s => s.trim()).filter(Boolean).forEach(v => createTagElement(v, container, inputEl));
-      }
-    }
-
-    // Tag input event handlers
-    function setupTagInput(inputEl, container) {
-      inputEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === ",") {
-          e.preventDefault();
-          const value = inputEl.value.trim();
-          if (value) {
-            createTagElement(value, container, inputEl);
-            inputEl.value = "";
-          }
-        } else if (e.key === "Backspace" && !inputEl.value) {
-          const tags = container.querySelectorAll(".tag-item");
-          if (tags.length > 0) {
-            tags[tags.length - 1].remove();
-          }
-        }
-      });
-      // Also add on blur to capture any remaining input
-      inputEl.addEventListener("blur", () => {
-        const value = inputEl.value.trim();
-        if (value) {
-          createTagElement(value, container, inputEl);
-          inputEl.value = "";
-        }
-      });
-    }
 
     setupTagInput(aliasInputEl, aliasesContainerEl);
     setupTagInput(requiredPhraseInputEl, requiredPhrasesContainerEl);

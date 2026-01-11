@@ -12,7 +12,7 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from .models import MenuItemTask, OrderTask, ItemTask, TaskStatus
-from .schemas import OrderPhase, StateMachineResult
+from .schemas import OrderPhase, StateMachineResult, ParsedCoffeeEntry
 from .parsers import (
     parse_coffee_size,
     parse_coffee_style,
@@ -1819,26 +1819,37 @@ class CoffeeConfigHandler:
         from .parsers.deterministic import parse_open_input_deterministic
         parsed = parse_open_input_deterministic(user_input)
 
-        # Check if they specified a coffee/drink
-        if parsed and (parsed.new_coffee or parsed.new_coffee_type):
-            coffee_type = parsed.new_coffee_type
-            # Call add_coffee with the parsed values
-            return self.add_coffee(
-                coffee_type=coffee_type,
-                size=parsed.new_coffee_size,
-                iced=parsed.new_coffee_iced,
-                milk=parsed.new_coffee_milk,
-                sweetener=parsed.new_coffee_sweetener,
-                sweetener_quantity=parsed.new_coffee_sweetener_quantity or 1,
-                flavor_syrup=parsed.new_coffee_flavor_syrup,
-                quantity=parsed.new_coffee_quantity or 1,
-                order=order,
-                special_instructions=parsed.new_coffee_special_instructions,
-                decaf=parsed.new_coffee_decaf,
-                syrup_quantity=parsed.new_coffee_syrup_quantity or 1,
-                cream_level=parsed.new_coffee_cream_level,
-                original_input=user_input,
+        # Check if they specified a coffee/drink via parsed_items
+        if parsed and parsed.parsed_items:
+            coffee_entry = next(
+                (item for item in parsed.parsed_items if isinstance(item, ParsedCoffeeEntry)),
+                None
             )
+            if coffee_entry:
+                # Extract sweetener/syrup info from the new format
+                sweetener = coffee_entry.sweeteners[0].type if coffee_entry.sweeteners else None
+                sweetener_quantity = coffee_entry.sweeteners[0].quantity if coffee_entry.sweeteners else 1
+                flavor_syrup = coffee_entry.syrups[0].type if coffee_entry.syrups else None
+                syrup_quantity = coffee_entry.syrups[0].quantity if coffee_entry.syrups else 1
+                # Convert temperature to iced boolean
+                iced = True if coffee_entry.temperature == "iced" else (False if coffee_entry.temperature == "hot" else None)
+
+                return self.add_coffee(
+                    coffee_type=coffee_entry.drink_type,
+                    size=coffee_entry.size,
+                    iced=iced,
+                    milk=coffee_entry.milk,
+                    sweetener=sweetener,
+                    sweetener_quantity=sweetener_quantity,
+                    flavor_syrup=flavor_syrup,
+                    quantity=coffee_entry.quantity,
+                    order=order,
+                    special_instructions=coffee_entry.special_instructions,
+                    decaf=coffee_entry.decaf,
+                    syrup_quantity=syrup_quantity,
+                    cream_level=coffee_entry.cream_level,
+                    original_input=user_input,
+                )
 
         # Try direct matching with known drink types
         for bev_type in get_coffee_types():

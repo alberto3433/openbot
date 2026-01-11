@@ -200,7 +200,7 @@ class TestCriticalOrderScenarios:
         # Check that we have both items
         active_items = order.items.get_active_items()
         bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in active_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Items in cart: {len(active_items)} (bagels: {len(bagels)}, coffees: {len(coffees)})")
 
@@ -276,7 +276,7 @@ class TestCriticalOrderScenarios:
         # Verify both items in cart
         active_items = order.items.get_active_items()
         bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in active_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Final cart: {len(bagels)} bagel(s), {len(coffees)} coffee(s)")
 
@@ -389,7 +389,7 @@ class TestCriticalOrderScenarios:
                 print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        coffees = [i for i in active_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Total items: {len(active_items)}, Coffees: {len(coffees)}")
 
@@ -576,7 +576,7 @@ class TestCriticalOrderScenarios:
         print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        coffees = [i for i in active_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         if coffees:
             coffee = coffees[0]
@@ -628,7 +628,7 @@ class TestCriticalOrderScenarios:
         # Check cart - should have coffee, not bagel
         active_items = order.items.get_active_items()
         bagels = [i for i in active_items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in active_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
 
         print(f"Cart after cancellation: {len(bagels)} bagels, {len(coffees)} coffees")
 

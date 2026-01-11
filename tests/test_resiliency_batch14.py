@@ -58,7 +58,7 @@ class TestPronounContextReferences:
         result = sm.process("another one of those", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         total_qty = sum(c.quantity for c in coffees)
 
         # Should have 2 coffees
@@ -84,7 +84,7 @@ class TestPronounContextReferences:
         result = sm.process("make that iced", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         # Should have updated coffee to iced
         if coffees:

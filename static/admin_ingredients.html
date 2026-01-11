@@ -739,7 +739,7 @@
               <li class="ingredient-item">
                 <div class="ingredient-info">
                   <span class="ingredient-name">${ing.name}</span>
-                  <span class="ingredient-meta">${ing.category || 'uncategorized'}${ing.unit ? ' | Unit: ' + ing.unit : ''}${ing.aliases ? ' | Aliases: ' + ing.aliases : ''}</span>
+                  <span class="ingredient-meta">${ing.category || 'uncategorized'}${ing.unit ? ' | Unit: ' + ing.unit : ''}${ing.aliases && ing.aliases.length ? ' | Aliases: ' + ing.aliases.join(', ') : ''}</span>
                 </div>
                 <div class="ingredient-actions">
                   <button class="edit-btn" data-id="${ing.id}">Edit</button>

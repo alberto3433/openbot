@@ -63,6 +63,7 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import (
     MenuItem,
+    MenuItemAlias,
     ItemTypeAttribute,
     MenuItemAttributeValue,
     MenuItemAttributeSelection,
@@ -77,6 +78,7 @@ from ..schemas.item_type_attributes import (
     AttributeFormField,
     AttributeOptionOut,
 )
+from ..services.helpers import validate_aliases
 
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,33 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+from typing import Optional
+
+
+def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[str]) -> None:
+    """
+    Set menu item aliases from a comma-separated string.
+    Clears existing aliases and creates new ones from the input string.
+    Validates global uniqueness of aliases before adding.
+
+    Raises:
+        HTTPException: If any alias conflicts with an existing alias
+    """
+    # Clear existing aliases
+    for alias in list(item.alias_records):
+        db.delete(alias)
+
+    # Validate and add new aliases if provided
+    if aliases_str:
+        try:
+            validated_aliases = validate_aliases(db, aliases_str, exclude_table="menu_item_aliases")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        for alias in validated_aliases:
+            db.add(MenuItemAlias(menu_item=item, alias=alias))
+
 
 def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """Convert MenuItem model to response schema."""
@@ -142,11 +171,15 @@ def create_menu_item(
         available_qty=payload.available_qty,
         extra_metadata=json.dumps(payload.metadata or {}),
         item_type_id=payload.item_type_id,
-        aliases=payload.aliases,
         abbreviation=payload.abbreviation,
         required_match_phrases=payload.required_match_phrases,
     )
     db.add(item)
+    db.flush()  # Get the item ID before adding child records
+
+    # Add aliases through child table
+    _set_menu_item_aliases(db, item, payload.aliases)
+
     db.commit()
     db.refresh(item)
     logger.info("Created menu item: %s (id=%d)", item.name, item.id)
@@ -195,7 +228,7 @@ def update_menu_item(
     if payload.item_type_id is not None:
         item.item_type_id = payload.item_type_id
     if payload.aliases is not None:
-        item.aliases = payload.aliases
+        _set_menu_item_aliases(db, item, payload.aliases)
     if payload.abbreviation is not None:
         item.abbreviation = payload.abbreviation
     if payload.required_match_phrases is not None:

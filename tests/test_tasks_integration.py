@@ -1510,7 +1510,7 @@ class TestBagelWithCoffeeConfig:
         # Coffee should be in the order (either queued or added as in_progress)
         coffee_items = [
             item for item in order.items.items
-            if isinstance(item, CoffeeItemTask)
+            if getattr(item, 'is_sized_beverage', False)
         ]
         # With disambiguation, coffee is added directly to items as in_progress
         assert len(coffee_items) == 1, "Expected one coffee item in order"
@@ -1588,7 +1588,7 @@ class TestBagelWithCoffeeConfig:
 
         # Verify both items are complete
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 1
         assert len(coffees) == 1
         assert bagels[0].bagel_type == "plain"
@@ -1639,7 +1639,7 @@ class TestBagelWithCoffeeConfig:
             f"Expected bagel or coffee question, got: {result.message}"
 
         # Get current coffee count - may be 1 or 2 depending on disambiguation behavior
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         initial_coffee_count = len(coffees)
         assert initial_coffee_count >= 1, f"Expected at least 1 coffee item, got: {initial_coffee_count}"
 
@@ -1671,7 +1671,7 @@ class TestBagelWithCoffeeConfig:
             result = sm.process("no", order)
 
         # If there's a second coffee, configure it too
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         incomplete_coffees = [c for c in coffees if c.size is None]
         if incomplete_coffees:
             # Should be asking about second coffee size
@@ -1687,7 +1687,7 @@ class TestBagelWithCoffeeConfig:
 
         # Should eventually ask "Anything else?" or be in checkout
         # (Flexible check since flow varies based on disambiguation)
-        final_coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        final_coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         final_bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
 
         assert len(final_bagels) >= 1, f"Expected at least 1 bagel, got: {len(final_bagels)}"
@@ -1712,7 +1712,7 @@ class TestBagelWithCoffeeConfig:
 
         # Verify items were created
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 2, f"Expected 2 bagels, got: {len(bagels)}"
         assert len(coffees) == 2, f"Expected 2 coffees, got: {len(coffees)}"
 
@@ -1758,7 +1758,7 @@ class TestBagelWithCoffeeConfig:
 
         # Verify all 4 items are complete
         bagels = [i for i in order.items.items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 2
         assert len(coffees) == 2
         assert all(b.bagel_type is not None for b in bagels), "All bagels should have type set"
@@ -1862,7 +1862,7 @@ class TestDrinkClarification:
         result = sm.coffee_handler.handle_drink_selection("2", order)
 
         # Should have added the second drink
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1
         assert coffees[0].drink_type == "Tropicana Orange Juice 46 oz"
         assert coffees[0].unit_price == 8.99
@@ -1895,7 +1895,7 @@ class TestDrinkClarification:
         result = sm.coffee_handler.handle_drink_selection("fresh squeezed", order)
 
         # Should have added the first drink
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1
         assert coffees[0].drink_type == "Fresh Squeezed Orange Juice"
         assert coffees[0].unit_price == 5.00
@@ -1961,7 +1961,7 @@ class TestDrinkClarification:
         )
 
         # Should add directly without asking (single match)
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1
         assert coffees[0].drink_type == "Fresh Squeezed Orange Juice"
         assert order.pending_field != "drink_selection"
@@ -1997,7 +1997,7 @@ class TestQuantityChange:
 
         # Should have added one more
         assert result is not None
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 2
         assert all(c.drink_type == "Tropicana Orange Juice No Pulp" for c in coffees)
 
@@ -2018,7 +2018,7 @@ class TestQuantityChange:
         result = sm.order_utils_handler.handle_quantity_change("can you make it two coffees", order)
 
         assert result is not None
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 2
 
     def test_already_has_enough(self):
@@ -2042,7 +2042,7 @@ class TestQuantityChange:
         # Should NOT add more, just confirm
         assert result is not None
         assert "already have 2" in result.message
-        coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 2
 
     def test_no_match_returns_none(self):
@@ -4656,7 +4656,7 @@ class TestGreetingHandler:
             result = sm._handle_greeting("I'd like a large iced drip coffee", order)
 
             # Should have added a coffee (or be configuring it)
-            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+            coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
             # If coffee config is in progress, the coffee should still be added
             assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers")
 
@@ -4712,7 +4712,7 @@ class TestTakingItemsHandler:
 
             result = sm._handle_taking_items("a medium drip coffee", order)
 
-            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+            coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
             # Coffee should be added (or be configuring it)
             assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers")
 
@@ -4931,7 +4931,7 @@ class TestTakingItemsHandler:
 
             # Should have 2 espressos now, both as MenuItemTask
             espressos = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type == "espresso"]
-            coffees = [i for i in order.items.items if isinstance(i, CoffeeItemTask)]
+            coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
 
             # Verify espresso was added as MenuItemTask, not CoffeeItemTask
             assert len(espressos) == 2, f"Expected 2 espressos, got {len(espressos)}"
@@ -5077,6 +5077,67 @@ class TestMultiSelectTokenization:
         matched_slugs = [m["slug"] for m in matched]
 
         assert matched_slugs == ["sugar"], f"Should match only Sugar, got {matched_slugs}"
+
+
+class TestShotNormalization:
+    """Tests for shot input normalization (e.g., 'two shots' → 'double')."""
+
+    def test_normalize_two_shots_to_double(self):
+        """Test that 'two shots' normalizes to 'double'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        result = handler._normalize_for_matching("two shots")
+        assert result == "double", f"Expected 'double', got '{result}'"
+
+    def test_normalize_3_shots_to_triple(self):
+        """Test that '3 shots' normalizes to 'triple'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        result = handler._normalize_for_matching("3 shots")
+        assert result == "triple", f"Expected 'triple', got '{result}'"
+
+    def test_normalize_one_shot_to_single(self):
+        """Test that 'one shot' normalizes to 'single'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        result = handler._normalize_for_matching("one shot")
+        assert result == "single", f"Expected 'single', got '{result}'"
+
+    def test_normalize_four_shots_to_quad(self):
+        """Test that 'four shots' normalizes to 'quad'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        result = handler._normalize_for_matching("four shots")
+        assert result == "quad", f"Expected 'quad', got '{result}'"
+
+    def test_normalize_two_to_double(self):
+        """Test that plain 'two' still normalizes to 'double'."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        result = handler._normalize_for_matching("two")
+        assert result == "double", f"Expected 'double', got '{result}'"
+
+    def test_two_shots_matches_double_option(self):
+        """Test that 'two shots' matches the Double option."""
+        from sandwich_bot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        handler = MenuItemConfigHandler(None)
+
+        options = [
+            {"slug": "single", "display_name": "Single"},
+            {"slug": "double", "display_name": "Double"},
+            {"slug": "triple", "display_name": "Triple"},
+            {"slug": "quad", "display_name": "Quad"},
+        ]
+
+        matched, partial_matches = handler._match_option_from_input("two shots", options)
+
+        assert matched is not None, f"Should match an option, got partial_matches: {partial_matches}"
+        assert matched["slug"] == "double", f"Should match 'double', got '{matched['slug']}'"
 
 
 class TestPaymentMethodHandler:

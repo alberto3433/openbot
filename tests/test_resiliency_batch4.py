@@ -77,7 +77,7 @@ class TestEdgeCaseQuantities:
         assert result.message is not None
 
         # Should have added coffees with quantity 2
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         total_quantity = sum(c.quantity for c in coffees)
 
         assert total_quantity == 2, f"Should have 2 coffees, got {total_quantity}"

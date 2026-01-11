@@ -164,7 +164,7 @@ class TestAmbiguousItemOrders:
         assert result.message is not None
 
         # Should either ask about size/temp OR add coffee and start configuring
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         if coffees:
             # Coffee was added - check if it's asking for configuration

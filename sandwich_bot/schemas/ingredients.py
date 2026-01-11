@@ -78,8 +78,8 @@ class IngredientOut(BaseModel):
         unit: Unit of measurement (piece, oz, slice, etc.)
         track_inventory: Whether to track counts (legacy, usually False)
         is_available: Global availability (False = 86'd everywhere)
-        aliases: Comma-separated synonyms for matching (e.g., "wheat" for "Whole Wheat Bagel")
-        must_match: Comma-separated strings - at least one must be in input for this to match
+        aliases: List of synonyms for matching (e.g., ["wheat"] for "Whole Wheat Bagel")
+        must_match: List of strings - at least one must be in input for this to match
         abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
     model_config = ConfigDict(from_attributes=True)
@@ -90,8 +90,8 @@ class IngredientOut(BaseModel):
     unit: str
     track_inventory: bool
     is_available: bool
-    aliases: Optional[str] = None
-    must_match: Optional[str] = None
+    aliases: list[str] = []
+    must_match: list[str] = []
     abbreviation: Optional[str] = None
 
 

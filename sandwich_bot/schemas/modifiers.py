@@ -365,7 +365,7 @@ class ModifierCategoryOut(BaseModel):
         id: Database primary key
         slug: URL-safe identifier (e.g., "sweeteners")
         display_name: Human-readable name (e.g., "Sweeteners")
-        aliases: Comma-separated keywords that trigger this category
+        aliases: List of keywords that trigger this category
         description: Static response text for small categories
         prompt_suffix: Question to ask after listing options
         loads_from_ingredients: If True, options are loaded from Ingredient table
@@ -376,7 +376,7 @@ class ModifierCategoryOut(BaseModel):
     id: int
     slug: str
     display_name: str
-    aliases: Optional[str] = None
+    aliases: list[str] = []
     description: Optional[str] = None
     prompt_suffix: Optional[str] = None
     loads_from_ingredients: bool = False

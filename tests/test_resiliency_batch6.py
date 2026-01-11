@@ -73,7 +73,7 @@ class TestCancellationRemoval:
         # Coffee should be cancelled (status = SKIPPED)
         active_coffees = [
             i for i in result.order.items.items
-            if isinstance(i, CoffeeItemTask) and i.status != TaskStatus.SKIPPED
+            if getattr(i, 'is_sized_beverage', False) and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_coffees) == 0, \
             f"Coffee should be cancelled. Active coffees: {len(active_coffees)}"
@@ -114,7 +114,7 @@ class TestCancellationRemoval:
         # Coffee should be cancelled (status = SKIPPED)
         active_coffees = [
             i for i in result.order.items.items
-            if isinstance(i, CoffeeItemTask) and i.status != TaskStatus.SKIPPED
+            if getattr(i, 'is_sized_beverage', False) and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_coffees) == 0, \
             f"Coffee should be cancelled. Active coffees: {len(active_coffees)}"

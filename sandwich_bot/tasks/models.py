@@ -219,9 +219,18 @@ class BagelItemTask(ItemTask):
 
 
 class CoffeeItemTask(ItemTask):
-    """Task for capturing a coffee/drink order."""
+    """Task for capturing a coffee/drink order.
+
+    Note: This class is being deprecated in favor of MenuItemTask with
+    menu_item_type="sized_beverage". The is_sized_beverage attribute is
+    added for backward compatibility with code that checks this property.
+    """
 
     item_type: Literal["coffee"] = "coffee"
+
+    # Backward compatibility: new code checks is_sized_beverage on MenuItemTask,
+    # but tests may still create CoffeeItemTask directly
+    is_sized_beverage: bool = True
 
     # Coffee-specific fields
     drink_type: str | None = None  # drip, latte, espresso, etc.

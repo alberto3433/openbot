@@ -179,9 +179,11 @@ class CoffeeConfigHandler:
                             "price": float(link.price_modifier or 0),
                             "category": ingredient.category,  # For filtering by type (milk/sweetener/syrup)
                         }
-                        # Include ingredient aliases for matching
+                        # Include ingredient aliases and must_match for matching (now lists from child tables)
                         if ingredient.aliases:
                             opt_data["ingredient_aliases"] = ingredient.aliases
+                        if ingredient.must_match:
+                            opt_data["ingredient_must_match"] = ingredient.must_match
                         opts_data.append(opt_data)
                 else:
                     # Fall back to attribute_options table
@@ -290,16 +292,21 @@ class CoffeeConfigHandler:
                 if slug.endswith("_syrup"):
                     valid_names.add(slug.replace("_syrup", "").replace("_", " "))
 
-            # Add ingredient aliases
-            aliases = opt.get("ingredient_aliases", "")
+            # Add ingredient aliases (now a list from child table)
+            aliases = opt.get("ingredient_aliases", [])
             if aliases:
-                for alias in aliases.split(","):
+                for alias in aliases:
                     alias = alias.strip().lower()
                     if alias:
                         valid_names.add(alias)
-                        # Handle pipe-separated alternatives
-                        for alt in alias.split("|"):
-                            valid_names.add(alt.strip())
+
+            # Add must_match patterns (now a list from child table)
+            must_match = opt.get("ingredient_must_match", [])
+            if must_match:
+                for mm in must_match:
+                    mm = mm.strip().lower()
+                    if mm:
+                        valid_names.add(mm)
 
         # Also add size and temperature options as valid answers
         for opt in self._get_size_options():
@@ -333,19 +340,19 @@ class CoffeeConfigHandler:
         matched_slugs = set()
         used_phrases = []
 
-        # PASS 1: Check must-match aliases first (longer, more specific phrases)
+        # PASS 1: Check must-match patterns first (longer, more specific phrases)
         for opt in options:
             slug = opt.get("slug", "")
             display = opt.get("display_name", "")
-            ingredient_aliases = opt.get("ingredient_aliases", "")
+            must_match = opt.get("ingredient_must_match", [])
 
-            if not ingredient_aliases or "|" not in ingredient_aliases:
+            if not must_match:
                 continue
 
-            alias_patterns = [p.strip() for p in ingredient_aliases.split("|")]
-            for alias in alias_patterns:
-                if alias and re.search(rf'\b{re.escape(alias)}\b', user_lower):
-                    quantity = _extract_quantity(user_lower, alias)
+            for mm in must_match:
+                mm = mm.strip()
+                if mm and re.search(rf'\b{re.escape(mm)}\b', user_lower):
+                    quantity = _extract_quantity(user_lower, mm)
                     matched.append({
                         "slug": slug,
                         "display_name": display or slug.replace("_", " ").title(),
@@ -354,7 +361,7 @@ class CoffeeConfigHandler:
                         "quantity": quantity,
                     })
                     matched_slugs.add(slug)
-                    used_phrases.append(alias)
+                    used_phrases.append(mm)
                     break
 
         # PASS 2: Check simple aliases (only if words not already used)
@@ -364,37 +371,40 @@ class CoffeeConfigHandler:
                 continue
 
             display = opt.get("display_name", "")
-            ingredient_aliases = opt.get("ingredient_aliases", "")
+            aliases = opt.get("ingredient_aliases", [])
 
-            if not ingredient_aliases or "|" in ingredient_aliases:
+            if not aliases:
                 continue
 
-            alias = ingredient_aliases.strip()
-            alias_used = any(alias in phrase for phrase in used_phrases)
-            if alias_used:
-                continue
+            for alias in aliases:
+                alias = alias.strip()
+                alias_used = any(alias in phrase for phrase in used_phrases)
+                if alias_used:
+                    continue
 
-            if alias and re.search(rf'\b{re.escape(alias)}s?\b', user_lower):
-                quantity = _extract_quantity(user_lower, alias)
-                matched.append({
-                    "slug": slug,
-                    "display_name": display or slug.replace("_", " ").title(),
-                    "price": opt.get("price", 0),
-                    "category": opt.get("category", ""),
-                    "quantity": quantity,
-                })
-                matched_slugs.add(slug)
+                if alias and re.search(rf'\b{re.escape(alias)}s?\b', user_lower):
+                    quantity = _extract_quantity(user_lower, alias)
+                    matched.append({
+                        "slug": slug,
+                        "display_name": display or slug.replace("_", " ").title(),
+                        "price": opt.get("price", 0),
+                        "category": opt.get("category", ""),
+                        "quantity": quantity,
+                    })
+                    matched_slugs.add(slug)
+                    break
 
-        # PASS 3: Fallback to slug-based matching (no ingredient aliases)
+        # PASS 3: Fallback to slug-based matching (no ingredient aliases or must_match)
         for opt in options:
             slug = opt.get("slug", "")
             if slug in matched_slugs:
                 continue
 
             display = opt.get("display_name", "")
-            ingredient_aliases = opt.get("ingredient_aliases", "")
+            aliases = opt.get("ingredient_aliases", [])
+            must_match = opt.get("ingredient_must_match", [])
 
-            if ingredient_aliases:
+            if aliases or must_match:
                 continue
 
             slug_pattern = slug.replace("_", " ")
@@ -863,9 +873,10 @@ class CoffeeConfigHandler:
     ) -> StateMachineResult:
         """Configure the next incomplete coffee item."""
         # Find all coffee items (both complete and incomplete) to determine total count
+        # Supports both MenuItemTask with is_sized_beverage and legacy CoffeeItemTask
         all_coffees = [
             item for item in order.items.items
-            if isinstance(item, MenuItemTask) and item.is_sized_beverage
+            if getattr(item, 'is_sized_beverage', False)
         ]
         total_coffees = len(all_coffees)
 
@@ -1031,12 +1042,13 @@ class CoffeeConfigHandler:
         order.pending_field = "coffee_style"
 
         # Count items of the SAME drink type to determine if ordinals needed
-        drink_name = item.menu_item_name if isinstance(item, MenuItemTask) else "coffee"
+        # Handle both MenuItemTask (menu_item_name) and CoffeeItemTask (drink_type)
+        drink_name = getattr(item, 'menu_item_name', None) or getattr(item, 'drink_type', None) or "coffee"
         all_coffees = [
             c for c in order.items.items
-            if isinstance(c, MenuItemTask) and c.is_sized_beverage
+            if getattr(c, 'is_sized_beverage', False)
         ]
-        same_type_items = [c for c in all_coffees if (c.menu_item_name or "coffee") == drink_name]
+        same_type_items = [c for c in all_coffees if (getattr(c, 'menu_item_name', None) or getattr(c, 'drink_type', None) or "coffee") == drink_name]
         same_type_count = len(same_type_items)
 
         if same_type_count > 1:
@@ -1564,7 +1576,7 @@ class CoffeeConfigHandler:
                 order.items.add_item(drink)
 
             # If still needs configuration, ask the next question
-            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if isinstance(d, MenuItemTask) and d.is_sized_beverage):
+            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if getattr(d, 'is_sized_beverage', False)):
                 return self.configure_next_incomplete_coffee(order)
             else:
                 # Build summary for confirmation

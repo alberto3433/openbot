@@ -75,7 +75,7 @@ class MenuItemOut(BaseModel):
         available_qty: Legacy inventory count (use 86 system instead)
         metadata: Additional item data (description, defaults, etc.)
         item_type_id: Foreign key to ItemType for configuration options
-        aliases: Comma-separated synonyms for matching (e.g., "coke, coca cola")
+        aliases: List of synonyms for matching (e.g., ["coke", "coca cola"])
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
     """
     model_config = ConfigDict(from_attributes=True)
@@ -89,7 +89,7 @@ class MenuItemOut(BaseModel):
     available_qty: int
     metadata: Dict[str, Any]
     item_type_id: Optional[int] = None
-    aliases: Optional[str] = None
+    aliases: list[str] = []
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
 

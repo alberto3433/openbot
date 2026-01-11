@@ -44,12 +44,13 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ModifierCategory
+from ..models import ModifierCategory, ModifierCategoryAlias
 from ..schemas.modifiers import (
     ModifierCategoryOut,
     ModifierCategoryCreate,
     ModifierCategoryUpdate,
 )
+from ..services.helpers import validate_aliases
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,30 @@ admin_modifier_categories_router = APIRouter(
     prefix="/admin/modifier-categories",
     tags=["Admin - Modifier Categories"]
 )
+
+
+def _set_modifier_category_aliases(db: Session, category: ModifierCategory, aliases_str: str | None) -> None:
+    """
+    Set modifier category aliases from a comma-separated string.
+    Clears existing aliases and creates new ones from the input string.
+    Validates global uniqueness of aliases before adding.
+
+    Raises:
+        HTTPException: If any alias conflicts with an existing alias
+    """
+    # Clear existing aliases
+    for alias in list(category.alias_records):
+        db.delete(alias)
+
+    # Validate and add new aliases if provided
+    if aliases_str:
+        try:
+            validated_aliases = validate_aliases(db, aliases_str, exclude_table="modifier_category_aliases")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        for alias in validated_aliases:
+            db.add(ModifierCategoryAlias(modifier_category=category, alias=alias))
 
 
 # =============================================================================
@@ -95,13 +120,17 @@ def create_modifier_category(
     category = ModifierCategory(
         slug=payload.slug,
         display_name=payload.display_name,
-        aliases=payload.aliases,
         description=payload.description,
         prompt_suffix=payload.prompt_suffix,
         loads_from_ingredients=payload.loads_from_ingredients,
         ingredient_category=payload.ingredient_category,
     )
     db.add(category)
+    db.flush()  # Get the category ID before adding child records
+
+    # Add aliases through child table
+    _set_modifier_category_aliases(db, category, payload.aliases)
+
     db.commit()
     db.refresh(category)
     logger.info("Created modifier category: %s (id=%d)", category.slug, category.id)
@@ -152,7 +181,7 @@ def update_modifier_category(
     if payload.display_name is not None:
         category.display_name = payload.display_name
     if payload.aliases is not None:
-        category.aliases = payload.aliases
+        _set_modifier_category_aliases(db, category, payload.aliases)
     if payload.description is not None:
         category.description = payload.description
     if payload.prompt_suffix is not None:

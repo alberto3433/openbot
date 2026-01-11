@@ -707,7 +707,7 @@
               <span class="item-badge ${cat.loads_from_ingredients ? 'dynamic' : 'static'}">
                 ${cat.loads_from_ingredients ? `Dynamic (${escapeHtml(cat.ingredient_category)})` : 'Static'}
               </span>
-              ${cat.aliases ? `<span class="item-badge aliases" title="${escapeHtml(cat.aliases)}">Keywords: ${escapeHtml(cat.aliases.split(',').slice(0, 3).join(', '))}${cat.aliases.split(',').length > 3 ? '...' : ''}</span>` : ''}
+              ${cat.aliases && cat.aliases.length ? `<span class="item-badge aliases" title="${escapeHtml(cat.aliases.join(', '))}">Keywords: ${escapeHtml(cat.aliases.slice(0, 3).join(', '))}${cat.aliases.length > 3 ? '...' : ''}</span>` : ''}
             </div>
           </div>
           <div class="item-actions">

@@ -68,7 +68,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("make it a large", order)
 
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -100,7 +100,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("can you make it with oat milk instead", order)
 
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -131,7 +131,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("make it a decaf", order)
 
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -170,7 +170,7 @@ class TestReplacementModificationScenarios:
         assert "size" in result.message.lower(), f"Should ask for size, got: {result.message}"
 
         # Check that coffee was added with decaf=True even before configuration is complete
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1, f"Should have 1 coffee, got {len(coffees)}"
         assert coffees[0].decaf is True, f"Decaf should be True from initial order, got: {coffees[0].decaf}"
 
@@ -184,7 +184,7 @@ class TestReplacementModificationScenarios:
             f"Should ask for hot/iced, got: {result.message}"
 
         # Check decaf is still True
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert coffees[0].decaf is True, f"Decaf should still be True after size, got: {coffees[0].decaf}"
         assert coffees[0].size == "medium", f"Size should be medium, got: {coffees[0].size}"
 
@@ -201,7 +201,7 @@ class TestReplacementModificationScenarios:
         result = sm.process("no", result.order)
 
         # Coffee should now be complete
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         final_coffee = coffees[0]

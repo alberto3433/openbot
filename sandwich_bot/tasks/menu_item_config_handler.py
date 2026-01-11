@@ -349,10 +349,28 @@ class MenuItemConfigHandler:
         Normalize user input for option matching.
 
         Handles common patterns users type when ordering:
+        - Shot quantities: "two shots" → "double", "3 shots" → "triple"
         - Leading quantities: "2 scrambled eggs" → "scrambled eggs"
         - Plural forms: "scrambled eggs" → "scrambled egg"
         """
         text = text.lower().strip()
+
+        # Normalize numeric shot quantities to words
+        # "1" → "single", "2" → "double", etc.
+        SHOT_NORMALIZATIONS = {
+            "1": "single", "one": "single",
+            "2": "double", "two": "double",
+            "3": "triple", "three": "triple",
+            "4": "quad", "four": "quad",
+        }
+
+        # Handle "X shot(s)" pattern FIRST before stripping quantities:
+        # "two shots" → "double", "3 shots" → "triple", "one shot" → "single"
+        shot_pattern = re.match(r'^(\w+)\s+shots?$', text)
+        if shot_pattern:
+            num_word = shot_pattern.group(1)
+            if num_word in SHOT_NORMALIZATIONS:
+                return SHOT_NORMALIZATIONS[num_word]
 
         # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
         text = re.sub(r'^(\d+x?\s+)', '', text)  # "2 ", "2x ", "10 "
@@ -365,14 +383,7 @@ class MenuItemConfigHandler:
         text = re.sub(r'\bbagels\b', 'bagel', text)
         text = re.sub(r'\bsyrups\b', 'syrup', text)
 
-        # Normalize numeric shot quantities to words
-        # "1" → "single", "2" → "double", etc.
-        SHOT_NORMALIZATIONS = {
-            "1": "single", "one": "single",
-            "2": "double", "two": "double",
-            "3": "triple", "three": "triple",
-            "4": "quad", "four": "quad",
-        }
+        # Also handle exact matches: "two" → "double", "3" → "triple"
         if text in SHOT_NORMALIZATIONS:
             text = SHOT_NORMALIZATIONS[text]
 

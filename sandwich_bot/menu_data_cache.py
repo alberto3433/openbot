@@ -268,12 +268,11 @@ class MenuDataCache:
         )
         for ing in spread_ingredients:
             spreads.add(ing.name.lower())
-            # Also add aliases
-            if ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        spreads.add(alias)
+            # Also add aliases (now a list from child table)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    spreads.add(alias)
 
         # Build bagel_spreads - all patterns for matching spreads in user input
         # This combines base spreads with spread types
@@ -334,12 +333,11 @@ class MenuDataCache:
                 if bagel_type not in [bt.lower() for bt in bagel_types_list]:
                     bagel_types_list.append(bagel_type)
 
-            # Add aliases if present
-            if hasattr(ing, 'aliases') and ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        bagel_types.add(alias)
+            # Add aliases if present (now a list from child table)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    bagel_types.add(alias)
 
         # Fallback if DB is empty
         if not bagel_types:
@@ -379,12 +377,11 @@ class MenuDataCache:
         for ing in protein_ingredients:
             # Add the ingredient name
             proteins.add(ing.name.lower())
-            # Also add aliases if present
-            if ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        proteins.add(alias)
+            # Also add aliases if present (now a list from child table)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    proteins.add(alias)
 
         # Fail if database has no proteins configured
         if not proteins:
@@ -415,12 +412,11 @@ class MenuDataCache:
         for ing in topping_ingredients:
             # Add the ingredient name
             toppings.add(ing.name.lower())
-            # Also add aliases if present
-            if ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        toppings.add(alias)
+            # Also add aliases if present (now a list from child table)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    toppings.add(alias)
 
         # Also load sauces as they function as toppings on bagels
         sauce_ingredients = (
@@ -431,11 +427,10 @@ class MenuDataCache:
 
         for ing in sauce_ingredients:
             toppings.add(ing.name.lower())
-            if ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        toppings.add(alias)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    toppings.add(alias)
 
         # Fail if database has no toppings configured
         if not toppings:
@@ -466,12 +461,11 @@ class MenuDataCache:
         for ing in cheese_ingredients:
             # Add the ingredient name
             cheeses.add(ing.name.lower())
-            # Also add aliases if present
-            if ing.aliases:
-                for alias in ing.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        cheeses.add(alias)
+            # Also add aliases if present (now a list from child table)
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    cheeses.add(alias)
 
         # Fail if database has no cheeses configured
         if not cheeses:
@@ -511,14 +505,13 @@ class MenuDataCache:
             # Map canonical name to itself
             alias_to_canonical[canonical_name] = item.name  # Preserve original casing
 
-            # Add all aliases if present
-            if item.aliases:
-                for alias in item.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        coffee_types.add(alias)
-                        # Map alias to canonical name (preserve original casing)
-                        alias_to_canonical[alias] = item.name
+            # Add all aliases if present (now a list from child table)
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    coffee_types.add(alias)
+                    # Map alias to canonical name (preserve original casing)
+                    alias_to_canonical[alias] = item.name
 
         self._coffee_types = coffee_types
         self._coffee_alias_to_canonical = alias_to_canonical
@@ -553,14 +546,13 @@ class MenuDataCache:
             # Map canonical name to itself
             alias_to_canonical[canonical_name] = item.name  # Preserve original casing
 
-            # Add all aliases if present
-            if item.aliases:
-                for alias in item.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        soda_types.add(alias)
-                        # Map alias to canonical name (preserve original casing)
-                        alias_to_canonical[alias] = item.name
+            # Add all aliases if present (now a list from child table)
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    soda_types.add(alias)
+                    # Map alias to canonical name (preserve original casing)
+                    alias_to_canonical[alias] = item.name
 
         self._soda_types = soda_types
         self._soda_alias_to_canonical = alias_to_canonical
@@ -675,13 +667,12 @@ class MenuDataCache:
                 menu_items.add(without_the)
                 alias_to_canonical[without_the] = canonical_name
 
-            # Add all aliases if present
-            if item.aliases:
-                for alias in item.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        menu_items.add(alias)
-                        alias_to_canonical[alias] = canonical_name
+            # Add all aliases if present (now a list from child table)
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    menu_items.add(alias)
+                    alias_to_canonical[alias] = canonical_name
 
         self._known_menu_items = menu_items
         self._menu_item_alias_to_canonical = alias_to_canonical
@@ -705,22 +696,20 @@ class MenuDataCache:
 
         signature_item_aliases: dict[str, str] = {}
 
-        # Query signature items with aliases
+        # Query signature items (aliases are loaded via relationship)
         # Only signature items should be in this mapping
         # (non-signature items like "Coffee" have their own parsing flow)
-        items_with_aliases = (
+        signature_items = (
             db.query(MenuItem)
             .filter(MenuItem.is_signature == True)  # noqa: E712
-            .filter(MenuItem.aliases.isnot(None))
-            .filter(MenuItem.aliases != "")
             .all()
         )
 
-        for item in items_with_aliases:
+        for item in signature_items:
             canonical_name = item.name  # Keep original casing
 
-            # Parse comma-separated aliases
-            for alias in item.aliases.split(","):
+            # Add aliases from child table (now a list)
+            for alias in item.aliases:
                 alias = alias.strip().lower()
                 if alias:
                     signature_item_aliases[alias] = canonical_name
@@ -738,7 +727,7 @@ class MenuDataCache:
         logger.debug(
             "Loaded %d signature item aliases from %d items",
             len(signature_item_aliases),
-            len(items_with_aliases),
+            len(signature_items),
         )
 
     def _load_by_pound_items(self, db: Session) -> None:
@@ -789,12 +778,11 @@ class MenuDataCache:
             base_name_lower = base_name.lower()
             by_pound_aliases[base_name_lower] = (base_name, category)
 
-            # Add aliases if present
-            if item.aliases:
-                for alias in item.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        by_pound_aliases[alias] = (base_name, category)
+            # Add aliases if present (now a list from child table)
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    by_pound_aliases[alias] = (base_name, category)
 
         self._by_pound_items = by_pound_items
         self._by_pound_aliases = by_pound_aliases
@@ -812,7 +800,8 @@ class MenuDataCache:
         Loads the mapping from category slugs (cheese, cold_cut, fish, etc.)
         to human-readable display names (cheeses, cold cuts, smoked fish, etc.).
 
-        Falls back to hardcoded values if the by_pound_categories table doesn't exist.
+        If the table doesn't exist or query fails, logs warning and returns empty dict.
+        Callers should handle the case where category names are not available.
         """
         category_names: dict[str, str] = {}
 
@@ -827,17 +816,13 @@ class MenuDataCache:
             for row in result:
                 category_names[row.slug] = row.display_name
         except Exception as e:
-            # Table may not exist (dropped in migration), use hardcoded fallback
-            # Rollback to clear the failed transaction state
+            # Table doesn't exist or query failed - fail gracefully with empty dict
             db.rollback()
-            logger.debug("by_pound_categories table not available, using fallback: %s", e)
-            category_names = {
-                "fish": "smoked fish",
-                "spread": "spreads",
-                "cheese": "cheeses",
-                "cold_cut": "cold cuts",
-                "salad": "salads",
-            }
+            logger.warning(
+                "Failed to load by_pound_categories from database: %s. "
+                "By-pound category display names will not be available.",
+                e
+            )
 
         self._by_pound_category_names = category_names
 
@@ -860,22 +845,20 @@ class MenuDataCache:
 
         modifier_aliases: dict[str, str] = {}
 
-        # Query all ingredients with aliases
-        ingredients_with_aliases = (
-            db.query(Ingredient)
-            .filter(Ingredient.aliases.isnot(None))
-            .filter(Ingredient.aliases != "")
-            .all()
-        )
+        # Query all ingredients (aliases are loaded via relationship)
+        all_ingredients = db.query(Ingredient).all()
 
-        for ing in ingredients_with_aliases:
+        ingredients_with_aliases_count = 0
+        for ing in all_ingredients:
             canonical_name = ing.name  # Preserve original casing
 
-            # Parse comma-separated aliases
-            for alias in ing.aliases.split(","):
-                alias = alias.strip().lower()
-                if alias:
-                    modifier_aliases[alias] = canonical_name
+            # Add aliases from child table (now a list)
+            if ing.aliases:
+                ingredients_with_aliases_count += 1
+                for alias in ing.aliases:
+                    alias = alias.strip().lower()
+                    if alias:
+                        modifier_aliases[alias] = canonical_name
 
             # Also add the ingredient name itself (lowercase) as a key
             name_lower = ing.name.lower()
@@ -886,7 +869,7 @@ class MenuDataCache:
         logger.debug(
             "Loaded %d modifier aliases from %d ingredients",
             len(modifier_aliases),
-            len(ingredients_with_aliases),
+            ingredients_with_aliases_count,
         )
 
     def _load_side_items(self, db: Session) -> None:
@@ -919,13 +902,12 @@ class MenuDataCache:
             side_items.add(name_lower)
             alias_to_canonical[name_lower] = canonical_name
 
-            # Add all aliases if present
-            if item.aliases:
-                for alias in item.aliases.split(","):
-                    alias = alias.strip().lower()
-                    if alias:
-                        side_items.add(alias)
-                        alias_to_canonical[alias] = canonical_name
+            # Add all aliases if present (now a list from child table)
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    side_items.add(alias)
+                    alias_to_canonical[alias] = canonical_name
 
         self._side_items = side_items
         self._side_alias_to_canonical = alias_to_canonical
@@ -956,14 +938,10 @@ class MenuDataCache:
 
         category_keywords: dict[str, dict] = {}
 
-        # Query all item_types that have aliases defined
-        item_types = (
-            db.query(ItemType)
-            .filter(ItemType.aliases.isnot(None))
-            .filter(ItemType.aliases != "")
-            .all()
-        )
+        # Query all item_types (aliases are loaded via relationship)
+        item_types = db.query(ItemType).all()
 
+        item_types_with_aliases = 0
         for item_type in item_types:
             slug = item_type.slug
 
@@ -991,11 +969,13 @@ class MenuDataCache:
             # Add slug itself as a key
             category_keywords[slug] = category_info
 
-            # Add all aliases as keys
-            for alias in item_type.aliases.split(","):
-                alias = alias.strip().lower()
-                if alias:
-                    category_keywords[alias] = category_info
+            # Add all aliases as keys (now a list from child table)
+            if item_type.aliases:
+                item_types_with_aliases += 1
+                for alias in item_type.aliases:
+                    alias = alias.strip().lower()
+                    if alias:
+                        category_keywords[alias] = category_info
 
         # Fail if database has no category keywords configured
         if not category_keywords:
@@ -1010,7 +990,7 @@ class MenuDataCache:
         logger.debug(
             "Loaded %d category keywords from %d item_types",
             len(category_keywords),
-            len(item_types),
+            item_types_with_aliases,
         )
 
     def _load_abbreviations(self, db: Session) -> None:
@@ -1207,7 +1187,11 @@ class MenuDataCache:
 
         Loads options for global attributes like shots, size, temperature, etc.
         These are used for data-driven pricing and display.
+
+        When an option has an ingredient_id, must_match and aliases are loaded
+        from the linked Ingredient record (single source of truth).
         """
+        from sqlalchemy.orm import joinedload
         from .models import GlobalAttribute, GlobalAttributeOption
 
         global_attribute_options: dict[str, list[dict]] = {}
@@ -1217,24 +1201,17 @@ class MenuDataCache:
             attributes = db.query(GlobalAttribute).all()
 
             for attr in attributes:
+                # Eagerly load the ingredient relationship for options that have one
                 options = (
                     db.query(GlobalAttributeOption)
+                    .options(joinedload(GlobalAttributeOption.ingredient))
                     .filter(GlobalAttributeOption.global_attribute_id == attr.id)
                     .order_by(GlobalAttributeOption.display_order)
                     .all()
                 )
 
                 global_attribute_options[attr.slug] = [
-                    {
-                        "slug": opt.slug,
-                        "display_name": opt.display_name,
-                        "price_modifier": opt.price_modifier,
-                        "iced_price_modifier": opt.iced_price_modifier,
-                        "is_default": opt.is_default,
-                        "is_available": opt.is_available,
-                        "aliases": opt.aliases,  # Pipe-separated aliases for parsing
-                        "must_match": opt.must_match,  # Required phrases for matching
-                    }
+                    self._build_global_option_dict(opt)
                     for opt in options
                 ]
 
@@ -1247,6 +1224,34 @@ class MenuDataCache:
         except Exception as e:
             logger.warning("Could not load global attribute options: %s", e)
             self._global_attribute_options = {}
+
+    def _build_global_option_dict(self, opt) -> dict:
+        """Build option dict, reading aliases/must_match ONLY from linked Ingredient.
+
+        Options that need aliases or must_match MUST be linked to an Ingredient.
+        If not linked, aliases and must_match will be None (fail gracefully).
+        """
+        # Aliases and must_match come ONLY from the linked Ingredient
+        # No fallback to deprecated option columns
+        if opt.ingredient:
+            aliases = opt.ingredient.aliases
+            must_match = opt.ingredient.must_match
+        else:
+            # Option not linked to ingredient - no aliases/must_match available
+            # This is expected for options that don't need special parsing
+            aliases = None
+            must_match = None
+
+        return {
+            "slug": opt.slug,
+            "display_name": opt.display_name,
+            "price_modifier": opt.price_modifier,
+            "iced_price_modifier": opt.iced_price_modifier,
+            "is_default": opt.is_default,
+            "is_available": opt.is_available,
+            "aliases": aliases,
+            "must_match": must_match,
+        }
 
     def _load_menu_index(self, db: Session) -> None:
         """Load and cache the menu index.
@@ -1442,10 +1447,10 @@ class MenuDataCache:
             if opt["slug"].lower() == input_lower:
                 return opt
 
-            # Check aliases (pipe-separated)
+            # Check aliases (now a list from child table)
             aliases = opt.get("aliases")
             if aliases:
-                alias_list = [a.strip().lower() for a in aliases.split("|")]
+                alias_list = [a.strip().lower() for a in aliases]
                 if input_lower in alias_list:
                     return opt
 

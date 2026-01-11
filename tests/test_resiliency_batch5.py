@@ -33,7 +33,7 @@ class TestMultiItemOrders:
 
         # Should have added both items
         bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
         assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
@@ -130,11 +130,11 @@ class TestMultiItemOrders:
         assert has_classic, f"Should recognize The Classic. Items: {all_items}"
 
         # Check if latte needs clarification (multiple latte types exist)
-        coffees = [i for i in all_items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in all_items if getattr(i, 'is_sized_beverage', False)]
         if len(coffees) == 0 and ("latte" in result.message.lower() or "matcha" in result.message.lower()):
             # System correctly asks for clarification between latte types
             result = sm.process("regular latte", result.order)
-            coffees = [i for i in result.order.items.get_active_items() if isinstance(i, CoffeeItemTask)]
+            coffees = [i for i in result.order.items.get_active_items() if getattr(i, 'is_sized_beverage', False)]
 
         # Should have coffee after clarification
         assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
@@ -158,7 +158,7 @@ class TestMultiItemOrders:
 
         # Check quantities
         bagels = [i for i in result.order.items.items if isinstance(i, BagelItemTask)]
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         bagel_qty = sum(b.quantity for b in bagels)
         coffee_qty = sum(c.quantity for c in coffees)

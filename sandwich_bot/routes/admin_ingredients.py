@@ -68,6 +68,8 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import (
     Ingredient,
+    IngredientAlias,
+    IngredientMustMatch,
     IngredientStoreAvailability,
     MenuItem,
     MenuItemStoreAvailability,
@@ -81,6 +83,7 @@ from ..schemas.ingredients import (
     MenuItemStoreAvailabilityOut,
     MenuItemAvailabilityUpdate,
 )
+from ..services.helpers import validate_aliases
 
 
 logger = logging.getLogger(__name__)
@@ -90,6 +93,47 @@ admin_ingredients_router = APIRouter(
     prefix="/admin/ingredients",
     tags=["Admin - Ingredients"]
 )
+
+
+def _set_ingredient_aliases(db: Session, ingredient: Ingredient, aliases_str: Optional[str]) -> None:
+    """
+    Set ingredient aliases from a comma-separated string.
+    Clears existing aliases and creates new ones from the input string.
+    Validates global uniqueness of aliases before adding.
+
+    Raises:
+        HTTPException: If any alias conflicts with an existing alias
+    """
+    # Clear existing aliases
+    for alias in list(ingredient.alias_records):
+        db.delete(alias)
+
+    # Validate and add new aliases if provided
+    if aliases_str:
+        try:
+            validated_aliases = validate_aliases(db, aliases_str, exclude_table="ingredient_aliases")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        for alias in validated_aliases:
+            db.add(IngredientAlias(ingredient=ingredient, alias=alias))
+
+
+def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_str: Optional[str]) -> None:
+    """
+    Set ingredient must_match from a comma-separated string.
+    Clears existing must_match entries and creates new ones from the input string.
+    """
+    # Clear existing must_match
+    for mm in list(ingredient.must_match_records):
+        db.delete(mm)
+
+    # Add new must_match entries if provided
+    if must_match_str:
+        for mm in must_match_str.split(","):
+            mm = mm.strip()
+            if mm:
+                db.add(IngredientMustMatch(ingredient=ingredient, must_match=mm))
 
 
 # =============================================================================
@@ -149,11 +193,15 @@ def create_ingredient(
         unit=payload.unit,
         track_inventory=payload.track_inventory,
         is_available=payload.is_available,
-        aliases=payload.aliases,
-        must_match=payload.must_match,
         abbreviation=payload.abbreviation,
     )
     db.add(ingredient)
+    db.flush()  # Get the ingredient ID before adding child records
+
+    # Add aliases and must_match through child tables
+    _set_ingredient_aliases(db, ingredient, payload.aliases)
+    _set_ingredient_must_match(db, ingredient, payload.must_match)
+
     db.commit()
     db.refresh(ingredient)
     logger.info("Created ingredient: %s (id=%d)", ingredient.name, ingredient.id)
@@ -329,9 +377,9 @@ def update_ingredient(
     if payload.is_available is not None:
         ingredient.is_available = payload.is_available
     if payload.aliases is not None:
-        ingredient.aliases = payload.aliases
+        _set_ingredient_aliases(db, ingredient, payload.aliases)
     if payload.must_match is not None:
-        ingredient.must_match = payload.must_match
+        _set_ingredient_must_match(db, ingredient, payload.must_match)
     if payload.abbreviation is not None:
         ingredient.abbreviation = payload.abbreviation
 

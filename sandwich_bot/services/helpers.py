@@ -56,7 +56,17 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import Company, ItemType, MenuItem, Order, Store
+from ..models import (
+    Company,
+    IngredientAlias,
+    ItemType,
+    ItemTypeAlias,
+    MenuItem,
+    MenuItemAlias,
+    ModifierCategoryAlias,
+    Order,
+    Store,
+)
 from ..schemas.menu import MenuItemOut
 from .item_type_helpers import has_linked_attributes
 
@@ -338,3 +348,110 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         metadata=meta,
         item_type_id=item.item_type_id,
     )
+
+
+def check_alias_uniqueness(
+    db: Session,
+    alias: str,
+    exclude_table: str | None = None,
+    exclude_id: int | None = None,
+) -> tuple[bool, str | None]:
+    """
+    Check if an alias is globally unique across all alias tables.
+
+    Aliases must be unique across all entity types (ItemType, MenuItem,
+    ModifierCategory, Ingredient) to prevent ambiguous lookups.
+
+    Args:
+        db: Database session
+        alias: The alias to check (case-insensitive)
+        exclude_table: Table name to exclude from check (for updates)
+        exclude_id: Record ID to exclude from check (for updates)
+
+    Returns:
+        Tuple of (is_unique, conflict_message)
+        - (True, None) if alias is unique
+        - (False, "Alias 'x' already exists on ItemType 'y'") if duplicate found
+    """
+    alias_lower = alias.strip().lower()
+    if not alias_lower:
+        return True, None
+
+    # Check ItemTypeAlias
+    if exclude_table != "item_type_aliases":
+        existing = db.query(ItemTypeAlias).filter(
+            func.lower(ItemTypeAlias.alias) == alias_lower
+        ).first()
+        if existing:
+            return False, f"Alias '{alias}' already exists on ItemType '{existing.item_type.slug}'"
+
+    # Check MenuItemAlias
+    if exclude_table != "menu_item_aliases":
+        existing = db.query(MenuItemAlias).filter(
+            func.lower(MenuItemAlias.alias) == alias_lower
+        ).first()
+        if existing:
+            return False, f"Alias '{alias}' already exists on MenuItem '{existing.menu_item.name}'"
+
+    # Check ModifierCategoryAlias
+    if exclude_table != "modifier_category_aliases":
+        existing = db.query(ModifierCategoryAlias).filter(
+            func.lower(ModifierCategoryAlias.alias) == alias_lower
+        ).first()
+        if existing:
+            return False, f"Alias '{alias}' already exists on ModifierCategory '{existing.modifier_category.slug}'"
+
+    # Check IngredientAlias
+    if exclude_table != "ingredient_aliases":
+        existing = db.query(IngredientAlias).filter(
+            func.lower(IngredientAlias.alias) == alias_lower
+        ).first()
+        if existing:
+            return False, f"Alias '{alias}' already exists on Ingredient '{existing.ingredient.name}'"
+
+    return True, None
+
+
+def validate_aliases(
+    db: Session,
+    aliases_str: str | None,
+    exclude_table: str | None = None,
+) -> list[str]:
+    """
+    Validate and return list of globally unique aliases.
+
+    Parses comma-separated aliases string, validates each is globally unique,
+    and returns the list of valid aliases. Raises HTTPException if any alias
+    is a duplicate.
+
+    Args:
+        db: Database session
+        aliases_str: Comma-separated aliases string
+        exclude_table: Table name to exclude from uniqueness check
+
+    Returns:
+        List of validated aliases
+
+    Raises:
+        ValueError if any alias is not globally unique
+    """
+    if not aliases_str:
+        return []
+
+    aliases = []
+    errors = []
+    for alias in aliases_str.split(","):
+        alias = alias.strip()
+        if not alias:
+            continue
+
+        is_unique, error_msg = check_alias_uniqueness(db, alias, exclude_table)
+        if not is_unique:
+            errors.append(error_msg)
+        else:
+            aliases.append(alias)
+
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    return aliases

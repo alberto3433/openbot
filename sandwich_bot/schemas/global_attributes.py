@@ -40,6 +40,9 @@ class GlobalAttributeOptionOut(BaseModel):
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
+    # Link to ingredient for normalized must_match/aliases lookup
+    ingredient_id: Optional[int] = None
+    ingredient_name: Optional[str] = None  # Display name from linked ingredient
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -53,6 +56,8 @@ class GlobalAttributeOptionCreate(BaseModel):
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
+    # Link to ingredient (optional) - when set, must_match/aliases are read from ingredient
+    ingredient_id: Optional[int] = None
 
 
 class GlobalAttributeOptionUpdate(BaseModel):
@@ -64,6 +69,9 @@ class GlobalAttributeOptionUpdate(BaseModel):
     is_default: Optional[bool] = None
     is_available: Optional[bool] = None
     display_order: Optional[int] = None
+    # Link to ingredient - when set, must_match/aliases are read from ingredient
+    # Set to null to unlink
+    ingredient_id: Optional[int] = None
 
 
 # =============================================================================

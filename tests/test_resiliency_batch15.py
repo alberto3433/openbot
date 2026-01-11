@@ -61,7 +61,7 @@ class TestCorrectionsAfterMisunderstanding:
         result = sm.process("I meant the small one", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if isinstance(i, CoffeeItemTask)]
+        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
 
         # Should change to small or acknowledge
         if coffees:

@@ -42,6 +42,7 @@ from ..db import get_db
 from ..models import (
     GlobalAttribute,
     GlobalAttributeOption,
+    Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
 )
@@ -90,6 +91,8 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
         is_default=opt.is_default,
         is_available=opt.is_available,
         display_order=opt.display_order,
+        ingredient_id=opt.ingredient_id,
+        ingredient_name=opt.ingredient.name if opt.ingredient else None,
         created_at=opt.created_at,
         updated_at=opt.updated_at,
     )
@@ -419,6 +422,15 @@ def create_global_attribute_option(
             detail=f"Option with slug '{payload.slug}' already exists for this attribute"
         )
 
+    # Validate ingredient_id if provided
+    if payload.ingredient_id is not None:
+        ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
+        if not ingredient:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient with id {payload.ingredient_id} not found"
+            )
+
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
         slug=payload.slug,
@@ -428,16 +440,18 @@ def create_global_attribute_option(
         is_default=payload.is_default,
         is_available=payload.is_available,
         display_order=payload.display_order,
+        ingredient_id=payload.ingredient_id,
     )
     db.add(option)
     db.commit()
     db.refresh(option)
 
     logger.info(
-        "Created global attribute option: %s for %s (id=%d)",
+        "Created global attribute option: %s for %s (id=%d, ingredient_id=%s)",
         option.slug,
         attr.slug,
-        option.id
+        option.id,
+        option.ingredient_id,
     )
     return _serialize_option(option)
 
@@ -494,10 +508,27 @@ def update_global_attribute_option(
     if payload.display_order is not None:
         option.display_order = payload.display_order
 
+    # Handle ingredient_id - check model_fields_set to distinguish None from not provided
+    if "ingredient_id" in payload.model_fields_set:
+        if payload.ingredient_id is not None:
+            # Validate ingredient exists
+            ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
+            if not ingredient:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Ingredient with id {payload.ingredient_id} not found"
+                )
+        option.ingredient_id = payload.ingredient_id
+
     db.commit()
     db.refresh(option)
 
-    logger.info("Updated global attribute option: %s (id=%d)", option.slug, option.id)
+    logger.info(
+        "Updated global attribute option: %s (id=%d, ingredient_id=%s)",
+        option.slug,
+        option.id,
+        option.ingredient_id,
+    )
     return _serialize_option(option)
 
 
@@ -533,6 +564,67 @@ def delete_global_attribute_option(
     db.delete(option)
     db.commit()
     return None
+
+
+@admin_global_attributes_router.post(
+    "/{attr_id}/options/auto-link-ingredients",
+    summary="Auto-link options to ingredients by matching slug"
+)
+def auto_link_options_to_ingredients(
+    attr_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """
+    Automatically link unlinked options to ingredients by matching slugs.
+
+    For each option without an ingredient_id, attempts to find an ingredient
+    with a matching slug and links them.
+
+    Returns:
+        Dict with counts of linked and unmatched options.
+    """
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Get unlinked options for this attribute
+    unlinked_options = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.ingredient_id.is_(None),
+    ).all()
+
+    linked = []
+    unmatched = []
+
+    for option in unlinked_options:
+        # Try to find ingredient with matching slug
+        ingredient = db.query(Ingredient).filter(Ingredient.slug == option.slug).first()
+        if ingredient:
+            option.ingredient_id = ingredient.id
+            linked.append({
+                "option_slug": option.slug,
+                "ingredient_id": ingredient.id,
+                "ingredient_name": ingredient.name,
+            })
+        else:
+            unmatched.append(option.slug)
+
+    db.commit()
+
+    logger.info(
+        "Auto-linked %d options to ingredients for attribute %s, %d unmatched",
+        len(linked),
+        attr.slug,
+        len(unmatched),
+    )
+
+    return {
+        "linked_count": len(linked),
+        "unmatched_count": len(unmatched),
+        "linked": linked,
+        "unmatched": unmatched,
+    }
 
 
 # =============================================================================

@@ -43,7 +43,6 @@ class ItemType(Base):
     display_name_plural = Column(String, nullable=True)  # e.g., "coffees and teas" for sized_beverage (if irregular)
 
     # Category keyword support (replaces MENU_CATEGORY_KEYWORDS constant)
-    aliases = Column(String, nullable=True)  # Comma-separated keywords that map to this type (e.g., "bagels" for "bagel")
     expands_to = Column(JSON, nullable=True)  # JSON array of slugs for meta-categories (e.g., ["pastry", "snack"] for "dessert")
     name_filter = Column(String, nullable=True)  # Substring filter for item names (e.g., "tea" to filter sized_beverage)
     is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
@@ -51,42 +50,33 @@ class ItemType(Base):
     # Relationships
     attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
     menu_items = relationship("MenuItem", back_populates="item_type")
-    fields = relationship("ItemTypeField", back_populates="item_type", cascade="all, delete-orphan")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
     type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
     global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type", cascade="all, delete-orphan")
+    alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
+
+    @property
+    def aliases(self) -> list[str]:
+        """Get list of aliases from child table."""
+        return [a.alias for a in self.alias_records]
+
+    @property
+    def aliases_str(self) -> str | None:
+        """Get pipe-separated aliases string for backward compatibility."""
+        aliases = self.aliases
+        return '|'.join(aliases) if aliases else None
 
 
-class ItemTypeField(Base):
-    """
-    Defines configurable fields for each item type.
-
-    This table stores field definitions like bagel_type, toasted, spread, etc.
-    for each item type. Fields can be marked as required (must have value for
-    item to be complete) and/or ask (should prompt user for this field).
-
-    The question_text is used to prompt the user when asking for this field.
-    Fields are ordered by display_order for consistent question sequence.
-    """
-    __tablename__ = "item_type_field"
+class ItemTypeAlias(Base):
+    """Child table for item type aliases. Aliases are globally unique."""
+    __tablename__ = "item_type_aliases"
 
     id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False)
-    field_name = Column(String(100), nullable=False)
-    display_order = Column(Integer, nullable=False, default=0)
-    required = Column(Boolean, nullable=False, default=False)  # Item needs this field to be complete
-    ask = Column(Boolean, nullable=False, default=True)  # Should prompt user for this field
-    question_text = Column(Text, nullable=True)  # Question to ask user for this field
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
     created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    # Relationships
-    item_type = relationship("ItemType", back_populates="fields")
-
-    __table_args__ = (
-        UniqueConstraint('item_type_id', 'field_name', name='uq_item_type_field_item_type_field'),
-        Index('idx_item_type_field_item_type', 'item_type_id'),
-    )
+    item_type = relationship("ItemType", back_populates="alias_records")
 
 
 class ResponsePattern(Base):
@@ -131,7 +121,6 @@ class ModifierCategory(Base):
     id = Column(Integer, primary_key=True, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sweeteners", "milks"
     display_name = Column(String, nullable=False)  # e.g., "Sweeteners", "Milks"
-    aliases = Column(String, nullable=True)  # Comma-separated keywords: "sweetener, sugar, sugars"
 
     # For static response categories (not database-backed)
     description = Column(String, nullable=True)  # e.g., "we have sugar, raw sugar, honey..."
@@ -140,6 +129,32 @@ class ModifierCategory(Base):
     # For database-backed categories (load from Ingredient table)
     loads_from_ingredients = Column(Boolean, nullable=False, default=False)
     ingredient_category = Column(String, nullable=True)  # Maps to Ingredient.category value
+
+    # Relationships
+    alias_records = relationship("ModifierCategoryAlias", back_populates="modifier_category", cascade="all, delete-orphan")
+
+    @property
+    def aliases(self) -> list[str]:
+        """Get list of aliases from child table."""
+        return [a.alias for a in self.alias_records]
+
+    @property
+    def aliases_str(self) -> str | None:
+        """Get pipe-separated aliases string for backward compatibility."""
+        aliases = self.aliases
+        return '|'.join(aliases) if aliases else None
+
+
+class ModifierCategoryAlias(Base):
+    """Child table for modifier category aliases. Aliases are globally unique."""
+    __tablename__ = "modifier_category_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    modifier_category_id = Column(Integer, ForeignKey("modifier_categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
+    created_at = Column(DateTime, server_default=func.now())
+
+    modifier_category = relationship("ModifierCategory", back_populates="alias_records")
 
 
 class AttributeDefinition(Base):
@@ -435,6 +450,9 @@ class GlobalAttributeOption(Base):
 
     For example, "Plain Cream Cheese", "Scallion Cream Cheese" are options
     for the "spread" global attribute.
+
+    Aliases and must_match values are stored on the linked Ingredient record,
+    not on this table. Use ingredient.aliases and ingredient.must_match.
     """
     __tablename__ = "global_attribute_options"
 
@@ -443,17 +461,15 @@ class GlobalAttributeOption(Base):
 
     slug = Column(String(100), nullable=False)  # e.g., "plain_cream_cheese", "scallion_cream_cheese"
     display_name = Column(String(100), nullable=False)  # e.g., "Plain Cream Cheese", "Scallion Cream Cheese"
-    aliases = Column(String(255), nullable=True)  # Pipe-separated aliases for parsing, e.g., "2|two|double shot"
+
+    # Link to ingredient for aliases/must_match lookup
+    # Options that need special parsing MUST link to an Ingredient
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="SET NULL"), nullable=True, index=True)
 
     price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
     iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
     is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
     is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
-
-    # Must match phrases - input must contain one of these to match this option
-    # E.g., "oat milk" has must_match="oat milk" - only matches "oat milk", not plain "milk"
-    # If None/empty, option matches when input contains the slug or display name
-    must_match = Column(Text, nullable=True)
 
     # Display order (lower = shown first)
     display_order = Column(Integer, nullable=False, default=0)
@@ -469,6 +485,7 @@ class GlobalAttributeOption(Base):
 
     # Relationships
     attribute = relationship("GlobalAttribute", back_populates="options")
+    ingredient = relationship("Ingredient", backref="global_attribute_options")
 
 
 class ItemTypeGlobalAttribute(Base):
@@ -608,10 +625,6 @@ class MenuItem(Base):
     # Example: "coffee cake, cake" for "Russian Coffee Cake" prevents "coffee" from matching
     required_match_phrases = Column(String, nullable=True)
 
-    # Aliases for matching user input to this item (comma-separated)
-    # Example: "coke, coca cola" for "Coca-Cola" allows "coke" to match
-    aliases = Column(String, nullable=True)
-
     # Abbreviation for text expansion (e.g., "oj" expands to "orange juice" before parsing)
     abbreviation = Column(String, nullable=True)
 
@@ -649,6 +662,30 @@ class MenuItem(Base):
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
     attribute_values = relationship("MenuItemAttributeValue", back_populates="menu_item", cascade="all, delete-orphan")
     attribute_selections = relationship("MenuItemAttributeSelection", back_populates="menu_item", cascade="all, delete-orphan")
+    alias_records = relationship("MenuItemAlias", back_populates="menu_item", cascade="all, delete-orphan")
+
+    @property
+    def aliases(self) -> list[str]:
+        """Get list of aliases from child table."""
+        return [a.alias for a in self.alias_records]
+
+    @property
+    def aliases_str(self) -> str | None:
+        """Get pipe-separated aliases string for backward compatibility."""
+        aliases = self.aliases
+        return '|'.join(aliases) if aliases else None
+
+
+class MenuItemAlias(Base):
+    """Child table for menu item aliases. Aliases are globally unique."""
+    __tablename__ = "menu_item_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
+    created_at = Column(DateTime, server_default=func.now())
+
+    menu_item = relationship("MenuItem", back_populates="alias_records")
 
 
 # --- Per-store menu item availability (86 system) ---
@@ -698,14 +735,6 @@ class Ingredient(Base):
     contains_sesame = Column(Boolean, nullable=False, default=False)
     contains_nuts = Column(Boolean, nullable=False, default=False)
 
-    # Aliases for matching (comma-separated, e.g., "wheat" for "Whole Wheat Bagel")
-    aliases = Column(Text, nullable=True)
-
-    # Must-match strings (comma-separated) - at least one must be present in input for this to match
-    # E.g., "Gluten Free Everything, GF Everything" for "Gluten Free Everything Bagel"
-    # Prevents "everything" alone from matching gluten-free variant
-    must_match = Column(Text, nullable=True)
-
     # Abbreviation for text expansion (e.g., "cc" expands to "cream cheese" before parsing)
     abbreviation = Column(String, nullable=True)
 
@@ -715,6 +744,59 @@ class Ingredient(Base):
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
     attribute_option_links = relationship("AttributeOptionIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
+    # Alias and must_match child tables
+    alias_records = relationship("IngredientAlias", back_populates="ingredient", cascade="all, delete-orphan")
+    must_match_records = relationship("IngredientMustMatch", back_populates="ingredient", cascade="all, delete-orphan")
+
+    @property
+    def aliases(self) -> list[str]:
+        """Get list of aliases from child table."""
+        return [a.alias for a in self.alias_records]
+
+    @property
+    def aliases_str(self) -> str | None:
+        """Get pipe-separated aliases string for backward compatibility."""
+        aliases = self.aliases
+        return '|'.join(aliases) if aliases else None
+
+    @property
+    def must_match(self) -> list[str]:
+        """Get list of must_match strings from child table."""
+        return [m.must_match for m in self.must_match_records]
+
+    @property
+    def must_match_str(self) -> str | None:
+        """Get pipe-separated must_match string for backward compatibility."""
+        mm = self.must_match
+        return '|'.join(mm) if mm else None
+
+
+class IngredientAlias(Base):
+    """Child table for ingredient aliases. Aliases are globally unique."""
+    __tablename__ = "ingredient_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
+    created_at = Column(DateTime, server_default=func.now())
+
+    ingredient = relationship("Ingredient", back_populates="alias_records")
+
+
+class IngredientMustMatch(Base):
+    """Child table for ingredient must_match strings."""
+    __tablename__ = "ingredient_must_match"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False, index=True)
+    must_match = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("ingredient_id", "must_match", name="uq_ingredient_must_match"),
+    )
+
+    ingredient = relationship("Ingredient", back_populates="must_match_records")
 
 
 # --- Per-store ingredient availability (86 system) ---

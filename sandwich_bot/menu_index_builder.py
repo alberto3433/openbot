@@ -570,12 +570,11 @@ def _build_item_keywords(db: Session) -> Dict[str, str]:
         if it.display_name:
             keyword_to_slug[it.display_name.lower()] = it.slug
 
-        # Add aliases from the aliases field (comma-separated)
-        if it.aliases:
-            for alias in it.aliases.split(","):
-                alias = alias.strip().lower()
-                if alias:
-                    keyword_to_slug[alias] = it.slug
+        # Add aliases from the child table (now a list)
+        for alias in it.aliases:
+            alias = alias.strip().lower()
+            if alias:
+                keyword_to_slug[alias] = it.slug
 
     return keyword_to_slug
 
@@ -1030,12 +1029,11 @@ def _build_modifier_categories(db: Session) -> Dict[str, Any]:
     category_data: Dict[str, Dict[str, Any]] = {}
 
     for cat in categories:
-        # Build keyword mappings from aliases
-        if cat.aliases:
-            for alias in cat.aliases.split(","):
-                alias = alias.strip().lower()
-                if alias:
-                    keyword_to_category[alias] = cat.slug
+        # Build keyword mappings from aliases (now a list from child table)
+        for alias in cat.aliases:
+            alias = alias.strip().lower()
+            if alias:
+                keyword_to_category[alias] = cat.slug
 
         # Build category data
         cat_info: Dict[str, Any] = {

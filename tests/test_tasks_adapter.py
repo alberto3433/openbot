@@ -14,6 +14,7 @@ from sandwich_bot.tasks.models import (
     OrderTask,
     BagelItemTask,
     CoffeeItemTask,
+    MenuItemTask,
 )
 from sandwich_bot.tasks.pricing import PricingEngine
 
@@ -200,7 +201,7 @@ class TestDictToOrderTask:
         assert item.unit_price == 5.99
 
     def test_coffee_item(self):
-        """Test converting a coffee item."""
+        """Test converting a coffee item (now uses MenuItemTask with sized_beverage)."""
         order_dict = {
             "items": [{
                 "item_type": "drink",
@@ -218,8 +219,10 @@ class TestDictToOrderTask:
 
         assert order.items.get_item_count() == 1
         item = order.items.items[0]
-        assert isinstance(item, CoffeeItemTask)
-        assert item.drink_type == "iced latte"
+        # Coffee items are now MenuItemTask with is_sized_beverage=True
+        assert isinstance(item, MenuItemTask)
+        assert item.is_sized_beverage is True
+        assert item.menu_item_name == "iced latte"  # drink_type stored as menu_item_name
         assert item.size == "large"
         assert item.iced is True  # inferred from "iced" in name
         assert item.milk == "oat"
@@ -237,7 +240,9 @@ class TestDictToOrderTask:
 
         assert order.items.get_item_count() == 2
         assert isinstance(order.items.items[0], BagelItemTask)
-        assert isinstance(order.items.items[1], CoffeeItemTask)
+        # Coffee items are now MenuItemTask with is_sized_beverage=True
+        assert isinstance(order.items.items[1], MenuItemTask)
+        assert order.items.items[1].is_sized_beverage is True
 
     def test_confirmed_order(self):
         """Test converting confirmed order."""

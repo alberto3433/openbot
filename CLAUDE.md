@@ -1,5 +1,16 @@
 # CLAUDE.md - Sandwich Bot Project Guide
 
+## ⚠️ CRITICAL: Database Rules
+
+**DO NOT USE SQLITE. DO NOT USE LOCAL DATABASES.**
+
+- **ONLY use the Neon PostgreSQL database** via the `DATABASE_URL` environment variable
+- **NEVER** run commands like `sqlite3 app.db` or `DATABASE_URL=sqlite:///app.db`
+- **NEVER** inspect or modify `app.db` or any local `.db` files
+- **IGNORE** any `app.db` file in the project - it is stale and not the source of truth
+- All database operations (migrations, queries, checks) must target the Neon PostgreSQL database
+- If you need to check database state, use `psql $DATABASE_URL` or Python with the proper DATABASE_URL
+
 ## Project Overview
 
 This is an AI-powered ordering chatbot for a bagel shop (Zucker's Bagels). The system handles natural language order processing, supporting bagels, coffees, sandwiches, and other menu items with full customization.
@@ -160,13 +171,12 @@ Items store all details in `item_config` JSON column:
 
 ## Database Environment
 
-**IMPORTANT**: This project uses a single Neon PostgreSQL database as the source of truth. There is no local development database.
+**CRITICAL**: This project uses Neon PostgreSQL ONLY. See "Database Rules" section at the top.
 
-- Do NOT query or inspect local SQLite files (e.g., `app.db`) - they are stale/incomplete
-- Do NOT use `sqlite3` commands to check schema or data
-- All database access should use the configured `DATABASE_URL` environment variable
-- To inspect database state, use the running application or connect to Neon directly
-- Alembic for migrations in `alembic/versions/`
+- The `DATABASE_URL` environment variable contains the Neon connection string
+- **NEVER** use SQLite or local databases - they do not exist for this project
+- Run migrations with: `alembic upgrade head` (uses DATABASE_URL automatically)
+- Alembic migrations are in `alembic/versions/`
 
 Key tables:
 - `orders`: Customer orders with totals and status

@@ -1,15 +1,23 @@
 # CLAUDE.md - Sandwich Bot Project Guide
 
-## ⚠️ CRITICAL: Database Rules
+## ⛔ DATABASE - CRITICAL
 
-**DO NOT USE SQLITE. DO NOT USE LOCAL DATABASES.**
+**This project uses PostgreSQL ONLY. SQLite is NOT used anywhere.**
 
-- **ONLY use the Neon PostgreSQL database** via the `DATABASE_URL` environment variable
-- **NEVER** run commands like `sqlite3 app.db` or `DATABASE_URL=sqlite:///app.db`
-- **NEVER** inspect or modify `app.db` or any local `.db` files
-- **IGNORE** any `app.db` file in the project - it is stale and not the source of truth
-- All database operations (migrations, queries, checks) must target the Neon PostgreSQL database
-- If you need to check database state, use `psql $DATABASE_URL` or Python with the proper DATABASE_URL
+### What You MUST NOT Do
+- Do NOT create, check, or reference any `.sqlite`, `.sqlite3`, or `.db` files
+- Do NOT import `sqlite3` or any SQLite libraries
+- Do NOT run commands like `sqlite3 app.db` or `DATABASE_URL=sqlite:///app.db`
+- Do NOT use SQLite-specific syntax (`sqlite_master`, `batch_alter_table` for SQLite compatibility, etc.)
+
+### What You MUST Do
+- All database operations use PostgreSQL via `DATABASE_URL` environment variable
+- Connection string format: `postgresql://...` (Neon PostgreSQL)
+- Use `psql $DATABASE_URL` to inspect database state
+- Use PostgreSQL syntax in all migrations and queries
+
+### Why This Matters
+Any `.db` files in the project are stale artifacts. The Neon PostgreSQL database is the single source of truth for all data.
 
 ## Project Overview
 
@@ -194,12 +202,12 @@ Items store all details in `item_config` JSON column:
 
 ## Database Environment
 
-**CRITICAL**: This project uses Neon PostgreSQL ONLY. See "Database Rules" section at the top.
+**PostgreSQL ONLY** - See "DATABASE - CRITICAL" section at top.
 
-- The `DATABASE_URL` environment variable contains the Neon connection string
-- **NEVER** use SQLite or local databases - they do not exist for this project
-- Run migrations with: `alembic upgrade head` (uses DATABASE_URL automatically)
+- `DATABASE_URL` environment variable contains the Neon PostgreSQL connection string
+- Run migrations: `alembic upgrade head` (uses DATABASE_URL automatically)
 - Alembic migrations are in `alembic/versions/`
+- All migrations must use PostgreSQL syntax only (no SQLite fallbacks)
 
 Key tables:
 - `orders`: Customer orders with totals and status

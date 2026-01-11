@@ -42,16 +42,17 @@ def upgrade() -> None:
     """))
 
     # Make slug not nullable and unique after population
-    # Use batch_alter_table for SQLite compatibility
-    # Check if index exists first
-    result = conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='index' AND name='ix_ingredients_slug'"))
+    # Check if index exists first (PostgreSQL syntax)
+    result = conn.execute(sa.text("""
+        SELECT 1 FROM pg_indexes
+        WHERE indexname = 'ix_ingredients_slug'
+    """))
     index_exists = result.fetchone() is not None
 
     if not index_exists:
-        with op.batch_alter_table('ingredients') as batch_op:
-            batch_op.alter_column('slug', nullable=False)
-            batch_op.create_unique_constraint('uq_ingredients_slug', ['slug'])
-            batch_op.create_index('ix_ingredients_slug', ['slug'])
+        op.alter_column('ingredients', 'slug', nullable=False)
+        op.create_unique_constraint('uq_ingredients_slug', 'ingredients', ['slug'])
+        op.create_index('ix_ingredients_slug', 'ingredients', ['slug'])
 
     # Step 3: Get item type IDs for espresso and sized_beverage
     result = conn.execute(sa.text("""
@@ -165,8 +166,7 @@ def downgrade() -> None:
     # Note: Cannot automatically restore deleted attribute_options or
     # split drink_modifier back to milk/sweetener/syrup without original data
 
-    # Remove slug column from ingredients using batch_alter_table for SQLite
-    with op.batch_alter_table('ingredients') as batch_op:
-        batch_op.drop_index('ix_ingredients_slug')
-        batch_op.drop_constraint('uq_ingredients_slug', type_='unique')
-        batch_op.drop_column('slug')
+    # Remove slug column from ingredients (PostgreSQL)
+    op.drop_index('ix_ingredients_slug', table_name='ingredients')
+    op.drop_constraint('uq_ingredients_slug', 'ingredients', type_='unique')
+    op.drop_column('ingredients', 'slug')

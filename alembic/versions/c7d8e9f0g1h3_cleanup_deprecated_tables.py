@@ -29,84 +29,71 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Remove deprecated tables and columns."""
-    bind = op.get_bind()
-    dialect = bind.dialect.name
+    """Remove deprecated tables and columns (PostgreSQL only)."""
 
-    if dialect == 'postgresql':
-        # PostgreSQL - use IF EXISTS syntax
+    # 1. Drop the FK constraint and column from attribute_options
+    # First check if constraint exists
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE constraint_name = 'attribute_options_attribute_definition_id_fkey'
+                AND table_name = 'attribute_options'
+            ) THEN
+                ALTER TABLE attribute_options
+                DROP CONSTRAINT attribute_options_attribute_definition_id_fkey;
+            END IF;
+        END $$;
+    """)
 
-        # 1. Drop the FK constraint and column from attribute_options
-        # First check if constraint exists
-        op.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.table_constraints
-                    WHERE constraint_name = 'attribute_options_attribute_definition_id_fkey'
-                    AND table_name = 'attribute_options'
-                ) THEN
-                    ALTER TABLE attribute_options
-                    DROP CONSTRAINT attribute_options_attribute_definition_id_fkey;
-                END IF;
-            END $$;
-        """)
+    # Drop unique constraint if exists
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE constraint_name = 'uix_attr_def_option_slug'
+                AND table_name = 'attribute_options'
+            ) THEN
+                ALTER TABLE attribute_options
+                DROP CONSTRAINT uix_attr_def_option_slug;
+            END IF;
+        END $$;
+    """)
 
-        # Drop unique constraint if exists
-        op.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.table_constraints
-                    WHERE constraint_name = 'uix_attr_def_option_slug'
-                    AND table_name = 'attribute_options'
-                ) THEN
-                    ALTER TABLE attribute_options
-                    DROP CONSTRAINT uix_attr_def_option_slug;
-                END IF;
-            END $$;
-        """)
+    # Drop the column if it exists
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'attribute_options'
+                AND column_name = 'attribute_definition_id'
+            ) THEN
+                ALTER TABLE attribute_options DROP COLUMN attribute_definition_id;
+            END IF;
+        END $$;
+    """)
 
-        # Drop the column if it exists
-        op.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'attribute_options'
-                    AND column_name = 'attribute_definition_id'
-                ) THEN
-                    ALTER TABLE attribute_options DROP COLUMN attribute_definition_id;
-                END IF;
-            END $$;
-        """)
+    # 2. Drop the attribute_definitions table
+    op.execute("""
+        DROP TABLE IF EXISTS attribute_definitions CASCADE;
+    """)
 
-        # 2. Drop the attribute_definitions table
-        op.execute("""
-            DROP TABLE IF EXISTS attribute_definitions CASCADE;
-        """)
-
-        # 3. Drop default_config column from menu_items
-        op.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'menu_items'
-                    AND column_name = 'default_config'
-                ) THEN
-                    ALTER TABLE menu_items DROP COLUMN default_config;
-                END IF;
-            END $$;
-        """)
-
-    else:
-        # SQLite - simpler approach (no IF EXISTS)
-        # Note: SQLite doesn't support DROP COLUMN easily, would need table recreation
-        # For SQLite, we just drop the table since the FK is nullable
-        op.execute("DROP TABLE IF EXISTS attribute_definitions")
+    # 3. Drop default_config column from menu_items
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'menu_items'
+                AND column_name = 'default_config'
+            ) THEN
+                ALTER TABLE menu_items DROP COLUMN default_config;
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
-    """Re-create deprecated structures (for rollback)."""
-    bind = op.get_bind()
-    dialect = bind.dialect.name
+    """Re-create deprecated structures (for rollback, PostgreSQL only)."""
 
     # 1. Re-create attribute_definitions table
     op.create_table(

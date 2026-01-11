@@ -433,6 +433,53 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    /* Tag Input Styles */
+    .tag-input-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      min-height: 36px;
+      align-items: center;
+      cursor: text;
+    }
+    .tag-input-container:focus-within {
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .tag-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 12px;
+      font-size: 12px;
+      color: #1565c0;
+    }
+    .tag-item .tag-remove {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #1976d2;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .tag-item .tag-remove:hover {
+      color: #d32f2f;
+    }
+    .tag-input {
+      flex: 1;
+      min-width: 120px;
+      border: none;
+      outline: none;
+      font-size: 13px;
+      padding: 4px 0;
+    }
   </style>
 </head>
 <body>
@@ -525,14 +572,18 @@
         </div>
 
         <div class="field">
-          <label for="itemAliases">Aliases (synonyms for matching)</label>
-          <input id="itemAliases" type="text" placeholder="e.g., coke, coca cola, cola" />
-          <small style="color: #666; font-size: 0.8em;">Comma-separated alternative names that customers might use</small>
+          <label>Aliases (synonyms for matching)</label>
+          <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
+            <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
+          <small style="color: #666; font-size: 0.8em;">Alternative names that customers might use (press Enter to add each one)</small>
         </div>
 
         <div class="field">
-          <label for="itemRequiredPhrases">Required Match Phrases</label>
-          <input id="itemRequiredPhrases" type="text" placeholder="e.g., coffee cake, cake" />
+          <label>Required Match Phrases</label>
+          <div class="tag-input-container" id="requiredPhrasesContainer" onclick="document.getElementById('requiredPhraseInput').focus()">
+            <input id="requiredPhraseInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
           <small style="color: #666; font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
         </div>
         </div><!-- End Basic Info Tab -->
@@ -617,8 +668,78 @@
     const itemCategoryEl = document.getElementById("itemCategory");
     const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
-    const itemAliasesEl = document.getElementById("itemAliases");
-    const itemRequiredPhrasesEl = document.getElementById("itemRequiredPhrases");
+
+    // Tag input elements
+    const aliasesContainerEl = document.getElementById("aliasesContainer");
+    const aliasInputEl = document.getElementById("aliasInput");
+    const requiredPhrasesContainerEl = document.getElementById("requiredPhrasesContainer");
+    const requiredPhraseInputEl = document.getElementById("requiredPhraseInput");
+
+    // Tag input helper functions
+    function createTagElement(text, container, inputEl) {
+      const tag = document.createElement("span");
+      tag.className = "tag-item";
+      tag.innerHTML = `<span class="tag-text">${escapeHtml(text)}</span><span class="tag-remove">&times;</span>`;
+      tag.querySelector(".tag-remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        tag.remove();
+      });
+      container.insertBefore(tag, inputEl);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function getTagValues(container) {
+      return Array.from(container.querySelectorAll(".tag-text")).map(el => el.textContent);
+    }
+
+    function clearTags(container, inputEl) {
+      container.querySelectorAll(".tag-item").forEach(tag => tag.remove());
+      inputEl.value = "";
+    }
+
+    function setTags(container, inputEl, values) {
+      clearTags(container, inputEl);
+      if (Array.isArray(values)) {
+        values.forEach(v => createTagElement(v, container, inputEl));
+      } else if (typeof values === "string" && values.trim()) {
+        values.split(",").map(s => s.trim()).filter(Boolean).forEach(v => createTagElement(v, container, inputEl));
+      }
+    }
+
+    // Tag input event handlers
+    function setupTagInput(inputEl, container) {
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === ",") {
+          e.preventDefault();
+          const value = inputEl.value.trim();
+          if (value) {
+            createTagElement(value, container, inputEl);
+            inputEl.value = "";
+          }
+        } else if (e.key === "Backspace" && !inputEl.value) {
+          const tags = container.querySelectorAll(".tag-item");
+          if (tags.length > 0) {
+            tags[tags.length - 1].remove();
+          }
+        }
+      });
+      // Also add on blur to capture any remaining input
+      inputEl.addEventListener("blur", () => {
+        const value = inputEl.value.trim();
+        if (value) {
+          createTagElement(value, container, inputEl);
+          inputEl.value = "";
+        }
+      });
+    }
+
+    setupTagInput(aliasInputEl, aliasesContainerEl);
+    setupTagInput(requiredPhraseInputEl, requiredPhrasesContainerEl);
 
     // Tab elements
     const detailTabsEl = document.getElementById("detailTabs");
@@ -800,8 +921,8 @@
       itemCategoryEl.value = "";
       itemPriceEl.value = "";
       itemSignatureEl.checked = false;
-      itemAliasesEl.value = "";
-      itemRequiredPhrasesEl.value = "";
+      clearTags(aliasesContainerEl, aliasInputEl);
+      clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
       // Clear attributes tab
       attributesContainerEl.innerHTML = '<div class="no-attrs-message">Create or select a menu item to configure its attributes.</div>';
@@ -839,8 +960,8 @@
       itemCategoryEl.value = item.item_type_id || "";
       itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
-      itemAliasesEl.value = item.aliases || "";
-      itemRequiredPhrasesEl.value = item.required_match_phrases || "";
+      setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
+      setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
 
       // Load attributes for the Attributes tab
       loadAttributeForm(item.id);
@@ -860,6 +981,10 @@
       const selectedOption = itemCategoryEl.options[itemCategoryEl.selectedIndex];
       const categoryName = selectedOption && selectedOption.value ? selectedOption.textContent : "";
 
+      // Get tag values as comma-separated strings for API
+      const aliasValues = getTagValues(aliasesContainerEl);
+      const requiredPhraseValues = getTagValues(requiredPhrasesContainerEl);
+
       const payload = {
         name: itemNameEl.value.trim(),
         description: itemDescriptionEl.value.trim() || null,
@@ -867,8 +992,8 @@
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
-        aliases: itemAliasesEl.value.trim() || null,
-        required_match_phrases: itemRequiredPhrasesEl.value.trim() || null
+        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
+        required_match_phrases: requiredPhraseValues.length > 0 ? requiredPhraseValues.join(",") : null
       };
 
       if (!payload.name) {

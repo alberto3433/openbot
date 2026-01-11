@@ -737,19 +737,23 @@ class MenuDataCache:
         1. _by_pound_items: dict mapping category (fish, spread, etc.) to list of item names
         2. _by_pound_aliases: dict mapping aliases to (canonical_name, category) tuples
 
-        This replaces the hardcoded BY_POUND_ITEMS constant.
+        Categories are determined by ItemType slugs (cheese, cold_cut, fish, salad, spread).
         """
         import re
-        from .models import MenuItem
+        from .models import MenuItem, ItemType
 
         by_pound_items: dict[str, list[str]] = {}
         by_pound_aliases: dict[str, tuple[str, str]] = {}
 
-        # Query items with by_pound_category set
+        # By-pound category slugs (these are ItemType slugs)
+        BY_POUND_CATEGORY_SLUGS = ["cheese", "cold_cut", "fish", "salad", "spread"]
+
+        # Query items where item_type is a by-pound category
         items = (
             db.query(MenuItem)
-            .filter(MenuItem.by_pound_category.isnot(None))
-            .order_by(MenuItem.by_pound_category, MenuItem.name)
+            .join(ItemType, MenuItem.item_type_id == ItemType.id)
+            .filter(ItemType.slug.in_(BY_POUND_CATEGORY_SLUGS))
+            .order_by(ItemType.slug, MenuItem.name)
             .all()
         )
 
@@ -757,7 +761,10 @@ class MenuDataCache:
         seen_base_names: dict[str, str] = {}  # Track which base names we've seen per category
 
         for item in items:
-            category = item.by_pound_category
+            # Get category from item_type slug
+            category = item.item_type.slug if item.item_type else None
+            if not category:
+                continue
             name = item.name
 
             # Extract base name without weight suffix: "Nova Scotia Salmon (1 lb)" -> "Nova Scotia Salmon"
@@ -795,39 +802,43 @@ class MenuDataCache:
         )
 
     def _load_by_pound_category_names(self, db: Session) -> None:
-        """Load by-the-pound category display names from database.
+        """Load by-the-pound category display names from ItemType table.
 
         Loads the mapping from category slugs (cheese, cold_cut, fish, etc.)
-        to human-readable display names (cheeses, cold cuts, smoked fish, etc.).
-
-        If the table doesn't exist or query fails, logs warning and returns empty dict.
-        Callers should handle the case where category names are not available.
+        to human-readable display names (cheeses, cold cuts, smoked fish, etc.)
+        using ItemType.display_name_plural.
         """
+        from .models import ItemType
+
         category_names: dict[str, str] = {}
 
+        # By-pound category slugs
+        BY_POUND_CATEGORY_SLUGS = ["cheese", "cold_cut", "fish", "salad", "spread"]
+
         try:
-            # Query the by_pound_categories table
-            result = db.execute(
-                __import__("sqlalchemy").text(
-                    "SELECT slug, display_name FROM by_pound_categories"
-                )
+            # Query ItemType for by-pound categories
+            item_types = (
+                db.query(ItemType)
+                .filter(ItemType.slug.in_(BY_POUND_CATEGORY_SLUGS))
+                .all()
             )
 
-            for row in result:
-                category_names[row.slug] = row.display_name
+            for it in item_types:
+                # Use display_name_plural if available, otherwise display_name
+                display_name = it.display_name_plural or it.display_name or it.slug
+                category_names[it.slug] = display_name
+
         except Exception as e:
-            # Table doesn't exist or query failed - fail gracefully with empty dict
             db.rollback()
             logger.warning(
-                "Failed to load by_pound_categories from database: %s. "
-                "By-pound category display names will not be available.",
+                "Failed to load by-pound category names from ItemType: %s",
                 e
             )
 
         self._by_pound_category_names = category_names
 
         logger.debug(
-            "Loaded %d by-pound category names",
+            "Loaded %d by-pound category names from ItemType",
             len(category_names),
         )
 

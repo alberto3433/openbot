@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Modifier Categories Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/admin_common.css">
   <style>
     body {
       margin: 0;
@@ -477,9 +478,11 @@
           </div>
 
           <div class="form-group">
-            <label for="aliases">Aliases</label>
-            <input type="text" id="aliases" placeholder="e.g., sweetener, sugar, sugars" />
-            <div class="hint">Comma-separated keywords that trigger this category</div>
+            <label>Aliases</label>
+            <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasesInput').focus()">
+              <input id="aliasesInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+            </div>
+            <div class="hint">Keywords that trigger this category (press Enter to add each one)</div>
           </div>
 
           <div class="form-group">
@@ -535,6 +538,7 @@
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
     // API base URL
     const API_BASE = "/admin/modifier-categories";
@@ -593,6 +597,11 @@
     const loadsFromIngredients = document.getElementById("loadsFromIngredients");
     const ingredientCategoryField = document.getElementById("ingredientCategoryField");
     const descriptionField = document.getElementById("descriptionField");
+
+    // Tag input elements
+    const aliasesContainerEl = document.getElementById("aliasesContainer");
+    const aliasesInputEl = document.getElementById("aliasesInput");
+    setupTagInput(aliasesInputEl, aliasesContainerEl);
 
     // Toast container reference
     const toastContainer = document.getElementById("toastContainer");
@@ -731,7 +740,7 @@
       document.getElementById("categoryId").value = "";
       document.getElementById("displayName").value = "";
       document.getElementById("slug").value = "";
-      document.getElementById("aliases").value = "";
+      clearTags(aliasesContainerEl, aliasesInputEl);
       document.getElementById("promptSuffix").value = "What would you like?";
       document.getElementById("loadsFromIngredients").checked = false;
       document.getElementById("ingredientCategory").value = "";
@@ -755,7 +764,7 @@
       document.getElementById("categoryId").value = cat.id;
       document.getElementById("displayName").value = cat.display_name;
       document.getElementById("slug").value = cat.slug;
-      document.getElementById("aliases").value = cat.aliases || "";
+      setTags(aliasesContainerEl, aliasesInputEl, cat.aliases || []);
       document.getElementById("promptSuffix").value = cat.prompt_suffix || "";
       document.getElementById("loadsFromIngredients").checked = cat.loads_from_ingredients;
       document.getElementById("ingredientCategory").value = cat.ingredient_category || "";
@@ -781,10 +790,11 @@
     // Save category (create or update)
     async function saveCategory() {
       const saveBtn = document.getElementById("saveBtn");
+      const aliasValues = getTagValues(aliasesContainerEl);
       const payload = {
         display_name: document.getElementById("displayName").value.trim(),
         slug: document.getElementById("slug").value.trim().toLowerCase(),
-        aliases: document.getElementById("aliases").value.trim() || null,
+        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
         prompt_suffix: document.getElementById("promptSuffix").value.trim() || null,
         loads_from_ingredients: document.getElementById("loadsFromIngredients").checked,
         ingredient_category: document.getElementById("loadsFromIngredients").checked

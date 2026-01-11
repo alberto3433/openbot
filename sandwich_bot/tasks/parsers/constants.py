@@ -954,10 +954,11 @@ def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
 
 def get_by_pound_category_names() -> dict[str, str]:
     """
-    Get by-the-pound category display names from database.
+    Get by-the-pound category display names from ItemType table.
 
     Returns a dict mapping category slugs (cheese, cold_cut, fish, salad, spread)
-    to human-readable display names (cheeses, cold cuts, smoked fish, salads, spreads).
+    to human-readable display names (cheeses, cold cuts, smoked fish, salads, spreads)
+    using ItemType.display_name_plural.
 
     Returns:
         Dict mapping category slug -> display name.

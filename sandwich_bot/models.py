@@ -575,9 +575,8 @@ class MenuItem(Base):
     # Abbreviation for text expansion (e.g., "oj" expands to "orange juice" before parsing)
     abbreviation = Column(String, nullable=True)
 
-    # By-the-pound category for items sold by weight
-    # Values: 'fish', 'spread', 'cheese', 'cold_cut', 'salad'
-    by_pound_category = Column(String, nullable=True)
+    # Note: by_pound_category column removed - by-pound items now use item_type_id
+    # to point to ItemType entries (cheese, cold_cut, fish, salad, spread)
 
     # Classifier for sub-category grouping (e.g., 'muffin', 'cookie', 'omelette')
     # Enables filtering like "what muffins do you have?" without hardcoded lists

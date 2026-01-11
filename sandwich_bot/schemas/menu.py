@@ -54,7 +54,7 @@ Usage:
     new_item = MenuItemOut.model_validate(db_item)
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -94,6 +94,23 @@ class MenuItemOut(BaseModel):
     required_match_phrases: Optional[str] = None
 
 
+class MenuItemAttributeValueInput(BaseModel):
+    """
+    Input model for setting a single attribute value.
+
+    Set the appropriate value field based on the attribute's input_type:
+    - single_select: set option_id
+    - multi_select: set selected_option_ids
+    - boolean: set value_boolean
+    - text: set value_text
+    """
+    option_id: Optional[int] = None
+    selected_option_ids: Optional[List[int]] = None
+    value_boolean: Optional[bool] = None
+    value_text: Optional[str] = None
+    still_ask: Optional[bool] = None
+
+
 class MenuItemCreate(BaseModel):
     """
     Request model for creating a new menu item.
@@ -110,6 +127,7 @@ class MenuItemCreate(BaseModel):
         item_type_id: Link to ItemType for configuration (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
+        attributes: Attribute values keyed by slug (optional, requires item_type_id)
 
     Example:
         {
@@ -117,9 +135,11 @@ class MenuItemCreate(BaseModel):
             "category": "sandwiches",
             "is_signature": true,
             "base_price": 10.99,
-            "metadata": {
-                "description": "Fresh vegetables on your choice of bread",
-                "vegetarian": true
+            "item_type_id": 3,
+            "attributes": {
+                "bread": {"option_id": 5, "still_ask": true},
+                "protein": {"option_id": 12},
+                "toppings": {"selected_option_ids": [20, 21]}
             }
         }
     """
@@ -134,6 +154,7 @@ class MenuItemCreate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
+    attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -153,6 +174,7 @@ class MenuItemUpdate(BaseModel):
         item_type_id: Change linked ItemType (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
+        attributes: Update attribute values keyed by slug (optional)
 
     Example:
         # Update only the price
@@ -161,8 +183,8 @@ class MenuItemUpdate(BaseModel):
         # Update multiple fields
         {"name": "Super Veggie Delight", "base_price": 12.99}
 
-        # Add aliases for matching
-        {"aliases": "veggie, veg delight"}
+        # Update attributes
+        {"attributes": {"bread": {"option_id": 5}, "toasted": {"value_boolean": true}}}
     """
     name: Optional[str] = None
     description: Optional[str] = None
@@ -175,3 +197,4 @@ class MenuItemUpdate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
+    attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None

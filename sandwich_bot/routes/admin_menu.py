@@ -141,6 +141,110 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     )
 
 
+def _set_menu_item_attributes(
+    db: Session,
+    item: MenuItem,
+    attributes: dict,
+) -> None:
+    """
+    Set attribute values for a menu item using relational tables.
+
+    Creates/updates MenuItemAttributeValue records for single-select, boolean, text.
+    Creates MenuItemAttributeSelection records for multi-select.
+
+    Args:
+        db: Database session
+        item: The menu item to set attributes for
+        attributes: Dict of attribute slug -> value data
+
+    Raises:
+        HTTPException: If item has no item_type_id
+    """
+    if not item.item_type_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Menu item has no item type - cannot set attributes"
+        )
+
+    # Get all attributes for this item type
+    attrs = (
+        db.query(ItemTypeAttribute)
+        .filter(ItemTypeAttribute.item_type_id == item.item_type_id)
+        .all()
+    )
+    attrs_by_slug = {a.slug: a for a in attrs}
+
+    # Process each attribute update
+    for slug, update in attributes.items():
+        attr = attrs_by_slug.get(slug)
+        if not attr:
+            logger.warning(
+                "Ignoring unknown attribute '%s' for menu item %d",
+                slug, item.id
+            )
+            continue
+
+        # Get or create the value record
+        value = (
+            db.query(MenuItemAttributeValue)
+            .filter(
+                MenuItemAttributeValue.menu_item_id == item.id,
+                MenuItemAttributeValue.attribute_id == attr.id
+            )
+            .first()
+        )
+
+        if not value:
+            value = MenuItemAttributeValue(
+                menu_item_id=item.id,
+                attribute_id=attr.id,
+            )
+            db.add(value)
+
+        # Update based on input type
+        if attr.input_type == "single_select":
+            if update.option_id is not None:
+                value.option_id = update.option_id
+                value.value_boolean = None
+                value.value_text = None
+        elif attr.input_type == "boolean":
+            if update.value_boolean is not None:
+                value.value_boolean = update.value_boolean
+                value.option_id = None
+                value.value_text = None
+        elif attr.input_type == "text":
+            if update.value_text is not None:
+                value.value_text = update.value_text
+                value.option_id = None
+                value.value_boolean = None
+        elif attr.input_type == "multi_select":
+            # Handle multi-select: update the selections table
+            if update.selected_option_ids is not None:
+                # Delete existing selections
+                db.query(MenuItemAttributeSelection).filter(
+                    MenuItemAttributeSelection.menu_item_id == item.id,
+                    MenuItemAttributeSelection.attribute_id == attr.id
+                ).delete()
+
+                # Create new selections
+                for opt_id in update.selected_option_ids:
+                    selection = MenuItemAttributeSelection(
+                        menu_item_id=item.id,
+                        attribute_id=attr.id,
+                        option_id=opt_id,
+                    )
+                    db.add(selection)
+
+        # Update still_ask if provided
+        if update.still_ask is not None:
+            value.still_ask = update.still_ask
+
+    logger.info(
+        "Set attributes for menu item %s (id=%d): %s",
+        item.name, item.id, list(attributes.keys())
+    )
+
+
 # =============================================================================
 # Menu Endpoints
 # =============================================================================
@@ -161,7 +265,16 @@ def create_menu_item(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> MenuItemOut:
-    """Create a new menu item. Requires admin authentication."""
+    """
+    Create a new menu item. Requires admin authentication.
+
+    Supports two ways to set default attribute values:
+    1. Legacy: Pass as JSON in 'metadata.default_config'
+    2. Form-based: Pass in 'attributes' dict with relational storage
+
+    If 'attributes' is provided and item_type_id is set, creates relational
+    records in menu_item_attribute_values and menu_item_attribute_selections.
+    """
     item = MenuItem(
         name=payload.name,
         description=payload.description,
@@ -179,6 +292,10 @@ def create_menu_item(
 
     # Add aliases through child table
     _set_menu_item_aliases(db, item, payload.aliases)
+
+    # Add attribute values if provided (form-based relational storage)
+    if payload.attributes and payload.item_type_id:
+        _set_menu_item_attributes(db, item, payload.attributes)
 
     db.commit()
     db.refresh(item)
@@ -233,6 +350,10 @@ def update_menu_item(
         item.abbreviation = payload.abbreviation
     if payload.required_match_phrases is not None:
         item.required_match_phrases = payload.required_match_phrases
+
+    # Update attribute values if provided (form-based relational storage)
+    if payload.attributes is not None:
+        _set_menu_item_attributes(db, item, payload.attributes)
 
     db.commit()
     db.refresh(item)

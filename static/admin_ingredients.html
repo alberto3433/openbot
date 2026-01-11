@@ -394,6 +394,53 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    /* Tag Input Styles */
+    .tag-input-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      min-height: 40px;
+      align-items: center;
+      cursor: text;
+    }
+    .tag-input-container:focus-within {
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .tag-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 12px;
+      font-size: 12px;
+      color: #1565c0;
+    }
+    .tag-item .tag-remove {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #1976d2;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .tag-item .tag-remove:hover {
+      color: #d32f2f;
+    }
+    .tag-input {
+      flex: 1;
+      min-width: 120px;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      padding: 4px 0;
+    }
   </style>
 </head>
 <body>
@@ -512,14 +559,18 @@
           <input type="text" id="editIngredientUnit" placeholder="e.g., piece, slice, oz" />
         </div>
         <div class="form-group">
-          <label for="editIngredientAliases">Aliases (synonyms for matching)</label>
-          <input type="text" id="editIngredientAliases" placeholder="e.g., swiss, swisscheese" />
-          <small>Comma-separated alternative names that customers might use when ordering</small>
+          <label>Aliases (synonyms for matching)</label>
+          <div class="tag-input-container" id="editAliasesContainer" onclick="document.getElementById('editAliasInput').focus()">
+            <input id="editAliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
+          <small>Alternative names that customers might use when ordering (press Enter to add each one)</small>
         </div>
         <div class="form-group">
-          <label for="editIngredientMustMatch">Must Match (required strings)</label>
-          <input type="text" id="editIngredientMustMatch" placeholder="e.g., Gluten Free Everything, GF Everything" />
-          <small>Comma-separated strings - at least one must be in input for this to match. Use for disambiguation (e.g., "GF Everything" prevents matching on just "everything")</small>
+          <label>Must Match (required strings)</label>
+          <div class="tag-input-container" id="editMustMatchContainer" onclick="document.getElementById('editMustMatchInput').focus()">
+            <input id="editMustMatchInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
+          <small>At least one must be in input for this to match. Use for disambiguation (e.g., "GF Everything" prevents matching on just "everything")</small>
         </div>
       </div>
       <div class="modal-footer">
@@ -605,8 +656,76 @@
     const editNameEl = document.getElementById("editIngredientName");
     const editCategoryEl = document.getElementById("editIngredientCategory");
     const editUnitEl = document.getElementById("editIngredientUnit");
-    const editAliasesEl = document.getElementById("editIngredientAliases");
-    const editMustMatchEl = document.getElementById("editIngredientMustMatch");
+
+    // Tag input elements
+    const editAliasesContainerEl = document.getElementById("editAliasesContainer");
+    const editAliasInputEl = document.getElementById("editAliasInput");
+    const editMustMatchContainerEl = document.getElementById("editMustMatchContainer");
+    const editMustMatchInputEl = document.getElementById("editMustMatchInput");
+
+    // Tag input helper functions
+    function createTagElement(text, container, inputEl) {
+      const tag = document.createElement("span");
+      tag.className = "tag-item";
+      tag.innerHTML = `<span class="tag-text">${escapeHtml(text)}</span><span class="tag-remove">&times;</span>`;
+      tag.querySelector(".tag-remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        tag.remove();
+      });
+      container.insertBefore(tag, inputEl);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function getTagValues(container) {
+      return Array.from(container.querySelectorAll(".tag-text")).map(el => el.textContent);
+    }
+
+    function clearTags(container, inputEl) {
+      container.querySelectorAll(".tag-item").forEach(tag => tag.remove());
+      inputEl.value = "";
+    }
+
+    function setTags(container, inputEl, values) {
+      clearTags(container, inputEl);
+      if (Array.isArray(values)) {
+        values.forEach(v => createTagElement(v, container, inputEl));
+      } else if (typeof values === "string" && values.trim()) {
+        values.split(",").map(s => s.trim()).filter(Boolean).forEach(v => createTagElement(v, container, inputEl));
+      }
+    }
+
+    function setupTagInput(inputEl, container) {
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === ",") {
+          e.preventDefault();
+          const value = inputEl.value.trim();
+          if (value) {
+            createTagElement(value, container, inputEl);
+            inputEl.value = "";
+          }
+        } else if (e.key === "Backspace" && !inputEl.value) {
+          const tags = container.querySelectorAll(".tag-item");
+          if (tags.length > 0) {
+            tags[tags.length - 1].remove();
+          }
+        }
+      });
+      inputEl.addEventListener("blur", () => {
+        const value = inputEl.value.trim();
+        if (value) {
+          createTagElement(value, container, inputEl);
+          inputEl.value = "";
+        }
+      });
+    }
+
+    setupTagInput(editAliasInputEl, editAliasesContainerEl);
+    setupTagInput(editMustMatchInputEl, editMustMatchContainerEl);
 
     // Store name mapping - loaded dynamically from API
     let STORE_NAMES = {};
@@ -823,8 +942,8 @@
       editNameEl.value = ingredient.name;
       editCategoryEl.value = ingredient.category;
       editUnitEl.value = ingredient.unit || "";
-      editAliasesEl.value = ingredient.aliases || "";
-      editMustMatchEl.value = ingredient.must_match || "";
+      setTags(editAliasesContainerEl, editAliasInputEl, ingredient.aliases || []);
+      setTags(editMustMatchContainerEl, editMustMatchInputEl, ingredient.must_match || []);
 
       editModal.classList.add("active");
     }
@@ -835,8 +954,8 @@
       editNameEl.value = "";
       editCategoryEl.value = "bread";
       editUnitEl.value = "";
-      editAliasesEl.value = "";
-      editMustMatchEl.value = "";
+      clearTags(editAliasesContainerEl, editAliasInputEl);
+      clearTags(editMustMatchContainerEl, editMustMatchInputEl);
     }
 
     async function saveIngredient() {
@@ -848,12 +967,16 @@
         return;
       }
 
+      // Get tag values as comma-separated strings for API
+      const aliasValues = getTagValues(editAliasesContainerEl);
+      const mustMatchValues = getTagValues(editMustMatchContainerEl);
+
       const payload = {
         name: editNameEl.value.trim(),
         category: editCategoryEl.value,
         unit: editUnitEl.value.trim(),
-        aliases: editAliasesEl.value.trim() || null,
-        must_match: editMustMatchEl.value.trim() || null
+        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
+        must_match: mustMatchValues.length > 0 ? mustMatchValues.join(",") : null
       };
 
       if (!payload.name || !payload.unit) {

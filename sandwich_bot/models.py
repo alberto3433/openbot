@@ -48,7 +48,6 @@ class ItemType(Base):
     is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
 
     # Relationships
-    attribute_definitions = relationship("AttributeDefinition", back_populates="item_type", cascade="all, delete-orphan")
     menu_items = relationship("MenuItem", back_populates="item_type")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
     type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
@@ -157,49 +156,9 @@ class ModifierCategoryAlias(Base):
     modifier_category = relationship("ModifierCategory", back_populates="alias_records")
 
 
-class AttributeDefinition(Base):
-    """
-    Defines a customizable attribute for an item type.
-
-    Examples for sandwich: bread, size, protein, cheese, toppings, sauces, toasted
-    Examples for pizza: size, crust, sauce, toppings
-    """
-    __tablename__ = "attribute_definitions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    slug = Column(String, nullable=False)  # e.g., "bread", "protein", "toppings"
-    display_name = Column(String, nullable=False)  # e.g., "Bread", "Protein", "Toppings"
-
-    # Input type determines UI and validation
-    # "single_select": Pick exactly one (e.g., bread type)
-    # "multi_select": Pick multiple (e.g., toppings)
-    # "boolean": Yes/no (e.g., toasted)
-    input_type = Column(String, nullable=False, default="single_select")
-
-    # Validation rules
-    is_required = Column(Boolean, nullable=False, default=True)  # Must be specified
-    allow_none = Column(Boolean, nullable=False, default=False)  # Can select "none" option
-    min_selections = Column(Integer, nullable=True)  # For multi_select: minimum selections
-    max_selections = Column(Integer, nullable=True)  # For multi_select: maximum selections
-
-    # Display order (lower = shown first)
-    display_order = Column(Integer, nullable=False, default=0)
-
-    # Unique constraint: one definition per slug per item type
-    __table_args__ = (
-        UniqueConstraint("item_type_id", "slug", name="uix_item_type_attr_slug"),
-    )
-
-    # Relationships
-    item_type = relationship("ItemType", back_populates="attribute_definitions")
-    options = relationship("AttributeOption", back_populates="attribute_definition", cascade="all, delete-orphan")
-
-
 class AttributeOption(Base):
     """
-    An available option for an attribute definition.
+    An available option for an item type attribute.
 
     Examples for bread attribute: white, wheat, italian, wrap
     Examples for toppings attribute: lettuce, tomato, onion, pickle
@@ -207,10 +166,8 @@ class AttributeOption(Base):
     __tablename__ = "attribute_options"
 
     id = Column(Integer, primary_key=True, index=True)
-    # Legacy FK - nullable during transition to item_type_attributes
-    attribute_definition_id = Column(Integer, ForeignKey("attribute_definitions.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    # New FK to consolidated item_type_attributes (primary FK going forward)
+    # FK to consolidated item_type_attributes
     item_type_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=True, index=True)
 
     slug = Column(String, nullable=False)  # e.g., "white", "wheat", "lettuce"
@@ -224,13 +181,7 @@ class AttributeOption(Base):
     # Display order (lower = shown first)
     display_order = Column(Integer, nullable=False, default=0)
 
-    # Unique constraint: one option per slug per attribute definition
-    __table_args__ = (
-        UniqueConstraint("attribute_definition_id", "slug", name="uix_attr_def_option_slug"),
-    )
-
     # Relationships
-    attribute_definition = relationship("AttributeDefinition", back_populates="options")
     item_type_attribute = relationship("ItemTypeAttribute")
     ingredient_links = relationship("AttributeOptionIngredient", back_populates="attribute_option", cascade="all, delete-orphan")
 
@@ -615,10 +566,6 @@ class MenuItem(Base):
     # Link to generic item type system (optional - for migration compatibility)
     item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)
     item_type = relationship("ItemType", back_populates="menu_items")
-
-    # Default configuration for this menu item (JSON)
-    # e.g., {"bread": "italian", "protein": "turkey", "cheese": "provolone", "toasted": true}
-    default_config = Column(JSON, nullable=True)
 
     # Required match phrases for search filtering (comma-separated)
     # If set, user input must contain at least ONE of these phrases for a match

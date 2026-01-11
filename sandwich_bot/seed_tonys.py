@@ -14,7 +14,7 @@ from sandwich_bot.models import (
     MenuItem,
     Ingredient,
     ItemType,
-    AttributeDefinition,
+    ItemTypeAttribute,
     AttributeOption,
     AttributeOptionIngredient,
     Company,
@@ -143,7 +143,7 @@ def seed_item_types():
 
         # Create attribute definitions for pizza
         attr_defs = [
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=pizza_type.id,
                 slug="size",
                 display_name="Size",
@@ -152,7 +152,7 @@ def seed_item_types():
                 allow_none=False,
                 display_order=1,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=pizza_type.id,
                 slug="crust",
                 display_name="Crust",
@@ -161,7 +161,7 @@ def seed_item_types():
                 allow_none=False,
                 display_order=2,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=pizza_type.id,
                 slug="sauce",
                 display_name="Sauce",
@@ -170,7 +170,7 @@ def seed_item_types():
                 allow_none=True,
                 display_order=3,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=pizza_type.id,
                 slug="cheese",
                 display_name="Cheese",
@@ -179,7 +179,7 @@ def seed_item_types():
                 allow_none=True,
                 display_order=4,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=pizza_type.id,
                 slug="toppings",
                 display_name="Toppings",
@@ -195,31 +195,31 @@ def seed_item_types():
         db.flush()
 
         # Get attribute definitions
-        size_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == pizza_type.id,
-            AttributeDefinition.slug == "size"
+        size_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == pizza_type.id,
+            ItemTypeAttribute.slug == "size"
         ).first()
-        crust_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == pizza_type.id,
-            AttributeDefinition.slug == "crust"
+        crust_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == pizza_type.id,
+            ItemTypeAttribute.slug == "crust"
         ).first()
-        sauce_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == pizza_type.id,
-            AttributeDefinition.slug == "sauce"
+        sauce_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == pizza_type.id,
+            ItemTypeAttribute.slug == "sauce"
         ).first()
-        cheese_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == pizza_type.id,
-            AttributeDefinition.slug == "cheese"
+        cheese_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == pizza_type.id,
+            ItemTypeAttribute.slug == "cheese"
         ).first()
-        toppings_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == pizza_type.id,
-            AttributeDefinition.slug == "toppings"
+        toppings_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == pizza_type.id,
+            ItemTypeAttribute.slug == "toppings"
         ).first()
 
         # Create size options (no ingredient link needed)
         size_options = [
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="small",
                 display_name="Small (10\")",
                 price_modifier=0.0,
@@ -227,7 +227,7 @@ def seed_item_types():
                 display_order=1,
             ),
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="medium",
                 display_name="Medium (12\")",
                 price_modifier=3.00,
@@ -235,7 +235,7 @@ def seed_item_types():
                 display_order=2,
             ),
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="large",
                 display_name="Large (14\")",
                 price_modifier=6.00,
@@ -243,7 +243,7 @@ def seed_item_types():
                 display_order=3,
             ),
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="xlarge",
                 display_name="X-Large (16\")",
                 price_modifier=9.00,
@@ -257,7 +257,7 @@ def seed_item_types():
         def create_option_with_ingredient(attr_def_id, ingredient, display_order, is_default=False):
             slug = ingredient.name.lower().replace(" ", "_").replace("-", "_")
             option = AttributeOption(
-                attribute_definition_id=attr_def_id,
+                item_type_attribute_id=attr_def_id,
                 slug=slug,
                 display_name=ingredient.name,
                 price_modifier=ingredient.base_price,
@@ -286,7 +286,7 @@ def seed_item_types():
 
         # Create sauce options (with "none" option)
         none_sauce = AttributeOption(
-            attribute_definition_id=sauce_def.id,
+            item_type_attribute_id=sauce_def.id,
             slug="none",
             display_name="No Sauce",
             price_modifier=0.0,
@@ -299,7 +299,7 @@ def seed_item_types():
 
         # Create cheese options (with "none" option)
         none_cheese = AttributeOption(
-            attribute_definition_id=cheese_def.id,
+            item_type_attribute_id=cheese_def.id,
             slug="none",
             display_name="No Cheese",
             price_modifier=0.0,
@@ -346,13 +346,13 @@ def seed_menu():
                 base_price=12.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Thin Crust",
                     "sauce": "Marinara",
                     "cheese": "Mozzarella",
                     "toppings": ["Fresh Tomatoes", "Fresh Basil"],
-                },
+                }}),
             ),
             MenuItem(
                 name="Pepperoni",
@@ -361,13 +361,13 @@ def seed_menu():
                 base_price=13.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Hand Tossed",
                     "sauce": "Marinara",
                     "cheese": "Mozzarella",
                     "toppings": ["Pepperoni"],
-                },
+                }}),
             ),
             MenuItem(
                 name="Supreme",
@@ -376,13 +376,13 @@ def seed_menu():
                 base_price=16.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Hand Tossed",
                     "sauce": "Marinara",
                     "cheese": "Mozzarella",
                     "toppings": ["Pepperoni", "Italian Sausage", "Mushrooms", "Bell Peppers", "Onions", "Black Olives"],
-                },
+                }}),
             ),
             MenuItem(
                 name="Meat Lovers",
@@ -391,13 +391,13 @@ def seed_menu():
                 base_price=17.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Hand Tossed",
                     "sauce": "Marinara",
                     "cheese": "Extra Mozzarella",
                     "toppings": ["Pepperoni", "Italian Sausage", "Bacon", "Ham", "Meatballs"],
-                },
+                }}),
             ),
             MenuItem(
                 name="BBQ Chicken",
@@ -406,13 +406,13 @@ def seed_menu():
                 base_price=15.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Hand Tossed",
                     "sauce": "BBQ",
                     "cheese": "Mozzarella",
                     "toppings": ["Grilled Chicken", "Onions", "Bacon"],
-                },
+                }}),
             ),
             MenuItem(
                 name="Veggie Garden",
@@ -421,13 +421,13 @@ def seed_menu():
                 base_price=14.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Thin Crust",
                     "sauce": "Marinara",
                     "cheese": "Mozzarella",
                     "toppings": ["Mushrooms", "Bell Peppers", "Onions", "Black Olives", "Fresh Tomatoes", "Spinach"],
-                },
+                }}),
             ),
             MenuItem(
                 name="White Pizza",
@@ -436,13 +436,13 @@ def seed_menu():
                 base_price=14.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Thin Crust",
                     "sauce": "White Garlic",
                     "cheese": "Ricotta",
                     "toppings": ["Spinach", "Roasted Garlic", "Fresh Tomatoes"],
-                },
+                }}),
             ),
             MenuItem(
                 name="Hawaiian",
@@ -451,13 +451,13 @@ def seed_menu():
                 base_price=14.99,
                 available_qty=50,
                 item_type_id=pizza_type.id if pizza_type else None,
-                default_config={
+                extra_metadata=json.dumps({"default_config": {
                     "size": "Medium (12\")",
                     "crust": "Hand Tossed",
                     "sauce": "Marinara",
                     "cheese": "Mozzarella",
                     "toppings": ["Ham", "Pineapple"],
-                },
+                }}),
             ),
             # Build Your Own Pizza
             MenuItem(

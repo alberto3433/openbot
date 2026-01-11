@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     ItemType,
-    AttributeDefinition,
+    ItemTypeAttribute,
     AttributeOption,
 )
 
@@ -22,13 +22,13 @@ def get_item_type_by_slug(db: Session, slug: str) -> Optional[ItemType]:
     return db.query(ItemType).filter(ItemType.slug == slug).first()
 
 
-def get_attribute_definitions(
+def get_type_attributes(
     db: Session,
     item_type_id: int,
     include_options: bool = True
 ) -> List[Dict[str, Any]]:
     """
-    Get attribute definitions for an item type.
+    Get type attributes for an item type.
 
     Args:
         db: Database session
@@ -36,32 +36,32 @@ def get_attribute_definitions(
         include_options: Whether to include options for each attribute
 
     Returns:
-        List of attribute definition dicts with optional options
+        List of attribute dicts with optional options
     """
-    attr_defs = (
-        db.query(AttributeDefinition)
-        .filter(AttributeDefinition.item_type_id == item_type_id)
-        .order_by(AttributeDefinition.display_order)
+    attrs = (
+        db.query(ItemTypeAttribute)
+        .filter(ItemTypeAttribute.item_type_id == item_type_id)
+        .order_by(ItemTypeAttribute.display_order)
         .all()
     )
 
     result = []
-    for ad in attr_defs:
+    for attr in attrs:
         attr_dict = {
-            "id": ad.id,
-            "slug": ad.slug,
-            "display_name": ad.display_name,
-            "input_type": ad.input_type,
-            "is_required": ad.is_required,
-            "allow_none": ad.allow_none,
-            "min_selections": ad.min_selections,
-            "max_selections": ad.max_selections,
+            "id": attr.id,
+            "slug": attr.slug,
+            "display_name": attr.display_name,
+            "input_type": attr.input_type,
+            "is_required": attr.is_required,
+            "allow_none": attr.allow_none,
+            "min_selections": attr.min_selections,
+            "max_selections": attr.max_selections,
         }
 
         if include_options:
             options = (
                 db.query(AttributeOption)
-                .filter(AttributeOption.attribute_definition_id == ad.id)
+                .filter(AttributeOption.item_type_attribute_id == attr.id)
                 .order_by(AttributeOption.display_order)
                 .all()
             )
@@ -79,6 +79,20 @@ def get_attribute_definitions(
         result.append(attr_dict)
 
     return result
+
+
+# Backward compatibility alias
+def get_attribute_definitions(
+    db: Session,
+    item_type_id: int,
+    include_options: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Get attribute definitions for an item type.
+
+    Deprecated: Use get_type_attributes instead.
+    """
+    return get_type_attributes(db, item_type_id, include_options)
 
 
 def get_attribute_option_price(
@@ -104,27 +118,27 @@ def get_attribute_option_price(
     if not item_type:
         return 0.0
 
-    # Get the attribute definition
-    attr_def = (
-        db.query(AttributeDefinition)
+    # Get the type attribute
+    attr = (
+        db.query(ItemTypeAttribute)
         .filter(
-            AttributeDefinition.item_type_id == item_type.id,
-            AttributeDefinition.slug == attribute_slug
+            ItemTypeAttribute.item_type_id == item_type.id,
+            ItemTypeAttribute.slug == attribute_slug
         )
         .first()
     )
-    if not attr_def:
+    if not attr:
         return 0.0
 
     # Get the option by display_name or slug (case-insensitive)
     option_lower = option_value.lower() if option_value else ""
-    option = (
+    options = (
         db.query(AttributeOption)
-        .filter(AttributeOption.attribute_definition_id == attr_def.id)
+        .filter(AttributeOption.item_type_attribute_id == attr.id)
         .all()
     )
 
-    for opt in option:
+    for opt in options:
         if opt.display_name.lower() == option_lower or opt.slug.lower() == option_lower:
             return opt.price_modifier
 
@@ -159,35 +173,35 @@ def calculate_item_price_from_config(
     if not item_type:
         return base_price
 
-    # Get all attribute definitions for this item type
-    attr_defs = (
-        db.query(AttributeDefinition)
-        .filter(AttributeDefinition.item_type_id == item_type.id)
+    # Get all type attributes for this item type
+    attrs = (
+        db.query(ItemTypeAttribute)
+        .filter(ItemTypeAttribute.item_type_id == item_type.id)
         .all()
     )
 
-    attr_def_map = {ad.slug: ad for ad in attr_defs}
+    attr_map = {a.slug: a for a in attrs}
 
     # Calculate modifiers for each attribute in the config
     for attr_slug, value in item_config.items():
-        if attr_slug not in attr_def_map:
+        if attr_slug not in attr_map:
             continue
 
-        attr_def = attr_def_map[attr_slug]
+        attr = attr_map[attr_slug]
 
         # Handle different input types
-        if attr_def.input_type == "single_select":
+        if attr.input_type == "single_select":
             # Single value
             if value and value != "none":
                 total += get_attribute_option_price(db, item_type_slug, attr_slug, value)
 
-        elif attr_def.input_type == "multi_select":
+        elif attr.input_type == "multi_select":
             # List of values
             if isinstance(value, list):
                 for v in value:
                     total += get_attribute_option_price(db, item_type_slug, attr_slug, v)
 
-        elif attr_def.input_type == "boolean":
+        elif attr.input_type == "boolean":
             # Boolean doesn't typically have price modifiers
             pass
 
@@ -216,7 +230,7 @@ def build_item_type_menu_data(db: Session, item_type_slug: str) -> Dict[str, Any
         "slug": item_type.slug,
         "display_name": item_type.display_name,
         "is_configurable": item_type.is_configurable,
-        "attributes": get_attribute_definitions(db, item_type.id, include_options=True),
+        "attributes": get_type_attributes(db, item_type.id, include_options=True),
     }
 
 
@@ -242,21 +256,21 @@ def get_available_options_for_attribute(
     if not item_type:
         return []
 
-    attr_def = (
-        db.query(AttributeDefinition)
+    attr = (
+        db.query(ItemTypeAttribute)
         .filter(
-            AttributeDefinition.item_type_id == item_type.id,
-            AttributeDefinition.slug == attribute_slug
+            ItemTypeAttribute.item_type_id == item_type.id,
+            ItemTypeAttribute.slug == attribute_slug
         )
         .first()
     )
-    if not attr_def:
+    if not attr:
         return []
 
     options = (
         db.query(AttributeOption)
         .filter(
-            AttributeOption.attribute_definition_id == attr_def.id,
+            AttributeOption.item_type_attribute_id == attr.id,
             AttributeOption.is_available == True
         )
         .order_by(AttributeOption.display_order)

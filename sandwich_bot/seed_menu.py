@@ -4,7 +4,7 @@ from sandwich_bot.models import (
     MenuItem,
     Ingredient,
     ItemType,
-    AttributeDefinition,
+    ItemTypeAttribute,
     AttributeOption,
     AttributeOptionIngredient,
 )
@@ -294,7 +294,7 @@ def seed_item_types():
 
         # Create attribute definitions for sandwich
         attr_defs = [
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="size",
                 display_name="Size",
@@ -303,7 +303,7 @@ def seed_item_types():
                 allow_none=False,
                 display_order=1,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="bread",
                 display_name="Bread",
@@ -312,7 +312,7 @@ def seed_item_types():
                 allow_none=False,
                 display_order=2,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="protein",
                 display_name="Protein",
@@ -321,7 +321,7 @@ def seed_item_types():
                 allow_none=True,  # Can have no protein (veggie)
                 display_order=3,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="cheese",
                 display_name="Cheese",
@@ -330,7 +330,7 @@ def seed_item_types():
                 allow_none=True,  # Can have no cheese
                 display_order=4,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="toppings",
                 display_name="Toppings",
@@ -341,7 +341,7 @@ def seed_item_types():
                 max_selections=10,
                 display_order=5,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="sauces",
                 display_name="Sauces",
@@ -352,7 +352,7 @@ def seed_item_types():
                 max_selections=5,
                 display_order=6,
             ),
-            AttributeDefinition(
+            ItemTypeAttribute(
                 item_type_id=sandwich_type.id,
                 slug="toasted",
                 display_name="Toasted",
@@ -366,39 +366,39 @@ def seed_item_types():
         db.flush()
 
         # Get attribute definitions for option creation
-        size_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "size"
+        size_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "size"
         ).first()
-        bread_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "bread"
+        bread_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "bread"
         ).first()
-        protein_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "protein"
+        protein_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "protein"
         ).first()
-        cheese_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "cheese"
+        cheese_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "cheese"
         ).first()
-        toppings_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "toppings"
+        toppings_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "toppings"
         ).first()
-        sauces_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "sauces"
+        sauces_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "sauces"
         ).first()
-        toasted_def = db.query(AttributeDefinition).filter(
-            AttributeDefinition.item_type_id == sandwich_type.id,
-            AttributeDefinition.slug == "toasted"
+        toasted_def = db.query(ItemTypeAttribute).filter(
+            ItemTypeAttribute.item_type_id == sandwich_type.id,
+            ItemTypeAttribute.slug == "toasted"
         ).first()
 
         # Create size options (no ingredient link needed)
         size_options = [
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="6inch",
                 display_name='6"',
                 price_modifier=0.0,
@@ -406,7 +406,7 @@ def seed_item_types():
                 display_order=1,
             ),
             AttributeOption(
-                attribute_definition_id=size_def.id,
+                item_type_attribute_id=size_def.id,
                 slug="12inch",
                 display_name='12"',
                 price_modifier=4.00,
@@ -419,7 +419,7 @@ def seed_item_types():
         # Create toasted options (no ingredient link needed)
         toasted_options = [
             AttributeOption(
-                attribute_definition_id=toasted_def.id,
+                item_type_attribute_id=toasted_def.id,
                 slug="yes",
                 display_name="Yes",
                 price_modifier=0.0,
@@ -427,7 +427,7 @@ def seed_item_types():
                 display_order=1,
             ),
             AttributeOption(
-                attribute_definition_id=toasted_def.id,
+                item_type_attribute_id=toasted_def.id,
                 slug="no",
                 display_name="No",
                 price_modifier=0.0,
@@ -449,7 +449,7 @@ def seed_item_types():
         def create_option_with_ingredient(attr_def_id, ingredient, display_order, is_default=False):
             slug = ingredient.name.lower().replace(" ", "_").replace("&", "and")
             option = AttributeOption(
-                attribute_definition_id=attr_def_id,
+                item_type_attribute_id=attr_def_id,
                 slug=slug,
                 display_name=ingredient.name,
                 price_modifier=ingredient.base_price,
@@ -473,7 +473,7 @@ def seed_item_types():
 
         # Create protein options (with "none" option)
         none_protein = AttributeOption(
-            attribute_definition_id=protein_def.id,
+            item_type_attribute_id=protein_def.id,
             slug="none",
             display_name="No Protein",
             price_modifier=0.0,
@@ -486,7 +486,7 @@ def seed_item_types():
 
         # Create cheese options (with "none" option)
         none_cheese = AttributeOption(
-            attribute_definition_id=cheese_def.id,
+            item_type_attribute_id=cheese_def.id,
             slug="none",
             display_name="No Cheese",
             price_modifier=0.0,

@@ -14,7 +14,7 @@ import json
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-from .models import Company, ItemType, AttributeDefinition, AttributeOption
+from .models import Company, ItemType, ItemTypeAttribute, AttributeOption
 from .services.item_type_helpers import has_linked_attributes
 
 
@@ -343,9 +343,9 @@ def build_item_types_prompt_section(db: Session) -> str:
 
         # Get attributes for this item type
         attr_defs = (
-            db.query(AttributeDefinition)
-            .filter(AttributeDefinition.item_type_id == item_type.id)
-            .order_by(AttributeDefinition.display_order)
+            db.query(ItemTypeAttribute)
+            .filter(ItemTypeAttribute.item_type_id == item_type.id)
+            .order_by(ItemTypeAttribute.display_order)
             .all()
         )
 
@@ -354,7 +354,7 @@ def build_item_types_prompt_section(db: Session) -> str:
             options = (
                 db.query(AttributeOption)
                 .filter(
-                    AttributeOption.attribute_definition_id == ad.id,
+                    AttributeOption.item_type_attribute_id == ad.id,
                     AttributeOption.is_available == True
                 )
                 .order_by(AttributeOption.display_order)

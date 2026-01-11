@@ -183,104 +183,6 @@ class AttributeOptionUpdate(BaseModel):
 
 
 # =============================================================================
-# Attribute Definition Schemas
-# =============================================================================
-
-class AttributeDefinitionOut(BaseModel):
-    """
-    Response model for an attribute definition.
-
-    Attributes define configurable aspects of an item type
-    (e.g., "Size", "Bread", "Toppings").
-
-    Attributes:
-        id: Database primary key
-        slug: URL-safe identifier (e.g., "size")
-        display_name: Human-readable name (e.g., "Size")
-        input_type: How user selects (single_select, multi_select)
-        is_required: Whether selection is mandatory
-        allow_none: Whether "none" is a valid choice
-        min_selections: Minimum selections for multi_select
-        max_selections: Maximum selections for multi_select
-        display_order: Sort order for display
-        options: List of available options
-    """
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    slug: str
-    display_name: str
-    input_type: str
-    is_required: bool
-    allow_none: bool
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
-    display_order: int
-    options: List[AttributeOptionOut] = []
-
-
-class AttributeDefinitionCreate(BaseModel):
-    """
-    Request model for creating an attribute definition.
-
-    Attributes:
-        slug: URL-safe identifier (required)
-        display_name: Human-readable name (required)
-        input_type: Selection type (default: single_select)
-        is_required: Require selection (default: True)
-        allow_none: Allow "none" choice (default: False)
-        min_selections: Min for multi_select
-        max_selections: Max for multi_select
-        display_order: Sort order (default: 0)
-
-    Example:
-        {
-            "slug": "toppings",
-            "display_name": "Toppings",
-            "input_type": "multi_select",
-            "is_required": false,
-            "min_selections": 0,
-            "max_selections": 5,
-            "display_order": 3
-        }
-    """
-    slug: str
-    display_name: str
-    input_type: str = "single_select"
-    is_required: bool = True
-    allow_none: bool = False
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
-    display_order: int = 0
-
-
-class AttributeDefinitionUpdate(BaseModel):
-    """
-    Request model for updating an attribute definition.
-
-    All fields optional - only provided fields are updated.
-
-    Attributes:
-        slug: New slug
-        display_name: New display name
-        input_type: New input type
-        is_required: Update required status
-        allow_none: Update allow_none
-        min_selections: New minimum
-        max_selections: New maximum
-        display_order: New sort order
-    """
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    input_type: Optional[str] = None
-    is_required: Optional[bool] = None
-    allow_none: Optional[bool] = None
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
-    display_order: Optional[int] = None
-
-
-# =============================================================================
 # Item Type Schemas
 # =============================================================================
 
@@ -297,8 +199,8 @@ class ItemTypeOut(BaseModel):
         display_name: Human-readable name (e.g., "Bagel")
         is_configurable: Whether items need configuration
         skip_config: Skip configuration dialog
-        attribute_definitions: List of configurable attributes
         menu_item_count: Number of menu items using this type
+        global_attribute_count: Number of linked global attributes
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -307,7 +209,6 @@ class ItemTypeOut(BaseModel):
     display_name: str
     is_configurable: bool
     skip_config: bool = False
-    attribute_definitions: List[AttributeDefinitionOut] = []
     menu_item_count: int = 0
     global_attribute_count: int = 0
 

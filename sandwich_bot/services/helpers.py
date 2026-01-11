@@ -309,9 +309,8 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """
     Convert a MenuItem ORM instance into MenuItemOut response model.
 
-    Handles the metadata field which can be stored as JSON string or dict,
-    and merges data from both extra_metadata (legacy) and default_config
-    (new generic item type system).
+    Handles the metadata field which can be stored as JSON string or dict.
+    The extra_metadata field may contain a default_config dict for signature items.
 
     Args:
         item: MenuItem ORM instance
@@ -319,7 +318,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     Returns:
         MenuItemOut Pydantic model ready for API response
     """
-    # Start with extra_metadata (legacy field)
+    # Parse extra_metadata (contains default_config for signature items)
     raw_meta = getattr(item, "extra_metadata", None)
 
     if isinstance(raw_meta, dict):
@@ -331,12 +330,6 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
             meta = {}
     else:
         meta = {}
-
-    # Merge default_config (new generic item type system) if present
-    default_config = getattr(item, "default_config", None)
-    if default_config and isinstance(default_config, dict):
-        # Wrap in default_config key for frontend compatibility
-        meta["default_config"] = default_config
 
     return MenuItemOut(
         id=item.id,

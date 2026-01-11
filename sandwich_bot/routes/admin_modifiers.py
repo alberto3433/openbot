@@ -3,9 +3,8 @@ Admin Modifiers Routes for Sandwich Bot
 ========================================
 
 This module contains admin endpoints for managing the menu configuration
-system: Item Types, Attribute Definitions, and Attribute Options. This
-flexible system allows configuring what options are available for different
-types of menu items.
+system: Item Types and Attribute Options. This flexible system allows
+configuring what options are available for different types of menu items.
 
 Endpoints:
 ----------
@@ -16,13 +15,7 @@ Item Types:
 - PUT /admin/modifiers/item-types/{id}: Update item type
 - DELETE /admin/modifiers/item-types/{id}: Delete item type
 
-Attribute Definitions:
-- POST /admin/modifiers/item-types/{id}/attributes: Add attribute
-- PUT /admin/modifiers/attributes/{id}: Update attribute
-- DELETE /admin/modifiers/attributes/{id}: Delete attribute
-
 Attribute Options:
-- POST /admin/modifiers/attributes/{id}/options: Add option
 - PUT /admin/modifiers/options/{id}: Update option
 - DELETE /admin/modifiers/options/{id}: Delete option
 
@@ -36,9 +29,9 @@ Hierarchical Structure:
    - Defines a category of configurable items
    - Links to menu items via MenuItem.item_type_id
 
-2. AttributeDefinition (e.g., "Size", "Bread", "Milk")
+2. ItemTypeAttribute (e.g., "Size", "Bread", "Milk")
    - Defines a configurable aspect of the item type
-   - Specifies input type (single_select, multi_select)
+   - Managed via seeding migrations
 
 3. AttributeOption (e.g., "Small", "Medium", "Large")
    - Individual choices for an attribute
@@ -55,17 +48,6 @@ Example:
         ├── Option: "None" (default)
         ├── Option: "Whole"
         └── Option: "Oat" (+$0.75)
-
-Usage:
-------
-    # Create a size attribute for coffees
-    POST /admin/modifiers/item-types/1/attributes
-    {
-        "slug": "size",
-        "display_name": "Size",
-        "input_type": "single_select",
-        "is_required": true
-    }
 """
 
 import logging
@@ -76,17 +58,13 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, AttributeDefinition, AttributeOption, MenuItem, ItemTypeGlobalAttribute
+from ..models import ItemType, AttributeOption, MenuItem, ItemTypeGlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..schemas.modifiers import (
     ItemTypeOut,
     ItemTypeCreate,
     ItemTypeUpdate,
-    AttributeDefinitionOut,
-    AttributeDefinitionCreate,
-    AttributeDefinitionUpdate,
     AttributeOptionOut,
-    AttributeOptionCreate,
     AttributeOptionUpdate,
 )
 
@@ -105,7 +83,7 @@ admin_modifiers_router = APIRouter(
 # =============================================================================
 
 def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
-    """Build full ItemTypeOut with nested attributes and options."""
+    """Build full ItemTypeOut response."""
     menu_item_count = db.query(MenuItem).filter(
         MenuItem.item_type_id == item_type.id
     ).count()
@@ -119,29 +97,12 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
     is_configurable = has_linked_attributes(item_type.id, db)
     skip_config = not has_askable_attributes(item_type.id, db) if is_configurable else True
 
-    attributes = []
-    for attr in item_type.attribute_definitions:
-        options = [AttributeOptionOut.model_validate(opt) for opt in attr.options]
-        attributes.append(AttributeDefinitionOut(
-            id=attr.id,
-            slug=attr.slug,
-            display_name=attr.display_name,
-            input_type=attr.input_type,
-            is_required=attr.is_required,
-            allow_none=attr.allow_none,
-            min_selections=attr.min_selections,
-            max_selections=attr.max_selections,
-            display_order=attr.display_order,
-            options=options,
-        ))
-
     return ItemTypeOut(
         id=item_type.id,
         slug=item_type.slug,
         display_name=item_type.display_name,
         is_configurable=is_configurable,
         skip_config=skip_config,
-        attribute_definitions=attributes,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
     )
@@ -251,153 +212,8 @@ def delete_item_type(
 
 
 # =============================================================================
-# Attribute Definition Endpoints
-# =============================================================================
-
-@admin_modifiers_router.post("/item-types/{item_type_id}/attributes", response_model=AttributeDefinitionOut, status_code=201)
-def create_attribute(
-    item_type_id: int,
-    payload: AttributeDefinitionCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> AttributeDefinitionOut:
-    """Add an attribute to an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
-
-    attribute = AttributeDefinition(
-        item_type_id=item_type_id,
-        slug=payload.slug,
-        display_name=payload.display_name,
-        input_type=payload.input_type,
-        is_required=payload.is_required,
-        allow_none=payload.allow_none,
-        min_selections=payload.min_selections,
-        max_selections=payload.max_selections,
-        display_order=payload.display_order,
-    )
-    db.add(attribute)
-    db.commit()
-    db.refresh(attribute)
-    logger.info("Created attribute: %s for item type %s", attribute.slug, item_type.slug)
-
-    return AttributeDefinitionOut(
-        id=attribute.id,
-        slug=attribute.slug,
-        display_name=attribute.display_name,
-        input_type=attribute.input_type,
-        is_required=attribute.is_required,
-        allow_none=attribute.allow_none,
-        min_selections=attribute.min_selections,
-        max_selections=attribute.max_selections,
-        display_order=attribute.display_order,
-        options=[],
-    )
-
-
-@admin_modifiers_router.put("/attributes/{attribute_id}", response_model=AttributeDefinitionOut)
-def update_attribute(
-    attribute_id: int,
-    payload: AttributeDefinitionUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> AttributeDefinitionOut:
-    """Update an attribute definition."""
-    attribute = db.query(AttributeDefinition).filter(
-        AttributeDefinition.id == attribute_id
-    ).first()
-    if not attribute:
-        raise HTTPException(status_code=404, detail="Attribute not found")
-
-    if payload.slug is not None:
-        attribute.slug = payload.slug
-    if payload.display_name is not None:
-        attribute.display_name = payload.display_name
-    if payload.input_type is not None:
-        attribute.input_type = payload.input_type
-    if payload.is_required is not None:
-        attribute.is_required = payload.is_required
-    if payload.allow_none is not None:
-        attribute.allow_none = payload.allow_none
-    if payload.min_selections is not None:
-        attribute.min_selections = payload.min_selections
-    if payload.max_selections is not None:
-        attribute.max_selections = payload.max_selections
-    if payload.display_order is not None:
-        attribute.display_order = payload.display_order
-
-    db.commit()
-    db.refresh(attribute)
-    logger.info("Updated attribute: %s", attribute.slug)
-
-    options = [AttributeOptionOut.model_validate(opt) for opt in attribute.options]
-    return AttributeDefinitionOut(
-        id=attribute.id,
-        slug=attribute.slug,
-        display_name=attribute.display_name,
-        input_type=attribute.input_type,
-        is_required=attribute.is_required,
-        allow_none=attribute.allow_none,
-        min_selections=attribute.min_selections,
-        max_selections=attribute.max_selections,
-        display_order=attribute.display_order,
-        options=options,
-    )
-
-
-@admin_modifiers_router.delete("/attributes/{attribute_id}", status_code=204)
-def delete_attribute(
-    attribute_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an attribute and its options."""
-    attribute = db.query(AttributeDefinition).filter(
-        AttributeDefinition.id == attribute_id
-    ).first()
-    if not attribute:
-        raise HTTPException(status_code=404, detail="Attribute not found")
-
-    logger.info("Deleting attribute: %s", attribute.slug)
-    db.delete(attribute)
-    db.commit()
-    return None
-
-
-# =============================================================================
 # Attribute Option Endpoints
 # =============================================================================
-
-@admin_modifiers_router.post("/attributes/{attribute_id}/options", response_model=AttributeOptionOut, status_code=201)
-def create_option(
-    attribute_id: int,
-    payload: AttributeOptionCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> AttributeOptionOut:
-    """Add an option to an attribute."""
-    attribute = db.query(AttributeDefinition).filter(
-        AttributeDefinition.id == attribute_id
-    ).first()
-    if not attribute:
-        raise HTTPException(status_code=404, detail="Attribute not found")
-
-    option = AttributeOption(
-        attribute_id=attribute_id,
-        slug=payload.slug,
-        display_name=payload.display_name,
-        price_modifier=payload.price_modifier,
-        is_default=payload.is_default,
-        is_available=payload.is_available,
-        display_order=payload.display_order,
-    )
-    db.add(option)
-    db.commit()
-    db.refresh(option)
-    logger.info("Created option: %s for attribute %s", option.slug, attribute.slug)
-    return AttributeOptionOut.model_validate(option)
-
 
 @admin_modifiers_router.put("/options/{option_id}", response_model=AttributeOptionOut)
 def update_option(

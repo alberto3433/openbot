@@ -16,7 +16,6 @@ from .models import (
     IngredientStoreAvailability,
     MenuItemStoreAvailability,
     ItemType,
-    AttributeDefinition,
     AttributeOption,
     ModifierCategory,
     NeighborhoodZipCode,
@@ -248,18 +247,15 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for item in items:
         recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
 
-        # Get default_config from pre-loaded relational data (new system)
-        # Falls back to JSON column during transition period
+        # Get default_config from relational data (menu_item_attribute_values/selections)
+        # Falls back to extra_metadata for legacy items not yet migrated
         default_config = _build_default_config_from_relational(item.id, preloaded_configs)
-        if default_config is None:
-            # Fallback to JSON column for items not yet migrated
-            default_config = item.default_config
-            if default_config is None and item.extra_metadata:
-                try:
-                    meta = json.loads(item.extra_metadata)
-                    default_config = meta.get("default_config")
-                except (json.JSONDecodeError, TypeError):
-                    pass
+        if default_config is None and item.extra_metadata:
+            try:
+                meta = json.loads(item.extra_metadata)
+                default_config = meta.get("default_config")
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         # Get item type info if available
         item_type_slug = None
@@ -586,8 +582,8 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
     This provides the LLM with structured information about configurable items
     that goes beyond the hardcoded sandwich attributes.
 
-    Uses the new item_type_attributes table (consolidated schema) with fallback
-    to attribute_definitions for backward compatibility during transition.
+    Uses the item_type_attributes table (consolidated schema) and global
+    attributes for configuring item type options.
 
     Args:
         db: Database session
@@ -678,33 +674,6 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         .all()
                     )
 
-                    # Fallback: check for options via old attribute_definition_id FK
-                    # This handles cases where options were created via legacy migrations
-                    if not options:
-                        # Find matching AttributeDefinition by slug and item_type
-                        legacy_attr_def = (
-                            db.query(AttributeDefinition)
-                            .filter(
-                                AttributeDefinition.item_type_id == it.id,
-                                AttributeDefinition.slug == ita.slug
-                            )
-                            .first()
-                        )
-                        if legacy_attr_def:
-                            options = (
-                                db.query(AttributeOption)
-                                .filter(
-                                    AttributeOption.attribute_definition_id == legacy_attr_def.id,
-                                    AttributeOption.is_available == True
-                                )
-                                .order_by(AttributeOption.display_order)
-                                .all()
-                            )
-                            logger.debug(
-                                "Fallback options for %s.%s: found %d options via legacy attr_def_id=%d",
-                                it.slug, ita.slug, len(options), legacy_attr_def.id
-                            )
-
                     attr_data = {
                         "slug": ita.slug,
                         "display_name": ita.display_name,
@@ -728,50 +697,6 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                 if ita.input_type == "multi_select":
                     attr_data["min_selections"] = ita.min_selections
                     attr_data["max_selections"] = ita.max_selections
-
-                attributes.append(attr_data)
-        else:
-            # Fallback to old attribute_definitions table
-            attr_defs = (
-                db.query(AttributeDefinition)
-                .filter(AttributeDefinition.item_type_id == it.id)
-                .order_by(AttributeDefinition.display_order)
-                .all()
-            )
-
-            for ad in attr_defs:
-                # Get options for this attribute
-                options = (
-                    db.query(AttributeOption)
-                    .filter(
-                        AttributeOption.attribute_definition_id == ad.id,
-                        AttributeOption.is_available == True
-                    )
-                    .order_by(AttributeOption.display_order)
-                    .all()
-                )
-
-                attr_data = {
-                    "slug": ad.slug,
-                    "display_name": ad.display_name,
-                    "input_type": ad.input_type,
-                    "is_required": ad.is_required,
-                    "allow_none": ad.allow_none,
-                    "options": [
-                        {
-                            "slug": opt.slug,
-                            "display_name": opt.display_name,
-                            "price_modifier": opt.price_modifier,
-                            "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
-                            "is_default": opt.is_default,
-                        }
-                        for opt in options
-                    ],
-                }
-
-                if ad.input_type == "multi_select":
-                    attr_data["min_selections"] = ad.min_selections
-                    attr_data["max_selections"] = ad.max_selections
 
                 attributes.append(attr_data)
 

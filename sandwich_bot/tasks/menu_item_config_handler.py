@@ -6,6 +6,7 @@ with DB-driven attributes. It supports:
 - Mandatory attributes (ask_in_conversation=True) asked in sequence
 - Customization checkpoint after mandatory attributes
 - Optional attributes (ask_in_conversation=False) offered in a loop
+- Modifier extraction during configuration (proteins, cheeses, toppings, etc.)
 
 Designed to be generic and work with any item type that has DB-defined attributes.
 """
@@ -16,8 +17,9 @@ from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
 from .models import OrderTask, MenuItemTask
-from .schemas import StateMachineResult, OrderPhase
+from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers, ExtractedCoffeeModifiers
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
+from .parsers import extract_modifiers_from_input, extract_coffee_modifiers_from_input
 from .handler_config import BaseHandler
 from .attribute_loader import load_item_type_attributes
 
@@ -38,7 +40,53 @@ class MenuItemConfigHandler(BaseHandler):
     """
 
     # Item types that use this handler for configuration
-    SUPPORTED_ITEM_TYPES = {"deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso"}
+    SUPPORTED_ITEM_TYPES = {
+        "deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso",
+        "bagel", "sized_beverage",  # Added in Phase 6 migration
+    }
+
+    # Mapping from legacy pending_field names to DB attribute slugs
+    # This allows routing legacy field handlers through the generic handler
+    LEGACY_FIELD_TO_ATTR = {
+        # Bagel fields
+        "bagel_choice": "bread",
+        "spread": "spread_type",
+        "toasted": "toasted",
+        "cheese_choice": "cheese",
+        "spread_sandwich_toasted": "toasted",
+        "menu_item_bagel_toasted": "toasted",
+        # Coffee/beverage fields
+        "coffee_size": "size",
+        "coffee_style": "iced",  # Hot/iced maps to boolean iced attribute
+        "coffee_modifiers": "milk_sweetener_syrup",
+        "syrup_flavor": "syrup",
+    }
+
+    # Mapping from DB attribute slugs to legacy storage keys in attribute_values
+    # This allows checking if an attribute is already answered when stored under legacy key
+    LEGACY_ATTR_ALIASES = {
+        "bread": ["bagel_type"],  # DB uses "bread", legacy code uses "bagel_type"
+        "spread": ["spread_type"],  # DB uses "spread", legacy code uses "spread_type"
+    }
+
+    # Attributes that may be stored as direct model fields instead of in attribute_values
+    # When checking if these are answered, we also check the direct field on MenuItemTask
+    DIRECT_FIELD_ATTRS = {"toasted", "scooped", "decaf"}
+
+    # Modifier extraction configuration per item type
+    # Maps item type slugs to the type of modifier extraction to use
+    MODIFIER_EXTRACTION_TYPE = {
+        # Food items use bagel-style modifiers (proteins, cheeses, toppings, spreads)
+        "deli_sandwich": "food",
+        "egg_sandwich": "food",
+        "fish_sandwich": "food",
+        "spread_sandwich": "food",
+        "bagel": "food",
+        "omelette": "food",
+        # Beverage items use coffee-style modifiers (milk, sweetener, syrup)
+        "espresso": "beverage",
+        "sized_beverage": "beverage",
+    }
 
     def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
         """
@@ -189,25 +237,61 @@ class MenuItemConfigHandler(BaseHandler):
     def _get_unanswered_mandatory(
         self, item: MenuItemTask, item_type_slug: str
     ) -> list[dict]:
-        """Get mandatory attributes that haven't been answered yet."""
+        """Get mandatory attributes that haven't been answered yet.
+
+        Checks both canonical attribute slugs and legacy aliases to handle
+        backward compatibility with items created by legacy handlers.
+        Also checks direct model fields for certain attributes.
+        """
         mandatory = self._get_mandatory_attributes(item_type_slug)
         unanswered = []
         for attr in mandatory:
             slug = attr["slug"]
-            if slug not in item.attribute_values:
-                unanswered.append(attr)
+            # Check canonical slug in attribute_values
+            if slug in item.attribute_values:
+                continue
+            # Check legacy aliases for this attribute
+            legacy_aliases = self.LEGACY_ATTR_ALIASES.get(slug, [])
+            found_via_alias = any(
+                alias in item.attribute_values for alias in legacy_aliases
+            )
+            if found_via_alias:
+                continue
+            # Check direct model field for certain attributes (e.g., toasted, scooped)
+            if slug in self.DIRECT_FIELD_ATTRS:
+                direct_value = getattr(item, slug, None)
+                if direct_value is not None:
+                    continue
+            unanswered.append(attr)
         return unanswered
 
     def _get_unanswered_optional(
         self, item: MenuItemTask, item_type_slug: str
     ) -> list[dict]:
-        """Get optional attributes that haven't been answered yet."""
+        """Get optional attributes that haven't been answered yet.
+
+        Checks both canonical attribute slugs, legacy aliases, and direct model fields.
+        """
         optional = self._get_optional_attributes(item_type_slug)
         unanswered = []
         for attr in optional:
             slug = attr["slug"]
-            if slug not in item.attribute_values:
-                unanswered.append(attr)
+            # Check canonical slug in attribute_values
+            if slug in item.attribute_values:
+                continue
+            # Check legacy aliases for this attribute
+            legacy_aliases = self.LEGACY_ATTR_ALIASES.get(slug, [])
+            found_via_alias = any(
+                alias in item.attribute_values for alias in legacy_aliases
+            )
+            if found_via_alias:
+                continue
+            # Check direct model field for certain attributes
+            if slug in self.DIRECT_FIELD_ATTRS:
+                direct_value = getattr(item, slug, None)
+                if direct_value is not None:
+                    continue
+            unanswered.append(attr)
         return unanswered
 
     def _extract_quantity_from_input(self, user_input: str) -> tuple[int, str]:
@@ -808,7 +892,8 @@ class MenuItemConfigHandler(BaseHandler):
         """
         item_type = item.menu_item_type
         if not item_type or not self.supports_item_type(item_type):
-            # Not a supported item type, mark complete
+            # Not a supported item type, recalculate price and mark complete
+            self._recalculate_item_price(item)
             item.mark_complete()
             return self._get_next_question(order)
 
@@ -868,8 +953,9 @@ class MenuItemConfigHandler(BaseHandler):
         unanswered_optional = self._get_unanswered_optional(item, item_type)
 
         if not unanswered_optional:
-            # No optional attributes available, item is complete
+            # No optional attributes available, recalculate price and complete
             item.customization_offered = True
+            self._recalculate_item_price(item)
             item.mark_complete()
             order.phase = OrderPhase.TAKING_ITEMS.value
             order.clear_pending()
@@ -894,13 +980,709 @@ class MenuItemConfigHandler(BaseHandler):
         )
 
     # =========================================================================
+    # Modifier Extraction During Configuration
+    # =========================================================================
+
+    def _extract_modifiers_from_input(
+        self, user_input: str, item_type: str
+    ) -> ExtractedModifiers | ExtractedCoffeeModifiers | None:
+        """
+        Extract modifiers from user input based on item type.
+
+        Uses the appropriate extraction function for the item type:
+        - Food items: extract_modifiers_from_input() -> ExtractedModifiers
+        - Beverage items: extract_coffee_modifiers_from_input() -> ExtractedCoffeeModifiers
+
+        Args:
+            user_input: Raw user input string
+            item_type: The item type slug (e.g., "deli_sandwich", "espresso")
+
+        Returns:
+            ExtractedModifiers or ExtractedCoffeeModifiers, or None if no extraction
+            is configured for this item type
+        """
+        extraction_type = self.MODIFIER_EXTRACTION_TYPE.get(item_type)
+
+        if extraction_type == "food":
+            modifiers = extract_modifiers_from_input(user_input)
+            if modifiers.has_modifiers() or modifiers.has_special_instructions():
+                logger.debug("Extracted food modifiers from input: %s", modifiers)
+                return modifiers
+        elif extraction_type == "beverage":
+            modifiers = extract_coffee_modifiers_from_input(user_input)
+            if modifiers.milk or modifiers.sweetener or modifiers.flavor_syrup or modifiers.has_special_instructions():
+                logger.debug("Extracted beverage modifiers from input: %s", modifiers)
+                return modifiers
+
+        return None
+
+    def _apply_extracted_modifiers(
+        self, item: MenuItemTask, modifiers: ExtractedModifiers | ExtractedCoffeeModifiers
+    ) -> str | None:
+        """
+        Apply extracted modifiers to a menu item.
+
+        Handles both food-style modifiers (proteins, cheeses, etc.) and
+        beverage-style modifiers (milk, sweetener, syrup).
+
+        Args:
+            item: The menu item to apply modifiers to
+            modifiers: Extracted modifiers from user input
+
+        Returns:
+            Acknowledgment string if modifiers were applied, None otherwise
+        """
+        added_items = []
+
+        if isinstance(modifiers, ExtractedModifiers):
+            # Apply food-style modifiers
+            # Proteins: first one to sandwich_protein if not set, rest to extras
+            if modifiers.proteins:
+                if not item.sandwich_protein:
+                    item.sandwich_protein = modifiers.proteins[0]
+                    item.extras.extend(modifiers.proteins[1:])
+                else:
+                    item.extras.extend(modifiers.proteins)
+                added_items.extend(modifiers.proteins)
+
+            # Cheeses to extras
+            if modifiers.needs_cheese_clarification:
+                if "cheese" not in item.extras:
+                    item.extras.append("cheese")
+                item.needs_cheese_clarification = True
+                added_items.append("cheese")
+            elif modifiers.cheeses:
+                item.extras.extend(modifiers.cheeses)
+                added_items.extend(modifiers.cheeses)
+
+            # Toppings to extras
+            if modifiers.toppings:
+                item.extras.extend(modifiers.toppings)
+                added_items.extend(modifiers.toppings)
+
+            # Spreads: set if not already set
+            if modifiers.spreads and not item.spread:
+                item.spread = modifiers.spreads[0]
+                added_items.extend(modifiers.spreads)
+
+            # Special instructions
+            if modifiers.has_special_instructions():
+                existing = item.special_instructions or ""
+                new_instr = modifiers.get_special_instructions_string()
+                item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
+
+        elif isinstance(modifiers, ExtractedCoffeeModifiers):
+            # Apply beverage-style modifiers using attribute_values
+            if modifiers.milk and "milk" not in item.attribute_values:
+                item.attribute_values["milk"] = modifiers.milk
+                added_items.append(modifiers.milk)
+
+            if modifiers.sweetener and "sweetener" not in item.attribute_values:
+                item.attribute_values["sweetener"] = modifiers.sweetener
+                if modifiers.sweetener_quantity > 1:
+                    item.attribute_values["sweetener_quantity"] = modifiers.sweetener_quantity
+                added_items.append(modifiers.sweetener)
+
+            if modifiers.flavor_syrup and "flavor_syrup" not in item.attribute_values:
+                item.attribute_values["flavor_syrup"] = modifiers.flavor_syrup
+                if modifiers.syrup_quantity > 1:
+                    item.attribute_values["syrup_quantity"] = modifiers.syrup_quantity
+                added_items.append(f"{modifiers.flavor_syrup} syrup")
+
+            if modifiers.cream_level and "cream_level" not in item.attribute_values:
+                item.attribute_values["cream_level"] = modifiers.cream_level
+
+            # Special instructions
+            if modifiers.has_special_instructions():
+                existing = item.special_instructions or ""
+                new_instr = modifiers.get_special_instructions_string()
+                item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
+
+        # Build acknowledgment string
+        if not added_items:
+            return None
+
+        if len(added_items) == 1:
+            return f"I've added {added_items[0]}. "
+        else:
+            items_str = ", ".join(added_items[:-1]) + f" and {added_items[-1]}"
+            return f"I've added {items_str}. "
+
+    def _extract_and_apply_modifiers(
+        self, user_input: str, item: MenuItemTask
+    ) -> str | None:
+        """
+        Extract modifiers from user input and apply them to the item.
+
+        This is a convenience method that combines extraction and application.
+        Call this after successfully handling an attribute input to capture
+        any additional modifiers mentioned with the answer.
+
+        Args:
+            user_input: Raw user input string
+            item: The menu item to apply modifiers to
+
+        Returns:
+            Acknowledgment string if modifiers were applied, None otherwise
+        """
+        item_type = item.menu_item_type
+        if not item_type:
+            return None
+
+        modifiers = self._extract_modifiers_from_input(user_input, item_type)
+        if modifiers:
+            logger.info("Applying extracted modifiers to %s: %s", item.menu_item_name, modifiers)
+            return self._apply_extracted_modifiers(item, modifiers)
+
+        return None
+
+    # =========================================================================
+    # Pricing Abstraction
+    # =========================================================================
+
+    def _recalculate_item_price(self, item: MenuItemTask) -> float:
+        """
+        Recalculate and update an item's price based on its current state.
+
+        This method provides a generic price recalculation that works with any
+        item type. For bagels and beverages, it delegates to existing specialized
+        methods. For other items, it calculates from base price + attribute selections.
+
+        Args:
+            item: The menu item to recalculate price for
+
+        Returns:
+            The new calculated price
+        """
+        item_type = item.menu_item_type
+
+        # Delegate to specialized pricing methods for bagels and beverages
+        if item_type == "bagel" and self.pricing:
+            return self.pricing.recalculate_bagel_price(item)
+
+        if item_type in ("sized_beverage", "espresso") and self.pricing:
+            return self.pricing.recalculate_coffee_price(item)
+
+        # Generic pricing for DB-driven item types
+        return self._calculate_generic_item_price(item)
+
+    def _calculate_generic_item_price(self, item: MenuItemTask) -> float:
+        """
+        Calculate price for a generic DB-driven item type.
+
+        Sums the base price (from menu item) plus all attribute selection prices
+        stored in attribute_values[*_selections].
+
+        Args:
+            item: The menu item to calculate price for
+
+        Returns:
+            The calculated total price
+        """
+        # Get base price from menu item data
+        base_price = self._get_item_base_price(item)
+        total = base_price
+
+        # Sum up prices from attribute selections
+        for key, value in item.attribute_values.items():
+            if key.endswith("_selections") and isinstance(value, list):
+                for sel in value:
+                    if isinstance(sel, dict):
+                        price = sel.get("price", 0) or 0
+                        qty = sel.get("quantity", 1) or 1
+                        total += price * qty
+
+        # Round and update
+        new_price = round(total, 2)
+        item.unit_price = new_price
+
+        logger.info(
+            "Recalculated generic item price for %s (%s): base=$%.2f + selections -> total=$%.2f",
+            item.menu_item_name, item.menu_item_type, base_price, new_price
+        )
+
+        return new_price
+
+    def _get_item_base_price(self, item: MenuItemTask) -> float:
+        """
+        Get the base price for an item from menu data.
+
+        Looks up the menu item by ID or name to find its base price.
+        Falls back to calculating from current price minus known selections.
+
+        Args:
+            item: The menu item to get base price for
+
+        Returns:
+            The base price (before any modifier upcharges)
+        """
+        # Try to look up from menu item data
+        if hasattr(item, 'menu_item_id') and item.menu_item_id:
+            menu_index = menu_cache.get_menu_index()
+            if menu_index:
+                # Search through all categories for the menu item
+                for category_data in menu_index.get("categories", {}).values():
+                    for mi in category_data.get("items", []):
+                        if mi.get("id") == item.menu_item_id:
+                            return float(mi.get("base_price", 0))
+
+        # Try by name lookup
+        if hasattr(item, 'menu_item_name') and item.menu_item_name:
+            menu_index = menu_cache.get_menu_index()
+            if menu_index:
+                for category_data in menu_index.get("categories", {}).values():
+                    for mi in category_data.get("items", []):
+                        if mi.get("name", "").lower() == item.menu_item_name.lower():
+                            return float(mi.get("base_price", 0))
+
+        # Fallback: calculate from current price minus selections
+        if item.unit_price:
+            selections_total = 0.0
+            for key, value in item.attribute_values.items():
+                if key.endswith("_selections") and isinstance(value, list):
+                    for sel in value:
+                        if isinstance(sel, dict):
+                            price = sel.get("price", 0) or 0
+                            qty = sel.get("quantity", 1) or 1
+                            selections_total += price * qty
+            return max(0.0, item.unit_price - selections_total)
+
+        return 0.0
+
+    # =========================================================================
+    # Multi-Item Orchestration
+    # =========================================================================
+
+    def configure_next_incomplete_item(
+        self, order: OrderTask, item_type: str | None = None
+    ) -> StateMachineResult:
+        """
+        Find and configure the next incomplete menu item of supported types.
+
+        This method provides multi-item orchestration similar to bagel/coffee handlers.
+        It iterates through items, asks required questions, and tracks progress.
+
+        Args:
+            order: The order task containing all items
+            item_type: Optional specific item type to configure. If None,
+                      configures all supported item types.
+
+        Returns:
+            StateMachineResult with next question or completion message
+        """
+        from .models import TaskStatus
+        from .message_builder import MessageBuilder
+
+        # Determine which item types to process
+        if item_type:
+            target_types = {item_type} & self.SUPPORTED_ITEM_TYPES
+        else:
+            target_types = self.SUPPORTED_ITEM_TYPES
+
+        if not target_types:
+            # No supported types to configure
+            return self._get_next_question(order)
+
+        # Collect all items of the target types
+        target_items = [
+            item for item in order.items.items
+            if isinstance(item, MenuItemTask)
+            and item.menu_item_type in target_types
+        ]
+
+        if not target_items:
+            return self._get_next_question(order)
+
+        # Group items by type for ordinal messaging
+        items_by_type: dict[str, list[MenuItemTask]] = {}
+        for item in target_items:
+            t = item.menu_item_type
+            if t not in items_by_type:
+                items_by_type[t] = []
+            items_by_type[t].append(item)
+
+        # Process each incomplete item
+        for item in target_items:
+            if item.status != TaskStatus.IN_PROGRESS:
+                continue
+
+            item_type_slug = item.menu_item_type
+            same_type_items = items_by_type.get(item_type_slug, [item])
+            same_type_count = len(same_type_items)
+
+            # Build ordinal descriptor if multiple items of same type
+            if same_type_count > 1:
+                item_num = next(
+                    (i + 1 for i, it in enumerate(same_type_items) if it.id == item.id),
+                    1
+                )
+                ordinal = MessageBuilder.get_ordinal(item_num)
+                item_desc = f"the {ordinal} {item.menu_item_name}"
+            else:
+                item_desc = f"your {item.menu_item_name}"
+
+            # Get unanswered mandatory attributes
+            unanswered = self._get_unanswered_mandatory(item, item_type_slug)
+
+            if unanswered:
+                # Ask the first unanswered mandatory question
+                first_attr = unanswered[0]
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                order.pending_item_id = item.id
+                order.pending_field = f"menu_item_attr_{first_attr['slug']}"
+                order.config_options_page = 0
+
+                # Get question text
+                db_question = first_attr.get("question_text")
+                attr_name = first_attr["display_name"].lower()
+                if db_question:
+                    question = db_question
+                elif first_attr.get("input_type") == "boolean":
+                    question = f"Would you like it {attr_name}?"
+                else:
+                    question = f"What kind of {attr_name} would you like?"
+
+                # Add ordinal prefix for multi-item
+                if same_type_count > 1:
+                    message = f"For {item_desc}, {question.lower()}"
+                else:
+                    message = question
+
+                return StateMachineResult(message=message, order=order)
+
+            # No mandatory questions left - check if customization was offered
+            if not item.customization_offered:
+                return self._ask_customization_checkpoint(item, order)
+
+            # Item is complete - recalculate price and mark complete
+            self._recalculate_item_price(item)
+            item.mark_complete()
+
+        # All target items are complete - summarize and return
+        completed_items = [
+            item for item in target_items
+            if item.status == TaskStatus.COMPLETE
+        ]
+
+        if completed_items:
+            last_item = completed_items[-1]
+            summary = last_item.get_summary()
+
+            # Count identical items at the end for pluralization
+            count = 0
+            for item in reversed(completed_items):
+                if item.get_summary() == summary:
+                    count += 1
+                else:
+                    break
+
+            if count > 1:
+                summary = f"{count} {summary}s" if not summary.endswith("s") else f"{count} {summary}"
+
+            order.clear_pending()
+            order.phase = OrderPhase.TAKING_ITEMS.value
+
+            return StateMachineResult(
+                message=f"Got it, {summary}. Anything else?",
+                order=order,
+            )
+
+        # Fallback to generic next question
+        return self._get_next_question(order)
+
+    # =========================================================================
+    # Disambiguation Resolution
+    # =========================================================================
+
+    def _resolve_disambiguation(
+        self,
+        user_input: str,
+        options: list[dict],
+    ) -> dict | None:
+        """
+        Resolve user's selection from disambiguation options.
+
+        Similar to bagel handler's _resolve_spread_disambiguation but works with
+        dict options (having display_name and slug fields).
+
+        Args:
+            user_input: User's response (e.g., "honey walnut", "the first one", "maple")
+            options: List of option dicts with display_name and slug fields
+
+        Returns:
+            Selected option dict if matched, None if no match found.
+        """
+        input_lower = user_input.lower().strip()
+
+        # Remove common filler words
+        input_lower = input_lower.replace("the ", "").strip()
+        input_lower = input_lower.replace("please", "").strip()
+
+        # Try exact match on display_name first
+        for opt in options:
+            if opt["display_name"].lower() == input_lower:
+                return opt
+
+        # Try exact match on slug (with underscores replaced by spaces)
+        for opt in options:
+            slug_readable = opt["slug"].replace("_", " ")
+            if slug_readable == input_lower:
+                return opt
+
+        # Try if user said just the first word (e.g., "honey" for "honey walnut")
+        for opt in options:
+            display_lower = opt["display_name"].lower()
+            first_word = display_lower.split()[0] if display_lower else ""
+            if first_word and first_word == input_lower:
+                return opt
+
+        # Try substring match (e.g., "maple" matches "maple raisin walnut")
+        for opt in options:
+            display_lower = opt["display_name"].lower()
+            if input_lower in display_lower:
+                return opt
+
+        # Try if option name is a substring of input (e.g., "honey walnut please")
+        for opt in options:
+            display_lower = opt["display_name"].lower()
+            if display_lower in input_lower:
+                return opt
+
+        # Handle ordinal selections ("first one", "second one", "1", "2")
+        ordinal_map = {
+            "first": 0, "1": 0, "one": 0,
+            "second": 1, "2": 1, "two": 1,
+            "third": 2, "3": 2, "three": 2,
+            "fourth": 3, "4": 3, "four": 3,
+        }
+        for word, index in ordinal_map.items():
+            if word in input_lower and index < len(options):
+                return options[index]
+
+        return None
+
+    def _handle_disambiguation_response(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult | None:
+        """
+        Handle user response to an attribute disambiguation question.
+
+        Checks if there's a pending disambiguation, attempts to resolve
+        the user's selection, applies any stored modifiers, and returns
+        the next question.
+
+        Args:
+            user_input: User's response to disambiguation question
+            order: Current order state
+
+        Returns:
+            StateMachineResult if disambiguation was handled, None if no disambiguation pending
+        """
+        disambiguation = order.pending_attr_disambiguation
+        if not disambiguation:
+            return None
+
+        options = disambiguation.get("options", [])
+        attr_slug = disambiguation.get("attr_slug")
+        stored_modifiers = disambiguation.get("modifiers", {})
+        item_id = disambiguation.get("item_id")
+
+        # Find the item being configured
+        item = order.items.get_item_by_id(item_id) if item_id else None
+        if not item or not isinstance(item, MenuItemTask):
+            logger.warning("Disambiguation item not found: %s", item_id)
+            order.pending_attr_disambiguation = None
+            return self._get_next_question(order)
+
+        # Try to resolve the selection
+        selected = self._resolve_disambiguation(user_input, options)
+
+        if not selected:
+            # Couldn't match - ask again
+            options_text = self._format_options_list(options)
+            return StateMachineResult(
+                message=f"Sorry, I didn't catch that. Did you mean {options_text}?",
+                order=order,
+            )
+
+        # Clear disambiguation state
+        order.pending_attr_disambiguation = None
+
+        # Get the attribute info
+        item_type = item.menu_item_type
+        attrs = self._get_item_type_attributes(item_type)
+        attr = attrs.get(attr_slug, {})
+
+        # Store the selected value
+        quantity = stored_modifiers.pop("_quantity", 1)
+        qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
+
+        selection = {
+            "slug": selected["slug"],
+            "display_name": selected["display_name"],
+            "price": selected.get("price", 0),
+            "quantity": quantity,
+        }
+        if qualifier:
+            selection["qualifier"] = qualifier
+
+        input_type = attr.get("input_type", "single_select")
+        if input_type == "multi_select":
+            item.attribute_values[attr_slug] = [selected["slug"]]
+            item.attribute_values[f"{attr_slug}_selections"] = [selection]
+        else:
+            item.attribute_values[attr_slug] = selected["slug"]
+            item.attribute_values[f"{attr_slug}_selections"] = [selection]
+            # Update price if applicable
+            if selected.get("price", 0) > 0:
+                price_key = f"{attr_slug}_price"
+                item.attribute_values[price_key] = selected["price"]
+                if item.unit_price is not None:
+                    item.unit_price = item.unit_price + selected["price"]
+
+        # Apply any stored modifiers (e.g., milk type, sweetener extracted before disambiguation)
+        if stored_modifiers:
+            self._apply_stored_modifiers(item, stored_modifiers)
+
+        # Build acknowledgment
+        ack_name = selected["display_name"]
+        if qualifier:
+            ack_name = f"{ack_name} ({qualifier})"
+        ack_text = f"{quantity} {ack_name}" if quantity > 1 else ack_name
+
+        logger.info(
+            "DISAMBIGUATION RESOLVED: %s -> %s for attr=%s, stored_mods=%s",
+            user_input, selected["display_name"], attr_slug, stored_modifiers
+        )
+
+        return self._advance_to_next_question(item, order, attr, ack_text)
+
+    def _apply_stored_modifiers(self, item: MenuItemTask, modifiers: dict) -> None:
+        """
+        Apply stored modifiers from disambiguation to the item.
+
+        This handles modifiers that were extracted before disambiguation
+        (e.g., "large iced oat milk latte" - oat milk is stored while
+        disambiguating between latte types).
+
+        Args:
+            item: The item to apply modifiers to
+            modifiers: Dict of modifier values to apply
+        """
+        # Handle common beverage modifiers
+        if "milk" in modifiers:
+            item.milk = modifiers["milk"]
+        if "sweetener" in modifiers:
+            # Sweeteners are stored as list of dicts
+            if not item.sweeteners:
+                item.sweeteners = []
+            item.sweeteners.append({
+                "type": modifiers["sweetener"],
+                "quantity": modifiers.get("sweetener_quantity", 1),
+            })
+        if "syrup" in modifiers or "flavor_syrup" in modifiers:
+            syrup = modifiers.get("syrup") or modifiers.get("flavor_syrup")
+            if syrup:
+                if not item.flavor_syrups:
+                    item.flavor_syrups = []
+                item.flavor_syrups.append({
+                    "flavor": syrup,
+                    "quantity": modifiers.get("syrup_quantity", 1),
+                })
+        if "size" in modifiers:
+            item.size = modifiers["size"]
+        if "iced" in modifiers:
+            item.iced = modifiers["iced"]
+        if "decaf" in modifiers:
+            item.decaf = modifiers["decaf"]
+
+        # Handle food modifiers (spreads, proteins, etc.)
+        # These would come from _extract_modifiers_from_input
+        if "spread" in modifiers:
+            item.spread = modifiers["spread"]
+
+    # =========================================================================
     # Handle User Input for Different States
     # =========================================================================
+
+    def handle_legacy_field_input(
+        self, user_input: str, item: MenuItemTask, order: OrderTask, legacy_field: str
+    ) -> StateMachineResult:
+        """
+        Handle user input for legacy pending_field names (bagel_choice, coffee_size, etc.).
+
+        This method maps legacy field names to DB attribute slugs and delegates to
+        handle_attribute_input. It's used during the Phase 6 migration to route
+        legacy handlers through the generic MenuItemConfigHandler.
+
+        Args:
+            user_input: The user's input text
+            item: The menu item being configured
+            order: The current order
+            legacy_field: The legacy pending_field name (e.g., "bagel_choice", "coffee_size")
+
+        Returns:
+            StateMachineResult with next question or completion message
+        """
+        # Map legacy field to DB attribute slug
+        attr_slug = self.LEGACY_FIELD_TO_ATTR.get(legacy_field)
+
+        if not attr_slug:
+            logger.warning(
+                "Unknown legacy field '%s' for item type '%s'",
+                legacy_field, item.menu_item_type
+            )
+            order.clear_pending()
+            return self._get_next_question(order)
+
+        # Special handling for coffee_style -> iced boolean
+        # The coffee_style question asks "hot or iced?" but the DB attr is boolean "iced"
+        if legacy_field == "coffee_style":
+            return self._handle_coffee_style_input(user_input, item, order)
+
+        # Delegate to generic attribute handler
+        return self.handle_attribute_input(user_input, item, order, attr_slug)
+
+    def _handle_coffee_style_input(
+        self, user_input: str, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult:
+        """Handle coffee style (hot/iced) input - special case for boolean mapping."""
+        user_lower = user_input.lower().strip()
+
+        # Check for iced indicators
+        iced_patterns = ["iced", "ice", "cold"]
+        hot_patterns = ["hot", "warm"]
+
+        if any(p in user_lower for p in iced_patterns):
+            item.attribute_values["iced"] = True
+            item.iced = True
+        elif any(p in user_lower for p in hot_patterns):
+            item.attribute_values["iced"] = False
+            item.iced = False
+        else:
+            # Couldn't determine - ask again
+            return StateMachineResult(
+                message="Would you like that hot or iced?",
+                order=order,
+            )
+
+        # Extract and apply any additional modifiers from the input
+        self._extract_and_apply_modifiers(user_input, item)
+
+        # Advance to next question using the multi-item flow for beverages
+        return self._advance_to_next_question(
+            item, order, {"slug": "iced"}, use_multi_item_orchestration=True
+        )
 
     def handle_attribute_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr_slug: str
     ) -> StateMachineResult:
         """Handle user input for a specific attribute question."""
+        # Check if we're resolving a disambiguation first
+        disambiguation_result = self._handle_disambiguation_response(user_input, order)
+        if disambiguation_result:
+            return disambiguation_result
+
         item_type = item.menu_item_type
         attrs = self._get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug)
@@ -968,6 +1750,10 @@ class MenuItemConfigHandler(BaseHandler):
                 message=f"Sorry, I didn't catch that. {question} (yes or no)",
                 order=order,
             )
+
+        # Extract and apply any additional modifiers from the input
+        # (e.g., "yes with bacon" -> captures the boolean AND the bacon modifier)
+        self._extract_and_apply_modifiers(user_input, item)
 
         return self._advance_to_next_question(item, order, attr)
 
@@ -1054,6 +1840,9 @@ class MenuItemConfigHandler(BaseHandler):
                 else:
                     ack_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}"
 
+                # Extract and apply any additional modifiers from the input
+                self._extract_and_apply_modifiers(user_input, item)
+
                 return self._advance_to_next_question(item, order, attr, ack_text)
 
         # For single_select (or if multi_select found nothing), use single-match logic
@@ -1092,6 +1881,9 @@ class MenuItemConfigHandler(BaseHandler):
                 # Always use _selections format to support quantity
                 item.attribute_values[f"{attr_slug}_selections"] = [selection]
 
+            # Extract and apply any additional modifiers from the input
+            self._extract_and_apply_modifiers(user_input, item)
+
             # Acknowledgment with quantity and qualifier
             ack_name = matched["display_name"]
             if qualifier:
@@ -1099,8 +1891,38 @@ class MenuItemConfigHandler(BaseHandler):
             ack_text = f"{quantity} {ack_name}" if quantity > 1 else ack_name
             return self._advance_to_next_question(item, order, attr, ack_text)
 
-        # Multiple partial matches - ask for disambiguation with just those options
+        # Multiple partial matches - store disambiguation state and ask
         if partial_matches:
+            # Extract any modifiers that should be remembered during disambiguation
+            # (e.g., "walnut with bacon" -> remember bacon while disambiguating walnut type)
+            extracted_mods = self._extract_modifiers_from_input(user_input, item.menu_item_type)
+            stored_modifiers = {"_quantity": quantity}
+            if extracted_mods:
+                # Convert extracted modifiers to dict for storage
+                if hasattr(extracted_mods, "milk") and extracted_mods.milk:
+                    stored_modifiers["milk"] = extracted_mods.milk
+                if hasattr(extracted_mods, "sweetener") and extracted_mods.sweetener:
+                    stored_modifiers["sweetener"] = extracted_mods.sweetener
+                if hasattr(extracted_mods, "syrup") and extracted_mods.syrup:
+                    stored_modifiers["syrup"] = extracted_mods.syrup
+                if hasattr(extracted_mods, "size") and extracted_mods.size:
+                    stored_modifiers["size"] = extracted_mods.size
+                if hasattr(extracted_mods, "iced") and extracted_mods.iced is not None:
+                    stored_modifiers["iced"] = extracted_mods.iced
+
+            # Store disambiguation state
+            order.pending_attr_disambiguation = {
+                "options": partial_matches,
+                "attr_slug": attr_slug,
+                "modifiers": stored_modifiers,
+                "item_id": item.id,
+            }
+
+            logger.info(
+                "DISAMBIGUATION STARTED: attr=%s, options=%s, stored_mods=%s",
+                attr_slug, [o["display_name"] for o in partial_matches], stored_modifiers
+            )
+
             options_text = self._format_options_list(partial_matches)
             return StateMachineResult(
                 message=f"I found a few options matching that. Did you mean {options_text}?",
@@ -1212,7 +2034,8 @@ class MenuItemConfigHandler(BaseHandler):
 
     def _advance_to_next_question(
         self, item: MenuItemTask, order: OrderTask, current_attr: dict,
-        matched_choice: str | None = None
+        matched_choice: str | None = None,
+        use_multi_item_orchestration: bool = False
     ) -> StateMachineResult:
         """Advance to the next question after answering current attribute.
 
@@ -1221,6 +2044,8 @@ class MenuItemConfigHandler(BaseHandler):
             order: The current order
             current_attr: The attribute that was just answered
             matched_choice: The display name of the choice the user made (for acknowledgment)
+            use_multi_item_orchestration: If True, use configure_next_incomplete_item()
+                to handle multiple items of the same type
         """
         item_type = item.menu_item_type
 
@@ -1232,8 +2057,13 @@ class MenuItemConfigHandler(BaseHandler):
                 next_attr = unanswered_mandatory[0]
                 return self._ask_attribute_question(item, order, next_attr)
             else:
-                # All mandatory done, go to checkpoint
-                return self._ask_customization_checkpoint(item, order)
+                # All mandatory done for this item
+                if use_multi_item_orchestration:
+                    # Use multi-item orchestration to check for more items
+                    return self.configure_next_incomplete_item(order, item_type)
+                else:
+                    # Single-item flow - go to checkpoint
+                    return self._ask_customization_checkpoint(item, order)
         else:
             # Just answered an optional question, ask for more customizations
             return self._ask_more_customizations(item, order, matched_choice)
@@ -1255,7 +2085,8 @@ class MenuItemConfigHandler(BaseHandler):
         ack_prefix = f"Okay, {matched_choice}. " if matched_choice else ""
 
         if not unanswered:
-            # No more options, complete the item
+            # No more options, recalculate price and complete
+            self._recalculate_item_price(item)
             item.mark_complete()
             order.phase = OrderPhase.TAKING_ITEMS.value
             order.clear_pending()
@@ -1289,6 +2120,8 @@ class MenuItemConfigHandler(BaseHandler):
             "i'm good", "im good", "all set", "done", "nothing"
         ]
         if any(user_lower == p or user_lower.startswith(p) for p in no_patterns):
+            # Recalculate price and complete
+            self._recalculate_item_price(item)
             item.mark_complete()
             order.phase = OrderPhase.TAKING_ITEMS.value
             order.clear_pending()

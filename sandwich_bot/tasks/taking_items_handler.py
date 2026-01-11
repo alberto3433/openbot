@@ -2678,9 +2678,10 @@ class TakingItemsHandler:
                             bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
                     # Check if this menu item contains a bagel (e.g., Classic BEC)
                     elif not item.requires_side_choice:
-                        # DB-driven items use MenuItemConfigHandler or CoffeeConfigHandler
+                        # DB-driven items use MenuItemConfigHandler
                         # They should NOT go through the bagel handler's hardcoded toasted question
-                        if item.menu_item_type in ("deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso"):
+                        # Phase 6: Added "bagel" and "sized_beverage" for unified configuration
+                        if item.menu_item_type in ("deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso", "bagel", "sized_beverage"):
                             individual_items.append((item.id, item.menu_item_name, "menu_item", "menu_item_config"))
                         elif item.is_sized_beverage:
                             # Sized beverages (coffee, latte, etc.) use coffee config handler

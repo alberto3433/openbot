@@ -138,12 +138,13 @@ def extract_quantity(user_input: str, pattern: str) -> int:
 # =============================================================================
 
 # Note: BY_POUND_ITEMS has been moved to the database.
-# Items are loaded from menu_items with by_pound_category column set.
+# Items are loaded from menu_items by joining with item_types where
+# slug is in (cheese, cold_cut, fish, salad, spread).
 # Use get_by_pound_items() to get the category -> item names mapping.
 # Use find_by_pound_item() to look up an item by name or alias.
 
 # Note: BY_POUND_CATEGORY_NAMES has been moved to the database.
-# Category display names are loaded from the by_pound_categories table.
+# Category display names are loaded from ItemType.display_name_plural.
 # Use get_by_pound_category_names() to get the slug -> display_name mapping.
 
 # Note: BY_POUND_PRICES has been moved to the database.

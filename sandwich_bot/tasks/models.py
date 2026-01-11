@@ -542,11 +542,14 @@ class MenuItemTask(ItemTask):
                 bread_display = bread.replace("_", " ").title()
                 parts.append(f"on {bread_display}")
 
-            # Handle toasted
-            toasted = self.attribute_values.get("toasted")
-            if toasted is True:
+            # Handle toasted - check both attribute_values and direct property
+            # (supports both menu_item_config_handler which uses attribute_values,
+            # and bagel_config_handler which uses direct property)
+            toasted_from_attr = self.attribute_values.get("toasted")
+            toasted_value = toasted_from_attr if toasted_from_attr is not None else self.toasted
+            if toasted_value is True:
                 parts.append("toasted")
-            elif toasted is False and bread:
+            elif toasted_value is False and bread:
                 parts.append("not toasted")
 
             # Handle other customizations (extra protein, toppings, etc.)
@@ -906,6 +909,16 @@ class OrderTask(BaseTask):
     # This is a transient field that should not be serialized
     last_add_error: Any | None = Field(default=None, exclude=True)
 
+    # Generic attribute disambiguation state for MenuItemConfigHandler
+    # Used when user input matches multiple options for an attribute (e.g., "walnut" matches
+    # "honey walnut" and "maple raisin walnut" for cream cheese spread)
+    # Dict with:
+    #   - options: list[dict] - the options to choose from
+    #   - attr_slug: str - the attribute being disambiguated
+    #   - modifiers: dict - extracted modifiers to apply after resolution
+    #   - item_id: str - the item being configured
+    pending_attr_disambiguation: dict | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -943,6 +956,9 @@ class OrderTask(BaseTask):
         # Handle suggested item confirmation ("Would you like to order one?" -> "yes")
         if self.pending_field == "confirm_suggested_item":
             return True
+        # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
+        if self.pending_attr_disambiguation is not None:
+            return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 
     def is_configuring_multiple(self) -> bool:
@@ -956,6 +972,7 @@ class OrderTask(BaseTask):
         self.config_options_page = 0
         self.pending_suggested_item = None
         self.pending_coffee_modifiers = {}
+        self.pending_attr_disambiguation = None
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

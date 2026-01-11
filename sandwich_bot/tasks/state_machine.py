@@ -324,17 +324,21 @@ class OrderStateMachine:
         self.coffee_handler = CoffeeConfigHandler(
             config=self._handler_config,
         )
-        # Now set the coffee callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_coffee = self.coffee_handler.configure_next_incomplete_coffee
+        # Set the coffee callback on checkout_utils_handler
+        # Phase 6 Migration: Route through menu_item_handler instead of coffee_handler
+        self.checkout_utils_handler._configure_next_incomplete_coffee = self._configure_next_incomplete_coffee
         # Note: Espresso now uses MenuItemConfigHandler (data-driven) instead of dedicated EspressoConfigHandler
         # Initialize bagel config handler
+        # Note: bagel_handler is still initialized for legacy field handlers in configuring_item_handler
+        # Phase 6 Migration: Orchestration routes through menu_item_handler
         self.bagel_handler = BagelConfigHandler(
             config=self._handler_config,
             get_item_by_id=self.checkout_utils_handler.get_item_by_id,
-            configure_coffee=self.coffee_handler.configure_next_incomplete_coffee,
+            configure_coffee=self._configure_next_incomplete_coffee,
         )
-        # Now set the bagel callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_bagel = self.bagel_handler.configure_next_incomplete_bagel
+        # Set the bagel callback on checkout_utils_handler
+        # Phase 6 Migration: Route through menu_item_handler instead of bagel_handler
+        self.checkout_utils_handler._configure_next_incomplete_bagel = self._configure_next_incomplete_bagel
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize by-the-pound handler
@@ -353,9 +357,10 @@ class OrderStateMachine:
             build_order_summary=self.checkout_utils_handler.build_order_summary,
         )
         # Initialize item adder handler
+        # Phase 6 Migration: Route through menu_item_handler instead of bagel_handler
         self.item_adder_handler = ItemAdderHandler(
             config=self._handler_config,
-            configure_next_incomplete_bagel=self.bagel_handler.configure_next_incomplete_bagel,
+            configure_next_incomplete_bagel=self._configure_next_incomplete_bagel,
         )
         # Initialize modifier change handler
         self.modifier_change_handler = ModifierChangeHandler(config=self._handler_config)
@@ -368,7 +373,7 @@ class OrderStateMachine:
         self.checkout_handler.order_utils_handler = self.order_utils_handler
         self.checkout_handler.checkout_utils_handler = self.checkout_utils_handler
         self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
-        # Initialize menu item config handler (for deli sandwiches, etc.)
+        # Initialize menu item config handler (for deli sandwiches, bagels, coffees, etc.)
         self.menu_item_handler = MenuItemConfigHandler(
             config=self._handler_config,
         )
@@ -376,12 +381,17 @@ class OrderStateMachine:
         self.item_adder_handler.menu_item_handler = self.menu_item_handler
         # Set menu_item callback on checkout_utils_handler (for espresso and other MenuItemTask config)
         self.checkout_utils_handler._configure_next_incomplete_menu_item = self._configure_next_incomplete_menu_item
+
+        # Phase 6 Migration: Orchestration now routes through menu_item_handler.
+        # The specialized handlers (coffee_handler, bagel_handler) are still initialized
+        # and passed to configuring_item_handler for legacy field handling methods.
+        # Once all field handlers are migrated, these can be removed.
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
             config=self._handler_config,
             by_pound_handler=self.by_pound_handler,
-            coffee_handler=self.coffee_handler,
-            bagel_handler=self.bagel_handler,
+            coffee_handler=self.coffee_handler,  # Legacy: for field-specific handlers
+            bagel_handler=self.bagel_handler,  # Legacy: for field-specific handlers
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             modifier_change_handler=self.modifier_change_handler,
@@ -666,6 +676,22 @@ class OrderStateMachine:
 
         # No incomplete menu items found - return to checkout flow
         return self.checkout_utils_handler.get_next_question(order)
+
+    def _configure_next_incomplete_bagel(self, order: OrderTask) -> StateMachineResult:
+        """Configure the next incomplete bagel item using menu_item_handler.
+
+        Phase 6 Migration: This method routes bagel configuration through the generic
+        MenuItemConfigHandler instead of the specialized BagelConfigHandler.
+        """
+        return self.menu_item_handler.configure_next_incomplete_item(order, "bagel")
+
+    def _configure_next_incomplete_coffee(self, order: OrderTask) -> StateMachineResult:
+        """Configure the next incomplete coffee/beverage item using menu_item_handler.
+
+        Phase 6 Migration: This method routes beverage configuration through the generic
+        MenuItemConfigHandler instead of the specialized CoffeeConfigHandler.
+        """
+        return self.menu_item_handler.configure_next_incomplete_item(order, "sized_beverage")
 
     def _handle_greeting(
         self,

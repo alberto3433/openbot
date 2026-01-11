@@ -327,6 +327,8 @@ class ConfiguringItemHandler:
         # Route to field-specific handler
         if order.pending_field == "side_choice":
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
+        # Bagel configuration fields - use specialized handler for now
+        # (Phase 6 migration: these will eventually route through MenuItemConfigHandler)
         elif order.pending_field == "bagel_choice":
             return self.bagel_handler.handle_bagel_choice(user_input, item, order)
         elif order.pending_field == "spread":
@@ -335,6 +337,8 @@ class ConfiguringItemHandler:
             return self.bagel_handler.handle_toasted_choice(user_input, item, order)
         elif order.pending_field == "cheese_choice":
             return self.bagel_handler.handle_cheese_choice(user_input, item, order)
+        # Coffee configuration fields - use specialized handler for now
+        # (Phase 6 migration: these will eventually route through MenuItemConfigHandler)
         elif order.pending_field == "coffee_size":
             return self.coffee_handler.handle_coffee_size(user_input, item, order)
         elif order.pending_field == "coffee_style":

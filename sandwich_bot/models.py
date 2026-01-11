@@ -539,9 +539,6 @@ class OrderItem(Base):
     unit_price = Column(Float, nullable=False)
     line_total = Column(Float, nullable=False)
 
-    # You can keep this if you want extra arbitrary config, or remove if unused
-    extra = Column(JSON, default=dict)
-
     # Free-form notes for special instructions that don't fit standard modifiers
     # e.g., "light on the cream cheese", "extra crispy", "a splash of milk"
     notes = Column(String, nullable=True)
@@ -577,10 +574,6 @@ class MenuItem(Base):
 
     # Note: by_pound_category column removed - by-pound items now use item_type_id
     # to point to ItemType entries (cheese, cold_cut, fish, salad, spread)
-
-    # Classifier for sub-category grouping (e.g., 'muffin', 'cookie', 'omelette')
-    # Enables filtering like "what muffins do you have?" without hardcoded lists
-    classifier = Column(String, nullable=True, index=True)
 
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify
@@ -1046,7 +1039,7 @@ class Company(Base):
     corporate_email = Column(String, nullable=True)
     website = Column(String, nullable=True)
 
-    # Social media & feedback
+    # Social media & feedbackt
     instagram_handle = Column(String, nullable=True)  # e.g., "@zuckersbagels"
     feedback_form_url = Column(String, nullable=True)  # URL to customer feedback form
 

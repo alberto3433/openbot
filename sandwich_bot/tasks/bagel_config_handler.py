@@ -43,7 +43,7 @@ from .parsers.constants import (
     get_bagel_types_list,
 )
 from .message_builder import MessageBuilder
-from .handler_config import HandlerConfig
+from .handler_config import HandlerConfig, BaseHandler
 from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
@@ -168,7 +168,7 @@ def apply_modifiers_to_bagel(
         item.special_instructions = f"{existing_instructions}, {new_instructions}".strip(", ") if existing_instructions else new_instructions
 
 
-class BagelConfigHandler:
+class BagelConfigHandler(BaseHandler):
     """
     Handles bagel configuration flow for orders.
 
@@ -192,17 +192,7 @@ class BagelConfigHandler:
             configure_coffee: Callback to configure next incomplete coffee.
             **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self.pricing = config.pricing
-            self._get_next_question = config.get_next_question
-            self._check_redirect = config.check_redirect
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self.pricing = kwargs.get("pricing")
-            self._get_next_question = kwargs.get("get_next_question")
-            self._check_redirect = kwargs.get("check_redirect")
+        super().__init__(config, **kwargs)
 
         # Handler-specific callbacks (not in HandlerConfig)
         self._get_item_by_id = get_item_by_id or kwargs.get("get_item_by_id")

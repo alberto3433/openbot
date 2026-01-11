@@ -42,6 +42,7 @@ from .parsers.llm_parsers import (
     parse_email,
 )
 from ..address_service import complete_address
+from .handler_config import BaseHandler
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class CheckoutHandler:
+class CheckoutHandler(BaseHandler):
     """
     Handles the entire checkout flow for orders.
 
@@ -82,17 +83,7 @@ class CheckoutHandler:
             handle_taking_items_with_parsed: Callback to handle parsed items during confirmation.
             **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self.message_builder = config.message_builder
-            self._store_info = config.store_info
-            self._menu_data = config.menu_data or {}
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self.message_builder = kwargs.get("message_builder")
-            self._store_info = None
-            self._menu_data = {}
+        super().__init__(config, **kwargs)
 
         # Handler-specific dependencies and callbacks
         self.order_utils_handler = order_utils_handler or kwargs.get("order_utils_handler")

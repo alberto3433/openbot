@@ -11,58 +11,22 @@ Designed to be generic and work with any item type that has DB-defined attribute
 """
 
 import logging
-import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
+from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
+from .handler_config import BaseHandler
+from .attribute_loader import load_item_type_attributes
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
 
 logger = logging.getLogger(__name__)
 
-# Word-to-number mapping for quantity extraction (for syrups, shots, etc.)
-WORD_TO_NUM = {
-    "one": 1, "a": 1, "an": 1,
-    "two": 2, "double": 2,
-    "three": 3, "triple": 3,
-    "four": 4, "quad": 4, "quadruple": 4,
-    "five": 5,
-    "six": 6,
-}
 
-
-def _extract_quantity(user_input: str, pattern: str) -> int:
-    """Extract quantity from user input for a given pattern.
-
-    Handles both numeric ("2 vanilla") and word ("two vanilla") quantities.
-
-    Args:
-        user_input: The user's input string (lowercase)
-        pattern: The pattern to look for (e.g., "vanilla", "vanilla syrup")
-
-    Returns:
-        The extracted quantity, defaulting to 1 if not found.
-    """
-    escaped_pattern = re.escape(pattern)
-
-    # Try digit match first: "2 vanilla syrups"
-    digit_match = re.search(rf'(\d+)\s*{escaped_pattern}s?', user_input)
-    if digit_match:
-        return int(digit_match.group(1))
-
-    # Try word match: "two vanilla syrups"
-    word_pattern = r'(one|two|three|four|five|six|double|triple|quad|quadruple)\s+' + escaped_pattern + r's?'
-    word_match = re.search(word_pattern, user_input)
-    if word_match:
-        return WORD_TO_NUM.get(word_match.group(1).lower(), 1)
-
-    return 1
-
-
-class MenuItemConfigHandler:
+class MenuItemConfigHandler(BaseHandler):
     """
     Handles menu item configuration with DB-driven attributes.
 
@@ -75,9 +39,6 @@ class MenuItemConfigHandler:
     # Item types that use this handler for configuration
     SUPPORTED_ITEM_TYPES = {"deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso"}
 
-    # Page size for options pagination (matches other handlers)
-    OPTIONS_PAGE_SIZE = 5
-
     def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
         """
         Initialize the menu item config handler.
@@ -86,14 +47,7 @@ class MenuItemConfigHandler:
             config: HandlerConfig with shared dependencies.
             **kwargs: Legacy parameter support.
         """
-        if config:
-            self.pricing = config.pricing
-            self.menu_lookup = config.menu_lookup
-            self._get_next_question = config.get_next_question
-        else:
-            self.pricing = kwargs.get("pricing")
-            self.menu_lookup = kwargs.get("menu_lookup")
-            self._get_next_question = kwargs.get("get_next_question")
+        super().__init__(config, **kwargs)
 
         # Cache for item type attributes (keyed by item_type_slug)
         self._attributes_cache: dict[str, dict] = {}
@@ -105,6 +59,9 @@ class MenuItemConfigHandler:
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
         Load item type attributes from database.
+
+        Uses the shared attribute_loader for core attributes and adds
+        global attributes with custom question text handling.
 
         Returns dict with structure:
         {
@@ -123,84 +80,26 @@ class MenuItemConfigHandler:
         if item_type_slug in self._attributes_cache:
             return self._attributes_cache[item_type_slug]
 
+        # Use shared loader for core item type attributes
+        result = load_item_type_attributes(item_type_slug, include_global_attributes=False)
+
+        if not result:
+            self._attributes_cache[item_type_slug] = {}
+            return {}
+
+        # Load global attributes with custom question text handling
         from ..db import SessionLocal
         from ..models import (
-            ItemType, ItemTypeAttribute, AttributeOption,
-            ItemTypeIngredient, Ingredient,
-            ItemTypeGlobalAttribute, GlobalAttribute,
+            ItemType, ItemTypeGlobalAttribute, GlobalAttribute,
         )
 
         db = SessionLocal()
         try:
             item_type = db.query(ItemType).filter(ItemType.slug == item_type_slug).first()
             if not item_type:
-                logger.warning("Item type '%s' not found in database", item_type_slug)
-                self._attributes_cache[item_type_slug] = {}
-                return {}
+                self._attributes_cache[item_type_slug] = result
+                return result
 
-            attrs = db.query(ItemTypeAttribute).filter(
-                ItemTypeAttribute.item_type_id == item_type.id
-            ).order_by(ItemTypeAttribute.display_order).all()
-
-            result = {}
-            for attr in attrs:
-                opts_data = []
-
-                # Check if options should come from ingredients
-                if attr.loads_from_ingredients and attr.ingredient_group:
-                    ingredient_links = (
-                        db.query(ItemTypeIngredient)
-                        .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
-                        .filter(
-                            ItemTypeIngredient.item_type_id == item_type.id,
-                            ItemTypeIngredient.ingredient_group == attr.ingredient_group,
-                            ItemTypeIngredient.is_available == True,
-                        )
-                        .order_by(ItemTypeIngredient.display_order)
-                        .all()
-                    )
-
-                    for link in ingredient_links:
-                        ingredient = link.ingredient
-                        opt_data = {
-                            "slug": ingredient.slug or ingredient.name.lower().replace(" ", "_"),
-                            "display_name": link.display_name_override or ingredient.name,
-                            "price": float(link.price_modifier or 0),
-                            "is_default": link.is_default,
-                        }
-                        if ingredient.aliases:
-                            opt_data["aliases"] = ingredient.aliases
-                        if ingredient.must_match:
-                            opt_data["must_match"] = ingredient.must_match
-                        opts_data.append(opt_data)
-                else:
-                    # Load options from attribute_options table
-                    options = db.query(AttributeOption).filter(
-                        AttributeOption.item_type_attribute_id == attr.id,
-                        AttributeOption.is_available == True,
-                    ).order_by(AttributeOption.display_order).all()
-
-                    for opt in options:
-                        opt_data = {
-                            "slug": opt.slug,
-                            "display_name": opt.display_name,
-                            "price": float(opt.price_modifier or 0),
-                            "is_default": opt.is_default,
-                        }
-                        opts_data.append(opt_data)
-
-                result[attr.slug] = {
-                    "slug": attr.slug,
-                    "display_name": attr.display_name,
-                    "question_text": attr.question_text,
-                    "ask_in_conversation": attr.ask_in_conversation,
-                    "input_type": attr.input_type,
-                    "display_order": attr.display_order,
-                    "allow_none": attr.allow_none,
-                    "options": opts_data,
-                }
-
-            # Also load global attributes linked to this item type
             global_attr_links = (
                 db.query(ItemTypeGlobalAttribute)
                 .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
@@ -878,7 +777,7 @@ class MenuItemConfigHandler:
 
         page = order.config_options_page - 1  # 0-indexed for slicing
         page_options, has_more = self._get_options_page(
-            options, page, self.OPTIONS_PAGE_SIZE
+            options, page, DEFAULT_PAGINATION_SIZE
         )
 
         if not page_options:
@@ -1118,10 +1017,10 @@ class MenuItemConfigHandler:
                         # Extract qualifier (extra, light, on the side, etc.)
                         qualifier = self._extract_qualifier_for_option(user_input, opt["display_name"])
                         # Extract quantity specific to this option (e.g., "2 vanilla syrups")
-                        opt_quantity = _extract_quantity(user_lower, opt["display_name"].lower())
+                        opt_quantity = extract_quantity(user_lower, opt["display_name"].lower())
                         if opt_quantity == 1:
                             # Also try with slug pattern
-                            opt_quantity = _extract_quantity(user_lower, opt["slug"].replace("_", " "))
+                            opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
                         selection = {
                             "slug": opt["slug"],
                             "display_name": opt["display_name"],
@@ -1519,9 +1418,9 @@ class MenuItemConfigHandler:
                         opt_name = opt["display_name"]
                         qualifier = self._extract_qualifier_for_option(user_input, opt_name)
                         # Extract quantity for this specific option
-                        opt_quantity = _extract_quantity(user_lower, opt_name.lower())
+                        opt_quantity = extract_quantity(user_lower, opt_name.lower())
                         if opt_quantity == 1:
-                            opt_quantity = _extract_quantity(user_lower, opt["slug"].replace("_", " "))
+                            opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
 
                         if qualifier:
                             value = f"{opt['slug']}_{qualifier}"

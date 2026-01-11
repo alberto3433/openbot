@@ -9,9 +9,9 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from .models import MenuItemTask, OrderTask, ItemTask, TaskStatus
+from .models import MenuItemTask, OrderTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult, ParsedCoffeeEntry
 from .parsers import (
     parse_coffee_size,
@@ -19,9 +19,10 @@ from .parsers import (
     parse_hot_iced_deterministic,
     extract_coffee_modifiers_from_input,
 )
-from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink
+from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink, extract_quantity
 from .message_builder import MessageBuilder
-from .handler_config import HandlerConfig
+from .handler_config import HandlerConfig, BaseHandler
+from .attribute_loader import load_item_type_attributes
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -29,57 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Word-to-number mapping for quantity extraction
-WORD_TO_NUM = {
-    "one": 1, "a": 1, "an": 1,
-    "two": 2, "double": 2,
-    "three": 3, "triple": 3,
-    "four": 4, "quad": 4, "quadruple": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
 
-
-def _extract_quantity(user_input: str, pattern: str) -> int:
-    """Extract quantity from user input for a given pattern.
-
-    Handles both numeric ("2 vanilla") and word ("two vanilla") quantities.
-    """
-    escaped_pattern = re.escape(pattern)
-
-    # Try digit match first: "2 vanilla syrups"
-    digit_match = re.search(rf'(\d+)\s*{escaped_pattern}s?', user_input)
-    if digit_match:
-        return int(digit_match.group(1))
-
-    # Try word match: "two vanilla syrups"
-    word_pattern = r'(one|two|three|four|five|six|seven|eight|nine|ten|double|triple|quad|quadruple)\s+' + escaped_pattern + r's?'
-    word_match = re.search(word_pattern, user_input)
-    if word_match:
-        return WORD_TO_NUM.get(word_match.group(1).lower(), 1)
-
-    return 1
-
-
-def _check_redirect_to_pending_item(
-    user_input: str,
-    item: ItemTask,
-    order: OrderTask,
-    question: str,
-) -> StateMachineResult | None:
-    """Check if user is trying to order a new item while configuring an existing one.
-
-    Import from state_machine to avoid circular imports - this is just a type stub
-    for the callback pattern.
-    """
-    pass  # Will be injected via callback
-
-
-class CoffeeConfigHandler:
+class CoffeeConfigHandler(BaseHandler):
     """
     Handles coffee ordering and configuration flow.
 
@@ -94,25 +46,15 @@ class CoffeeConfigHandler:
             config: HandlerConfig with shared dependencies.
             **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self.pricing = config.pricing
-            self.menu_lookup = config.menu_lookup
-            self._get_next_question = config.get_next_question
-            self._check_redirect = config.check_redirect
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self.pricing = kwargs.get("pricing")
-            self.menu_lookup = kwargs.get("menu_lookup")
-            self._get_next_question = kwargs.get("get_next_question")
-            self._check_redirect = kwargs.get("check_redirect")
+        super().__init__(config, **kwargs)
 
         # Cache for item type attributes (loaded on first use)
         self._sized_beverage_attributes_cache: dict | None = None
 
     def _get_sized_beverage_attributes(self) -> dict:
         """Load sized_beverage item type attributes from database.
+
+        Uses the shared attribute_loader module for consistent loading.
 
         Returns dict with structure:
         {
@@ -124,92 +66,16 @@ class CoffeeConfigHandler:
                 "question_text": "Hot or iced?",
                 "options": [{"slug": "hot", "display_name": "Hot"}, {"slug": "iced", "display_name": "Iced"}]
             },
-            "drink_modifier": {
-                "question_text": "Any milk, sweetener, or syrup?",
-                "options": [{"slug": "oat_milk", "display_name": "Oat Milk", "price": 0.50, "category": "milk"}, ...]
-            },
             ...
         }
         """
         if self._sized_beverage_attributes_cache is not None:
             return self._sized_beverage_attributes_cache
 
-        from ..db import SessionLocal
-        from ..models import (
-            ItemType, ItemTypeAttribute, AttributeOption,
-            ItemTypeIngredient, Ingredient
-        )
-
-        db = SessionLocal()
-        try:
-            sized_beverage_type = db.query(ItemType).filter(ItemType.slug == "sized_beverage").first()
-            if not sized_beverage_type:
-                logger.warning("sized_beverage item type not found in database")
-                self._sized_beverage_attributes_cache = {}
-                return {}
-
-            attrs = db.query(ItemTypeAttribute).filter(
-                ItemTypeAttribute.item_type_id == sized_beverage_type.id
-            ).all()
-
-            result = {}
-            for attr in attrs:
-                opts_data = []
-
-                # Check if options should come from ingredients (data-driven approach)
-                if attr.loads_from_ingredients and attr.ingredient_group:
-                    # Load options from item_type_ingredients + ingredients
-                    ingredient_links = (
-                        db.query(ItemTypeIngredient)
-                        .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
-                        .filter(
-                            ItemTypeIngredient.item_type_id == sized_beverage_type.id,
-                            ItemTypeIngredient.ingredient_group == attr.ingredient_group,
-                            ItemTypeIngredient.is_available == True,
-                        )
-                        .order_by(ItemTypeIngredient.display_order)
-                        .all()
-                    )
-
-                    for link in ingredient_links:
-                        ingredient = link.ingredient
-                        opt_data = {
-                            "slug": ingredient.slug or ingredient.name.lower().replace(" ", "_"),
-                            "display_name": link.display_name_override or ingredient.name,
-                            "price": float(link.price_modifier or 0),
-                            "category": ingredient.category,  # For filtering by type (milk/sweetener/syrup)
-                        }
-                        # Include ingredient aliases and must_match for matching (now lists from child tables)
-                        if ingredient.aliases:
-                            opt_data["ingredient_aliases"] = ingredient.aliases
-                        if ingredient.must_match:
-                            opt_data["ingredient_must_match"] = ingredient.must_match
-                        opts_data.append(opt_data)
-                else:
-                    # Fall back to attribute_options table
-                    options = db.query(AttributeOption).filter(
-                        AttributeOption.item_type_attribute_id == attr.id
-                    ).order_by(AttributeOption.display_order).all()
-
-                    for opt in options:
-                        opts_data.append({
-                            "slug": opt.slug,
-                            "display_name": opt.display_name or opt.slug.replace("_", " ").title(),
-                            "price": float(opt.price_modifier or 0),
-                        })
-
-                result[attr.slug] = {
-                    "question_text": attr.question_text,
-                    "ask_in_conversation": attr.ask_in_conversation,
-                    "options": opts_data,
-                }
-
-            self._sized_beverage_attributes_cache = result
-            logger.info("Loaded sized_beverage attributes from DB: %s", list(result.keys()))
-            return result
-
-        finally:
-            db.close()
+        result = load_item_type_attributes("sized_beverage", include_ingredient_metadata=True)
+        self._sized_beverage_attributes_cache = result
+        logger.info("Loaded sized_beverage attributes from DB: %s", list(result.keys()))
+        return result
 
     def _get_size_question(self) -> str:
         """Get the size question from DB, with fallback."""
@@ -352,7 +218,7 @@ class CoffeeConfigHandler:
             for mm in must_match:
                 mm = mm.strip()
                 if mm and re.search(rf'\b{re.escape(mm)}\b', user_lower):
-                    quantity = _extract_quantity(user_lower, mm)
+                    quantity = extract_quantity(user_lower, mm)
                     matched.append({
                         "slug": slug,
                         "display_name": display or slug.replace("_", " ").title(),
@@ -383,7 +249,7 @@ class CoffeeConfigHandler:
                     continue
 
                 if alias and re.search(rf'\b{re.escape(alias)}s?\b', user_lower):
-                    quantity = _extract_quantity(user_lower, alias)
+                    quantity = extract_quantity(user_lower, alias)
                     matched.append({
                         "slug": slug,
                         "display_name": display or slug.replace("_", " ").title(),
@@ -422,7 +288,7 @@ class CoffeeConfigHandler:
 
             for pattern in patterns:
                 if pattern and re.search(rf'\b{re.escape(pattern)}s?\b', user_lower):
-                    quantity = _extract_quantity(user_lower, pattern)
+                    quantity = extract_quantity(user_lower, pattern)
                     matched.append({
                         "slug": slug,
                         "display_name": display or slug.replace("_", " ").title(),

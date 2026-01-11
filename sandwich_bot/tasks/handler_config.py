@@ -5,7 +5,7 @@ This module provides a centralized configuration dataclass that is shared
 across all handler classes, reducing boilerplate in handler initialization.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -65,6 +65,73 @@ class HandlerConfig:
         current = asdict(self)
         current.update(kwargs)
         return HandlerConfig(**current)
+
+
+class BaseHandler:
+    """
+    Base class for state machine handlers.
+
+    Provides common initialization logic to reduce boilerplate across handlers.
+    Handlers inherit from this and call super().__init__(config, **kwargs).
+
+    Attributes extracted from config (with legacy kwargs fallback):
+        model: LLM model name (default: "gpt-4o-mini")
+        pricing: PricingEngine instance
+        menu_lookup: MenuLookup instance
+        menu_data: Raw menu data dictionary
+        store_info: Store information dictionary
+        message_builder: MessageBuilder instance
+        _get_next_question: Callback for next question
+        _check_redirect: Callback for redirect checks
+    """
+
+    def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
+        """
+        Initialize base handler with config or legacy kwargs.
+
+        Args:
+            config: HandlerConfig with shared dependencies.
+            **kwargs: Legacy parameter support for backwards compatibility.
+        """
+        if config:
+            self.model = config.model
+            self.pricing = config.pricing
+            self.menu_lookup = config.menu_lookup
+            self._menu_data = config.menu_data or {}
+            self._store_info = config.store_info
+            self.message_builder = config.message_builder
+            self._get_next_question = config.get_next_question
+            self._check_redirect = config.check_redirect
+        else:
+            # Legacy support for direct parameters
+            self.model = kwargs.get("model", "gpt-4o-mini")
+            self.pricing = kwargs.get("pricing")
+            self.menu_lookup = kwargs.get("menu_lookup")
+            self._menu_data = kwargs.get("menu_data") or {}
+            self._store_info = kwargs.get("store_info")
+            self.message_builder = kwargs.get("message_builder")
+            self._get_next_question = kwargs.get("get_next_question")
+            self._check_redirect = kwargs.get("check_redirect")
+
+    @property
+    def menu_data(self) -> dict:
+        """Get menu data dictionary."""
+        return self._menu_data
+
+    @menu_data.setter
+    def menu_data(self, value: dict) -> None:
+        """Set menu data dictionary."""
+        self._menu_data = value or {}
+
+    @property
+    def store_info(self) -> dict | None:
+        """Get store info dictionary."""
+        return self._store_info
+
+    @store_info.setter
+    def store_info(self, value: dict | None) -> None:
+        """Set store info dictionary."""
+        self._store_info = value
 
 
 @dataclass

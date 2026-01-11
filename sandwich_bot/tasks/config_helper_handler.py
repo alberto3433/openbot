@@ -10,7 +10,7 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, BagelItemTask
 from .schemas import OrderPhase, StateMachineResult
@@ -29,41 +29,6 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"(?:\s+(?:the|my|that|this))?\s*(.+?)(?:\s+please)?$",
     re.IGNORECASE
 )
-
-
-def _check_redirect_to_pending_item(
-    user_input: str,
-    item: "ItemTask",
-    order: OrderTask,
-    question: str,
-    valid_answers: set[str] | None = None,
-) -> StateMachineResult | None:
-    """
-    Check if user input looks like a new order attempt rather than an answer.
-
-    If it looks like a new order attempt (e.g., "can I also get a latte"),
-    return a redirect message asking them to answer the current question first.
-
-    Returns None if input appears to be a valid answer to the current question.
-    """
-    # Import here to avoid circular dependency
-    from .state_machine import _looks_like_new_order_attempt
-
-    # If it's in the valid answers set, don't redirect
-    if valid_answers:
-        user_lower = user_input.lower().strip()
-        for valid in valid_answers:
-            if valid in user_lower:
-                return None
-
-    # Check if it looks like a new order attempt
-    if _looks_like_new_order_attempt(user_input):
-        return StateMachineResult(
-            message=f"Let me just finish up with this item first. {question}",
-            order=order,
-        )
-
-    return None
 
 
 class ConfigHelperHandler:
@@ -558,6 +523,9 @@ class ConfigHelperHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle side choice for omelette - uses constrained parser."""
+        # Import here to avoid circular dependency
+        from .state_machine import _check_redirect_to_pending_item
+
         # "bagel" and "fruit salad" are valid answers, not new order attempts
         redirect = _check_redirect_to_pending_item(
             user_input, item, order, "Would you like a bagel or fruit salad with it?",

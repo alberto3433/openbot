@@ -14,7 +14,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult, ByPoundOrderItem
 from .parsers import parse_by_pound_category
 from .parsers.constants import get_by_pound_items, get_by_pound_category_names
-from .handler_config import HandlerConfig
+from .handler_config import HandlerConfig, BaseHandler
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ByPoundHandler:
+class ByPoundHandler(BaseHandler):
     """
     Handles by-the-pound item ordering and category browsing.
 
@@ -44,26 +44,10 @@ class ByPoundHandler:
             process_taking_items_input: Callback to process new order input.
             **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self._menu_data = config.menu_data or {}
-            self.pricing = config.pricing
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self._menu_data = kwargs.get("menu_data") or {}
-            self.pricing = kwargs.get("pricing")
+        super().__init__(config, **kwargs)
 
         # Handler-specific callback
         self._process_taking_items_input = process_taking_items_input or kwargs.get("process_taking_items_input")
-
-    @property
-    def menu_data(self) -> dict:
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        self._menu_data = value or {}
 
     def handle_by_pound_inquiry(
         self,

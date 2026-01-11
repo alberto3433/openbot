@@ -140,6 +140,29 @@ Prices are calculated in `pricing.py` using database lookups:
 
 See migration `m7n8o9p0q1r2_populate_modifier_prices.py` for initial price data.
 
+## Data-Driven Architecture
+
+### Principle
+All food-domain behavior must be **data-driven**, not hardcoded. The codebase should have no knowledge of specific foods - item types are database configurations, not code concepts.
+
+### Current State → Target State
+
+| Legacy (Avoid) | Generic (Preferred) |
+|----------------|---------------------|
+| `bagel_handler.py` | `menu_item_handler.py` |
+| `BagelItemTask` | `MenuItemTask` |
+| `BAGEL_TYPES` constant | `AttributeOption` query |
+| `if item == "coffee":` | `if item.requires("temperature"):` |
+
+### Rules for New Code
+1. No new item-specific files or handlers
+2. No new item-specific Pydantic models
+3. No hardcoded item/modifier lists - query the database
+4. No conditionals that check for specific item type names
+
+### Legacy Code
+Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt. Do not extend them - work toward consolidating into generic handlers.
+
 ## Key Patterns
 
 ### Item Configuration Storage

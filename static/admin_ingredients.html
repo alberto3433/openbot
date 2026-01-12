@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Availability Manager (86 System)</title>
+  <title>Ingredient Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
@@ -30,81 +30,233 @@
     .app-header a:hover {
       color: #fff;
     }
-    .container {
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
+
+    /* Two-panel layout */
+    .layout {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      height: calc(100vh - 52px);
     }
-    .section-header .count {
-      background: #e0e0e0;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: normal;
-    }
-    .section-header.danger {
-      background: #ffebee;
-      color: #c62828;
-    }
-    .section-header.danger .count {
-      background: #ef9a9a;
-      color: #b71c1c;
-    }
-    .ingredient-list {
-      padding: 0;
-      margin: 0;
-      list-style: none;
-    }
-    .ingredient-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 16px;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    .ingredient-item:last-child {
-      border-bottom: none;
-    }
-    .ingredient-item:hover {
+    .sidebar {
+      width: 40%;
+      max-width: 520px;
+      border-right: 1px solid #ddd;
       background: #fafafa;
-    }
-    .ingredient-info {
       display: flex;
       flex-direction: column;
     }
-    .ingredient-name {
-      font-weight: 500;
+    .sidebar-header {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    .sidebar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sidebar-header input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
       font-size: 14px;
     }
-    .ingredient-meta {
+    .sidebar-header select {
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+      min-width: 120px;
+    }
+    .sidebar-header button {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: none;
+      background: #1976d2;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sidebar-header button:hover {
+      background: #115293;
+    }
+    .store-indicator {
+      background: #fff3cd;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #856404;
+    }
+    .list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .category-group-header {
+      padding: 8px 12px;
+      background: #e8e8e8;
+      font-weight: 600;
+      font-size: 12px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #ddd;
+      position: sticky;
+      top: 0;
+    }
+    .item-row {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .item-row:hover {
+      background: #e3f2fd;
+    }
+    .item-row.active {
+      background: #bbdefb;
+    }
+    .item-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .item-name {
+      font-weight: 600;
+      color: #1976d2;
+    }
+    .item-category {
       font-size: 12px;
       color: #666;
     }
+    .item-status {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .item-status.available {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .item-status.unavailable {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .empty-state {
+      padding: 20px;
+      text-align: center;
+      color: #777;
+      font-size: 14px;
+    }
+
+    /* Detail panel */
+    .detail {
+      flex: 1;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .detail-nav button {
+      padding: 4px 8px;
+      margin-left: 4px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .detail-nav button:hover {
+      background: #e0e0e0;
+    }
+
+    /* Form fields */
+    .detail-body {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .field input[type="text"],
+    .field select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .field input:focus,
+    .field select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .field .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* Availability section */
+    .availability-section {
+      margin: 20px 0;
+      padding: 16px;
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+    .availability-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+    }
+    .availability-toggle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
     .toggle-btn {
-      padding: 6px 14px;
+      padding: 8px 16px;
       border-radius: 4px;
       border: none;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      min-width: 100px;
+      min-width: 120px;
       transition: all 0.2s;
     }
     .toggle-btn.available {
@@ -127,214 +279,119 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
-    .empty-state {
-      padding: 30px;
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-    }
-    .empty-state.good {
-      color: #2e7d32;
-    }
-    .filter-bar {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-    .filter-bar input,
-    .filter-bar select {
-      padding: 8px 12px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      font-size: 14px;
-    }
-    .filter-bar input {
-      flex: 1;
-      min-width: 200px;
-    }
-    .status-bar {
-      padding: 10px 16px;
-      background: #e3f2fd;
-      color: #1565c0;
-      font-size: 13px;
-      text-align: center;
-    }
-    .status-bar.error {
-      background: #ffebee;
-      color: #c62828;
-    }
-    .status-bar.success {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
-    .refresh-btn {
-      padding: 8px 16px;
-      background: #1976d2;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .refresh-btn:hover {
-      background: #1565c0;
-    }
-    .category-group {
-      margin-bottom: 16px;
-    }
-    .category-title {
-      padding: 8px 16px;
-      background: #fafafa;
-      font-weight: 600;
-      font-size: 13px;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    /* Edit button styles */
-    .edit-btn {
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: 1px solid #1976d2;
-      background: #fff;
-      color: #1976d2;
+    .availability-note {
       font-size: 12px;
-      cursor: pointer;
-      margin-right: 8px;
-    }
-    .edit-btn:hover {
-      background: #e3f2fd;
-    }
-    .ingredient-actions {
-      display: flex;
-      align-items: center;
-    }
-    /* Modal styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-      width: 90%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      font-weight: 600;
-      font-size: 18px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
       color: #666;
-      padding: 0;
-      line-height: 1;
     }
-    .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-weight: 500;
-      margin-bottom: 6px;
-      font-size: 14px;
-    }
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 10px 12px;
+
+    /* Tag input styles */
+    .tag-input-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px;
       border: 1px solid #ccc;
       border-radius: 4px;
-      font-size: 14px;
-      box-sizing: border-box;
+      min-height: 40px;
+      background: #fff;
+      cursor: text;
     }
-    .form-group input:focus,
-    .form-group select:focus {
-      outline: none;
+    .tag-input-container:focus-within {
       border-color: #1976d2;
       box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
     }
-    .form-group small {
-      display: block;
-      color: #666;
-      font-size: 12px;
-      margin-top: 4px;
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      background: #e3f2fd;
+      color: #1565c0;
+      border-radius: 4px;
+      font-size: 13px;
     }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
+    .tag-remove {
+      cursor: pointer;
+      font-weight: bold;
+      color: #1565c0;
+      margin-left: 2px;
+    }
+    .tag-remove:hover {
+      color: #c62828;
+    }
+    .tag-input {
+      flex: 1;
+      min-width: 100px;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      padding: 4px;
+    }
+
+    /* Stats section */
+    .stats-section {
+      margin-top: 20px;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+    }
+    .stats-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stats-content {
+      font-size: 13px;
+      color: #333;
+    }
+
+    /* Detail footer */
+    .detail-footer {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid #ddd;
+      margin-top: auto;
+    }
+    .detail-footer-left {
+      display: flex;
+      gap: 10px;
+    }
+    .detail-footer-right {
+      display: flex;
       gap: 10px;
     }
     .btn {
       padding: 10px 20px;
       border-radius: 4px;
-      border: none;
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
     }
-    .btn-primary {
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
       background: #1976d2;
       color: #fff;
+      border-color: #1976d2;
     }
-    .btn-primary:hover {
+    .btn.primary:hover {
       background: #1565c0;
     }
-    .btn-secondary {
-      background: #e0e0e0;
-      color: #333;
+    .btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
     }
-    .btn-secondary:hover {
-      background: #d0d0d0;
-    }
-    .btn-danger {
-      background: #c62828;
-      color: #fff;
-    }
-    .btn-danger:hover {
-      background: #b71c1c;
-    }
-    .modal-footer-left {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-    }
-    .modal-footer-right {
-      display: flex;
-      gap: 10px;
+    .btn.danger:hover {
+      background: #ffebee;
     }
 
     /* Toast notification styles */
@@ -371,13 +428,14 @@
       from { transform: translateX(0); opacity: 1; }
       to { transform: translateX(100%); opacity: 0; }
     }
+
     /* Button state styles */
-    .btn.saving, .btn-primary.saving {
+    .btn.saving {
       position: relative;
       pointer-events: none;
       opacity: 0.8;
     }
-    .btn.saving::after, .btn-primary.saving::after {
+    .btn.saving::after {
       content: "";
       width: 14px;
       height: 14px;
@@ -389,20 +447,41 @@
       display: inline-block;
       vertical-align: middle;
     }
-    .btn.saved, .btn-primary.saved {
+    .btn.saved {
       background: #10b981 !important;
+      border-color: #10b981 !important;
+      color: #fff !important;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    /* 86'd summary bar */
+    .summary-bar {
+      padding: 8px 12px;
+      background: #fff3cd;
+      border-bottom: 1px solid #ddd;
+      font-size: 13px;
+      color: #856404;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .summary-bar.all-good {
+      background: #d4edda;
+      color: #155724;
+    }
+    .summary-bar .count {
+      font-weight: 600;
     }
   </style>
 </head>
 <body>
   <!-- Toast notification container -->
-  <div class="toast-container" id="toastContainer"></div>
+  <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Availability Manager (86 System)</div>
+    <div>Ingredient Management</div>
     <div>
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_menu.html">Menu</a>
@@ -419,121 +498,115 @@
     </div>
   </div>
 
-  <div class="container">
-    <!-- Store Selector -->
-    <div class="filter-bar" style="margin-bottom: 20px; background: #fff3cd; padding: 12px 16px; border-radius: 8px;">
-      <label for="storeSelector" style="font-weight: 600; margin-right: 10px;">Managing availability for:</label>
-      <select id="storeSelector" style="flex: none; min-width: 200px;">
-        <!-- Populated dynamically from API -->
-      </select>
-      <span style="color: #856404; font-size: 13px; margin-left: 10px;">Changes only affect the selected store</span>
-    </div>
-
-    <div id="statusBar" class="status-bar" style="display: none;"></div>
-
-    <!-- Out of Stock Section - Ingredients -->
-    <div class="section" id="outOfStockSection">
-      <div class="section-header danger">
-        <span>Ingredients 86'd (Out of Stock)</span>
-        <span class="count" id="outOfStockCount">0</span>
-      </div>
-      <ul class="ingredient-list" id="outOfStockList">
-        <li class="empty-state good">All ingredients are available!</li>
-      </ul>
-    </div>
-
-    <!-- Out of Stock Section - Menu Items -->
-    <div class="section" id="outOfStockMenuItemsSection">
-      <div class="section-header danger">
-        <span>Menu Items 86'd (Out of Stock)</span>
-        <span class="count" id="outOfStockMenuItemsCount">0</span>
-      </div>
-      <ul class="ingredient-list" id="outOfStockMenuItemsList">
-        <li class="empty-state good">All menu items are available!</li>
-      </ul>
-    </div>
-
-    <!-- Filter Bar -->
-    <div class="filter-bar">
-      <input type="text" id="searchInput" placeholder="Search ingredients..." />
-      <select id="categoryFilter">
-        <option value="">All categories</option>
-      </select>
-      <button class="refresh-btn" id="refreshBtn">Refresh</button>
-    </div>
-
-    <!-- All Ingredients Section -->
-    <div class="section" id="allIngredientsSection">
-      <div class="section-header">
-        <span>All Ingredients</span>
-        <span class="count" id="totalCount">0</span>
-      </div>
-      <div id="ingredientsList"></div>
-    </div>
-
-    <!-- Filter Bar for Menu Items -->
-    <div class="filter-bar">
-      <input type="text" id="menuItemSearchInput" placeholder="Search menu items..." />
-      <select id="menuItemCategoryFilter">
-        <option value="">All categories</option>
-      </select>
-    </div>
-
-    <!-- All Menu Items Section -->
-    <div class="section" id="allMenuItemsSection">
-      <div class="section-header">
-        <span>All Menu Items</span>
-        <span class="count" id="menuItemTotalCount">0</span>
-      </div>
-      <div id="menuItemsList"></div>
-    </div>
-  </div>
-
-  <!-- Edit Ingredient Modal -->
-  <div class="modal-overlay" id="editIngredientModal">
-    <div class="modal">
-      <div class="modal-header">
-        <span>Edit Ingredient</span>
-        <button class="modal-close" id="closeModal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="editIngredientId" />
-        <div class="form-group">
-          <label for="editIngredientName">Name</label>
-          <input type="text" id="editIngredientName" placeholder="e.g., Swiss Cheese" />
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-row">
+          <input id="searchInput" type="text" placeholder="Search ingredients..." />
+          <button id="newIngredientBtn">+ New</button>
         </div>
-        <div class="form-group">
-          <label for="editIngredientCategory">Category</label>
-          <select id="editIngredientCategory">
-            <!-- Populated dynamically from existing categories -->
+        <div class="sidebar-row">
+          <select id="categoryFilter">
+            <option value="">All categories</option>
+          </select>
+          <select id="storeSelector">
+            <!-- Populated dynamically from API -->
           </select>
         </div>
-        <div class="form-group">
-          <label for="editIngredientUnit">Unit</label>
-          <input type="text" id="editIngredientUnit" placeholder="e.g., piece, slice, oz" />
-        </div>
-        <div class="form-group">
-          <label>Aliases (synonyms for matching)</label>
-          <div class="tag-input-container" id="editAliasesContainer" onclick="document.getElementById('editAliasInput').focus()">
-            <input id="editAliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
-          </div>
-          <small>Alternative names that customers might use when ordering (press Enter to add each one)</small>
-        </div>
-        <div class="form-group">
-          <label>Must Match (required strings)</label>
-          <div class="tag-input-container" id="editMustMatchContainer" onclick="document.getElementById('editMustMatchInput').focus()">
-            <input id="editMustMatchInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
-          </div>
-          <small>At least one must be in input for this to match. Use for disambiguation (e.g., "GF Everything" prevents matching on just "everything")</small>
+      </div>
+      <div id="summaryBar" class="summary-bar all-good">
+        <span>All ingredients available</span>
+      </div>
+      <div id="ingredientList" class="list">
+        <div class="empty-state">Loading ingredients...</div>
+      </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail">
+      <div class="detail-header">
+        <div class="detail-title" id="detailTitle">No ingredient selected</div>
+        <div class="detail-nav">
+          <button id="prevBtn">&larr; Prev</button>
+          <button id="nextBtn">Next &rarr;</button>
         </div>
       </div>
-      <div class="modal-footer">
-        <div class="modal-footer-left">
-          <button class="btn btn-danger" id="deleteIngredientBtn">Delete Ingredient</button>
-          <div class="modal-footer-right">
-            <button class="btn btn-secondary" id="cancelEditBtn">Cancel</button>
-            <button class="btn btn-primary" id="saveIngredientBtn">Save Changes</button>
+
+      <div class="detail-body" id="detailBody">
+        <input type="hidden" id="ingredientId" />
+
+        <div class="field-row">
+          <div class="field">
+            <label for="ingredientName">Name *</label>
+            <input type="text" id="ingredientName" placeholder="e.g., Swiss Cheese" />
+            <div class="hint">Display name for the ingredient</div>
           </div>
+          <div class="field">
+            <label for="ingredientCategory">Category *</label>
+            <select id="ingredientCategory">
+              <option value="bread">Bread</option>
+              <option value="protein">Protein</option>
+              <option value="cheese">Cheese</option>
+              <option value="topping">Topping</option>
+              <option value="sauce">Sauce</option>
+              <option value="spread">Spread</option>
+              <option value="bagel">Bagel</option>
+              <option value="drink">Drink</option>
+            </select>
+            <div class="hint">Type of ingredient for grouping</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ingredientUnit">Unit</label>
+          <input type="text" id="ingredientUnit" placeholder="e.g., piece, slice, oz" />
+          <div class="hint">Unit of measurement</div>
+        </div>
+
+        <div class="field">
+          <label>Aliases (synonyms for matching)</label>
+          <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
+            <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
+          <div class="hint">Alternative names customers might use when ordering (press Enter to add each)</div>
+        </div>
+
+        <div class="field">
+          <label>Must Match (required strings)</label>
+          <div class="tag-input-container" id="mustMatchContainer" onclick="document.getElementById('mustMatchInput').focus()">
+            <input id="mustMatchInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+          </div>
+          <div class="hint">At least one must be in input for this to match. Use for disambiguation.</div>
+        </div>
+
+        <div class="availability-section" id="availabilitySection">
+          <div class="availability-header">Availability Status</div>
+          <div class="availability-toggle">
+            <button class="toggle-btn available" id="availabilityToggle">
+              Available
+            </button>
+            <span class="availability-note" id="availabilityNote">
+              At selected store
+            </span>
+          </div>
+        </div>
+
+        <div class="stats-section" id="statsSection" style="display: none;">
+          <div class="stats-header">Ingredient Info</div>
+          <div class="stats-content" id="statsContent">
+            <!-- Populated when ingredient is loaded -->
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-footer">
+        <div class="detail-footer-left">
+          <button class="btn danger" id="deleteBtn">Delete</button>
+        </div>
+        <div class="detail-footer-right">
+          <button class="btn" id="cancelBtn">Cancel</button>
+          <button class="btn primary" id="saveBtn">Save</button>
         </div>
       </div>
     </div>
@@ -541,20 +614,80 @@
 
   <script src="/static/admin_common.js"></script>
   <script>
-    const API_BASE = "";
+    // API base URLs
+    const API_BASE = "/admin/ingredients";
+
+    // Auth credentials storage
+    let authCredentials = null;
+
+    // State
     let allIngredients = [];
     let filteredIngredients = [];
-    let allMenuItems = [];
-    let filteredMenuItems = [];
+    let currentIndex = -1;
+    let editingIngredientId = null;
+    let STORE_NAMES = {};
 
-    const statusBar = document.getElementById("statusBar");
+    // DOM elements
     const toastContainer = document.getElementById("toastContainer");
+    const searchInput = document.getElementById("searchInput");
+    const categoryFilter = document.getElementById("categoryFilter");
+    const storeSelector = document.getElementById("storeSelector");
+    const summaryBar = document.getElementById("summaryBar");
+    const ingredientList = document.getElementById("ingredientList");
+    const detailTitle = document.getElementById("detailTitle");
+    const aliasesContainer = document.getElementById("aliasesContainer");
+    const aliasInput = document.getElementById("aliasInput");
+    const mustMatchContainer = document.getElementById("mustMatchContainer");
+    const mustMatchInput = document.getElementById("mustMatchInput");
 
-    // Toast notification system
+    // Initialize tag inputs
+    setupTagInput(aliasInput, aliasesContainer);
+    setupTagInput(mustMatchInput, mustMatchContainer);
+
+    // Authenticated fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+      }
+
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
+    // Toast notification
     function showToast(message, type = "info") {
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
-      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
       toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
       toastContainer.appendChild(toast);
       setTimeout(() => {
@@ -564,7 +697,7 @@
     }
 
     // Button state management
-    function setSaveButtonState(button, state, originalText = "Save Changes") {
+    function setSaveButtonState(button, state, originalText = "Save") {
       if (!button) return;
       switch (state) {
         case "saving":
@@ -591,39 +724,22 @@
       }
     }
 
-    const outOfStockList = document.getElementById("outOfStockList");
-    const outOfStockCount = document.getElementById("outOfStockCount");
-    const outOfStockMenuItemsList = document.getElementById("outOfStockMenuItemsList");
-    const outOfStockMenuItemsCount = document.getElementById("outOfStockMenuItemsCount");
-    const ingredientsList = document.getElementById("ingredientsList");
-    const totalCount = document.getElementById("totalCount");
-    const menuItemsList = document.getElementById("menuItemsList");
-    const menuItemTotalCount = document.getElementById("menuItemTotalCount");
-    const searchInput = document.getElementById("searchInput");
-    const categoryFilter = document.getElementById("categoryFilter");
-    const menuItemSearchInput = document.getElementById("menuItemSearchInput");
-    const menuItemCategoryFilter = document.getElementById("menuItemCategoryFilter");
-    const storeSelector = document.getElementById("storeSelector");
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      return div.innerHTML;
+    }
 
-    // Modal elements
-    const editModal = document.getElementById("editIngredientModal");
-    const editIdEl = document.getElementById("editIngredientId");
-    const editNameEl = document.getElementById("editIngredientName");
-    const editCategoryEl = document.getElementById("editIngredientCategory");
-    const editUnitEl = document.getElementById("editIngredientUnit");
+    function getCurrentStoreId() {
+      return storeSelector.value;
+    }
 
-    // Tag input elements (functions from admin_common.js)
-    const editAliasesContainerEl = document.getElementById("editAliasesContainer");
-    const editAliasInputEl = document.getElementById("editAliasInput");
-    const editMustMatchContainerEl = document.getElementById("editMustMatchContainer");
-    const editMustMatchInputEl = document.getElementById("editMustMatchInput");
+    function getCurrentStoreName() {
+      return STORE_NAMES[getCurrentStoreId()] || getCurrentStoreId();
+    }
 
-    setupTagInput(editAliasInputEl, editAliasesContainerEl);
-    setupTagInput(editMustMatchInputEl, editMustMatchContainerEl);
-
-    // Store name mapping - loaded dynamically from API
-    let STORE_NAMES = {};
-
+    // Load stores
     async function loadStores() {
       try {
         const resp = await fetch("/stores");
@@ -644,40 +760,30 @@
       }
     }
 
-    function getCurrentStoreId() {
-      return storeSelector.value;
-    }
-
-    function getCurrentStoreName() {
-      return STORE_NAMES[getCurrentStoreId()] || getCurrentStoreId();
-    }
-
-    function showStatus(message, type = "info") {
-      statusBar.textContent = message;
-      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
-      statusBar.style.display = "block";
-      if (type !== "error") {
-        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
-      }
-    }
-
+    // Load ingredients (lightweight list)
     async function loadIngredients() {
       const storeId = getCurrentStoreId();
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients?store_id=${storeId}`, { credentials: 'include' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        allIngredients = await resp.json();
+        const response = await authFetch(`${API_BASE}/list?store_id=${storeId}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        allIngredients = await response.json();
         buildCategoryFilter();
-        applyFilters();
-        renderOutOfStock();
-      } catch (err) {
-        console.error("Error loading ingredients:", err);
-        showStatus("Error loading ingredients. Make sure you're logged in as admin.", "error");
+        applyFilter();
+        updateSummaryBar();
+        if (filteredIngredients.length > 0 && currentIndex === -1) {
+          selectIngredientByIndex(0);
+        }
+      } catch (error) {
+        console.error("Failed to load ingredients:", error);
+        showToast("Failed to load ingredients", "error");
+        ingredientList.innerHTML = '<div class="empty-state">Failed to load ingredients. Please refresh.</div>';
       }
     }
 
+    // Build category filter from loaded data
     function buildCategoryFilter() {
       const categories = [...new Set(allIngredients.map(i => i.category))].sort();
+      const currentValue = categoryFilter.value;
       categoryFilter.innerHTML = '<option value="">All categories</option>';
       categories.forEach(cat => {
         const opt = document.createElement("option");
@@ -685,10 +791,24 @@
         opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
         categoryFilter.appendChild(opt);
       });
+      categoryFilter.value = currentValue;
     }
 
-    function applyFilters() {
-      const query = searchInput.value.toLowerCase();
+    // Update summary bar with 86'd count
+    function updateSummaryBar() {
+      const unavailableCount = allIngredients.filter(i => !i.is_available).length;
+      if (unavailableCount === 0) {
+        summaryBar.className = "summary-bar all-good";
+        summaryBar.innerHTML = '<span>All ingredients available</span>';
+      } else {
+        summaryBar.className = "summary-bar";
+        summaryBar.innerHTML = `<span><span class="count">${unavailableCount}</span> ingredient${unavailableCount !== 1 ? 's' : ''} 86'd at ${escapeHtml(getCurrentStoreName())}</span>`;
+      }
+    }
+
+    // Apply search and category filter
+    function applyFilter() {
+      const query = searchInput.value.toLowerCase().trim();
       const cat = categoryFilter.value;
 
       filteredIngredients = allIngredients.filter(ing => {
@@ -697,441 +817,348 @@
         return matchesQuery && matchesCat;
       });
 
-      renderIngredientsList();
+      renderList();
     }
 
-    function renderOutOfStock() {
-      const unavailable = allIngredients.filter(i => !i.is_available);
-      outOfStockCount.textContent = unavailable.length;
-
-      if (unavailable.length === 0) {
-        outOfStockList.innerHTML = '<li class="empty-state good">All ingredients are available!</li>';
-        return;
-      }
-
-      outOfStockList.innerHTML = unavailable.map(ing => `
-        <li class="ingredient-item">
-          <div class="ingredient-info">
-            <span class="ingredient-name">${ing.name}</span>
-            <span class="ingredient-meta">${ing.category}</span>
-          </div>
-          <button class="toggle-btn unavailable" data-id="${ing.id}" data-available="false">
-            86'd - Click to Restock
-          </button>
-        </li>
-      `).join("");
-
-      // Add click handlers
-      outOfStockList.querySelectorAll(".toggle-btn").forEach(btn => {
-        btn.addEventListener("click", () => toggleAvailability(btn));
-      });
-    }
-
-    function renderIngredientsList() {
-      totalCount.textContent = filteredIngredients.length;
-
+    // Render the sidebar list grouped by category
+    function renderList() {
       if (filteredIngredients.length === 0) {
-        ingredientsList.innerHTML = '<div class="empty-state">No ingredients found.</div>';
+        ingredientList.innerHTML = '<div class="empty-state">No ingredients found. Click "+ New" to create one.</div>';
         return;
       }
 
       // Group by category
       const grouped = {};
-      filteredIngredients.forEach(ing => {
+      filteredIngredients.forEach((ing, idx) => {
         if (!grouped[ing.category]) grouped[ing.category] = [];
-        grouped[ing.category].push(ing);
+        grouped[ing.category].push({ ...ing, filteredIndex: idx });
       });
 
       const categories = Object.keys(grouped).sort();
 
-      ingredientsList.innerHTML = categories.map(cat => `
-        <div class="category-group">
-          <div class="category-title">${cat} (${grouped[cat].length})</div>
-          <ul class="ingredient-list">
-            ${grouped[cat].map(ing => `
-              <li class="ingredient-item">
-                <div class="ingredient-info">
-                  <span class="ingredient-name">${ing.name}</span>
-                  <span class="ingredient-meta">${ing.category || 'uncategorized'}${ing.unit ? ' | Unit: ' + ing.unit : ''}${ing.aliases && ing.aliases.length ? ' | Aliases: ' + ing.aliases.join(', ') : ''}</span>
-                </div>
-                <div class="ingredient-actions">
-                  <button class="edit-btn" data-id="${ing.id}">Edit</button>
-                  <button class="toggle-btn ${ing.is_available ? 'available' : 'unavailable'}"
-                          data-id="${ing.id}"
-                          data-available="${ing.is_available}">
-                    ${ing.is_available ? 'Available' : "86'd"}
-                  </button>
-                </div>
-              </li>
-            `).join("")}
-          </ul>
-        </div>
-      `).join("");
-
-      // Add click handlers for toggle buttons
-      ingredientsList.querySelectorAll(".toggle-btn").forEach(btn => {
-        btn.addEventListener("click", () => toggleAvailability(btn));
+      let html = '';
+      categories.forEach(cat => {
+        html += `<div class="category-group-header">${escapeHtml(cat)} (${grouped[cat].length})</div>`;
+        grouped[cat].forEach(ing => {
+          html += `
+            <div class="item-row${ing.filteredIndex === currentIndex ? ' active' : ''}" data-index="${ing.filteredIndex}">
+              <div class="item-main">
+                <span class="item-name">${escapeHtml(ing.name)}</span>
+                <span class="item-category">${escapeHtml(ing.category)}</span>
+              </div>
+              <span class="item-status ${ing.is_available ? 'available' : 'unavailable'}">
+                ${ing.is_available ? 'Available' : "86'd"}
+              </span>
+            </div>
+          `;
+        });
       });
 
-      // Add click handlers for edit buttons
-      ingredientsList.querySelectorAll(".edit-btn").forEach(btn => {
-        btn.addEventListener("click", () => openEditModal(parseInt(btn.dataset.id)));
+      ingredientList.innerHTML = html;
+
+      // Add click handlers
+      document.querySelectorAll(".item-row").forEach(row => {
+        row.addEventListener("click", () => {
+          selectIngredientByIndex(parseInt(row.dataset.index));
+        });
       });
     }
 
-    async function toggleAvailability(btn) {
-      const id = btn.dataset.id;
+    // Clear detail form
+    function clearDetailForm() {
+      detailTitle.textContent = "New Ingredient";
+      document.getElementById("ingredientId").value = "";
+      document.getElementById("ingredientName").value = "";
+      document.getElementById("ingredientCategory").value = "topping";
+      document.getElementById("ingredientUnit").value = "piece";
+      clearTags(aliasesContainer, aliasInput);
+      clearTags(mustMatchContainer, mustMatchInput);
+      updateAvailabilityButton(true);
+      document.getElementById("statsSection").style.display = "none";
+    }
+
+    // Select ingredient by index
+    async function selectIngredientByIndex(idx, newItem = false) {
+      currentIndex = idx;
+
+      // Update list highlighting
+      document.querySelectorAll(".item-row").forEach((row, i) => {
+        row.classList.toggle("active", parseInt(row.dataset.index) === currentIndex);
+      });
+
+      if (newItem || idx < 0 || idx >= filteredIngredients.length) {
+        editingIngredientId = null;
+        clearDetailForm();
+        return;
+      }
+
+      const ingredient = filteredIngredients[idx];
+      editingIngredientId = ingredient.id;
+
+      // Fetch full details
+      try {
+        const response = await authFetch(`${API_BASE}/${ingredient.id}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const fullData = await response.json();
+        populateDetailForm(fullData);
+      } catch (error) {
+        console.error("Failed to load ingredient details:", error);
+        showToast("Failed to load ingredient details", "error");
+        // Use minimal data from list
+        populateDetailForm(ingredient);
+      }
+    }
+
+    // Populate detail form with ingredient data
+    function populateDetailForm(ingredient) {
+      detailTitle.textContent = ingredient.name;
+      document.getElementById("ingredientId").value = ingredient.id;
+      document.getElementById("ingredientName").value = ingredient.name;
+      document.getElementById("ingredientCategory").value = ingredient.category;
+      document.getElementById("ingredientUnit").value = ingredient.unit || "piece";
+
+      // Set aliases
+      setTags(aliasesContainer, aliasInput, ingredient.aliases || []);
+
+      // Set must_match
+      setTags(mustMatchContainer, mustMatchInput, ingredient.must_match || []);
+
+      // Update availability button
+      updateAvailabilityButton(ingredient.is_available);
+
+      // Show stats
+      const statsSection = document.getElementById("statsSection");
+      const statsContent = document.getElementById("statsContent");
+      statsSection.style.display = "block";
+      statsContent.innerHTML = `
+        <div>Unit: ${escapeHtml(ingredient.unit || 'piece')}</div>
+        ${ingredient.abbreviation ? `<div>Abbreviation: ${escapeHtml(ingredient.abbreviation)}</div>` : ''}
+      `;
+    }
+
+    // Update availability toggle button
+    function updateAvailabilityButton(isAvailable) {
+      const btn = document.getElementById("availabilityToggle");
+      btn.className = "toggle-btn " + (isAvailable ? "available" : "unavailable");
+      btn.textContent = isAvailable ? "Available" : "86'd";
+      btn.dataset.available = isAvailable.toString();
+
+      const note = document.getElementById("availabilityNote");
+      note.textContent = `At ${getCurrentStoreName()}`;
+    }
+
+    // Toggle availability
+    async function toggleAvailability() {
+      if (!editingIngredientId) return;
+
+      const btn = document.getElementById("availabilityToggle");
       const currentlyAvailable = btn.dataset.available === "true";
       const newAvailable = !currentlyAvailable;
-      const storeId = getCurrentStoreId();
 
       btn.disabled = true;
       btn.textContent = "Updating...";
 
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/${id}/availability`, {
+        const response = await authFetch(`${API_BASE}/${editingIngredientId}/availability`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_available: newAvailable, store_id: storeId }),
-          credentials: 'include'
+          body: JSON.stringify({ is_available: newAvailable, store_id: getCurrentStoreId() })
         });
 
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-        const updated = await resp.json();
-        showStatus(`${updated.name} is now ${newAvailable ? 'available' : "86'd"} at ${getCurrentStoreName()}`, "success");
-
-        // Update local data and re-render
-        const idx = allIngredients.findIndex(i => i.id === updated.id);
-        if (idx !== -1) {
-          allIngredients[idx] = updated;
-        }
-        applyFilters();
-        renderOutOfStock();
-
-      } catch (err) {
-        console.error("Error updating availability:", err);
-        showStatus("Error updating ingredient. See console.", "error");
-        btn.disabled = false;
-        btn.textContent = currentlyAvailable ? 'Available' : "86'd";
-      }
-    }
-
-    // ========== INGREDIENT EDIT MODAL FUNCTIONS ==========
-
-    function openEditModal(ingredientId) {
-      const ingredient = allIngredients.find(i => i.id === ingredientId);
-      if (!ingredient) {
-        showStatus("Ingredient not found", "error");
-        return;
-      }
-
-      // Populate category dropdown with all existing categories
-      const categories = [...new Set(allIngredients.map(i => i.category).filter(Boolean))].sort();
-      editCategoryEl.innerHTML = categories.map(cat =>
-        `<option value="${cat}">${cat.charAt(0).toUpperCase() + cat.slice(1)}</option>`
-      ).join("");
-
-      editIdEl.value = ingredient.id;
-      editNameEl.value = ingredient.name;
-      editCategoryEl.value = ingredient.category;
-      editUnitEl.value = ingredient.unit || "";
-      setTags(editAliasesContainerEl, editAliasInputEl, ingredient.aliases || []);
-      setTags(editMustMatchContainerEl, editMustMatchInputEl, ingredient.must_match || []);
-
-      editModal.classList.add("active");
-    }
-
-    function closeEditModal() {
-      editModal.classList.remove("active");
-      editIdEl.value = "";
-      editNameEl.value = "";
-      editCategoryEl.value = "bread";
-      editUnitEl.value = "";
-      clearTags(editAliasesContainerEl, editAliasInputEl);
-      clearTags(editMustMatchContainerEl, editMustMatchInputEl);
-    }
-
-    async function saveIngredient() {
-      const saveBtn = document.getElementById("saveIngredientBtn");
-      const id = editIdEl.value;
-      if (!id) {
-        showStatus("No ingredient selected", "error");
-        showToast("No ingredient selected", "error");
-        return;
-      }
-
-      // Get tag values as comma-separated strings for API
-      const aliasValues = getTagValues(editAliasesContainerEl);
-      const mustMatchValues = getTagValues(editMustMatchContainerEl);
-
-      const payload = {
-        name: editNameEl.value.trim(),
-        category: editCategoryEl.value,
-        unit: editUnitEl.value.trim(),
-        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
-        must_match: mustMatchValues.length > 0 ? mustMatchValues.join(",") : null
-      };
-
-      if (!payload.name || !payload.unit) {
-        showStatus("Name and unit are required", "error");
-        showToast("Name and unit are required", "error");
-        return;
-      }
-
-      setSaveButtonState(saveBtn, "saving");
-      try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          credentials: 'include'
-        });
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-        const updated = await resp.json();
-        setSaveButtonState(saveBtn, "saved", "Save Changes");
-        showToast(`${updated.name} updated successfully`, "success");
-        showStatus(`${updated.name} updated successfully`, "success");
+        const updated = await response.json();
+        showToast(`${updated.name} is now ${newAvailable ? 'available' : "86'd"} at ${getCurrentStoreName()}`, "success");
 
         // Update local data
         const idx = allIngredients.findIndex(i => i.id === updated.id);
         if (idx !== -1) {
-          allIngredients[idx] = updated;
+          allIngredients[idx].is_available = newAvailable;
         }
 
-        closeEditModal();
-        applyFilters();
+        updateAvailabilityButton(newAvailable);
+        applyFilter();
+        updateSummaryBar();
 
-      } catch (err) {
-        console.error("Error updating ingredient:", err);
-        setSaveButtonState(saveBtn, "error", "Save Changes");
-        showToast("Error updating ingredient. See console.", "error");
-        showStatus("Error updating ingredient. See console.", "error");
+      } catch (error) {
+        console.error("Failed to toggle availability:", error);
+        showToast("Failed to update availability", "error");
+        updateAvailabilityButton(currentlyAvailable);
+      }
+
+      btn.disabled = false;
+    }
+
+    // Save ingredient
+    async function saveIngredient() {
+      const saveBtn = document.getElementById("saveBtn");
+      const name = document.getElementById("ingredientName").value.trim();
+      const category = document.getElementById("ingredientCategory").value;
+      const unit = document.getElementById("ingredientUnit").value.trim() || "piece";
+
+      if (!name) {
+        showToast("Please enter an ingredient name", "error");
+        return;
+      }
+
+      const aliasValues = getTagValues(aliasesContainer);
+      const mustMatchValues = getTagValues(mustMatchContainer);
+
+      const payload = {
+        name: name,
+        category: category,
+        unit: unit,
+        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
+        must_match: mustMatchValues.length > 0 ? mustMatchValues.join(",") : null
+      };
+
+      setSaveButtonState(saveBtn, "saving");
+      try {
+        let response;
+        if (editingIngredientId) {
+          response = await authFetch(`${API_BASE}/${editingIngredientId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        const saved = await response.json();
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast(`Ingredient "${name}" saved successfully!`, "success");
+
+        await loadIngredients();
+
+        // Re-select the saved item
+        const newIdx = filteredIngredients.findIndex(i => i.id === saved.id);
+        if (newIdx !== -1) {
+          selectIngredientByIndex(newIdx);
+        }
+      } catch (error) {
+        console.error("Failed to save ingredient:", error);
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast(`Failed to save: ${error.message}`, "error");
       }
     }
 
+    // Delete ingredient
     async function deleteIngredient() {
-      const id = editIdEl.value;
-      if (!id) {
-        showStatus("No ingredient selected", "error");
+      if (!editingIngredientId) {
+        showToast("No ingredient selected", "error");
         return;
       }
 
-      const ingredientName = editNameEl.value;
-      const confirmed = confirm(`Are you sure you want to delete "${ingredientName}"?\n\nThis action cannot be undone.`);
-      if (!confirmed) {
+      const name = document.getElementById("ingredientName").value;
+      if (!confirm(`Are you sure you want to delete "${name}"?\n\nThis action cannot be undone.`)) {
         return;
       }
 
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/${id}`, {
-          method: "DELETE",
-          credentials: 'include'
+        const response = await authFetch(`${API_BASE}/${editingIngredientId}`, {
+          method: "DELETE"
         });
 
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-        showStatus(`${ingredientName} deleted successfully`, "success");
-
-        // Remove from local data
-        allIngredients = allIngredients.filter(i => i.id !== parseInt(id));
-
-        closeEditModal();
-        applyFilters();
-        renderOutOfStock();
-
-      } catch (err) {
-        console.error("Error deleting ingredient:", err);
-        showStatus("Error deleting ingredient. See console.", "error");
-      }
-    }
-
-    // ========== MENU ITEMS FUNCTIONS ==========
-
-    async function loadMenuItems() {
-      const storeId = getCurrentStoreId();
-      try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items?store_id=${storeId}`, { credentials: 'include' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        allMenuItems = await resp.json();
-        buildMenuItemCategoryFilter();
-        applyMenuItemFilters();
-        renderOutOfStockMenuItems();
-      } catch (err) {
-        console.error("Error loading menu items:", err);
-        showStatus("Error loading menu items. See console.", "error");
-      }
-    }
-
-    function buildMenuItemCategoryFilter() {
-      const categories = [...new Set(allMenuItems.map(i => i.category))].sort();
-      menuItemCategoryFilter.innerHTML = '<option value="">All categories</option>';
-      categories.forEach(cat => {
-        const opt = document.createElement("option");
-        opt.value = cat;
-        opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
-        menuItemCategoryFilter.appendChild(opt);
-      });
-    }
-
-    function applyMenuItemFilters() {
-      const query = menuItemSearchInput.value.toLowerCase();
-      const cat = menuItemCategoryFilter.value;
-
-      filteredMenuItems = allMenuItems.filter(item => {
-        const matchesQuery = !query || item.name.toLowerCase().includes(query);
-        const matchesCat = !cat || item.category === cat;
-        return matchesQuery && matchesCat;
-      });
-
-      renderMenuItemsList();
-    }
-
-    function renderOutOfStockMenuItems() {
-      const unavailable = allMenuItems.filter(i => !i.is_available);
-      outOfStockMenuItemsCount.textContent = unavailable.length;
-
-      if (unavailable.length === 0) {
-        outOfStockMenuItemsList.innerHTML = '<li class="empty-state good">All menu items are available!</li>';
-        return;
-      }
-
-      outOfStockMenuItemsList.innerHTML = unavailable.map(item => `
-        <li class="ingredient-item">
-          <div class="ingredient-info">
-            <span class="ingredient-name">${item.name}</span>
-            <span class="ingredient-meta">${item.category} - $${item.base_price.toFixed(2)}</span>
-          </div>
-          <button class="toggle-btn unavailable" data-id="${item.id}" data-available="false" data-type="menu-item">
-            86'd - Click to Restock
-          </button>
-        </li>
-      `).join("");
-
-      // Add click handlers
-      outOfStockMenuItemsList.querySelectorAll(".toggle-btn").forEach(btn => {
-        btn.addEventListener("click", () => toggleMenuItemAvailability(btn));
-      });
-    }
-
-    function renderMenuItemsList() {
-      menuItemTotalCount.textContent = filteredMenuItems.length;
-
-      if (filteredMenuItems.length === 0) {
-        menuItemsList.innerHTML = '<div class="empty-state">No menu items found.</div>';
-        return;
-      }
-
-      // Group by category
-      const grouped = {};
-      filteredMenuItems.forEach(item => {
-        if (!grouped[item.category]) grouped[item.category] = [];
-        grouped[item.category].push(item);
-      });
-
-      const categories = Object.keys(grouped).sort();
-
-      menuItemsList.innerHTML = categories.map(cat => `
-        <div class="category-group">
-          <div class="category-title">${cat} (${grouped[cat].length})</div>
-          <ul class="ingredient-list">
-            ${grouped[cat].map(item => `
-              <li class="ingredient-item">
-                <div class="ingredient-info">
-                  <span class="ingredient-name">${item.name}</span>
-                  <span class="ingredient-meta">$${item.base_price.toFixed(2)}</span>
-                </div>
-                <button class="toggle-btn ${item.is_available ? 'available' : 'unavailable'}"
-                        data-id="${item.id}"
-                        data-available="${item.is_available}"
-                        data-type="menu-item">
-                  ${item.is_available ? 'Available' : "86'd"}
-                </button>
-              </li>
-            `).join("")}
-          </ul>
-        </div>
-      `).join("");
-
-      // Add click handlers
-      menuItemsList.querySelectorAll(".toggle-btn").forEach(btn => {
-        btn.addEventListener("click", () => toggleMenuItemAvailability(btn));
-      });
-    }
-
-    async function toggleMenuItemAvailability(btn) {
-      const id = btn.dataset.id;
-      const currentlyAvailable = btn.dataset.available === "true";
-      const newAvailable = !currentlyAvailable;
-      const storeId = getCurrentStoreId();
-
-      btn.disabled = true;
-      btn.textContent = "Updating...";
-
-      try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients/menu-items/${id}/availability`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_available: newAvailable, store_id: storeId }),
-          credentials: 'include'
-        });
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-        const updated = await resp.json();
-        showStatus(`${updated.name} is now ${newAvailable ? 'available' : "86'd"} at ${getCurrentStoreName()}`, "success");
-
-        // Update local data and re-render
-        const idx = allMenuItems.findIndex(i => i.id === updated.id);
-        if (idx !== -1) {
-          allMenuItems[idx] = updated;
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
-        applyMenuItemFilters();
-        renderOutOfStockMenuItems();
 
-      } catch (err) {
-        console.error("Error updating menu item availability:", err);
-        showStatus("Error updating menu item. See console.", "error");
-        btn.disabled = false;
-        btn.textContent = currentlyAvailable ? 'Available' : "86'd";
+        showToast("Ingredient deleted", "success");
+
+        editingIngredientId = null;
+        currentIndex = -1;
+        await loadIngredients();
+
+        if (filteredIngredients.length > 0) {
+          selectIngredientByIndex(0);
+        } else {
+          clearDetailForm();
+        }
+      } catch (error) {
+        console.error("Failed to delete ingredient:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
       }
     }
 
-    // ========== COMBINED LOAD FUNCTION ==========
-
-    async function loadAll() {
-      showStatus(`Loading data for ${getCurrentStoreName()}...`);
-      await Promise.all([loadIngredients(), loadMenuItems()]);
-      statusBar.style.display = "none";
+    // Cancel editing
+    function cancelEditing() {
+      if (currentIndex >= 0 && currentIndex < filteredIngredients.length) {
+        selectIngredientByIndex(currentIndex);
+      } else {
+        clearDetailForm();
+      }
     }
 
-    // Event listeners - Ingredients
-    searchInput.addEventListener("input", applyFilters);
-    categoryFilter.addEventListener("change", applyFilters);
+    // Navigation
+    function prevItem() {
+      if (filteredIngredients.length === 0) return;
+      if (currentIndex <= 0) {
+        selectIngredientByIndex(filteredIngredients.length - 1);
+      } else {
+        selectIngredientByIndex(currentIndex - 1);
+      }
+    }
 
-    // Event listeners - Menu Items
-    menuItemSearchInput.addEventListener("input", applyMenuItemFilters);
-    menuItemCategoryFilter.addEventListener("change", applyMenuItemFilters);
+    function nextItem() {
+      if (filteredIngredients.length === 0) return;
+      if (currentIndex >= filteredIngredients.length - 1) {
+        selectIngredientByIndex(0);
+      } else {
+        selectIngredientByIndex(currentIndex + 1);
+      }
+    }
 
-    // Event listeners - Common
-    document.getElementById("refreshBtn").addEventListener("click", loadAll);
-    storeSelector.addEventListener("change", loadAll);
+    // Event listeners
+    document.getElementById("newIngredientBtn").addEventListener("click", () => {
+      currentIndex = -1;
+      selectIngredientByIndex(-1, true);
+    });
+    document.getElementById("prevBtn").addEventListener("click", prevItem);
+    document.getElementById("nextBtn").addEventListener("click", nextItem);
+    document.getElementById("saveBtn").addEventListener("click", saveIngredient);
+    document.getElementById("deleteBtn").addEventListener("click", deleteIngredient);
+    document.getElementById("cancelBtn").addEventListener("click", cancelEditing);
+    document.getElementById("availabilityToggle").addEventListener("click", toggleAvailability);
 
-    // Event listeners - Modal
-    document.getElementById("closeModal").addEventListener("click", closeEditModal);
-    document.getElementById("cancelEditBtn").addEventListener("click", closeEditModal);
-    document.getElementById("saveIngredientBtn").addEventListener("click", saveIngredient);
-    document.getElementById("deleteIngredientBtn").addEventListener("click", deleteIngredient);
-    editModal.addEventListener("click", (e) => {
-      if (e.target === editModal) closeEditModal();
+    searchInput.addEventListener("input", applyFilter);
+    categoryFilter.addEventListener("change", applyFilter);
+    storeSelector.addEventListener("change", () => {
+      loadIngredients();
+      if (editingIngredientId) {
+        // Re-fetch current ingredient with new store's availability
+        selectIngredientByIndex(currentIndex);
+      }
     });
 
-    // Initial load - load stores first so dropdown is populated
+    // Keyboard navigation
+    document.addEventListener("keydown", (e) => {
+      // Don't navigate when typing in inputs
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        prevItem();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        nextItem();
+      }
+    });
+
+    // Initial load
     async function init() {
       await loadStores();
-      loadAll();
+      loadIngredients();
     }
     init();
   </script>

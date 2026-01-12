@@ -57,7 +57,7 @@ import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
@@ -255,7 +255,12 @@ def admin_menu(
     _admin: str = Depends(verify_admin_credentials),
 ) -> List[MenuItemOut]:
     """List all menu items. Requires admin authentication."""
-    items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
+    items = (
+        db.query(MenuItem)
+        .options(joinedload(MenuItem.alias_records))
+        .order_by(MenuItem.id.asc())
+        .all()
+    )
     return [serialize_menu_item(m) for m in items]
 
 

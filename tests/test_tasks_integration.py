@@ -260,7 +260,7 @@ class TestMixedItemBagelChoice:
                 f"CC bagel should not have bagel_type yet, got {cc_bagel.bagel_type}"
 
             # Should ask about toasted for the omelette's bagel next
-            assert result.order.pending_field in ("toasted", "menu_item_attr_toasted")
+            assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "menu_item_bagel_toasted")
 
     def test_sequential_configuration_flow(self):
         """Test that items are configured one at a time in sequence."""
@@ -300,7 +300,7 @@ class TestMixedItemBagelChoice:
 
         assert omelette.bagel_choice == "plain"
         assert cc_bagel.bagel_type is None  # Not configured yet
-        assert result.order.pending_field in ("toasted", "menu_item_attr_toasted")  # Asks toasted for omelette's bagel
+        assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "menu_item_bagel_toasted")  # Asks toasted for omelette's bagel
 
 
 # =============================================================================

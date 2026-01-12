@@ -76,6 +76,7 @@ from ..models import (
     MenuItemStoreAvailability,
 )
 from ..schemas.ingredients import (
+    IngredientListOut,
     IngredientOut,
     IngredientCreate,
     IngredientUpdate,
@@ -167,6 +168,35 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
 # =============================================================================
 # Ingredient Endpoints
 # =============================================================================
+
+@admin_ingredients_router.get("/list", response_model=List[IngredientListOut])
+def list_ingredients_minimal(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    store_id: Optional[str] = Query(None, description="Store ID for availability"),
+) -> List[IngredientListOut]:
+    """Lightweight list for sidebar - minimal fields for fast loading."""
+    ingredients = db.query(Ingredient).order_by(Ingredient.category, Ingredient.name).all()
+
+    result = []
+    for ing in ingredients:
+        is_available = ing.is_available
+        if store_id:
+            store_avail = db.query(IngredientStoreAvailability).filter(
+                IngredientStoreAvailability.ingredient_id == ing.id,
+                IngredientStoreAvailability.store_id == store_id
+            ).first()
+            if store_avail:
+                is_available = store_avail.is_available
+
+        result.append(IngredientListOut(
+            id=ing.id,
+            name=ing.name,
+            category=ing.category,
+            is_available=is_available,
+        ))
+    return result
+
 
 @admin_ingredients_router.get("", response_model=List[IngredientStoreAvailabilityOut])
 def list_ingredients(

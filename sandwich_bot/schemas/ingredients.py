@@ -64,6 +64,27 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 
+class IngredientListOut(BaseModel):
+    """
+    Lightweight response model for ingredient list (sidebar).
+
+    Returns only essential fields for fast loading. Full details
+    including aliases and must_match are fetched on selection.
+
+    Attributes:
+        id: Database primary key
+        name: Display name (e.g., "Swiss Cheese")
+        category: Type category (bread, protein, cheese, topping, sauce)
+        is_available: Availability status for quick indicator
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category: str
+    is_available: bool
+
+
 class IngredientOut(BaseModel):
     """
     Response model for ingredient data.

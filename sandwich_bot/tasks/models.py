@@ -828,6 +828,13 @@ class ItemsTask(BaseTask):
         """Get total count of active items."""
         return sum(item.quantity for item in self.get_active_items())
 
+    def get_item_by_id(self, item_id: str) -> ItemTask | None:
+        """Get an item by its ID."""
+        for item in self.items:
+            if item.id == item_id:
+                return item
+        return None
+
 
 # =============================================================================
 # Root Order Task

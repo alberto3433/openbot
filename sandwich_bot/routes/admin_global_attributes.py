@@ -280,6 +280,13 @@ def create_global_attribute_with_options(
 
     # Add options
     for i, opt_data in enumerate(payload.options):
+        # Auto-find matching ingredient by name or slug
+        ingredient = db.query(Ingredient).filter(
+            (Ingredient.name == opt_data.display_name) |
+            (Ingredient.slug == opt_data.slug)
+        ).first()
+        ingredient_id = ingredient.id if ingredient else None
+
         option = GlobalAttributeOption(
             global_attribute_id=attr.id,
             slug=opt_data.slug,
@@ -289,8 +296,14 @@ def create_global_attribute_with_options(
             is_default=opt_data.is_default,
             is_available=opt_data.is_available,
             display_order=opt_data.display_order if opt_data.display_order else i,
+            ingredient_id=ingredient_id,
         )
         db.add(option)
+        if ingredient:
+            logger.info(
+                "Auto-linked option '%s' to Ingredient '%s' (id=%d)",
+                opt_data.display_name, ingredient.name, ingredient.id
+            )
 
     db.commit()
     db.refresh(attr)
@@ -422,13 +435,27 @@ def create_global_attribute_option(
             detail=f"Option with slug '{payload.slug}' already exists for this attribute"
         )
 
-    # Validate ingredient_id if provided
-    if payload.ingredient_id is not None:
-        ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
+    # Determine ingredient_id: use provided value, or auto-find matching ingredient
+    ingredient_id = payload.ingredient_id
+    if ingredient_id is not None:
+        # Validate provided ingredient_id
+        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
         if not ingredient:
             raise HTTPException(
                 status_code=400,
-                detail=f"Ingredient with id {payload.ingredient_id} not found"
+                detail=f"Ingredient with id {ingredient_id} not found"
+            )
+    else:
+        # Auto-find matching ingredient by name or slug
+        ingredient = db.query(Ingredient).filter(
+            (Ingredient.name == payload.display_name) |
+            (Ingredient.slug == payload.slug)
+        ).first()
+        if ingredient:
+            ingredient_id = ingredient.id
+            logger.info(
+                "Auto-linked new option '%s' to Ingredient '%s' (id=%d)",
+                payload.display_name, ingredient.name, ingredient.id
             )
 
     option = GlobalAttributeOption(
@@ -440,7 +467,7 @@ def create_global_attribute_option(
         is_default=payload.is_default,
         is_available=payload.is_available,
         display_order=payload.display_order,
-        ingredient_id=payload.ingredient_id,
+        ingredient_id=ingredient_id,
     )
     db.add(option)
     db.commit()

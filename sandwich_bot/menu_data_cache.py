@@ -111,6 +111,10 @@ class MenuDataCache:
         # Global attribute options cache (for shots, size, temperature, etc.)
         self._global_attribute_options: dict[str, list[dict]] = {}  # attr_slug -> list of options
 
+        # Item type attributes cache (lazy-loaded per item type)
+        # This is the single source of truth for attribute configs
+        self._item_type_attributes: dict[str, dict] = {}  # item_type_slug -> {attr_slug -> attr_config}
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
@@ -140,7 +144,7 @@ class MenuDataCache:
         """Get timestamp of last cache refresh."""
         return self._last_refresh
 
-    def load_from_db(self, db: Session, fail_on_error: bool = True) -> None:
+    def load_from_db(self, db: Session, fail_on_error: bool = True, force: bool = False) -> None:
         """
         Load all menu data from the database.
 
@@ -148,11 +152,22 @@ class MenuDataCache:
             db: SQLAlchemy database session
             fail_on_error: If True, raise exception on DB errors (for startup)
                           If False, log warning and keep existing cache
+            force: If True, reload even if already loaded (for manual refresh)
 
         Raises:
             RuntimeError: If fail_on_error=True and DB load fails
         """
+        # Skip if already loaded (unless forced)
+        if self._is_loaded and not force:
+            logger.info("Menu data cache already loaded, skipping reload")
+            return
+
         with self._refresh_lock:
+            # Double-check after acquiring lock
+            if self._is_loaded and not force:
+                logger.info("Menu data cache already loaded, skipping reload")
+                return
+
             try:
                 logger.info("Loading menu data cache from database...")
 
@@ -1420,6 +1435,201 @@ class MenuDataCache:
             return []
         return self._global_attribute_options.get(attr_slug, [])
 
+    def get_item_type_attributes(self, item_type_slug: str) -> dict:
+        """Get attributes for an item type (lazy-loaded, single source of truth).
+
+        This is the consolidated cache for item type attributes. All handlers
+        should use this method instead of maintaining their own caches.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "deli_sandwich")
+
+        Returns:
+            Dict with structure:
+            {
+                "attribute_slug": {
+                    "slug": "attribute_slug",
+                    "display_name": "Attribute Name",
+                    "question_text": "What would you like?",
+                    "ask_in_conversation": True,
+                    "input_type": "single_select",
+                    "display_order": 1,
+                    "allow_none": False,
+                    "options": [{"slug": "opt1", "display_name": "Option 1", "price": 0.0}, ...]
+                },
+                ...
+            }
+        """
+        # Check cache first
+        if item_type_slug in self._item_type_attributes:
+            return self._item_type_attributes[item_type_slug]
+
+        # Load from database
+        result = self._load_item_type_attributes_from_db(item_type_slug)
+        self._item_type_attributes[item_type_slug] = result
+        return result
+
+    def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
+        """Load item type attributes from database.
+
+        Loads both item-type-specific attributes (from ItemTypeAttribute table)
+        and linked global attributes (from ItemTypeGlobalAttribute table).
+        """
+        from .db import SessionLocal
+        from .models import (
+            ItemType, ItemTypeAttribute, AttributeOption,
+            ItemTypeIngredient, Ingredient,
+            ItemTypeGlobalAttribute, GlobalAttribute,
+        )
+
+        db = SessionLocal()
+        try:
+            item_type = db.query(ItemType).filter(ItemType.slug == item_type_slug).first()
+            if not item_type:
+                logger.warning("Item type '%s' not found in database", item_type_slug)
+                return {}
+
+            result: dict = {}
+
+            # Load item-type-specific attributes
+            attrs = db.query(ItemTypeAttribute).filter(
+                ItemTypeAttribute.item_type_id == item_type.id
+            ).order_by(ItemTypeAttribute.display_order).all()
+
+            for attr in attrs:
+                opts_data = self._load_attribute_options_from_db(
+                    db, attr, item_type.id
+                )
+                result[attr.slug] = {
+                    "slug": attr.slug,
+                    "display_name": attr.display_name,
+                    "question_text": attr.question_text,
+                    "ask_in_conversation": attr.ask_in_conversation,
+                    "input_type": attr.input_type,
+                    "display_order": attr.display_order,
+                    "allow_none": getattr(attr, 'allow_none', False),
+                    "options": opts_data,
+                }
+
+            # Load global attributes linked to this item type
+            global_attr_links = (
+                db.query(ItemTypeGlobalAttribute)
+                .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
+                .order_by(ItemTypeGlobalAttribute.display_order)
+                .all()
+            )
+
+            for link in global_attr_links:
+                global_attr = db.query(GlobalAttribute).filter(
+                    GlobalAttribute.id == link.global_attribute_id
+                ).first()
+                if not global_attr:
+                    continue
+
+                # Load options from our own cache (already loaded at startup)
+                cached_opts = self._global_attribute_options.get(global_attr.slug, [])
+
+                opts_data = []
+                for opt in cached_opts:
+                    if not opt.get("is_available", True):
+                        continue
+                    opt_data = {
+                        "slug": opt["slug"],
+                        "display_name": opt["display_name"],
+                        "price": float(opt.get("price_modifier") or 0),
+                        "is_default": opt.get("is_default", False),
+                    }
+                    if opt.get("aliases"):
+                        opt_data["aliases"] = opt["aliases"]
+                    if opt.get("must_match"):
+                        opt_data["must_match"] = opt["must_match"]
+                    opts_data.append(opt_data)
+
+                # Use link's question_text if provided, else generate
+                if link.question_text:
+                    question_text = link.question_text
+                elif global_attr.input_type == "boolean":
+                    question_text = f"Would you like it {global_attr.display_name.lower()}?"
+                else:
+                    question_text = f"What {global_attr.display_name.lower()} would you like?"
+
+                result[global_attr.slug] = {
+                    "slug": global_attr.slug,
+                    "display_name": global_attr.display_name,
+                    "question_text": question_text,
+                    "ask_in_conversation": link.ask_in_conversation,
+                    "input_type": global_attr.input_type or "single_select",
+                    "display_order": link.display_order,
+                    "allow_none": link.allow_none,
+                    "options": opts_data,
+                    "is_global_attribute": True,
+                }
+
+            logger.info(
+                "Loaded %d attributes for %s: %s",
+                len(result), item_type_slug, list(result.keys())
+            )
+            return result
+
+        finally:
+            db.close()
+
+    def _load_attribute_options_from_db(self, db, attr, item_type_id: int) -> list[dict]:
+        """Load options for an attribute from ingredients or attribute_options table."""
+        from .models import ItemTypeIngredient, Ingredient, AttributeOption
+
+        opts_data = []
+
+        if attr.loads_from_ingredients and attr.ingredient_group:
+            # Load from item_type_ingredients + ingredients
+            ingredient_links = (
+                db.query(ItemTypeIngredient)
+                .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
+                .filter(
+                    ItemTypeIngredient.item_type_id == item_type_id,
+                    ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+                    ItemTypeIngredient.is_available == True,
+                )
+                .order_by(ItemTypeIngredient.display_order)
+                .all()
+            )
+
+            for link in ingredient_links:
+                ingredient = link.ingredient
+                opt_data = {
+                    "slug": ingredient.slug or ingredient.name.lower().replace(" ", "_"),
+                    "display_name": link.display_name_override or ingredient.name,
+                    "price": float(link.price_modifier or 0),
+                    "is_default": getattr(link, 'is_default', False),
+                    "category": ingredient.category,
+                }
+                if ingredient.aliases:
+                    opt_data["aliases"] = ingredient.aliases
+                if ingredient.must_match:
+                    opt_data["must_match"] = ingredient.must_match
+                opts_data.append(opt_data)
+        else:
+            # Load from attribute_options table
+            options = db.query(AttributeOption).filter(
+                AttributeOption.item_type_attribute_id == attr.id,
+                AttributeOption.is_available == True,
+            ).order_by(AttributeOption.display_order).all()
+
+            for opt in options:
+                opt_data = {
+                    "slug": opt.slug,
+                    "display_name": opt.display_name or opt.slug.replace("_", " ").title(),
+                    "price": float(opt.price_modifier or 0),
+                    "is_default": getattr(opt, 'is_default', False),
+                }
+                opts_data.append(opt_data)
+
+        return opts_data
+
+    def clear_item_type_attributes_cache(self) -> None:
+        """Clear the item type attributes cache (for testing or after DB changes)."""
+        self._item_type_attributes = {}
+
     def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
         """Resolve an option by alias or slug for a global attribute.
 
@@ -2351,7 +2561,7 @@ class MenuDataCache:
                 # Perform refresh
                 logger.info("Running scheduled menu cache refresh...")
                 with get_db_session() as db:
-                    self.load_from_db(db, fail_on_error=False)
+                    self.load_from_db(db, fail_on_error=False, force=True)
 
             except asyncio.CancelledError:
                 break

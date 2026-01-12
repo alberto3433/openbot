@@ -113,6 +113,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
         order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
         order.pending_same_thing_clarification = sm_state.get("pending_same_thing_clarification")
         order.pending_suggested_item = sm_state.get("pending_suggested_item")
+        order.pending_attr_disambiguation = sm_state.get("pending_attr_disambiguation")
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -271,6 +272,7 @@ def order_task_to_dict(
         "pending_duplicate_selection": order.pending_duplicate_selection,
         "pending_same_thing_clarification": order.pending_same_thing_clarification,
         "pending_suggested_item": order.pending_suggested_item,
+        "pending_attr_disambiguation": order.pending_attr_disambiguation,
     }
 
     return order_dict

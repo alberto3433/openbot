@@ -21,7 +21,6 @@ from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers, Extract
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers import extract_modifiers_from_input, extract_coffee_modifiers_from_input
 from .handler_config import BaseHandler
-from .attribute_loader import load_item_type_attributes
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -101,9 +100,7 @@ class MenuItemConfigHandler(BaseHandler):
             **kwargs: Legacy parameter support.
         """
         super().__init__(config, **kwargs)
-
-        # Cache for item type attributes (keyed by item_type_slug)
-        self._attributes_cache: dict[str, dict] = {}
+        # Note: Item type attributes are cached in menu_cache (single source of truth)
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type."""
@@ -111,10 +108,10 @@ class MenuItemConfigHandler(BaseHandler):
 
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
-        Load item type attributes from database.
+        Get item type attributes from centralized cache.
 
-        Uses the shared attribute_loader for core attributes and adds
-        global attributes with custom question text handling.
+        Uses menu_cache as the single source of truth for all item type
+        attributes (both item-type-specific and global attributes).
 
         Returns dict with structure:
         {
@@ -130,95 +127,7 @@ class MenuItemConfigHandler(BaseHandler):
             ...
         }
         """
-        if item_type_slug in self._attributes_cache:
-            return self._attributes_cache[item_type_slug]
-
-        # Use shared loader for core item type attributes
-        result = load_item_type_attributes(item_type_slug, include_global_attributes=False)
-
-        if not result:
-            self._attributes_cache[item_type_slug] = {}
-            return {}
-
-        # Load global attributes with custom question text handling
-        from ..db import SessionLocal
-        from ..models import (
-            ItemType, ItemTypeGlobalAttribute, GlobalAttribute,
-        )
-
-        db = SessionLocal()
-        try:
-            item_type = db.query(ItemType).filter(ItemType.slug == item_type_slug).first()
-            if not item_type:
-                self._attributes_cache[item_type_slug] = result
-                return result
-
-            global_attr_links = (
-                db.query(ItemTypeGlobalAttribute)
-                .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
-                .order_by(ItemTypeGlobalAttribute.display_order)
-                .all()
-            )
-
-            for link in global_attr_links:
-                global_attr = db.query(GlobalAttribute).filter(
-                    GlobalAttribute.id == link.global_attribute_id
-                ).first()
-                if not global_attr:
-                    continue
-
-                # Load options from cache instead of direct DB query
-                # This ensures we always have consistent field mappings (must_match, aliases, etc.)
-                cached_opts = menu_cache.get_global_attribute_options(global_attr.slug)
-
-                opts_data = []
-                for opt in cached_opts:
-                    # Skip unavailable options
-                    if not opt.get("is_available", True):
-                        continue
-                    opt_data = {
-                        "slug": opt["slug"],
-                        "display_name": opt["display_name"],
-                        "price": float(opt.get("price_modifier") or 0),
-                        "is_default": opt.get("is_default", False),
-                    }
-                    # Include aliases for option matching (pipe-separated)
-                    if opt.get("aliases"):
-                        opt_data["aliases"] = opt["aliases"]
-                    # Include must_match for filtering (e.g., "oat milk" only matches "oat milk")
-                    if opt.get("must_match"):
-                        opt_data["must_match"] = opt["must_match"]
-                    opts_data.append(opt_data)
-
-                # Use link's question_text if provided, else generate based on input_type
-                if link.question_text:
-                    question_text = link.question_text
-                elif global_attr.input_type == "boolean":
-                    question_text = f"Would you like it {global_attr.display_name.lower()}?"
-                else:
-                    question_text = f"What {global_attr.display_name.lower()} would you like?"
-
-                result[global_attr.slug] = {
-                    "slug": global_attr.slug,
-                    "display_name": global_attr.display_name,
-                    "question_text": question_text,
-                    "ask_in_conversation": link.ask_in_conversation,
-                    "input_type": global_attr.input_type or "single_select",
-                    "display_order": link.display_order,
-                    "allow_none": link.allow_none,
-                    "options": opts_data,
-                    "is_global_attribute": True,  # Flag to identify global attrs
-                }
-
-            self._attributes_cache[item_type_slug] = result
-            logger.info(
-                "Loaded %d attributes for %s: %s",
-                len(result), item_type_slug, list(result.keys())
-            )
-            return result
-
-        finally:
-            db.close()
+        return menu_cache.get_item_type_attributes(item_type_slug)
 
     def _get_mandatory_attributes(self, item_type_slug: str) -> list[dict]:
         """Get mandatory attributes (ask_in_conversation=True) in display order."""
@@ -554,8 +463,28 @@ class MenuItemConfigHandler(BaseHandler):
         # Also include the full input for single-item matching
         all_inputs = [user_lower] + [self._normalize_for_matching(t) for t in tokens if t.lower() != user_lower]
 
+        # Log which options have must_match for debugging
+        opts_with_must_match = [
+            (o.get("display_name"), o.get("must_match"))
+            for o in options if o.get("must_match")
+        ]
+        if opts_with_must_match:
+            logger.info(
+                "MULTI_SELECT OPTIONS with must_match: %s",
+                opts_with_must_match
+            )
+        else:
+            logger.info(
+                "MULTI_SELECT OPTIONS: none have must_match (total %d options)",
+                len(options)
+            )
+
         for opt in options:
             if not self._passes_must_match(user_input, opt):
+                logger.debug(
+                    "MULTI_SELECT SKIP: '%s' filtered by must_match=%s for option '%s'",
+                    user_input, opt.get("must_match"), opt.get("display_name")
+                )
                 continue  # Skip options that don't pass must_match
 
             display_lower = opt["display_name"].lower()
@@ -632,8 +561,16 @@ class MenuItemConfigHandler(BaseHandler):
         # At least one must_match string must be present
         for must_str in must_match_list:
             if self._is_whole_word_match(must_str, user_lower):
+                logger.debug(
+                    "MUST_MATCH PASSED: '%s' contains '%s' for option '%s'",
+                    user_input, must_str, opt.get("display_name")
+                )
                 return True
 
+        logger.debug(
+            "MUST_MATCH FAILED: '%s' does not contain any of %s for option '%s'",
+            user_input, must_match_list, opt.get("display_name")
+        )
         return False
 
     def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
@@ -1412,13 +1349,14 @@ class MenuItemConfigHandler(BaseHandler):
         options: list[dict],
     ) -> dict | None:
         """
-        Resolve user's selection from disambiguation options.
+        Resolve user's selection from disambiguation options using STRICT matching.
 
-        Similar to bagel handler's _resolve_spread_disambiguation but works with
-        dict options (having display_name and slug fields).
+        This is used when we've asked "Did you mean X or Y?" and need to match
+        the user's response to one of the specific options. We use exact matching
+        to avoid "ham" matching "Black Forest Ham".
 
         Args:
-            user_input: User's response (e.g., "honey walnut", "the first one", "maple")
+            user_input: User's response (e.g., "ham", "black forest ham", "first", "1")
             options: List of option dicts with display_name and slug fields
 
         Returns:
@@ -1429,47 +1367,46 @@ class MenuItemConfigHandler(BaseHandler):
         # Remove common filler words
         input_lower = input_lower.replace("the ", "").strip()
         input_lower = input_lower.replace("please", "").strip()
+        input_lower = input_lower.replace("i want ", "").strip()
+        input_lower = input_lower.replace("i'll take ", "").strip()
+        input_lower = input_lower.replace("just ", "").strip()
 
-        # Try exact match on display_name first
+        # Handle ordinal selections FIRST ("first one", "second one", "1", "2")
+        # This allows quick selection by position
+        ordinal_map = {
+            "first": 0, "1": 0,
+            "second": 1, "2": 1,
+            "third": 2, "3": 2,
+            "fourth": 3, "4": 3,
+        }
+        for word, index in ordinal_map.items():
+            if input_lower == word or input_lower == f"{word} one":
+                if index < len(options):
+                    return options[index]
+
+        # Try EXACT match on display_name (case-insensitive)
+        # "ham" matches "Ham" but NOT "Black Forest Ham"
         for opt in options:
             if opt["display_name"].lower() == input_lower:
                 return opt
 
-        # Try exact match on slug (with underscores replaced by spaces)
+        # Try EXACT match on slug (with underscores replaced by spaces)
         for opt in options:
             slug_readable = opt["slug"].replace("_", " ")
             if slug_readable == input_lower:
                 return opt
 
-        # Try if user said just the first word (e.g., "honey" for "honey walnut")
-        for opt in options:
-            display_lower = opt["display_name"].lower()
-            first_word = display_lower.split()[0] if display_lower else ""
-            if first_word and first_word == input_lower:
-                return opt
-
-        # Try substring match (e.g., "maple" matches "maple raisin walnut")
-        for opt in options:
-            display_lower = opt["display_name"].lower()
-            if input_lower in display_lower:
-                return opt
-
-        # Try if option name is a substring of input (e.g., "honey walnut please")
+        # Try if the FULL option name is in the user input
+        # This handles "black forest ham please" → "Black Forest Ham"
+        # But NOT "ham" → "Black Forest Ham" (substring of option name)
         for opt in options:
             display_lower = opt["display_name"].lower()
             if display_lower in input_lower:
                 return opt
 
-        # Handle ordinal selections ("first one", "second one", "1", "2")
-        ordinal_map = {
-            "first": 0, "1": 0, "one": 0,
-            "second": 1, "2": 1, "two": 1,
-            "third": 2, "3": 2, "three": 2,
-            "fourth": 3, "4": 3, "four": 3,
-        }
-        for word, index in ordinal_map.items():
-            if word in input_lower and index < len(options):
-                return options[index]
+        # NO substring matching in the other direction!
+        # We deliberately don't check if input_lower is in display_name
+        # because that would make "ham" match "Black Forest Ham"
 
         return None
 
@@ -1798,6 +1735,30 @@ class MenuItemConfigHandler(BaseHandler):
                 attr_slug, user_input, len(matched_options),
                 [o["slug"] for o in matched_options]
             )
+
+            # DISAMBIGUATION: If multiple options matched but user input was a single token
+            # (not compound like "ham and bacon"), ask for clarification
+            if len(matched_options) > 1:
+                tokens = self._tokenize_multi_input(user_input)
+                is_single_token = len(tokens) <= 1
+                if is_single_token:
+                    logger.info(
+                        "MULTI_SELECT DISAMBIGUATION: single token '%s' matched %d options: %s",
+                        user_input, len(matched_options), [o["display_name"] for o in matched_options]
+                    )
+                    # Store disambiguation state and ask user to clarify
+                    order.pending_attr_disambiguation = {
+                        "options": matched_options,
+                        "attr_slug": attr_slug,
+                        "modifiers": {"_quantity": quantity},
+                        "item_id": item.id,
+                    }
+                    options_text = self._format_options_list(matched_options)
+                    return StateMachineResult(
+                        message=f"Did you mean {options_text}?",
+                        order=order,
+                    )
+
             if matched_options:
                 # Store as list of slugs
                 existing = item.attribute_values.get(attr_slug)

@@ -39,11 +39,11 @@ Cleanup, rationalization, and simplification opportunities identified 2026-01-11
     BagelConfigHandler, CheckoutHandler
   - ~100 lines of duplicate if/else config extraction removed
 
-- [x] **Extract common attribute loading** into shared `attribute_loader.py` ✓ DONE
-  - Created `tasks/attribute_loader.py` with `load_item_type_attributes()` function
-  - Updated `coffee_config_handler.py` - reduced 100+ lines to ~15 lines
-  - Updated `menu_item_config_handler.py` - uses shared loader for core attributes
-  - Module-level cache for efficiency
+- [x] **Consolidate attribute loading into menu_cache** ✓ DONE
+  - Removed `tasks/attribute_loader.py` - consolidated into `menu_data_cache.py`
+  - `menu_cache.get_item_type_attributes()` is now the single source of truth
+  - Removed duplicate caches from MenuItemConfigHandler and CoffeeConfigHandler
+  - Lazy loading per item type for efficiency
 
 ## Low Priority
 

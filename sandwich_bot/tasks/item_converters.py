@@ -124,12 +124,12 @@ class ItemConverter(ABC):
         total_upcharges = 0.0
 
         for attr_slug, attr_value in attribute_values.items():
-            # Skip metadata keys (price and selections are processed with their parent)
-            if attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
+            # Skip metadata keys (price/upcharge and selections are processed with their parent)
+            if attr_slug.endswith("_price") or attr_slug.endswith("_upcharge") or attr_slug.endswith("_selections"):
                 continue
             if attr_slug in skip_slugs:
                 continue
-            if attr_value is None or attr_value is False:
+            if attr_value is None or attr_value is False or attr_value == "" or attr_value == []:
                 continue  # Skip empty/false values
 
             # Check if this is a multi-select attribute with _selections data
@@ -155,6 +155,10 @@ class ItemConverter(ABC):
                     if sel_quantity > 1:
                         sel_display = f"{sel_quantity} {sel_display}"
                         sel_price = sel_price * sel_quantity
+
+                    # Skip if display name is empty
+                    if not sel_display:
+                        continue
 
                     if sel_price > 0:
                         modifiers.append({"name": sel_display, "price": sel_price})
@@ -198,6 +202,10 @@ class ItemConverter(ABC):
                         display_name = pricing.lookup_size_display_name(attr_value) or display_name
                     elif attr_slug == "temperature" and hasattr(pricing, 'lookup_temperature_display_name'):
                         display_name = pricing.lookup_temperature_display_name(attr_value) or display_name
+
+            # Skip if display name is empty
+            if not display_name:
+                continue
 
             # Add to modifiers (if priced) or free_details
             if price > 0:

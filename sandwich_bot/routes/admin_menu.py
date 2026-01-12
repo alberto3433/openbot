@@ -437,7 +437,7 @@ def refresh_cache(
     from ..menu_data_cache import menu_cache
 
     logger.info("Manual cache refresh triggered by admin")
-    menu_cache.load_from_db(db, fail_on_error=False)
+    menu_cache.load_from_db(db, fail_on_error=False, force=True)
 
     return {
         "message": "Cache refreshed successfully",

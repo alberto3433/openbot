@@ -67,6 +67,7 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import (
+    GlobalAttributeOption,
     Ingredient,
     IngredientAlias,
     IngredientMustMatch,
@@ -136,6 +137,33 @@ def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_s
                 db.add(IngredientMustMatch(ingredient=ingredient, must_match=mm))
 
 
+def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> int:
+    """
+    Link any GlobalAttributeOptions that match this Ingredient by name or slug.
+
+    This ensures that when an Ingredient has must_match values, the corresponding
+    GlobalAttributeOptions are linked so they can access the must_match data.
+
+    Returns:
+        Number of options linked.
+    """
+    # Find matching options by name or slug that aren't already linked
+    matching_options = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.ingredient_id.is_(None),
+        (GlobalAttributeOption.display_name == ingredient.name) |
+        (GlobalAttributeOption.slug == ingredient.slug)
+    ).all()
+
+    for opt in matching_options:
+        opt.ingredient_id = ingredient.id
+        logger.info(
+            "Auto-linked GlobalAttributeOption '%s' (id=%d) to Ingredient '%s' (id=%d)",
+            opt.display_name, opt.id, ingredient.name, ingredient.id
+        )
+
+    return len(matching_options)
+
+
 # =============================================================================
 # Ingredient Endpoints
 # =============================================================================
@@ -203,6 +231,11 @@ def create_ingredient(
     # Add aliases and must_match through child tables
     _set_ingredient_aliases(db, ingredient, payload.aliases)
     _set_ingredient_must_match(db, ingredient, payload.must_match)
+
+    # Auto-link to any matching GlobalAttributeOptions
+    linked_count = _sync_ingredient_to_global_options(db, ingredient)
+    if linked_count > 0:
+        logger.info("Auto-linked %d GlobalAttributeOptions to new ingredient", linked_count)
 
     db.commit()
     db.refresh(ingredient)
@@ -382,6 +415,10 @@ def update_ingredient(
         _set_ingredient_aliases(db, ingredient, payload.aliases)
     if payload.must_match is not None:
         _set_ingredient_must_match(db, ingredient, payload.must_match)
+        # Auto-link to any matching GlobalAttributeOptions when must_match is set
+        linked_count = _sync_ingredient_to_global_options(db, ingredient)
+        if linked_count > 0:
+            logger.info("Auto-linked %d GlobalAttributeOptions after must_match update", linked_count)
     if payload.abbreviation is not None:
         ingredient.abbreviation = payload.abbreviation
 

@@ -16,12 +16,12 @@ TEST_ADMIN_PASSWORD = "testpassword123"
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 
-@pytest.fixture
-def client():
-    """Shared FastAPI TestClient using PostgreSQL test database.
+@pytest.fixture(scope="session")
+def _app_client_session():
+    """Session-scoped FastAPI TestClient setup.
 
-    Uses transaction rollback for test isolation.
-    Sets up test admin credentials for authentication.
+    Creates the TestClient once for the entire test session to avoid
+    restarting the server (lifespan events) for every test.
     """
     if not TEST_DATABASE_URL:
         pytest.skip("TEST_DATABASE_URL or DATABASE_URL environment variable required")
@@ -31,7 +31,6 @@ def client():
     import sandwich_bot.config as config_mod
     from sandwich_bot.models import Base, MenuItem
     from sandwich_bot.main import app
-    from sandwich_bot.services.session import SESSION_CACHE
 
     # Store original values
     original_config_username = config_mod.ADMIN_USERNAME
@@ -123,20 +122,35 @@ def client():
 
     app.dependency_overrides[db.get_db] = override_get_db
 
-    # Clear session cache before each test
-    SESSION_CACHE.clear()
-
+    # Create TestClient once - this triggers lifespan events (startup/shutdown)
+    # only once for the entire test session
     with TestClient(app) as test_client:
         yield test_client
 
+    # Cleanup after all tests complete
     app.dependency_overrides.clear()
-
-    # Clear session cache after each test
-    SESSION_CACHE.clear()
 
     # Restore original credentials
     config_mod.ADMIN_USERNAME = original_config_username
     config_mod.ADMIN_PASSWORD = original_config_password
+
+
+@pytest.fixture
+def client(_app_client_session):
+    """Function-scoped client that reuses the session-scoped TestClient.
+
+    Clears session cache before/after each test for isolation.
+    The server is NOT restarted between tests - only the cache is cleared.
+    """
+    from sandwich_bot.services.session import SESSION_CACHE
+
+    # Clear session cache before test
+    SESSION_CACHE.clear()
+
+    yield _app_client_session
+
+    # Clear session cache after test
+    SESSION_CACHE.clear()
 
 
 @pytest.fixture

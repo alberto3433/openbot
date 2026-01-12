@@ -35,7 +35,6 @@ from .parsers import (
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink, extract_quantity
 from .message_builder import MessageBuilder
 from .handler_config import HandlerConfig, BaseHandler
-from .attribute_loader import load_item_type_attributes
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -61,13 +60,10 @@ class CoffeeConfigHandler(BaseHandler):
         """
         super().__init__(config, **kwargs)
 
-        # Cache for item type attributes (loaded on first use)
-        self._sized_beverage_attributes_cache: dict | None = None
-
     def _get_sized_beverage_attributes(self) -> dict:
-        """Load sized_beverage item type attributes from database.
+        """Load sized_beverage item type attributes from centralized cache.
 
-        Uses the shared attribute_loader module for consistent loading.
+        Delegates to menu_cache, the single source of truth for item type attributes.
 
         Returns dict with structure:
         {
@@ -82,13 +78,8 @@ class CoffeeConfigHandler(BaseHandler):
             ...
         }
         """
-        if self._sized_beverage_attributes_cache is not None:
-            return self._sized_beverage_attributes_cache
-
-        result = load_item_type_attributes("sized_beverage", include_ingredient_metadata=True)
-        self._sized_beverage_attributes_cache = result
-        logger.info("Loaded sized_beverage attributes from DB: %s", list(result.keys()))
-        return result
+        from ..menu_data_cache import menu_cache
+        return menu_cache.get_item_type_attributes("sized_beverage")
 
     def _get_size_question(self) -> str:
         """Get the size question from DB, with fallback."""

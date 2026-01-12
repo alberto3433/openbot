@@ -5,7 +5,9 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 
-from sqlalchemy.orm import Session
+from collections import defaultdict
+
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,165 @@ from .models import (
     GlobalAttributeOption,
     ItemTypeGlobalAttribute,
 )
-from .services.item_type_helpers import (
-    has_linked_attributes,
-    has_askable_attributes,
-    should_skip_config,
-)
+# Note: We no longer import has_linked_attributes, has_askable_attributes, should_skip_config
+# These caused N+1 queries. Instead, we pre-load all ItemTypeGlobalAttribute data.
+
+
+def _preload_item_type_config_status(db: Session) -> Dict[int, Dict[str, Any]]:
+    """
+    Pre-load configuration status for all item types in a single query.
+
+    This replaces the N+1 query pattern where we called has_linked_attributes()
+    and has_askable_attributes() for each item type.
+
+    Returns:
+        Dict mapping item_type_id -> {
+            "has_linked_attrs": bool,
+            "has_askable_attrs": bool,
+            "is_configurable": bool,
+            "skip_config": bool,
+            "global_attrs": List[ItemTypeGlobalAttribute]
+        }
+    """
+    # Load ALL global attribute links in one query
+    all_global_attrs = (
+        db.query(ItemTypeGlobalAttribute)
+        .options(joinedload(ItemTypeGlobalAttribute.global_attribute))
+        .all()
+    )
+
+    # Group by item_type_id
+    attrs_by_type: Dict[int, List] = defaultdict(list)
+    for attr in all_global_attrs:
+        attrs_by_type[attr.item_type_id].append(attr)
+
+    # Build config status for each item type
+    result: Dict[int, Dict[str, Any]] = {}
+
+    # Get all item type IDs
+    all_type_ids = db.query(ItemType.id).all()
+
+    for (type_id,) in all_type_ids:
+        attrs = attrs_by_type.get(type_id, [])
+        has_linked = len(attrs) > 0
+        has_askable = any(attr.ask_in_conversation for attr in attrs) if has_linked else False
+
+        result[type_id] = {
+            "has_linked_attrs": has_linked,
+            "has_askable_attrs": has_askable,
+            "is_configurable": has_linked,
+            "skip_config": not has_askable,
+            "global_attrs": attrs,
+        }
+
+    return result
+
+
+def _preload_all_ingredients(db: Session) -> Dict[str, List[Ingredient]]:
+    """
+    Pre-load ALL ingredients in a single query, grouped by category.
+
+    This replaces multiple separate queries for bread, cheese, sauce, etc.
+
+    Returns:
+        Dict mapping category -> List[Ingredient]
+    """
+    all_ingredients = db.query(Ingredient).order_by(Ingredient.name).all()
+
+    by_category: Dict[str, List[Ingredient]] = defaultdict(list)
+    for ing in all_ingredients:
+        if ing.category:
+            by_category[ing.category].append(ing)
+
+    return by_category
+
+
+def _preload_item_type_attributes(db: Session) -> Dict[int, List]:
+    """
+    Pre-load all item type attributes in a single query.
+
+    Returns:
+        Dict mapping item_type_id -> List[ItemTypeAttribute]
+    """
+    all_attrs = (
+        db.query(ItemTypeAttribute)
+        .order_by(ItemTypeAttribute.item_type_id, ItemTypeAttribute.display_order)
+        .all()
+    )
+
+    by_type: Dict[int, List] = defaultdict(list)
+    for attr in all_attrs:
+        by_type[attr.item_type_id].append(attr)
+
+    return by_type
+
+
+def _preload_attribute_options(db: Session) -> Dict[int, List]:
+    """
+    Pre-load all attribute options in a single query.
+
+    Returns:
+        Dict mapping item_type_attribute_id -> List[AttributeOption]
+    """
+    all_options = (
+        db.query(AttributeOption)
+        .filter(AttributeOption.is_available == True)  # noqa: E712
+        .order_by(AttributeOption.item_type_attribute_id, AttributeOption.display_order)
+        .all()
+    )
+
+    by_attr: Dict[int, List] = defaultdict(list)
+    for opt in all_options:
+        if opt.item_type_attribute_id:
+            by_attr[opt.item_type_attribute_id].append(opt)
+
+    return by_attr
+
+
+def _preload_global_attribute_options(db: Session) -> Dict[int, List]:
+    """
+    Pre-load all global attribute options in a single query.
+
+    Returns:
+        Dict mapping global_attribute_id -> List[GlobalAttributeOption]
+    """
+    all_options = (
+        db.query(GlobalAttributeOption)
+        .filter(GlobalAttributeOption.is_available == True)  # noqa: E712
+        .order_by(GlobalAttributeOption.global_attribute_id, GlobalAttributeOption.display_order)
+        .all()
+    )
+
+    by_attr: Dict[int, List] = defaultdict(list)
+    for opt in all_options:
+        by_attr[opt.global_attribute_id].append(opt)
+
+    return by_attr
+
+
+def _preload_item_type_ingredients(db: Session) -> Dict[tuple, List]:
+    """
+    Pre-load all item type ingredient links in a single query.
+
+    Returns:
+        Dict mapping (item_type_id, ingredient_group) -> List[ItemTypeIngredient]
+    """
+    all_links = (
+        db.query(ItemTypeIngredient)
+        .options(joinedload(ItemTypeIngredient.ingredient))
+        .filter(ItemTypeIngredient.is_available == True)  # noqa: E712
+        .order_by(ItemTypeIngredient.item_type_id, ItemTypeIngredient.display_order)
+        .all()
+    )
+
+    by_type_group: Dict[tuple, List] = defaultdict(list)
+    for link in all_links:
+        # Only include if ingredient is also available
+        if link.ingredient and link.ingredient.is_available:
+            key = (link.item_type_id, link.ingredient_group)
+            by_type_group[key].append(link)
+
+    return by_type_group
 
 
 def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
@@ -194,17 +350,29 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         db: Database session
         store_id: Optional store ID for store-specific ingredient availability
     """
-    items = db.query(MenuItem).order_by(MenuItem.id.asc()).all()
-
-    # Pre-load all menu item configs in batched queries (fixes N+1 query problem)
+    # Pre-load all data in batched queries to avoid N+1 query problems
     preloaded_configs = _preload_menu_item_configs(db)
+    preloaded_config_status = _preload_item_type_config_status(db)
+    preloaded_ingredients = _preload_all_ingredients(db)
+
+    # Load menu items with eager loading for related objects
+    items = (
+        db.query(MenuItem)
+        .options(
+            joinedload(MenuItem.item_type),
+            joinedload(MenuItem.recipe),
+        )
+        .order_by(MenuItem.id.asc())
+        .all()
+    )
 
     # Determine the primary configurable item type for dynamic category naming
     # A configurable item type has linked global attributes
     all_item_types = db.query(ItemType).all()
     primary_item_type = None
     for it in all_item_types:
-        if has_linked_attributes(it.id, db):
+        config_status = preloaded_config_status.get(it.id, {})
+        if config_status.get("has_linked_attrs", False):
             primary_item_type = it
             break
     primary_type_slug = primary_item_type.slug if primary_item_type else "sandwich"
@@ -262,8 +430,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         item_type_skip_config = False
         if item.item_type:
             item_type_slug = item.item_type.slug
-            # Derive skip_config from linked global attributes
-            item_type_skip_config = should_skip_config(item.item_type, db)
+            # Use pre-loaded config status instead of N+1 query
+            config_status = preloaded_config_status.get(item.item_type.id, {})
+            item_type_skip_config = config_status.get("skip_config", True)
 
         item_json = {
             "id": item.id,
@@ -310,25 +479,14 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             index["other"].append(item_json)
 
     # Convenience lists for quick questions like "what breads do you have?"
-    # These are pulled directly from the Ingredient table by category,
-    # allowing admins to manage options independently of recipes.
+    # These use the pre-loaded ingredients (single query instead of 5 separate queries)
 
     # Bread types - all ingredients with category 'bread'
-    bread_ingredients = (
-        db.query(Ingredient)
-        .filter(Ingredient.category == "bread")
-        .order_by(Ingredient.name)
-        .all()
-    )
+    bread_ingredients = preloaded_ingredients.get("bread", [])
     index["bread_types"] = [ing.name for ing in bread_ingredients]
 
     # Cheese types - all ingredients with category 'cheese'
-    cheese_ingredients = (
-        db.query(Ingredient)
-        .filter(Ingredient.category == "cheese")
-        .order_by(Ingredient.name)
-        .all()
-    )
+    cheese_ingredients = preloaded_ingredients.get("cheese", [])
     index["cheese_types"] = [ing.name for ing in cheese_ingredients]
     index["cheese_prices"] = {ing.name.lower(): ing.base_price for ing in cheese_ingredients}
 
@@ -344,21 +502,11 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     index["cream_cheese_flavors"] = cream_cheese_flavors
 
     # Sauce types - all ingredients with category 'sauce'
-    sauce_ingredients = (
-        db.query(Ingredient)
-        .filter(Ingredient.category == "sauce")
-        .order_by(Ingredient.name)
-        .all()
-    )
+    sauce_ingredients = preloaded_ingredients.get("sauce", [])
     index["sauce_types"] = [ing.name for ing in sauce_ingredients]
 
     # Protein types - all ingredients with category 'protein' (include prices for custom sandwiches)
-    protein_ingredients = (
-        db.query(Ingredient)
-        .filter(Ingredient.category == "protein")
-        .order_by(Ingredient.name)
-        .all()
-    )
+    protein_ingredients = preloaded_ingredients.get("protein", [])
     index["protein_types"] = [ing.name for ing in protein_ingredients]
     index["protein_prices"] = {ing.name.lower(): ing.base_price for ing in protein_ingredients}
 
@@ -366,12 +514,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     index["bread_prices"] = {ing.name.lower(): ing.base_price for ing in bread_ingredients}
 
     # Topping types - all ingredients with category 'topping'
-    topping_ingredients = (
-        db.query(Ingredient)
-        .filter(Ingredient.category == "topping")
-        .order_by(Ingredient.name)
-        .all()
-    )
+    topping_ingredients = preloaded_ingredients.get("topping", [])
     index["topping_types"] = [ing.name for ing in topping_ingredients]
 
     # Unavailable ingredients (86'd items) - so LLM knows what's out of stock
@@ -426,8 +569,22 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
                 unavailable_menu_items.append({"name": item.name, "category": item.category})
     index["unavailable_menu_items"] = unavailable_menu_items
 
+    # Pre-load attribute and option data for _build_item_types_data
+    preloaded_type_attrs = _preload_item_type_attributes(db)
+    preloaded_attr_options = _preload_attribute_options(db)
+    preloaded_global_options = _preload_global_attribute_options(db)
+    preloaded_type_ingredients = _preload_item_type_ingredients(db)
+
     # Add generic item type data for configurable items
-    index["item_types"] = _build_item_types_data(db, store_id)
+    index["item_types"] = _build_item_types_data(
+        db,
+        store_id,
+        preloaded_config_status,
+        preloaded_type_attrs,
+        preloaded_attr_options,
+        preloaded_global_options,
+        preloaded_type_ingredients,
+    )
 
     # Add list of menu items that contain bagels (for bagel configuration questions)
     index["bagel_menu_items"] = _build_bagel_menu_items(db)
@@ -575,7 +732,15 @@ def _build_item_keywords(db: Session) -> Dict[str, str]:
     return keyword_to_slug
 
 
-def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
+def _build_item_types_data(
+    db: Session,
+    store_id: Optional[str] = None,
+    preloaded_config_status: Optional[Dict[int, Dict[str, Any]]] = None,
+    preloaded_type_attrs: Optional[Dict[int, List]] = None,
+    preloaded_attr_options: Optional[Dict[int, List]] = None,
+    preloaded_global_options: Optional[Dict[int, List]] = None,
+    preloaded_type_ingredients: Optional[Dict[tuple, List]] = None,
+) -> Dict[str, Any]:
     """
     Build generic item type data including all attributes and options.
 
@@ -588,17 +753,35 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
     Args:
         db: Database session
         store_id: Optional store ID for availability filtering
+        preloaded_config_status: Pre-loaded config status from _preload_item_type_config_status()
+        preloaded_type_attrs: Pre-loaded item type attributes from _preload_item_type_attributes()
+        preloaded_attr_options: Pre-loaded attribute options from _preload_attribute_options()
+        preloaded_global_options: Pre-loaded global options from _preload_global_attribute_options()
+        preloaded_type_ingredients: Pre-loaded type ingredients from _preload_item_type_ingredients()
 
     Returns:
         Dict mapping item type slugs to their attribute configurations
     """
     result = {}
 
+    # Use pre-loaded data if available, otherwise load (for backward compatibility)
+    if preloaded_config_status is None:
+        preloaded_config_status = _preload_item_type_config_status(db)
+    if preloaded_type_attrs is None:
+        preloaded_type_attrs = _preload_item_type_attributes(db)
+    if preloaded_attr_options is None:
+        preloaded_attr_options = _preload_attribute_options(db)
+    if preloaded_global_options is None:
+        preloaded_global_options = _preload_global_attribute_options(db)
+    if preloaded_type_ingredients is None:
+        preloaded_type_ingredients = _preload_item_type_ingredients(db)
+
     item_types = db.query(ItemType).all()
     for it in item_types:
-        # Derive configurability from linked global attributes
-        it_is_configurable = has_linked_attributes(it.id, db)
-        it_skip_config = not has_askable_attributes(it.id, db) if it_is_configurable else True
+        # Use pre-loaded config status instead of N+1 queries
+        config_status = preloaded_config_status.get(it.id, {})
+        it_is_configurable = config_status.get("has_linked_attrs", False)
+        it_skip_config = config_status.get("skip_config", True)
 
         if not it_is_configurable:
             # Non-configurable items don't need attribute data
@@ -610,13 +793,8 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
             }
             continue
 
-        # Try new item_type_attributes table first (consolidated schema)
-        item_type_attrs = (
-            db.query(ItemTypeAttribute)
-            .filter(ItemTypeAttribute.item_type_id == it.id)
-            .order_by(ItemTypeAttribute.display_order)
-            .all()
-        )
+        # Get item type attributes from pre-loaded data
+        item_type_attrs = preloaded_type_attrs.get(it.id, [])
 
         attributes = []
 
@@ -625,19 +803,9 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
             for ita in item_type_attrs:
                 # Check if this attribute loads from ingredients table
                 if ita.loads_from_ingredients and ita.ingredient_group:
-                    # Load options from item_type_ingredients table
-                    ingredient_links = (
-                        db.query(ItemTypeIngredient)
-                        .join(Ingredient)
-                        .filter(
-                            ItemTypeIngredient.item_type_id == it.id,
-                            ItemTypeIngredient.ingredient_group == ita.ingredient_group,
-                            ItemTypeIngredient.is_available == True,
-                            Ingredient.is_available == True  # Also check ingredient availability
-                        )
-                        .order_by(ItemTypeIngredient.display_order)
-                        .all()
-                    )
+                    # Get ingredient links from pre-loaded data
+                    key = (it.id, ita.ingredient_group)
+                    ingredient_links = preloaded_type_ingredients.get(key, [])
 
                     attr_data = {
                         "slug": ita.slug,
@@ -663,16 +831,8 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
                         ],
                     }
                 else:
-                    # Get options linked to this attribute via item_type_attribute_id (new FK)
-                    options = (
-                        db.query(AttributeOption)
-                        .filter(
-                            AttributeOption.item_type_attribute_id == ita.id,
-                            AttributeOption.is_available == True
-                        )
-                        .order_by(AttributeOption.display_order)
-                        .all()
-                    )
+                    # Get options from pre-loaded data
+                    options = preloaded_attr_options.get(ita.id, [])
 
                     attr_data = {
                         "slug": ita.slug,
@@ -700,30 +860,20 @@ def _build_item_types_data(db: Session, store_id: Optional[str] = None) -> Dict[
 
                 attributes.append(attr_data)
 
-        # Also load global attributes linked to this item type
+        # Get global attributes from pre-loaded config status (already loaded with joinedload)
         # Global attributes are shared across item types with normalized options
-        global_attr_links = (
-            db.query(ItemTypeGlobalAttribute)
-            .filter(ItemTypeGlobalAttribute.item_type_id == it.id)
-            .order_by(ItemTypeGlobalAttribute.display_order)
-            .all()
-        )
+        global_attr_links = config_status.get("global_attrs", [])
+
+        # Sort by display_order (they may not be sorted in the pre-loaded data)
+        global_attr_links = sorted(global_attr_links, key=lambda x: x.display_order or 0)
 
         for link in global_attr_links:
             global_attr = link.global_attribute
             if not global_attr:
                 continue
 
-            # Get options from global_attribute_options table
-            options = (
-                db.query(GlobalAttributeOption)
-                .filter(
-                    GlobalAttributeOption.global_attribute_id == global_attr.id,
-                    GlobalAttributeOption.is_available == True
-                )
-                .order_by(GlobalAttributeOption.display_order)
-                .all()
-            )
+            # Get options from pre-loaded global options
+            options = preloaded_global_options.get(global_attr.id, [])
 
             attr_data = {
                 "slug": global_attr.slug,

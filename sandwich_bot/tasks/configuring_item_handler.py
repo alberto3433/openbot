@@ -355,6 +355,14 @@ class ConfiguringItemHandler:
                     user_input, item, order, order.pending_field
                 )
 
+        # Handle bagel_choice for menu items with bagel sides (e.g., omelettes, salads)
+        # These items have side_choice="bagel" and need to specify which bagel type
+        if order.pending_field == "bagel_choice" and isinstance(item, MenuItemTask):
+            if getattr(item, 'side_choice', None) == "bagel":
+                return self.config_helper_handler.handle_bagel_choice_for_side(
+                    user_input, item, order
+                )
+
         # Handle espresso legacy fields - route to menu_item_handler
         if order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):
             if isinstance(item, MenuItemTask) and self.menu_item_handler:

@@ -186,6 +186,25 @@ class AttributeOptionUpdate(BaseModel):
 # Item Type Schemas
 # =============================================================================
 
+class ItemTypeListOut(BaseModel):
+    """
+    Lightweight response model for item type list (sidebar).
+
+    Returns only essential fields for fast loading. Full details
+    including counts are fetched on selection via ItemTypeOut.
+
+    Attributes:
+        id: Database primary key
+        slug: URL-safe identifier (e.g., "bagel")
+        display_name: Human-readable name (e.g., "Bagel")
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+
+
 class ItemTypeOut(BaseModel):
     """
     Response model for an item type.

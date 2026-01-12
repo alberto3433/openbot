@@ -613,3 +613,52 @@ class ConfigHelperHandler:
                 message="Got it. Anything else?",
                 order=order,
             )
+
+    def handle_bagel_choice_for_side(
+        self,
+        user_input: str,
+        item: "MenuItemTask",
+        order: "OrderTask",
+    ) -> "StateMachineResult":
+        """Handle bagel type selection for menu items with bagel sides.
+
+        This handles the bagel_choice question for items like omelettes and salads
+        that have a bagel as a side option. It parses the user's bagel choice and
+        updates the item's bagel_choice field.
+
+        Args:
+            user_input: The user's input (e.g., "plain", "everything bagel")
+            item: The menu item with a bagel side
+            order: The current order
+
+        Returns:
+            StateMachineResult with next question or completion message
+        """
+        from .state_machine import BagelChoiceResponse
+        from .parsers.llm_parsers import parse_bagel_choice
+
+        # Parse the bagel choice
+        parsed = parse_bagel_choice(user_input, num_pending_bagels=1)
+
+        if parsed.bagel_type:
+            # Set the bagel choice on the menu item
+            item.bagel_choice = parsed.bagel_type
+            logger.info(
+                "Set bagel_choice='%s' on menu item '%s'",
+                parsed.bagel_type, item.menu_item_name
+            )
+
+            # Clear pending and continue to next question
+            order.clear_pending()
+            if self._get_next_question:
+                return self._get_next_question(order)
+            return StateMachineResult(
+                message="Got it. Anything else?",
+                order=order,
+            )
+        else:
+            # Couldn't parse - ask again
+            return StateMachineResult(
+                message="What kind of bagel would you like for your side?",
+                order=order,
+            )

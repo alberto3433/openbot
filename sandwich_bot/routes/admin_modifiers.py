@@ -61,6 +61,7 @@ from ..db import get_db
 from ..models import ItemType, AttributeOption, MenuItem, ItemTypeGlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..schemas.modifiers import (
+    ItemTypeListOut,
     ItemTypeOut,
     ItemTypeCreate,
     ItemTypeUpdate,
@@ -112,6 +113,19 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
 # =============================================================================
 # Item Type Endpoints
 # =============================================================================
+
+@admin_modifiers_router.get("/item-types/list", response_model=List[ItemTypeListOut])
+def list_item_types_minimal(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[ItemTypeListOut]:
+    """Lightweight list for sidebar - no counts, no derived fields."""
+    item_types = db.query(ItemType).order_by(ItemType.display_name).all()
+    return [
+        ItemTypeListOut(id=it.id, slug=it.slug, display_name=it.display_name)
+        for it in item_types
+    ]
+
 
 @admin_modifiers_router.get("/item-types", response_model=List[ItemTypeOut])
 def list_item_types(

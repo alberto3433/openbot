@@ -1392,10 +1392,10 @@ class TakingItemsHandler:
                     new_style = None
                     if "iced" in input_lower:
                         new_style = "iced"
-                        last_item.iced = True
+                        last_item.temperature = "iced"
                     elif "hot" in input_lower:
                         new_style = "hot"
-                        last_item.iced = False
+                        last_item.temperature = "hot"
 
                     if new_style:
                         logger.info("Replacement: changed coffee style to '%s'", new_style)
@@ -2687,7 +2687,7 @@ class TakingItemsHandler:
                             # Sized beverages (coffee, latte, etc.) use coffee config handler
                             if item.size is None:
                                 coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_size"))
-                            elif item.iced is None:
+                            elif item.temperature is None:
                                 coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_style"))
                             elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
                                 coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_modifiers"))

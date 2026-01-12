@@ -209,17 +209,36 @@ class MenuItemTask(ItemTask):
             del self.attribute_values["size"]
 
     @property
+    def temperature(self) -> str | None:
+        """Get temperature from attribute_values ("iced" or "hot")."""
+        return self.attribute_values.get("temperature")
+
+    @temperature.setter
+    def temperature(self, value: str | None) -> None:
+        """Set temperature in attribute_values ("iced" or "hot")."""
+        if value is not None:
+            self.attribute_values["temperature"] = value
+        elif "temperature" in self.attribute_values:
+            del self.attribute_values["temperature"]
+
+    @property
     def iced(self) -> bool | None:
-        """Get iced flag from attribute_values."""
-        return self.attribute_values.get("iced")
+        """Get iced flag (computed from temperature for backward compatibility)."""
+        temp = self.attribute_values.get("temperature")
+        if temp is None:
+            return None
+        return temp == "iced"
 
     @iced.setter
     def iced(self, value: bool | None) -> None:
-        """Set iced flag in attribute_values."""
-        if value is not None:
-            self.attribute_values["iced"] = value
-        elif "iced" in self.attribute_values:
-            del self.attribute_values["iced"]
+        """Set iced flag (converts to temperature for backward compatibility)."""
+        if value is None:
+            if "temperature" in self.attribute_values:
+                del self.attribute_values["temperature"]
+        elif value:
+            self.attribute_values["temperature"] = "iced"
+        else:
+            self.attribute_values["temperature"] = "hot"
 
     @property
     def decaf(self) -> bool | None:
@@ -508,9 +527,9 @@ class MenuItemTask(ItemTask):
             parts = []
             if self.size:
                 parts.append(self.size)
-            if self.iced is True:
+            if self.temperature == "iced":
                 parts.append("iced")
-            elif self.iced is False:
+            elif self.temperature == "hot":
                 parts.append("hot")
             if self.decaf:
                 parts.append("decaf")

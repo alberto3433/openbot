@@ -97,6 +97,13 @@ class ParsedCoffeeEntry(BaseModel):
     quantity: int = 1
     special_instructions: str | None = None
 
+    @property
+    def iced(self) -> bool | None:
+        """Backward-compatible property that derives bool from temperature."""
+        if self.temperature is None:
+            return None
+        return self.temperature == "iced"
+
     # Decaf preference
     decaf: bool | None = None
 

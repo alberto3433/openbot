@@ -514,9 +514,11 @@ class CoffeeConfigHandler(BaseHandler):
 
                 # Store original modifiers so they can be applied when user clarifies drink type
                 # This preserves "large iced oat milk vanilla" when user clarifies "latte"
+                # Convert iced boolean to temperature string for storage
+                temperature_str = "iced" if iced is True else ("hot" if iced is False else None)
                 order.pending_coffee_modifiers = {
                     "size": size,
-                    "iced": iced,
+                    "temperature": temperature_str,
                     "milk": milk,
                     "sweetener": sweetener,
                     "sweetener_quantity": sweetener_quantity,
@@ -529,8 +531,8 @@ class CoffeeConfigHandler(BaseHandler):
                     "quantity": quantity,
                 }
                 logger.info(
-                    "ADD COFFEE: Stored modifiers for disambiguation: size=%s, iced=%s, milk=%s, syrup=%s",
-                    size, iced, milk, flavor_syrup
+                    "ADD COFFEE: Stored modifiers for disambiguation: size=%s, temperature=%s, milk=%s, syrup=%s",
+                    size, temperature_str, milk, flavor_syrup
                 )
 
                 return StateMachineResult(
@@ -606,9 +608,11 @@ class CoffeeConfigHandler(BaseHandler):
 
                 # Store original modifiers so they can be applied when user clarifies drink type
                 # This preserves "large iced oat milk vanilla" when user clarifies "latte" vs "matcha latte"
+                # Convert iced boolean to temperature string for storage
+                temperature_str = "iced" if iced is True else ("hot" if iced is False else None)
                 order.pending_coffee_modifiers = {
                     "size": size,
-                    "iced": iced,
+                    "temperature": temperature_str,
                     "milk": milk,
                     "sweetener": sweetener,
                     "sweetener_quantity": sweetener_quantity,
@@ -621,8 +625,8 @@ class CoffeeConfigHandler(BaseHandler):
                     "quantity": quantity,
                 }
                 logger.info(
-                    "ADD COFFEE: Stored modifiers for drink_selection disambiguation: size=%s, iced=%s, milk=%s, syrup=%s",
-                    size, iced, milk, flavor_syrup
+                    "ADD COFFEE: Stored modifiers for drink_selection disambiguation: size=%s, temperature=%s, milk=%s, syrup=%s",
+                    size, temperature_str, milk, flavor_syrup
                 )
 
                 # Build the clarification message
@@ -720,7 +724,7 @@ class CoffeeConfigHandler(BaseHandler):
             if size:
                 coffee.size = size
             if iced is not None:
-                coffee.iced = iced
+                coffee.temperature = "iced" if iced else "hot"
             if decaf:
                 coffee.decaf = decaf
             if milk:
@@ -770,8 +774,8 @@ class CoffeeConfigHandler(BaseHandler):
                 continue
 
             logger.info(
-                "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, iced=%s, status=%s",
-                coffee.id, coffee.size, coffee.iced, coffee.status
+                "CONFIGURE COFFEE: Checking coffee id=%s, size=%s, temperature=%s, status=%s",
+                coffee.id, coffee.size, coffee.temperature, coffee.status
             )
 
             # Get drink name for the question
@@ -802,7 +806,7 @@ class CoffeeConfigHandler(BaseHandler):
                 )
 
             # Then ask about hot/iced (skip for espresso - always hot)
-            if coffee.iced is None and not coffee.is_espresso:
+            if coffee.temperature is None and not coffee.is_espresso:
                 order.phase = OrderPhase.CONFIGURING_ITEM
                 order.pending_item_id = coffee.id
                 order.pending_field = "coffee_style"
@@ -835,8 +839,14 @@ class CoffeeConfigHandler(BaseHandler):
                 )
 
             # Ask about milk/sugar/syrup if none specified yet (optional question)
-            if (coffee.milk is None and not coffee.sweeteners
-                    and not coffee.flavor_syrups):
+            # Check both legacy fields AND unified attribute_values for backward compatibility
+            modifiers_answered = (
+                coffee.milk is not None
+                or coffee.sweeteners
+                or coffee.flavor_syrups
+                or "milk_sweetener_syrup" in coffee.attribute_values
+            )
+            if not modifiers_answered:
                 # Recalculate price with size/iced upcharges so cart displays correctly
                 # This handles cases where user orders "large iced coffee" directly
                 if self.pricing:
@@ -923,7 +933,7 @@ class CoffeeConfigHandler(BaseHandler):
             self.pricing.recalculate_coffee_price(item)
 
         # If hot/iced was already specified (e.g., "hot latte"), check for modifiers question
-        if item.iced is not None:
+        if item.temperature is not None:
             order.clear_pending()
             # Check for modifiers question or move to next incomplete coffee
             return self.configure_next_incomplete_coffee(order)
@@ -997,7 +1007,7 @@ class CoffeeConfigHandler(BaseHandler):
                 order=order,
             )
 
-        item.iced = iced
+        item.temperature = "iced" if iced else "hot"
 
         # Also extract any milk/sweetener/syrup mentioned with the hot/iced response
         # e.g., "hot with 2 splenda" or "iced with oat milk"
@@ -1413,7 +1423,7 @@ class CoffeeConfigHandler(BaseHandler):
         # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
         stored_mods = order.pending_coffee_modifiers or {}
         stored_size = stored_mods.get("size")
-        stored_iced = stored_mods.get("iced")
+        stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
         stored_milk = stored_mods.get("milk")
         stored_sweetener = stored_mods.get("sweetener")
         stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
@@ -1429,8 +1439,8 @@ class CoffeeConfigHandler(BaseHandler):
         order.clear_pending()
 
         logger.info(
-            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, iced=%s, milk=%s, syrup=%s",
-            selected_name, selected_price, stored_size, stored_iced, stored_milk, stored_syrup
+            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, syrup=%s",
+            selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_syrup
         )
 
         # Check if this drink should skip configuration
@@ -1482,8 +1492,8 @@ class CoffeeConfigHandler(BaseHandler):
                 # Set beverage properties via attribute_values
                 if stored_size:
                     drink.size = stored_size
-                if stored_iced is not None:
-                    drink.iced = stored_iced
+                if stored_temperature is not None:
+                    drink.temperature = stored_temperature
                 if stored_decaf:
                     drink.decaf = stored_decaf
                 if stored_milk:
@@ -1502,7 +1512,7 @@ class CoffeeConfigHandler(BaseHandler):
                     self.pricing.recalculate_coffee_price(drink)
 
                 # Check if fully configured (size and hot/iced specified)
-                if drink.size is not None and drink.iced is not None:
+                if drink.size is not None and drink.temperature is not None:
                     drink.mark_complete()
                 else:
                     drink.mark_in_progress()
@@ -1638,7 +1648,7 @@ class CoffeeConfigHandler(BaseHandler):
                 # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
                 stored_mods = order.pending_coffee_modifiers or {}
                 stored_size = stored_mods.get("size")
-                stored_iced = stored_mods.get("iced")
+                stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
                 stored_milk = stored_mods.get("milk")
                 stored_sweetener = stored_mods.get("sweetener")
                 stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
@@ -1651,8 +1661,8 @@ class CoffeeConfigHandler(BaseHandler):
                 stored_quantity = stored_mods.get("quantity", 1)
 
                 logger.info(
-                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, iced=%s, milk=%s, sweetener=%s(%d), syrup=%s",
-                    selected_name, selected_price, stored_size, stored_iced, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
+                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+                    selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
                 )
 
                 order.pending_drink_options = []
@@ -1705,8 +1715,8 @@ class CoffeeConfigHandler(BaseHandler):
                     # Set beverage properties via attribute_values
                     if stored_size:
                         drink.size = stored_size
-                    if stored_iced is not None:
-                        drink.iced = stored_iced
+                    if stored_temperature is not None:
+                        drink.temperature = stored_temperature
                     if stored_milk:
                         drink.milk = stored_milk
                     if sweeteners_list:
@@ -1733,8 +1743,8 @@ class CoffeeConfigHandler(BaseHandler):
                         # Set beverage properties via attribute_values
                         if stored_size:
                             extra_drink.size = stored_size
-                        if stored_iced is not None:
-                            extra_drink.iced = stored_iced
+                        if stored_temperature is not None:
+                            extra_drink.temperature = stored_temperature
                         if stored_milk:
                             extra_drink.milk = stored_milk
                         if sweeteners_list:

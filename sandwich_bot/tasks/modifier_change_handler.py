@@ -498,9 +498,9 @@ class ModifierChangeHandler:
                     message="I can only change hot/iced for a coffee drink.",
                 )
 
-            old_style = "iced" if item.iced else "hot"
-            item.iced = (new_value_lower == "iced")
-            new_style = "iced" if item.iced else "hot"
+            old_style = item.temperature or "hot"
+            item.temperature = new_value_lower  # "iced" or "hot"
+            new_style = item.temperature
             logger.info("Changed coffee style from '%s' to '%s'", old_style, new_style)
 
             summary = item.get_summary()

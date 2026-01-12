@@ -409,12 +409,18 @@ class TestOrderTaskToDict:
 
         assert len(result["items"]) == 1
         item = result["items"][0]
-        assert item["item_type"] == "drink"
+        assert item["item_type"] == "menu_item"  # All beverages now use unified menu_item type
         assert item["menu_item_name"] == "latte"
-        assert item["size"] == "large"
-        assert item["item_config"]["style"] == "iced"
-        assert item["item_config"]["milk"] == "almond"
-        assert item["item_config"]["sweeteners"] == [{"type": "honey", "quantity": 1}]
+        # Check attribute_values for stored configuration
+        # Note: "iced" property stores as "temperature" in attribute_values
+        # Note: "sweeteners" property stores as "sweetener_selections" in attribute_values
+        assert item["attribute_values"]["size"] == "large"
+        assert item["attribute_values"]["temperature"] == "iced"  # iced=True stores as temperature="iced"
+        assert item["attribute_values"]["milk"] == "almond"
+        assert item["attribute_values"]["sweetener_selections"] == [{"type": "honey", "quantity": 1}]
+        # Check modifiers list includes almond milk (with price if upcharge)
+        modifier_names = [m["name"].lower() for m in item["modifiers"]]
+        assert any("almond" in name for name in modifier_names)
 
     def test_confirmed_status(self):
         """Test confirmed order status."""
@@ -624,9 +630,8 @@ class TestModifiersConsistency:
         result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
-        # Modifiers and free_details should be in item_config
+        # Modifiers should be in item_config (free_details no longer used - all go to modifiers)
         assert "modifiers" in item["item_config"]
-        assert "free_details" in item["item_config"]
 
         # Oat milk upcharge should be in modifiers
         modifiers = item["item_config"]["modifiers"]
@@ -634,8 +639,8 @@ class TestModifiersConsistency:
         assert milk_mod is not None
         assert milk_mod["price"] == 0.70
 
-    def test_coffee_free_details_in_item_config(self):
-        """Test that free coffee details (iced/hot, sweetener) are in item_config."""
+    def test_coffee_free_details_in_modifiers(self):
+        """Test that free coffee details (size, sweetener) are in modifiers with price=0."""
         order = OrderTask()
         coffee = create_coffee_task(
             drink_type="coffee",
@@ -649,14 +654,17 @@ class TestModifiersConsistency:
         result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
-        free_details = item["item_config"]["free_details"]
+        # Free details now go to modifiers with price=0
+        modifiers = item["item_config"]["modifiers"]
+        modifier_names = [m["name"].lower() for m in modifiers]
 
-        # Should contain "hot" and "sugar"
-        assert any("hot" in d.lower() for d in free_details)
-        assert any("sugar" in d.lower() for d in free_details)
+        # Should contain "medium" in modifiers (size is stored in attribute_values)
+        assert any("medium" in name for name in modifier_names)
+        # Sweeteners are stored as sweetener_selections in attribute_values
+        assert item["attribute_values"].get("sweetener_selections") == [{"type": "sugar", "quantity": 1}]
 
-    def test_coffee_decaf_in_free_details(self):
-        """Test that decaf coffee has 'decaf' in free_details."""
+    def test_coffee_decaf_in_modifiers(self):
+        """Test that decaf coffee has 'decaf' in modifiers with price=0."""
         order = OrderTask()
         coffee = create_coffee_task(
             drink_type="coffee",
@@ -670,19 +678,19 @@ class TestModifiersConsistency:
         result = order_task_to_dict(order, pricing=create_test_pricing())
 
         item = result["items"][0]
-        free_details = item["free_details"]
-        item_config_free_details = item["item_config"]["free_details"]
+        # Free details now go to modifiers with price=0
+        modifiers = item["modifiers"]
+        modifier_names = [m["name"].lower() for m in modifiers]
 
-        # Should contain "decaf" in both top-level free_details and item_config
-        assert "decaf" in free_details, f"Expected 'decaf' in free_details, got: {free_details}"
-        assert "decaf" in item_config_free_details, f"Expected 'decaf' in item_config.free_details, got: {item_config_free_details}"
+        # Should contain "decaf" in modifiers
+        assert any("decaf" in name for name in modifier_names), f"Expected 'decaf' in modifiers, got: {modifier_names}"
 
-        # Should also contain "iced" and "medium"
-        assert "iced" in free_details
-        assert "medium" in free_details
+        # Should also contain "iced" and "medium" in modifiers
+        assert any("iced" in name for name in modifier_names)
+        assert any("medium" in name for name in modifier_names)
 
-        # item_config should have decaf=True
-        assert item["item_config"]["decaf"] is True
+        # attribute_values should have decaf=True
+        assert item["attribute_values"]["decaf"] is True
 
     def test_menu_item_modifiers_in_item_config(self):
         """Test that menu item (omelette) modifiers are in item_config."""

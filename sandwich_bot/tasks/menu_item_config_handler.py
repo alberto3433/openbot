@@ -67,6 +67,10 @@ class MenuItemConfigHandler(BaseHandler):
     LEGACY_ATTR_ALIASES = {
         "bread": ["bagel_type"],  # DB uses "bread", legacy code uses "bagel_type"
         "spread": ["spread_type"],  # DB uses "spread", legacy code uses "spread_type"
+        # Note: temperature is now the canonical key, no alias needed
+        # milk_sweetener_syrup is a consolidated attribute but _apply_extracted_modifiers
+        # stores individual fields (sweetener, milk, flavor_syrup) for display purposes
+        "milk_sweetener_syrup": ["sweetener", "milk", "flavor_syrup"],
     }
 
     # Attributes that may be stored as direct model fields instead of in attribute_values
@@ -245,10 +249,15 @@ class MenuItemConfigHandler(BaseHandler):
         """
         mandatory = self._get_mandatory_attributes(item_type_slug)
         unanswered = []
+        logger.info(
+            "GET_UNANSWERED_MANDATORY: item_type=%s, attribute_values=%s",
+            item_type_slug, item.attribute_values
+        )
         for attr in mandatory:
             slug = attr["slug"]
             # Check canonical slug in attribute_values
             if slug in item.attribute_values:
+                logger.debug("  %s: FOUND in attribute_values", slug)
                 continue
             # Check legacy aliases for this attribute
             legacy_aliases = self.LEGACY_ATTR_ALIASES.get(slug, [])
@@ -256,13 +265,20 @@ class MenuItemConfigHandler(BaseHandler):
                 alias in item.attribute_values for alias in legacy_aliases
             )
             if found_via_alias:
+                logger.debug("  %s: FOUND via alias %s", slug, legacy_aliases)
                 continue
             # Check direct model field for certain attributes (e.g., toasted, scooped)
             if slug in self.DIRECT_FIELD_ATTRS:
                 direct_value = getattr(item, slug, None)
                 if direct_value is not None:
+                    logger.debug("  %s: FOUND in direct field", slug)
                     continue
+            logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
             unanswered.append(attr)
+        logger.info(
+            "GET_UNANSWERED_MANDATORY result: %s",
+            [a["slug"] for a in unanswered]
+        )
         return unanswered
 
     def _get_unanswered_optional(
@@ -1650,11 +1666,9 @@ class MenuItemConfigHandler(BaseHandler):
         hot_patterns = ["hot", "warm"]
 
         if any(p in user_lower for p in iced_patterns):
-            item.attribute_values["iced"] = True
-            item.iced = True
+            item.temperature = "iced"
         elif any(p in user_lower for p in hot_patterns):
-            item.attribute_values["iced"] = False
-            item.iced = False
+            item.temperature = "hot"
         else:
             # Couldn't determine - ask again
             return StateMachineResult(
@@ -1779,6 +1793,11 @@ class MenuItemConfigHandler(BaseHandler):
         # For multi_select, try to match ALL options in the input
         if input_type == "multi_select":
             matched_options = self._match_multiple_options_from_input(user_input, options)
+            logger.info(
+                "MULTI_SELECT MATCH for %s: input='%s', found %d matches: %s",
+                attr_slug, user_input, len(matched_options),
+                [o["slug"] for o in matched_options]
+            )
             if matched_options:
                 # Store as list of slugs
                 existing = item.attribute_values.get(attr_slug)
@@ -1792,6 +1811,9 @@ class MenuItemConfigHandler(BaseHandler):
                 selections = item.attribute_values.get(f"{attr_slug}_selections", [])
                 if not isinstance(selections, list):
                     selections = []
+
+                # Track count before adding new selections (for price update below)
+                existing_count = len(selections)
 
                 user_lower = user_input.lower()
                 for opt in matched_options:
@@ -1816,6 +1838,35 @@ class MenuItemConfigHandler(BaseHandler):
 
                 item.attribute_values[attr_slug] = slugs
                 item.attribute_values[f"{attr_slug}_selections"] = selections
+                logger.info(
+                    "STORED multi_select: %s = %s, attribute_values keys: %s",
+                    attr_slug, slugs, list(item.attribute_values.keys())
+                )
+
+                # Update unit_price for NEWLY added selections only (skip previously existing ones)
+                for sel in selections[existing_count:]:
+                    sel_price = sel.get("price", 0) or 0.0
+                    sel_qty = sel.get("quantity", 1) or 1
+                    sel_slug = sel.get("slug", "")
+
+                    # For sized_beverage, look up price from pricing engine if not in option
+                    if sel_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
+                        # Try syrup price first, then milk
+                        sel_price = self.pricing.lookup_coffee_modifier_price(sel_slug, "syrup") or 0.0
+                        if sel_price == 0:
+                            sel_price = self.pricing.lookup_coffee_modifier_price(sel_slug, "milk") or 0.0
+                        # Update the selection with the looked-up price
+                        if sel_price > 0:
+                            sel["price"] = sel_price
+
+                    # Update unit_price
+                    total_sel_price = sel_price * sel_qty
+                    if total_sel_price > 0 and item.unit_price is not None:
+                        item.unit_price = item.unit_price + total_sel_price
+                        logger.info(
+                            "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
+                            item.id, sel_slug, sel_price, sel_qty, item.unit_price
+                        )
 
                 # Build acknowledgment text with quantity and qualifier
                 display_names = []
@@ -1836,8 +1887,10 @@ class MenuItemConfigHandler(BaseHandler):
                 else:
                     ack_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}"
 
-                # Extract and apply any additional modifiers from the input
-                self._extract_and_apply_modifiers(user_input, item)
+                # NOTE: Do NOT call _extract_and_apply_modifiers here.
+                # Multi-select input has been fully handled above. Extracting
+                # modifiers would cause duplicates (e.g., "2 scrambled eggs"
+                # would add scrambled_egg to both add_egg_selections AND extras).
 
                 return self._advance_to_next_question(item, order, attr, ack_text)
 
@@ -1863,22 +1916,39 @@ class MenuItemConfigHandler(BaseHandler):
             else:
                 # Single select - store slug and use _selections format to support quantity
                 item.attribute_values[attr_slug] = matched["slug"]
+
+                # Determine the price for this option
+                option_price = matched.get("price", 0) or 0.0
+
+                # For sized_beverage attributes, look up price from pricing engine if not set
+                if option_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
+                    if attr_slug == "size" and matched["slug"].lower() not in ("small", "s"):
+                        option_price = self.pricing.lookup_coffee_modifier_price(matched["slug"], "size") or 0.0
+                    elif attr_slug == "temperature" and matched["slug"].lower() == "iced":
+                        # Iced upcharge depends on size
+                        size = item.attribute_values.get("size")
+                        if size:
+                            option_price = self.pricing.lookup_iced_upcharge_by_size(size) or 0.0
+
                 # Store price if applicable and update unit_price
-                if matched.get("price", 0) > 0:
+                if option_price > 0:
                     price_key = f"{attr_slug}_price"
-                    item.attribute_values[price_key] = matched["price"]
+                    item.attribute_values[price_key] = option_price
                     # Update unit_price to include this modifier price
                     if item.unit_price is not None:
-                        item.unit_price = item.unit_price + matched["price"]
+                        item.unit_price = item.unit_price + option_price
                         logger.info(
                             "Updated unit_price for %s: added %s price %.2f, new total %.2f",
-                            item.id, attr_slug, matched["price"], item.unit_price
+                            item.id, attr_slug, option_price, item.unit_price
                         )
+
                 # Always use _selections format to support quantity
                 item.attribute_values[f"{attr_slug}_selections"] = [selection]
 
-            # Extract and apply any additional modifiers from the input
-            self._extract_and_apply_modifiers(user_input, item)
+            # NOTE: Do NOT call _extract_and_apply_modifiers here.
+            # The user's input was a direct answer to the attribute question.
+            # Extracting modifiers would cause duplicates (e.g., "2 scrambled eggs"
+            # would add scrambled_egg to both add_egg_selections AND extras/sandwich_protein).
 
             # Acknowledgment with quantity and qualifier
             ack_name = matched["display_name"]
@@ -2044,6 +2114,10 @@ class MenuItemConfigHandler(BaseHandler):
                 to handle multiple items of the same type
         """
         item_type = item.menu_item_type
+        logger.info(
+            "ADVANCE_TO_NEXT: after attr=%s, item_type=%s, attribute_values=%s",
+            current_attr.get("slug"), item_type, item.attribute_values
+        )
 
         # Check if we're in mandatory phase or optional phase
         if current_attr.get("ask_in_conversation", True):

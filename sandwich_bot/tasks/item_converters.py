@@ -90,6 +90,126 @@ class ItemConverter(ABC):
             "special_instructions": getattr(item, 'special_instructions', None),
         }
 
+    def _process_attribute_values_to_modifiers(
+        self,
+        attribute_values: Dict[str, Any],
+        modifiers: list,
+        free_details: list,
+        pricing: "PricingEngine | None" = None,
+        skip_slugs: set | None = None,
+        price_lookup_fn=None,
+        include_free_in_modifiers: bool = False,
+    ) -> float:
+        """
+        Generic data-driven processing of attribute_values into modifiers/free_details.
+
+        Iterates through all attribute_values and builds modifier entries for priced
+        attributes and free_details entries for non-priced ones.
+
+        Args:
+            attribute_values: Dict of attribute slug -> value
+            modifiers: List to append priced modifiers to (mutated)
+            free_details: List to append free details to (mutated)
+            pricing: Optional PricingEngine for price and display name lookups
+            skip_slugs: Set of attribute slugs to skip (e.g., "bread" for sandwiches)
+            price_lookup_fn: Optional function(attr_slug, attr_value, pricing) -> float
+                             for custom price lookups (e.g., coffee-specific lookups)
+            include_free_in_modifiers: If True, add free items to modifiers with price=0
+                                       instead of to free_details (useful for cart display)
+
+        Returns:
+            Total upcharge amount from all processed attributes
+        """
+        skip_slugs = skip_slugs or set()
+        total_upcharges = 0.0
+
+        for attr_slug, attr_value in attribute_values.items():
+            # Skip metadata keys (price and selections are processed with their parent)
+            if attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
+                continue
+            if attr_slug in skip_slugs:
+                continue
+            if attr_value is None or attr_value is False:
+                continue  # Skip empty/false values
+
+            # Check if this is a multi-select attribute with _selections data
+            selections = attribute_values.get(f"{attr_slug}_selections")
+            if selections and isinstance(selections, list):
+                # Multi-select: create a modifier for each selection
+                for sel in selections:
+                    sel_slug = sel.get("slug", "")
+                    sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
+                    sel_price = sel.get("price", 0) or 0.0
+                    sel_quantity = sel.get("quantity", 1) or 1
+                    sel_qualifier = sel.get("qualifier")
+
+                    # Try custom price lookup if price not set
+                    if sel_price == 0 and price_lookup_fn and pricing:
+                        sel_price = price_lookup_fn(attr_slug, sel_slug, pricing) or 0.0
+
+                    # Build display with qualifier
+                    if sel_qualifier:
+                        sel_display = f"{sel_display} ({sel_qualifier})"
+
+                    # Handle quantity
+                    if sel_quantity > 1:
+                        sel_display = f"{sel_quantity} {sel_display}"
+                        sel_price = sel_price * sel_quantity
+
+                    if sel_price > 0:
+                        modifiers.append({"name": sel_display, "price": sel_price})
+                        total_upcharges += sel_price
+                    elif include_free_in_modifiers:
+                        modifiers.append({"name": sel_display, "price": 0})
+                    else:
+                        free_details.append(sel_display)
+                continue
+
+            # Single-select or scalar attribute
+            # Get associated price (stored as {attr_slug}_price or {attr_slug}_upcharge)
+            price = attribute_values.get(f"{attr_slug}_price", 0) or 0.0
+            if price == 0:
+                # Also check for {attr_slug}_upcharge (legacy storage format)
+                price = attribute_values.get(f"{attr_slug}_upcharge", 0) or 0.0
+
+            # Try custom price lookup if price not stored
+            if price == 0 and price_lookup_fn and pricing and isinstance(attr_value, str):
+                price = price_lookup_fn(attr_slug, attr_value, pricing) or 0.0
+
+            # Build display name
+            if attr_value is True:
+                # Boolean attribute (e.g., decaf, toasted) - keep lowercase
+                display_name = attr_slug.replace("_", " ").lower()
+            elif isinstance(attr_value, list):
+                # List without _selections (legacy fallback) - add each item
+                for val in attr_value:
+                    val_display = str(val).replace("_", " ").title()
+                    if include_free_in_modifiers:
+                        modifiers.append({"name": val_display, "price": 0})
+                    else:
+                        free_details.append(val_display)
+                continue
+            else:
+                # String attribute (e.g., size: "large", milk: "oat")
+                display_name = str(attr_value).replace("_", " ").title()
+                # Use pricing engine display name lookup if available
+                if pricing:
+                    if attr_slug == "size" and hasattr(pricing, 'lookup_size_display_name'):
+                        display_name = pricing.lookup_size_display_name(attr_value) or display_name
+                    elif attr_slug == "temperature" and hasattr(pricing, 'lookup_temperature_display_name'):
+                        display_name = pricing.lookup_temperature_display_name(attr_value) or display_name
+
+            # Add to modifiers (if priced) or free_details
+            if price > 0:
+                modifiers.append({"name": display_name, "price": price})
+                total_upcharges += price
+            elif include_free_in_modifiers:
+                modifiers.append({"name": display_name, "price": 0})
+            else:
+                free_details.append(display_name)
+
+        return total_upcharges
+
 
 class MenuItemConverter(ItemConverter):
     """Converter for MenuItemTask (omelettes, sandwiches, etc.)."""
@@ -108,10 +228,42 @@ class MenuItemConverter(ItemConverter):
                 break
 
         item_config = item_dict.get("item_config") or {}
+
+        # Determine menu_item_type - map legacy "drink" to "sized_beverage"
+        item_type = item_dict.get("item_type")
+        menu_item_type = item_dict.get("menu_item_type") or item_config.get("menu_item_type")
+        if not menu_item_type and item_type in ("drink", "coffee", "sized_beverage", "espresso"):
+            menu_item_type = "sized_beverage"
+
+        # Build attribute_values from various sources
+        attribute_values = item_dict.get("attribute_values") or item_config.get("attribute_values") or {}
+
+        # Restore beverage properties from item_config (legacy format)
+        if menu_item_type == "sized_beverage" and item_config:
+            # Restore size
+            if item_config.get("size") and "size" not in attribute_values:
+                attribute_values["size"] = item_config["size"]
+            # Restore temperature/style
+            if item_config.get("style") and "temperature" not in attribute_values:
+                attribute_values["temperature"] = item_config["style"]
+            # Restore decaf
+            if item_config.get("decaf") and "decaf" not in attribute_values:
+                attribute_values["decaf"] = item_config["decaf"]
+            # Restore milk
+            if item_config.get("milk") and "milk" not in attribute_values:
+                attribute_values["milk"] = item_config["milk"]
+            # Restore sweeteners
+            if item_config.get("sweeteners") and "sweetener_selections" not in attribute_values:
+                attribute_values["sweetener_selections"] = item_config["sweeteners"]
+
+        # Also check top-level dict for size (common in legacy format)
+        if item_dict.get("size") and "size" not in attribute_values:
+            attribute_values["size"] = item_dict["size"]
+
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
             menu_item_id=item_dict.get("menu_item_id"),
-            menu_item_type=item_dict.get("menu_item_type"),
+            menu_item_type=menu_item_type,
             modifications=item_dict.get("modifications") or [],
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             side_choice=item_dict.get("side_choice"),
@@ -122,8 +274,7 @@ class MenuItemConverter(ItemConverter):
             requires_side_choice=item_dict.get("requires_side_choice", False),
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-            # DB-driven attribute values for deli sandwiches, etc.
-            attribute_values=item_dict.get("attribute_values") or item_config.get("attribute_values") or {},
+            attribute_values=attribute_values,
             customization_offered=item_dict.get("customization_offered", False),
         )
         self._restore_common_fields(menu_item, item_dict)
@@ -193,52 +344,16 @@ class MenuItemConverter(ItemConverter):
             modifiers.append({"name": mod, "price": 0})
 
         # Convert DB-driven attribute_values to modifiers for cart display
-        # (attribute_values was loaded earlier for display_name)
-        for attr_slug, attr_value in attribute_values.items():
-            # Skip fields that shouldn't be modifiers
-            if attr_slug in ("bread",) or attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
-                continue  # bread is in display_name, price and selections fields are metadata
-            if attr_value is None or attr_value is False:
-                continue  # Skip empty/false values
-
-            # Check if this is a multi-select attribute with _selections data
-            selections = attribute_values.get(f"{attr_slug}_selections")
-            if selections and isinstance(selections, list):
-                # Multi-select: create a modifier for each selection, respecting quantity and qualifier
-                for sel in selections:
-                    sel_display = sel.get("display_name") or sel.get("slug", "").replace("_", " ").title()
-                    sel_price = sel.get("price", 0) or 0
-                    sel_quantity = sel.get("quantity", 1) or 1
-                    sel_qualifier = sel.get("qualifier")
-
-                    # Include qualifier (extra, light, on the side, etc.) in display
-                    if sel_qualifier:
-                        sel_display = f"{sel_display} ({sel_qualifier})"
-
-                    # Show quantity in display name and multiply price
-                    if sel_quantity > 1:
-                        sel_display = f"{sel_display} (x{sel_quantity})"
-                        sel_price = sel_price * sel_quantity
-
-                    modifiers.append({"name": sel_display, "price": sel_price})
-                continue
-
-            # Get associated price if any (for single-select)
-            price = attribute_values.get(f"{attr_slug}_price", 0) or 0
-
-            if attr_value is True:
-                # Boolean attribute (e.g., toasted, scooped)
-                display_name_mod = attr_slug.replace("_", " ").title()
-                modifiers.append({"name": display_name_mod, "price": price})
-            elif isinstance(attr_value, list):
-                # List attribute without _selections data (fallback)
-                for val in attr_value:
-                    value_display = str(val).replace("_", " ").title()
-                    modifiers.append({"name": value_display, "price": 0})
-            else:
-                # String attribute (e.g., extra_protein: "turkey_bacon")
-                value_display = str(attr_value).replace("_", " ").title()
-                modifiers.append({"name": value_display, "price": price})
+        # Use the shared generic processing method
+        # Pass include_free=True so all customizations appear in cart (with price=0)
+        self._process_attribute_values_to_modifiers(
+            attribute_values=attribute_values,
+            modifiers=modifiers,
+            free_details=[],  # Not used when include_free=True
+            pricing=pricing,
+            skip_slugs={"bread"},  # bread is in display_name
+            include_free_in_modifiers=True,  # Add free items to modifiers with price=0
+        )
 
         customization_offered = getattr(item, 'customization_offered', False)
 
@@ -258,17 +373,12 @@ class MenuItemConverter(ItemConverter):
             "side_bagel_config": side_bagel_config,
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
-            # DB-driven attribute values for deli sandwiches, etc.
+            # DB-driven attribute values
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
+            # Simplified item_config - just the essential data
             "item_config": {
                 "menu_item_type": menu_item_type,
-                "side_choice": side_choice,
-                "bagel_choice": bagel_choice,
-                "toasted": toasted,
-                "spread": spread,
-                "modifications": getattr(item, 'modifications', []),
-                "removed_ingredients": removed_ingredients,
                 "modifiers": modifiers,
                 "attribute_values": attribute_values,
             },
@@ -452,200 +562,6 @@ class SandwichConverter(ItemConverter):
         return BagelConverter().to_dict(item, pricing)
 
 
-class CoffeeConverter(ItemConverter):
-    """Converter for sized_beverage MenuItemTask (coffee, latte, etc.)."""
-
-    @property
-    def item_type(self) -> str:
-        return "coffee"
-
-    @property
-    def output_item_type(self) -> str:
-        """The item_type to use in dict output (for backwards compatibility)."""
-        return "drink"
-
-    def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
-        """Convert dict to MenuItemTask with menu_item_type='sized_beverage'."""
-        item_config = item_dict.get("item_config") or {}
-
-        # Determine iced value from style
-        style = item_config.get("style")
-        if style == "iced":
-            iced_value = True
-        elif style == "hot":
-            iced_value = False
-        else:
-            iced_value = None
-
-        # Handle sweeteners
-        sweeteners = item_config.get("sweeteners", [])
-        if not sweeteners and item_config.get("sweetener"):
-            sweeteners = [{
-                "type": item_config["sweetener"],
-                "quantity": item_config.get("sweetener_quantity", 1)
-            }]
-
-        # Handle flavor syrups
-        flavor_syrups = item_config.get("flavor_syrups", [])
-        if not flavor_syrups and item_config.get("flavor_syrup"):
-            flavor_syrups = [{
-                "flavor": item_config["flavor_syrup"],
-                "quantity": item_config.get("syrup_quantity", 1)
-            }]
-
-        # Create MenuItemTask with sized_beverage type
-        coffee = MenuItemTask(
-            menu_item_name=item_dict.get("menu_item_name") or "coffee",
-            menu_item_type="sized_beverage",
-            special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-        )
-
-        # Set beverage-specific fields via property setters
-        size = item_dict.get("size") or item_config.get("size")
-        if size:
-            coffee.size = size
-        if iced_value is not None:
-            coffee.iced = iced_value
-        if item_config.get("decaf"):
-            coffee.decaf = item_config.get("decaf")
-        if item_config.get("milk"):
-            coffee.milk = item_config.get("milk")
-        if item_config.get("cream_level"):
-            coffee.cream_level = item_config.get("cream_level")
-
-        # Set sweeteners and syrups
-        if sweeteners:
-            coffee.attribute_values["sweetener_selections"] = sweeteners
-        if flavor_syrups:
-            coffee.attribute_values["syrup_selections"] = flavor_syrups
-
-        # Set upcharge values
-        if item_config.get("size_upcharge"):
-            coffee.size_upcharge = item_config.get("size_upcharge", 0.0)
-        if item_config.get("milk_upcharge"):
-            coffee.milk_upcharge = item_config.get("milk_upcharge", 0.0)
-        if item_config.get("syrup_upcharge"):
-            coffee.syrup_upcharge = item_config.get("syrup_upcharge", 0.0)
-        if item_config.get("iced_upcharge"):
-            coffee.iced_upcharge = item_config.get("iced_upcharge", 0.0)
-        if item_config.get("wants_syrup"):
-            coffee.wants_syrup = item_config.get("wants_syrup", False)
-        if item_config.get("pending_syrup_quantity"):
-            coffee.pending_syrup_quantity = item_config.get("pending_syrup_quantity", 1)
-
-        self._restore_common_fields(coffee, item_dict)
-        if coffee.menu_item_name and coffee.iced is not None:
-            coffee.mark_complete()
-        return coffee
-
-    def to_dict(
-        self,
-        item: ItemTask,
-        pricing: "PricingEngine | None" = None,
-    ) -> Dict[str, Any]:
-        drink_type = getattr(item, 'drink_type', 'coffee')
-        size = getattr(item, 'size', None)
-        milk = getattr(item, 'milk', None)
-        flavor_syrups = getattr(item, 'flavor_syrups', []) or []
-        sweeteners = getattr(item, 'sweeteners', []) or []
-        iced = getattr(item, 'iced', None)
-        decaf = getattr(item, 'decaf', None)
-        cream_level = getattr(item, 'cream_level', None)
-
-        size_upcharge = getattr(item, 'size_upcharge', 0.0) or 0.0
-        milk_upcharge = getattr(item, 'milk_upcharge', 0.0) or 0.0
-        syrup_upcharge = getattr(item, 'syrup_upcharge', 0.0) or 0.0
-        iced_upcharge = getattr(item, 'iced_upcharge', 0.0) or 0.0
-
-        modifiers = []
-        free_details = []
-
-        if size:
-            # Get display name from database via pricing engine
-            size_label = pricing.lookup_size_display_name(size) if pricing else size
-            if size_upcharge > 0:
-                modifiers.append({"name": size_label, "price": size_upcharge})
-            else:
-                free_details.append(size_label)
-
-        if iced is True:
-            # Get display name from database via pricing engine
-            iced_label = pricing.lookup_temperature_display_name(True) if pricing else "iced"
-            if iced_upcharge > 0:
-                modifiers.append({"name": iced_label, "price": iced_upcharge})
-            else:
-                free_details.append(iced_label)
-        elif iced is False:
-            hot_label = pricing.lookup_temperature_display_name(False) if pricing else "hot"
-            free_details.append(hot_label)
-
-        if decaf is True:
-            free_details.append("decaf")
-
-        if milk and milk.lower() not in ("none", "black"):
-            if milk_upcharge > 0:
-                modifiers.append({"name": f"{milk} milk", "price": milk_upcharge})
-            else:
-                free_details.append(f"{milk} milk")
-        elif milk and milk.lower() in ("none", "black"):
-            free_details.append("black")
-
-        for syrup_entry in flavor_syrups:
-            flavor = syrup_entry.get("flavor", "")
-            qty = syrup_entry.get("quantity", 1)
-            # Use individual syrup price stored by pricing engine, fall back to total upcharge
-            entry_price = syrup_entry.get("price", 0.0)
-            if flavor:
-                syrup_name = f"{qty} {flavor} syrups" if qty > 1 else f"{flavor} syrup"
-                if entry_price > 0:
-                    modifiers.append({"name": syrup_name, "price": entry_price})
-                else:
-                    free_details.append(syrup_name)
-
-        for sweetener_entry in sweeteners:
-            s_type = sweetener_entry.get("type", "")
-            s_qty = sweetener_entry.get("quantity", 1)
-            if s_type:
-                if s_qty > 1:
-                    free_details.append(f"{s_qty} {s_type}s")
-                else:
-                    free_details.append(s_type)
-
-        if cream_level:
-            free_details.append(cream_level)
-
-        total_price = item.unit_price or 0
-        base_price = total_price - size_upcharge - milk_upcharge - syrup_upcharge - iced_upcharge
-
-        result = self._build_common_dict_fields(item)
-        result["quantity"] = 1  # Coffee is always quantity 1
-        result["line_total"] = item.unit_price if item.unit_price else 0
-        result.update({
-            "menu_item_name": drink_type,
-            "size": size,
-            "base_price": base_price,
-            "modifiers": modifiers,
-            "free_details": free_details,
-            "item_config": {
-                "size": size,
-                "milk": milk,
-                "cream_level": cream_level,
-                "sweeteners": sweeteners,
-                "flavor_syrups": flavor_syrups,
-                "decaf": decaf,
-                "style": "iced" if iced is True else ("hot" if iced is False else None),
-                "size_upcharge": size_upcharge,
-                "milk_upcharge": milk_upcharge,
-                "syrup_upcharge": syrup_upcharge,
-                "iced_upcharge": iced_upcharge,
-                "wants_syrup": getattr(item, 'wants_syrup', False),
-                "pending_syrup_quantity": getattr(item, 'pending_syrup_quantity', 1),
-                "modifiers": modifiers,
-                "free_details": free_details,
-                "base_price": base_price,
-            },
-        })
-        return result
 
 
 # -----------------------------------------------------------------------------
@@ -672,11 +588,11 @@ class UnifiedItemConverter(ItemConverter):
         # Route to specialized converter
         if item_type == "bagel":
             return BagelConverter().from_dict(item_dict)
-        elif item_type in ("coffee", "drink", "sized_beverage"):
-            return CoffeeConverter().from_dict(item_dict)
         elif item_type == "sandwich":
             return SandwichConverter().from_dict(item_dict)
         else:
+            # All other types (menu_item, coffee, drink, sized_beverage, espresso)
+            # use MenuItemConverter
             return MenuItemConverter().from_dict(item_dict)
 
     def to_dict(
@@ -690,9 +606,9 @@ class UnifiedItemConverter(ItemConverter):
 
         if menu_item_type == "bagel":
             return BagelConverter().to_dict(item, pricing)
-        elif menu_item_type in ("sized_beverage", "espresso"):
-            return CoffeeConverter().to_dict(item, pricing)
         else:
+            # All other types (menu_item, sized_beverage, espresso, etc.)
+            # use MenuItemConverter
             return MenuItemConverter().to_dict(item, pricing)
 
 
@@ -726,17 +642,15 @@ class ItemConverterRegistry:
 
         For MenuItemTask, routes based on menu_item_type:
         - menu_item_type='bagel' -> BagelConverter
-        - menu_item_type='sized_beverage' -> CoffeeConverter
-        - otherwise -> MenuItemConverter
+        - otherwise -> MenuItemConverter (handles all types including sized_beverage)
         """
         # Check if it's a MenuItemTask with specific menu_item_type
         if isinstance(item, MenuItemTask):
             menu_item_type = getattr(item, 'menu_item_type', None)
             if menu_item_type == "bagel":
                 return cls._converters.get("bagel")
-            elif menu_item_type == "sized_beverage":
-                return cls._converters.get("coffee")
-            # Fall through to default menu_item converter
+            # All other types use MenuItemConverter
+            return cls._converters.get("menu_item")
 
         return cls._converters.get(item.item_type)
 
@@ -750,19 +664,14 @@ class ItemConverterRegistry:
 ItemConverterRegistry.register(MenuItemConverter())
 ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
-ItemConverterRegistry.register(CoffeeConverter())
 ItemConverterRegistry.register(UnifiedItemConverter())
 
-# Register CoffeeConverter under "drink" as well (for dict input compatibility)
-ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["coffee"]
-
-# For backwards compatibility, treat signature_item as menu_item
-# (signature items are now MenuItemTask with is_signature=True)
-ItemConverterRegistry._converters["signature_item"] = ItemConverterRegistry._converters["menu_item"]
-ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._converters["menu_item"]
-
-# Espresso now uses MenuItemConverter (data-driven via MenuItemTask)
+# All beverage types now use MenuItemConverter (unified data-driven approach)
+ItemConverterRegistry._converters["coffee"] = ItemConverterRegistry._converters["menu_item"]
+ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["menu_item"]
+ItemConverterRegistry._converters["sized_beverage"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["espresso"] = ItemConverterRegistry._converters["menu_item"]
 
-# Sized_beverage uses CoffeeConverter (same as coffee/drink)
-ItemConverterRegistry._converters["sized_beverage"] = ItemConverterRegistry._converters["coffee"]
+# For backwards compatibility, treat signature_item as menu_item
+ItemConverterRegistry._converters["signature_item"] = ItemConverterRegistry._converters["menu_item"]
+ItemConverterRegistry._converters["speed_menu_bagel"] = ItemConverterRegistry._converters["menu_item"]

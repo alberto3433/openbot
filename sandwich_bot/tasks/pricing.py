@@ -741,18 +741,22 @@ class PricingEngine:
         )
         return 0.0
 
-    def lookup_temperature_display_name(self, is_iced: bool) -> str:
+    def lookup_temperature_display_name(self, temperature: str | bool) -> str:
         """
         Look up the display name for temperature (hot/iced) from the database.
 
         Args:
-            is_iced: True for iced, False for hot
+            temperature: "iced", "hot", True (for iced), or False (for hot)
 
         Returns:
             The display name from the database (e.g., "Iced", "Hot"),
             or fallback to "iced"/"hot" if not found.
         """
-        target_slug = "iced" if is_iced else "hot"
+        # Support both string and legacy boolean format
+        if isinstance(temperature, bool):
+            target_slug = "iced" if temperature else "hot"
+        else:
+            target_slug = temperature  # Already "iced" or "hot"
         fallback = target_slug  # lowercase fallback
 
         if not self._menu_data:

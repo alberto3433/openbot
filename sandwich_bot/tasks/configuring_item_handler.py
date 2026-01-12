@@ -209,7 +209,9 @@ class ConfiguringItemHandler:
         # Coffee/beverage fields -> route to unified handler when item is "sized_beverage" type
         "coffee_size": ("sized_beverage", "size"),
         "coffee_style": ("sized_beverage", "iced"),
-        "coffee_modifiers": ("sized_beverage", "milk_sweetener_syrup"),
+        # Note: coffee_modifiers NOT routed to unified handler because sized_beverage has
+        # separate milk/sweetener/syrup attributes, not a consolidated milk_sweetener_syrup attr.
+        # The legacy coffee_handler.handle_coffee_modifiers handles this correctly.
         "syrup_flavor": ("sized_beverage", "syrup"),
         # Sandwich/spread_sandwich toasted fields (same attr, different item types)
         "spread_sandwich_toasted": ("spread_sandwich", "toasted"),

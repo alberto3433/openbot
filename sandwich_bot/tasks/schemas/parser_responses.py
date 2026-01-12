@@ -37,6 +37,194 @@ class QualifierConflict(BaseModel):
 # ParsedItem Types for Multi-Item Order Handling
 # =============================================================================
 
+class ParsedItemEntry(BaseModel):
+    """Unified parsed item entry for data-driven item handling.
+
+    This is the canonical representation for ALL item types, replacing the
+    item-specific ParsedBagelEntry and ParsedCoffeeEntry classes.
+
+    All item attributes are stored in the attribute_values dict, keyed by
+    attribute slug from the database (e.g., "size", "temperature", "bread").
+
+    Examples:
+        # Bagel
+        ParsedItemEntry(
+            item_type="bagel",
+            attribute_values={"bread": "everything", "toasted": True, "spread_type": "scallion"},
+            modifiers=["bacon", "egg"],
+        )
+
+        # Coffee
+        ParsedItemEntry(
+            item_type="sized_beverage",
+            item_name="Latte",
+            attribute_values={"size": "large", "temperature": "iced", "milk": "oat"},
+            syrups=[SyrupItem(type="vanilla", quantity=1)],
+        )
+    """
+    type: Literal["item"] = "item"
+
+    # Item identification
+    item_type: str  # "bagel", "sized_beverage", "espresso", "spread_sandwich", etc.
+    item_name: str | None = None  # Specific menu item name if known (e.g., "Latte", "Cappuccino")
+    quantity: int = 1
+
+    # Data-driven attribute values (keyed by attribute slug)
+    # Keys match attribute slugs in the database: "bread", "size", "temperature", "milk", etc.
+    attribute_values: dict = Field(default_factory=dict)
+
+    # Modifiers (ingredients to add - proteins, cheeses, toppings, spreads, etc.)
+    modifiers: list[str] = Field(default_factory=list)
+
+    # Structured modifiers for beverages (need quantity info)
+    sweeteners: list[SweetenerItem] = Field(default_factory=list)
+    syrups: list[SyrupItem] = Field(default_factory=list)
+
+    # Special instructions text
+    special_instructions: str | None = None
+
+    # Original text (for context preservation in disambiguation)
+    original_text: str | None = None
+
+    # Flags that may require clarification
+    needs_cheese_clarification: bool = False
+    wants_syrup: bool = False  # User said "syrup" without specifying flavor
+
+    # Convenience properties for backward compatibility during migration
+    @property
+    def bagel_type(self) -> str | None:
+        """Get bagel type from attribute_values."""
+        return self.attribute_values.get("bread")
+
+    @property
+    def toasted(self) -> bool | None:
+        """Get toasted from attribute_values."""
+        return self.attribute_values.get("toasted")
+
+    @property
+    def scooped(self) -> bool | None:
+        """Get scooped from attribute_values."""
+        return self.attribute_values.get("scooped")
+
+    @property
+    def spread(self) -> str | None:
+        """Get spread from attribute_values."""
+        return self.attribute_values.get("spread")
+
+    @property
+    def spread_type(self) -> str | None:
+        """Get spread_type from attribute_values."""
+        return self.attribute_values.get("spread_type")
+
+    @property
+    def drink_type(self) -> str | None:
+        """Get drink type (item_name for beverages)."""
+        return self.item_name
+
+    @property
+    def size(self) -> str | None:
+        """Get size from attribute_values."""
+        return self.attribute_values.get("size")
+
+    @property
+    def temperature(self) -> str | None:
+        """Get temperature from attribute_values."""
+        return self.attribute_values.get("temperature")
+
+    @property
+    def iced(self) -> bool | None:
+        """Backward-compatible property that derives bool from temperature."""
+        temp = self.attribute_values.get("temperature")
+        if temp is None:
+            return None
+        return temp == "iced"
+
+    @property
+    def milk(self) -> str | None:
+        """Get milk from attribute_values."""
+        return self.attribute_values.get("milk")
+
+    @property
+    def decaf(self) -> bool | None:
+        """Get decaf from attribute_values."""
+        return self.attribute_values.get("decaf")
+
+    @property
+    def cream_level(self) -> str | None:
+        """Get cream_level from attribute_values."""
+        return self.attribute_values.get("cream_level")
+
+    @property
+    def extra_shots(self) -> int:
+        """Get extra_shots from attribute_values."""
+        return self.attribute_values.get("extra_shots", 0)
+
+    @classmethod
+    def from_bagel_entry(cls, entry: "ParsedBagelEntry") -> "ParsedItemEntry":
+        """Convert a ParsedBagelEntry to ParsedItemEntry."""
+        attr_values = {}
+        if entry.bagel_type:
+            attr_values["bread"] = entry.bagel_type
+        if entry.toasted is not None:
+            attr_values["toasted"] = entry.toasted
+        if entry.scooped is not None:
+            attr_values["scooped"] = entry.scooped
+        if entry.spread:
+            attr_values["spread"] = entry.spread
+        if entry.spread_type:
+            attr_values["spread_type"] = entry.spread_type
+
+        # Combine all modifier lists
+        modifiers = []
+        modifiers.extend(entry.proteins)
+        modifiers.extend(entry.cheeses)
+        modifiers.extend(entry.toppings)
+        modifiers.extend(entry.modifiers)
+
+        return cls(
+            item_type="bagel",
+            quantity=entry.quantity,
+            attribute_values=attr_values,
+            modifiers=modifiers,
+            special_instructions=entry.special_instructions,
+            needs_cheese_clarification=entry.needs_cheese_clarification,
+        )
+
+    @classmethod
+    def from_coffee_entry(cls, entry: "ParsedCoffeeEntry") -> "ParsedItemEntry":
+        """Convert a ParsedCoffeeEntry to ParsedItemEntry."""
+        attr_values = {}
+        if entry.size:
+            attr_values["size"] = entry.size
+        if entry.temperature:
+            attr_values["temperature"] = entry.temperature
+        if entry.milk:
+            attr_values["milk"] = entry.milk
+        if entry.decaf is not None:
+            attr_values["decaf"] = entry.decaf
+        if entry.cream_level:
+            attr_values["cream_level"] = entry.cream_level
+        if entry.extra_shots:
+            attr_values["extra_shots"] = entry.extra_shots
+
+        # Convert sweeteners and syrups
+        sweeteners = [SweetenerItem(type=s.type, quantity=s.quantity) for s in entry.sweeteners]
+        syrups = [SyrupItem(type=s.type, quantity=s.quantity) for s in entry.syrups]
+
+        return cls(
+            item_type="sized_beverage",
+            item_name=entry.drink_type,
+            quantity=entry.quantity,
+            attribute_values=attr_values,
+            modifiers=list(entry.modifiers),
+            sweeteners=sweeteners,
+            syrups=syrups,
+            special_instructions=entry.special_instructions,
+            original_text=entry.original_text,
+            wants_syrup=entry.wants_syrup,
+        )
+
+
 class ParsedMenuItemEntry(BaseModel):
     """A parsed menu item from multi-item detection.
 

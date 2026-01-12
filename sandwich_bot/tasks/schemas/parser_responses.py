@@ -241,10 +241,11 @@ class ParsedMenuItemEntry(BaseModel):
 
 
 class ParsedBagelEntry(BaseModel):
-    """A parsed bagel from multi-item detection.
+    """DEPRECATED: Use ParsedItemEntry instead.
 
-    This is the canonical representation for bagel orders, used by the
-    parsed_items system for unified multi-item order handling.
+    A parsed bagel from multi-item detection. This class is maintained for
+    backward compatibility. New code should use ParsedItemEntry with
+    item_type="bagel" and store attributes in attribute_values dict.
     """
     type: Literal["bagel"] = "bagel"
     bagel_type: str | None = None  # May be None if user just said "bagel" without type
@@ -272,10 +273,11 @@ class ParsedBagelEntry(BaseModel):
 
 
 class ParsedCoffeeEntry(BaseModel):
-    """A parsed coffee from multi-item detection.
+    """DEPRECATED: Use ParsedItemEntry instead.
 
-    This is the canonical representation for coffee orders, used by the
-    parsed_items system for unified multi-item order handling.
+    A parsed coffee from multi-item detection. This class is maintained for
+    backward compatibility. New code should use ParsedItemEntry with
+    item_type="sized_beverage" and store attributes in attribute_values dict.
     """
     type: Literal["coffee"] = "coffee"
     drink_type: str

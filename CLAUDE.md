@@ -24,8 +24,11 @@ Any `.db` files in the project are stale artifacts. The Neon PostgreSQL database
 This is an AI-powered ordering chatbot for a bagel shop (Zucker's Bagels). The system handles natural language order processing, supporting bagels, coffees, sandwiches, and other menu items with full customization.
 
 See @README.md for project overview
-See @docs/hierarchical-task-architecture.md for task system details
-See @docs/bagel_bot_architecture.md for architecture diagrams
+See @docs/architecture.md for system architecture
+
+## Development Phase
+
+This project is in active testing/development. Backward compatibility is not a concern—feel free to make breaking changes to APIs, database schemas, or data formats as needed.
 
 ## Code Style
 
@@ -146,8 +149,6 @@ Prices are calculated in `pricing.py` using database lookups:
 - Iced upcharges from `iced_price_modifier` column on size options
 - Modifiers stored in `item_config` for database persistence
 
-See migration `m7n8o9p0q1r2_populate_modifier_prices.py` for initial price data.
-
 ## Data-Driven Architecture
 
 ### Principle
@@ -187,13 +188,6 @@ Items store all details in `item_config` JSON column:
 }
 ```
 
-### Adding New Menu Items
-
-1. Add to `parsers/constants.py` if it needs recognition
-2. Update `pricing.py` for modifier prices
-3. Create handler in `tasks/*_handler.py` if special flow needed
-4. Add tests in `tests/test_tasks_parsing.py`
-
 ### Test Organization
 
 - **Parsing tests**: `test_tasks_parsing.py` - validates input recognition
@@ -215,27 +209,6 @@ Key tables:
 - `chat_sessions`: Conversation state and history
 - `menu_items`: Available menu items per store
 - `stores`: Store locations with tax rates and delivery zones
-
-## Daily Database Checks
-
-**Check for duplicate menu items daily** - Duplicates can cause incorrect matching and pricing issues.
-
-```sql
--- Find duplicate menu items (run against Neon database)
-SELECT LOWER(name) as name, category, COUNT(*) as count
-FROM menu_items
-GROUP BY LOWER(name), category
-HAVING COUNT(*) > 1
-ORDER BY count DESC;
-
--- Delete duplicates, keeping the oldest entry (lowest ID)
-DELETE FROM menu_items
-WHERE id NOT IN (
-    SELECT MIN(id)
-    FROM menu_items
-    GROUP BY LOWER(name), category
-);
-```
 
 ## Environment Variables
 
@@ -266,32 +239,6 @@ python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel
 - **Error exposure**: Never expose internal errors or stack traces in API responses
 - **Sessions**: Use secure session tokens; expire inactive sessions
 
-## Git Workflow
-
-- **Branch naming**: `feature/*`, `bugfix/*`, `hotfix/*` prefixes
-- **Commit messages**: Imperative mood ("Add feature" not "Added feature")
-- **PR requirements**: All tests must pass, code should be reviewed
-- **Main branch**: Protected; merge only via PR
-
-## Versioning
-
-**IMPORTANT**: Update the version number in BOTH files before every commit/push to GitHub:
-
-1. **`pyproject.toml`** (line 7):
-```toml
-version = "0.1.1"  # Increment this
-```
-
-2. **`static/index.html`** (search for `APP_VERSION`):
-```javascript
-const APP_VERSION = "0.1.1";  // Keep in sync with pyproject.toml
-```
-
-Version format: `MAJOR.MINOR.PATCH`
-- **PATCH**: Bug fixes, small improvements (most commits)
-- **MINOR**: New features, significant improvements
-- **MAJOR**: Breaking changes or major feature releases
-
 ## Debugging
 
 ```bash
@@ -308,11 +255,6 @@ python -m pytest tests/test_tasks_parsing.py::TestBagelParsing::test_plain_bagel
 # Example: Check session state
 psql $DATABASE_URL -c "SELECT session_id, order_state FROM chat_sessions LIMIT 5"
 ```
-
-## Known Issues
-
-- 9 resiliency tests in batches 9, 10, 11, 14, 17 fail due to using non-existent `current_item_id` field
-- These are pre-existing test issues, not code bugs
 
 ## Bug Fix Protocol
 

@@ -47,6 +47,9 @@ class ItemType(Base):
     name_filter = Column(String, nullable=True)  # Substring filter for item names (e.g., "tea" to filter sized_beverage)
     is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
 
+    # Modifier extraction category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
+    modifier_category = Column(String(20), nullable=True)
+
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")

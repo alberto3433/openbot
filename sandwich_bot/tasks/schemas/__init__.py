@@ -13,9 +13,10 @@ from .parser_responses import (
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
+    ParsedItemEntry,  # New unified type (replaces ParsedBagelEntry/ParsedCoffeeEntry)
     ParsedMenuItemEntry,
-    ParsedBagelEntry,
-    ParsedCoffeeEntry,
+    ParsedBagelEntry,  # Deprecated - use ParsedItemEntry
+    ParsedCoffeeEntry,  # Deprecated - use ParsedItemEntry
     ParsedSignatureItemEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
@@ -59,9 +60,10 @@ __all__ = [
     # Qualifier conflict model
     "QualifierConflict",
     # ParsedItem types for multi-item handling
+    "ParsedItemEntry",  # New unified type
     "ParsedMenuItemEntry",
-    "ParsedBagelEntry",
-    "ParsedCoffeeEntry",
+    "ParsedBagelEntry",  # Deprecated
+    "ParsedCoffeeEntry",  # Deprecated
     "ParsedSignatureItemEntry",
     "ParsedSpeedMenuBagelEntry",
     "ParsedSideItemEntry",

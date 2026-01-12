@@ -344,8 +344,10 @@ class ParsedByPoundEntry(BaseModel):
 
 
 # Union type for dispatcher
-# Note: ParsedSignatureItemEntry was removed - signature items now use ParsedMenuItemEntry with is_signature=True
+# Note: ParsedItemEntry is the new unified type. ParsedBagelEntry and ParsedCoffeeEntry
+# are deprecated but still supported for backward compatibility.
 ParsedItem = Union[
+    ParsedItemEntry,
     ParsedMenuItemEntry,
     ParsedBagelEntry,
     ParsedCoffeeEntry,

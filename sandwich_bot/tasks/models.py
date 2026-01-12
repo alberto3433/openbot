@@ -435,20 +435,8 @@ class MenuItemTask(ItemTask):
             return False
         from sandwich_bot.menu_data_cache import menu_cache
         attrs = menu_cache.get_item_type_attributes(self.menu_item_type)
-
-        # If we got attributes from cache, use them
-        if attrs:
-            return attr_slug in attrs
-
-        # Fallback for tests without menu_cache loaded - use known type mappings
-        # This ensures tests that don't load the cache still work correctly
-        FALLBACK_TYPE_ATTRS = {
-            "bagel": {"bread", "spread", "toasted"},
-            "sized_beverage": {"size", "milk", "temperature", "sweetener", "syrup"},
-            "espresso": {"milk", "sweetener", "syrup"},
-        }
-        fallback_attrs = FALLBACK_TYPE_ATTRS.get(self.menu_item_type, set())
-        return attr_slug in fallback_attrs
+        # Return False if no attributes found (fail gracefully instead of fallback)
+        return attr_slug in attrs
 
     # -------------------------------------------------------------------------
     # Bagel helper properties (for bagel items)

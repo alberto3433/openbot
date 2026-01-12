@@ -27,6 +27,7 @@ from .schemas import (
     ExtractedCoffeeModifiers,
     CoffeeOrderDetails,
     # ParsedItem types for multi-item handling
+    ParsedItemEntry,  # New unified type
     ParsedMenuItemEntry,
     ParsedBagelEntry,
     ParsedCoffeeEntry,
@@ -545,12 +546,9 @@ class TakingItemsHandler:
             )
             if is_beverage:
                 # Check if input is ONLY a modifier (no other item keywords)
-                non_modifier_keywords = {
-                    "bagel", "coffee", "latte", "espresso", "cappuccino", "americano",
-                    "tea", "chai", "matcha", "sandwich", "croissant", "muffin",
-                    "juice", "soda", "water", "cold brew", "drip",
-                }
-                has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
+                # Use item keywords from database (menu item names + item type slugs)
+                item_keywords = menu_cache.get_item_keywords()
+                has_other_item = any(kw in input_lower for kw in item_keywords)
                 if not has_other_item:
                     is_pure_modifier_input = True
 
@@ -830,12 +828,9 @@ class TakingItemsHandler:
                 )
                 if is_beverage:
                     # Check if input is ONLY a modifier (no other item keywords)
-                    non_modifier_keywords = {
-                        "bagel", "coffee", "latte", "espresso", "cappuccino", "americano",
-                        "tea", "chai", "matcha", "sandwich", "croissant", "muffin",
-                        "juice", "soda", "water", "cold brew", "drip",
-                    }
-                    has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
+                    # Use item keywords from database (menu item names + item type slugs)
+                    item_keywords = menu_cache.get_item_keywords()
+                    has_other_item = any(kw in input_lower for kw in item_keywords)
                     if not has_other_item:
                         is_pure_modifier_input = True
 
@@ -2063,12 +2058,138 @@ class TakingItemsHandler:
     # Multi-Item Order Handling via ParsedItem Types
     # =========================================================================
 
+    def _add_parsed_item_entry(self, item: ParsedItemEntry, order: OrderTask) -> tuple[OrderTask, str]:
+        """
+        Handle the unified ParsedItemEntry type (data-driven).
+
+        This method routes based on item_type and extracts attribute_values
+        to pass to the unified add_item() dispatcher.
+
+        Returns tuple of (updated_order, item_summary_string).
+        """
+        item_type = item.item_type
+
+        if item_type == "bagel":
+            # Build ExtractedModifiers from modifiers list
+            extracted_mods = ExtractedModifiers()
+            # Parse modifiers into categories
+            for mod in item.modifiers:
+                mod_lower = mod.lower()
+                if mod_lower in ("bacon", "ham", "sausage", "turkey", "egg", "lox", "salmon", "nova"):
+                    extracted_mods.proteins.append(mod)
+                elif mod_lower in ("american", "swiss", "cheddar", "muenster", "provolone"):
+                    extracted_mods.cheeses.append(mod)
+                else:
+                    extracted_mods.toppings.append(mod)
+
+            extracted_mods.needs_cheese_clarification = item.needs_cheese_clarification
+            if item.special_instructions:
+                extracted_mods.special_instructions = [item.special_instructions]
+
+            # Use unified add_item() dispatcher
+            result = self.item_adder_handler.add_item(
+                item_type="bagel",
+                order=order,
+                quantity=item.quantity,
+                bagel_type=item.attribute_values.get("bread"),
+                toasted=item.attribute_values.get("toasted"),
+                scooped=item.attribute_values.get("scooped"),
+                spread=item.attribute_values.get("spread"),
+                spread_type=item.attribute_values.get("spread_type"),
+                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
+            )
+            order = result.order
+
+            # Build summary
+            bagel_type = item.attribute_values.get("bread")
+            bagel_desc = f"{bagel_type} bagel" if bagel_type else "bagel"
+            summary = bagel_desc
+            if item.attribute_values.get("toasted"):
+                summary += " toasted"
+            if item.quantity > 1:
+                summary = f"{item.quantity} {bagel_desc}s"
+                if item.attribute_values.get("toasted"):
+                    summary += " toasted"
+            return order, summary
+
+        elif item_type in ("sized_beverage", "espresso"):
+            # Convert sweeteners and syrups to the format expected by add_item
+            sweetener = None
+            sweetener_quantity = 1
+            if item.sweeteners:
+                sweetener = item.sweeteners[0].type
+                sweetener_quantity = item.sweeteners[0].quantity
+
+            flavor_syrup = None
+            syrup_quantity = 1
+            if item.syrups:
+                flavor_syrup = item.syrups[0].type
+                syrup_quantity = item.syrups[0].quantity
+
+            # Convert temperature to iced bool
+            iced = None
+            temp = item.attribute_values.get("temperature")
+            if temp == "iced":
+                iced = True
+            elif temp == "hot":
+                iced = False
+
+            # Use unified add_item() dispatcher
+            result = self.item_adder_handler.add_item(
+                item_type=item_type,
+                order=order,
+                quantity=item.quantity,
+                coffee_type=item.item_name,
+                drink_type=item.item_name,
+                size=item.attribute_values.get("size"),
+                iced=iced,
+                milk=item.attribute_values.get("milk"),
+                sweetener=sweetener,
+                sweetener_quantity=sweetener_quantity,
+                flavor_syrup=flavor_syrup,
+                syrup_quantity=syrup_quantity,
+                decaf=item.attribute_values.get("decaf"),
+                cream_level=item.attribute_values.get("cream_level"),
+                extra_shots=item.attribute_values.get("extra_shots", 0),
+                special_instructions=item.special_instructions,
+                wants_syrup=item.wants_syrup,
+                original_input=item.original_text,
+            )
+            order = result.order
+
+            # Build summary
+            drink_name = item.item_name or "coffee"
+            summary = drink_name
+            if item.quantity > 1:
+                summary = f"{item.quantity} {drink_name}s"
+            return order, summary
+
+        else:
+            # Generic item type - use add_menu_item
+            result = self.item_adder_handler.add_menu_item(
+                item.item_name or item_type,
+                item.quantity,
+                order,
+                item.attribute_values.get("toasted"),
+                item.attribute_values.get("bread"),
+                item.modifiers,
+            )
+            order = result.order
+            summary = item.item_name or item_type
+            if item.quantity > 1:
+                summary = f"{item.quantity} {summary}s"
+            return order, summary
+
     def _add_parsed_item(self, item: ParsedItem, order: OrderTask) -> tuple[OrderTask, str]:
         """
         Dispatch a parsed item to the appropriate handler.
 
         Returns tuple of (updated_order, item_summary_string).
         """
+        # Handle new unified ParsedItemEntry type (data-driven)
+        if isinstance(item, ParsedItemEntry):
+            return self._add_parsed_item_entry(item, order)
+
         if isinstance(item, ParsedMenuItemEntry):
             # Track item count before to detect if item was actually added
             items_before = len(order.items.items)

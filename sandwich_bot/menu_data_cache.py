@@ -115,6 +115,16 @@ class MenuDataCache:
         # This is the single source of truth for attribute configs
         self._item_type_attributes: dict[str, dict] = {}  # item_type_slug -> {attr_slug -> attr_config}
 
+        # Item type modifier categories ("food" or "beverage") - replaces MODIFIER_EXTRACTION_TYPE
+        self._item_type_modifier_categories: dict[str, str | None] = {}  # item_type_slug -> modifier_category
+
+        # Item keywords for disambiguation (menu item names + item type slugs)
+        # Used to detect "this input contains a new item" vs "this is a modifier"
+        self._item_keywords: set[str] = set()
+
+        # Configurable item types (those with attributes defined)
+        self._configurable_item_types: set[str] = set()
+
         # Keyword indices for partial matching
         self._spread_keyword_index: dict[str, list[str]] = {}
         self._bagel_keyword_index: dict[str, list[str]] = {}
@@ -192,6 +202,7 @@ class MenuDataCache:
                 self._load_response_patterns(db)
                 self._load_modifier_qualifiers(db)
                 self._load_global_attribute_options(db)
+                self._load_item_type_metadata(db)
                 self._load_menu_index(db)
 
                 # Build keyword indices for partial matching
@@ -1019,6 +1030,84 @@ class MenuDataCache:
             item_types_with_aliases,
         )
 
+    def _load_item_type_metadata(self, db: Session) -> None:
+        """Load item type metadata: modifier_category, item_keywords, and configurable types.
+
+        This replaces:
+        - MODIFIER_EXTRACTION_TYPE hardcoded dict in menu_item_config_handler.py
+        - SUPPORTED_ITEM_TYPES hardcoded set in menu_item_config_handler.py
+        - non_modifier_keywords hardcoded sets in taking_items_handler.py
+
+        Loads:
+        - modifier_category: "food" or "beverage" from item_types.modifier_category
+        - item_keywords: all menu item names (lowercase) + item type slugs for disambiguation
+        - configurable_item_types: item types that have attributes defined
+        """
+        from .models import ItemType, MenuItem, ItemTypeAttribute, ItemTypeGlobalAttribute
+
+        modifier_categories: dict[str, str | None] = {}
+        item_keywords: set[str] = set()
+        configurable_types: set[str] = set()
+
+        # Load all item types with their modifier_category
+        item_types = db.query(ItemType).all()
+        for item_type in item_types:
+            slug = item_type.slug
+            modifier_categories[slug] = item_type.modifier_category
+
+            # Add item type slug as a keyword
+            item_keywords.add(slug.lower())
+
+            # Add item type aliases as keywords
+            for alias in item_type.aliases:
+                item_keywords.add(alias.lower())
+
+        # Check which item types have attributes (either item_type_attributes or global_attributes)
+        types_with_attrs = set()
+
+        # Item types with ItemTypeAttribute entries
+        attr_types = (
+            db.query(ItemTypeAttribute.item_type_id)
+            .distinct()
+            .all()
+        )
+        types_with_attrs.update(t[0] for t in attr_types)
+
+        # Item types with ItemTypeGlobalAttribute links
+        global_attr_types = (
+            db.query(ItemTypeGlobalAttribute.item_type_id)
+            .distinct()
+            .all()
+        )
+        types_with_attrs.update(t[0] for t in global_attr_types)
+
+        # Map item type IDs to slugs for configurable types
+        for item_type in item_types:
+            if item_type.id in types_with_attrs:
+                configurable_types.add(item_type.slug)
+
+        # Load all menu item names as keywords
+        menu_items = db.query(MenuItem.name).all()
+        for (name,) in menu_items:
+            # Add the full name
+            item_keywords.add(name.lower())
+            # Also add individual words from multi-word names (e.g., "cold brew" -> "cold", "brew")
+            words = name.lower().split()
+            for word in words:
+                if len(word) > 2:  # Skip very short words
+                    item_keywords.add(word)
+
+        self._item_type_modifier_categories = modifier_categories
+        self._item_keywords = item_keywords
+        self._configurable_item_types = configurable_types
+
+        logger.debug(
+            "Loaded item type metadata: %d modifier_categories, %d item_keywords, %d configurable_types",
+            len(modifier_categories),
+            len(item_keywords),
+            len(configurable_types),
+        )
+
     def _load_abbreviations(self, db: Session) -> None:
         """Load abbreviations from ingredients and menu_items tables.
 
@@ -1411,6 +1500,76 @@ class MenuDataCache:
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
         return self._known_menu_items.copy() if self._is_loaded else set()
+
+    def get_modifier_category(self, item_type_slug: str) -> str | None:
+        """Get the modifier extraction category for an item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            "food" for items with food-style modifiers (proteins, cheeses, toppings)
+            "beverage" for items with beverage-style modifiers (milk, sweetener, syrup)
+            None if the item type has no modifier category or cache not loaded
+
+        Example:
+            >>> cache.get_modifier_category("bagel")
+            "food"
+            >>> cache.get_modifier_category("sized_beverage")
+            "beverage"
+        """
+        if not self._is_loaded:
+            return None
+        return self._item_type_modifier_categories.get(item_type_slug)
+
+    def get_item_keywords(self) -> set[str]:
+        """Get all item keywords for disambiguation.
+
+        Returns a set of lowercase keywords that indicate a new item request
+        (as opposed to a modifier for an existing item). This includes:
+        - Item type slugs (bagel, coffee, sandwich, etc.)
+        - Item type aliases (latte, cappuccino, etc.)
+        - Menu item names (The Classic BEC, etc.)
+        - Words from menu item names (classic, bec, etc.)
+
+        This replaces the hardcoded non_modifier_keywords sets.
+
+        Returns:
+            Set of lowercase item keywords, or empty set if cache not loaded.
+
+        Example:
+            >>> keywords = cache.get_item_keywords()
+            >>> "bagel" in keywords
+            True
+            >>> "latte" in keywords
+            True
+        """
+        if not self._is_loaded:
+            return set()
+        return self._item_keywords.copy()
+
+    def get_configurable_item_types(self) -> set[str]:
+        """Get item type slugs that have attributes defined.
+
+        Returns the set of item type slugs that have either:
+        - ItemTypeAttribute entries
+        - ItemTypeGlobalAttribute links
+
+        This replaces the hardcoded SUPPORTED_ITEM_TYPES set.
+
+        Returns:
+            Set of item type slugs, or empty set if cache not loaded.
+
+        Example:
+            >>> types = cache.get_configurable_item_types()
+            >>> "bagel" in types
+            True
+            >>> "sized_beverage" in types
+            True
+        """
+        if not self._is_loaded:
+            return set()
+        return self._configurable_item_types.copy()
 
     def get_global_attribute_options(self, attr_slug: str) -> list[dict]:
         """Get options for a global attribute by slug.

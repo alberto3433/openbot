@@ -646,9 +646,9 @@ MORE_MENU_ITEMS_PATTERNS = [
 # Dynamic Menu Data Cache Getters
 # =============================================================================
 #
-# These functions delegate to the MenuDataCache if loaded, otherwise return
-# the hardcoded fallback values defined above. This allows the parsing logic
-# to work even before the cache is initialized (e.g., during tests).
+# These functions delegate to the MenuDataCache if loaded. There are no
+# hardcoded fallbacks - if the cache is not loaded, these functions raise
+# RuntimeError. This ensures all menu data comes from the database.
 
 
 def _get_menu_cache():

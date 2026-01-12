@@ -29,78 +29,88 @@
     .app-header a:hover {
       color: #fff;
     }
-    .container {
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
+
+    /* Two-panel layout */
+    .layout {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      height: calc(100vh - 52px);
     }
-    .section-header .count {
-      background: #e0e0e0;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: normal;
-    }
-    .item-list {
-      padding: 0;
-      margin: 0;
-      list-style: none;
-    }
-    .item-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    .item-row:last-child {
-      border-bottom: none;
-    }
-    .item-row:hover {
+    .sidebar {
+      width: 40%;
+      max-width: 520px;
+      border-right: 1px solid #ddd;
       background: #fafafa;
-    }
-    .item-info {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+    }
+    .sidebar-header {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    .sidebar-header input[type="text"] {
       flex: 1;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .sidebar-header button {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: none;
+      background: #1976d2;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .sidebar-header button:hover {
+      background: #115293;
+    }
+    .list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .item-row {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 14px;
+    }
+    .item-row:hover {
+      background: #e3f2fd;
+    }
+    .item-row.active {
+      background: #bbdefb;
+    }
+    .item-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
     .item-name {
       font-weight: 600;
-      font-size: 16px;
       color: #1976d2;
     }
     .item-slug {
-      font-size: 13px;
+      font-size: 12px;
       color: #666;
       font-family: monospace;
     }
-    .item-meta {
+    .item-badges {
       display: flex;
-      gap: 8px;
-      margin-top: 6px;
+      gap: 6px;
+      margin-top: 4px;
       flex-wrap: wrap;
     }
     .item-badge {
-      font-size: 11px;
-      padding: 2px 8px;
+      font-size: 10px;
+      padding: 2px 6px;
       border-radius: 10px;
       font-weight: 500;
     }
@@ -120,115 +130,54 @@
       background: #e8f5e9;
       color: #2e7d32;
     }
-    .item-actions {
-      display: flex;
-      gap: 8px;
+    .empty-state {
+      padding: 20px;
+      text-align: center;
+      color: #777;
+      font-size: 14px;
     }
-    .action-btn {
-      padding: 6px 14px;
+
+    /* Detail panel */
+    .detail {
+      flex: 1;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .detail-nav button {
+      padding: 4px 8px;
+      margin-left: 4px;
       border-radius: 4px;
       border: 1px solid #ccc;
       background: #fff;
       font-size: 12px;
-      font-weight: 500;
       cursor: pointer;
-      min-width: 60px;
-      transition: all 0.2s;
     }
-    .action-btn:hover {
-      background: #f5f5f5;
-      border-color: #999;
-    }
-    .action-btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .action-btn.primary:hover {
-      background: #1565c0;
-    }
-    .action-btn.danger {
-      background: #fff;
-      color: #c62828;
-      border-color: #ef9a9a;
-    }
-    .action-btn.danger:hover {
-      background: #ffebee;
-    }
-    .status-bar {
-      padding: 10px 16px;
-      background: #e3f2fd;
-      color: #1565c0;
-      font-size: 13px;
-      text-align: center;
-      margin-bottom: 16px;
-      border-radius: 4px;
-    }
-    .status-bar.error {
-      background: #ffebee;
-      color: #c62828;
-    }
-    .status-bar.success {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
-    .add-btn {
-      padding: 10px 20px;
-      background: #4caf50;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      margin-bottom: 16px;
-    }
-    .add-btn:hover {
-      background: #43a047;
-    }
-    .empty-state {
-      padding: 40px;
-      text-align: center;
-      color: #666;
+    .detail-nav button:hover {
+      background: #e0e0e0;
     }
 
-    /* Modal Styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      width: 100%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      margin: 20px;
-    }
-    .modal.wide {
-      max-width: 900px;
-    }
     /* Tabs */
-    .modal-tabs {
+    .detail-tabs {
       display: flex;
       border-bottom: 1px solid #e0e0e0;
-      background: #fafafa;
+      margin-bottom: 16px;
     }
-    .modal-tab {
-      padding: 12px 20px;
+    .detail-tab {
+      padding: 10px 18px;
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
@@ -238,45 +187,120 @@
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
     }
-    .modal-tab:hover {
+    .detail-tab:hover {
       color: #333;
-      background: #f0f0f0;
+      background: #f5f5f5;
     }
-    .modal-tab.active {
+    .detail-tab.active {
       color: #1976d2;
       border-bottom-color: #1976d2;
-      background: #fff;
     }
-    .tab-content {
+    .tab-panel {
       display: none;
+      flex: 1;
+      overflow-y: auto;
     }
-    .tab-content.active {
+    .tab-panel.active {
       display: block;
     }
-    /* Attributes list */
-    .attributes-section {
+
+    /* Form fields */
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .field input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .field .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .config-note {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #666;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .config-note .note-icon {
+      font-size: 16px;
+    }
+
+    /* Attributes section */
+    .link-attr-section {
+      margin-bottom: 20px;
+    }
+    .link-attr-row {
+      display: flex;
+      gap: 8px;
+    }
+    .link-attr-row select {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .link-attr-row button {
+      padding: 8px 16px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .link-attr-row button:hover {
+      background: #43a047;
+    }
+    .attributes-list {
       border: 1px solid #e0e0e0;
       border-radius: 4px;
-      margin-top: 16px;
     }
-    .attributes-header {
+    .attributes-list-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
+      padding: 10px 14px;
       background: #f5f5f5;
       border-bottom: 1px solid #e0e0e0;
-    }
-    .attributes-header h3 {
-      margin: 0;
-      font-size: 14px;
       font-weight: 600;
+      font-size: 13px;
+    }
+    .attributes-list-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: normal;
     }
     .attr-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
+      padding: 10px 14px;
       border-bottom: 1px solid #f0f0f0;
     }
     .attr-row:last-child {
@@ -293,7 +317,7 @@
       font-size: 14px;
     }
     .attr-slug {
-      font-size: 12px;
+      font-size: 11px;
       color: #666;
       font-family: monospace;
     }
@@ -324,10 +348,6 @@
       background: #fff3e0;
       color: #e65100;
     }
-    .attr-badge.ingredient-based {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
     .attr-actions {
       display: flex;
       gap: 6px;
@@ -356,131 +376,70 @@
       color: #888;
       font-size: 13px;
     }
-    /* Attribute form */
-    .attr-form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+
+    /* Detail footer */
+    .detail-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid #ddd;
+      margin-top: auto;
     }
-    .attr-form-row.full {
-      grid-template-columns: 1fr;
-    }
-    /* Options list in attribute form */
-    .options-list {
-      border: 1px solid #e0e0e0;
+    .btn {
+      padding: 10px 20px;
       border-radius: 4px;
-      margin-top: 8px;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    .option-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 12px;
-      border-bottom: 1px solid #f0f0f0;
-      font-size: 13px;
-    }
-    .option-row:last-child {
-      border-bottom: none;
-    }
-    .option-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .option-default {
-      font-size: 10px;
-      background: #e8f5e9;
-      color: #2e7d32;
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-    .add-option-row {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: #fafafa;
-    }
-    .add-option-row input {
-      flex: 1;
-      padding: 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 13px;
-    }
-    /* Ingredient search/filter styles */
-    .ingredient-search-container {
-      padding: 8px 12px;
-      background: #fafafa;
-      border-top: 1px solid #e0e0e0;
-    }
-    .ingredient-search-input {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 13px;
-      box-sizing: border-box;
-    }
-    .ingredient-search-input:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .ingredient-results {
-      max-height: 150px;
-      overflow-y: auto;
-      border: 1px solid #e0e0e0;
-      border-top: none;
-      border-radius: 0 0 4px 4px;
-      background: #fff;
-      display: none;
-    }
-    .ingredient-results.active {
-      display: block;
-    }
-    .ingredient-result-item {
-      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 500;
       cursor: pointer;
-      font-size: 13px;
-      display: flex;
-      justify-content: space-between;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .btn.danger:hover {
+      background: #ffebee;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
       align-items: center;
-      border-bottom: 1px solid #f0f0f0;
     }
-    .ingredient-result-item:last-child {
-      border-bottom: none;
+    .modal-overlay.active {
+      display: flex;
     }
-    .ingredient-result-item:hover {
-      background: #e3f2fd;
-    }
-    .ingredient-result-item .category {
-      font-size: 11px;
-      color: #888;
-      background: #f5f5f5;
-      padding: 2px 6px;
-      border-radius: 3px;
-    }
-    .ingredient-result-item.disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background: #f5f5f5;
-    }
-    .ingredient-result-item.disabled:hover {
-      background: #f5f5f5;
-    }
-    .no-results {
-      padding: 12px;
-      text-align: center;
-      color: #888;
-      font-size: 13px;
-    }
-    .loading-indicator {
-      padding: 12px;
-      text-align: center;
-      color: #666;
-      font-size: 13px;
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
     }
     .modal-header {
       padding: 16px 20px;
@@ -508,6 +467,13 @@
     }
     .modal-body {
       padding: 20px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
     }
     .form-group {
       margin-bottom: 16px;
@@ -556,40 +522,13 @@
       font-size: 14px;
       cursor: pointer;
     }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
+    .attr-form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #c62828;
-      color: #fff;
-      border-color: #c62828;
-    }
-    .btn.danger:hover {
-      background: #b71c1c;
+    .attr-form-row.full {
+      grid-template-columns: 1fr;
     }
 
     /* Toast notification styles */
@@ -648,6 +587,7 @@
     .btn.saved {
       background: #10b981 !important;
       border-color: #10b981 !important;
+      color: #fff !important;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
@@ -676,95 +616,80 @@
     </div>
   </div>
 
-  <div class="container">
-    <div id="statusBar" class="status-bar" style="display: none;"></div>
-
-    <button class="add-btn" id="addItemTypeBtn">+ Add New Item Type</button>
-
-    <div class="section">
-      <div class="section-header">
-        <span>All Item Types</span>
-        <span class="count" id="itemTypeCount">0</span>
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <input id="searchInput" type="text" placeholder="Search item types..." />
+        <button id="newItemTypeBtn">+ New</button>
       </div>
-      <ul class="item-list" id="itemTypeList">
-        <li class="empty-state">Loading item types...</li>
-      </ul>
+      <div id="itemTypeList" class="list">
+        <div class="empty-state">Loading item types...</div>
+      </div>
     </div>
-  </div>
 
-  <!-- Add/Edit Item Type Modal -->
-  <div class="modal-overlay" id="itemTypeModal">
-    <div class="modal" id="itemTypeModalContent">
-      <div class="modal-header">
-        <h2 id="modalTitle">Add New Item Type</h2>
-        <button class="modal-close" id="modalClose">&times;</button>
-      </div>
-
-      <!-- Tabs (only shown when editing) -->
-      <div class="modal-tabs" id="modalTabs" style="display: none;">
-        <button class="modal-tab active" data-tab="basic">Basic Info</button>
-        <button class="modal-tab" data-tab="attributes">Attributes</button>
-      </div>
-
-      <!-- Basic Info Tab -->
-      <div class="tab-content active" id="tabBasic">
-        <div class="modal-body">
-          <form id="itemTypeForm">
-            <input type="hidden" id="itemTypeId" />
-
-            <div class="form-group">
-              <label for="displayName">Display Name *</label>
-              <input type="text" id="displayName" required placeholder="e.g., Sandwich, Beverage, Bagel" />
-              <div class="hint">Human-readable name shown in the admin UI</div>
-            </div>
-
-            <div class="form-group">
-              <label for="slug">Slug *</label>
-              <input type="text" id="slug" required placeholder="e.g., sandwich, beverage, bagel" pattern="[a-z0-9_]+" />
-              <div class="hint">Unique identifier (lowercase, underscores only). Used in code and API.</div>
-            </div>
-
-            <div class="form-group">
-              <div class="config-note">
-                <span class="note-icon">ℹ️</span>
-                <span class="note-text">
-                  <strong>Configurability is automatic:</strong> Item types become configurable when they have
-                  linked global attributes. Configuration questions are asked when attributes have "Ask Customer" enabled.
-                </span>
-              </div>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn" id="cancelBtn">Cancel</button>
-          <button type="button" class="btn danger" id="deleteBtn" style="display: none;">Delete</button>
-          <button type="button" class="btn primary" id="saveBtn">Save</button>
+    <!-- Detail Panel -->
+    <div class="detail">
+      <div class="detail-header">
+        <div class="detail-title" id="detailTitle">No item type selected</div>
+        <div class="detail-nav">
+          <button id="prevBtn">&larr; Prev</button>
+          <button id="nextBtn">Next &rarr;</button>
         </div>
       </div>
 
-      <!-- Attributes Tab -->
-      <div class="tab-content" id="tabAttributes">
-        <div class="modal-body">
-          <p style="font-size: 13px; color: #666; margin-top: 0;">
+      <div class="detail-tabs" id="detailTabs">
+        <button class="detail-tab active" data-tab="basic">Basic Info</button>
+        <button class="detail-tab" data-tab="attributes">Attributes</button>
+      </div>
+
+      <div id="detailBody" style="flex: 1; overflow-y: auto;">
+        <!-- Basic Info Tab -->
+        <div class="tab-panel active" id="tabBasicInfo">
+          <input type="hidden" id="itemTypeId" />
+
+          <div class="field">
+            <label for="displayName">Display Name *</label>
+            <input type="text" id="displayName" placeholder="e.g., Sandwich, Beverage, Bagel" />
+            <div class="hint">Human-readable name shown in the admin UI</div>
+          </div>
+
+          <div class="field">
+            <label for="slug">Slug *</label>
+            <input type="text" id="slug" placeholder="e.g., sandwich, beverage, bagel" pattern="[a-z0-9_]+" />
+            <div class="hint">Unique identifier (lowercase, underscores only). Used in code and API.</div>
+          </div>
+
+          <div class="config-note">
+            <span class="note-icon">i</span>
+            <span class="note-text">
+              <strong>Configurability is automatic:</strong> Item types become configurable when they have
+              linked global attributes. Configuration questions are asked when attributes have "Ask Customer" enabled.
+            </span>
+          </div>
+        </div>
+
+        <!-- Attributes Tab -->
+        <div class="tab-panel" id="tabAttributes">
+          <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
             Link global attributes to this item type. Options are managed in
             <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Global Attributes</a>.
           </p>
 
-          <!-- Link new attribute section -->
-          <div class="form-group" style="margin-bottom: 20px;">
-            <label>Link Global Attribute</label>
-            <div style="display: flex; gap: 8px;">
-              <select id="globalAttrSelect" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+          <div class="link-attr-section">
+            <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Link Global Attribute</label>
+            <div class="link-attr-row">
+              <select id="globalAttrSelect">
                 <option value="">-- Select attribute to link --</option>
               </select>
-              <button class="attr-btn" id="linkAttributeBtn" style="background: #4caf50; color: #fff; border-color: #4caf50; padding: 8px 16px;">Link</button>
+              <button id="linkAttributeBtn">Link</button>
             </div>
-            <div class="hint">Select from available global attributes to add to this item type</div>
+            <div class="hint" style="margin-top: 4px;">Select from available global attributes to add to this item type</div>
           </div>
 
-          <div class="attributes-section">
-            <div class="attributes-header">
-              <h3>Linked Attributes</h3>
+          <div class="attributes-list">
+            <div class="attributes-list-header">
+              <span>Linked Attributes</span>
               <span class="count" id="linkedAttrCount">0</span>
             </div>
             <div id="attributesList">
@@ -772,16 +697,18 @@
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn" id="closeAttrsBtn">Close</button>
-        </div>
+      </div>
+
+      <div class="detail-footer">
+        <button class="btn danger" id="deleteBtn">Delete</button>
+        <button class="btn primary" id="saveBtn">Save</button>
       </div>
     </div>
   </div>
 
   <!-- Edit Global Attribute Link Modal -->
   <div class="modal-overlay" id="attributeModal">
-    <div class="modal" style="max-width: 500px;">
+    <div class="modal">
       <div class="modal-header">
         <h2 id="attrModalTitle">Edit Attribute Settings</h2>
         <button class="modal-close" id="attrModalClose">&times;</button>
@@ -883,10 +810,31 @@
     // API base URLs
     const API_BASE = "/admin/modifiers/item-types";
     const GLOBAL_ATTRS_API = "/admin/global-attributes";
-    const ITEM_TYPE_GLOBAL_ATTRS_API = "/admin/item-types"; // + /{id}/global-attributes
+    const ITEM_TYPE_GLOBAL_ATTRS_API = "/admin/item-types";
 
     // Auth credentials storage
     let authCredentials = null;
+
+    // State
+    let allItemTypes = [];
+    let filteredItemTypes = [];
+    let currentIndex = -1;
+    let editingItemTypeId = null;
+    let linkedAttributes = [];
+    let allGlobalAttributes = [];
+    let editingLinkId = null;
+
+    // DOM elements
+    const toastContainer = document.getElementById("toastContainer");
+    const searchInput = document.getElementById("searchInput");
+    const itemTypeList = document.getElementById("itemTypeList");
+    const detailTitle = document.getElementById("detailTitle");
+    const detailTabs = document.getElementById("detailTabs");
+    const tabBasicInfo = document.getElementById("tabBasicInfo");
+    const tabAttributes = document.getElementById("tabAttributes");
+    const attributesList = document.getElementById("attributesList");
+    const attributeModal = document.getElementById("attributeModal");
+    const deleteModal = document.getElementById("deleteModal");
 
     // Authenticated fetch helper
     async function authFetch(url, options = {}) {
@@ -927,35 +875,7 @@
       return response;
     }
 
-    // DOM elements
-    const statusBar = document.getElementById("statusBar");
-    const itemTypeList = document.getElementById("itemTypeList");
-    const itemTypeCount = document.getElementById("itemTypeCount");
-    const itemTypeModal = document.getElementById("itemTypeModal");
-    const itemTypeModalContent = document.getElementById("itemTypeModalContent");
-    const deleteModal = document.getElementById("deleteModal");
-    const modalTitle = document.getElementById("modalTitle");
-    const itemTypeForm = document.getElementById("itemTypeForm");
-    const deleteBtn = document.getElementById("deleteBtn");
-    const modalTabs = document.getElementById("modalTabs");
-    const tabBasic = document.getElementById("tabBasic");
-    const tabAttributes = document.getElementById("tabAttributes");
-    const attributesList = document.getElementById("attributesList");
-    const attributeModal = document.getElementById("attributeModal");
-
-    // Toast container reference
-    const toastContainer = document.getElementById("toastContainer");
-
-    // Current state
-    let itemTypes = [];
-    let editingItemTypeId = null;
-    let deletingItemTypeId = null;
-    let linkedAttributes = []; // Global attributes linked to current item type
-    let allGlobalAttributes = []; // All available global attributes
-    let editingLinkId = null; // ID of the item_type_global_attribute link being edited
-    let editingGlobalAttrId = null; // ID of the global attribute being viewed
-
-    // Toast notification function
+    // Toast notification
     function showToast(message, type = "info") {
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
@@ -996,29 +916,35 @@
       }
     }
 
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      return div.innerHTML;
+    }
+
     // Load item types from API
     async function loadItemTypes() {
       try {
         const response = await authFetch(API_BASE);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        allItemTypes = await response.json();
+        applyFilter();
+        if (filteredItemTypes.length > 0 && currentIndex === -1) {
+          selectItemTypeByIndex(0);
         }
-        itemTypes = await response.json();
-        renderItemTypes();
       } catch (error) {
         console.error("Failed to load item types:", error);
-        showStatus("Failed to load item types from server", "error");
-        itemTypeList.innerHTML = '<li class="empty-state">Failed to load item types. Please refresh the page.</li>';
+        showToast("Failed to load item types", "error");
+        itemTypeList.innerHTML = '<div class="empty-state">Failed to load item types. Please refresh.</div>';
       }
     }
 
-    // Load all global attributes for the dropdown
+    // Load all global attributes for dropdown
     async function loadAllGlobalAttributes() {
       try {
         const response = await authFetch(GLOBAL_ATTRS_API);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         allGlobalAttributes = await response.json();
         populateGlobalAttrDropdown();
       } catch (error) {
@@ -1027,27 +953,29 @@
       }
     }
 
-    // Populate the global attribute dropdown
+    // Populate global attribute dropdown
     function populateGlobalAttrDropdown() {
       const select = document.getElementById("globalAttrSelect");
       const linkedIds = new Set(linkedAttributes.map(la => la.global_attribute_id));
-
-      // Filter out already linked attributes
       const available = allGlobalAttributes.filter(ga => !linkedIds.has(ga.id));
 
       select.innerHTML = '<option value="">-- Select attribute to link --</option>' +
         available.map(ga => `
-          <option value="${ga.id}">${escapeHtml(ga.display_name)} (${ga.options_count || 0} options)</option>
+          <option value="${ga.id}">${escapeHtml(ga.display_name)} (${ga.options_count || ga.option_count || 0} options)</option>
         `).join("");
     }
 
-    // Load linked global attributes for an item type
+    // Load linked attributes for current item type
     async function loadAttributes(itemTypeId) {
+      if (!itemTypeId) {
+        linkedAttributes = [];
+        renderAttributes();
+        return;
+      }
+
       try {
         const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${itemTypeId}/global-attributes`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         linkedAttributes = await response.json();
         renderAttributes();
         populateGlobalAttrDropdown();
@@ -1057,61 +985,52 @@
       }
     }
 
-    // Show status message
-    function showStatus(message, type = "info") {
-      statusBar.textContent = message;
-      statusBar.className = "status-bar" + (type === "error" ? " error" : type === "success" ? " success" : "");
-      statusBar.style.display = "block";
-      if (type !== "error") {
-        setTimeout(() => { statusBar.style.display = "none"; }, 3000);
+    // Apply search filter
+    function applyFilter() {
+      const query = searchInput.value.toLowerCase().trim();
+      if (!query) {
+        filteredItemTypes = [...allItemTypes];
+      } else {
+        filteredItemTypes = allItemTypes.filter(it =>
+          it.display_name.toLowerCase().includes(query) ||
+          it.slug.toLowerCase().includes(query)
+        );
       }
+      renderList();
     }
 
-    // Escape HTML to prevent XSS
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text || "";
-      return div.innerHTML;
-    }
-
-    // Render the item type list
-    function renderItemTypes() {
-      itemTypeCount.textContent = itemTypes.length;
-
-      if (itemTypes.length === 0) {
-        itemTypeList.innerHTML = '<li class="empty-state">No item types found. Click "Add New Item Type" to create one.</li>';
+    // Render the sidebar list
+    function renderList() {
+      if (filteredItemTypes.length === 0) {
+        itemTypeList.innerHTML = '<div class="empty-state">No item types found. Click "+ New" to create one.</div>';
         return;
       }
 
-      itemTypeList.innerHTML = itemTypes.map(itemType => `
-        <li class="item-row" data-id="${itemType.id}">
-          <div class="item-info">
+      itemTypeList.innerHTML = filteredItemTypes.map((itemType, idx) => `
+        <div class="item-row${idx === currentIndex ? ' active' : ''}" data-index="${idx}">
+          <div class="item-main">
             <span class="item-name">${escapeHtml(itemType.display_name)}</span>
             <span class="item-slug">${escapeHtml(itemType.slug)}</span>
-            <div class="item-meta">
+            <div class="item-badges">
               <span class="item-badge ${itemType.is_configurable ? 'configurable' : 'simple'}">
                 ${itemType.is_configurable ? 'Configurable' : 'Simple'}
               </span>
               ${itemType.skip_config ? '<span class="item-badge skip">Skip Config</span>' : ''}
-              <span class="item-badge count">${itemType.menu_item_count || 0} menu items</span>
+              <span class="item-badge count">${itemType.menu_item_count || 0} items</span>
             </div>
           </div>
-          <div class="item-actions">
-            <button class="action-btn primary edit-btn" data-id="${itemType.id}">Edit</button>
-          </div>
-        </li>
+        </div>
       `).join("");
 
-      // Add click handlers for edit buttons
-      document.querySelectorAll(".edit-btn").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          openEditModal(parseInt(btn.dataset.id));
+      // Add click handlers
+      document.querySelectorAll(".item-row").forEach(row => {
+        row.addEventListener("click", () => {
+          selectItemTypeByIndex(parseInt(row.dataset.index));
         });
       });
     }
 
-    // Render linked attributes list
+    // Render linked attributes
     function renderAttributes() {
       document.getElementById("linkedAttrCount").textContent = linkedAttributes.length;
 
@@ -1120,11 +1039,10 @@
         return;
       }
 
-      // Sort by display_order
       const sorted = [...linkedAttributes].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
       attributesList.innerHTML = sorted.map(link => `
-        <div class="attr-row" data-link-id="${link.id}" data-global-attr-id="${link.global_attribute_id}">
+        <div class="attr-row" data-link-id="${link.id}">
           <div class="attr-info">
             <span class="attr-name">${escapeHtml(link.global_attribute_display_name || link.global_attribute_slug || 'Unknown')}</span>
             <span class="attr-slug">${escapeHtml(link.global_attribute_slug || '')}</span>
@@ -1153,69 +1071,57 @@
 
     // Switch tabs
     function switchTab(tabName) {
-      document.querySelectorAll(".modal-tab").forEach(tab => {
+      detailTabs.querySelectorAll(".detail-tab").forEach(tab => {
         tab.classList.toggle("active", tab.dataset.tab === tabName);
       });
-      tabBasic.classList.toggle("active", tabName === "basic");
+      tabBasicInfo.classList.toggle("active", tabName === "basic");
       tabAttributes.classList.toggle("active", tabName === "attributes");
     }
 
-    // Open the modal for adding a new item type
-    function openAddModal() {
-      editingItemTypeId = null;
-      modalTitle.textContent = "Add New Item Type";
-      deleteBtn.style.display = "none";
-      modalTabs.style.display = "none";
-      itemTypeModalContent.classList.remove("wide");
-      itemTypeForm.reset();
+    // Clear detail form
+    function clearDetailForm() {
+      detailTitle.textContent = "New Item Type";
       document.getElementById("itemTypeId").value = "";
+      document.getElementById("displayName").value = "";
+      document.getElementById("slug").value = "";
       document.getElementById("slug").dataset.manuallyEdited = "";
+      linkedAttributes = [];
+      renderAttributes();
+      populateGlobalAttrDropdown();
       switchTab("basic");
-      itemTypeModal.classList.add("active");
     }
 
-    // Open the modal for editing an existing item type
-    async function openEditModal(itemTypeId) {
-      const itemType = itemTypes.find(it => it.id === itemTypeId);
-      if (!itemType) {
-        showStatus("Item type not found", "error");
+    // Select item type by index
+    async function selectItemTypeByIndex(idx, newItem = false) {
+      currentIndex = idx;
+
+      // Update list highlighting
+      document.querySelectorAll(".item-row").forEach((row, i) => {
+        row.classList.toggle("active", i === currentIndex);
+      });
+
+      if (newItem || idx < 0 || idx >= filteredItemTypes.length) {
+        editingItemTypeId = null;
+        clearDetailForm();
         return;
       }
 
-      editingItemTypeId = itemTypeId;
-      modalTitle.textContent = `Edit: ${itemType.display_name}`;
-      deleteBtn.style.display = "inline-block";
-      modalTabs.style.display = "flex";
-      itemTypeModalContent.classList.add("wide");
+      const itemType = filteredItemTypes[idx];
+      editingItemTypeId = itemType.id;
 
-      // Populate form fields
+      detailTitle.textContent = itemType.display_name;
       document.getElementById("itemTypeId").value = itemType.id;
       document.getElementById("displayName").value = itemType.display_name;
       document.getElementById("slug").value = itemType.slug;
 
-      // Load global attributes and linked attributes
-      attributesList.innerHTML = '<div class="empty-attrs">Loading attributes...</div>';
+      // Load attributes
       await loadAllGlobalAttributes();
-      await loadAttributes(itemTypeId);
+      await loadAttributes(itemType.id);
 
       switchTab("basic");
-      itemTypeModal.classList.add("active");
     }
 
-    // Close the item type modal
-    function closeModal() {
-      itemTypeModal.classList.remove("active");
-      editingItemTypeId = null;
-      linkedAttributes = [];
-    }
-
-    // Close the delete modal
-    function closeDeleteModal() {
-      deleteModal.classList.remove("active");
-      deletingItemTypeId = null;
-    }
-
-    // Save the item type (add or update)
+    // Save item type
     async function saveItemType() {
       const saveBtn = document.getElementById("saveBtn");
       const displayName = document.getElementById("displayName").value.trim();
@@ -1226,30 +1132,23 @@
         return;
       }
 
-      // Validate slug format
       if (!/^[a-z0-9_]+$/.test(slug)) {
         showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
         return;
       }
 
-      // Note: is_configurable and skip_config are derived from linked global attributes
-      const payload = {
-        display_name: displayName,
-        slug: slug
-      };
+      const payload = { display_name: displayName, slug: slug };
 
       setSaveButtonState(saveBtn, "saving");
       try {
         let response;
         if (editingItemTypeId) {
-          // Update existing item type
           response = await authFetch(`${API_BASE}/${editingItemTypeId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
         } else {
-          // Create new item type
           response = await authFetch(API_BASE, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1262,39 +1161,48 @@
           throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
+        const saved = await response.json();
         setSaveButtonState(saveBtn, "saved", "Save");
         showToast(`Item type "${displayName}" saved successfully!`, "success");
-        closeModal();
+
         await loadItemTypes();
+
+        // Re-select the saved item
+        const newIdx = filteredItemTypes.findIndex(it => it.id === saved.id);
+        if (newIdx !== -1) {
+          selectItemTypeByIndex(newIdx);
+        }
       } catch (error) {
         console.error("Failed to save item type:", error);
         setSaveButtonState(saveBtn, "error", "Save");
-        showToast(`Failed to save item type: ${error.message}`, "error");
+        showToast(`Failed to save: ${error.message}`, "error");
       }
     }
 
     // Open delete confirmation
     function openDeleteConfirmation() {
-      if (!editingItemTypeId) return;
+      if (!editingItemTypeId) {
+        showToast("No item type selected", "error");
+        return;
+      }
 
-      const itemType = itemTypes.find(it => it.id === editingItemTypeId);
+      const itemType = filteredItemTypes[currentIndex];
       if (!itemType) return;
 
-      deletingItemTypeId = editingItemTypeId;
       document.getElementById("deleteItemTypeName").textContent = itemType.display_name;
-      closeModal();
       deleteModal.classList.add("active");
     }
 
-    // Delete the item type
-    async function deleteItemType() {
-      if (!deletingItemTypeId) return;
+    function closeDeleteModal() {
+      deleteModal.classList.remove("active");
+    }
 
-      const itemType = itemTypes.find(it => it.id === deletingItemTypeId);
-      const itemTypeName = itemType ? itemType.display_name : "Item Type";
+    // Delete item type
+    async function deleteItemType() {
+      if (!editingItemTypeId) return;
 
       try {
-        const response = await authFetch(`${API_BASE}/${deletingItemTypeId}`, {
+        const response = await authFetch(`${API_BASE}/${editingItemTypeId}`, {
           method: "DELETE"
         });
 
@@ -1304,19 +1212,24 @@
         }
 
         closeDeleteModal();
-        showStatus(`"${itemTypeName}" has been deleted`, "success");
+        showToast("Item type deleted", "success");
+
+        editingItemTypeId = null;
+        currentIndex = -1;
         await loadItemTypes();
+
+        if (filteredItemTypes.length > 0) {
+          selectItemTypeByIndex(0);
+        } else {
+          clearDetailForm();
+        }
       } catch (error) {
         console.error("Failed to delete item type:", error);
-        showStatus(`Failed to delete item type: ${error.message}`, "error");
+        showToast(`Failed to delete: ${error.message}`, "error");
       }
     }
 
-    // =====================
-    // Global Attribute Link Functions
-    // =====================
-
-    // Link a global attribute to the current item type
+    // Link a global attribute
     async function linkAttribute() {
       const select = document.getElementById("globalAttrSelect");
       const globalAttrId = parseInt(select.value);
@@ -1348,11 +1261,11 @@
         await loadAttributes(editingItemTypeId);
       } catch (error) {
         console.error("Failed to link attribute:", error);
-        showToast(`Failed to link attribute: ${error.message}`, "error");
+        showToast(`Failed to link: ${error.message}`, "error");
       }
     }
 
-    // Unlink a global attribute from the current item type
+    // Unlink a global attribute
     async function unlinkAttribute(linkId, attrName) {
       if (!confirm(`Unlink "${attrName}" from this item type?`)) return;
 
@@ -1370,37 +1283,26 @@
         await loadAttributes(editingItemTypeId);
       } catch (error) {
         console.error("Failed to unlink attribute:", error);
-        showToast(`Failed to unlink attribute: ${error.message}`, "error");
+        showToast(`Failed to unlink: ${error.message}`, "error");
       }
     }
 
-    // Open modal to edit per-item-type settings for a linked attribute
+    // Open attribute settings modal
     function openAttributeModal(linkId) {
       const link = linkedAttributes.find(la => la.id === linkId);
       if (!link) return;
 
       editingLinkId = linkId;
-      editingGlobalAttrId = link.global_attribute_id;
 
-      // Set modal title and global attribute info
-      document.getElementById("attrModalTitle").textContent = "Edit Attribute Settings";
       document.getElementById("attrLinkId").value = linkId;
-
-      // Display global attribute info (read-only)
       document.getElementById("attrDisplayName").textContent = link.global_attribute_display_name || link.global_attribute_slug || 'Unknown';
       document.getElementById("attrSlug").textContent = link.global_attribute_slug || '';
       document.getElementById("attrInputType").textContent = (link.input_type || 'single_select').replace('_', ' ');
       document.getElementById("attrOptionsCount").textContent = `${(link.options || []).length} options`;
 
-      // Show/hide multi-select options based on input type
       const multiSelectOptions = document.getElementById("multiSelectOptions");
-      if (link.input_type === 'multi_select') {
-        multiSelectOptions.style.display = 'grid';
-      } else {
-        multiSelectOptions.style.display = 'none';
-      }
+      multiSelectOptions.style.display = link.input_type === 'multi_select' ? 'grid' : 'none';
 
-      // Populate per-item-type settings
       document.getElementById("attrDisplayOrder").value = link.display_order || 0;
       document.getElementById("attrIsRequired").checked = link.is_required || false;
       document.getElementById("attrAllowNone").checked = link.allow_none !== false;
@@ -1415,10 +1317,9 @@
     function closeAttributeModal() {
       attributeModal.classList.remove("active");
       editingLinkId = null;
-      editingGlobalAttrId = null;
     }
 
-    // Save per-item-type settings for a linked attribute
+    // Save attribute settings
     async function saveAttribute() {
       const saveBtn = document.getElementById("attrSaveBtn");
       if (!editingLinkId || !editingItemTypeId) return;
@@ -1457,23 +1358,43 @@
       }
     }
 
+    // Navigation
+    function prevItem() {
+      if (filteredItemTypes.length === 0) return;
+      if (currentIndex <= 0) {
+        selectItemTypeByIndex(filteredItemTypes.length - 1);
+      } else {
+        selectItemTypeByIndex(currentIndex - 1);
+      }
+    }
+
+    function nextItem() {
+      if (filteredItemTypes.length === 0) return;
+      if (currentIndex >= filteredItemTypes.length - 1) {
+        selectItemTypeByIndex(0);
+      } else {
+        selectItemTypeByIndex(currentIndex + 1);
+      }
+    }
+
     // Event listeners
-    document.getElementById("addItemTypeBtn").addEventListener("click", openAddModal);
-    document.getElementById("modalClose").addEventListener("click", closeModal);
-    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("newItemTypeBtn").addEventListener("click", () => {
+      currentIndex = -1;
+      selectItemTypeByIndex(-1, true);
+    });
+    document.getElementById("prevBtn").addEventListener("click", prevItem);
+    document.getElementById("nextBtn").addEventListener("click", nextItem);
     document.getElementById("saveBtn").addEventListener("click", saveItemType);
     document.getElementById("deleteBtn").addEventListener("click", openDeleteConfirmation);
-    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
-    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
-    document.getElementById("deleteConfirmBtn").addEventListener("click", deleteItemType);
-    document.getElementById("closeAttrsBtn").addEventListener("click", closeModal);
+
+    searchInput.addEventListener("input", applyFilter);
 
     // Tab switching
-    document.querySelectorAll(".modal-tab").forEach(tab => {
+    detailTabs.querySelectorAll(".detail-tab").forEach(tab => {
       tab.addEventListener("click", () => switchTab(tab.dataset.tab));
     });
 
-    // Global attribute link events
+    // Attribute modal
     document.getElementById("linkAttributeBtn").addEventListener("click", linkAttribute);
     document.getElementById("attrModalClose").addEventListener("click", closeAttributeModal);
     document.getElementById("attrCancelBtn").addEventListener("click", closeAttributeModal);
@@ -1487,15 +1408,17 @@
       }
     });
 
-    // Close modals when clicking outside
-    itemTypeModal.addEventListener("click", (e) => {
-      if (e.target === itemTypeModal) closeModal();
+    // Delete modal
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", deleteItemType);
+
+    // Close modals on overlay click
+    attributeModal.addEventListener("click", (e) => {
+      if (e.target === attributeModal) closeAttributeModal();
     });
     deleteModal.addEventListener("click", (e) => {
       if (e.target === deleteModal) closeDeleteModal();
-    });
-    attributeModal.addEventListener("click", (e) => {
-      if (e.target === attributeModal) closeAttributeModal();
     });
 
     // Close modals on Escape key
@@ -1503,25 +1426,16 @@
       if (e.key === "Escape") {
         if (attributeModal.classList.contains("active")) {
           closeAttributeModal();
-        } else {
-          closeModal();
+        }
+        if (deleteModal.classList.contains("active")) {
           closeDeleteModal();
         }
-      }
-    });
-
-    // Handle form submission with Enter key
-    itemTypeForm.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        saveItemType();
       }
     });
 
     // Auto-generate slug from display name
     document.getElementById("displayName").addEventListener("input", (e) => {
       const slugField = document.getElementById("slug");
-      // Only auto-generate if slug is empty or was auto-generated
       if (!editingItemTypeId && !slugField.dataset.manuallyEdited) {
         slugField.value = e.target.value
           .toLowerCase()
@@ -1530,7 +1444,6 @@
       }
     });
 
-    // Mark slug as manually edited
     document.getElementById("slug").addEventListener("input", () => {
       document.getElementById("slug").dataset.manuallyEdited = "true";
     });

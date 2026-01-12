@@ -103,6 +103,7 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         display_name=item_type.display_name,
         is_configurable=is_configurable,
         skip_config=skip_config,
+        modifier_category=item_type.modifier_category,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
     )
@@ -138,6 +139,7 @@ def create_item_type(
     item_type = ItemType(
         slug=payload.slug,
         display_name=payload.display_name,
+        modifier_category=payload.modifier_category,
     )
     db.add(item_type)
     db.commit()
@@ -175,6 +177,8 @@ def update_item_type(
         item_type.slug = payload.slug
     if payload.display_name is not None:
         item_type.display_name = payload.display_name
+    if payload.modifier_category is not None:
+        item_type.modifier_category = payload.modifier_category
     # Note: is_configurable and skip_config are derived from linked global attributes
     # so we ignore any values provided in the payload
 

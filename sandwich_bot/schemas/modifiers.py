@@ -199,6 +199,7 @@ class ItemTypeOut(BaseModel):
         display_name: Human-readable name (e.g., "Bagel")
         is_configurable: Whether items need configuration
         skip_config: Skip configuration dialog
+        modifier_category: Type of modifier extraction ("food" or "beverage")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
     """
@@ -209,6 +210,7 @@ class ItemTypeOut(BaseModel):
     display_name: str
     is_configurable: bool
     skip_config: bool = False
+    modifier_category: Optional[str] = None  # "food" or "beverage"
     menu_item_count: int = 0
     global_attribute_count: int = 0
 
@@ -223,15 +225,18 @@ class ItemTypeCreate(BaseModel):
     Attributes:
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
+        modifier_category: Type of modifier extraction ("food" or "beverage", optional)
 
     Example:
         {
             "slug": "specialty_drink",
-            "display_name": "Specialty Drink"
+            "display_name": "Specialty Drink",
+            "modifier_category": "beverage"
         }
     """
     slug: str
     display_name: str
+    modifier_category: Optional[str] = None  # "food" or "beverage"
 
 
 class ItemTypeUpdate(BaseModel):
@@ -246,9 +251,11 @@ class ItemTypeUpdate(BaseModel):
     Attributes:
         slug: New slug
         display_name: New display name
+        modifier_category: Type of modifier extraction ("food" or "beverage")
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
+    modifier_category: Optional[str] = None  # "food" or "beverage"
 
 
 # =============================================================================

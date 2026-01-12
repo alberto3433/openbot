@@ -38,11 +38,8 @@ class MenuItemConfigHandler(BaseHandler):
     - What options are valid (attribute_options or item_type_ingredients)
     """
 
-    # Item types that use this handler for configuration
-    SUPPORTED_ITEM_TYPES = {
-        "deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso",
-        "bagel", "sized_beverage",  # Added in Phase 6 migration
-    }
+    # Note: SUPPORTED_ITEM_TYPES is now queried from the database via menu_cache.
+    # Item types are configurable if they have linked attributes in the DB.
 
     # Mapping from legacy pending_field names to DB attribute slugs
     # This allows routing legacy field handlers through the generic handler
@@ -76,20 +73,9 @@ class MenuItemConfigHandler(BaseHandler):
     # When checking if these are answered, we also check the direct field on MenuItemTask
     DIRECT_FIELD_ATTRS = {"toasted", "scooped", "decaf"}
 
-    # Modifier extraction configuration per item type
-    # Maps item type slugs to the type of modifier extraction to use
-    MODIFIER_EXTRACTION_TYPE = {
-        # Food items use bagel-style modifiers (proteins, cheeses, toppings, spreads)
-        "deli_sandwich": "food",
-        "egg_sandwich": "food",
-        "fish_sandwich": "food",
-        "spread_sandwich": "food",
-        "bagel": "food",
-        "omelette": "food",
-        # Beverage items use coffee-style modifiers (milk, sweetener, syrup)
-        "espresso": "beverage",
-        "sized_beverage": "beverage",
-    }
+    # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_types.modifier_category column
+    # and queried via menu_cache.get_modifier_category(item_type_slug).
+    # Values: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
 
     def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
         """
@@ -103,8 +89,13 @@ class MenuItemConfigHandler(BaseHandler):
         # Note: Item type attributes are cached in menu_cache (single source of truth)
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
-        """Check if this handler supports the given item type."""
-        return item_type_slug in self.SUPPORTED_ITEM_TYPES
+        """Check if this handler supports the given item type.
+
+        An item type is supported if it has linked attributes in the database.
+        """
+        if not item_type_slug:
+            return False
+        return item_type_slug in menu_cache.get_configurable_item_types()
 
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
@@ -954,7 +945,8 @@ class MenuItemConfigHandler(BaseHandler):
             ExtractedModifiers or ExtractedCoffeeModifiers, or None if no extraction
             is configured for this item type
         """
-        extraction_type = self.MODIFIER_EXTRACTION_TYPE.get(item_type)
+        # Get modifier category from database via menu_cache
+        extraction_type = menu_cache.get_modifier_category(item_type)
 
         if extraction_type == "food":
             modifiers = extract_modifiers_from_input(user_input)
@@ -1223,10 +1215,12 @@ class MenuItemConfigHandler(BaseHandler):
         from .message_builder import MessageBuilder
 
         # Determine which item types to process
+        # Get configurable item types from database (item types with linked attributes)
+        configurable_types = menu_cache.get_configurable_item_types()
         if item_type:
-            target_types = {item_type} & self.SUPPORTED_ITEM_TYPES
+            target_types = {item_type} & configurable_types
         else:
-            target_types = self.SUPPORTED_ITEM_TYPES
+            target_types = configurable_types
 
         if not target_types:
             # No supported types to configure

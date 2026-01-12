@@ -83,20 +83,19 @@ def _get_parser_syrup_options() -> list[str]:
     """Get syrup options from database for parsing.
 
     Returns list of syrup names in lowercase like ["vanilla", "caramel", ...].
-    Falls back to hardcoded list if database not loaded.
+    Returns empty list if database not loaded (fail gracefully, no fallback).
     """
     db_syrups = menu_cache.get_beverage_syrups()
     if db_syrups:
         return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
-    return ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
-            "cinnamon", "lavender", "almond"]
+    return []
 
 
 def _get_parser_sweetener_options() -> list[str]:
     """Get sweetener options from database for parsing.
 
     Returns list of sweetener names in lowercase.
-    Falls back to hardcoded list if database not loaded.
+    Returns empty list if database not loaded (fail gracefully, no fallback).
 
     Note: Always includes generic "sugar" for common user phrases like
     "coffee with sugar" even if database only has brand names like "Domino Sugar".
@@ -116,14 +115,14 @@ def _get_parser_sweetener_options() -> list[str]:
         if "sugar" not in options:
             options.append("sugar")
         return options
-    return ["splenda", "sugar", "stevia", "equal", "sweet n low", "sweet'n low", "honey"]
+    return []
 
 
 def _get_parser_milk_options() -> list[str]:
     """Get milk options from database for parsing.
 
     Returns list of milk type patterns in lowercase.
-    Falls back to hardcoded list if database not loaded.
+    Returns empty list if database not loaded (fail gracefully, no fallback).
     """
     db_milks = menu_cache.get_beverage_milks()
     if db_milks:
@@ -144,10 +143,7 @@ def _get_parser_milk_options() -> list[str]:
             if p not in options:
                 options.append(p)
         return options
-    return [
-        "oat", "almond", "coconut", "soy", "whole", "skim", "nonfat",
-        "2%", "two percent", "half and half", "half & half", "cream"
-    ]
+    return []
 
 
 # =============================================================================
@@ -3448,7 +3444,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         # Check if this looks like a single coffee order with multiple modifiers
         coffee_keywords = ["coffee", "latte", "cappuccino", "espresso", "americano",
                           "macchiato", "mocha", "tea", "chai", "matcha", "cold brew"]
-        # Get modifier options from database (with fallbacks)
+        # Get modifier options from database (returns empty if not loaded)
         sweeteners = _get_parser_sweetener_options()
         syrups = _get_parser_syrup_options() + ["syrup"]  # Add generic "syrup" keyword
         milks = _get_parser_milk_options() + ["milk"]  # Add generic "milk" keyword

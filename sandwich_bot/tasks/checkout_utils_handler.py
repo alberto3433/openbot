@@ -77,14 +77,14 @@ class CheckoutUtilsHandler:
         # Check for incomplete items that need configuration
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
-                # Handle bagels that need configuration
-                if getattr(item, 'is_bagel', False):
+                # Handle bagels that need configuration (items with bread attribute)
+                if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
                     if item.bagel_type is None or item.toasted is None:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
                             return self._configure_next_incomplete_bagel(order)
-                # Handle coffee that needs configuration (sized_beverage)
-                elif isinstance(item, MenuItemTask) and item.is_sized_beverage:
+                # Handle coffee that needs configuration (items with size attribute)
+                elif isinstance(item, MenuItemTask) and item.has_attribute("size"):
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
@@ -184,11 +184,11 @@ class CheckoutUtilsHandler:
 
             # Fall back to full config handlers for legacy queued items without names
             if target_item:
-                if item_type == "bagel" and getattr(target_item, 'is_bagel', False):
+                if item_type == "bagel" and isinstance(target_item, MenuItemTask) and target_item.has_attribute("bread"):
                     # Start bagel configuration
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)
-                elif item_type == "coffee" and isinstance(target_item, MenuItemTask) and target_item.is_sized_beverage:
+                elif item_type == "coffee" and isinstance(target_item, MenuItemTask) and target_item.has_attribute("size"):
                     # Start coffee configuration
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
@@ -236,8 +236,8 @@ class CheckoutUtilsHandler:
             last_item = items[-1]
             # Use formal summary for counting identical items
             last_formal_summary = last_item.get_summary()
-            # Use natural spoken summary for sized_beverage items, formal summary for others
-            if isinstance(last_item, MenuItemTask) and last_item.is_sized_beverage and hasattr(last_item, "get_spoken_summary"):
+            # Use natural spoken summary for items with size attribute (beverages), formal summary for others
+            if isinstance(last_item, MenuItemTask) and last_item.has_attribute("size") and hasattr(last_item, "get_spoken_summary"):
                 last_summary = last_item.get_spoken_summary()
             else:
                 last_summary = last_formal_summary

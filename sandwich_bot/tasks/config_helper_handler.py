@@ -133,7 +133,7 @@ class ConfigHelperHandler:
             "avocado", "capers",
         }
 
-        if cancel_desc in removable_modifiers and getattr(current_item, 'is_bagel', False):
+        if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask) and current_item.has_attribute("bread"):
             modifier_removed = False
             removed_modifier_name = cancel_desc
 
@@ -165,7 +165,7 @@ class ConfigHelperHandler:
                 # Recalculate price if pricing handler is available
                 if self.pricing:
                     try:
-                        self.pricing.recalculate_bagel_price(current_item)
+                        self.pricing.recalculate_item_price(current_item)
                     except (ValueError, KeyError):
                         # Price recalculation failed (missing menu data), skip
                         logger.debug("Could not recalculate bagel price after modifier removal")

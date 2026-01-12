@@ -165,8 +165,8 @@ class OrderUtilsHandler:
         template_item = matching_items[0]
         for _ in range(to_add):
             # Create a copy of the item
-            if getattr(template_item, 'is_bagel', False):
-                # Create bagel using MenuItemTask with menu_item_type="bagel"
+            if isinstance(template_item, MenuItemTask) and template_item.has_attribute("bread"):
+                # Create bagel using MenuItemTask with menu_item_type="bagel" (has bread attribute)
                 new_item = MenuItemTask(
                     menu_item_name="Bagel",
                     menu_item_type="bagel",

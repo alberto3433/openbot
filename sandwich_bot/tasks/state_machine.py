@@ -191,17 +191,17 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
 
 def _get_pending_item_description(item: "ItemTask") -> str:
     """Get a short description of the pending item for redirect messages."""
-    if getattr(item, 'is_bagel', False):
-        # Describe based on what's been specified
-        parts = []
-        if item.sandwich_protein:
-            parts.append(item.sandwich_protein)
-        if item.extras:
-            parts.extend(item.extras[:2])  # Limit to avoid long descriptions
-        if parts:
-            return " ".join(parts) + " bagel"
-        return "bagel"
-    elif isinstance(item, MenuItemTask):
+    if isinstance(item, MenuItemTask):
+        # Items with bread attribute (bagels) - describe based on what's been specified
+        if item.has_attribute("bread"):
+            parts = []
+            if item.sandwich_protein:
+                parts.append(item.sandwich_protein)
+            if item.extras:
+                parts.extend(item.extras[:2])  # Limit to avoid long descriptions
+            if parts:
+                return " ".join(parts) + " bagel"
+            return "bagel"
         # For espresso, sized_beverage, and other menu items, use the menu_item_name
         return item.menu_item_name or "item"
     return "item"

@@ -356,9 +356,11 @@ class TestPriceRecalculationInvariants:
         modifiers.proteins = ["ham", "egg"]
         modifiers.cheeses = ["american"]
 
-        result = sm.item_adder_handler.add_bagel(
-            bagel_type="wheat",
+        result = sm.item_adder_handler.add_item(
+            item_type="bagel",
             order=order,
+            quantity=1,
+            bagel_type="wheat",
             toasted=True,
             spread="none",
             spread_type=None,
@@ -1961,16 +1963,11 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # User asks for "orange juice" which matches multiple items
-        result = sm.item_adder_handler.add_coffee(
-            coffee_type="orange juice",
-            size=None,
-            iced=None,
-            milk=None,
-            sweetener=None,
-            sweetener_quantity=0,
-            flavor_syrup=None,
-            quantity=1,
+        result = sm.item_adder_handler.add_item(
+            item_type="sized_beverage",
             order=order,
+            quantity=1,
+            coffee_type="orange juice",
         )
 
         # Should ask for clarification with multiple matches
@@ -2093,16 +2090,11 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # User asks for "fresh squeezed" - matches only one item
-        result = sm.item_adder_handler.add_coffee(
-            coffee_type="fresh squeezed",
-            size=None,
-            iced=None,
-            milk=None,
-            sweetener=None,
-            sweetener_quantity=0,
-            flavor_syrup=None,
-            quantity=1,
+        result = sm.item_adder_handler.add_item(
+            item_type="sized_beverage",
             order=order,
+            quantity=1,
+            coffee_type="fresh squeezed",
         )
 
         # Should add directly without asking (single match)

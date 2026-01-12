@@ -402,8 +402,53 @@ class MenuItemTask(ItemTask):
 
     @property
     def is_sized_beverage(self) -> bool:
-        """Check if this is a sized beverage (coffee, latte, etc.)."""
+        """Check if this is a sized beverage (coffee, latte, etc.).
+
+        DEPRECATED: Use has_attribute('size') instead for data-driven checks.
+        """
         return self.menu_item_type == "sized_beverage"
+
+    # -------------------------------------------------------------------------
+    # Generic attribute query method (data-driven)
+    # -------------------------------------------------------------------------
+
+    def has_attribute(self, attr_slug: str) -> bool:
+        """Check if this item type has a specific attribute defined in the database.
+
+        This is the preferred way to check item capabilities instead of
+        checking item type names directly. It queries the database to see
+        what attributes are defined for this item's type.
+
+        Examples:
+            item.has_attribute("size")        # True for sized_beverage
+            item.has_attribute("bagel_type")  # True for bagel (via 'bread' attr)
+            item.has_attribute("spread")      # True for bagel, some sandwiches
+            item.has_attribute("milk")        # True for sized_beverage
+
+        Args:
+            attr_slug: The attribute slug to check for (e.g., "size", "spread", "milk")
+
+        Returns:
+            True if this item type has the specified attribute, False otherwise.
+        """
+        if not self.menu_item_type:
+            return False
+        from sandwich_bot.menu_data_cache import menu_cache
+        attrs = menu_cache.get_item_type_attributes(self.menu_item_type)
+
+        # If we got attributes from cache, use them
+        if attrs:
+            return attr_slug in attrs
+
+        # Fallback for tests without menu_cache loaded - use known type mappings
+        # This ensures tests that don't load the cache still work correctly
+        FALLBACK_TYPE_ATTRS = {
+            "bagel": {"bread", "spread", "toasted"},
+            "sized_beverage": {"size", "milk", "temperature", "sweetener", "syrup"},
+            "espresso": {"milk", "sweetener", "syrup"},
+        }
+        fallback_attrs = FALLBACK_TYPE_ATTRS.get(self.menu_item_type, set())
+        return attr_slug in fallback_attrs
 
     # -------------------------------------------------------------------------
     # Bagel helper properties (for bagel items)
@@ -412,7 +457,10 @@ class MenuItemTask(ItemTask):
 
     @property
     def is_bagel(self) -> bool:
-        """Check if this is a bagel item."""
+        """Check if this is a bagel item.
+
+        DEPRECATED: Use has_attribute('bread') or menu_item_type == 'bagel' instead.
+        """
         return self.menu_item_type == "bagel"
 
     @property

@@ -436,7 +436,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_SIZE:
-            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
+            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
                 return ChangeResult(
                     success=False,
                     message="I can only change the size of a coffee drink.",
@@ -451,7 +451,7 @@ class ModifierChangeHandler:
 
             # Recalculate price with new size
             if self.pricing:
-                self.pricing.recalculate_coffee_price(item)
+                self.pricing.recalculate_item_price(item)
 
             summary = item.get_summary()
             return ChangeResult(
@@ -461,7 +461,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_MILK:
-            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
+            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
                 return ChangeResult(
                     success=False,
                     message="I can only change the milk for a coffee drink.",
@@ -482,7 +482,7 @@ class ModifierChangeHandler:
 
             # Recalculate price with new milk (may have upcharge)
             if self.pricing:
-                self.pricing.recalculate_coffee_price(item)
+                self.pricing.recalculate_item_price(item)
 
             summary = item.get_summary()
             return ChangeResult(
@@ -492,7 +492,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_STYLE:
-            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
+            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
                 return ChangeResult(
                     success=False,
                     message="I can only change hot/iced for a coffee drink.",
@@ -511,7 +511,7 @@ class ModifierChangeHandler:
             )
 
         elif category == ModifierCategory.COFFEE_DECAF:
-            if not (isinstance(item, MenuItemTask) and item.is_sized_beverage):
+            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
                 return ChangeResult(
                     success=False,
                     message="I can only change decaf for a coffee drink.",

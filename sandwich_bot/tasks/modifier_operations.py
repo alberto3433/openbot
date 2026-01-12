@@ -118,11 +118,12 @@ MENU_ITEM_MODIFIER_FIELDS = [
 
 def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type."""
-    if getattr(item, 'is_bagel', False):
-        return BAGEL_MODIFIER_FIELDS
-    elif isinstance(item, MenuItemTask):
-        # sized_beverage items use coffee modifier fields
-        if item.is_sized_beverage:
+    if isinstance(item, MenuItemTask):
+        # Items with bread attribute (bagels) use bagel modifier fields
+        if item.has_attribute("bread"):
+            return BAGEL_MODIFIER_FIELDS
+        # Items with size attribute (beverages) use coffee modifier fields
+        elif item.has_attribute("size"):
             return COFFEE_MODIFIER_FIELDS
         return MENU_ITEM_MODIFIER_FIELDS
     else:

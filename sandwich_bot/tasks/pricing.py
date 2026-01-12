@@ -484,14 +484,12 @@ class PricingEngine:
         Returns:
             The new calculated price
         """
-        item_type = getattr(item, 'menu_item_type', None)
-
-        # Route to specialized methods based on item type
-        if item_type == "bagel":
-            return self.recalculate_bagel_price(item)
-
-        if item_type in ("sized_beverage", "espresso"):
-            return self.recalculate_coffee_price(item)
+        # Route to specialized methods based on item attributes (data-driven)
+        if hasattr(item, 'has_attribute'):
+            if item.has_attribute("bread"):
+                return self.recalculate_bagel_price(item)
+            if item.has_attribute("size"):
+                return self.recalculate_coffee_price(item)
 
         # For other menu items (sandwiches, omelettes, etc.)
         if hasattr(item, 'menu_item_type'):

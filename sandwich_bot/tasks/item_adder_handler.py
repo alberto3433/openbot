@@ -77,6 +77,108 @@ class ItemAdderHandler:
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
 
+    def add_item(
+        self,
+        item_type: str,
+        order: OrderTask,
+        quantity: int = 1,
+        **kwargs,
+    ) -> StateMachineResult:
+        """
+        Unified item adder that routes to appropriate handler based on item type attributes.
+
+        This is the data-driven entry point for adding items. Instead of checking
+        item type names, callers should use this method which routes based on
+        what attributes the item type has in the database.
+
+        Args:
+            item_type: The item type slug (e.g., "bagel", "sized_beverage", "espresso")
+            order: The current order
+            quantity: Number of items to add (default 1)
+            **kwargs: Item-specific parameters passed to the specialized handler
+
+        Returns:
+            StateMachineResult with next question or confirmation
+        """
+        from sandwich_bot.menu_data_cache import menu_cache
+
+        # Get attributes for this item type from database
+        attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+
+        # Route based on attributes (data-driven, not type names)
+        if "bread" in attrs:
+            # Items with bread attribute (bagels) - use bagel handler
+            return self._add_bagel_item(order, quantity, **kwargs)
+        elif "size" in attrs:
+            # Items with size attribute (beverages) - use coffee handler
+            return self._add_coffee_item(order, quantity, **kwargs)
+        else:
+            # Generic menu item - use menu item handler
+            item_name = kwargs.get("item_name") or kwargs.get("menu_item_name") or item_type
+            return self.add_menu_item(
+                item_name=item_name,
+                quantity=quantity,
+                order=order,
+                toasted=kwargs.get("toasted"),
+                bagel_choice=kwargs.get("bagel_choice"),
+                modifications=kwargs.get("modifications"),
+            )
+
+    def _add_bagel_item(
+        self,
+        order: OrderTask,
+        quantity: int = 1,
+        **kwargs,
+    ) -> StateMachineResult:
+        """Internal: Route bagel item to _add_bagel or _add_bagels."""
+        if quantity > 1:
+            return self._add_bagels(
+                quantity=quantity,
+                bagel_type=kwargs.get("bagel_type"),
+                toasted=kwargs.get("toasted"),
+                scooped=kwargs.get("scooped"),
+                spread=kwargs.get("spread"),
+                spread_type=kwargs.get("spread_type"),
+                order=order,
+                extracted_modifiers=kwargs.get("extracted_modifiers"),
+            )
+        else:
+            return self._add_bagel(
+                bagel_type=kwargs.get("bagel_type"),
+                order=order,
+                toasted=kwargs.get("toasted"),
+                scooped=kwargs.get("scooped"),
+                spread=kwargs.get("spread"),
+                spread_type=kwargs.get("spread_type"),
+                extracted_modifiers=kwargs.get("extracted_modifiers"),
+            )
+
+    def _add_coffee_item(
+        self,
+        order: OrderTask,
+        quantity: int = 1,
+        **kwargs,
+    ) -> StateMachineResult:
+        """Internal: Route coffee/beverage item to _add_coffee."""
+        return self._add_coffee(
+            coffee_type=kwargs.get("coffee_type") or kwargs.get("drink_type"),
+            size=kwargs.get("size"),
+            iced=kwargs.get("iced"),
+            milk=kwargs.get("milk"),
+            sweetener=kwargs.get("sweetener"),
+            sweetener_quantity=kwargs.get("sweetener_quantity", 1),
+            flavor_syrup=kwargs.get("flavor_syrup"),
+            quantity=quantity,
+            order=order,
+            special_instructions=kwargs.get("special_instructions"),
+            decaf=kwargs.get("decaf"),
+            syrup_quantity=kwargs.get("syrup_quantity", 1),
+            wants_syrup=kwargs.get("wants_syrup", False),
+            cream_level=kwargs.get("cream_level"),
+            extra_shots=kwargs.get("extra_shots", 0),
+            original_input=kwargs.get("original_input"),
+        )
+
     # Generic category terms that should trigger disambiguation when multiple items match
     # These are base terms - we check if item_name equals OR ends with these
     GENERIC_CATEGORY_TERMS = frozenset([
@@ -451,7 +553,7 @@ class ItemAdderHandler:
             order=order,
         )
 
-    def add_bagel(
+    def _add_bagel(
         self,
         bagel_type: str | None,
         order: OrderTask,
@@ -461,7 +563,7 @@ class ItemAdderHandler:
         spread_type: str | None = None,
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
-        """Add a bagel and start configuration, pre-filling any provided details."""
+        """Internal: Add a bagel and start configuration, pre-filling any provided details."""
         # Look up base bagel price from menu
         base_price = self.pricing.lookup_bagel_price(bagel_type)
 
@@ -538,7 +640,7 @@ class ItemAdderHandler:
         order.items.add_item(bagel)
 
         # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-        self.pricing.recalculate_bagel_price(bagel)
+        self.pricing.recalculate_item_price(bagel)
 
         logger.info(
             "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, special_instructions=%s",
@@ -549,7 +651,7 @@ class ItemAdderHandler:
         # and handles all business rules (skip spread if has toppings, etc.)
         return self._configure_next_incomplete_bagel(order)
 
-    def add_bagels(
+    def _add_bagels(
         self,
         quantity: int,
         bagel_type: str | None,
@@ -561,7 +663,7 @@ class ItemAdderHandler:
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """
-        Add multiple bagels with the same configuration.
+        Internal: Add multiple bagels with the same configuration.
 
         Creates all bagels upfront, then configures them one at a time.
         Extracted modifiers are applied to the first bagel.
@@ -653,19 +755,19 @@ class ItemAdderHandler:
             order.items.add_item(bagel)
 
             # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-            self.pricing.recalculate_bagel_price(bagel)
+            self.pricing.recalculate_item_price(bagel)
 
         # Find first incomplete bagel and start configuring it
         return self._configure_next_incomplete_bagel(order)
 
-    def add_bagels_from_details(
+    def _add_bagels_from_details(
         self,
         bagel_details: list[BagelOrderDetails],
         order: OrderTask,
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """
-        Add multiple bagels with different configurations.
+        Internal: Add multiple bagels with different configurations.
 
         Creates all bagels upfront, then configures incomplete ones one at a time.
         Extracted modifiers are applied to the first bagel.
@@ -757,7 +859,7 @@ class ItemAdderHandler:
             order.items.add_item(bagel)
 
             # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-            self.pricing.recalculate_bagel_price(bagel)
+            self.pricing.recalculate_item_price(bagel)
 
             logger.info(
                 "Bagel %d: type=%s, toasted=%s, spread=%s (status=%s)",
@@ -768,7 +870,7 @@ class ItemAdderHandler:
         # Find first incomplete bagel and start configuring it
         return self._configure_next_incomplete_bagel(order)
 
-    def add_coffee(
+    def _add_coffee(
         self,
         coffee_type: str | None,
         size: str | None,
@@ -787,7 +889,7 @@ class ItemAdderHandler:
         extra_shots: int = 0,
         original_input: str | None = None,
     ) -> StateMachineResult:
-        """Add coffee/drink(s) and start configuration flow if needed."""
+        """Internal: Add coffee/drink(s) and start configuration flow if needed."""
         logger.info(
             "ADD COFFEE: type=%s, size=%s, iced=%s, decaf=%s, QUANTITY=%d, sweetener=%s (sweetener_qty=%d), syrup=%s (syrup_qty=%d), wants_syrup=%s, special_instructions=%s",
             coffee_type, size, iced, decaf, quantity, sweetener, sweetener_quantity, flavor_syrup, syrup_quantity, wants_syrup, special_instructions
@@ -1159,7 +1261,7 @@ class ItemAdderHandler:
                 coffee.extra_shots = extra_shots
             # Calculate upcharges immediately so cart shows correct price
             if self.pricing:
-                self.pricing.recalculate_coffee_price(coffee)
+                self.pricing.recalculate_item_price(coffee)
             coffee.mark_in_progress()
             order.items.add_item(coffee)
 

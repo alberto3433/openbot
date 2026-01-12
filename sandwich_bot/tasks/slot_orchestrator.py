@@ -285,12 +285,13 @@ MENU_ITEM_SLOTS: list[ItemSlotDefinition] = [
 
 def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
     """Get slot definitions for an item based on its type."""
-    if getattr(item, 'is_bagel', False):
-        return BAGEL_SLOTS
-    elif getattr(item, 'is_sized_beverage', False):
-        # MenuItemTask with is_sized_beverage uses coffee slots
-        return COFFEE_SLOTS
-    elif isinstance(item, MenuItemTask):
+    if isinstance(item, MenuItemTask):
+        # Items with bread attribute (bagels) use bagel slots
+        if item.has_attribute("bread"):
+            return BAGEL_SLOTS
+        # Items with size attribute (beverages) use coffee slots
+        elif item.has_attribute("size"):
+            return COFFEE_SLOTS
         return MENU_ITEM_SLOTS
     else:
         return []

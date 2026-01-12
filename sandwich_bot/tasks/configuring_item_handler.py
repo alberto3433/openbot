@@ -17,8 +17,6 @@ from .schemas import StateMachineResult, OrderPhase
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .by_pound_handler import ByPoundHandler
-    from .coffee_config_handler import CoffeeConfigHandler
-    from .bagel_config_handler import BagelConfigHandler
     from .config_helper_handler import ConfigHelperHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .modifier_change_handler import ModifierChangeHandler
@@ -209,9 +207,7 @@ class ConfiguringItemHandler:
         # Coffee/beverage fields -> route to unified handler when item is "sized_beverage" type
         "coffee_size": ("sized_beverage", "size"),
         "coffee_style": ("sized_beverage", "iced"),
-        # Note: coffee_modifiers NOT routed to unified handler because sized_beverage has
-        # separate milk/sweetener/syrup attributes, not a consolidated milk_sweetener_syrup attr.
-        # The legacy coffee_handler.handle_coffee_modifiers handles this correctly.
+        "coffee_modifiers": ("sized_beverage", "milk_sweetener_syrup"),
         "syrup_flavor": ("sized_beverage", "syrup"),
         # Sandwich/spread_sandwich toasted fields (same attr, different item types)
         "spread_sandwich_toasted": ("spread_sandwich", "toasted"),
@@ -222,8 +218,6 @@ class ConfiguringItemHandler:
         self,
         config: "HandlerConfig | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
-        coffee_handler: "CoffeeConfigHandler | None" = None,
-        bagel_handler: "BagelConfigHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
@@ -238,8 +232,6 @@ class ConfiguringItemHandler:
             config: HandlerConfig with shared dependencies (currently unused,
                     but accepted for consistency with other handlers).
             by_pound_handler: Handler for by-pound items.
-            coffee_handler: Handler for coffee configuration.
-            bagel_handler: Handler for bagel configuration.
             config_helper_handler: Handler for config helpers (side choice, etc.).
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
@@ -252,8 +244,6 @@ class ConfiguringItemHandler:
         _ = config  # Unused but accepted for API consistency
 
         self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
-        self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
-        self.bagel_handler = bagel_handler or kwargs.get("bagel_handler")
         self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
         self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
         self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
@@ -279,11 +269,11 @@ class ConfiguringItemHandler:
 
         # Handle drink selection when multiple options were presented
         if order.pending_field == "drink_selection":
-            return self.coffee_handler.handle_drink_selection(user_input, order)
+            return self.taking_items_handler.handle_drink_selection(user_input, order)
 
         # Handle drink type selection when user asked for a generic "drink"
         if order.pending_field == "drink_type":
-            return self.coffee_handler.handle_drink_type_selection(user_input, order)
+            return self.taking_items_handler.handle_drink_type_selection(user_input, order)
 
         # Handle generic item selection when multiple options were presented (cookies, muffins, etc.)
         if order.pending_field == "item_selection":
@@ -365,37 +355,12 @@ class ConfiguringItemHandler:
                     user_input, item, order, order.pending_field
                 )
 
-        # Fallback to specialized handlers for items that don't use the unified handler
-        # (e.g., BagelItemTask, CoffeeItemTask from older code paths, or items with different types)
-        if order.pending_field == "bagel_choice":
-            return self.bagel_handler.handle_bagel_choice(user_input, item, order)
-        elif order.pending_field == "spread":
-            return self.bagel_handler.handle_spread_choice(user_input, item, order)
-        elif order.pending_field == "toasted":
-            return self.bagel_handler.handle_toasted_choice(user_input, item, order)
-        elif order.pending_field == "cheese_choice":
-            return self.bagel_handler.handle_cheese_choice(user_input, item, order)
-        elif order.pending_field == "coffee_size":
-            return self.coffee_handler.handle_coffee_size(user_input, item, order)
-        elif order.pending_field == "coffee_style":
-            return self.coffee_handler.handle_coffee_style(user_input, item, order)
-        elif order.pending_field == "coffee_modifiers":
-            return self.coffee_handler.handle_coffee_modifiers(user_input, item, order)
-        elif order.pending_field == "syrup_flavor":
-            return self.coffee_handler.handle_syrup_flavor(user_input, item, order)
-        # Note: espresso_modifiers and espresso_syrup_flavor are legacy fields
-        # Espresso now uses menu_item_handler with global attributes (shots, milk_sweetener_syrup)
-        elif order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):
-            # Route to menu_item_handler for espresso configuration
+        # Handle espresso legacy fields - route to menu_item_handler
+        if order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.get_first_question(item, order)
-            # Fallback: advance to next question
             order.clear_pending()
             return self.checkout_utils_handler.get_next_question(order)
-        elif order.pending_field == "spread_sandwich_toasted":
-            return self.bagel_handler.handle_toasted_choice(user_input, item, order)
-        elif order.pending_field == "menu_item_bagel_toasted":
-            return self.bagel_handler.handle_toasted_choice(user_input, item, order)
 
         # Handle menu item configuration (deli sandwiches, etc.)
         elif order.pending_field == "customization_checkpoint":

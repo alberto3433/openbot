@@ -134,7 +134,7 @@ class TestCriticalOrderScenarios:
         assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), "Should ask about spread"
 
         # Answer spread (mock the LLM parser)
-        with patch('sandwich_bot.tasks.bagel_config_handler.parse_spread_choice') as mock_spread:
+        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
             mock_spread.return_value = mock_spread_parser(no_spread=True)
             result = sm.process("no thanks", order)
             order = result.order
@@ -191,7 +191,7 @@ class TestCriticalOrderScenarios:
         print(f"User: yes toasted")
         print(f"Bot: {result.message}")
 
-        with patch('sandwich_bot.tasks.bagel_config_handler.parse_spread_choice') as mock_spread:
+        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
             mock_spread.return_value = mock_spread_parser(spread_value="cream cheese")
             result = sm.process("cream cheese", order)
             order = result.order
@@ -246,7 +246,7 @@ class TestCriticalOrderScenarios:
         msg_lower = result.message.lower()
 
         # Complete any remaining configuration
-        with patch('sandwich_bot.tasks.bagel_config_handler.parse_spread_choice') as mock_spread:
+        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
             mock_spread.return_value = mock_spread_parser(no_spread=True)
 
             # Keep answering until we get "anything else"
@@ -435,7 +435,7 @@ class TestCriticalOrderScenarios:
         assert "cream cheese" in result.message.lower() or "butter" in result.message.lower() or "spread" in result.message.lower()
 
         # Try to modify toasted preference
-        with patch('sandwich_bot.tasks.bagel_config_handler.parse_spread_choice') as mock_spread:
+        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
             mock_spread.return_value = mock_spread_parser(spread_value="cream cheese")
             result = sm.process("cream cheese but actually not toasted", order)
             order = result.order
@@ -531,7 +531,7 @@ class TestCriticalOrderScenarios:
 
         # May still ask about spread if not considered answered
         if "cream cheese" in result.message.lower() or "butter" in result.message.lower():
-            with patch('sandwich_bot.tasks.bagel_config_handler.parse_spread_choice') as mock_spread:
+            with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
                 mock_spread.return_value = mock_spread_parser(no_spread=True)
                 result = sm.process("no spread", order)
                 order = result.order

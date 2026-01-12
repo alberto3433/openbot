@@ -8,31 +8,16 @@ import pytest
 
 def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     """Test that cream cheese spread on omelette side bagel is captured with correct price."""
-    from sandwich_bot.tasks.bagel_config_handler import BagelConfigHandler
+    from sandwich_bot.tasks.state_machine import OrderStateMachine
     from sandwich_bot.tasks.models import OrderTask, MenuItemTask
-    from sandwich_bot.tasks.state_machine import OrderPhase
-    from sandwich_bot.tasks.pricing import PricingEngine
+    from sandwich_bot.tasks.schemas import OrderPhase
     from sandwich_bot.menu_data_cache import menu_cache
 
     # Get menu data from cache
     menu_data = menu_cache.get_menu_index()
 
-    # Create pricing engine
-    def menu_lookup(name: str) -> dict | None:
-        for item in menu_data.get('all_items', []):
-            if item.get('name', '').lower() == name.lower():
-                return item
-        return None
-
-    pricing = PricingEngine(menu_data, menu_lookup)
-
-    # Create handler with dummy callback
-    from sandwich_bot.tasks.state_machine import StateMachineResult
-    def dummy_next_question(order):
-        return StateMachineResult(message="Anything else?", order=order)
-
-    handler = BagelConfigHandler(menu_data=menu_data, pricing=pricing)
-    handler._get_next_question = dummy_next_question
+    # Create state machine
+    state_machine = OrderStateMachine(menu_data=menu_data)
 
     # Create order with omelette already set up for spread choice
     order = OrderTask()
@@ -70,8 +55,8 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     print(f"Spread Price: {getattr(omelette, 'spread_price', None)}")
     print(f"Unit Price: {omelette.unit_price}")
 
-    # Process cream cheese choice
-    result = handler.handle_spread_choice('cream cheese', omelette, order)
+    # Process cream cheese choice via state machine
+    result = state_machine.process("cream cheese", order)
     print(f"\nResponse: {result.message[:100]}...")
     order = result.order
 

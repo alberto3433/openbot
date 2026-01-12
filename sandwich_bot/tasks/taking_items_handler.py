@@ -47,6 +47,8 @@ from .parsers.constants import (
     get_proteins,
     get_cheeses,
     get_toppings,
+    get_coffee_types,
+    is_soda_drink,
     resolve_soda_alias,
     resolve_coffee_alias,
     resolve_side_alias,
@@ -56,7 +58,6 @@ from .parsers.constants import (
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .pricing import PricingEngine
-    from .coffee_config_handler import CoffeeConfigHandler
     from .item_adder_handler import ItemAdderHandler
     from .menu_inquiry_handler import MenuInquiryHandler
     from .store_info_handler import StoreInfoHandler
@@ -312,7 +313,6 @@ class TakingItemsHandler:
     def __init__(
         self,
         config: "HandlerConfig | None" = None,
-        coffee_handler: "CoffeeConfigHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
         store_info_handler: "StoreInfoHandler | None" = None,
@@ -326,7 +326,6 @@ class TakingItemsHandler:
 
         Args:
             config: HandlerConfig with shared dependencies.
-            coffee_handler: Handler for coffee items.
             item_adder_handler: Handler for adding items.
             menu_inquiry_handler: Handler for menu inquiries.
             store_info_handler: Handler for store info inquiries.
@@ -346,7 +345,6 @@ class TakingItemsHandler:
             self._menu_data = {}
 
         # Handler-specific dependencies
-        self.coffee_handler = coffee_handler or kwargs.get("coffee_handler")
         self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
         self.menu_inquiry_handler = menu_inquiry_handler or kwargs.get("menu_inquiry_handler")
         self.store_info_handler = store_info_handler or kwargs.get("store_info_handler")
@@ -1823,7 +1821,17 @@ class TakingItemsHandler:
                     )
             elif item_type == "coffee":
                 # Add a new coffee and start config flow
-                return self.coffee_handler.add_coffee(order)
+                return self.item_adder_handler.add_coffee(
+                    coffee_type=None,  # Generic coffee - will prompt for type
+                    size=None,
+                    iced=None,
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=1,
+                    flavor_syrup=None,
+                    quantity=1,
+                    order=order,
+                )
             elif item_type == "sandwich":
                 # Treat sandwich as bagel with potential proteins
                 return self.item_adder_handler.add_bagel(order, quantity=1)
@@ -2439,7 +2447,7 @@ class TakingItemsHandler:
             flavor_syrup = item.syrups[0].type if item.syrups else None
             syrup_qty = item.syrups[0].quantity if item.syrups else 1
 
-            result = self.coffee_handler.add_coffee(
+            result = self.item_adder_handler.add_coffee(
                 item.drink_type,
                 item.size,
                 item.temperature == "iced" if item.temperature else None,
@@ -2552,7 +2560,7 @@ class TakingItemsHandler:
         # Check if we're waiting for drink type selection (user said "drink" or partial term like "juice")
         # This must be checked BEFORE checking summaries because add_coffee sets pending_field
         # but _add_parsed_item still adds the generic term to summaries
-        if order.pending_field == "drink_type" and self.coffee_handler.menu_lookup:
+        if order.pending_field == "drink_type" and self.item_adder_handler.menu_lookup:
             logger.info("Pending drink type selection - presenting drink options")
 
             # Check if we have filtered options (partial term like "juice") or need full menu
@@ -2562,7 +2570,7 @@ class TakingItemsHandler:
                 logger.info("Using %d pre-filtered drink options", len(all_drinks))
             else:
                 # Get full drink menu for generic "drink" request
-                items_by_type = self.coffee_handler.menu_lookup.menu_data.get("items_by_type", {})
+                items_by_type = self.item_adder_handler.menu_lookup.menu_data.get("items_by_type", {})
                 sized_items = items_by_type.get("sized_beverage", [])
                 cold_items = items_by_type.get("beverage", [])
                 all_drinks = sized_items + cold_items
@@ -3205,5 +3213,543 @@ class TakingItemsHandler:
 
         return StateMachineResult(
             message=f"I didn't catch that. Would you like to repeat your previous order, or {cart_option}?",
+            order=order,
+        )
+
+    def handle_drink_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user selecting from multiple drink options.
+
+        Called when pending_field == "drink_selection" and user needs
+        to choose from multiple matching drink items.
+        """
+        if not order.pending_drink_options:
+            order.clear_pending()
+            return StateMachineResult(
+                message="What would you like to order?",
+                order=order,
+            )
+
+        user_lower = user_input.lower().strip()
+        options = order.pending_drink_options
+
+        # Reject negative numbers or other invalid input early
+        if user_lower.startswith('-') or user_lower.startswith('−'):
+            option_list = []
+            for i, item in enumerate(options, 1):
+                name = item.get("name", "Unknown")
+                price = item.get("base_price", 0)
+                if price > 0:
+                    option_list.append(f"{i}. {name} (${price:.2f})")
+                else:
+                    option_list.append(f"{i}. {name}")
+            options_str = "\n".join(option_list)
+            return StateMachineResult(
+                message=f"Please choose a number from 1 to {len(options)}:\n{options_str}",
+                order=order,
+            )
+
+        # Try to match by number (1, 2, 3, "first", "second", etc.)
+        number_map = {
+            "1": 0, "one": 0, "first": 0, "the first": 0, "number 1": 0, "number one": 0,
+            "2": 1, "two": 1, "second": 1, "the second": 1, "number 2": 1, "number two": 1,
+            "3": 2, "three": 2, "third": 2, "the third": 2, "number 3": 2, "number three": 2,
+            "4": 3, "four": 3, "fourth": 3, "the fourth": 3, "number 4": 3, "number four": 3,
+        }
+
+        selected_item = None
+
+        # Check for number/ordinal selection
+        for key, idx in number_map.items():
+            if key in user_lower:
+                if idx < len(options):
+                    selected_item = options[idx]
+                    break
+                else:
+                    # User selected a number that's out of range - ask again
+                    logger.info("DRINK SELECTION: User selected %s but only %d options available", key, len(options))
+                    option_list = []
+                    for i, item in enumerate(options, 1):
+                        name = item.get("name", "Unknown")
+                        price = item.get("base_price", 0)
+                        if price > 0:
+                            option_list.append(f"{i}. {name} (${price:.2f})")
+                        else:
+                            option_list.append(f"{i}. {name}")
+                    options_str = "\n".join(option_list)
+                    return StateMachineResult(
+                        message=f"I only have {len(options)} options. Please choose:\n{options_str}",
+                        order=order,
+                    )
+
+        # If not found by number, try to match by name
+        if not selected_item:
+            for option in options:
+                option_name = option.get("name", "").lower()
+                # Check if the option name is in user input or vice versa
+                # But require minimum length to avoid false matches like "4" in "46 oz"
+                if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
+                    selected_item = option
+                    break
+                # Also try matching individual words
+                for word in user_lower.split():
+                    if len(word) > 3 and word in option_name:
+                        selected_item = option
+                        break
+
+        if not selected_item:
+            # Couldn't determine which one - ask again
+            option_list = []
+            for i, item in enumerate(options, 1):
+                name = item.get("name", "Unknown")
+                price = item.get("base_price", 0)
+                if price > 0:
+                    option_list.append(f"{i}. {name} (${price:.2f})")
+                else:
+                    option_list.append(f"{i}. {name}")
+            options_str = "\n".join(option_list)
+            return StateMachineResult(
+                message=f"I didn't catch which one. Please choose:\n{options_str}",
+                order=order,
+            )
+
+        # Found the selection - retrieve stored modifiers BEFORE clearing pending state
+        selected_name = selected_item.get("name", "drink")
+        selected_price = selected_item.get("base_price", 0)
+
+        # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
+        stored_mods = order.pending_coffee_modifiers or {}
+        stored_size = stored_mods.get("size")
+        stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
+        stored_milk = stored_mods.get("milk")
+        stored_sweetener = stored_mods.get("sweetener")
+        stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
+        stored_syrup = stored_mods.get("flavor_syrup")
+        stored_syrup_qty = stored_mods.get("syrup_quantity", 1)
+        stored_decaf = stored_mods.get("decaf")
+        stored_cream = stored_mods.get("cream_level")
+        stored_shots = stored_mods.get("extra_shots", 0)
+        stored_instructions = stored_mods.get("special_instructions")
+        stored_quantity = stored_mods.get("quantity", 1)
+
+        order.pending_drink_options = []
+        order.clear_pending()
+
+        logger.info(
+            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, syrup=%s",
+            selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_syrup
+        )
+
+        # Check if this drink should skip configuration
+        is_configurable_coffee = any(
+            bev in selected_name.lower() for bev in get_coffee_types()
+        )
+        should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
+
+        if should_skip_config or not is_configurable_coffee:
+            # Add directly as complete (no size/iced questions)
+            drink = MenuItemTask(
+                menu_item_name=selected_name,
+                menu_item_type="sized_beverage",
+                unit_price=selected_price,
+            )
+            drink.mark_complete()
+            order.items.add_item(drink)
+
+            return StateMachineResult(
+                message=f"Got it, {selected_name}. Anything else?",
+                order=order,
+            )
+        else:
+            # Needs configuration - apply stored modifiers from original order
+            # Build sweeteners list from stored modifier
+            sweeteners_list = []
+            if stored_sweetener:
+                sweeteners_list.append({
+                    "type": stored_sweetener,
+                    "quantity": stored_sweetener_qty or 1,
+                })
+
+            # Build flavor syrups list from stored modifier
+            syrups_list = []
+            if stored_syrup:
+                syrups_list.append({
+                    "flavor": stored_syrup,
+                    "quantity": stored_syrup_qty or 1,
+                })
+
+            # Create drinks with stored modifiers
+            for _ in range(stored_quantity):
+                drink = MenuItemTask(
+                    menu_item_name=selected_name,
+                    menu_item_type="sized_beverage",
+                    unit_price=selected_price,
+                    special_instructions=stored_instructions,
+                )
+                # Set beverage properties via attribute_values
+                if stored_size:
+                    drink.size = stored_size
+                if stored_temperature is not None:
+                    drink.temperature = stored_temperature
+                if stored_decaf:
+                    drink.decaf = stored_decaf
+                if stored_milk:
+                    drink.milk = stored_milk
+                if stored_cream:
+                    drink.cream_level = stored_cream
+                if sweeteners_list:
+                    drink.sweeteners = sweeteners_list.copy()
+                if syrups_list:
+                    drink.flavor_syrups = syrups_list.copy()
+                if stored_shots:
+                    drink.extra_shots = stored_shots
+
+                # Calculate price with modifiers
+                if self.pricing:
+                    self.pricing.recalculate_coffee_price(drink)
+
+                # Check if fully configured (size and hot/iced specified)
+                if drink.size is not None and drink.temperature is not None:
+                    drink.mark_complete()
+                else:
+                    drink.mark_in_progress()
+
+                order.items.add_item(drink)
+
+            # If still needs configuration, ask the next question
+            if any(d.status == TaskStatus.IN_PROGRESS for d in order.items.items if getattr(d, 'is_sized_beverage', False)):
+                if self.item_adder_handler and self.item_adder_handler._configure_next_incomplete_coffee:
+                    return self.item_adder_handler._configure_next_incomplete_coffee(order)
+                # Fallback
+                return StateMachineResult(
+                    message="What size would you like?",
+                    order=order,
+                )
+            else:
+                # Build summary for confirmation
+                summary = drink.get_summary() if stored_quantity == 1 else f"{stored_quantity} {selected_name}s"
+                return StateMachineResult(
+                    message=f"Got it, {summary}. Anything else?",
+                    order=order,
+                )
+
+    def handle_drink_type_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user specifying a drink type after asking for a generic 'drink'.
+
+        This is called when the user said something like "drink" and we asked
+        "What type of drink would you like?" and now they're responding.
+        """
+        user_lower = user_input.lower().strip()
+
+        # Check for "what else" / "more options" pagination requests
+        show_more_phrases = [
+            "what else", "any other", "more options", "other options",
+            "what other", "anything else", "show more", "more drinks",
+            "other drinks", "different",
+        ]
+        if any(phrase in user_lower for phrase in show_more_phrases):
+            pagination = order.get_menu_pagination()
+            if pagination and pagination.get("category") == "drink":
+                offset = pagination.get("offset", 0)
+                # Get drink items again
+                menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
+                items_by_type = menu_lookup.menu_data.get("items_by_type", {}) if menu_lookup else {}
+                sized_items = items_by_type.get("sized_beverage", [])
+                cold_items = items_by_type.get("beverage", [])
+                all_drinks = sized_items + cold_items
+
+                if offset < len(all_drinks):
+                    batch = all_drinks[offset:offset + DEFAULT_PAGINATION_SIZE]
+                    remaining = len(all_drinks) - (offset + len(batch))
+
+                    drink_names = [item.get("name", "Unknown") for item in batch]
+
+                    if remaining > 0:
+                        if len(drink_names) == 1:
+                            drinks_str = drink_names[0]
+                        else:
+                            drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
+                        message = f"We also have {drinks_str}, and more."
+                        order.set_menu_pagination("drink", offset + DEFAULT_PAGINATION_SIZE, len(all_drinks))
+                    else:
+                        if len(drink_names) == 1:
+                            drinks_str = drink_names[0]
+                        elif len(drink_names) == 2:
+                            drinks_str = f"{drink_names[0]} and {drink_names[1]}"
+                        else:
+                            drinks_str = ", ".join(drink_names[:-1]) + f", and {drink_names[-1]}"
+                        message = f"We also have {drinks_str}. That's all our drinks."
+                        order.clear_menu_pagination()
+
+                    return StateMachineResult(message=message, order=order)
+                else:
+                    order.clear_menu_pagination()
+                    return StateMachineResult(
+                        message="That's all our drinks. Which would you like?",
+                        order=order,
+                    )
+            # No pagination state - just re-ask
+            return StateMachineResult(
+                message="Which drink would you like?",
+                order=order,
+            )
+
+        # FIRST: Check if we have pending drink options (from disambiguation like "latte" matching multiple items)
+        # If so, try to match the user's input against those options before doing anything else
+        if order.pending_drink_options:
+            options = order.pending_drink_options
+            selected_item = None
+
+            # Try to match by number (1, 2, 3, "first", "second", etc.)
+            number_map = {
+                "1": 0, "one": 0, "first": 0, "the first": 0, "number 1": 0, "number one": 0,
+                "2": 1, "two": 1, "second": 1, "the second": 1, "number 2": 1, "number two": 1,
+                "3": 2, "three": 2, "third": 2, "the third": 2, "number 3": 2, "number three": 2,
+                "4": 3, "four": 3, "fourth": 3, "the fourth": 3, "number 4": 3, "number four": 3,
+            }
+
+            for key, idx in number_map.items():
+                if key in user_lower:
+                    if idx < len(options):
+                        selected_item = options[idx]
+                        break
+
+            # If not found by number, try to match by name
+            if not selected_item:
+                for option in options:
+                    option_name = option.get("name", "").lower()
+                    # Check if the option name is in user input or vice versa
+                    if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
+                        selected_item = option
+                        break
+                    # Also try matching individual words
+                    for word in user_lower.split():
+                        if len(word) > 3 and word in option_name:
+                            selected_item = option
+                            break
+                    if selected_item:
+                        break
+
+            if selected_item:
+                # Found the selection - retrieve stored modifiers before clearing pending state
+                selected_name = selected_item.get("name", "drink")
+                selected_price = selected_item.get("base_price", 0)
+
+                # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
+                stored_mods = order.pending_coffee_modifiers or {}
+                stored_size = stored_mods.get("size")
+                stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
+                stored_milk = stored_mods.get("milk")
+                stored_sweetener = stored_mods.get("sweetener")
+                stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
+                stored_syrup = stored_mods.get("flavor_syrup")
+                stored_syrup_qty = stored_mods.get("syrup_quantity", 1)
+                stored_decaf = stored_mods.get("decaf")
+                stored_cream = stored_mods.get("cream_level")
+                stored_shots = stored_mods.get("extra_shots", 0)
+                stored_instructions = stored_mods.get("special_instructions")
+                stored_quantity = stored_mods.get("quantity", 1)
+
+                logger.info(
+                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+                    selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
+                )
+
+                order.pending_drink_options = []
+                order.clear_pending()
+
+                # Check if this drink should skip configuration
+                is_configurable_coffee = any(
+                    bev in selected_name.lower() for bev in get_coffee_types()
+                )
+                should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
+
+                if should_skip_config or not is_configurable_coffee:
+                    # Add directly as complete (no size/iced questions)
+                    drink = MenuItemTask(
+                        menu_item_name=selected_name,
+                        menu_item_type="sized_beverage",
+                        unit_price=selected_price,
+                    )
+                    drink.mark_complete()
+                    order.items.add_item(drink)
+
+                    return StateMachineResult(
+                        message=f"Got it, {selected_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    # Needs configuration - apply stored modifiers from original order
+                    # Build sweeteners list from stored modifier
+                    sweeteners_list = []
+                    if stored_sweetener:
+                        sweeteners_list.append({
+                            "type": stored_sweetener,
+                            "quantity": stored_sweetener_qty or 1,
+                        })
+
+                    # Build flavor syrups list from stored modifier
+                    syrups_list = []
+                    if stored_syrup:
+                        syrups_list.append({
+                            "flavor": stored_syrup,
+                            "quantity": stored_syrup_qty or 1,
+                        })
+
+                    drink = MenuItemTask(
+                        menu_item_name=selected_name,
+                        menu_item_type="sized_beverage",
+                        unit_price=selected_price,
+                        special_instructions=stored_instructions,
+                    )
+                    # Set beverage properties via attribute_values
+                    if stored_size:
+                        drink.size = stored_size
+                    if stored_temperature is not None:
+                        drink.temperature = stored_temperature
+                    if stored_milk:
+                        drink.milk = stored_milk
+                    if sweeteners_list:
+                        drink.sweeteners = sweeteners_list
+                    if syrups_list:
+                        drink.flavor_syrups = syrups_list
+                    if stored_decaf:
+                        drink.decaf = stored_decaf
+                    if stored_cream:
+                        drink.cream_level = stored_cream
+                    if stored_shots:
+                        drink.extra_shots = stored_shots
+                    drink.mark_in_progress()
+                    order.items.add_item(drink)
+
+                    # Add multiple drinks if quantity > 1
+                    for _ in range(stored_quantity - 1):
+                        extra_drink = MenuItemTask(
+                            menu_item_name=selected_name,
+                            menu_item_type="sized_beverage",
+                            unit_price=selected_price,
+                            special_instructions=stored_instructions,
+                        )
+                        # Set beverage properties via attribute_values
+                        if stored_size:
+                            extra_drink.size = stored_size
+                        if stored_temperature is not None:
+                            extra_drink.temperature = stored_temperature
+                        if stored_milk:
+                            extra_drink.milk = stored_milk
+                        if sweeteners_list:
+                            extra_drink.sweeteners = sweeteners_list.copy()
+                        if syrups_list:
+                            extra_drink.flavor_syrups = syrups_list.copy()
+                        if stored_decaf:
+                            extra_drink.decaf = stored_decaf
+                        if stored_cream:
+                            extra_drink.cream_level = stored_cream
+                        if stored_shots:
+                            extra_drink.extra_shots = stored_shots
+                        extra_drink.mark_in_progress()
+                        order.items.add_item(extra_drink)
+
+                    # Use _get_next_question which checks for incomplete bagels first
+                    # This ensures bagels are configured before coffees when both are ordered together
+                    if self.item_adder_handler and self.item_adder_handler._get_next_question:
+                        return self.item_adder_handler._get_next_question(order)
+                    # Fallback
+                    return StateMachineResult(
+                        message="What size would you like?",
+                        order=order,
+                    )
+
+        # Clear pending state and pagination
+        order.clear_pending()
+        order.clear_menu_pagination()
+
+        # Try to parse the drink type from the user's input
+        # Use the deterministic parser to extract coffee type
+        from .parsers.deterministic import parse_open_input_deterministic
+        from .schemas import ParsedCoffeeEntry
+        parsed = parse_open_input_deterministic(user_input)
+
+        # Check if they specified a coffee/drink via parsed_items
+        if parsed and parsed.parsed_items:
+            coffee_entry = next(
+                (item for item in parsed.parsed_items if isinstance(item, ParsedCoffeeEntry)),
+                None
+            )
+            if coffee_entry:
+                # Extract sweetener/syrup info from the new format
+                sweetener = coffee_entry.sweeteners[0].type if coffee_entry.sweeteners else None
+                sweetener_quantity = coffee_entry.sweeteners[0].quantity if coffee_entry.sweeteners else 1
+                flavor_syrup = coffee_entry.syrups[0].type if coffee_entry.syrups else None
+                syrup_quantity = coffee_entry.syrups[0].quantity if coffee_entry.syrups else 1
+                # Convert temperature to iced boolean
+                iced = True if coffee_entry.temperature == "iced" else (False if coffee_entry.temperature == "hot" else None)
+
+                return self.item_adder_handler.add_coffee(
+                    coffee_type=coffee_entry.drink_type,
+                    size=coffee_entry.size,
+                    iced=iced,
+                    milk=coffee_entry.milk,
+                    sweetener=sweetener,
+                    sweetener_quantity=sweetener_quantity,
+                    flavor_syrup=flavor_syrup,
+                    quantity=coffee_entry.quantity,
+                    order=order,
+                    special_instructions=coffee_entry.special_instructions,
+                    decaf=coffee_entry.decaf,
+                    syrup_quantity=syrup_quantity,
+                    cream_level=coffee_entry.cream_level,
+                    original_input=user_input,
+                )
+
+        # Try direct matching with known drink types
+        for bev_type in get_coffee_types():
+            if bev_type in user_lower:
+                return self.item_adder_handler.add_coffee(
+                    coffee_type=bev_type,
+                    size=None,
+                    iced=None,
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=1,
+                    flavor_syrup=None,
+                    quantity=1,
+                    order=order,
+                    original_input=user_input,
+                )
+
+        # Try to look up in menu
+        menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
+        if menu_lookup:
+            matching_items = menu_lookup.lookup_menu_items(user_input)
+            if matching_items:
+                # Use the first match
+                item_name = matching_items[0].get("name", user_input)
+                return self.item_adder_handler.add_coffee(
+                    coffee_type=item_name,
+                    size=None,
+                    iced=None,
+                    milk=None,
+                    sweetener=None,
+                    sweetener_quantity=1,
+                    flavor_syrup=None,
+                    quantity=1,
+                    order=order,
+                    original_input=user_input,
+                )
+
+        # Couldn't parse - ask again
+        logger.info("DRINK TYPE SELECTION: Couldn't parse '%s', asking again", user_input[:50])
+        order.pending_field = "drink_type"
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        return StateMachineResult(
+            message="I didn't catch that. What type of drink would you like - coffee, latte, tea, or something else?",
             order=order,
         )

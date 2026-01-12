@@ -122,6 +122,7 @@ class ItemConverter(ABC):
         """
         skip_slugs = skip_slugs or set()
         total_upcharges = 0.0
+        processed_selections = set()  # Track which _selections keys we've processed
 
         for attr_slug, attr_value in attribute_values.items():
             # Skip metadata keys (price/upcharge and selections are processed with their parent)
@@ -129,15 +130,20 @@ class ItemConverter(ABC):
                 continue
             if attr_slug in skip_slugs:
                 continue
+            # Skip internal state fields (pending_ prefix) - not for display
+            if attr_slug.startswith("pending_"):
+                continue
             if attr_value is None or attr_value is False or attr_value == "" or attr_value == []:
                 continue  # Skip empty/false values
 
             # Check if this is a multi-select attribute with _selections data
             selections = attribute_values.get(f"{attr_slug}_selections")
             if selections and isinstance(selections, list):
+                processed_selections.add(f"{attr_slug}_selections")
                 # Multi-select: create a modifier for each selection
                 for sel in selections:
-                    sel_slug = sel.get("slug", "")
+                    # Check for slug, flavor (for syrups), or type (for sweeteners)
+                    sel_slug = sel.get("slug", "") or sel.get("flavor", "") or sel.get("type", "")
                     sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
                     sel_price = sel.get("price", 0) or 0.0
                     sel_quantity = sel.get("quantity", 1) or 1
@@ -215,6 +221,53 @@ class ItemConverter(ABC):
                 modifiers.append({"name": display_name, "price": 0})
             else:
                 free_details.append(display_name)
+
+        # Second pass: process orphan _selections keys that weren't processed above
+        # (e.g., syrup_selections without a parent "syrup" key)
+        for attr_slug, attr_value in attribute_values.items():
+            if not attr_slug.endswith("_selections"):
+                continue
+            if attr_slug in processed_selections:
+                continue  # Already processed with its parent
+            if not isinstance(attr_value, list) or not attr_value:
+                continue
+
+            # Process this orphan selections list
+            for sel in attr_value:
+                # Check for slug, flavor (for syrups), or type (for sweeteners)
+                sel_slug = sel.get("slug", "") or sel.get("flavor", "") or sel.get("type", "")
+                sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
+                sel_price = sel.get("price", 0) or 0.0
+                sel_quantity = sel.get("quantity", 1) or 1
+                sel_qualifier = sel.get("qualifier")
+
+                # Derive parent slug from selections key (e.g., "syrup_selections" -> "syrup")
+                parent_slug = attr_slug[:-11]  # Remove "_selections" suffix
+
+                # Try custom price lookup if price not set
+                if sel_price == 0 and price_lookup_fn and pricing:
+                    sel_price = price_lookup_fn(parent_slug, sel_slug, pricing) or 0.0
+
+                # Build display with qualifier
+                if sel_qualifier:
+                    sel_display = f"{sel_display} ({sel_qualifier})"
+
+                # Handle quantity
+                if sel_quantity > 1:
+                    sel_display = f"{sel_quantity} {sel_display}"
+                    sel_price = sel_price * sel_quantity
+
+                # Skip if display name is empty
+                if not sel_display:
+                    continue
+
+                if sel_price > 0:
+                    modifiers.append({"name": sel_display, "price": sel_price})
+                    total_upcharges += sel_price
+                elif include_free_in_modifiers:
+                    modifiers.append({"name": sel_display, "price": 0})
+                else:
+                    free_details.append(sel_display)
 
         return total_upcharges
 

@@ -3666,24 +3666,21 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         # Try signature item FIRST - important because "bacon egg and cheese"
         # would otherwise be matched as a menu item "Bacon"
         speed_result = _parse_signature_item_deterministic(part)
-        if speed_result and speed_result.new_signature_item:
+        # Phase 4: Use parsed_items directly from sub-parser
+        signature_items = [
+            item for item in (speed_result.parsed_items if speed_result else [])
+            if hasattr(item, 'is_signature') and item.is_signature
+        ]
+        if signature_items:
             signature_item = True
-            signature_item_name = speed_result.new_signature_item_name
-            signature_item_qty = speed_result.new_signature_item_quantity or 1
-            signature_item_toasted = speed_result.new_signature_item_toasted
-            signature_item_bagel_choice = speed_result.new_signature_item_bagel_choice
-            signature_item_modifications = speed_result.new_signature_item_modifications
-            # Add to parsed_items for generic handling
-            parsed_items.append(ParsedMenuItemEntry(
-                menu_item_name=speed_result.new_signature_item_name,
-                bagel_type=speed_result.new_signature_item_bagel_choice,
-                toasted=speed_result.new_signature_item_toasted,
-                quantity=speed_result.new_signature_item_quantity or 1,
-                modifiers=speed_result.new_signature_item_modifications or [],
-                is_signature=True,
-            ))
-            logger.info("Multi-item: detected signature item '%s' (qty=%d) via direct parse",
-                        signature_item_name, signature_item_qty)
+            for item in signature_items:
+                parsed_items.append(item)
+                signature_item_name = item.menu_item_name
+                signature_item_qty = item.quantity
+                signature_item_toasted = item.toasted
+                signature_item_bagel_choice = item.bagel_type
+                signature_item_modifications = item.modifiers
+            logger.info("Multi-item: detected %d signature item(s) via direct parse", len(signature_items))
             continue
 
         # Try by-pound order BEFORE menu item extraction
@@ -3703,48 +3700,22 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         # Try coffee detection BEFORE menu item extraction
         # This prevents "latte" from being matched as a menu item instead of coffee
         coffee_result = _parse_coffee_deterministic(part)
-        if coffee_result and coffee_result.new_coffee:
-            # Track coffee for new_coffee_* fields in return (backwards compat)
-            if not coffee_list:
-                coffee_list.append(CoffeeOrderDetails(
-                    drink_type=coffee_result.new_coffee_type or "coffee",
-                    size=coffee_result.new_coffee_size,
-                    iced=coffee_result.new_coffee_iced,
-                    decaf=coffee_result.new_coffee_decaf,
-                    quantity=coffee_result.new_coffee_quantity or 1,
-                    milk=coffee_result.new_coffee_milk,
-                    special_instructions=coffee_result.new_coffee_special_instructions,
-                ))
-            # Build sweeteners list from parsed values
-            sweeteners = []
-            if coffee_result.new_coffee_sweetener:
-                sweeteners.append(SweetenerItem(
-                    type=coffee_result.new_coffee_sweetener,
-                    quantity=coffee_result.new_coffee_sweetener_quantity or 1,
-                ))
-            # Build syrups list from parsed values
-            syrups = []
-            if coffee_result.new_coffee_flavor_syrup:
-                syrups.append(SyrupItem(
-                    type=coffee_result.new_coffee_flavor_syrup,
-                    quantity=getattr(coffee_result, 'new_coffee_syrup_quantity', 1) or 1,
-                ))
-            # Add to parsed_items for generic handling
-            parsed_items.append(_build_coffee_parsed_item(
-                drink_type=coffee_result.new_coffee_type or "coffee",
-                size=coffee_result.new_coffee_size,
-                temperature="iced" if coffee_result.new_coffee_iced else ("hot" if coffee_result.new_coffee_iced is False else None),
-                milk=coffee_result.new_coffee_milk,
-                quantity=coffee_result.new_coffee_quantity or 1,
-                special_instructions=coffee_result.new_coffee_special_instructions,
-                decaf=coffee_result.new_coffee_decaf,
-                sweeteners=sweeteners,
-                syrups=syrups,
-                original_text=part,
-            ))
-            logger.info("Multi-item: detected coffee '%s' (qty=%d, size=%s, iced=%s, milk=%s) via direct parse",
-                        coffee_result.new_coffee_type, coffee_result.new_coffee_quantity or 1,
-                        coffee_result.new_coffee_size, coffee_result.new_coffee_iced, coffee_result.new_coffee_milk)
+        if coffee_result and coffee_result.parsed_items:
+            # Use parsed_items directly from sub-parser (Phase 4: avoid deprecated fields)
+            for item in coffee_result.parsed_items:
+                parsed_items.append(item)
+                # Track first coffee for backwards-compat coffee_list
+                if not coffee_list and hasattr(item, 'item_name'):
+                    coffee_list.append(CoffeeOrderDetails(
+                        drink_type=item.item_name or "coffee",
+                        size=item.attribute_values.get("size"),
+                        iced=item.attribute_values.get("temperature") == "iced" if item.attribute_values.get("temperature") else None,
+                        decaf=item.attribute_values.get("decaf"),
+                        quantity=item.quantity,
+                        milk=item.attribute_values.get("milk"),
+                        special_instructions=item.special_instructions,
+                    ))
+            logger.info("Multi-item: detected %d coffee item(s) via direct parse", len(coffee_result.parsed_items))
             continue
 
         # If "bagel" is explicitly in the part, try bagel parsing FIRST before menu item
@@ -3752,34 +3723,23 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         part_lower = part.lower()
         if "bagel" in part_lower:
             parsed = parse_open_input_deterministic(part)
-            if parsed and parsed.new_bagel:
+            # Check for bagel items in parsed_items (Phase 4: avoid deprecated fields)
+            bagel_items = [
+                item for item in (parsed.parsed_items if parsed else [])
+                if hasattr(item, 'item_type') and item.item_type == "bagel"
+            ]
+            if bagel_items:
                 bagel = True
-                bagel_qty = parsed.new_bagel_quantity or 1
-                bagel_type = parsed.new_bagel_type
-                bagel_toasted = parsed.new_bagel_toasted
-                bagel_scooped = parsed.new_bagel_scooped
-                bagel_spread = parsed.new_bagel_spread
-                bagel_spread_type = parsed.new_bagel_spread_type
-
-                # Build modifiers list from spread and extras
-                modifiers = []
-                if parsed.new_bagel_spread_type:
-                    modifiers.append(parsed.new_bagel_spread_type)
-                if parsed.new_bagel_toppings:
-                    modifiers.extend(parsed.new_bagel_toppings)
-
-                # Add to parsed_items
-                parsed_items.append(_build_bagel_parsed_item(
-                    bagel_type=bagel_type,
-                    toasted=bagel_toasted,
-                    scooped=bagel_scooped,
-                    spread=parsed.new_bagel_spread,
-                    spread_type=parsed.new_bagel_spread_type,
-                    quantity=bagel_qty,
-                    modifiers=modifiers,
-                ))
-                logger.info("Multi-item: detected bagel '%s' (qty=%d, toasted=%s, scooped=%s, spread=%s, spread_type=%s)",
-                            bagel_type, bagel_qty, bagel_toasted, bagel_scooped, bagel_spread, parsed.new_bagel_spread_type)
+                for item in bagel_items:
+                    parsed_items.append(item)
+                    # Extract values for backwards-compat deprecated fields
+                    bagel_qty = item.quantity
+                    bagel_type = item.attribute_values.get("bread") or item.attribute_values.get("bagel_type")
+                    bagel_toasted = item.attribute_values.get("toasted")
+                    bagel_scooped = item.attribute_values.get("scooped")
+                    bagel_spread = item.attribute_values.get("spread")
+                    bagel_spread_type = item.attribute_values.get("spread_type")
+                logger.info("Multi-item: detected %d bagel item(s) via direct parse", len(bagel_items))
                 continue
 
         item_name, item_qty = _extract_menu_item_from_text(part)
@@ -3807,143 +3767,57 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                         item_name, item_qty, bagel_choice, toasted, modifications)
             continue
 
+        # Fall back to generic parsing
         parsed = parse_open_input_deterministic(part)
         if not parsed:
             logger.debug("Multi-item: could not parse part '%s' deterministically", part)
             continue
 
-        if parsed.new_menu_item:
-            menu_item_list.append(MenuItemOrderDetails(
-                name=parsed.new_menu_item,
-                quantity=parsed.new_menu_item_quantity or 1,
-                bagel_choice=parsed.new_menu_item_bagel_choice,
-                toasted=parsed.new_menu_item_toasted,
-                modifications=parsed.new_menu_item_modifications or [],
-            ))
-            # Add to parsed_items for generic handling
-            parsed_items.append(ParsedMenuItemEntry(
-                menu_item_name=parsed.new_menu_item,
-                quantity=parsed.new_menu_item_quantity or 1,
-                bagel_type=parsed.new_menu_item_bagel_choice,
-                toasted=parsed.new_menu_item_toasted,
-                modifiers=parsed.new_menu_item_modifications or [],
-            ))
-            logger.info("Multi-item: detected menu item '%s' (qty=%d, mods=%s)",
-                        parsed.new_menu_item, parsed.new_menu_item_quantity or 1, parsed.new_menu_item_modifications)
-
-        if parsed.new_coffee:
-            # Track coffee for new_coffee_* fields in return (backwards compat)
-            if not coffee_list:
-                # Only need first coffee for primary fields
-                coffee_list.append(CoffeeOrderDetails(
-                    drink_type=parsed.new_coffee_type or "coffee",
-                    size=parsed.new_coffee_size,
-                    iced=parsed.new_coffee_iced,
-                    decaf=parsed.new_coffee_decaf,
-                    quantity=parsed.new_coffee_quantity or 1,
-                    milk=parsed.new_coffee_milk,
-                    special_instructions=parsed.new_coffee_special_instructions,
-                ))
-            # Build sweeteners list from parsed values
-            sweeteners = []
-            if parsed.new_coffee_sweetener:
-                sweeteners.append(SweetenerItem(
-                    type=parsed.new_coffee_sweetener,
-                    quantity=parsed.new_coffee_sweetener_quantity or 1,
-                ))
-
-            # Build syrups list from parsed values
-            syrups = []
-            if parsed.new_coffee_flavor_syrup:
-                syrups.append(SyrupItem(
-                    type=parsed.new_coffee_flavor_syrup,
-                    quantity=getattr(parsed, 'new_coffee_syrup_quantity', 1) or 1,
-                ))
-
-            # Add to parsed_items for generic handling
-            parsed_items.append(_build_coffee_parsed_item(
-                drink_type=parsed.new_coffee_type or "coffee",
-                size=parsed.new_coffee_size,
-                temperature="iced" if parsed.new_coffee_iced else ("hot" if parsed.new_coffee_iced is False else None),
-                milk=parsed.new_coffee_milk,
-                quantity=parsed.new_coffee_quantity or 1,
-                special_instructions=parsed.new_coffee_special_instructions,
-                decaf=parsed.new_coffee_decaf,
-                sweeteners=sweeteners,
-                syrups=syrups,
-                original_text=part,
-            ))
-            logger.info("Multi-item: detected coffee '%s' (qty=%d, decaf=%s, milk=%s, instructions=%s)",
-                        parsed.new_coffee_type, parsed.new_coffee_quantity or 1,
-                        parsed.new_coffee_decaf, parsed.new_coffee_milk, parsed.new_coffee_special_instructions)
-
-        if parsed.new_bagel:
-            bagel = True
-            bagel_qty = parsed.new_bagel_quantity or 1
-            bagel_type = parsed.new_bagel_type
-            bagel_toasted = parsed.new_bagel_toasted
-            bagel_scooped = parsed.new_bagel_scooped
-            bagel_spread = parsed.new_bagel_spread
-            bagel_spread_type = parsed.new_bagel_spread_type
-
-            # Build special instructions string from list
-            special_instructions = None
-            if parsed.new_bagel_special_instructions:
-                special_instructions = ", ".join(parsed.new_bagel_special_instructions)
-
-            # Add to parsed_items for generic handling (always add, even without bagel_type)
-            # Keep modifiers for backwards compatibility
-            modifiers = []
-            if bagel_spread:
-                modifiers.append(bagel_spread)
-            if bagel_spread_type:
-                modifiers.append(bagel_spread_type)
-
-            parsed_items.append(_build_bagel_parsed_item(
-                bagel_type=bagel_type,  # May be None - will need config
-                quantity=bagel_qty,
-                toasted=bagel_toasted,
-                scooped=bagel_scooped,
-                spread=bagel_spread,
-                spread_type=bagel_spread_type,
-                proteins=parsed.new_bagel_proteins or [],
-                cheeses=parsed.new_bagel_cheeses or [],
-                toppings=parsed.new_bagel_toppings or [],
-                special_instructions=special_instructions,
-                needs_cheese_clarification=parsed.new_bagel_needs_cheese_clarification,
-                modifiers=modifiers,
-            ))
-            logger.info("Multi-item: detected bagel (type=%s, qty=%d, toasted=%s, spread=%s, proteins=%s)",
-                        bagel_type, bagel_qty, bagel_toasted, bagel_spread, parsed.new_bagel_proteins)
-
-        if parsed.new_side_item:
-            side_item = parsed.new_side_item
-            side_item_qty = parsed.new_side_item_quantity or 1
-            # Add to parsed_items for generic handling
-            parsed_items.append(ParsedSideItemEntry(
-                side_name=parsed.new_side_item,
-                quantity=side_item_qty,
-            ))
-            logger.info("Multi-item: detected side item '%s' (qty=%d)", side_item, side_item_qty)
-
-        if parsed.new_signature_item:
-            signature_item = True
-            signature_item_name = parsed.new_signature_item_name
-            signature_item_qty = parsed.new_signature_item_quantity or 1
-            signature_item_toasted = parsed.new_signature_item_toasted
-            signature_item_bagel_choice = parsed.new_signature_item_bagel_choice
-            signature_item_modifications = parsed.new_signature_item_modifications
-            # Add to parsed_items for generic handling
-            parsed_items.append(ParsedMenuItemEntry(
-                menu_item_name=parsed.new_signature_item_name,
-                bagel_type=parsed.new_signature_item_bagel_choice,
-                toasted=parsed.new_signature_item_toasted,
-                quantity=signature_item_qty,
-                modifiers=parsed.new_signature_item_modifications or [],
-                is_signature=True,
-            ))
-            logger.info("Multi-item: detected signature item '%s' (qty=%d, toasted=%s, bagel=%s)",
-                        signature_item_name, signature_item_qty, signature_item_toasted, signature_item_bagel_choice)
+        # Phase 4: Use parsed_items directly from sub-parser instead of deprecated fields
+        if parsed.parsed_items:
+            for item in parsed.parsed_items:
+                parsed_items.append(item)
+                # Track for backwards-compat variables
+                if hasattr(item, 'item_type'):
+                    if item.item_type == "bagel":
+                        bagel = True
+                        bagel_qty = item.quantity
+                        # Bagel type stored as "bread" in attribute_values
+                        bagel_type = item.attribute_values.get("bread") or item.attribute_values.get("bagel_type")
+                        bagel_toasted = item.attribute_values.get("toasted")
+                        bagel_spread = item.attribute_values.get("spread")
+                        bagel_spread_type = item.attribute_values.get("spread_type")
+                    elif item.item_type == "sized_beverage":
+                        if not coffee_list and hasattr(item, 'item_name'):
+                            coffee_list.append(CoffeeOrderDetails(
+                                drink_type=item.item_name or "coffee",
+                                size=item.attribute_values.get("size"),
+                                iced=item.attribute_values.get("temperature") == "iced" if item.attribute_values.get("temperature") else None,
+                                decaf=item.attribute_values.get("decaf"),
+                                quantity=item.quantity,
+                                milk=item.attribute_values.get("milk"),
+                                special_instructions=item.special_instructions,
+                            ))
+                elif hasattr(item, 'side_name'):
+                    side_item = item.side_name
+                    side_item_qty = item.quantity
+                elif hasattr(item, 'menu_item_name'):
+                    if getattr(item, 'is_signature', False):
+                        signature_item = True
+                        signature_item_name = item.menu_item_name
+                        signature_item_qty = item.quantity
+                        signature_item_toasted = item.toasted
+                        signature_item_bagel_choice = item.bagel_type
+                        signature_item_modifications = item.modifiers
+                    else:
+                        menu_item_list.append(MenuItemOrderDetails(
+                            name=item.menu_item_name,
+                            quantity=item.quantity,
+                            bagel_choice=item.bagel_type,
+                            toasted=item.toasted,
+                            modifications=item.modifiers or [],
+                        ))
+            logger.info("Multi-item: used %d parsed_items from sub-parser", len(parsed.parsed_items))
 
     # Get first menu item for primary fields, rest go to additional_menu_items
     first_menu_item = menu_item_list[0] if menu_item_list else None

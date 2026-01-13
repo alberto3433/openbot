@@ -43,6 +43,9 @@ class GlobalAttributeOptionOut(BaseModel):
     # Link to ingredient for normalized must_match/aliases lookup
     ingredient_id: Optional[int] = None
     ingredient_name: Optional[str] = None  # Display name from linked ingredient
+    # Link to modifier category for sub-categorization within an attribute
+    modifier_category_id: Optional[int] = None
+    modifier_category_name: Optional[str] = None  # Display name from linked category
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -58,6 +61,8 @@ class GlobalAttributeOptionCreate(BaseModel):
     display_order: int = 0
     # Link to ingredient (optional) - when set, must_match/aliases are read from ingredient
     ingredient_id: Optional[int] = None
+    # Link to modifier category for sub-categorization (e.g., milks within coffee_additions)
+    modifier_category_id: Optional[int] = None
 
 
 class GlobalAttributeOptionUpdate(BaseModel):
@@ -72,6 +77,9 @@ class GlobalAttributeOptionUpdate(BaseModel):
     # Link to ingredient - when set, must_match/aliases are read from ingredient
     # Set to null to unlink
     ingredient_id: Optional[int] = None
+    # Link to modifier category for sub-categorization
+    # Set to null to unlink
+    modifier_category_id: Optional[int] = None
 
 
 # =============================================================================

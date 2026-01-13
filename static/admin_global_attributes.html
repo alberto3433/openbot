@@ -261,6 +261,13 @@
       padding: 2px 6px;
       border-radius: 4px;
     }
+    .option-category {
+      font-size: 10px;
+      background: #fff3e0;
+      color: #e65100;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
     .option-actions {
       display: flex;
       gap: 6px;
@@ -695,6 +702,13 @@
             <input type="checkbox" id="optionIsAvailable" checked />
             <label for="optionIsAvailable">Available</label>
           </div>
+          <div class="form-group">
+            <label for="optionModifierCategory">Modifier Category</label>
+            <select id="optionModifierCategory">
+              <option value="">(None)</option>
+            </select>
+            <div class="hint">Sub-categorize options within this attribute (e.g., "Milk" for milks in coffee_additions)</div>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -725,12 +739,14 @@
 
   <script>
     const API_BASE = "/admin/global-attributes";
+    const MODIFIER_CATEGORIES_API = "/admin/modifier-categories";
     let authCredentials = null;
 
     // State
     let attributes = [];
     let selectedAttrId = null;
     let editingOptionId = null;
+    let modifierCategories = [];
 
     // Auth fetch helper
     async function authFetch(url, options = {}) {
@@ -875,6 +891,7 @@
               <span class="option-slug">${escapeHtml(opt.slug)}</span>
               ${opt.price_modifier > 0 ? `<span class="option-price">+$${opt.price_modifier.toFixed(2)}</span>` : ''}
               ${opt.is_default ? '<span class="option-default">default</span>' : ''}
+              ${opt.modifier_category_name ? `<span class="option-category" title="Modifier Category">${escapeHtml(opt.modifier_category_name)}</span>` : ''}
             </div>
             <div class="option-actions">
               <button class="btn-sm edit-option-btn" data-id="${opt.id}">Edit</button>
@@ -1048,11 +1065,18 @@
     // Option Modal
     // ==================
 
-    function openOptionModal(opt = null) {
+    async function openOptionModal(opt = null) {
       const modal = document.getElementById("optionModal");
       const form = document.getElementById("optionForm");
       form.reset();
       editingOptionId = null;
+
+      // Load categories if not loaded yet
+      if (modifierCategories.length === 0) {
+        await loadModifierCategories();
+      }
+      // Ensure dropdown is populated
+      populateModifierCategoryDropdown();
 
       if (opt) {
         document.getElementById("optionModalTitle").textContent = "Edit Option";
@@ -1064,12 +1088,14 @@
         document.getElementById("optionOrder").value = opt.display_order || 0;
         document.getElementById("optionIsDefault").checked = opt.is_default || false;
         document.getElementById("optionIsAvailable").checked = opt.is_available !== false;
+        document.getElementById("optionModifierCategory").value = opt.modifier_category_id || "";
         document.getElementById("optionDeleteBtn").style.display = "inline-block";
         editingOptionId = opt.id;
       } else {
         document.getElementById("optionModalTitle").textContent = "Add Option";
         document.getElementById("optionId").value = "";
         document.getElementById("optionIsAvailable").checked = true;
+        document.getElementById("optionModifierCategory").value = "";
         document.getElementById("optionDeleteBtn").style.display = "none";
       }
 
@@ -1092,6 +1118,8 @@
       const displayOrder = parseInt(document.getElementById("optionOrder").value) || 0;
       const isDefault = document.getElementById("optionIsDefault").checked;
       const isAvailable = document.getElementById("optionIsAvailable").checked;
+      const modifierCategoryValue = document.getElementById("optionModifierCategory").value;
+      const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
 
       if (!slug || !displayName) {
         showToast("Slug and display name are required", "error");
@@ -1110,7 +1138,8 @@
         iced_price_modifier: icedPriceModifier,
         display_order: displayOrder,
         is_default: isDefault,
-        is_available: isAvailable
+        is_available: isAvailable,
+        modifier_category_id: modifierCategoryId
       };
 
       const saveBtn = document.getElementById("optionSaveBtn");
@@ -1235,8 +1264,30 @@
       e.target.dataset.edited = "true";
     });
 
-    // Initial load
-    loadAttributes();
+    // Load modifier categories for dropdown
+    async function loadModifierCategories() {
+      try {
+        const response = await authFetch(MODIFIER_CATEGORIES_API);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        modifierCategories = await response.json();
+        populateModifierCategoryDropdown();
+      } catch (error) {
+        console.error("Failed to load modifier categories:", error);
+        // Non-critical, continue without categories
+      }
+    }
+
+    // Populate the modifier category dropdown
+    function populateModifierCategoryDropdown() {
+      const select = document.getElementById("optionModifierCategory");
+      select.innerHTML = '<option value="">(None)</option>' +
+        modifierCategories.map(cat =>
+          `<option value="${cat.id}">${escapeHtml(cat.display_name)}</option>`
+        ).join("");
+    }
+
+    // Initial load - call sequentially to ensure auth is set up first
+    loadAttributes().then(() => loadModifierCategories());
   </script>
 </body>
 </html>

@@ -235,6 +235,10 @@ class ItemTypeAttribute(Base):
     loads_from_ingredients = Column(Boolean, nullable=False, default=False)
     ingredient_group = Column(String(50), nullable=True)  # Links to ItemTypeIngredient.ingredient_group
 
+    # Default value for this attribute (JSON-encoded string)
+    # Used by field_config to determine initial values without hardcoded Python constants
+    default_value = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -420,6 +424,10 @@ class GlobalAttributeOption(Base):
     # Options that need special parsing MUST link to an Ingredient
     ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Link to modifier category for sub-categorization within an attribute
+    # Used to answer "what milks do you have?" when milks/sweeteners/syrups are in same attribute
+    modifier_category_id = Column(Integer, ForeignKey("modifier_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+
     price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
     iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
     is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
@@ -440,6 +448,7 @@ class GlobalAttributeOption(Base):
     # Relationships
     attribute = relationship("GlobalAttribute", back_populates="options")
     ingredient = relationship("Ingredient", backref="global_attribute_options")
+    modifier_category = relationship("ModifierCategory", backref="global_attribute_options")
 
 
 class ItemTypeGlobalAttribute(Base):

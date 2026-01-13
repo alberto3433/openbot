@@ -45,6 +45,7 @@ from ..models import (
     Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
+    ModifierCategory,
 )
 from ..schemas.global_attributes import (
     GlobalAttributeOut,
@@ -93,6 +94,8 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
         display_order=opt.display_order,
         ingredient_id=opt.ingredient_id,
         ingredient_name=opt.ingredient.name if opt.ingredient else None,
+        modifier_category_id=opt.modifier_category_id,
+        modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
         created_at=opt.created_at,
         updated_at=opt.updated_at,
     )
@@ -458,6 +461,18 @@ def create_global_attribute_option(
                 payload.display_name, ingredient.name, ingredient.id
             )
 
+    # Validate modifier_category_id if provided
+    modifier_category_id = payload.modifier_category_id
+    if modifier_category_id is not None:
+        category = db.query(ModifierCategory).filter(
+            ModifierCategory.id == modifier_category_id
+        ).first()
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Modifier category with id {modifier_category_id} not found"
+            )
+
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
         slug=payload.slug,
@@ -468,6 +483,7 @@ def create_global_attribute_option(
         is_available=payload.is_available,
         display_order=payload.display_order,
         ingredient_id=ingredient_id,
+        modifier_category_id=modifier_category_id,
     )
     db.add(option)
     db.commit()
@@ -547,14 +563,29 @@ def update_global_attribute_option(
                 )
         option.ingredient_id = payload.ingredient_id
 
+    # Handle modifier_category_id - check model_fields_set to distinguish None from not provided
+    if "modifier_category_id" in payload.model_fields_set:
+        if payload.modifier_category_id is not None:
+            # Validate modifier category exists
+            category = db.query(ModifierCategory).filter(
+                ModifierCategory.id == payload.modifier_category_id
+            ).first()
+            if not category:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Modifier category with id {payload.modifier_category_id} not found"
+                )
+        option.modifier_category_id = payload.modifier_category_id
+
     db.commit()
     db.refresh(option)
 
     logger.info(
-        "Updated global attribute option: %s (id=%d, ingredient_id=%s)",
+        "Updated global attribute option: %s (id=%d, ingredient_id=%s, modifier_category_id=%s)",
         option.slug,
         option.id,
         option.ingredient_id,
+        option.modifier_category_id,
     )
     return _serialize_option(option)
 

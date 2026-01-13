@@ -3538,7 +3538,8 @@ class TestBagelModifierRemoval:
             f"Should have 1 item (bagel with spread), not 2. Got: {[i.get_summary() for i in active_items]}"
 
         # The bagel should now have the spread
-        assert isinstance(active_items[0], BagelItemTask)
+        from tests.test_helpers import is_bagel_item
+        assert is_bagel_item(active_items[0]), "Item should be a bagel"
         assert active_items[0].spread is not None, "Bagel should have spread added"
         assert "scallion" in active_items[0].spread.lower() or "cream cheese" in active_items[0].spread.lower(), \
             f"Spread should be scallion cream cheese, got: {active_items[0].spread}"
@@ -6296,7 +6297,8 @@ class TestModifierRemovalDuringConfig:
 
         # Verify bacon was removed
         remaining_bagel = active_items[0]
-        assert isinstance(remaining_bagel, BagelItemTask)
+        from tests.test_helpers import is_bagel_item
+        assert is_bagel_item(remaining_bagel), "Item should be a bagel"
         assert remaining_bagel.sandwich_protein is None, "Bacon should be removed"
 
         # Verify egg is still there

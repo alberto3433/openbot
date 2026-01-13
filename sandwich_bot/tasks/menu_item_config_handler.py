@@ -1460,10 +1460,11 @@ class MenuItemConfigHandler(BaseHandler):
         quantity = stored_modifiers.pop("_quantity", 1)
         qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
 
+        opt_price = selected.get("price") or selected.get("price_modifier") or 0
         selection = {
             "slug": selected["slug"],
             "display_name": selected["display_name"],
-            "price": selected.get("price", 0),
+            "price": opt_price,
             "quantity": quantity,
         }
         if qualifier:
@@ -1477,11 +1478,11 @@ class MenuItemConfigHandler(BaseHandler):
             item.attribute_values[attr_slug] = selected["slug"]
             item.attribute_values[f"{attr_slug}_selections"] = [selection]
             # Update price if applicable
-            if selected.get("price", 0) > 0:
+            if opt_price > 0:
                 price_key = f"{attr_slug}_price"
-                item.attribute_values[price_key] = selected["price"]
+                item.attribute_values[price_key] = opt_price
                 if item.unit_price is not None:
-                    item.unit_price = item.unit_price + selected["price"]
+                    item.unit_price = item.unit_price + opt_price
 
         # Apply any stored modifiers (e.g., milk type, sweetener extracted before disambiguation)
         if stored_modifiers:
@@ -1784,7 +1785,7 @@ class MenuItemConfigHandler(BaseHandler):
                         selection = {
                             "slug": opt["slug"],
                             "display_name": opt["display_name"],
-                            "price": opt.get("price", 0),
+                            "price": opt.get("price") or opt.get("price_modifier") or 0,
                             "quantity": opt_quantity,
                         }
                         if qualifier:
@@ -1855,10 +1856,11 @@ class MenuItemConfigHandler(BaseHandler):
         if matched:
             # Extract qualifier for single match
             qualifier = self._extract_qualifier_for_option(user_input, matched["display_name"])
+            sel_price = matched.get("price") or matched.get("price_modifier") or 0
             selection = {
                 "slug": matched["slug"],
                 "display_name": matched["display_name"],
-                "price": matched.get("price", 0),
+                "price": sel_price,
                 "quantity": quantity,
             }
             if qualifier:
@@ -1873,7 +1875,7 @@ class MenuItemConfigHandler(BaseHandler):
                 item.attribute_values[attr_slug] = matched["slug"]
 
                 # Determine the price for this option
-                option_price = matched.get("price", 0) or 0.0
+                option_price = sel_price or 0.0
 
                 # For sized_beverage attributes, look up price from pricing engine if not set
                 if option_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
@@ -1889,12 +1891,13 @@ class MenuItemConfigHandler(BaseHandler):
                 if option_price > 0:
                     price_key = f"{attr_slug}_price"
                     item.attribute_values[price_key] = option_price
-                    # Update unit_price to include this modifier price
+                    # Update unit_price to include this modifier price (multiplied by quantity)
+                    total_price = option_price * quantity
                     if item.unit_price is not None:
-                        item.unit_price = item.unit_price + option_price
+                        item.unit_price = item.unit_price + total_price
                         logger.info(
-                            "Updated unit_price for %s: added %s price %.2f, new total %.2f",
-                            item.id, attr_slug, option_price, item.unit_price
+                            "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
+                            item.id, attr_slug, option_price, quantity, item.unit_price
                         )
 
                 # Always use _selections format to support quantity
@@ -2298,7 +2301,7 @@ class MenuItemConfigHandler(BaseHandler):
                         selection = {
                             "slug": opt["slug"],
                             "display_name": opt_name,
-                            "price": opt.get("price", 0),
+                            "price": opt.get("price") or opt.get("price_modifier") or 0,
                             "quantity": opt_quantity,
                         }
                         if qualifier:
@@ -2410,6 +2413,7 @@ class MenuItemConfigHandler(BaseHandler):
                 matched, _ = self._match_option_from_input(input_for_matching, options)
                 if matched:
                     item.attribute_values[attr_slug] = matched["slug"]
-                    if matched.get("price", 0) > 0:
-                        item.attribute_values[f"{attr_slug}_price"] = matched["price"]
+                    opt_price = matched.get("price") or matched.get("price_modifier") or 0
+                    if opt_price > 0:
+                        item.attribute_values[f"{attr_slug}_price"] = opt_price
                     logger.info("Captured %s=%s from input", attr_slug, matched["slug"])

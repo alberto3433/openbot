@@ -22,6 +22,47 @@ from sandwich_bot.tasks.parsing import (
 
 
 # =============================================================================
+# Helper Functions for ParsedItem Type Checking
+# =============================================================================
+
+def _get_parsed_item_type(item) -> str:
+    """Get the effective type of a ParsedItem.
+
+    Works with both:
+    - ParsedItemEntry (unified): item_type field (e.g., "bagel", "sized_beverage")
+    - ParsedBagelEntry/ParsedCoffeeEntry (deprecated): type field (e.g., "bagel", "coffee")
+
+    Returns a normalized type string for test assertions.
+    """
+    # Check for unified ParsedItemEntry
+    item_type = getattr(item, 'item_type', None)
+    if item_type:
+        # Map item_type to legacy type names for test compatibility
+        if item_type == "sized_beverage":
+            return "coffee"
+        return item_type
+
+    # Fall back to deprecated type field
+    return getattr(item, 'type', 'unknown')
+
+
+def _is_coffee_item(item) -> bool:
+    """Check if a ParsedItem is a coffee/beverage."""
+    item_type = getattr(item, 'item_type', None)
+    if item_type:
+        return item_type == "sized_beverage"
+    return getattr(item, 'type', None) == "coffee"
+
+
+def _is_bagel_item(item) -> bool:
+    """Check if a ParsedItem is a bagel."""
+    item_type = getattr(item, 'item_type', None)
+    if item_type:
+        return item_type == "bagel"
+    return getattr(item, 'type', None) == "bagel"
+
+
+# =============================================================================
 # Schema Validation Tests
 # =============================================================================
 
@@ -1561,7 +1602,7 @@ class TestNotesExtraction:
         assert result.new_coffee is True
         assert result.new_bagel is True
         # Check parsed_items has a coffee with milk and special instructions
-        coffee_items = [item for item in result.parsed_items if isinstance(item, ParsedCoffeeEntry)]
+        coffee_items = [item for item in result.parsed_items if _is_coffee_item(item)]
         assert len(coffee_items) >= 1
         coffee = coffee_items[0]
         assert coffee.milk == "whole"  # "with a splash of milk" should default to whole
@@ -1581,7 +1622,7 @@ class TestNotesExtraction:
         assert result.new_coffee_special_instructions is not None
         assert "sugar on the side" in result.new_coffee_special_instructions.lower()
         # Also check parsed_items
-        coffee_items = [item for item in result.parsed_items if isinstance(item, ParsedCoffeeEntry)]
+        coffee_items = [item for item in result.parsed_items if _is_coffee_item(item)]
         assert len(coffee_items) >= 1
         coffee = coffee_items[0]
         assert len(coffee.sweeteners) >= 1  # Sweetener added for pricing
@@ -2352,7 +2393,7 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) == 2, f"Expected 2 parsed_items, got {len(result.parsed_items)}"
 
         # Check the parsed_items list contains both items (both should be menu_item now)
-        types = [item.type for item in result.parsed_items]
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
         # Signature items are now consolidated as menu_items with is_signature=True
         assert types.count("menu_item") == 2, f"Expected 2 menu_items, got: {types}"
 
@@ -2371,7 +2412,7 @@ class TestParsedItemsMultiItem:
         assert result is not None
         assert len(result.parsed_items) == 2
 
-        types = [item.type for item in result.parsed_items]
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
         assert "bagel" in types
         assert "coffee" in types
 
@@ -2390,12 +2431,12 @@ class TestParsedItemsMultiItem:
         assert result is not None
         assert len(result.parsed_items) == 2
 
-        types = [item.type for item in result.parsed_items]
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
         assert "coffee" in types, f"Expected coffee in parsed_items, got: {types}"
         assert "bagel" in types or "menu_item" in types, f"Expected bagel/menu_item in parsed_items, got: {types}"
 
         # Verify coffee details
-        coffee_items = [item for item in result.parsed_items if item.type == "coffee"]
+        coffee_items = [item for item in result.parsed_items if _is_coffee_item(item)]
         assert len(coffee_items) == 1
         coffee = coffee_items[0]
         assert coffee.drink_type.lower() == "latte"
@@ -2412,7 +2453,7 @@ class TestParsedItemsMultiItem:
         # May get 2 menu items
         assert len(result.parsed_items) >= 2
 
-        types = [item.type for item in result.parsed_items]
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
         # All should be menu_item (signature_item is now consolidated into menu_item)
         for t in types:
             assert t == "menu_item", f"Expected menu_item, got: {t}"
@@ -2428,7 +2469,7 @@ class TestParsedItemsMultiItem:
         assert result is not None
         assert len(result.parsed_items) == 2
 
-        types = [item.type for item in result.parsed_items]
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
         # Signature items are now menu_item type
         assert "menu_item" in types, f"Expected menu_item in types, got: {types}"
         assert "coffee" in types, f"Expected coffee in types, got: {types}"

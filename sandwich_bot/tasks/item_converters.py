@@ -395,14 +395,32 @@ class MenuItemConverter(ItemConverter):
         if toasted is True and side_choice == "bagel":
             modifiers.append({"name": "Toasted", "price": 0})
 
-        # Add spread to modifiers if set (show even if price is 0 or not set)
-        spread_price = getattr(item, 'spread_price', None) or 0
-        if spread and spread != "none":
-            modifiers.append({"name": spread, "price": spread_price})
+        # Add spread to modifiers if set
+        spread_price = getattr(item, 'spread_price', None)
+        spread_type = getattr(item, 'spread_type', None) or attribute_values.get("spread_type")
+        if spread and spread.lower() != "none":
+            # Look up spread price from pricing engine if not already set
+            if spread_price is None and pricing and hasattr(pricing, 'lookup_spread_price'):
+                spread_price = pricing.lookup_spread_price(spread, spread_type) or 0
+            spread_name = spread
+            if spread_type and spread_type != "plain":
+                spread_name = f"{spread_type} {spread}"
+            modifiers.append({"name": spread_name, "price": spread_price or 0})
 
         item_modifications = getattr(item, 'modifications', []) or []
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
+
+        # Add sandwich_protein and extras for bagels (with prices from pricing engine)
+        sandwich_protein = getattr(item, 'sandwich_protein', None)
+        extras = getattr(item, 'extras', []) or []
+        if sandwich_protein and pricing and hasattr(pricing, 'lookup_modifier_price'):
+            protein_price = pricing.lookup_modifier_price(sandwich_protein) or 0
+            modifiers.append({"name": sandwich_protein, "price": protein_price})
+        for extra in extras:
+            if pricing and hasattr(pricing, 'lookup_modifier_price'):
+                extra_price = pricing.lookup_modifier_price(extra) or 0
+                modifiers.append({"name": extra, "price": extra_price})
 
         # Convert DB-driven attribute_values to modifiers for cart display
         # Use the shared generic processing method
@@ -418,7 +436,30 @@ class MenuItemConverter(ItemConverter):
 
         customization_offered = getattr(item, 'customization_offered', False)
 
+        # Get base_price from pricing engine if available, or from item
+        base_price = getattr(item, 'base_price', None)
+        if base_price is None and pricing:
+            # For bagels, look up base price from pricing engine
+            if menu_item_type == "bagel":
+                base_price = pricing.get_bagel_base_price()
+            elif hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
+                base_price = pricing.lookup_menu_item_price(menu_item_name)
+        if base_price is None:
+            base_price = item.unit_price or 0.0
+
+        # For bagels, include bagel-specific fields in item_config for backwards compatibility
+        bagel_type = attribute_values.get("bagel_type")
+        bagel_type_upcharge = attribute_values.get("bagel_type_upcharge", 0.0) or 0.0
+        spread_type = attribute_values.get("spread_type")
+        scooped = attribute_values.get("scooped")
+        sandwich_protein = getattr(item, 'sandwich_protein', None)
+        extras = getattr(item, 'extras', []) or []
+
         result = self._build_common_dict_fields(item)
+        # Use the actual menu_item_type for backwards compatibility
+        # (bagels should output item_type="bagel", not "menu_item")
+        if menu_item_type:
+            result["item_type"] = menu_item_type
         result.update({
             "menu_item_name": menu_item_name,
             "display_name": display_name,
@@ -427,21 +468,35 @@ class MenuItemConverter(ItemConverter):
             "modifications": getattr(item, 'modifications', []),
             "modifiers": modifiers,
             "free_details": [],
+            "base_price": base_price,
             "side_choice": side_choice,
             "bagel_choice": bagel_choice,
-            "toasted": toasted,
+            "toasted": toasted if toasted is not None else attribute_values.get("toasted"),
             "spread": spread,
+            # Bagel-specific fields at top level for backwards compatibility
+            "bagel_type": bagel_type,
+            "extras": extras,
             "side_bagel_config": side_bagel_config,
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
             # DB-driven attribute values
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
-            # Simplified item_config - just the essential data
+            # item_config with both generic and bagel-specific fields for backwards compatibility
             "item_config": {
                 "menu_item_type": menu_item_type,
                 "modifiers": modifiers,
                 "attribute_values": attribute_values,
+                "base_price": base_price,
+                # Bagel-specific fields (for backwards compatibility)
+                "bagel_type": bagel_type,
+                "bagel_type_upcharge": bagel_type_upcharge,
+                "spread": spread,
+                "spread_type": spread_type,
+                "toasted": toasted if toasted is not None else attribute_values.get("toasted"),
+                "scooped": scooped,
+                "sandwich_protein": sandwich_protein,
+                "extras": extras,
             },
         })
         return result
@@ -707,10 +762,9 @@ class ItemConverterRegistry:
         """
         # Check if it's a MenuItemTask with specific menu_item_type
         if isinstance(item, MenuItemTask):
-            menu_item_type = getattr(item, 'menu_item_type', None)
-            if menu_item_type == "bagel":
-                return cls._converters.get("bagel")
-            # All other types use MenuItemConverter
+            # All MenuItemTask types use MenuItemConverter (data-driven approach)
+            # This includes bagel, sized_beverage, espresso, deli_sandwich, etc.
+            # MenuItemConverter reads from attribute_values which is populated by the unified handler
             return cls._converters.get("menu_item")
 
         return cls._converters.get(item.item_type)
@@ -727,7 +781,9 @@ ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
 ItemConverterRegistry.register(UnifiedItemConverter())
 
-# All beverage types now use MenuItemConverter (unified data-driven approach)
+# All item types now use MenuItemConverter (unified data-driven approach)
+# This reads from attribute_values populated by the unified handler
+ItemConverterRegistry._converters["bagel"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["coffee"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["sized_beverage"] = ItemConverterRegistry._converters["menu_item"]

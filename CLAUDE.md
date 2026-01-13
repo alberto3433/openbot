@@ -277,3 +277,11 @@ Before claiming any bug is fixed, you MUST:
 ### 4. No Premature Victory
 - Do NOT say "fixed" or "done" until I verify the change works
 - If you can't verify it yourself, explicitly say "I've made the changes but cannot verify - please test"
+
+### 5. Post-Fix Cleanup
+After successfully fixing a bug that required one or more failed attempts:
+1. Review all changes made during debugging
+2. Identify which changes were failed attempts vs. part of the actual solution
+3. Flag any changes from failed attempts that may need to be reverted
+4. Revert unnecessary changes after confirmation
+5. Verify tests still pass after cleanup

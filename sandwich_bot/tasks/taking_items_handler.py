@@ -84,6 +84,39 @@ ORDINAL_WORDS = {
 }
 
 
+# =============================================================================
+# ParsedItem Type Checking Helpers
+# =============================================================================
+# These helpers support both the new unified ParsedItemEntry (item_type field)
+# and the deprecated ParsedBagelEntry/ParsedCoffeeEntry (type field) for
+# backward compatibility during migration.
+
+def _is_bagel_entry(item: "ParsedItem") -> bool:
+    """Check if a ParsedItem represents a bagel.
+
+    Works with both:
+    - ParsedItemEntry: item_type == "bagel"
+    - ParsedBagelEntry (deprecated): type == "bagel"
+    """
+    item_type = getattr(item, 'item_type', None)
+    if item_type:
+        return item_type == "bagel"
+    return getattr(item, 'type', None) == "bagel"
+
+
+def _is_coffee_entry(item: "ParsedItem") -> bool:
+    """Check if a ParsedItem represents a coffee/beverage.
+
+    Works with both:
+    - ParsedItemEntry: item_type == "sized_beverage"
+    - ParsedCoffeeEntry (deprecated): type == "coffee"
+    """
+    item_type = getattr(item, 'item_type', None)
+    if item_type:
+        return item_type == "sized_beverage"
+    return getattr(item, 'type', None) == "coffee"
+
+
 def _get_syrup_options() -> list[str]:
     """Get syrup options from database, converted to lowercase for matching.
 
@@ -1258,7 +1291,7 @@ class TakingItemsHandler:
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
                 bagel_entry = next(
                     (item for item in parsed.parsed_items
-                     if isinstance(item, ParsedBagelEntry) and item.bagel_type),
+                     if _is_bagel_entry(item) and item.bagel_type),
                     None
                 )
                 if has_new_items and bagel_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
@@ -2217,12 +2250,19 @@ class TakingItemsHandler:
 
             return order, summary
 
-        elif isinstance(item, ParsedBagelEntry):
+        elif _is_bagel_entry(item):
             # Build ExtractedModifiers from parsed entry fields
             extracted_mods = ExtractedModifiers()
+            # For ParsedItemEntry, all modifiers are combined in item.modifiers
+            # For deprecated ParsedBagelEntry, modifiers are categorized
             extracted_mods.proteins = list(item.proteins) if item.proteins else []
             extracted_mods.cheeses = list(item.cheeses) if item.cheeses else []
             extracted_mods.toppings = list(item.toppings) if item.toppings else []
+            # If using unified ParsedItemEntry, combined modifiers are in item.modifiers
+            # Store them in toppings (they'll be recategorized by add_bagel)
+            if not extracted_mods.proteins and not extracted_mods.cheeses and not extracted_mods.toppings:
+                if hasattr(item, 'modifiers') and item.modifiers:
+                    extracted_mods.toppings = list(item.modifiers)
             extracted_mods.needs_cheese_clarification = item.needs_cheese_clarification
             # Convert special_instructions string to list for ExtractedModifiers
             if item.special_instructions:
@@ -2252,7 +2292,7 @@ class TakingItemsHandler:
                     summary += " toasted"
             return order, summary
 
-        elif isinstance(item, ParsedCoffeeEntry):
+        elif _is_coffee_entry(item):
             # Check if this is a modifier-only input (e.g., "2 vanilla syrups") that should
             # be added to the last beverage instead of creating a new coffee
             drink_type_lower = (item.drink_type or "").lower()
@@ -2616,10 +2656,10 @@ class TakingItemsHandler:
                         else:
                             item_type = "menu_item"
                         display_name = parsed_item.menu_item_name
-                    elif isinstance(parsed_item, ParsedBagelEntry):
+                    elif _is_bagel_entry(parsed_item):
                         item_type = "bagel"
                         display_name = f"{parsed_item.bagel_type} bagel" if parsed_item.bagel_type else "bagel"
-                    elif isinstance(parsed_item, ParsedCoffeeEntry):
+                    elif _is_coffee_entry(parsed_item):
                         item_type = "coffee"
                         display_name = parsed_item.drink_type
                     else:
@@ -3736,13 +3776,12 @@ class TakingItemsHandler:
         # Try to parse the drink type from the user's input
         # Use the deterministic parser to extract coffee type
         from .parsers.deterministic import parse_open_input_deterministic
-        from .schemas import ParsedCoffeeEntry
         parsed = parse_open_input_deterministic(user_input)
 
         # Check if they specified a coffee/drink via parsed_items
         if parsed and parsed.parsed_items:
             coffee_entry = next(
-                (item for item in parsed.parsed_items if isinstance(item, ParsedCoffeeEntry)),
+                (item for item in parsed.parsed_items if _is_coffee_entry(item)),
                 None
             )
             if coffee_entry:

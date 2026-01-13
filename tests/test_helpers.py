@@ -98,4 +98,24 @@ def create_coffee_task(
 # These allow tests to use BagelItemTask(...) and CoffeeItemTask(...) syntax
 # while actually creating MenuItemTask instances
 BagelItemTask = create_bagel_task
+
+
+def is_bagel_item(item) -> bool:
+    """Check if an item is a bagel (for use in tests).
+
+    This replaces isinstance(item, BagelItemTask) checks.
+    """
+    if hasattr(item, 'menu_item_type'):
+        return item.menu_item_type == "bagel"
+    return False
+
+
+def is_coffee_item(item) -> bool:
+    """Check if an item is a coffee/sized beverage (for use in tests).
+
+    This replaces isinstance(item, CoffeeItemTask) checks.
+    """
+    if hasattr(item, 'menu_item_type'):
+        return item.menu_item_type == "sized_beverage"
+    return False
 CoffeeItemTask = create_coffee_task

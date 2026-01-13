@@ -159,6 +159,25 @@ class ParsedItemEntry(BaseModel):
         """Get extra_shots from attribute_values."""
         return self.attribute_values.get("extra_shots", 0)
 
+    # Backward-compatible properties for bagel ingredient categorization.
+    # In ParsedItemEntry, all ingredients are combined in modifiers list.
+    # These return empty lists since categorization is not preserved.
+    # The handler add_bagel() will recategorize modifiers if needed.
+    @property
+    def proteins(self) -> list[str]:
+        """Return empty list - proteins are in modifiers list."""
+        return []
+
+    @property
+    def cheeses(self) -> list[str]:
+        """Return empty list - cheeses are in modifiers list."""
+        return []
+
+    @property
+    def toppings(self) -> list[str]:
+        """Return empty list - toppings are in modifiers list."""
+        return []
+
     @classmethod
     def from_bagel_entry(cls, entry: "ParsedBagelEntry") -> "ParsedItemEntry":
         """Convert a ParsedBagelEntry to ParsedItemEntry."""
@@ -529,202 +548,76 @@ class ByPoundOrderItem(BaseModel):
 class OpenInputResponse(BaseModel):
     """Parser output when open for new items (not configuring a specific item).
 
-    MIGRATION NOTE (Phase 10):
-    The boolean flag fields (new_bagel, new_coffee, new_signature_item, new_menu_item,
-    new_side_item and their associated fields) are DEPRECATED. Use the `parsed_items`
-    field instead, which provides a unified list of ParsedBagelEntry, ParsedCoffeeEntry,
-    ParsedSignatureItemEntry, ParsedMenuItemEntry, and ParsedSideItemEntry objects.
+    All item data is stored in the `parsed_items` field as a list of ParsedItemEntry,
+    ParsedMenuItemEntry, ParsedSideItemEntry, or ParsedByPoundEntry objects.
 
-    The model_validator auto-populates parsed_items from boolean flags for backward
-    compatibility, but new code should use parsed_items directly.
+    DEPRECATED FIELDS (kept for parser compatibility, will be removed after parser cleanup):
+    - new_bagel, new_bagel_* fields
+    - new_coffee, new_coffee_* fields
+    - new_signature_item, new_signature_item_* fields
+    - new_menu_item, new_menu_item_* fields
+    - new_side_item, new_side_item_* fields
+    - bagel_details, coffee_details
+    - additional_menu_items
     """
 
-    # DEPRECATED: Use parsed_items with ParsedMenuItemEntry instead.
-    # These menu item fields are auto-converted to parsed_items by model_validator.
-    new_menu_item: str | None = Field(
-        default=None,
-        description="DEPRECATED: Use parsed_items. Name of a menu item ordered"
-    )
-    new_menu_item_quantity: int = Field(
-        default=1,
-        description="Number of menu items ordered (e.g., '3 omelettes' -> 3, 'two sandwiches' -> 2)"
-    )
-    new_menu_item_toasted: bool | None = Field(
-        default=None,
-        description="Whether the menu item should be toasted (True if 'toasted' mentioned, None if not specified)"
-    )
-    new_menu_item_bagel_choice: str | None = Field(
-        default=None,
-        description="Bagel type for spread/salad sandwiches if specified (e.g., 'plain bagel with cream cheese' -> 'plain')"
-    )
-    new_menu_item_modifications: list[str] = Field(
-        default_factory=list,
-        description="Modifications for menu items (e.g., 'with mayo and mustard' -> ['mayo', 'mustard'], 'no onions' -> ['no onions'])"
-    )
-    # For multiple menu items in a single order (e.g., "A Lexington and a BLT")
-    additional_menu_items: list[MenuItemOrderDetails] = Field(
-        default_factory=list,
-        description="Additional menu items when ordering multiple in one request. The first item uses new_menu_item fields."
-    )
-    # DEPRECATED: Use parsed_items with ParsedSideItemEntry instead.
-    # These side item fields are auto-converted to parsed_items by model_validator.
-    new_side_item: str | None = Field(
-        default=None,
-        description="DEPRECATED: Use parsed_items. Side item ordered"
-    )
-    new_side_item_quantity: int = Field(
-        default=1,
-        description="DEPRECATED: Use parsed_items. Number of side items ordered"
-    )
-    # DEPRECATED: Use parsed_items with ParsedBagelEntry instead.
-    # These bagel fields are auto-converted to parsed_items by model_validator.
-    new_bagel: bool = Field(
-        default=False,
-        description="DEPRECATED: Use parsed_items. User wants to order a bagel"
-    )
-    new_bagel_quantity: int = Field(
-        default=1,
-        description="Number of bagels ordered (e.g., 'two bagels' -> 2)"
-    )
-    new_bagel_type: str | None = Field(
-        default=None,
-        description="Bagel type if specified (e.g., 'plain', 'everything', 'pumpernickel')"
-    )
-    new_bagel_toasted: bool | None = Field(
-        default=None,
-        description="Whether the bagel should be toasted (True if 'toasted' mentioned, False if 'not toasted', None if not specified)"
-    )
-    new_bagel_scooped: bool | None = Field(
-        default=None,
-        description="Whether the bagel should be scooped out (True if 'scooped' mentioned, None if not specified)"
-    )
-    new_bagel_spread: str | None = Field(
-        default=None,
-        description="Spread for the bagel if specified (e.g., 'cream cheese', 'butter')"
-    )
-    new_bagel_spread_type: str | None = Field(
-        default=None,
-        description="Specific spread variety if mentioned (e.g., 'scallion', 'veggie', 'plain')"
-    )
-    # Bagel modifiers for orders like "everything bagel with bacon and egg"
-    new_bagel_proteins: list[str] = Field(
-        default_factory=list,
-        description="Proteins to add to the bagel (e.g., 'bacon', 'egg', 'ham')"
-    )
-    new_bagel_cheeses: list[str] = Field(
-        default_factory=list,
-        description="Cheeses to add to the bagel (e.g., 'american', 'swiss', 'cheddar')"
-    )
-    new_bagel_toppings: list[str] = Field(
-        default_factory=list,
-        description="Toppings to add to the bagel (e.g., 'tomato', 'onion', 'lettuce')"
-    )
-    new_bagel_spreads: list[str] = Field(
-        default_factory=list,
-        description="Spreads to add to the bagel (e.g., 'cream cheese', 'butter')"
-    )
-    new_bagel_special_instructions: list[str] = Field(
-        default_factory=list,
-        description="Special instructions (e.g., 'light cream cheese', 'extra bacon')"
-    )
-    new_bagel_needs_cheese_clarification: bool = Field(
-        default=False,
-        description="True if user said 'cheese' without specifying type (American, Swiss, etc.)"
-    )
-    # DEPRECATED: Use parsed_items with ParsedBagelEntry objects instead.
-    # This field is maintained for backward compatibility only.
-    bagel_details: list[BagelOrderDetails] = Field(
-        default_factory=list,
-        description="DEPRECATED: Use parsed_items instead. When ordering multiple bagels with different configs, list each one separately"
-    )
-    # DEPRECATED: Use parsed_items with ParsedCoffeeEntry instead.
-    # These coffee fields are auto-converted to parsed_items by model_validator.
-    new_coffee: bool = Field(
-        default=False,
-        description="DEPRECATED: Use parsed_items. User wants to order coffee/drink"
-    )
-    new_coffee_type: str | None = Field(
-        default=None,
-        description="Coffee/drink type if specified (drip coffee, latte, cappuccino, etc.)"
-    )
-    new_coffee_size: str | None = Field(
-        default=None,
-        description="Coffee size if specified: small or large"
-    )
-    new_coffee_iced: bool | None = Field(
-        default=None,
-        description="True if user wants iced, False if hot, None if not specified"
-    )
-    new_coffee_decaf: bool | None = Field(
-        default=None,
-        description="True if user wants decaf, False if regular, None if not specified"
-    )
-    new_coffee_milk: str | None = Field(
-        default=None,
-        description="Milk preference: whole, skim, oat, almond, none/black. 'black' means no milk."
-    )
-    new_coffee_cream_level: str | None = Field(
-        default=None,
-        description="Cream level preference: dark (less cream), light (more cream), regular"
-    )
-    new_coffee_sweetener: str | None = Field(
-        default=None,
-        description="Sweetener type: sugar, splenda, stevia, equal, etc."
-    )
-    new_coffee_sweetener_quantity: int = Field(
-        default=1,
-        description="Number of sweetener packets (e.g., 'two sugars' = 2)"
-    )
-    new_coffee_flavor_syrup: str | None = Field(
-        default=None,
-        description="Flavor syrup: vanilla, caramel, hazelnut, etc."
-    )
-    new_coffee_syrup_quantity: int = Field(
-        default=1,
-        description="Number of syrup pumps (e.g., '2 hazelnut syrups' = 2, 'double vanilla' = 2)"
-    )
-    new_coffee_special_instructions: str | None = Field(
-        default=None,
-        description="Special instructions for the coffee like 'a splash of milk', 'extra hot', 'light ice'"
-    )
-    new_coffee_quantity: int = Field(
-        default=1,
-        description="Number of drinks ordered (e.g., '3 diet cokes' -> 3, 'two coffees' -> 2)"
-    )
-    # DEPRECATED: Use parsed_items with ParsedCoffeeEntry objects instead.
-    # This field is maintained for backward compatibility only.
-    coffee_details: list[CoffeeOrderDetails] = Field(
-        default_factory=list,
-        description="DEPRECATED: Use parsed_items instead. When ordering multiple different coffees, list each one separately"
-    )
+    # ============ DEPRECATED BOOLEAN FLAGS - DO NOT USE IN NEW CODE ============
+    # These are kept for backward compatibility with parser code that still sets them.
+    # All handlers should read from parsed_items instead.
 
-    # DEPRECATED: Use parsed_items with ParsedSignatureItemEntry instead.
-    # Signature item orders (pre-configured sandwiches like "The Classic BEC", "The Leo")
-    # These fields are auto-converted to parsed_items by model_validator.
-    new_signature_item: bool = Field(
-        default=False,
-        description="DEPRECATED: Use parsed_items. User wants to order a signature item"
-    )
-    new_signature_item_name: str | None = Field(
-        default=None,
-        description="Name of the signature item (e.g., 'The Classic BEC', 'The Leo', 'The Max Zucker')"
-    )
-    new_signature_item_quantity: int = Field(
-        default=1,
-        description="Number of signature items ordered (e.g., '3 Classics' -> 3)"
-    )
-    new_signature_item_toasted: bool | None = Field(
-        default=None,
-        description="Whether the signature item should be toasted (True/False/None)"
-    )
-    new_signature_item_bagel_choice: str | None = Field(
-        default=None,
-        description="Custom bagel choice for signature item (e.g., 'wheat' for 'Classic BEC on a wheat bagel')"
-    )
-    new_signature_item_modifications: list[str] = Field(
-        default_factory=list,
-        description="Modifications for signature items (e.g., 'with mayo' -> ['mayo'], 'no onions' -> ['no onions'])"
-    )
+    # Bagel fields (DEPRECATED)
+    new_bagel: bool = Field(default=False, description="DEPRECATED: Use parsed_items")
+    new_bagel_quantity: int = Field(default=1, description="DEPRECATED: Use parsed_items")
+    new_bagel_type: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_toasted: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_scooped: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_spread: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_spread_type: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_proteins: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_cheeses: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_toppings: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_spreads: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_special_instructions: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_bagel_needs_cheese_clarification: bool = Field(default=False, description="DEPRECATED: Use parsed_items")
+    bagel_details: list[BagelOrderDetails] = Field(default_factory=list, description="DEPRECATED: Use parsed_items")
+
+    # Coffee fields (DEPRECATED)
+    new_coffee: bool = Field(default=False, description="DEPRECATED: Use parsed_items")
+    new_coffee_type: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_size: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_iced: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_decaf: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_milk: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_cream_level: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_sweetener: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_sweetener_quantity: int | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_flavor_syrup: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_syrup_quantity: int | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_special_instructions: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_coffee_quantity: int = Field(default=1, description="DEPRECATED: Use parsed_items")
+    coffee_details: list[CoffeeOrderDetails] = Field(default_factory=list, description="DEPRECATED: Use parsed_items")
+
+    # Signature item fields (DEPRECATED)
+    new_signature_item: bool = Field(default=False, description="DEPRECATED: Use parsed_items")
+    new_signature_item_name: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_signature_item_quantity: int = Field(default=1, description="DEPRECATED: Use parsed_items")
+    new_signature_item_toasted: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_signature_item_bagel_choice: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_signature_item_modifications: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+
+    # Menu item fields (DEPRECATED)
+    new_menu_item: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_menu_item_quantity: int = Field(default=1, description="DEPRECATED: Use parsed_items")
+    new_menu_item_toasted: bool | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_menu_item_bagel_choice: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_menu_item_modifications: list[str] | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    additional_menu_items: list[MenuItemOrderDetails] = Field(default_factory=list, description="DEPRECATED: Use parsed_items")
+
+    # Side item fields (DEPRECATED)
+    new_side_item: str | None = Field(default=None, description="DEPRECATED: Use parsed_items")
+    new_side_item_quantity: int = Field(default=1, description="DEPRECATED: Use parsed_items")
+
+    # ============ END DEPRECATED FIELDS ============
 
     # Clarifications needed
     needs_soda_clarification: bool = Field(
@@ -939,110 +832,6 @@ class OpenInputResponse(BaseModel):
         description="List of parsed items from multi-item order detection. Used for generic item processing in handler."
     )
 
-    @model_validator(mode='after')
-    def populate_parsed_items_from_boolean_flags(self) -> Self:
-        """Auto-populate parsed_items from boolean flags for unified handler path.
-
-        This validator ensures that even LLM responses that only use boolean flags
-        (new_bagel, new_coffee, etc.) will have parsed_items populated so the
-        unified _process_multi_item_order() path can handle all orders.
-
-        Phase 9 migration: This enables removal of boolean flag handling code.
-        """
-        # Skip if parsed_items already populated (deterministic parser dual-write)
-        if self.parsed_items:
-            return self
-
-        items: list[ParsedItem] = []
-
-        # Add bagels from boolean flags
-        if self.new_bagel:
-            for _ in range(self.new_bagel_quantity):
-                items.append(ParsedBagelEntry(
-                    bagel_type=self.new_bagel_type,
-                    quantity=1,  # Individual entries, quantity already expanded
-                    toasted=self.new_bagel_toasted,
-                    spread=self.new_bagel_spread,
-                    spread_type=self.new_bagel_spread_type,
-                    proteins=list(self.new_bagel_proteins) if self.new_bagel_proteins else [],
-                    cheeses=list(self.new_bagel_cheeses) if self.new_bagel_cheeses else [],
-                    toppings=list(self.new_bagel_toppings) if self.new_bagel_toppings else [],
-                    needs_cheese_clarification=self.new_bagel_needs_cheese_clarification,
-                    modifiers=list(self.new_bagel_special_instructions) if self.new_bagel_special_instructions else [],
-                ))
-
-        # Add coffee from boolean flags
-        if self.new_coffee:
-            # Build sweeteners list
-            sweeteners = []
-            if self.new_coffee_sweetener:
-                sweeteners.append({
-                    "type": self.new_coffee_sweetener,
-                    "quantity": self.new_coffee_sweetener_quantity,
-                })
-            # Build syrups list
-            syrups = []
-            if self.new_coffee_flavor_syrup:
-                syrups.append({
-                    "type": self.new_coffee_flavor_syrup,
-                    "quantity": self.new_coffee_syrup_quantity,
-                })
-            for _ in range(self.new_coffee_quantity):
-                items.append(ParsedCoffeeEntry(
-                    drink_type=self.new_coffee_type,  # Preserve None for generic drink requests
-                    size=self.new_coffee_size,
-                    temperature="iced" if self.new_coffee_iced else ("hot" if self.new_coffee_iced is False else None),
-                    quantity=1,
-                    milk=self.new_coffee_milk,
-                    decaf=self.new_coffee_decaf,
-                    special_instructions=self.new_coffee_special_instructions,
-                    sweeteners=sweeteners.copy() if sweeteners else [],
-                    syrups=syrups.copy() if syrups else [],
-                ))
-
-        # Add signature item from boolean flags
-        if self.new_signature_item:
-            for _ in range(self.new_signature_item_quantity):
-                items.append(ParsedMenuItemEntry(
-                    menu_item_name=self.new_signature_item_name or "",
-                    bagel_type=self.new_signature_item_bagel_choice,
-                    toasted=self.new_signature_item_toasted,
-                    quantity=1,
-                    modifiers=list(self.new_signature_item_modifications) if self.new_signature_item_modifications else [],
-                    is_signature=True,
-                ))
-
-        # Add menu item from boolean flags
-        if self.new_menu_item:
-            for _ in range(self.new_menu_item_quantity):
-                items.append(ParsedMenuItemEntry(
-                    menu_item_name=self.new_menu_item,
-                    quantity=1,
-                    bagel_type=self.new_menu_item_bagel_choice,
-                    toasted=self.new_menu_item_toasted,
-                    modifiers=list(self.new_menu_item_modifications) if self.new_menu_item_modifications else [],
-                ))
-            # Also add additional menu items if present
-            for extra in self.additional_menu_items:
-                for _ in range(extra.quantity):
-                    items.append(ParsedMenuItemEntry(
-                        menu_item_name=extra.name,
-                        quantity=1,
-                        bagel_type=extra.bagel_choice,
-                        toasted=extra.toasted,
-                        modifiers=list(extra.modifications) if extra.modifications else [],
-                    ))
-
-        # Add side item from boolean flags
-        if self.new_side_item:
-            for _ in range(self.new_side_item_quantity):
-                items.append(ParsedSideItemEntry(
-                    side_name=self.new_side_item,
-                    quantity=1,
-                ))
-
-        self.parsed_items = items
-        return self
 
 
 class ByPoundCategoryResponse(BaseModel):

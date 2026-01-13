@@ -24,9 +24,10 @@ from ..schemas import (
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
+    ParsedItemEntry,  # Unified type (preferred)
     ParsedMenuItemEntry,
-    ParsedBagelEntry,
-    ParsedCoffeeEntry,
+    ParsedBagelEntry,  # Deprecated - use ParsedItemEntry
+    ParsedCoffeeEntry,  # Deprecated - use ParsedItemEntry
     ParsedSignatureItemEntry,
     ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
@@ -162,20 +163,40 @@ def _build_bagel_parsed_item(
     toppings: list[str] | None = None,
     needs_cheese_clarification: bool = False,
     modifiers: list[str] | None = None,
-) -> ParsedBagelEntry:
-    """Build a ParsedBagelEntry from boolean flag data."""
-    return ParsedBagelEntry(
-        bagel_type=bagel_type,
+    special_instructions: str | None = None,
+) -> ParsedItemEntry:
+    """Build a ParsedItemEntry for a bagel from boolean flag data.
+
+    Returns the unified ParsedItemEntry type with item_type="bagel" and
+    all bagel-specific data stored in attribute_values dict.
+    """
+    # Build attribute_values dict
+    attr_values: dict = {}
+    if bagel_type is not None:
+        attr_values["bread"] = bagel_type
+    if toasted is not None:
+        attr_values["toasted"] = toasted
+    if scooped is not None:
+        attr_values["scooped"] = scooped
+    if spread is not None:
+        attr_values["spread"] = spread
+    if spread_type is not None:
+        attr_values["spread_type"] = spread_type
+
+    # Combine all modifier lists
+    all_modifiers = []
+    all_modifiers.extend(proteins or [])
+    all_modifiers.extend(cheeses or [])
+    all_modifiers.extend(toppings or [])
+    all_modifiers.extend(modifiers or [])
+
+    return ParsedItemEntry(
+        item_type="bagel",
         quantity=quantity,
-        toasted=toasted,
-        scooped=scooped,
-        spread=spread,
-        spread_type=spread_type,
-        proteins=proteins or [],
-        cheeses=cheeses or [],
-        toppings=toppings or [],
+        attribute_values=attr_values,
+        modifiers=all_modifiers,
+        special_instructions=special_instructions,
         needs_cheese_clarification=needs_cheese_clarification,
-        modifiers=modifiers or [],
     )
 
 
@@ -192,20 +213,36 @@ def _build_coffee_parsed_item(
     syrups: list | None = None,
     extra_shots: int = 0,
     original_text: str | None = None,
-) -> ParsedCoffeeEntry:
-    """Build a ParsedCoffeeEntry from boolean flag data."""
-    return ParsedCoffeeEntry(
-        drink_type=drink_type,
-        size=size,
-        temperature=temperature,
+) -> ParsedItemEntry:
+    """Build a ParsedItemEntry for a coffee/beverage from boolean flag data.
+
+    Returns the unified ParsedItemEntry type with item_type="sized_beverage" and
+    all coffee-specific data stored in attribute_values dict.
+    """
+    # Build attribute_values dict
+    attr_values: dict = {}
+    if size is not None:
+        attr_values["size"] = size
+    if temperature is not None:
+        attr_values["temperature"] = temperature
+    if milk is not None:
+        attr_values["milk"] = milk
+    if decaf is not None:
+        attr_values["decaf"] = decaf
+    if cream_level is not None:
+        attr_values["cream_level"] = cream_level
+    if extra_shots:
+        attr_values["extra_shots"] = extra_shots
+
+    return ParsedItemEntry(
+        item_type="sized_beverage",
+        item_name=drink_type,
         quantity=quantity,
-        milk=milk,
-        decaf=decaf,
-        cream_level=cream_level,
-        special_instructions=special_instructions,
+        attribute_values=attr_values,
+        modifiers=[],
         sweeteners=sweeteners or [],
         syrups=syrups or [],
-        extra_shots=extra_shots,
+        special_instructions=special_instructions,
         original_text=original_text,
     )
 
@@ -1986,7 +2023,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         # Create entries for this part (may be >1 for uneven splits like "two not toasted")
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
-            parsed_items.append(ParsedBagelEntry(
+            parsed_items.append(_build_bagel_parsed_item(
                 bagel_type=bagel_type,  # Use per-item bagel type (may differ from base)
                 quantity=1,
                 toasted=toasted,
@@ -2001,7 +2038,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
 
     # If we have fewer entries than total_quantity, fill with base bagels
     while len(parsed_items) < total_quantity:
-        parsed_items.append(ParsedBagelEntry(
+        parsed_items.append(_build_bagel_parsed_item(
             bagel_type=base_bagel_type,
             quantity=1,
             toasted=base_toasted,
@@ -2193,7 +2230,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
         # Create entries for this part (may be >1 for uneven splits like "two hot")
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
-            parsed_items.append(ParsedCoffeeEntry(
+            parsed_items.append(_build_coffee_parsed_item(
                 drink_type=base_drink_type,
                 size=base_size,
                 temperature=temperature,
@@ -2210,7 +2247,7 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
 
     # If we have fewer entries than total_quantity, fill with base drinks
     while len(parsed_items) < total_quantity:
-        parsed_items.append(ParsedCoffeeEntry(
+        parsed_items.append(_build_coffee_parsed_item(
             drink_type=base_drink_type,
             size=base_size,
             temperature="iced" if base_iced else ("hot" if base_iced is False else None),
@@ -2884,6 +2921,15 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
     canonical_name, category = result
     logger.info("BY-POUND ORDER: '%s' -> %s %s (category=%s)", text[:50], quantity, canonical_name, category)
 
+    # Build parsed_items for unified handler (Phase 8 dual-write)
+    parsed_items = [
+        ParsedByPoundEntry(
+            item_name=canonical_name,
+            quantity=quantity,
+            category=category,
+        )
+    ]
+
     return OpenInputResponse(
         by_pound_items=[
             ByPoundOrderItem(
@@ -2891,7 +2937,8 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
                 quantity=quantity,
                 category=category,
             )
-        ]
+        ],
+        parsed_items=parsed_items,  # Dual-write for unified parsing
     )
 
 
@@ -3683,7 +3730,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                     quantity=getattr(coffee_result, 'new_coffee_syrup_quantity', 1) or 1,
                 ))
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedCoffeeEntry(
+            parsed_items.append(_build_coffee_parsed_item(
                 drink_type=coffee_result.new_coffee_type or "coffee",
                 size=coffee_result.new_coffee_size,
                 temperature="iced" if coffee_result.new_coffee_iced else ("hot" if coffee_result.new_coffee_iced is False else None),
@@ -3722,7 +3769,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                     modifiers.extend(parsed.new_bagel_toppings)
 
                 # Add to parsed_items
-                parsed_items.append(ParsedBagelEntry(
+                parsed_items.append(_build_bagel_parsed_item(
                     bagel_type=bagel_type,
                     toasted=bagel_toasted,
                     scooped=bagel_scooped,
@@ -3814,7 +3861,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 ))
 
             # Add to parsed_items for generic handling
-            parsed_items.append(ParsedCoffeeEntry(
+            parsed_items.append(_build_coffee_parsed_item(
                 drink_type=parsed.new_coffee_type or "coffee",
                 size=parsed.new_coffee_size,
                 temperature="iced" if parsed.new_coffee_iced else ("hot" if parsed.new_coffee_iced is False else None),
@@ -3852,7 +3899,7 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             if bagel_spread_type:
                 modifiers.append(bagel_spread_type)
 
-            parsed_items.append(ParsedBagelEntry(
+            parsed_items.append(_build_bagel_parsed_item(
                 bagel_type=bagel_type,  # May be None - will need config
                 quantity=bagel_qty,
                 toasted=bagel_toasted,

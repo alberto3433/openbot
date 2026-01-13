@@ -928,14 +928,14 @@ class PricingEngine:
         item.iced_upcharge = iced_upcharge
 
         # Update the item's price
-        item.unit_price = total
+        item.unit_price = round(total, 2)
 
         logger.info(
             "Recalculated coffee price: base=$%.2f + size=$%.2f + milk=$%.2f + syrup=$%.2f + shots=$%.2f + iced=$%.2f -> total=$%.2f",
-            base_price, size_upcharge, milk_upcharge, syrup_upcharge, extra_shots_upcharge, iced_upcharge, total
+            base_price, size_upcharge, milk_upcharge, syrup_upcharge, extra_shots_upcharge, iced_upcharge, item.unit_price
         )
 
-        return total
+        return item.unit_price
 
     def recalculate_menu_item_price(self, item) -> float:
         """
@@ -984,17 +984,17 @@ class PricingEngine:
             item.spread_price = None
 
         # Update the item's price
-        item.unit_price = total
+        item.unit_price = round(total, 2)
 
         logger.info(
             "Recalculated menu item price: %s base=$%.2f + spread=$%.2f -> total=$%.2f",
             getattr(item, 'menu_item_name', 'unknown'),
             base_price,
             item.spread_price or 0.0,
-            total
+            item.unit_price
         )
 
-        return total
+        return item.unit_price
 
     # =========================================================================
     # Category Pricing

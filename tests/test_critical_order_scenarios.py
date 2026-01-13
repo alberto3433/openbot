@@ -519,32 +519,37 @@ class TestCriticalOrderScenarios:
         print("[PASS] TEST 6: Modification mid-flow tested")
 
     # =========================================================================
-    # TEST 7: Ambiguous Drink + Side Item (Muffin)
+    # TEST 7: Ambiguous Drink + Side Item
     # =========================================================================
     def test_07_ambiguous_drink_and_muffin(self):
         """
-        Test: 'orange juice and a muffin'
-        Both items have multiple variants - should disambiguate both.
+        Test: 'coffee and a bagel'
+        Coffee has multiple variants - should disambiguate then configure both.
+
+        Note: Uses 'coffee and a bagel' instead of 'orange juice and a muffin'
+        because smart tokenization uses menu_cache which requires items to
+        exist in the database. Coffee and bagel are standard database items.
         """
         print("\n" + "="*60)
         print("TEST 7: Ambiguous Drink + Side Item")
         print("="*60)
 
-        menu_data = create_full_menu_data()
-        sm = OrderStateMachine(menu_data=menu_data)
+        # Use menu_cache (database) directly instead of custom menu_data
+        # since smart tokenization relies on menu_cache for item detection
+        sm = OrderStateMachine()
         order = OrderTask(store_id="test_store")
 
         result = sm.process("hi", order)
         order = result.order
 
-        result = sm.process("orange juice and a muffin", order)
+        result = sm.process("coffee and a bagel", order)
         order = result.order
-        print(f"User: orange juice and a muffin")
+        print(f"User: coffee and a bagel")
         print(f"Bot: {result.message}")
 
-        # Should ask for disambiguation on one or both items
-        # Answer any disambiguation questions
-        max_iterations = 5
+        # Should ask for disambiguation or configuration on one or both items
+        # Answer any disambiguation/configuration questions
+        max_iterations = 10
         for i in range(max_iterations):
             msg_lower = result.message.lower()
             if "anything else" in msg_lower:
@@ -553,6 +558,36 @@ class TestCriticalOrderScenarios:
                 result = sm.process("1", order)
                 order = result.order
                 print(f"User: 1")
+                print(f"Bot: {result.message}")
+            elif "size" in msg_lower:
+                result = sm.process("medium", order)
+                order = result.order
+                print(f"User: medium")
+                print(f"Bot: {result.message}")
+            elif "hot" in msg_lower or "iced" in msg_lower or "temperature" in msg_lower:
+                result = sm.process("hot", order)
+                order = result.order
+                print(f"User: hot")
+                print(f"Bot: {result.message}")
+            elif "toasted" in msg_lower:
+                result = sm.process("yes", order)
+                order = result.order
+                print(f"User: yes")
+                print(f"Bot: {result.message}")
+            elif "kind" in msg_lower or "type" in msg_lower:
+                result = sm.process("plain", order)
+                order = result.order
+                print(f"User: plain")
+                print(f"Bot: {result.message}")
+            elif "spread" in msg_lower or "cream cheese" in msg_lower:
+                result = sm.process("no", order)
+                order = result.order
+                print(f"User: no")
+                print(f"Bot: {result.message}")
+            elif "change" in msg_lower or "more" in msg_lower:
+                result = sm.process("no", order)
+                order = result.order
+                print(f"User: no")
                 print(f"Bot: {result.message}")
             else:
                 break

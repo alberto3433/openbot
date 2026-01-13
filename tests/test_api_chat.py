@@ -40,7 +40,9 @@ def test_health_endpoint_not_versioned(client):
     """Test that /health remains at root level (not versioned)."""
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "version" in data
 
 
 def test_chat_message_rejects_empty_message(client):

@@ -615,13 +615,13 @@ class ConfigHelperHandler:
                     return self._get_next_question(order)
                 # Fallback: ask about toasted if not specified, otherwise spread
                 if item.toasted is None:
-                    order.pending_field = "toasted"
+                    order.pending_field = "bagel:toasted"
                     return StateMachineResult(
                         message=f"Ok, {parsed.bagel_type} bagel. Would you like that toasted?",
                         order=order,
                     )
                 elif item.spread is None:
-                    order.pending_field = "spread"
+                    order.pending_field = "bagel:spread_type"
                     toasted_desc = " toasted" if item.toasted else ""
                     return StateMachineResult(
                         message=f"Ok, {parsed.bagel_type} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
@@ -636,7 +636,7 @@ class ConfigHelperHandler:
                     )
             else:
                 # Need to ask for bagel type
-                order.pending_field = "bagel_choice"
+                order.pending_field = "bagel:bread"
                 return StateMachineResult(
                     message="What kind of bagel would you like?",
                     order=order,

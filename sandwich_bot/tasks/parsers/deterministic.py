@@ -15,21 +15,13 @@ from ..schemas import (
     OpenInputResponse,
     ExtractedModifiers,
     ExtractedCoffeeModifiers,
-    CoffeeOrderDetails,
-    MenuItemOrderDetails,
-    BagelOrderDetails,
-    # Helper types for coffee modifiers
+    # Helper types for modifiers with quantity
     SweetenerItem,
     SyrupItem,
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
-    ParsedItemEntry,  # Unified type (preferred)
-    ParsedMenuItemEntry,
-    ParsedBagelEntry,  # Deprecated - use ParsedItemEntry
-    ParsedCoffeeEntry,  # Deprecated - use ParsedItemEntry
-    ParsedSignatureItemEntry,
-    ParsedSpeedMenuBagelEntry,
+    ParsedItemEntry,  # Unified type for all items
     ParsedSideItemEntry,
     ParsedByPoundEntry,
     # By-the-pound orders
@@ -253,13 +245,18 @@ def _build_signature_item_parsed_item(
     toasted: bool | None = None,
     quantity: int = 1,
     modifiers: list[str] | None = None,
-) -> ParsedMenuItemEntry:
-    """Build a ParsedMenuItemEntry for a signature item (is_signature=True)."""
-    return ParsedMenuItemEntry(
-        menu_item_name=signature_item_name,
-        bagel_type=bagel_type,
-        toasted=toasted,
+) -> ParsedItemEntry:
+    """Build a ParsedItemEntry for a signature item (is_signature=True)."""
+    attr_values: dict = {}
+    if bagel_type is not None:
+        attr_values["bread"] = bagel_type
+    if toasted is not None:
+        attr_values["toasted"] = toasted
+    return ParsedItemEntry(
+        item_type="menu_item",
+        item_name=signature_item_name,
         quantity=quantity,
+        attribute_values=attr_values,
         modifiers=modifiers or [],
         is_signature=True,
     )
@@ -271,13 +268,18 @@ def _build_menu_item_parsed_item(
     bagel_type: str | None = None,
     toasted: bool | None = None,
     modifiers: list[str] | None = None,
-) -> ParsedMenuItemEntry:
-    """Build a ParsedMenuItemEntry from boolean flag data."""
-    return ParsedMenuItemEntry(
-        menu_item_name=menu_item_name,
+) -> ParsedItemEntry:
+    """Build a ParsedItemEntry for a menu item from boolean flag data."""
+    attr_values: dict = {}
+    if bagel_type is not None:
+        attr_values["bread"] = bagel_type
+    if toasted is not None:
+        attr_values["toasted"] = toasted
+    return ParsedItemEntry(
+        item_type="menu_item",
+        item_name=menu_item_name,
         quantity=quantity,
-        bagel_type=bagel_type,
-        toasted=toasted,
+        attribute_values=attr_values,
         modifiers=modifiers or [],
     )
 
@@ -1554,6 +1556,10 @@ def _parse_item_generic(
         if name_lower in signature_items or menu_item_name in signature_items.values():
             is_signature = True
 
+    # Extract special instructions (e.g., "splash of milk", "extra cream cheese")
+    instructions_list = extract_special_instructions_from_input(text)
+    special_instructions = ", ".join(instructions_list) if instructions_list else None
+
     return ParsedItemEntry(
         item_type=item_type,
         item_name=menu_item_name,
@@ -1562,6 +1568,7 @@ def _parse_item_generic(
         modifiers=modifiers,
         sweeteners=sweeteners,
         syrups=syrups,
+        special_instructions=special_instructions,
         is_signature=is_signature,
         original_text=text,
     )
@@ -3850,15 +3857,512 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# Smart Tokenization for Multi-Item Orders
+# =============================================================================
+
+# Quantity words mapping
+_QUANTITY_WORDS = {
+    "a": 1, "an": 1, "one": 1,
+    "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12,
+    "dozen": 12, "half dozen": 6,
+}
+
+# Words to skip during tokenization (not meaningful for classification)
+_SKIP_WORDS = {"please", "thanks", "thank", "you", "with", "the", "some", "of"}
+
+
+def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
+    """Extract leading quantity from text.
+
+    Args:
+        text: Input text like "2 bagels", "a coffee", "three lattes"
+
+    Returns:
+        (quantity, remaining_text) - quantity and text with quantity removed
+
+    Examples:
+        >>> _extract_leading_quantity("2 bagels")
+        (2, "bagels")
+        >>> _extract_leading_quantity("a coffee")
+        (1, "coffee")
+        >>> _extract_leading_quantity("three lattes")
+        (3, "lattes")
+        >>> _extract_leading_quantity("coffee")
+        (None, "coffee")
+    """
+    text = text.strip()
+    text_lower = text.lower()
+
+    # Check for numeric prefix
+    match = re.match(r'^(\d+)\s+', text)
+    if match:
+        return int(match.group(1)), text[match.end():].strip()
+
+    # Check for quantity words
+    for word, qty in sorted(_QUANTITY_WORDS.items(), key=lambda x: -len(x[0])):
+        if text_lower.startswith(word + " "):
+            return qty, text[len(word):].strip()
+        if text_lower == word:
+            return qty, ""
+
+    return None, text
+
+
+def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
+    """Check if text contains an item type trigger or matches a menu item.
+
+    Prioritizes item triggers that appear early in the text (especially after
+    articles like "a", "an") over longer triggers that appear later. This
+    correctly identifies "a bagel with cream cheese" as a bagel, not cream cheese.
+
+    Args:
+        text: Text to check
+
+    Returns:
+        (has_indicator, item_type, resolved_name)
+        - (True, "sized_beverage", "Latte") if triggers coffee
+        - (True, "egg_sandwich", "The Classic BEC") if matches menu item
+        - (False, None, None) if no item indicator
+
+    Examples:
+        >>> _has_item_indicator("large iced latte")
+        (True, "sized_beverage", "latte")
+        >>> _has_item_indicator("bacon egg and cheese")
+        (True, "egg_sandwich", "The Classic BEC")  # if alias exists
+        >>> _has_item_indicator("cream cheese")
+        (False, None, None)
+    """
+    text_lower = text.lower().strip()
+
+    # First, check if entire text matches a menu item (including aliases)
+    resolved = menu_cache.resolve_menu_item_alias(text_lower)
+    if resolved:
+        # Get the item type for this menu item
+        item_type, _ = _detect_item_type(text_lower)
+        return True, item_type, resolved
+
+    # Check for item type triggers - prioritize early matches
+    all_triggers = menu_cache.get_item_type_triggers()
+
+    # Find all matches and their positions
+    matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
+
+    for item_type_slug, triggers in all_triggers.items():
+        for keyword in triggers:
+            keyword_lower = keyword.lower()
+            pos = text_lower.find(keyword_lower)
+            if pos >= 0:
+                matches.append((pos, len(keyword_lower), item_type_slug, keyword))
+
+    # Add implicit triggers for item type names themselves
+    # This handles cases where "bagel" type doesn't have "bagel" as explicit trigger
+    # Use get_configurable_item_types() to include all item types, not just those with triggers
+    all_item_types = menu_cache.get_configurable_item_types()
+    for item_type_slug in all_item_types:
+        # Check for the item type name (with underscores replaced by spaces)
+        type_variants = [
+            item_type_slug.lower(),
+            item_type_slug.lower().replace("_", " "),
+        ]
+        for variant in type_variants:
+            if variant in text_lower:
+                pos = text_lower.find(variant)
+                # Only add if not already matched at this position
+                existing = [(m[0], m[2]) for m in matches]
+                if (pos, item_type_slug) not in existing:
+                    matches.append((pos, len(variant), item_type_slug, variant))
+
+    if not matches:
+        return False, None, None
+
+
+    # Get modifiers and attribute options for deprioritizing modifier-based triggers
+    all_modifiers = menu_cache.get_all_modifier_words()
+    all_attr_options = menu_cache.get_all_attribute_option_words()
+    # Get coffee types - these are primary triggers for sized_beverage, not just modifiers
+    coffee_types = get_coffee_types()
+    coffee_types_lower = {c.lower() for c in coffee_types}
+
+    # Item type priority: prefer specific types over generic ones
+    # When trigger is the same word for multiple types, prefer the type
+    # that matches the trigger word itself (e.g., "bagel" -> bagel type)
+    def _type_priority(item_type: str, trigger: str) -> int:
+        """Return priority score (lower = better)."""
+        trigger_lower = trigger.lower()
+        # Best: item type matches the trigger word (bagel -> bagel)
+        if item_type.lower() == trigger_lower:
+            return 0
+        # Also best: trigger is a known coffee/beverage type and item_type is sized_beverage
+        # e.g., "latte" -> sized_beverage should have high priority
+        if trigger_lower in coffee_types_lower and item_type == "sized_beverage":
+            return 1
+        # Also best: trigger matches another item type name exactly
+        # This means the trigger is likely targeting that specific type, not this one
+        # e.g., "bagel" trigger for "side" type should yield to "bagel" type if it exists
+        if trigger_lower in all_item_types or trigger_lower.replace(" ", "_") in all_item_types:
+            # This item_type doesn't match the trigger, but another type does
+            # Demote this match significantly
+            return 6
+        # Deprioritize triggers that are actually modifiers/attributes (but not coffee types)
+        # e.g., "large" is a size, not an item indicator
+        if trigger_lower in all_modifiers or trigger_lower in all_attr_options:
+            return 5
+        # Good: item type contains the trigger word (e.g., "egg_sandwich" contains "egg")
+        if trigger_lower in item_type.lower():
+            return 1
+        # Generic types have lower priority
+        generic_types = {"side", "snack", "beverage", "menu_item"}
+        if item_type in generic_types:
+            return 4
+        return 2
+
+    # Check if any trigger word matches an item type name
+    # Add implicit match for that item type (with position from the trigger location)
+    added_implicit = []
+    for pos, length, item_type, trigger in list(matches):
+        trigger_lower = trigger.lower()
+        if trigger_lower in all_item_types and trigger_lower != item_type:
+            # The trigger word is an item type name, add it as a match
+            matches.append((pos, length, trigger_lower, trigger))
+            added_implicit.append((pos, length, trigger_lower, trigger))
+        trigger_underscore = trigger_lower.replace(" ", "_")
+        if trigger_underscore in all_item_types and trigger_underscore != item_type:
+            matches.append((pos, length, trigger_underscore, trigger))
+            added_implicit.append((pos, length, trigger_underscore, trigger))
+
+    # PRIORITY RULES:
+    # 1. Priority 0 matches (trigger == item_type, e.g., "bagel" -> bagel) always win
+    # 2. Among same-priority matches, prefer earlier position
+    # 3. For position < 15, prefer that match unless priority 0 exists elsewhere
+
+    # First, check if any match has priority 0 (trigger matches item type)
+    priority_0_matches = [
+        m for m in matches
+        if _type_priority(m[2], m[3]) == 0
+    ]
+
+    if priority_0_matches:
+        # Sort priority 0 matches by position, then length
+        priority_0_matches.sort(key=lambda x: (x[0], -x[1]))
+        best = priority_0_matches[0]
+        return True, best[2], best[3]
+
+    # No priority 0 matches - use priority + position logic
+    # Sort by priority first, then position (within first 30 chars), then length
+    def _match_score(m):
+        pos, length, item_type, trigger = m
+        priority = _type_priority(item_type, trigger)
+        # Group positions: early (<=15), mid (16-30), late (>30)
+        pos_group = 0 if pos <= 15 else (1 if pos <= 30 else 2)
+        return (priority, pos_group, pos, -length)
+
+    matches.sort(key=_match_score)
+
+    best = matches[0]
+    return True, best[2], best[3]
+
+
+def _is_modifier_only(text: str) -> tuple[bool, list[str]]:
+    """Check if text contains ONLY modifiers (no item triggers).
+
+    Modifiers include:
+    - Known ingredients (bacon, cheese, cream cheese, lox)
+    - Known attribute options (large, medium, iced, hot)
+    - Quantity words are skipped
+
+    Args:
+        text: Text to check
+
+    Returns:
+        (is_modifier_only, list_of_modifiers)
+        - (True, ["cream cheese"]) if only modifiers
+        - (False, []) if contains item trigger or unknown words
+
+    Examples:
+        >>> _is_modifier_only("cream cheese")
+        (True, ["Cream Cheese"])
+        >>> _is_modifier_only("bacon and cheese")
+        (True, ["Bacon", "American Cheese"])
+        >>> _is_modifier_only("large iced latte")
+        (False, [])  # "latte" is an item trigger
+    """
+    text_lower = text.lower().strip()
+
+    # Remove quantity prefix
+    _, remaining = _extract_leading_quantity(text_lower)
+    if not remaining:
+        return False, []
+
+    # Check if this has any item indicators
+    has_item, _, _ = _has_item_indicator(remaining)
+    if has_item:
+        return False, []
+
+    # Get lookup data
+    all_modifiers = menu_cache.get_all_modifier_words()
+    attr_options = menu_cache.get_all_attribute_option_words()
+
+    # Tokenize and check each word/phrase
+    # First try to match multi-word modifiers (e.g., "cream cheese")
+    found_modifiers = []
+    remaining_to_check = remaining
+
+    # Try to match known multi-word modifiers first
+    for modifier in sorted(all_modifiers, key=len, reverse=True):
+        if modifier in remaining_to_check:
+            normalized = menu_cache.normalize_modifier(modifier)
+            found_modifiers.append(normalized)
+            remaining_to_check = remaining_to_check.replace(modifier, " ").strip()
+
+    # Check remaining words
+    words = remaining_to_check.split()
+    for word in words:
+        word = word.strip().lower()
+        if not word:
+            continue
+
+        # Skip common words
+        if word in _SKIP_WORDS:
+            continue
+
+        # Skip "and" separator
+        if word == "and":
+            continue
+
+        # Check if it's a known modifier
+        if word in all_modifiers:
+            normalized = menu_cache.normalize_modifier(word)
+            if normalized not in found_modifiers:
+                found_modifiers.append(normalized)
+            continue
+
+        # Check if it's a known attribute option
+        if word in attr_options:
+            continue
+
+        # Unknown word - this is NOT modifier-only
+        return False, []
+
+    return True, found_modifiers
+
+
+def _classify_token(text: str) -> "Token":
+    """Classify a token from split input.
+
+    Args:
+        text: Token text to classify
+
+    Returns:
+        Token with classification info
+    """
+    from sandwich_bot.tasks.schemas.parser_responses import Token
+
+    text = text.strip()
+    text_lower = text.lower()
+
+    # Check for separator
+    if text_lower in ("and", ","):
+        return Token(original=text, token_type="separator")
+
+    # Extract quantity
+    quantity, remaining = _extract_leading_quantity(text)
+
+    # If only quantity (e.g., just "a" or "2"), it's a quantity token
+    if not remaining and quantity is not None:
+        return Token(original=text, token_type="quantity", quantity=quantity)
+
+    # Check if it has an item indicator
+    has_item, item_type, resolved_name = _has_item_indicator(remaining if remaining else text)
+    if has_item:
+        return Token(
+            original=text,
+            token_type="item",
+            quantity=quantity or 1,
+            item_type=item_type,
+            resolved_name=resolved_name,
+        )
+
+    # Check if it's modifier-only
+    is_mod, modifiers = _is_modifier_only(remaining if remaining else text)
+    if is_mod:
+        return Token(
+            original=text,
+            token_type="modifier",
+            resolved_name=", ".join(modifiers) if modifiers else None,
+        )
+
+    # Check if it's an attribute option
+    attr_options = menu_cache.get_all_attribute_option_words()
+    if text_lower in attr_options:
+        return Token(
+            original=text,
+            token_type="attribute",
+            attribute_slug=attr_options[text_lower],
+        )
+
+    # Unknown
+    return Token(original=text, token_type="unknown")
+
+
+def _smart_split_and_tokenize(text: str) -> list["Token"]:
+    """Split text on separators and classify each part.
+
+    Args:
+        text: Full input text
+
+    Returns:
+        List of classified tokens
+
+    Examples:
+        >>> _smart_split_and_tokenize("bacon egg and cheese and a coffee")
+        [Token("bacon egg", item), Token("cheese", modifier), Token("a coffee", item)]
+    """
+    from sandwich_bot.tasks.schemas.parser_responses import Token
+
+    text_lower = text.lower().strip()
+
+    # First, try to match entire input as a single item
+    has_item, item_type, resolved_name = _has_item_indicator(text_lower)
+    if has_item and " and " not in text_lower and ", " not in text_lower:
+        qty, _ = _extract_leading_quantity(text_lower)
+        return [Token(
+            original=text,
+            token_type="item",
+            quantity=qty or 1,
+            item_type=item_type,
+            resolved_name=resolved_name,
+        )]
+
+    # Split on " and " and ", "
+    # Normalize separators
+    normalized = text_lower.replace(", and ", ", ").replace(" and ", ", ")
+    parts = [p.strip() for p in normalized.split(",") if p.strip()]
+
+    if len(parts) < 2:
+        # Not a multi-item order
+        return []
+
+    # Classify each part
+    tokens = []
+    for part in parts:
+        token = _classify_token(part)
+        tokens.append(token)
+
+    return tokens
+
+
+def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
+    """Recombine modifier tokens with their associated item tokens.
+
+    Modifier tokens are attached to the PREVIOUS item token.
+
+    Args:
+        tokens: List of classified tokens
+
+    Returns:
+        List of item tokens with modifiers combined
+
+    Examples:
+        >>> tokens = [Token("bacon egg", item), Token("cheese", modifier), Token("coffee", item)]
+        >>> _recombine_tokens(tokens)
+        [Token("bacon egg and cheese", item), Token("coffee", item)]
+    """
+    from sandwich_bot.tasks.schemas.parser_responses import Token
+
+    if not tokens:
+        return []
+
+    result = []
+    current_item = None
+    accumulated_modifiers = []
+
+    for token in tokens:
+        if token.token_type == "item":
+            # Save previous item with its modifiers
+            if current_item:
+                if accumulated_modifiers:
+                    # Combine item with modifiers
+                    combined_text = current_item.original + " and " + " and ".join(
+                        m.original for m in accumulated_modifiers
+                    )
+                    # Re-check if combined text matches a menu item
+                    has_item, item_type, resolved = _has_item_indicator(combined_text.lower())
+                    result.append(Token(
+                        original=combined_text,
+                        token_type="item",
+                        quantity=current_item.quantity,
+                        item_type=item_type or current_item.item_type,
+                        resolved_name=resolved or current_item.resolved_name,
+                    ))
+                else:
+                    result.append(current_item)
+            current_item = token
+            accumulated_modifiers = []
+
+        elif token.token_type == "modifier":
+            if current_item:
+                accumulated_modifiers.append(token)
+            else:
+                # Modifier without preceding item - treat as unknown/skip
+                logger.debug("Modifier token without preceding item: %s", token.original)
+
+        elif token.token_type == "attribute":
+            # Attributes attach to current item
+            if current_item:
+                accumulated_modifiers.append(token)
+
+        elif token.token_type == "unknown":
+            # Unknown tokens might be part of an item name
+            # Try combining with previous
+            if current_item:
+                combined = current_item.original + " " + token.original
+                has_item, item_type, resolved = _has_item_indicator(combined.lower())
+                if has_item:
+                    current_item = Token(
+                        original=combined,
+                        token_type="item",
+                        quantity=current_item.quantity,
+                        item_type=item_type,
+                        resolved_name=resolved,
+                    )
+                else:
+                    # Can't combine - save current and start fresh
+                    result.append(current_item)
+                    current_item = None
+                    accumulated_modifiers = []
+
+    # Don't forget the last item
+    if current_item:
+        if accumulated_modifiers:
+            combined_text = current_item.original + " and " + " and ".join(
+                m.original for m in accumulated_modifiers
+            )
+            has_item, item_type, resolved = _has_item_indicator(combined_text.lower())
+            result.append(Token(
+                original=combined_text,
+                token_type="item",
+                quantity=current_item.quantity,
+                item_type=item_type or current_item.item_type,
+                resolved_name=resolved or current_item.resolved_name,
+            ))
+        else:
+            result.append(current_item)
+
+    return result
+
+
+# =============================================================================
 # Multi-Item Order Parsing
 # =============================================================================
 
 def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     """Parse multi-item orders like 'The Lexington and an orange juice'.
 
-    This function uses data-driven compound phrase protection and modifier chain
-    detection to properly split multi-item orders while preserving phrases like
-    "bacon egg and cheese" that should not be split.
+    This function uses smart tokenization to split multi-item orders while
+    properly handling compound phrases (resolved via menu item aliases) and
+    modifier chains. All logic is data-driven with no hardcoded food references.
 
     Returns OpenInputResponse with parsed_items list if 2+ items detected.
     """
@@ -3871,124 +4375,114 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         logger.debug("Multi-item: skipping split - detected modifier chain: '%s'", text[:60])
         return None
 
-    # --- Step 2: Protect compound phrases from splitting ---
-    db_compound_phrases = menu_cache.get_compound_phrases()
-    fallback_phrases = {
-        "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
-        "egg and cheese", "bacon and egg and cheese", "ham and egg and cheese",
-        "ham and cheese", "ham and egg", "bacon and egg",
-        "lox and cream cheese", "cream cheese and lox",
-        "salt and pepper", "black and white", "spinach and feta",
-        "mayo and mustard", "mustard and mayo", "lettuce and tomato",
-    }
-    all_compound_phrases = db_compound_phrases | fallback_phrases
-    preserved_text, placeholder_map = _protect_compound_phrases(text_lower, all_compound_phrases)
-
-    # --- Step 3: Check if we have multiple items ---
-    if " and " not in preserved_text and ", " not in preserved_text:
+    # --- Step 2: Use smart tokenization to split and classify ---
+    tokens = _smart_split_and_tokenize(text_lower)
+    if len(tokens) < 2:
+        # Not a multi-item order (single item or nothing)
         return None
 
-    # Normalize separators and split
-    preserved_text = preserved_text.replace(", and ", ", ").replace(" and ", ", ")
-    parts = [p.strip() for p in preserved_text.split(",") if p.strip()]
-    if len(parts) < 2:
-        return None
+    # --- Step 3: Check if tokens are all modifiers (don't split) ---
+    # e.g., "butter, cream cheese, not toasted" should not be split
+    non_modifier_count = sum(1 for t in tokens if t.token_type in ("item", "unknown"))
+    if non_modifier_count < 2:
+        # Check if first token is item and rest are modifiers
+        if tokens and tokens[0].token_type == "item":
+            modifier_types = ("modifier", "attribute", "separator")
+            rest_are_modifiers = all(t.token_type in modifier_types for t in tokens[1:])
+            if rest_are_modifiers:
+                logger.debug("Multi-item: skipping split - item with modifiers: '%s'", text[:60])
+                return None
 
-    # --- Step 4: Restore compound phrases ---
-    restored_parts = [p for p in _restore_compound_phrases(parts, placeholder_map) if p.strip()]
-    logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
+    # --- Step 3b: Check for item + modifiers that also match as items ---
+    # e.g., "pumpernickel bagel, butter, not toasted" - butter is also a menu item
+    # but in this context it's a modifier for the bagel
+    if tokens and tokens[0].token_type == "item":
+        all_modifiers = menu_cache.get_all_modifier_words()
+        attr_options = menu_cache.get_all_attribute_option_words()
 
-    # --- Step 5: Early exit for bagel with comma-separated modifiers ---
-    # e.g., "pumpernickel bagel, butter, not toasted please" should NOT be split
-    if len(restored_parts) >= 2 and "bagel" in restored_parts[0].lower():
-        bagel_modifier_keywords = [
-            "butter", "cream cheese", "cc", "scallion", "veggie", "plain", "lox",
-            "peanut butter", "nutella", "hummus", "jelly", "toasted", "not toasted",
-            "scooped", "please", "thanks",
-        ]
-        other_parts = restored_parts[1:]
-        if all(any(mod in part.lower() for mod in bagel_modifier_keywords) for part in other_parts):
-            logger.debug("Multi-item: skipping split - bagel with modifiers: '%s'", text[:60])
+        # Get boolean attribute names (like "toasted", "scooped")
+        # Check all item types that might match the first token (handles ambiguous detection)
+        boolean_attrs: set[str] = set()
+        all_triggers = menu_cache.get_item_type_triggers()
+        first_text = tokens[0].original.lower()
+
+        # Find all item types that have triggers matching words in the first token
+        item_types_to_check: set[str] = set()
+        for item_type_slug, triggers in all_triggers.items():
+            for trigger in triggers:
+                if trigger.lower() in first_text:
+                    item_types_to_check.add(item_type_slug)
+                    break
+
+        # Collect boolean attrs from all matching item types
+        for check_type in item_types_to_check:
+            item_attrs = menu_cache.get_item_type_attributes(check_type)
+            if item_attrs:
+                for attr_name, attr_info in item_attrs.items():
+                    # Boolean attrs have input_type: 'boolean'
+                    if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
+                        boolean_attrs.add(attr_name.lower())
+                        boolean_attrs.add(attr_name.lower().replace("_", " "))
+
+        def _is_potential_modifier(token_text: str) -> bool:
+            """Check if text could be a modifier (ignoring item matches)."""
+            text_clean = token_text.lower().strip()
+            # Remove common words
+            for skip in _SKIP_WORDS:
+                text_clean = text_clean.replace(skip, " ").strip()
+            # Split and check each word
+            words = text_clean.split()
+            for word in words:
+                word = word.strip()
+                if not word or word == "and" or word == "not":
+                    continue
+                # Check if it's a known modifier, attribute option, or boolean attr
+                if word in all_modifiers or word in attr_options or word in boolean_attrs:
+                    continue
+                # Check multi-word phrases
+                if text_clean in all_modifiers or text_clean in attr_options:
+                    continue
+                # Unknown word - not a modifier
+                return False
+            return True
+
+        other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
+        if other_tokens and all(_is_potential_modifier(t.original) for t in other_tokens):
+            logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
             return None
 
-    # --- Step 6: Parse each part with priority ordering ---
-    # Priority: signature items > by-pound > coffee > bagel > menu items > generic
+    # --- Step 4: Recombine modifier tokens with their items ---
+    combined_tokens = _recombine_tokens(tokens)
+    logger.info("Multi-item tokens after recombine: %s", [(t.original, t.token_type) for t in combined_tokens])
+
+    # --- Step 5: Filter to only item tokens ---
+    item_tokens = [t for t in combined_tokens if t.token_type == "item"]
+    if len(item_tokens) < 2:
+        return None
+
+    # --- Step 6: Parse each item token using generic parser ---
     parsed_items: list = []
-    for part in restored_parts:
-        part = part.strip()
-        if not part:
-            continue
+    for token in item_tokens:
+        # Use the generic parser with detected item type and resolved name
+        parsed_item = _parse_item_generic(
+            text=token.original,
+            item_type=token.item_type,
+            menu_item_name=token.resolved_name,
+        )
 
-        # Priority 1: Signature items (e.g., "the classic bec")
-        sig_result = _parse_signature_item_deterministic(part)
-        if sig_result and sig_result.parsed_items:
-            for item in sig_result.parsed_items:
-                parsed_items.append(item)
-            logger.debug("Multi-item: signature item '%s'", part[:40])
-            continue
-
-        # Priority 2: By-pound items (e.g., "quarter pound of cream cheese")
-        bp_result = _parse_by_pound_order(part)
-        if bp_result and bp_result.by_pound_items:
-            for bp_item in bp_result.by_pound_items:
-                parsed_items.append(ParsedByPoundEntry(
-                    item_name=bp_item.item_name,
-                    quantity=bp_item.quantity,
-                    category=bp_item.category,
-                ))
-            logger.debug("Multi-item: by-pound '%s'", part[:40])
-            continue
-
-        # Priority 3: Coffee/beverages (before menu items to prevent mismatches)
-        coffee_result = _parse_coffee_deterministic(part)
-        if coffee_result and coffee_result.parsed_items:
-            for item in coffee_result.parsed_items:
-                parsed_items.append(item)
-            logger.debug("Multi-item: coffee '%s'", part[:40])
-            continue
-
-        # Priority 4: Bagel orders (if "bagel" in text)
-        if "bagel" in part.lower():
-            bagel_result = parse_open_input_deterministic(part)
-            bagel_items = [
-                item for item in (bagel_result.parsed_items if bagel_result else [])
-                if hasattr(item, 'item_type') and item.item_type == "bagel"
-            ]
-            if bagel_items:
-                for item in bagel_items:
-                    parsed_items.append(item)
-                logger.debug("Multi-item: bagel '%s'", part[:40])
-                continue
-
-        # Priority 5: Menu item extraction
-        item_name, item_qty = _extract_menu_item_from_text(part)
-        if item_name:
-            bagel_choice = _extract_bagel_type(part)
-            toasted = _extract_toasted(part)
-            modifications = _extract_menu_item_modifications(part)
-            parsed_items.append(ParsedMenuItemEntry(
-                menu_item_name=item_name,
-                quantity=item_qty,
-                bagel_type=bagel_choice,
-                toasted=toasted,
-                modifiers=modifications,
-            ))
-            logger.debug("Multi-item: menu item '%s' -> %s", part[:40], item_name)
-            continue
-
-        # Priority 6: Generic parser
-        parsed_item = _parse_item_generic(part)
         if parsed_item:
+            # Apply quantity from token if detected
+            if token.quantity and token.quantity > 1:
+                parsed_item.quantity = token.quantity
             parsed_items.append(parsed_item)
-            logger.debug("Multi-item: generic '%s' -> %s", part[:40], parsed_item.item_type)
-            continue
-
-        # Fallback: try full deterministic parser for complex cases
-        full_result = parse_open_input_deterministic(part)
-        if full_result and full_result.parsed_items:
-            for item in full_result.parsed_items:
-                parsed_items.append(item)
-            logger.debug("Multi-item: fallback '%s'", part[:40])
+            logger.debug("Multi-item: parsed '%s' -> %s", token.original[:40], parsed_item.item_type)
+        else:
+            # Fallback: try full deterministic parser
+            full_result = parse_open_input_deterministic(token.original)
+            if full_result and full_result.parsed_items:
+                for item in full_result.parsed_items:
+                    parsed_items.append(item)
+                logger.debug("Multi-item: fallback parsed '%s'", token.original[:40])
 
     # --- Step 7: Return if 2+ items found ---
     if len(parsed_items) >= 2:

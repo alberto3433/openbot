@@ -93,7 +93,7 @@ class CheckoutUtilsHandler:
                     if item.side_choice == "bagel" and item.toasted is None:
                         logger.info("Found menu item with bagel side needing toasted question")
                         order.pending_item_id = item.id
-                        order.pending_field = "menu_item_bagel_toasted"
+                        order.pending_field = "bagel:toasted"
                         order.phase = OrderPhase.CONFIGURING_ITEM.value
                         bagel_type = item.bagel_choice or "bagel"
                         return StateMachineResult(

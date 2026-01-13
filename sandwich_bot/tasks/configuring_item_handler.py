@@ -56,52 +56,36 @@ OFF_TOPIC_PATTERNS = [
     re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
 ]
 
-# Generic words that are always valid answers to configuration questions
-_GENERIC_CONFIG_ANSWERS = {
-    # Affirmative answers
+# Truly generic words that are always valid answers to configuration questions
+# These are universal affirmative/negative responses, not menu-item-specific values.
+# All menu-item-specific values (toasted, hot, small, etc.) come from the database.
+_GENERIC_AFFIRMATIVE_ANSWERS = {
     "yes", "no", "yeah", "nope", "sure", "please", "ok", "okay",
-    # Toasted-specific
-    "toasted", "not toasted", "untoasted",
-    # Style answers (generic)
-    "hot", "iced", "cold",
-    # Size answers (generic)
-    "small", "large", "medium", "regular",
-    # Side choices (generic)
-    "bagel", "fruit", "fruit salad",
+    "yep", "yup", "nah", "definitely", "absolutely", "of course",
 }
 
 
 def _get_valid_config_answers() -> set[str]:
     """Get the set of valid configuration answers from the database.
 
-    Combines generic answers with bagel types and size options from database.
+    Combines truly generic affirmative/negative answers with all attribute options
+    from the database. This is fully data-driven - no hardcoded menu item values.
+
+    Returns:
+        Set of lowercase answer words that are valid responses to config questions
 
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded or configuration data is missing
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
-    answers = _GENERIC_CONFIG_ANSWERS.copy()
+    # Start with truly generic affirmative/negative answers
+    answers = _GENERIC_AFFIRMATIVE_ANSWERS.copy()
 
-    # Get bagel types from database (raises if not loaded)
-    bagel_types = menu_cache.get_bagel_types()
-    answers.update(bagel_types)
-
-    # Get size options from database (raises if not loaded)
-    size_options = menu_cache.get_global_attribute_options("size")
-    for opt in size_options:
-        if opt.get("display_name"):
-            answers.add(opt["display_name"].lower())
-        if opt.get("slug"):
-            answers.add(opt["slug"].lower())
-
-    # Get temperature options from database (raises if not loaded)
-    temp_options = menu_cache.get_global_attribute_options("temperature")
-    for opt in temp_options:
-        if opt.get("display_name"):
-            answers.add(opt["display_name"].lower())
-        if opt.get("slug"):
-            answers.add(opt["slug"].lower())
+    # Get all attribute option words from database (includes negation variants)
+    # This covers: size, temperature, toasted/not toasted, bagel types, side items, etc.
+    db_answers = menu_cache.get_all_config_answer_words()
+    answers.update(db_answers)
 
     return answers
 
@@ -118,16 +102,52 @@ def _get_cached_config_answers() -> set[str]:
     return _cached_config_answers
 
 
+def _parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
+    """Parse pending_field to extract item_type and attribute slug.
+
+    The pending_field format is "item_type:attr_slug" (e.g., "bagel:spread_type").
+    For flow-control fields without a colon, returns (None, pending_field).
+
+    Args:
+        pending_field: The pending field string (e.g., "bagel:spread_type" or "drink_selection")
+
+    Returns:
+        Tuple of (item_type_slug, attr_slug). Both may be None if pending_field is None.
+        For flow-control fields (no colon), item_type_slug will be None.
+
+    Examples:
+        >>> _parse_pending_field("bagel:spread_type")
+        ("bagel", "spread_type")
+        >>> _parse_pending_field("drink_selection")
+        (None, "drink_selection")
+        >>> _parse_pending_field(None)
+        (None, None)
+    """
+    if not pending_field:
+        return None, None
+    if ":" in pending_field:
+        parts = pending_field.split(":", 1)
+        return parts[0], parts[1]
+    return None, pending_field
+
+
 def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> bool:
     """Check if user input is an off-topic request during configuration.
 
+    This function determines if the user is asking about something unrelated to
+    the current configuration question. It's data-driven - keywords are loaded
+    from the database based on the attribute being configured.
+
     Args:
         user_input: The user's input text
-        pending_field: The current configuration field being asked about
+        pending_field: The current configuration field in "item_type:attr_slug" format
+                      (e.g., "bagel:spread_type", "sized_beverage:size")
 
     Returns:
         True if the request is off-topic and should trigger a redirect
     """
+    from sandwich_bot.menu_data_cache import menu_cache
+
     input_lower = user_input.lower().strip()
 
     # Get valid config answers from database (cached)
@@ -144,10 +164,12 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             return False
 
     # Check if the question is RELEVANT to the current config question
-    # These are valid questions to help the user answer the config question
     if pending_field:
+        # Parse the pending_field to get item_type and attr_slug
+        item_type_slug, attr_slug = _parse_pending_field(pending_field)
+
         # Generic "what do you have?" / "what kind do you have?" / "what are my options?"
-        # These are always relevant when asked during configuration
+        # These are always relevant when asked during configuration (truly universal patterns)
         generic_option_patterns = [
             "what do you have",
             "what kind do you have",
@@ -158,79 +180,63 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
             "what are the options",
             "what options do you have",
             "what choices",
-            "what flavors",  # For spread question
         ]
         if any(pattern in input_lower for pattern in generic_option_patterns):
             return False  # Let them ask about options
 
-        # Asking about cream cheese/spreads when being asked about spread → relevant
-        if pending_field == "spread":
-            spread_keywords = ["cream cheese", "spread", "butter", "schmear"]
-            if any(kw in input_lower for kw in spread_keywords):
-                return False  # Let them ask about cream cheese options
+        # Data-driven keyword matching: if this is an attribute config field,
+        # get relevant keywords from the database
+        if item_type_slug and attr_slug:
+            try:
+                relevant_keywords = menu_cache.get_relevant_keywords_for_attribute(
+                    item_type_slug, attr_slug
+                )
+                if any(kw in input_lower for kw in relevant_keywords):
+                    return False  # Question is relevant to the current attribute
+            except Exception:
+                # If DB lookup fails, fall through to off-topic check
+                pass
 
-        # Asking about cheese types when being asked about cheese choice → relevant
-        if pending_field in ("cheese_choice", "signature_item_cheese_choice"):
-            cheese_keywords = ["cheese", "cheeses"]
-            if any(kw in input_lower for kw in cheese_keywords):
-                return False  # Let them ask about cheese options
-
-        # Asking about bagel types when being asked about bagel choice → relevant
-        if pending_field in ("bagel_choice", "signature_item_bagel_type"):
-            bagel_keywords = ["bagel", "bagels"]
-            if any(kw in input_lower for kw in bagel_keywords):
-                return False  # Let them ask about bagel options
-
-        # Asking about sizes when being asked about size → relevant
-        if pending_field == "coffee_size":
-            size_keywords = ["size", "sizes"]
-            if any(kw in input_lower for kw in size_keywords):
-                return False  # Let them ask about size options
-
-        # Asking about hot/iced when being asked about style → relevant
-        if pending_field == "coffee_style":
-            style_keywords = ["hot", "iced", "cold", "style"]
-            if any(kw in input_lower for kw in style_keywords):
-                return False  # Let them ask about style options
-
-        # Asking about milk/sugar/syrup when being asked about coffee/espresso modifiers → relevant
-        if pending_field in ("coffee_modifiers", "espresso_modifiers"):
-            modifier_keywords = ["milk", "sugar", "syrup", "sweetener", "cream", "flavor"]
-            if any(kw in input_lower for kw in modifier_keywords):
-                return False  # Let them ask about modifier options
-
-        # Asking about menu item attributes (menu_item_attr_*) → check if question is about that attribute
-        # e.g., pending_field="menu_item_attr_bread" should allow "what kind of bread do you have?"
-        if pending_field and pending_field.startswith("menu_item_attr_"):
-            attr_name = pending_field.replace("menu_item_attr_", "").replace("_", " ")
-            # Allow questions containing the attribute name or generic "what" questions
-            if attr_name in input_lower:
-                return False  # Question is about the current attribute
-            # Also allow generic "what kind" questions for any menu item attribute
-            if "what kind" in input_lower or "what type" in input_lower:
+            # Also allow templatized questions: "what {attr} do you have?"
+            # e.g., "what spreads do you have?" when configuring spread
+            attr_display = attr_slug.replace("_", " ")
+            if attr_display in input_lower:
+                return False
+            # Check for plural form
+            if f"{attr_display}s" in input_lower:
                 return False
 
         # During customization_checkpoint or customization_selection, "add X" commands are valid
         # The bot is specifically offering options like "Add Egg, Extra Cheese, Toppings"
-        if pending_field in ("customization_checkpoint", "customization_selection"):
+        if attr_slug in ("customization_checkpoint", "customization_selection"):
             # Allow "add X" commands since the bot offered these as valid choices
             if input_lower.startswith("add "):
                 return False
-            # Allow standalone attribute names like "egg", "cheese", "toppings"
-            customization_keywords = [
-                "scooped", "spread", "egg", "cheese", "topping", "toppings",
-                "condiment", "condiments", "extra", "protein",
-            ]
-            if any(kw in input_lower for kw in customization_keywords):
+            # Get customization keywords from database (available modifier categories)
+            try:
+                # Load customization options from the item type's modifiable attributes
+                if item_type_slug:
+                    attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                    for attr_config in attrs.values():
+                        for opt in attr_config.get("options", []):
+                            opt_name = opt.get("display_name", "").lower()
+                            if opt_name and opt_name in input_lower:
+                                return False
+            except Exception:
+                pass
+            # Fallback: allow generic customization words
+            if any(kw in input_lower for kw in ["egg", "cheese", "topping", "extra", "protein"]):
                 return False
 
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:
         if pattern.search(user_input):
-            # Special case: "make it small/large" is a valid size answer
+            # Special case: "make it X" where X is a valid config answer
             if pattern.pattern.startswith("^make"):
-                if any(size in input_lower for size in ["small", "large", "medium"]):
-                    return False
+                # Check against all valid config answers (database-driven)
+                for answer in valid_config_answers:
+                    if answer in input_lower:
+                        return False
             return True
 
     return False
@@ -241,27 +247,9 @@ class ConfiguringItemHandler:
     Handles configuring items (answering configuration questions).
 
     Routes user input to the appropriate field-specific handler based
-    on the pending_field in the order.
+    on the pending_field in the order. The pending_field format is
+    "item_type:attr_slug" (e.g., "bagel:toasted", "sized_beverage:size").
     """
-
-    # Legacy pending_field names that can be routed through the unified MenuItemConfigHandler.
-    # Maps legacy field -> (item_type, attr_slug) for validation and routing.
-    # If the current item's menu_item_type matches, route through handle_legacy_field_input.
-    LEGACY_TO_UNIFIED_MAPPING = {
-        # Bagel fields -> route to unified handler when item is "bagel" type
-        "bagel_choice": ("bagel", "bread"),
-        "spread": ("bagel", "spread_type"),
-        "toasted": ("bagel", "toasted"),
-        "cheese_choice": ("bagel", "cheese"),
-        # Coffee/beverage fields -> route to unified handler when item is "sized_beverage" type
-        "coffee_size": ("sized_beverage", "size"),
-        "coffee_style": ("sized_beverage", "iced"),
-        "coffee_modifiers": ("sized_beverage", "milk_sweetener_syrup"),
-        "syrup_flavor": ("sized_beverage", "syrup"),
-        # Sandwich/spread_sandwich toasted fields (same attr, different item types)
-        "spread_sandwich_toasted": ("spread_sandwich", "toasted"),
-        "menu_item_bagel_toasted": ("bagel", "toasted"),
-    }
 
     def __init__(
         self,
@@ -388,22 +376,6 @@ class ConfiguringItemHandler:
         if order.pending_field == "side_choice":
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
 
-        # Registry-based routing for legacy fields through unified MenuItemConfigHandler
-        # This routes bagel/coffee config fields through the generic handler when item type matches
-        if order.pending_field in self.LEGACY_TO_UNIFIED_MAPPING:
-            expected_type, attr_slug = self.LEGACY_TO_UNIFIED_MAPPING[order.pending_field]
-            # Route through unified handler if item type matches and handler is available
-            if (isinstance(item, MenuItemTask) and
-                item.menu_item_type == expected_type and
-                self.menu_item_handler):
-                logger.debug(
-                    "Routing legacy field '%s' through unified handler for %s",
-                    order.pending_field, item.menu_item_type
-                )
-                return self.menu_item_handler.handle_legacy_field_input(
-                    user_input, item, order, order.pending_field
-                )
-
         # Handle bagel_choice for menu items with bagel sides (e.g., omelettes, salads)
         # These items have side_choice="bagel" and need to specify which bagel type
         if order.pending_field == "bagel_choice" and isinstance(item, MenuItemTask):
@@ -420,16 +392,22 @@ class ConfiguringItemHandler:
             return self.checkout_utils_handler.get_next_question(order)
 
         # Handle menu item configuration (deli sandwiches, etc.)
-        elif order.pending_field == "customization_checkpoint":
+        if order.pending_field == "customization_checkpoint":
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
         elif order.pending_field == "customization_selection":
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.handle_customization_selection(user_input, item, order)
-        elif order.pending_field and order.pending_field.startswith("menu_item_attr_"):
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                attr_slug = order.pending_field.replace("menu_item_attr_", "")
-                return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
+
+        # Data-driven routing: pending_field format is "item_type:attr_slug"
+        # Parse the pending_field and route to the appropriate handler
+        item_type_slug, attr_slug = _parse_pending_field(order.pending_field)
+        if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
+            logger.debug(
+                "Routing '%s' through unified handler for %s attr=%s",
+                order.pending_field, item_type_slug, attr_slug
+            )
+            return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
 
         # Handle queued menu item configuration (abbreviated flow from checkout_utils_handler)
         # This is set when a menu item is in the config queue and asked an abbreviated question

@@ -2651,6 +2651,305 @@ class MenuDataCache:
         modifier_lower = modifier.lower().strip()
         return self._modifier_aliases.get(modifier_lower, modifier)
 
+    def is_known_modifier(self, word: str) -> bool:
+        """
+        Check if a word is a known modifier (ingredient or alias).
+
+        Used for smart tokenization to determine if a word is a modifier
+        vs an item trigger.
+
+        Args:
+            word: Word to check (e.g., "cheese", "bacon", "lox")
+
+        Returns:
+            True if the word is a known modifier/ingredient
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.is_known_modifier("bacon")
+            True
+            >>> cache.is_known_modifier("coffee")
+            False
+        """
+        self._ensure_loaded()
+        return word.lower().strip() in self._modifier_aliases
+
+    def get_all_modifier_words(self) -> set[str]:
+        """
+        Get all known modifier words (ingredients and their aliases).
+
+        Returns lowercase set of all words that are recognized as modifiers.
+        Used for fast lookup during tokenization.
+
+        Returns:
+            Set of all modifier words (lowercase)
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> words = cache.get_all_modifier_words()
+            >>> "bacon" in words
+            True
+            >>> "lox" in words
+            True
+        """
+        self._ensure_loaded()
+        return set(self._modifier_aliases.keys())
+
+    def is_known_attribute_option(self, word: str) -> tuple[bool, str | None]:
+        """
+        Check if a word is a known attribute option value.
+
+        Checks against all global attribute options (size, temperature, etc.)
+        and returns which attribute it belongs to.
+
+        Args:
+            word: Word to check (e.g., "large", "iced", "hot")
+
+        Returns:
+            Tuple of (is_known, attribute_slug)
+            - (True, "size") if "large" is a size option
+            - (True, "temperature") if "iced" is a temperature option
+            - (False, None) if not a known attribute option
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.is_known_attribute_option("large")
+            (True, "size")
+            >>> cache.is_known_attribute_option("iced")
+            (True, "temperature")
+            >>> cache.is_known_attribute_option("bagel")
+            (False, None)
+        """
+        self._ensure_loaded()
+        word_lower = word.lower().strip()
+
+        for attr_slug, options in self._global_attribute_options.items():
+            for opt in options:
+                # Check slug and display_name
+                if opt.get("slug", "").lower() == word_lower:
+                    return True, attr_slug
+                if opt.get("display_name", "").lower() == word_lower:
+                    return True, attr_slug
+        return False, None
+
+    def get_all_attribute_option_words(self) -> dict[str, str]:
+        """
+        Get all known attribute option words mapped to their attribute slug.
+
+        Returns dict mapping lowercase option words to their attribute slug.
+        Used for fast lookup during tokenization.
+
+        Returns:
+            Dict mapping option word -> attribute slug
+            e.g., {"large": "size", "iced": "temperature", "hot": "temperature"}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> opts = cache.get_all_attribute_option_words()
+            >>> opts.get("large")
+            "size"
+            >>> opts.get("iced")
+            "temperature"
+        """
+        self._ensure_loaded()
+        result: dict[str, str] = {}
+
+        for attr_slug, options in self._global_attribute_options.items():
+            for opt in options:
+                slug = opt.get("slug", "").lower()
+                display = opt.get("display_name", "").lower()
+                if slug:
+                    result[slug] = attr_slug
+                if display and display != slug:
+                    result[display] = attr_slug
+        return result
+
+    def get_all_config_answer_words(self) -> set[str]:
+        """
+        Get all valid configuration answer words from the database.
+
+        Returns a set of lowercase words that are valid answers to item configuration
+        questions. Includes:
+        - All attribute option slugs and display names (e.g., "small", "large", "hot", "iced")
+        - All bagel type names
+        - All side item names
+        - Negation variants for boolean attributes (e.g., "not toasted", "untoasted")
+
+        This method replaces hardcoded answer lists with database-driven data.
+
+        Returns:
+            Set of lowercase answer words
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> words = cache.get_all_config_answer_words()
+            >>> "large" in words
+            True
+            >>> "not toasted" in words
+            True
+        """
+        self._ensure_loaded()
+        answers: set[str] = set()
+
+        # Add all global attribute options (size, temperature, etc.)
+        for attr_slug, options in self._global_attribute_options.items():
+            for opt in options:
+                slug = opt.get("slug", "").lower()
+                display = opt.get("display_name", "").lower()
+                if slug:
+                    answers.add(slug)
+                if display:
+                    answers.add(display)
+                # Add aliases if available
+                aliases = opt.get("aliases")
+                if aliases:
+                    for alias in aliases:
+                        answers.add(alias.lower())
+
+        # Add bagel types
+        if self._bagel_types:
+            answers.update(self._bagel_types)
+
+        # Add side item names (for side choice questions)
+        if self._side_items:
+            answers.update(self._side_items)
+
+        # Add negation variants for boolean fields across all item types
+        # Pattern: "not {field_name}" and "un{field_name}" for boolean fields
+        for item_type_slug, fields in self._item_type_fields.items():
+            for field in fields:
+                input_type = field.get("input_type", "")
+                if input_type == "boolean":
+                    field_name = field.get("field_name", "").lower()
+                    display_name = field.get("display_name", "").lower()
+                    # Add the field name itself as valid answer
+                    if field_name:
+                        answers.add(field_name)
+                        answers.add(f"not {field_name}")
+                        answers.add(f"un{field_name}")
+                    if display_name and display_name != field_name:
+                        answers.add(display_name)
+                        answers.add(f"not {display_name}")
+                        answers.add(f"un{display_name}")
+
+        return answers
+
+    def get_relevant_keywords_for_attribute(
+        self, item_type_slug: str | None, attr_slug: str
+    ) -> set[str]:
+        """
+        Get keywords relevant to a specific attribute for off-topic detection.
+
+        When configuring an attribute (e.g., "spread_type" for bagels), this returns
+        keywords that indicate the user is asking about that same attribute, not
+        going off-topic. For example, when asking about spread, "cream cheese",
+        "butter", "schmear" are relevant keywords.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage").
+                           Can be None for global attributes.
+            attr_slug: The attribute slug (e.g., "spread_type", "size", "toasted")
+
+        Returns:
+            Set of lowercase keywords relevant to this attribute, including:
+            - Attribute display_name words
+            - All option display_names and slugs
+            - All option aliases
+            - Option category names (e.g., "cheese" for cheese options)
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.get_relevant_keywords_for_attribute("bagel", "spread_type")
+            {"spread", "cream cheese", "butter", "schmear", "scallion", ...}
+            >>> cache.get_relevant_keywords_for_attribute("sized_beverage", "size")
+            {"size", "small", "medium", "large", "regular", ...}
+        """
+        self._ensure_loaded()
+        keywords: set[str] = set()
+
+        # Try item-type-specific attributes first
+        if item_type_slug:
+            attrs = self.get_item_type_attributes(item_type_slug)
+            if attr_slug in attrs:
+                attr = attrs[attr_slug]
+                self._extract_keywords_from_attribute(attr, keywords)
+                return keywords
+
+        # Try global attributes
+        if attr_slug in self._global_attribute_options:
+            options = self._global_attribute_options[attr_slug]
+            # Add the attribute slug itself
+            keywords.add(attr_slug.lower().replace("_", " "))
+            keywords.add(attr_slug.lower())
+            for opt in options:
+                self._extract_keywords_from_option(opt, keywords)
+            return keywords
+
+        # Fallback: just use the attr_slug as a keyword
+        keywords.add(attr_slug.lower().replace("_", " "))
+        keywords.add(attr_slug.lower())
+        return keywords
+
+    def _extract_keywords_from_attribute(self, attr: dict, keywords: set[str]) -> None:
+        """Extract keywords from an attribute config dict."""
+        # Add attribute display_name words
+        display_name = attr.get("display_name", "")
+        if display_name:
+            keywords.add(display_name.lower())
+            for word in display_name.lower().split():
+                if len(word) > 2:  # Skip tiny words like "a", "of"
+                    keywords.add(word)
+
+        # Add attribute slug
+        slug = attr.get("slug", "")
+        if slug:
+            keywords.add(slug.lower())
+            keywords.add(slug.lower().replace("_", " "))
+
+        # Add keywords from all options
+        for opt in attr.get("options", []):
+            self._extract_keywords_from_option(opt, keywords)
+
+    def _extract_keywords_from_option(self, opt: dict, keywords: set[str]) -> None:
+        """Extract keywords from an option dict."""
+        # Add option slug
+        slug = opt.get("slug", "")
+        if slug:
+            keywords.add(slug.lower())
+            keywords.add(slug.lower().replace("_", " "))
+
+        # Add option display_name
+        display_name = opt.get("display_name", "")
+        if display_name:
+            keywords.add(display_name.lower())
+            # Also add individual words for multi-word options
+            for word in display_name.lower().split():
+                if len(word) > 2:
+                    keywords.add(word)
+
+        # Add option aliases
+        aliases = opt.get("aliases")
+        if aliases:
+            for alias in aliases:
+                keywords.add(alias.lower())
+
+        # Add option category (e.g., "cheese", "spread")
+        category = opt.get("category", "")
+        if category:
+            keywords.add(category.lower())
+
     def get_side_items(self) -> set[str]:
         """
         Get all known side item names and aliases (lowercase).

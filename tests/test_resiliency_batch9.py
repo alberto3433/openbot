@@ -29,7 +29,7 @@ class TestAffirmativeNegativeResponses:
         order.items.add_item(bagel)
         # Set up pending state for toasted question
         order.pending_item_ids = [bagel.id]
-        order.pending_field = "toasted"
+        order.pending_field = "bagel:toasted"
 
         sm = OrderStateMachine()
         result = sm.process("yes", order)
@@ -57,7 +57,7 @@ class TestAffirmativeNegativeResponses:
         order.items.add_item(bagel)
         # Set up pending state for toasted question
         order.pending_item_ids = [bagel.id]
-        order.pending_field = "toasted"
+        order.pending_field = "bagel:toasted"
 
         sm = OrderStateMachine()
         result = sm.process("yeah sure", order)

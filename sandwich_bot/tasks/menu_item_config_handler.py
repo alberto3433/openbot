@@ -41,23 +41,6 @@ class MenuItemConfigHandler(BaseHandler):
     # Note: SUPPORTED_ITEM_TYPES is now queried from the database via menu_cache.
     # Item types are configurable if they have linked attributes in the DB.
 
-    # Mapping from legacy pending_field names to DB attribute slugs
-    # This allows routing legacy field handlers through the generic handler
-    LEGACY_FIELD_TO_ATTR = {
-        # Bagel fields
-        "bagel_choice": "bread",
-        "spread": "spread_type",
-        "toasted": "toasted",
-        "cheese_choice": "cheese",
-        "spread_sandwich_toasted": "toasted",
-        "menu_item_bagel_toasted": "toasted",
-        # Coffee/beverage fields
-        "coffee_size": "size",
-        "coffee_style": "iced",  # Hot/iced maps to boolean iced attribute
-        "coffee_modifiers": "milk_sweetener_syrup",
-        "syrup_flavor": "syrup",
-    }
-
     # Mapping from DB attribute slugs to legacy storage keys in attribute_values
     # This allows checking if an attribute is already answered when stored under legacy key
     LEGACY_ATTR_ALIASES = {
@@ -938,7 +921,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_item_id = item.id
-        order.pending_field = f"menu_item_attr_{attr['slug']}"
+        order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
         # Reset options page when asking a new attribute question
         order.config_options_page = 0
 
@@ -1342,7 +1325,7 @@ class MenuItemConfigHandler(BaseHandler):
                 first_attr = unanswered[0]
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 order.pending_item_id = item.id
-                order.pending_field = f"menu_item_attr_{first_attr['slug']}"
+                order.pending_field = f"{item_type_slug}:{first_attr['slug']}"
                 order.config_options_page = 0
 
                 # Get question text
@@ -1623,49 +1606,6 @@ class MenuItemConfigHandler(BaseHandler):
     # Handle User Input for Different States
     # =========================================================================
 
-    def handle_legacy_field_input(
-        self, user_input: str, item: MenuItemTask, order: OrderTask, legacy_field: str
-    ) -> StateMachineResult:
-        """
-        Handle user input for legacy pending_field names (bagel_choice, coffee_size, etc.).
-
-        This method maps legacy field names to DB attribute slugs and delegates to
-        handle_attribute_input. It's used during the Phase 6 migration to route
-        legacy handlers through the generic MenuItemConfigHandler.
-
-        Args:
-            user_input: The user's input text
-            item: The menu item being configured
-            order: The current order
-            legacy_field: The legacy pending_field name (e.g., "bagel_choice", "coffee_size")
-
-        Returns:
-            StateMachineResult with next question or completion message
-        """
-        # Map legacy field to DB attribute slug
-        attr_slug = self.LEGACY_FIELD_TO_ATTR.get(legacy_field)
-
-        if not attr_slug:
-            logger.warning(
-                "Unknown legacy field '%s' for item type '%s'",
-                legacy_field, item.menu_item_type
-            )
-            order.clear_pending()
-            return self._get_next_question(order)
-
-        # Special handling for coffee_style -> iced boolean
-        # The coffee_style question asks "hot or iced?" but the DB attr is boolean "iced"
-        if legacy_field == "coffee_style":
-            return self._handle_coffee_style_input(user_input, item, order)
-
-        # Special handling for coffee_modifiers -> uses extract_coffee_modifiers_from_input
-        # This parses complex modifier strings like "oat milk with 2 sugars and vanilla"
-        if legacy_field == "coffee_modifiers":
-            return self._handle_coffee_modifiers_input(user_input, item, order)
-
-        # Delegate to generic attribute handler
-        return self.handle_attribute_input(user_input, item, order, attr_slug)
-
     def _handle_coffee_style_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
@@ -1771,6 +1711,13 @@ class MenuItemConfigHandler(BaseHandler):
         if disambiguation_result:
             return disambiguation_result
 
+        # Special handling for attributes with custom parsing requirements
+        # These are beverage attributes that need special input parsing
+        if attr_slug in ("iced", "temperature"):
+            return self._handle_coffee_style_input(user_input, item, order)
+        if attr_slug == "milk_sweetener_syrup":
+            return self._handle_coffee_modifiers_input(user_input, item, order)
+
         item_type = item.menu_item_type
         attrs = self._get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug)
@@ -1825,12 +1772,13 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Also check for the attribute name with/without "not"
         attr_name = attr["display_name"].lower()
+        bool_value: bool | None = None
         if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
-            item.attribute_values[attr_slug] = False
+            bool_value = False
         elif any(p in user_lower for p in yes_patterns) or attr_name in user_lower:
-            item.attribute_values[attr_slug] = True
+            bool_value = True
         elif any(p in user_lower for p in no_patterns):
-            item.attribute_values[attr_slug] = False
+            bool_value = False
         else:
             # Couldn't parse, ask again
             question = attr.get("question_text") or f"{attr['display_name']}?"
@@ -1838,6 +1786,14 @@ class MenuItemConfigHandler(BaseHandler):
                 message=f"Sorry, I didn't catch that. {question} (yes or no)",
                 order=order,
             )
+
+        # Store in attribute_values
+        item.attribute_values[attr_slug] = bool_value
+
+        # Also set direct field for attributes in DIRECT_FIELD_ATTRS (backward compat)
+        if attr_slug in self.DIRECT_FIELD_ATTRS and hasattr(item, attr_slug):
+            setattr(item, attr_slug, bool_value)
+            logger.debug("Set direct field %s = %s", attr_slug, bool_value)
 
         # Extract and apply any additional modifiers from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon modifier)
@@ -2196,7 +2152,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Stay in same pending state to handle the follow-up answer
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_item_id = item.id
-        order.pending_field = f"menu_item_attr_{attr_slug}"
+        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
 
         logger.info(
             "Category match: user said '%s', found %d matching %s options",
@@ -2385,7 +2341,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_item_id = item.id
-        order.pending_field = f"menu_item_attr_{attr['slug']}"
+        order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
 
         return StateMachineResult(message=question, order=order)
 

@@ -12,19 +12,26 @@ from pydantic import BaseModel, Field, model_validator
 
 
 # =============================================================================
-# Helper Types for Coffee Modifiers
+# Helper Types for Modifiers with Quantity
 # =============================================================================
 
-class SweetenerItem(BaseModel):
-    """A sweetener with quantity for coffee orders."""
-    type: str  # "sugar", "splenda", "stevia", "equal", etc.
+class QuantifiedModifier(BaseModel):
+    """A modifier with quantity (sweeteners, syrups, extra shots, etc.).
+
+    Generic type for any modifier that can have a quantity attached.
+    Used for sweeteners, syrups, and other quantifiable beverage additions.
+
+    Examples:
+        QuantifiedModifier(type="sugar", quantity=2)  # 2 sugars
+        QuantifiedModifier(type="vanilla", quantity=1)  # 1 vanilla syrup
+    """
+    type: str
     quantity: int = 1
 
 
-class SyrupItem(BaseModel):
-    """A flavor syrup with quantity for coffee orders."""
-    type: str  # "vanilla", "caramel", "hazelnut", etc.
-    quantity: int = 1
+# Backward-compatible aliases (use QuantifiedModifier in new code)
+SweetenerItem = QuantifiedModifier
+SyrupItem = QuantifiedModifier
 
 
 class QualifierConflict(BaseModel):
@@ -32,6 +39,49 @@ class QualifierConflict(BaseModel):
     modifier: str  # The modifier with conflicting qualifiers (e.g., "mayo")
     qualifier1: str  # First qualifier (e.g., "light")
     qualifier2: str  # Second qualifier (e.g., "extra")
+
+
+# =============================================================================
+# Token Type for Smart Tokenization
+# =============================================================================
+
+class Token(BaseModel):
+    """Token for smart multi-item order tokenization.
+
+    Used to classify parts of user input during multi-item parsing.
+    Each token represents a segment of the input with its classification.
+
+    Token Types:
+        - item: Contains an item trigger or matches a menu item
+        - modifier: Known ingredient/modifier (cream cheese, bacon, lox)
+        - attribute: Known attribute option (large, medium, hot, iced)
+        - quantity: Number or quantity word (a, an, 2, three)
+        - separator: "and", ","
+        - unknown: Unclassified text
+
+    Examples:
+        Token(original="large iced latte", token_type="item",
+              resolved_name="Latte", item_type="sized_beverage", quantity=1)
+
+        Token(original="cream cheese", token_type="modifier",
+              resolved_name="Cream Cheese")
+
+        Token(original="a", token_type="quantity", quantity=1)
+    """
+    original: str  # Original text of this token
+    token_type: Literal["item", "modifier", "attribute", "quantity", "separator", "unknown"]
+
+    # Extracted quantity (from "a", "2", "three", etc.)
+    quantity: int | None = None
+
+    # Resolved menu item or modifier name
+    resolved_name: str | None = None
+
+    # Detected item type (for item tokens)
+    item_type: str | None = None
+
+    # For attribute tokens, the attribute slug
+    attribute_slug: str | None = None
 
 
 # =============================================================================
@@ -947,32 +997,43 @@ class OpenInputResponse(BaseModel):
 
             # Create signature item entry from deprecated fields
             if self.new_signature_item:
+                attr_values = {}
+                if self.new_signature_item_bagel_choice:
+                    attr_values["bread"] = self.new_signature_item_bagel_choice
+                if self.new_signature_item_toasted is not None:
+                    attr_values["toasted"] = self.new_signature_item_toasted
                 for _ in range(self.new_signature_item_quantity):
-                    items_to_add.append(ParsedMenuItemEntry(
-                        menu_item_name=self.new_signature_item_name,
+                    items_to_add.append(ParsedItemEntry(
+                        item_type="menu_item",
+                        item_name=self.new_signature_item_name,
                         quantity=1,
-                        bagel_type=self.new_signature_item_bagel_choice,
-                        toasted=self.new_signature_item_toasted,
+                        attribute_values=attr_values.copy(),
                         modifiers=self.new_signature_item_modifications or [],
                         is_signature=True,
                     ))
 
             # Create menu item entry from deprecated fields
             if self.new_menu_item:
+                attr_values = {}
+                if self.new_menu_item_bagel_choice:
+                    attr_values["bread"] = self.new_menu_item_bagel_choice
+                if self.new_menu_item_toasted is not None:
+                    attr_values["toasted"] = self.new_menu_item_toasted
                 for _ in range(self.new_menu_item_quantity):
-                    items_to_add.append(ParsedMenuItemEntry(
-                        menu_item_name=self.new_menu_item,
+                    items_to_add.append(ParsedItemEntry(
+                        item_type="menu_item",
+                        item_name=self.new_menu_item,
                         quantity=1,
-                        bagel_type=self.new_menu_item_bagel_choice,
-                        toasted=self.new_menu_item_toasted,
+                        attribute_values=attr_values.copy(),
                         modifiers=self.new_menu_item_modifications or [],
                     ))
 
             # Create side item entry from deprecated fields
             if self.new_side_item:
                 for _ in range(self.new_side_item_quantity):
-                    items_to_add.append(ParsedMenuItemEntry(
-                        menu_item_name=self.new_side_item,
+                    items_to_add.append(ParsedItemEntry(
+                        item_type="side",
+                        item_name=self.new_side_item,
                         quantity=1,
                     ))
 
@@ -1034,7 +1095,7 @@ class OpenInputResponse(BaseModel):
             first_sig = signature_items[0]
             self.new_signature_item = True
             self.new_signature_item_quantity = len(signature_items)
-            self.new_signature_item_name = getattr(first_sig, 'menu_item_name', None)
+            self.new_signature_item_name = getattr(first_sig, 'menu_item_name', None) or getattr(first_sig, 'item_name', None)
             self.new_signature_item_toasted = first_sig.toasted
             self.new_signature_item_bagel_choice = first_sig.bagel_type
             if first_sig.modifiers:

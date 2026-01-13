@@ -7,9 +7,10 @@ state machine for parsing user input and representing order phases.
 
 from .phases import OrderPhase
 from .parser_responses import (
-    # Helper types for coffee modifiers
-    SweetenerItem,
-    SyrupItem,
+    # Helper types for modifiers with quantity
+    QuantifiedModifier,
+    SweetenerItem,  # Alias for QuantifiedModifier
+    SyrupItem,  # Alias for QuantifiedModifier
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
@@ -54,9 +55,10 @@ from .result import StateMachineResult
 __all__ = [
     # Phases
     "OrderPhase",
-    # Helper types for coffee modifiers
-    "SweetenerItem",
-    "SyrupItem",
+    # Helper types for modifiers with quantity
+    "QuantifiedModifier",
+    "SweetenerItem",  # Alias for QuantifiedModifier
+    "SyrupItem",  # Alias for QuantifiedModifier
     # Qualifier conflict model
     "QualifierConflict",
     # ParsedItem types for multi-item handling

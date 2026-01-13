@@ -1245,14 +1245,20 @@ class TakingItemsHandler:
                 # e.g., "make it blueberry cream cheese" -> change spread, not add Blueberry Cream Cheese Sandwich
                 cream_cheese_menu_item = next(
                     (item for item in parsed.parsed_items
-                     if isinstance(item, ParsedMenuItemEntry)
-                     and "cream cheese sandwich" in item.menu_item_name.lower()),
+                     if (isinstance(item, ParsedMenuItemEntry) and "cream cheese sandwich" in item.menu_item_name.lower())
+                     or (isinstance(item, ParsedItemEntry) and item.item_type == "menu_item"
+                         and item.item_name and "cream cheese sandwich" in item.item_name.lower())),
                     None
                 )
-                if has_new_items and cream_cheese_menu_item and isinstance(last_item, MenuItemTask) and last_item.has_attribute("spread"):
+                # Get the menu item name from either type
+                cream_cheese_name = (
+                    cream_cheese_menu_item.menu_item_name if isinstance(cream_cheese_menu_item, ParsedMenuItemEntry)
+                    else cream_cheese_menu_item.item_name if cream_cheese_menu_item else None
+                )
+                if has_new_items and cream_cheese_menu_item and cream_cheese_name and isinstance(last_item, MenuItemTask) and last_item.has_attribute("spread"):
                     # Extract the spread name from the menu item name
                     # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
-                    spread_name = cream_cheese_menu_item.menu_item_name.lower().replace(" sandwich", "")
+                    spread_name = cream_cheese_name.lower().replace(" sandwich", "")
                     old_spread = last_item.spread or "none"
                     last_item.spread = spread_name
                     logger.info("Replacement: interpreted '%s' as spread change from '%s' to '%s'",
@@ -2682,6 +2688,13 @@ class TakingItemsHandler:
                         else:
                             item_type = "menu_item"
                         display_name = parsed_item.menu_item_name
+                    elif isinstance(parsed_item, ParsedItemEntry) and parsed_item.item_type == "menu_item":
+                        # New unified ParsedItemEntry with menu_item type
+                        if parsed_item.is_signature:
+                            item_type = "signature_item"
+                        else:
+                            item_type = "menu_item"
+                        display_name = parsed_item.item_name or summary
                     elif _is_bagel_entry(parsed_item):
                         item_type = "bagel"
                         display_name = f"{parsed_item.bagel_type} bagel" if parsed_item.bagel_type else "bagel"

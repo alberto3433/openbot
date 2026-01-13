@@ -1312,6 +1312,52 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
+    """Extract by-pound weight unit and product name from text.
+
+    Detects patterns like "quarter pound of cream cheese", "half lb salmon".
+
+    Args:
+        text: User input text
+
+    Returns:
+        (weight_unit, product_name) or (None, None) if not a by-pound pattern
+
+    Example:
+        >>> _extract_by_pound_info("quarter pound of plain cream cheese")
+        ("1/4 lb", "plain cream cheese")
+        >>> _extract_by_pound_info("half a pound of whitefish salad")
+        ("1/2 lb", "whitefish salad")
+    """
+    text_lower = text.lower().strip()
+
+    # Weight patterns to detect (pattern, normalized weight_unit)
+    weight_patterns = [
+        (r"(?:a\s+)?quarter\s+(?:pound|lb)", "1/4 lb"),
+        (r"1/4\s*(?:pound|lb)", "1/4 lb"),
+        (r"(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)", "1/2 lb"),
+        (r"1/2\s*(?:pound|lb)", "1/2 lb"),
+        (r"(?:one|1)\s+(?:pound|lb)", "1 lb"),
+        (r"a\s+(?:pound|lb)", "1 lb"),
+    ]
+
+    for pattern, weight_unit in weight_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            # Extract product name (part after "of" or after weight)
+            after_match = text_lower[match.end():].strip()
+            # Remove "of" prefix if present
+            if after_match.startswith("of "):
+                after_match = after_match[3:].strip()
+            # Remove trailing "please"
+            after_match = re.sub(r"\s+please\s*$", "", after_match).strip()
+
+            if after_match:
+                return weight_unit, after_match
+
+    return None, None
+
+
 def _is_modifier_chain(text: str) -> bool:
     """Check if text is a single item with modifier chain.
 
@@ -1402,7 +1448,7 @@ def _restore_compound_phrases(
 
 def _parse_item_generic(
     text: str,
-    item_type: str,
+    item_type: str | None = None,
     menu_item_name: str | None = None
 ) -> ParsedItemEntry | None:
     """Parse any item type using database configuration.
@@ -1411,9 +1457,12 @@ def _parse_item_generic(
     extraction instead of item-type-specific logic. It works for all item types
     that have proper configuration in the database.
 
+    Also handles by-pound items (e.g., "quarter pound of cream cheese").
+
     Args:
         text: User input text
-        item_type: Detected item type slug (e.g., "bagel", "sized_beverage")
+        item_type: Detected item type slug (e.g., "bagel", "sized_beverage").
+                   If None, will attempt to detect from text.
         menu_item_name: Matched menu item name (if any)
 
     Returns:
@@ -1424,8 +1473,44 @@ def _parse_item_generic(
         >>> _parse_item_generic("large iced latte", "sized_beverage", "latte")
         ParsedItemEntry(item_type="sized_beverage", item_name="latte",
                        attribute_values={"size": "large", "temperature": "iced"})
+        >>> _parse_item_generic("quarter pound of plain cream cheese")
+        ParsedItemEntry(item_type="by_pound", item_name="plain cream cheese",
+                       weight_unit="1/4 lb")
     """
     text_lower = text.lower()
+
+    # Check for by-pound pattern first
+    weight_unit, product_name = _extract_by_pound_info(text_lower)
+    if weight_unit:
+        # This is a by-pound order - find matching menu item
+        by_weight_items = menu_cache.get_menu_items_by_unit_type("by_weight")
+        matched_item = None
+        for item_name in by_weight_items:
+            # Check if product name matches (fuzzy match)
+            item_lower = item_name.lower()
+            if product_name in item_lower or any(
+                word in item_lower for word in product_name.split() if len(word) > 3
+            ):
+                # Check if weight matches too
+                if weight_unit.replace(" ", "") in item_lower.replace(" ", ""):
+                    matched_item = item_name
+                    break
+
+        return ParsedItemEntry(
+            item_type="by_pound",
+            item_name=matched_item or product_name,
+            quantity=1,
+            weight_unit=weight_unit,
+            original_text=text,
+        )
+
+    # Auto-detect item type if not provided
+    if not item_type:
+        item_type, detected_name = _detect_item_type(text_lower)
+        if not item_type:
+            return None
+        if not menu_item_name:
+            menu_item_name = detected_name
 
     # Extract quantity from text
     # Match patterns like "2 bagels", "three coffees", "a dozen bagels"
@@ -3774,232 +3859,113 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     This function uses data-driven compound phrase protection and modifier chain
     detection to properly split multi-item orders while preserving phrases like
     "bacon egg and cheese" that should not be split.
+
+    Returns OpenInputResponse with parsed_items list if 2+ items detected.
     """
     text = user_input.strip()
     text_lower = text.lower()
 
     # --- Step 1: Check for modifier chain (don't split) ---
     # e.g., "large iced coffee with sugar and 2 vanilla syrups" should NOT be split
-    # Uses the data-driven _is_modifier_chain() function
     if _is_modifier_chain(text_lower):
         logger.debug("Multi-item: skipping split - detected modifier chain: '%s'", text[:60])
-        return None  # Let single-item parser handle the complete input
+        return None
 
     # --- Step 2: Protect compound phrases from splitting ---
-    # Get compound phrases from database (e.g., "bacon egg and cheese", "ham and cheese")
-    # Also include fallback phrases that may not be in database yet
     db_compound_phrases = menu_cache.get_compound_phrases()
-
-    # Fallback compound phrases (will be removed once all are in database)
-    # These are kept for backward compatibility during migration
     fallback_phrases = {
-        # Egg sandwich phrases
         "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
         "egg and cheese", "bacon and egg and cheese", "ham and egg and cheese",
-        "bacon eggs and cheese", "ham eggs and cheese",
-        # Ingredient combinations
         "ham and cheese", "ham and egg", "bacon and egg",
         "lox and cream cheese", "cream cheese and lox",
-        "salt and pepper", "eggs and bacon",
-        "black and white", "spinach and feta",
-        # Condiment pairs
-        "mayo and mustard", "mustard and mayo", "ketchup and mustard",
-        "lettuce and tomato", "tomato and lettuce",
-        "onions and peppers", "pickles and onions",
+        "salt and pepper", "black and white", "spinach and feta",
+        "mayo and mustard", "mustard and mayo", "lettuce and tomato",
     }
-
-    # Combine database phrases with fallbacks
     all_compound_phrases = db_compound_phrases | fallback_phrases
-
-    # Use helper to protect compound phrases
     preserved_text, placeholder_map = _protect_compound_phrases(text_lower, all_compound_phrases)
 
     # --- Step 3: Check if we have multiple items ---
     if " and " not in preserved_text and ", " not in preserved_text:
         return None
 
-    # Normalize separators for splitting
-    preserved_text = preserved_text.replace(", and ", ", ")
-    preserved_text = preserved_text.replace(" and ", ", ")
-
+    # Normalize separators and split
+    preserved_text = preserved_text.replace(", and ", ", ").replace(" and ", ", ")
     parts = [p.strip() for p in preserved_text.split(",") if p.strip()]
     if len(parts) < 2:
         return None
 
-    # --- Step 4: Restore compound phrases in parts ---
-    # Use helper to restore compound phrases from placeholders
-    restored_parts = _restore_compound_phrases(parts, placeholder_map)
-    # Filter out empty parts
-    restored_parts = [p for p in restored_parts if p.strip()]
-
+    # --- Step 4: Restore compound phrases ---
+    restored_parts = [p for p in _restore_compound_phrases(parts, placeholder_map) if p.strip()]
     logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
 
-    # Early exit: Don't split bagel orders where commas separate modifiers from the bagel
+    # --- Step 5: Early exit for bagel with comma-separated modifiers ---
     # e.g., "pumpernickel bagel, butter, not toasted please" should NOT be split
-    # The commas are just punctuation, not item separators
-    if len(restored_parts) >= 2:
-        first_part_lower = restored_parts[0].lower()
-        # Check if first part is a bagel
-        if "bagel" in first_part_lower:
-            # Define what counts as bagel modifiers (not separate items)
-            bagel_modifier_keywords = [
-                # Spreads
-                "butter", "cream cheese", "cc", "scallion", "veggie", "vegetable",
-                "plain", "lox", "peanut butter", "nutella", "hummus", "jelly",
-                "strawberry", "grape", "raspberry", "jam", "preserves",
-                # Toasted state
-                "toasted", "not toasted", "untoasted",
-                # Scooped state
-                "scooped", "not scooped",
-                # Polite words that might end up as separate parts
-                "please", "thanks", "thank you",
-            ]
-            other_parts = restored_parts[1:]
-            # Check if ALL other parts are just modifiers, not separate items
-            all_are_modifiers = all(
-                any(mod in part.lower() for mod in bagel_modifier_keywords)
-                for part in other_parts
-            )
-            if all_are_modifiers:
-                logger.debug("Multi-item: skipping split - detected bagel with comma-separated modifiers: '%s'", text[:60])
-                return None  # Let bagel parser handle the complete input
+    if len(restored_parts) >= 2 and "bagel" in restored_parts[0].lower():
+        bagel_modifier_keywords = [
+            "butter", "cream cheese", "cc", "scallion", "veggie", "plain", "lox",
+            "peanut butter", "nutella", "hummus", "jelly", "toasted", "not toasted",
+            "scooped", "please", "thanks",
+        ]
+        other_parts = restored_parts[1:]
+        if all(any(mod in part.lower() for mod in bagel_modifier_keywords) for part in other_parts):
+            logger.debug("Multi-item: skipping split - bagel with modifiers: '%s'", text[:60])
+            return None
 
-    # Use a list to collect ALL menu items instead of overwriting
-    menu_item_list: list[MenuItemOrderDetails] = []
-    coffee_list: list[CoffeeOrderDetails] = []
-    bagel = False
-    bagel_qty = 1
-    bagel_type = None
-    bagel_toasted = None
-    bagel_scooped = None
-    bagel_spread = None
-    bagel_spread_type = None
-    side_item = None
-    side_item_qty = 1
-    # Signature item tracking
-    signature_item = False
-    signature_item_name = None
-    signature_item_qty = 1
-    signature_item_toasted = None
-    signature_item_bagel_choice = None
-    signature_item_modifications = None
-    # NEW: parsed_items list for generic multi-item handling
+    # --- Step 6: Parse each part with priority ordering ---
+    # Priority: signature items > by-pound > coffee > bagel > menu items > generic
     parsed_items: list = []
-    # By-the-pound items collection
-    by_pound_items: list[ByPoundOrderItem] = []
-
-    # First pass: count how many parts have menu items
-    # If only ONE part has a menu item, we should extract modifications from the ORIGINAL text
-    # (to handle cases like "the Lexington with mayo, mustard and ketchup" which gets split incorrectly)
-    parts_with_menu_items = 0
-    for part in restored_parts:
-        item_name, _ = _extract_menu_item_from_text(part.strip())
-        if item_name:
-            parts_with_menu_items += 1
-
-    # Extract modifications from original text if only one menu item detected
-    # This captures "with mayo, mustard and ketchup" that gets split into separate parts
-    use_original_text_for_mods = parts_with_menu_items == 1
-    original_modifications = _extract_menu_item_modifications(text) if use_original_text_for_mods else []
-
     for part in restored_parts:
         part = part.strip()
         if not part:
             continue
 
-        # Try signature item FIRST - important because "bacon egg and cheese"
-        # would otherwise be matched as a menu item "Bacon"
-        speed_result = _parse_signature_item_deterministic(part)
-        # Phase 4: Use parsed_items directly from sub-parser
-        signature_items = [
-            item for item in (speed_result.parsed_items if speed_result else [])
-            if hasattr(item, 'is_signature') and item.is_signature
-        ]
-        if signature_items:
-            signature_item = True
-            for item in signature_items:
+        # Priority 1: Signature items (e.g., "the classic bec")
+        sig_result = _parse_signature_item_deterministic(part)
+        if sig_result and sig_result.parsed_items:
+            for item in sig_result.parsed_items:
                 parsed_items.append(item)
-                signature_item_name = item.menu_item_name
-                signature_item_qty = item.quantity
-                signature_item_toasted = item.toasted
-                signature_item_bagel_choice = item.bagel_type
-                signature_item_modifications = item.modifiers
-            logger.info("Multi-item: detected %d signature item(s) via direct parse", len(signature_items))
+            logger.debug("Multi-item: signature item '%s'", part[:40])
             continue
 
-        # Try by-pound order BEFORE menu item extraction
-        # This prevents "quarter pound of plain cream cheese" from matching "Plain Cream Cheese Sandwich"
-        by_pound_result = _parse_by_pound_order(part)
-        if by_pound_result and by_pound_result.by_pound_items:
-            for bp_item in by_pound_result.by_pound_items:
-                by_pound_items.append(bp_item)
+        # Priority 2: By-pound items (e.g., "quarter pound of cream cheese")
+        bp_result = _parse_by_pound_order(part)
+        if bp_result and bp_result.by_pound_items:
+            for bp_item in bp_result.by_pound_items:
                 parsed_items.append(ParsedByPoundEntry(
                     item_name=bp_item.item_name,
                     quantity=bp_item.quantity,
                     category=bp_item.category,
                 ))
-            logger.info("Multi-item: detected by-pound items: %s", by_pound_result.by_pound_items)
+            logger.debug("Multi-item: by-pound '%s'", part[:40])
             continue
 
-        # Try coffee detection BEFORE menu item extraction
-        # This prevents "latte" from being matched as a menu item instead of coffee
+        # Priority 3: Coffee/beverages (before menu items to prevent mismatches)
         coffee_result = _parse_coffee_deterministic(part)
         if coffee_result and coffee_result.parsed_items:
-            # Use parsed_items directly from sub-parser (Phase 4: avoid deprecated fields)
             for item in coffee_result.parsed_items:
                 parsed_items.append(item)
-                # Track first coffee for backwards-compat coffee_list
-                if not coffee_list and hasattr(item, 'item_name'):
-                    coffee_list.append(CoffeeOrderDetails(
-                        drink_type=item.item_name or "coffee",
-                        size=item.attribute_values.get("size"),
-                        iced=item.attribute_values.get("temperature") == "iced" if item.attribute_values.get("temperature") else None,
-                        decaf=item.attribute_values.get("decaf"),
-                        quantity=item.quantity,
-                        milk=item.attribute_values.get("milk"),
-                        special_instructions=item.special_instructions,
-                    ))
-            logger.info("Multi-item: detected %d coffee item(s) via direct parse", len(coffee_result.parsed_items))
+            logger.debug("Multi-item: coffee '%s'", part[:40])
             continue
 
-        # If "bagel" is explicitly in the part, try bagel parsing FIRST before menu item
-        # This prevents "everything bagel with veggie cc" from matching "Vegetable Cream Cheese (1 lb)"
-        part_lower = part.lower()
-        if "bagel" in part_lower:
-            parsed = parse_open_input_deterministic(part)
-            # Check for bagel items in parsed_items (Phase 4: avoid deprecated fields)
+        # Priority 4: Bagel orders (if "bagel" in text)
+        if "bagel" in part.lower():
+            bagel_result = parse_open_input_deterministic(part)
             bagel_items = [
-                item for item in (parsed.parsed_items if parsed else [])
+                item for item in (bagel_result.parsed_items if bagel_result else [])
                 if hasattr(item, 'item_type') and item.item_type == "bagel"
             ]
             if bagel_items:
-                bagel = True
                 for item in bagel_items:
                     parsed_items.append(item)
-                    # Extract values for backwards-compat deprecated fields
-                    bagel_qty = item.quantity
-                    bagel_type = item.attribute_values.get("bread") or item.attribute_values.get("bagel_type")
-                    bagel_toasted = item.attribute_values.get("toasted")
-                    bagel_scooped = item.attribute_values.get("scooped")
-                    bagel_spread = item.attribute_values.get("spread")
-                    bagel_spread_type = item.attribute_values.get("spread_type")
-                logger.info("Multi-item: detected %d bagel item(s) via direct parse", len(bagel_items))
+                logger.debug("Multi-item: bagel '%s'", part[:40])
                 continue
 
+        # Priority 5: Menu item extraction
         item_name, item_qty = _extract_menu_item_from_text(part)
         if item_name:
             bagel_choice = _extract_bagel_type(part)
             toasted = _extract_toasted(part)
-            # Use original text mods if single menu item, otherwise extract from part
-            modifications = original_modifications if use_original_text_for_mods else _extract_menu_item_modifications(part)
-            menu_item_list.append(MenuItemOrderDetails(
-                name=item_name,
-                quantity=item_qty,
-                bagel_choice=bagel_choice,
-                toasted=toasted,
-                modifications=modifications,
-            ))
-            # Add to parsed_items for generic handling
+            modifications = _extract_menu_item_modifications(part)
             parsed_items.append(ParsedMenuItemEntry(
                 menu_item_name=item_name,
                 quantity=item_qty,
@@ -4007,124 +3973,27 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                 toasted=toasted,
                 modifiers=modifications,
             ))
-            logger.info("Multi-item: detected menu item '%s' (qty=%d, bagel=%s, toasted=%s, mods=%s)",
-                        item_name, item_qty, bagel_choice, toasted, modifications)
+            logger.debug("Multi-item: menu item '%s' -> %s", part[:40], item_name)
             continue
 
-        # Fall back to generic parsing
-        parsed = parse_open_input_deterministic(part)
-        if not parsed:
-            logger.debug("Multi-item: could not parse part '%s' deterministically", part)
+        # Priority 6: Generic parser
+        parsed_item = _parse_item_generic(part)
+        if parsed_item:
+            parsed_items.append(parsed_item)
+            logger.debug("Multi-item: generic '%s' -> %s", part[:40], parsed_item.item_type)
             continue
 
-        # Phase 4: Use parsed_items directly from sub-parser instead of deprecated fields
-        if parsed.parsed_items:
-            for item in parsed.parsed_items:
+        # Fallback: try full deterministic parser for complex cases
+        full_result = parse_open_input_deterministic(part)
+        if full_result and full_result.parsed_items:
+            for item in full_result.parsed_items:
                 parsed_items.append(item)
-                # Track for backwards-compat variables
-                if hasattr(item, 'item_type'):
-                    if item.item_type == "bagel":
-                        bagel = True
-                        bagel_qty = item.quantity
-                        # Bagel type stored as "bread" in attribute_values
-                        bagel_type = item.attribute_values.get("bread") or item.attribute_values.get("bagel_type")
-                        bagel_toasted = item.attribute_values.get("toasted")
-                        bagel_spread = item.attribute_values.get("spread")
-                        bagel_spread_type = item.attribute_values.get("spread_type")
-                    elif item.item_type == "sized_beverage":
-                        if not coffee_list and hasattr(item, 'item_name'):
-                            coffee_list.append(CoffeeOrderDetails(
-                                drink_type=item.item_name or "coffee",
-                                size=item.attribute_values.get("size"),
-                                iced=item.attribute_values.get("temperature") == "iced" if item.attribute_values.get("temperature") else None,
-                                decaf=item.attribute_values.get("decaf"),
-                                quantity=item.quantity,
-                                milk=item.attribute_values.get("milk"),
-                                special_instructions=item.special_instructions,
-                            ))
-                elif hasattr(item, 'side_name'):
-                    side_item = item.side_name
-                    side_item_qty = item.quantity
-                elif hasattr(item, 'menu_item_name'):
-                    if getattr(item, 'is_signature', False):
-                        signature_item = True
-                        signature_item_name = item.menu_item_name
-                        signature_item_qty = item.quantity
-                        signature_item_toasted = item.toasted
-                        signature_item_bagel_choice = item.bagel_type
-                        signature_item_modifications = item.modifiers
-                    else:
-                        menu_item_list.append(MenuItemOrderDetails(
-                            name=item.menu_item_name,
-                            quantity=item.quantity,
-                            bagel_choice=item.bagel_type,
-                            toasted=item.toasted,
-                            modifications=item.modifiers or [],
-                        ))
-            logger.info("Multi-item: used %d parsed_items from sub-parser", len(parsed.parsed_items))
+            logger.debug("Multi-item: fallback '%s'", part[:40])
 
-    # Get first menu item for primary fields, rest go to additional_menu_items
-    first_menu_item = menu_item_list[0] if menu_item_list else None
-    additional_menu_items = menu_item_list[1:] if len(menu_item_list) > 1 else []
-
-    items_found = sum([
-        len(menu_item_list) > 0,
-        len(coffee_list) > 0,
-        bagel,
-        side_item is not None,
-        signature_item,
-        len(by_pound_items) > 0,
-    ])
-    total_items = len(menu_item_list) + len(coffee_list) + (1 if bagel else 0) + (1 if side_item else 0) + (1 if signature_item else 0) + len(by_pound_items)
-
-    # Use parsed_items count as source of truth - it correctly tracks all items including
-    # multiple bagels of different types (e.g., "plain bagel and sesame bagel")
-    if items_found >= 2 or total_items >= 2 or len(parsed_items) >= 2:
-        logger.info("Multi-item order parsed: menu_items=%d, coffees=%d, bagel=%s, side=%s, signature_item=%s, parsed_items=%d",
-                    len(menu_item_list), len(coffee_list), bagel, side_item, signature_item_name, len(parsed_items))
-        # Phase 4: Only use parsed_items (deprecated fields removed)
-        return OpenInputResponse(
-            parsed_items=parsed_items,
-            by_pound_items=by_pound_items,
-        )
-
-    if menu_item_list:
-        # Build parsed_items for unified handler
-        menu_parsed_items = [
-            _build_menu_item_parsed_item(
-                menu_item_name=item.name,
-                quantity=item.quantity,
-                bagel_type=item.bagel_choice,
-                toasted=item.toasted,
-                modifiers=item.modifications,
-            )
-            for item in menu_item_list
-        ]
-        # Phase 4: Only use parsed_items (deprecated fields removed)
-        return OpenInputResponse(parsed_items=menu_parsed_items)
-    if coffee_list:
-        # Phase 4: Only use parsed_items (deprecated fields removed)
+    # --- Step 7: Return if 2+ items found ---
+    if len(parsed_items) >= 2:
+        logger.info("Multi-item order parsed: %d items", len(parsed_items))
         return OpenInputResponse(parsed_items=parsed_items)
-    if bagel:
-        # Build parsed_items for unified handler
-        bagel_parsed_items = [
-            _build_bagel_parsed_item(
-                bagel_type=bagel_type,
-                quantity=1,
-                toasted=bagel_toasted,
-                scooped=bagel_scooped,
-                spread=bagel_spread,
-                spread_type=bagel_spread_type,
-            )
-            for _ in range(bagel_qty)
-        ]
-        # Phase 4: Only use parsed_items (deprecated fields removed)
-        return OpenInputResponse(parsed_items=bagel_parsed_items)
-    if side_item:
-        # Build parsed_items for unified handler
-        side_parsed_items = [_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_item_qty)]
-        # Phase 4: Only use parsed_items (deprecated fields removed)
-        return OpenInputResponse(parsed_items=side_parsed_items)
 
     return None
 

@@ -75,17 +75,19 @@ def _get_valid_config_answers() -> set[str]:
     """Get the set of valid configuration answers from the database.
 
     Combines generic answers with bagel types and size options from database.
-    Falls back to a minimal hardcoded set if database is not available.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded or configuration data is missing
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
     answers = _GENERIC_CONFIG_ANSWERS.copy()
 
-    # Get bagel types from database
+    # Get bagel types from database (raises if not loaded)
     bagel_types = menu_cache.get_bagel_types()
     answers.update(bagel_types)
 
-    # Get size options from database
+    # Get size options from database (raises if not loaded)
     size_options = menu_cache.get_global_attribute_options("size")
     for opt in size_options:
         if opt.get("display_name"):
@@ -93,22 +95,13 @@ def _get_valid_config_answers() -> set[str]:
         if opt.get("slug"):
             answers.add(opt["slug"].lower())
 
-    # Get temperature options from database
+    # Get temperature options from database (raises if not loaded)
     temp_options = menu_cache.get_global_attribute_options("temperature")
     for opt in temp_options:
         if opt.get("display_name"):
             answers.add(opt["display_name"].lower())
         if opt.get("slug"):
             answers.add(opt["slug"].lower())
-
-    # If database returned very little, use fallback
-    if len(answers) < 15:
-        logger.warning("Database returned few config answers, using fallback set")
-        answers.update({
-            # Bagel types fallback
-            "plain", "everything", "sesame", "poppy", "wheat", "whole wheat", "onion",
-            "cinnamon", "cinnamon raisin", "pumpernickel", "salt", "garlic",
-        })
 
     return answers
 

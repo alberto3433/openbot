@@ -127,120 +127,95 @@ def _get_syrup_options() -> list[str]:
     """Get syrup options from database, converted to lowercase for matching.
 
     Returns list of syrup names like ["vanilla", "caramel", "hazelnut", ...].
-    Falls back to hardcoded list if database not loaded.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded
     """
     db_syrups = menu_cache.get_beverage_syrups()
-    if db_syrups:
-        # Convert display names like "Vanilla Syrup" -> "vanilla"
-        return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
-    # Fallback if database not loaded
-    return ["vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice",
-            "cinnamon", "lavender", "almond"]
+    # Convert display names like "Vanilla Syrup" -> "vanilla"
+    return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
 
 
 def _get_milk_options_coffee() -> list[tuple[str, str]]:
     """Get milk options for sized_beverage MenuItemTask from database.
 
     Returns list of (pattern, value) tuples like [("oat milk", "oat"), ...].
-    Falls back to hardcoded list if database not loaded.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded
     """
     db_milks = menu_cache.get_beverage_milks()
-    if db_milks:
-        options = []
-        for milk in db_milks:
-            milk_lower = milk.lower()
-            # Create value: "Oat Milk" -> "oat", "Half & Half" -> "half and half"
-            value = milk_lower.replace(" milk", "").replace("&", "and").strip()
-            # Add full pattern first ("oat milk"), then short form ("oat")
-            options.append((milk_lower.replace("&", "and"), value))
-            short_form = value.replace(" and ", " ").strip()
-            if short_form != milk_lower.replace("&", "and"):
-                options.append((short_form, value))
-        # Add generic "milk" at the end to default to whole milk
-        options.append(("milk", "whole"))
-        return options
-    # Fallback if database not loaded
-    return [
-        ("oat milk", "oat"), ("almond milk", "almond"),
-        ("soy milk", "soy"), ("coconut milk", "coconut"),
-        ("whole milk", "whole"), ("skim milk", "skim"),
-        ("2% milk", "2%"), ("half and half", "half and half"),
-        ("oat", "oat"), ("almond", "almond"),
-        ("soy", "soy"), ("coconut", "coconut"),
-        ("milk", "whole"),
-    ]
+    options = []
+    for milk in db_milks:
+        milk_lower = milk.lower()
+        # Create value: "Oat Milk" -> "oat", "Half & Half" -> "half and half"
+        value = milk_lower.replace(" milk", "").replace("&", "and").strip()
+        # Add full pattern first ("oat milk"), then short form ("oat")
+        options.append((milk_lower.replace("&", "and"), value))
+        short_form = value.replace(" and ", " ").strip()
+        if short_form != milk_lower.replace("&", "and"):
+            options.append((short_form, value))
+    # Add generic "milk" at the end to default to whole milk
+    options.append(("milk", "whole"))
+    return options
 
 
 def _get_milk_options_espresso() -> list[tuple[str, str, str]]:
     """Get milk options for espresso-type MenuItemTask from database.
 
     Returns list of (pattern, slug, display_name) tuples.
-    Falls back to hardcoded list if database not loaded.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded
     """
     db_milks = menu_cache.get_beverage_milks()
-    if db_milks:
-        options = []
-        for milk in db_milks:
-            milk_lower = milk.lower()
-            # Create slug: "Oat Milk" -> "oat_milk", "Half & Half" -> "half_n_half"
-            slug = milk_lower.replace(" ", "_").replace("&", "n").replace("__", "_")
-            display = milk  # Keep original display name
-            # Add full pattern first
-            pattern = milk_lower.replace("&", "and")
-            options.append((pattern, slug, display))
-            # Add short form (without "milk")
-            short_form = milk_lower.replace(" milk", "").replace("&", "and").strip()
-            if short_form != pattern:
-                options.append((short_form, slug, display))
-        return options
-    # Fallback if database not loaded
-    return [
-        ("oat milk", "oat_milk", "Oat Milk"), ("almond milk", "almond_milk", "Almond Milk"),
-        ("soy milk", "soy_milk", "Soy Milk"), ("coconut milk", "coconut_milk", "Coconut Milk"),
-        ("whole milk", "whole_milk", "Whole Milk"), ("skim milk", "skim_milk", "Skim Milk"),
-        ("half and half", "half_n_half", "Half & Half"),
-        ("oat", "oat_milk", "Oat Milk"), ("almond", "almond_milk", "Almond Milk"),
-        ("soy", "soy_milk", "Soy Milk"), ("coconut", "coconut_milk", "Coconut Milk"),
-    ]
+    options = []
+    for milk in db_milks:
+        milk_lower = milk.lower()
+        # Create slug: "Oat Milk" -> "oat_milk", "Half & Half" -> "half_n_half"
+        slug = milk_lower.replace(" ", "_").replace("&", "n").replace("__", "_")
+        display = milk  # Keep original display name
+        # Add full pattern first
+        pattern = milk_lower.replace("&", "and")
+        options.append((pattern, slug, display))
+        # Add short form (without "milk")
+        short_form = milk_lower.replace(" milk", "").replace("&", "and").strip()
+        if short_form != pattern:
+            options.append((short_form, slug, display))
+    return options
 
 
 def _get_sweetener_options() -> list[str]:
     """Get sweetener options from database, converted to lowercase for matching.
 
     Returns list of sweetener names like ["sugar", "splenda", ...].
-    Falls back to hardcoded list if database not loaded.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded
     """
     db_sweeteners = menu_cache.get_beverage_sweeteners()
-    if db_sweeteners:
-        # Convert display names to lowercase patterns
-        # Handle special cases like "Sweet N Low" -> "sweet n low"
-        return [s.lower().replace("'", "").strip() for s in db_sweeteners]
-    # Fallback if database not loaded
-    return ["sugar", "splenda", "stevia", "honey", "equal", "sweet n low"]
+    # Convert display names to lowercase patterns
+    # Handle special cases like "Sweet N Low" -> "sweet n low"
+    return [s.lower().replace("'", "").strip() for s in db_sweeteners]
 
 
 def _get_sweetener_options_espresso() -> list[tuple[str, str, str]]:
     """Get sweetener options for espresso-type MenuItemTask from database.
 
     Returns list of (name, slug, display_name) tuples.
-    Falls back to hardcoded list if database not loaded.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded
     """
     db_sweeteners = menu_cache.get_beverage_sweeteners()
-    if db_sweeteners:
-        options = []
-        for sweetener in db_sweeteners:
-            name = sweetener.lower().replace("'", "").strip()
-            # Create slug: "Sweet N Low" -> "sweet_n_low"
-            slug = name.replace(" ", "_")
-            display = sweetener
-            options.append((name, slug, display))
-        return options
-    # Fallback if database not loaded
-    return [
-        ("sugar", "sugar", "Sugar"), ("splenda", "splenda", "Splenda"),
-        ("stevia", "stevia", "Stevia"), ("honey", "honey", "Honey"),
-        ("equal", "equal", "Equal"), ("sweet n low", "sweet_n_low", "Sweet N Low"),
-    ]
+    options = []
+    for sweetener in db_sweeteners:
+        name = sweetener.lower().replace("'", "").strip()
+        # Create slug: "Sweet N Low" -> "sweet_n_low"
+        slug = name.replace(" ", "_")
+        display = sweetener
+        options.append((name, slug, display))
+    return options
 
 
 def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:

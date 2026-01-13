@@ -28,13 +28,15 @@ def _get_removable_modifiers() -> set[str]:
     """Get the set of removable modifier names from the database.
 
     Combines proteins, toppings, cheeses, and spreads from the menu cache.
-    Falls back to a minimal hardcoded set if database is not available.
+
+    Raises:
+        MenuDataNotLoadedError: If menu cache is not loaded or ingredient data is missing
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
     modifiers: set[str] = set()
 
-    # Get ingredients from database
+    # Get ingredients from database (all raise MenuDataNotLoadedError if not available)
     proteins = menu_cache.get_proteins()
     toppings = menu_cache.get_toppings()
     cheeses = menu_cache.get_cheeses()
@@ -53,26 +55,6 @@ def _get_removable_modifiers() -> set[str]:
         "cheese",  # Generic cheese
         "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
     })
-
-    # If database returned nothing, use minimal fallback
-    if len(modifiers) < 5:
-        logger.warning("Database returned few modifiers, using fallback set")
-        modifiers = {
-            # Proteins
-            "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
-            "lox", "nova", "salmon", "whitefish", "tuna",
-            # Eggs
-            "egg", "eggs", "fried egg", "scrambled egg",
-            # Cheeses
-            "cheese", "american", "american cheese", "swiss", "swiss cheese",
-            "cheddar", "cheddar cheese", "muenster", "muenster cheese",
-            "provolone", "provolone cheese",
-            # Spreads
-            "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
-            # Toppings
-            "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
-            "avocado", "capers",
-        }
 
     return modifiers
 

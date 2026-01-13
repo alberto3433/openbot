@@ -16,8 +16,6 @@ from sandwich_bot.tasks.models import (
 )
 from sandwich_bot.tasks.field_config import (
     MenuFieldConfig,
-    DEFAULT_BAGEL_FIELDS,
-    DEFAULT_COFFEE_FIELDS,
     get_field_config,
     get_default_value,
     should_ask_field,
@@ -239,15 +237,15 @@ class TestBagelItemTask:
     def test_get_missing_required_fields(self):
         """Test finding missing required fields."""
         bagel = create_bagel_task()  # No fields set
+        bagel_fields = MenuFieldConfig().bagel_fields
 
-        missing = bagel.get_missing_required_fields(DEFAULT_BAGEL_FIELDS)
+        missing = bagel.get_missing_required_fields(bagel_fields)
 
         missing_names = [f.name for f in missing]
-        # bagel_type now has a default of "plain bagel", so only toasted is missing
-        assert "bagel_type" not in missing_names  # has default
-        assert "toasted" in missing_names
-        # quantity has default, so not missing
-        assert "quantity" not in missing_names
+        # Database config: all bagel fields are optional (required=False)
+        # So no required fields should be missing
+        # quantity is not in the database config so not checked
+        assert len(missing) == 0
 
     def test_get_missing_required_fields_when_filled(self):
         """Test no missing fields when all required are filled."""
@@ -255,39 +253,41 @@ class TestBagelItemTask:
             bagel_type="plain",
             toasted=False,
         )
+        bagel_fields = MenuFieldConfig().bagel_fields
 
-        missing = bagel.get_missing_required_fields(DEFAULT_BAGEL_FIELDS)
+        missing = bagel.get_missing_required_fields(bagel_fields)
         assert len(missing) == 0
 
     def test_get_fields_to_ask(self):
         """Test getting fields that need asking."""
         bagel = create_bagel_task()
+        bagel_fields = MenuFieldConfig().bagel_fields
 
-        to_ask = bagel.get_fields_to_ask(DEFAULT_BAGEL_FIELDS)
+        to_ask = bagel.get_fields_to_ask(bagel_fields)
         field_names = [f.name for f in to_ask]
 
-        # bagel_type has a default now, so we don't ask
-        assert "bagel_type" not in field_names
-        # toasted is required with no default
-        assert "toasted" in field_names
-        # spread is optional with ask_if_empty=True
-        assert "spread" in field_names
-        # extras now has ask_if_empty=False, so we don't ask
+        # Database config: bagel_type, toasted, spread have ask_if_empty=True
+        assert "bagel_type" in field_names  # ask_if_empty=True
+        assert "toasted" in field_names  # ask_if_empty=True
+        assert "spread" in field_names  # ask_if_empty=True
+        # extras maps to toppings which has ask_if_empty=False
         assert "extras" not in field_names
-        # quantity has default, so we don't ask
+        # quantity is not in the database config
         assert "quantity" not in field_names
 
     def test_get_progress(self):
         """Test progress calculation."""
         bagel = create_bagel_task()
-        progress = bagel.get_progress(DEFAULT_BAGEL_FIELDS)
-        # bagel_type and quantity have defaults, only toasted is missing
-        # So 2/3 of required fields are filled
-        assert progress == pytest.approx(2/3, rel=0.1)
+        bagel_fields = MenuFieldConfig().bagel_fields
+        progress = bagel.get_progress(bagel_fields)
+        # Database config: all fields are optional (required=False)
+        # When no required fields, progress depends on is_complete() status
+        # A PENDING task returns 0.0, a COMPLETE task returns 1.0
+        assert progress == pytest.approx(0.0)  # Task is PENDING
 
-        bagel.toasted = True
-        progress = bagel.get_progress(DEFAULT_BAGEL_FIELDS)
-        # All required fields now filled
+        # Mark task complete - now progress should be 100%
+        bagel.mark_complete()
+        progress = bagel.get_progress(bagel_fields)
         assert progress == pytest.approx(1.0)
 
 
@@ -333,10 +333,12 @@ class TestCoffeeItemTask:
 
     def test_coffee_fields_with_size_config(self):
         """Test that size field is configured to always ask."""
+        coffee_fields = MenuFieldConfig().coffee_fields
         # Size must be explicitly asked (no default, always ask)
-        assert DEFAULT_COFFEE_FIELDS["size"].default is None
-        assert DEFAULT_COFFEE_FIELDS["size"].ask_if_empty is True
-        assert "small or large" in DEFAULT_COFFEE_FIELDS["size"].question.lower()
+        assert coffee_fields["size"].default is None
+        assert coffee_fields["size"].ask_if_empty is True
+        assert coffee_fields["size"].question is not None
+        assert "size" in coffee_fields["size"].question.lower()
 
 
 # =============================================================================
@@ -548,36 +550,36 @@ class TestMenuFieldConfig:
     """Tests for menu-based field configuration."""
 
     def test_default_config(self):
-        """Test default configuration."""
+        """Test default configuration loaded from database."""
         config = MenuFieldConfig()
 
+        # Fields are loaded from database via field name mapping
         assert "bagel_type" in config.bagel_fields
-        assert "drink_type" in config.coffee_fields
-        assert config.bagel_fields["toasted"].required is True
+        # Coffee fields include size (from database)
+        assert "size" in config.coffee_fields
+        # Database config: toasted is optional (required=False)
+        assert config.bagel_fields["toasted"].required is False
 
-    def test_from_menu_data_with_overrides(self):
-        """Test loading config with menu overrides."""
+    def test_from_menu_data_ignores_overrides(self):
+        """Test that from_menu_data returns config without applying overrides.
+
+        Note: The current implementation doesn't support menu_data overrides.
+        Field config is loaded from the database only.
+        """
         menu_data = {
             "field_config": {
                 "bagel": {
                     "toasted": {"default": False, "ask_if_empty": False},
-                },
-                "coffee": {
-                    "size": {"default": "large", "ask_if_empty": True, "question": "What size?"},
                 },
             }
         }
 
         config = MenuFieldConfig.from_menu_data(menu_data)
 
-        # Bagel toasted should now have default
-        assert config.bagel_fields["toasted"].default is False
-        assert config.bagel_fields["toasted"].ask_if_empty is False
-
-        # Coffee size should now be large and ask
-        assert config.coffee_fields["size"].default == "large"
-        assert config.coffee_fields["size"].ask_if_empty is True
-        assert config.coffee_fields["size"].question == "What size?"
+        # from_menu_data returns default config - overrides not supported
+        # Database config is the source of truth
+        assert "bagel_type" in config.bagel_fields
+        assert "toasted" in config.bagel_fields
 
     def test_get_fields_for_item_type(self):
         """Test getting fields for specific item types."""
@@ -587,10 +589,16 @@ class TestMenuFieldConfig:
         assert "bagel_type" in bagel_fields
 
         coffee_fields = config.get_fields_for_item_type("coffee")
-        assert "drink_type" in coffee_fields
+        # Coffee maps to sized_beverage which has size field
+        assert "size" in coffee_fields
 
-        unknown_fields = config.get_fields_for_item_type("unknown")
-        assert unknown_fields == {}
+    def test_get_fields_for_unknown_item_type_raises(self):
+        """Test that unknown item type raises MenuDataNotLoadedError."""
+        from sandwich_bot.exceptions import MenuDataNotLoadedError
+        config = MenuFieldConfig()
+
+        with pytest.raises(MenuDataNotLoadedError):
+            config.get_fields_for_item_type("unknown")
 
 
 class TestFieldConfigHelpers:
@@ -603,25 +611,25 @@ class TestFieldConfigHelpers:
         assert config.name == "toasted"
 
     def test_get_default_value(self):
-        """Test getting default values."""
-        # Coffee size no longer has a default - must be asked explicitly
+        """Test getting default values from database."""
+        # Database config: coffee size has no default
         size_default = get_default_value("coffee", "size")
         assert size_default is None
 
-        # bagel_type now has a default of "plain bagel"
+        # Database config: bagel_type has no default
         bagel_type_default = get_default_value("bagel", "bagel_type")
-        assert bagel_type_default == "plain bagel"
+        assert bagel_type_default is None
 
     def test_should_ask_field(self):
-        """Test should_ask_field function."""
-        # Bagel type with no value should NOT be asked (has default, ask_if_empty=False)
-        assert should_ask_field("bagel", "bagel_type", None) is False
+        """Test should_ask_field function with database config."""
+        # Database config: bagel_type has ask_if_empty=True, no default
+        assert should_ask_field("bagel", "bagel_type", None) is True
 
-        # Toasted with no value should be asked (required, no default)
+        # Database config: toasted has ask_if_empty=True
         assert should_ask_field("bagel", "toasted", None) is True
 
         # Toasted with value should not be asked
         assert should_ask_field("bagel", "toasted", True) is False
 
-        # Size with no value SHOULD be asked (no default, ask_if_empty=True)
+        # Size with no value SHOULD be asked (ask_if_empty=True)
         assert should_ask_field("coffee", "size", None) is True

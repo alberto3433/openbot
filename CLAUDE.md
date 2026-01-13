@@ -172,6 +172,67 @@ All food-domain behavior must be **data-driven**, not hardcoded. The codebase sh
 ### Legacy Code
 Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt. Do not extend them - work toward consolidating into generic handlers.
 
+## Database Queries: Fail Fast on Missing Data
+
+### Principle
+When querying the database for menu configuration data (ingredients, modifiers, item types, attributes, etc.), **never silently return empty collections or fall back to hardcoded values**. Instead, raise a descriptive `MenuDataNotLoadedError` exception with full context.
+
+### Why This Matters
+Silent fallbacks mask configuration problems:
+- An order that "works" with stale hardcoded data is worse than a visible failure
+- Debugging "why isn't X recognized?" is impossible when fallbacks are silent
+- Stale fallback data diverges from the database over time
+- Problems surface in production instead of at startup
+
+### The Pattern
+
+**WRONG - Silent empty return:**
+```python
+def get_proteins(self) -> set[str]:
+    if not self._is_loaded:
+        return set()  # Caller has no idea data is missing
+    return self._proteins.copy()
+```
+
+**WRONG - Silent fallback to hardcoded values:**
+```python
+def get_modifier_fields(item):
+    db_fields = load_from_db(item_type)
+    if not db_fields:
+        return HARDCODED_FIELDS  # Masks DB configuration problem
+    return db_fields
+```
+
+**CORRECT - Fail fast with context:**
+```python
+def get_proteins(self) -> set[str]:
+    if not self._is_loaded:
+        raise MenuDataNotLoadedError(
+            "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup."
+        )
+    if not self._proteins:
+        raise MenuDataNotLoadedError(
+            "No proteins found in database. "
+            "Check that ingredients table has records with category='protein'."
+        )
+    return self._proteins.copy()
+```
+
+### Exception Class
+Use `MenuDataNotLoadedError` (defined in `sandwich_bot/exceptions.py`) for all menu data loading failures. The error message must include:
+1. What data was expected
+2. Where to look to fix it (which table, which column)
+3. Any relevant context (item type slug, attribute name, etc.)
+
+### Exceptions to This Rule
+The following **lookup/search functions** may return `None` or the original input when no match is found (this is semantic "not found", not a data error):
+- `find_modifier_match()` - returns `None` if modifier not found on item
+- `resolve_coffee_alias()` - returns original name if no alias exists
+- `find_by_pound_item()` - returns `None` if item not in by-pound catalog
+- `normalize_modifier()` - returns original if no normalization needed
+
+These functions **MUST still throw** `MenuDataNotLoadedError` if the cache is not loaded.
+
 ## Key Patterns
 
 ### Item Configuration Storage

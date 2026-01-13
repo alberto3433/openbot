@@ -6,6 +6,10 @@ This module provides a generic system for handling modifier operations
 
 The key insight is that modifiers are just fields on item objects, and we can
 handle them generically by defining which fields are "modifiers" for each item type.
+
+All modifier field definitions are loaded from the database. There are no
+hardcoded fallbacks - if the database doesn't have modifier fields configured,
+an exception is raised to fail fast and make the configuration problem visible.
 """
 
 import logging
@@ -17,6 +21,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from sandwich_bot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
 
@@ -49,133 +54,68 @@ class ModifierRemovalResult:
     message: str
 
 
-# Define modifier fields for each item type
-# This is the single source of truth for what modifiers each item type has
-
-BAGEL_MODIFIER_FIELDS = [
-    ModifierField(
-        field_name="spread",
-        display_name="spread",
-        aliases=["cream cheese", "cc", "schmear", "butter"],
-        related_fields=["spread_type", "spread_price"],
-    ),
-    ModifierField(
-        field_name="sandwich_protein",
-        display_name="protein",
-        aliases=["bacon", "ham", "sausage", "turkey", "salami", "pastrami",
-                 "corned beef", "nova", "lox", "salmon", "whitefish", "sable"],
-    ),
-    ModifierField(
-        field_name="extras",
-        display_name="extras",
-        aliases=["tomato", "onion", "lettuce", "pickle", "jalapeno", "avocado",
-                 "capers", "egg", "cheese", "american cheese", "swiss", "cheddar",
-                 "muenster", "pepper jack"],
-        is_list=True,
-    ),
-]
-
-COFFEE_MODIFIER_FIELDS = [
-    ModifierField(
-        field_name="milk",
-        display_name="milk",
-        aliases=["milk", "whole milk", "oat milk", "almond milk", "coconut milk",
-                 "skim milk", "soy milk", "2% milk", "half and half", "cream",
-                 "oat", "almond", "coconut", "skim", "soy"],
-        price_field="milk_upcharge",
-    ),
-    ModifierField(
-        field_name="sweeteners",
-        display_name="sweetener",
-        aliases=["sugar", "sweetener", "honey", "splenda", "stevia", "raw sugar",
-                 "equal", "sweet n low"],
-        is_list=True,
-    ),
-    ModifierField(
-        field_name="flavor_syrups",
-        display_name="syrup",
-        aliases=["syrup", "vanilla", "vanilla syrup", "caramel", "caramel syrup",
-                 "hazelnut", "hazelnut syrup", "mocha", "mocha syrup", "lavender",
-                 "pumpkin spice"],
-        is_list=True,
-    ),
-]
-
-MENU_ITEM_MODIFIER_FIELDS = [
-    ModifierField(
-        field_name="spread",
-        display_name="spread",
-        aliases=["cream cheese", "cc", "schmear", "butter", "spread"],
-        price_field="spread_price",
-    ),
-    ModifierField(
-        field_name="modifications",
-        display_name="modification",
-        aliases=[],  # Dynamic - matches against actual modification values
-        is_list=True,
-    ),
-]
-
-def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField] | None:
+def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
     """Load modifier fields from database for an item type.
 
-    Returns a list of ModifierField objects, or None if loading fails or no data.
+    Returns a list of ModifierField objects.
+
+    Raises:
+        MenuDataNotLoadedError: If no modifier fields found in database
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
-    try:
-        field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
-        if not field_configs:
-            logger.debug("No modifier fields from DB for %s, using fallback", item_type_slug)
-            return None
-
-        result = []
-        for config in field_configs:
-            # Add related_fields for spread (to clear spread_type and spread_price together)
-            related_fields = None
-            if config["field_name"] == "spread":
-                related_fields = ["spread_type", "spread_price"]
-
-            result.append(ModifierField(
-                field_name=config["field_name"],
-                display_name=config["display_name"],
-                aliases=config["aliases"],
-                is_list=config["is_list"],
-                related_fields=related_fields,
-            ))
-
-        logger.debug(
-            "Loaded %d modifier fields from DB for %s: %s",
-            len(result), item_type_slug,
-            [(f.field_name, len(f.aliases)) for f in result]
+    field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
+    if not field_configs:
+        raise MenuDataNotLoadedError(
+            f"No modifier fields found in database for item type '{item_type_slug}'. "
+            f"Check that item_type_ingredients table has entries linking "
+            f"ingredients to this item type."
         )
-        return result if result else None
-    except Exception as e:
-        logger.warning("Failed to load modifier fields from DB for %s: %s", item_type_slug, e)
-        return None
+
+    result = []
+    for config in field_configs:
+        # Add related_fields for spread (to clear spread_type and spread_price together)
+        related_fields = None
+        if config["field_name"] == "spread":
+            related_fields = ["spread_type", "spread_price"]
+
+        result.append(ModifierField(
+            field_name=config["field_name"],
+            display_name=config["display_name"],
+            aliases=config["aliases"],
+            is_list=config["is_list"],
+            related_fields=related_fields,
+        ))
+
+    logger.debug(
+        "Loaded %d modifier fields from DB for %s: %s",
+        len(result), item_type_slug,
+        [(f.field_name, len(f.aliases)) for f in result]
+    )
+    return result
 
 
 def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type.
 
-    First tries to load from database, falls back to hardcoded constants.
+    Loads modifier fields from database. Fails fast if database not configured.
+
+    Raises:
+        MenuDataNotLoadedError: If no modifier fields found in database
     """
     if isinstance(item, MenuItemTask):
         # Items with bread attribute (bagels) use bagel modifier fields
         if item.has_attribute("bread"):
-            # Try database first
-            db_fields = _load_modifier_fields_from_db("bagel")
-            if db_fields:
-                return db_fields
-            return BAGEL_MODIFIER_FIELDS
+            return _load_modifier_fields_from_db("bagel")
         # Items with size attribute (beverages) use coffee modifier fields
         elif item.has_attribute("size"):
-            # Try database first
-            db_fields = _load_modifier_fields_from_db("sized_beverage")
-            if db_fields:
-                return db_fields
-            return COFFEE_MODIFIER_FIELDS
-        return MENU_ITEM_MODIFIER_FIELDS
+            return _load_modifier_fields_from_db("sized_beverage")
+        # Other menu items use their item type's modifier fields
+        item_type = getattr(item, 'menu_item_type', None)
+        if item_type:
+            return _load_modifier_fields_from_db(item_type)
+        # Fallback to menu_item type for generic items
+        return _load_modifier_fields_from_db("menu_item")
     else:
         return []
 

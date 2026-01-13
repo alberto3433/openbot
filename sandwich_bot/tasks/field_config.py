@@ -155,16 +155,23 @@ def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
     """Load field configurations from database for an item type.
 
     Returns a dict mapping code field names to FieldConfig objects.
+
+    Raises:
+        MenuDataNotLoadedError: If no field configs found in database for this item type
     """
     from sandwich_bot.menu_data_cache import menu_cache
+    from sandwich_bot.exceptions import MenuDataNotLoadedError
 
     # Map item type to database slug
     db_item_type = _ITEM_TYPE_TO_SLUG_MAP.get(item_type, item_type)
 
-    # Get field configs from database
+    # Get field configs from database (raises if cache not loaded)
     db_configs = menu_cache.get_all_field_configs(db_item_type)
     if not db_configs:
-        return {}
+        raise MenuDataNotLoadedError(
+            f"No field configurations found in database for item type '{db_item_type}'. "
+            f"Check that item_type_attributes table has entries for this item type."
+        )
 
     # Get the field name mapping for this item type
     field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})

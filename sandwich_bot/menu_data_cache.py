@@ -10,7 +10,7 @@ Features:
 - Partial string matching for disambiguation
 - Background refresh at configurable intervals (default: 3 AM daily)
 - Admin endpoint for manual refresh
-- Fallback to hardcoded values if DB unavailable
+- Fail-fast behavior: raises MenuDataNotLoadedError if cache not loaded or data missing
 
 Usage:
     from sandwich_bot.menu_data_cache import menu_cache
@@ -32,6 +32,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
 
+from .exceptions import MenuDataNotLoadedError
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,8 +41,8 @@ class MenuDataCache:
     """
     Singleton cache for menu data loaded from the database.
 
-    Replaces hardcoded constants with database-driven values while
-    maintaining backward compatibility through fallback values.
+    Replaces hardcoded constants with database-driven values.
+    Raises MenuDataNotLoadedError if accessed before loading or if data is missing.
     """
 
     _instance = None
@@ -369,21 +371,12 @@ class MenuDataCache:
                 if alias:
                     bagel_types.add(alias)
 
-        # Fallback if DB is empty
+        # Fail if database has no bagel types configured
         if not bagel_types:
-            bagel_types = {
-                "plain", "everything", "sesame", "poppy", "onion",
-                "cinnamon raisin", "cinnamon", "raisin", "pumpernickel",
-                "whole wheat", "wheat", "salt", "garlic", "bialy",
-                "egg", "multigrain", "asiago", "jalapeno", "blueberry",
-                "gluten free", "gluten-free",
-            }
-            bagel_types_list = [
-                "plain", "everything", "sesame", "poppy",
-                "onion", "cinnamon raisin", "whole wheat", "pumpernickel",
-                "salt", "garlic", "egg", "multigrain",
-                "asiago", "jalapeno", "blueberry", "bialy",
-            ]
+            raise RuntimeError(
+                "No bagel types found in database. Run migrations to populate ingredients table "
+                "with bread category items."
+            )
 
         self._bagel_types = bagel_types
         self._bagel_types_list = bagel_types_list
@@ -1477,13 +1470,33 @@ class MenuDataCache:
     # Getter Methods
     # =========================================================================
 
+    def _ensure_loaded(self) -> None:
+        """Ensure cache is loaded, raise exception if not."""
+        if not self._is_loaded:
+            raise MenuDataNotLoadedError(
+                "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup. "
+                "Check that the database connection is working and migrations have run."
+            )
+
     def get_spreads(self) -> set[str]:
         """Get base spread types (cream cheese, butter, etc.)."""
-        return self._spreads.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._spreads:
+            raise MenuDataNotLoadedError(
+                "No spreads found in database. "
+                "Check that ingredients table has records with category='spread'."
+            )
+        return self._spreads.copy()
 
     def get_spread_types(self) -> set[str]:
         """Get cream cheese variety types (scallion, honey walnut, etc.)."""
-        return self._spread_types.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._spread_types:
+            raise MenuDataNotLoadedError(
+                "No spread types found in database. "
+                "Check that menu_items table has records with category='cream_cheese'."
+            )
+        return self._spread_types.copy()
 
     def get_bagel_spreads(self) -> set[str]:
         """Get all spread patterns for matching in user input.
@@ -1493,60 +1506,132 @@ class MenuDataCache:
         - Spread types (scallion, honey walnut, etc.)
         - Combined patterns (scallion cream cheese, etc.)
         """
-        return self._bagel_spreads.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._bagel_spreads:
+            raise MenuDataNotLoadedError(
+                "No bagel spreads found in database. "
+                "Check ingredients and menu_items tables for spread data."
+            )
+        return self._bagel_spreads.copy()
 
     def get_bagel_types(self) -> set[str]:
         """Get bagel types (plain, everything, etc.) including aliases."""
-        return self._bagel_types.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._bagel_types:
+            raise MenuDataNotLoadedError(
+                "No bagel types found in database. "
+                "Check attribute_options table for 'bread' attribute options."
+            )
+        return self._bagel_types.copy()
 
     def get_bagel_types_list(self) -> list[str]:
         """Get ordered list of bagel types for display/pagination."""
-        return self._bagel_types_list.copy() if self._is_loaded else []
+        self._ensure_loaded()
+        if not self._bagel_types_list:
+            raise MenuDataNotLoadedError(
+                "No bagel types list found in database. "
+                "Check attribute_options table for 'bread' attribute options."
+            )
+        return self._bagel_types_list.copy()
 
     def get_proteins(self) -> set[str]:
         """Get protein types (bacon, ham, etc.)."""
-        return self._proteins.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._proteins:
+            raise MenuDataNotLoadedError(
+                "No proteins found in database. "
+                "Check that ingredients table has records with category='protein'."
+            )
+        return self._proteins.copy()
 
     def get_toppings(self) -> set[str]:
         """Get topping types (tomato, onion, etc.)."""
-        return self._toppings.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._toppings:
+            raise MenuDataNotLoadedError(
+                "No toppings found in database. "
+                "Check that ingredients table has records with category='topping'."
+            )
+        return self._toppings.copy()
 
     def get_cheeses(self) -> set[str]:
         """Get cheese types (american, swiss, etc.)."""
-        return self._cheeses.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._cheeses:
+            raise MenuDataNotLoadedError(
+                "No cheeses found in database. "
+                "Check that ingredients table has records with category='cheese'."
+            )
+        return self._cheeses.copy()
 
     def get_coffee_types(self) -> set[str]:
         """Get coffee/tea beverage types."""
-        return self._coffee_types.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._coffee_types:
+            raise MenuDataNotLoadedError(
+                "No coffee types found in database. "
+                "Check that menu_items table has sized_beverage items."
+            )
+        return self._coffee_types.copy()
 
     def get_soda_types(self) -> set[str]:
         """Get soda/bottled beverage types."""
-        return self._soda_types.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._soda_types:
+            raise MenuDataNotLoadedError(
+                "No soda types found in database. "
+                "Check that menu_items table has bottled_beverage items."
+            )
+        return self._soda_types.copy()
 
     def get_beverage_milks(self) -> list[str]:
         """Get available milk options for beverages.
 
         Returns ordered list of milk display names from the database.
         """
-        return self._beverage_milks.copy() if self._is_loaded else []
+        self._ensure_loaded()
+        if not self._beverage_milks:
+            raise MenuDataNotLoadedError(
+                "No beverage milks found in database. "
+                "Check item_type_ingredients table for sized_beverage milk options."
+            )
+        return self._beverage_milks.copy()
 
     def get_beverage_sweeteners(self) -> list[str]:
         """Get available sweetener options for beverages.
 
         Returns ordered list of sweetener display names from the database.
         """
-        return self._beverage_sweeteners.copy() if self._is_loaded else []
+        self._ensure_loaded()
+        if not self._beverage_sweeteners:
+            raise MenuDataNotLoadedError(
+                "No beverage sweeteners found in database. "
+                "Check item_type_ingredients table for sized_beverage sweetener options."
+            )
+        return self._beverage_sweeteners.copy()
 
     def get_beverage_syrups(self) -> list[str]:
         """Get available syrup/flavor options for beverages.
 
         Returns ordered list of syrup display names from the database.
         """
-        return self._beverage_syrups.copy() if self._is_loaded else []
+        self._ensure_loaded()
+        if not self._beverage_syrups:
+            raise MenuDataNotLoadedError(
+                "No beverage syrups found in database. "
+                "Check item_type_ingredients table for sized_beverage syrup options."
+            )
+        return self._beverage_syrups.copy()
 
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
-        return self._known_menu_items.copy() if self._is_loaded else set()
+        self._ensure_loaded()
+        if not self._known_menu_items:
+            raise MenuDataNotLoadedError(
+                "No menu items found in database. "
+                "Check that menu_items table has been populated."
+            )
+        return self._known_menu_items.copy()
 
     def get_modifier_category(self, item_type_slug: str) -> str | None:
         """Get the modifier extraction category for an item type.
@@ -1557,7 +1642,10 @@ class MenuDataCache:
         Returns:
             "food" for items with food-style modifiers (proteins, cheeses, toppings)
             "beverage" for items with beverage-style modifiers (milk, sweetener, syrup)
-            None if the item type has no modifier category or cache not loaded
+            None if the item type has no modifier category defined
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             >>> cache.get_modifier_category("bagel")
@@ -1565,8 +1653,8 @@ class MenuDataCache:
             >>> cache.get_modifier_category("sized_beverage")
             "beverage"
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
+        # Note: returning None is valid - not all item types have modifier categories
         return self._item_type_modifier_categories.get(item_type_slug)
 
     def get_item_keywords(self) -> set[str]:
@@ -1582,7 +1670,10 @@ class MenuDataCache:
         This replaces the hardcoded non_modifier_keywords sets.
 
         Returns:
-            Set of lowercase item keywords, or empty set if cache not loaded.
+            Set of lowercase item keywords.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or no keywords found
 
         Example:
             >>> keywords = cache.get_item_keywords()
@@ -1591,8 +1682,12 @@ class MenuDataCache:
             >>> "latte" in keywords
             True
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
+        if not self._item_keywords:
+            raise MenuDataNotLoadedError(
+                "No item keywords found in database. "
+                "Check that item_types and menu_items tables are populated."
+            )
         return self._item_keywords.copy()
 
     def get_configurable_item_types(self) -> set[str]:
@@ -1605,7 +1700,10 @@ class MenuDataCache:
         This replaces the hardcoded SUPPORTED_ITEM_TYPES set.
 
         Returns:
-            Set of item type slugs, or empty set if cache not loaded.
+            Set of item type slugs.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or no configurable types found
 
         Example:
             >>> types = cache.get_configurable_item_types()
@@ -1614,8 +1712,12 @@ class MenuDataCache:
             >>> "sized_beverage" in types
             True
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
+        if not self._configurable_item_types:
+            raise MenuDataNotLoadedError(
+                "No configurable item types found in database. "
+                "Check that item_type_attributes or item_type_global_attributes tables are populated."
+            )
         return self._configurable_item_types.copy()
 
     def get_global_attribute_options(self, attr_slug: str) -> list[dict]:
@@ -1627,7 +1729,9 @@ class MenuDataCache:
         Returns:
             List of option dicts with keys: slug, display_name, price_modifier,
             iced_price_modifier, is_default, is_available, aliases.
-            Returns empty list if attribute not found or cache not loaded.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or attribute has no options
 
         Example:
             >>> cache.get_global_attribute_options("shots")
@@ -1637,9 +1741,14 @@ class MenuDataCache:
                 ...
             ]
         """
-        if not self._is_loaded:
-            return []
-        return self._global_attribute_options.get(attr_slug, [])
+        self._ensure_loaded()
+        options = self._global_attribute_options.get(attr_slug, [])
+        if not options:
+            raise MenuDataNotLoadedError(
+                f"No options found for global attribute '{attr_slug}'. "
+                f"Check that global_attribute_options table has options for this attribute."
+            )
+        return options
 
     def get_item_type_attributes(self, item_type_slug: str) -> dict:
         """Get attributes for an item type (lazy-loaded, single source of truth).
@@ -2110,7 +2219,10 @@ class MenuDataCache:
         Returns:
             Option dict with keys: slug, display_name, price_modifier,
             iced_price_modifier, is_default, is_available, aliases.
-            Returns None if no match found.
+            Returns None if no match found (this is semantic, not an error).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             >>> cache.resolve_option_by_alias("shots", "2")
@@ -2120,12 +2232,11 @@ class MenuDataCache:
             >>> cache.resolve_option_by_alias("shots", "two")
             {"slug": "double", "display_name": "Double", "price_modifier": 0.75, ...}
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
 
         options = self._global_attribute_options.get(attr_slug, [])
         if not options:
-            return None
+            return None  # No options for this attribute - semantic "not found"
 
         input_lower = input_value.lower().strip()
 
@@ -2141,7 +2252,7 @@ class MenuDataCache:
                 if input_lower in alias_list:
                     return opt
 
-        return None
+        return None  # No match found - semantic "not found"
 
     def get_signature_item_aliases(self) -> dict[str, str]:
         """Get signature item alias mapping.
@@ -2152,9 +2263,13 @@ class MenuDataCache:
 
         Returns:
             Dict mapping lowercase alias -> menu item name (with original casing).
-            Returns empty dict if cache not loaded.
+            May be empty if no signature items are configured.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        return self._signature_item_aliases.copy() if self._is_loaded else {}
+        self._ensure_loaded()
+        return self._signature_item_aliases.copy()
 
     def get_by_pound_items(self) -> dict[str, list[str]]:
         """Get by-the-pound items organized by category.
@@ -2164,7 +2279,10 @@ class MenuDataCache:
 
         Returns:
             Dict mapping category -> list of item names.
-            Returns empty dict if cache not loaded.
+            May be empty if store doesn't sell by-pound items.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             {
@@ -2172,9 +2290,7 @@ class MenuDataCache:
                 "spread": ["Plain Cream Cheese", "Scallion Cream Cheese", ...],
             }
         """
-        # Return deep copy to prevent mutation
-        if not self._is_loaded:
-            return {}
+        self._ensure_loaded()
         return {k: list(v) for k, v in self._by_pound_items.items()}
 
     def get_by_pound_aliases(self) -> dict[str, tuple[str, str]]:
@@ -2185,7 +2301,10 @@ class MenuDataCache:
 
         Returns:
             Dict mapping lowercase alias -> (canonical_name, category).
-            Returns empty dict if cache not loaded.
+            May be empty if store doesn't sell by-pound items.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             {
@@ -2194,7 +2313,8 @@ class MenuDataCache:
                 "scallion": ("Scallion Cream Cheese", "spread"),
             }
         """
-        return self._by_pound_aliases.copy() if self._is_loaded else {}
+        self._ensure_loaded()
+        return self._by_pound_aliases.copy()
 
     def get_by_pound_category_names(self) -> dict[str, str]:
         """Get by-the-pound category display names.
@@ -2203,7 +2323,10 @@ class MenuDataCache:
 
         Returns:
             Dict mapping category slug -> display name.
-            Returns empty dict if cache not loaded.
+            May be empty if store doesn't sell by-pound items.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             {
@@ -2214,7 +2337,8 @@ class MenuDataCache:
                 "spread": "spreads",
             }
         """
-        return self._by_pound_category_names.copy() if self._is_loaded else {}
+        self._ensure_loaded()
+        return self._by_pound_category_names.copy()
 
     def find_by_pound_item(self, item_name: str) -> tuple[str, str] | None:
         """Find a by-pound item and its category by name or alias.
@@ -2224,9 +2348,12 @@ class MenuDataCache:
 
         Returns:
             Tuple of (canonical_name, category) if found, None otherwise.
+            None is a semantic "not found", not an error.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
 
         item_lower = item_name.lower().strip()
 
@@ -2251,7 +2378,7 @@ class MenuDataCache:
         if best_match:
             return (best_match[0], best_match[1])
 
-        return None
+        return None  # No match found - semantic "not found"
 
     def get_bagel_only_types(self) -> set[str]:
         """Get bagel types that are NOT also spread types.
@@ -2261,9 +2388,11 @@ class MenuDataCache:
 
         Returns:
             Set of bagel types that don't exist as spread types.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
         return self._bagel_types - self._spread_types
 
     def get_spread_only_types(self) -> set[str]:
@@ -2274,9 +2403,11 @@ class MenuDataCache:
 
         Returns:
             Set of spread types that don't exist as bagel types.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
         return self._spread_types - self._bagel_types
 
     def get_ambiguous_modifiers(self) -> set[str]:
@@ -2287,9 +2418,11 @@ class MenuDataCache:
 
         Returns:
             Set of types that exist as both bagel and spread types.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
         return self._bagel_types & self._spread_types
 
     def resolve_coffee_alias(self, name: str) -> str:
@@ -2301,10 +2434,12 @@ class MenuDataCache:
 
         Returns:
             Canonical menu item name (e.g., "Seasonal Latte Matcha" for "matcha")
-            or the original name if no mapping found.
+            or the original name if no mapping found (semantic "not found").
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return name
+        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._coffee_alias_to_canonical.get(name_lower, name)
 
@@ -2317,10 +2452,12 @@ class MenuDataCache:
 
         Returns:
             Canonical menu item name (e.g., "Coca-Cola" for "coke")
-            or the original name if no mapping found.
+            or the original name if no mapping found (semantic "not found").
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return name
+        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._soda_alias_to_canonical.get(name_lower, name)
 
@@ -2337,7 +2474,10 @@ class MenuDataCache:
         Returns:
             Canonical Ingredient.name (e.g., "Nova Scotia Salmon" for "lox",
             "Vegetable Cream Cheese" for "veggie") or the original modifier
-            if no mapping found (graceful failure).
+            if no mapping found (semantic "not found").
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.normalize_modifier("lox")
@@ -2347,8 +2487,7 @@ class MenuDataCache:
             >>> cache.normalize_modifier("unknown")
             "unknown"  # Returns original if not found
         """
-        if not self._is_loaded:
-            return modifier
+        self._ensure_loaded()
         modifier_lower = modifier.lower().strip()
         return self._modifier_aliases.get(modifier_lower, modifier)
 
@@ -2358,7 +2497,16 @@ class MenuDataCache:
 
         Returns:
             Set of side item names and their aliases, all lowercase.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or no side items found
         """
+        self._ensure_loaded()
+        if not self._side_items:
+            raise MenuDataNotLoadedError(
+                "No side items found in database. "
+                "Check that menu_items table has items in 'side' category."
+            )
         return self._side_items.copy()
 
     def resolve_side_alias(self, name: str) -> str | None:
@@ -2374,8 +2522,10 @@ class MenuDataCache:
         Returns:
             Canonical MenuItem.name (e.g., "Side of Sausage" for "sausage",
             "Side of Breakfast Latke" for "latke") or None if not found.
-            Returns None (not original) to allow graceful failure handling
-            by the caller.
+            None is semantic "not found", not an error.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.resolve_side_alias("sausage")
@@ -2385,8 +2535,7 @@ class MenuDataCache:
             >>> cache.resolve_side_alias("unknown")
             None  # Not found - caller should handle gracefully
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._side_alias_to_canonical.get(name_lower)
 
@@ -2409,8 +2558,10 @@ class MenuDataCache:
             Canonical MenuItem.name (e.g., "Tuna Salad Sandwich" for "tuna salad",
             "The BLT" for "blt", "Cheese Omelette" for "cheese omelette")
             or None if not found.
-            Returns None (not original) to allow graceful failure handling
-            by the caller.
+            None is semantic "not found", not an error.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.resolve_menu_item_alias("tuna salad")
@@ -2422,8 +2573,7 @@ class MenuDataCache:
             >>> cache.resolve_menu_item_alias("unknown item")
             None  # Not found - caller should handle gracefully
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._menu_item_alias_to_canonical.get(name_lower)
 
@@ -2434,8 +2584,17 @@ class MenuDataCache:
         Returns:
             Dict mapping abbreviation (lowercase) to canonical name (lowercase).
             Example: {"cc": "cream cheese", "pb": "peanut butter"}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or no abbreviations found
         """
-        return self._abbreviations.copy() if self._is_loaded else {}
+        self._ensure_loaded()
+        if not self._abbreviations:
+            raise MenuDataNotLoadedError(
+                "No abbreviations found in database. "
+                "Check that ingredients or menu_items tables have abbreviation values."
+            )
+        return self._abbreviations.copy()
 
     def expand_abbreviations(self, text: str) -> str:
         """
@@ -2450,7 +2609,9 @@ class MenuDataCache:
 
         Returns:
             Text with abbreviations expanded to canonical forms.
-            Returns original text if cache not loaded.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.expand_abbreviations("strawberry cc")
@@ -2462,7 +2623,9 @@ class MenuDataCache:
         """
         import re
 
-        if not self._is_loaded or not self._abbreviations:
+        self._ensure_loaded()
+        if not self._abbreviations:
+            # No abbreviations defined - return original text
             return text
 
         result = text
@@ -2506,8 +2669,7 @@ class MenuDataCache:
             >>> cache.get_category_keyword_mapping("unknown")
             None
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
         keyword_lower = keyword.lower().strip()
         return self._category_keywords.get(keyword_lower)
 
@@ -2519,12 +2681,14 @@ class MenuDataCache:
             Sorted list of all valid category keywords that can be used
             in menu/price queries.
 
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
         Example:
             >>> cache.get_available_category_keywords()
             ["bagels", "beverages", "coffees", "desserts", "drinks", ...]
         """
-        if not self._is_loaded:
-            return []
+        self._ensure_loaded()
         return sorted(self._category_keywords.keys())
 
     # =========================================================================
@@ -2670,7 +2834,10 @@ class MenuDataCache:
 
         Returns:
             List of field config dicts, ordered by display_order.
-            Returns empty list if item type not found or cache not loaded.
+            Returns empty list if item type not found in config.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.get_item_type_fields("bagel")
@@ -2680,8 +2847,7 @@ class MenuDataCache:
                 ...
             ]
         """
-        if not self._is_loaded:
-            return []
+        self._ensure_loaded()
         return self._item_type_fields.get(item_type_slug, [])
 
     def get_question_for_field(self, item_type_slug: str, field_name: str) -> str | None:
@@ -2693,7 +2859,10 @@ class MenuDataCache:
             field_name: The field name (e.g., "toasted", "size")
 
         Returns:
-            The question_text for the field, or None if not found.
+            The question_text for the field, or None if not found (semantic "not found").
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.get_question_for_field("bagel", "toasted")
@@ -2701,8 +2870,7 @@ class MenuDataCache:
             >>> cache.get_question_for_field("sized_beverage", "size")
             "What size?"
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
         fields = self._item_type_fields.get(item_type_slug, [])
         for field in fields:
             if field["field_name"] == field_name:
@@ -2725,15 +2893,17 @@ class MenuDataCache:
                      store-specific filtering)
 
         Returns:
-            The cached menu index dict, or empty dict if not loaded.
+            The cached menu index dict.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Note:
             This returns the cached index built at startup. The index is
             expensive to build (~55 seconds with N+1 queries) so we cache
             it rather than building on every request.
         """
-        if not self._is_loaded:
-            return {}
+        self._ensure_loaded()
         return self._menu_index
 
     # =========================================================================
@@ -2748,14 +2918,16 @@ class MenuDataCache:
             pattern_type: The type of response (affirmative, negative, cancel, done)
 
         Returns:
-            Set of patterns for the type, or empty set if not found.
+            Set of patterns for the type, or empty set if pattern_type not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
             >>> cache.get_response_patterns("affirmative")
             {"yes", "yeah", "yep", "sure", "ok", ...}
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
         return self._response_patterns.get(pattern_type, set()).copy()
 
     def is_response_type(self, text: str, pattern_type: str) -> bool:
@@ -2772,14 +2944,16 @@ class MenuDataCache:
         Returns:
             True if text matches any pattern of the given type.
 
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
         Examples:
             >>> cache.is_response_type("yes", "affirmative")
             True
             >>> cache.is_response_type("no thanks", "negative")
             True
         """
-        if not self._is_loaded:
-            return False
+        self._ensure_loaded()
         patterns = self._response_patterns.get(pattern_type, set())
         return text.lower().strip() in patterns
 
@@ -2865,7 +3039,9 @@ class MenuDataCache:
 
         Returns:
             Dict mapping pattern (lowercase) to {normalized_form, category}.
-            Returns empty dict if cache not loaded.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
 
         Example:
             {
@@ -2874,8 +3050,7 @@ class MenuDataCache:
                 "on the side": {"normalized_form": "on the side", "category": "position"},
             }
         """
-        if not self._is_loaded:
-            return {}
+        self._ensure_loaded()
         return self._modifier_qualifiers.copy()
 
     def get_qualifier_patterns(self) -> list[str]:
@@ -2887,9 +3062,11 @@ class MenuDataCache:
 
         Returns:
             List of patterns sorted by length descending.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return []
+        self._ensure_loaded()
         return sorted(self._modifier_qualifiers.keys(), key=len, reverse=True)
 
     def get_qualifier_patterns_by_category(self, category: str) -> set[str]:
@@ -2901,9 +3078,11 @@ class MenuDataCache:
 
         Returns:
             Set of patterns for the category.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return set()
+        self._ensure_loaded()
         return self._qualifier_patterns_by_category.get(category, set()).copy()
 
     def get_qualifier_info(self, pattern: str) -> dict | None:
@@ -2914,10 +3093,12 @@ class MenuDataCache:
             pattern: The pattern to look up (e.g., "extra", "on the side")
 
         Returns:
-            Dict with {normalized_form, category} or None if not found.
+            Dict with {normalized_form, category} or None if not found (semantic "not found").
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
         """
-        if not self._is_loaded:
-            return None
+        self._ensure_loaded()
         return self._modifier_qualifiers.get(pattern.lower())
 
     def normalize_qualifier(self, pattern: str) -> str | None:

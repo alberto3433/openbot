@@ -172,6 +172,14 @@ All food-domain behavior must be **data-driven**, not hardcoded. The codebase sh
 ### Legacy Code
 Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt. Do not extend them - work toward consolidating into generic handlers.
 
+### Code Validity Test
+Before committing any order handling code, verify:
+1. Could this exact code handle a sushi restaurant?
+2. If I delete all rows from `menu_items` and add new ones, does the code still work?
+3. Are there ZERO string literals that match food items?
+
+If any answer is "no", refactor to be data-driven.
+
 ## Database Queries: Fail Fast on Missing Data
 
 ### Principle

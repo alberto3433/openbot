@@ -87,6 +87,12 @@ class ParsedItemEntry(BaseModel):
     # Original text (for context preservation in disambiguation)
     original_text: str | None = None
 
+    # For signature/speed menu items
+    is_signature: bool = False
+
+    # For by-pound items (e.g., "1/4 lb", "1 lb")
+    weight_unit: str | None = None
+
     # Flags that may require clarification
     needs_cheese_clarification: bool = False
     wants_syrup: bool = False  # User said "syrup" without specifying flavor

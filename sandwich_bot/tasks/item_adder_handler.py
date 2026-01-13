@@ -566,8 +566,11 @@ class ItemAdderHandler:
         extracted_modifiers: ExtractedModifiers | None = None,
     ) -> StateMachineResult:
         """Internal: Add a bagel and start configuration, pre-filling any provided details."""
-        # Look up base bagel price from menu
-        base_price = self.pricing.lookup_bagel_price(bagel_type)
+        # Look up base bagel price and type upcharge from database
+        base_price = self.pricing.lookup_base_price("Bagel")
+        bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
+            "bagel", "bread", bagel_type
+        ) if bagel_type else 0.0
 
         # Build extras list from extracted modifiers
         extras: list[str] = []
@@ -596,12 +599,17 @@ class ItemAdderHandler:
             )
 
         # Calculate total price including modifiers
-        price = self.pricing.calculate_bagel_price_with_modifiers(
-            base_price, sandwich_protein, extras, spread, spread_type
-        )
+        price = base_price + bagel_type_upcharge
+        if sandwich_protein:
+            price += self.pricing.lookup_modifier_price(sandwich_protein)
+        for extra in extras:
+            price += self.pricing.lookup_modifier_price(extra)
+        if spread and spread.lower() != "none":
+            price += self.pricing.lookup_spread_price(spread, spread_type)
+        price = round(price, 2)
         logger.info(
-            "Bagel price: base=$%.2f, total=$%.2f (with modifiers)",
-            base_price, price
+            "Bagel price: base=$%.2f + type_upcharge=$%.2f + modifiers -> total=$%.2f",
+            base_price, bagel_type_upcharge, price
         )
 
         # Extract special instructions from modifiers
@@ -675,8 +683,11 @@ class ItemAdderHandler:
             quantity, bagel_type, toasted, spread, spread_type
         )
 
-        # Look up base bagel price from menu
-        base_price = self.pricing.lookup_bagel_price(bagel_type)
+        # Look up base bagel price and type upcharge from database
+        base_price = self.pricing.lookup_base_price("Bagel")
+        bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
+            "bagel", "bread", bagel_type
+        ) if bagel_type else 0.0
 
         # Create all the bagels
         for i in range(quantity):
@@ -722,9 +733,14 @@ class ItemAdderHandler:
                 logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
 
             # Calculate total price including modifiers (for first bagel with modifiers)
-            price = self.pricing.calculate_bagel_price_with_modifiers(
-                base_price, sandwich_protein, extras, bagel_spread, spread_type
-            )
+            price = base_price + bagel_type_upcharge
+            if sandwich_protein:
+                price += self.pricing.lookup_modifier_price(sandwich_protein)
+            for extra in extras:
+                price += self.pricing.lookup_modifier_price(extra)
+            if bagel_spread and bagel_spread.lower() != "none":
+                price += self.pricing.lookup_spread_price(bagel_spread, spread_type)
+            price = round(price, 2)
 
             # Create bagel using MenuItemTask with menu_item_type="bagel"
             bagel = MenuItemTask(
@@ -777,13 +793,14 @@ class ItemAdderHandler:
         logger.info("Adding %d bagels from details", len(bagel_details))
 
         for i, details in enumerate(bagel_details):
-            # Look up base price from menu (no fallback - fail gracefully with 0)
-            base_price = 0
-            if details.bagel_type:
-                bagel_name = f"{details.bagel_type.title()} Bagel" if "bagel" not in details.bagel_type.lower() else details.bagel_type
-                menu_item = self.menu_lookup.lookup_menu_item(bagel_name)
-                if menu_item:
-                    base_price = menu_item.get("base_price", 0)
+            # Look up base price and bagel type upcharge from database
+            try:
+                base_price = self.pricing.lookup_base_price("Bagel")
+            except ValueError:
+                base_price = 0
+            bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
+                "bagel", "bread", details.bagel_type
+            ) if details.bagel_type else 0.0
 
             # Build extras list from extracted modifiers (apply to first bagel only)
             extras: list[str] = []
@@ -827,9 +844,14 @@ class ItemAdderHandler:
                 logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
 
             # Calculate total price including modifiers
-            price = self.pricing.calculate_bagel_price_with_modifiers(
-                base_price, sandwich_protein, extras, spread, details.spread_type
-            )
+            price = base_price + bagel_type_upcharge
+            if sandwich_protein:
+                price += self.pricing.lookup_modifier_price(sandwich_protein)
+            for extra in extras:
+                price += self.pricing.lookup_modifier_price(extra)
+            if spread and spread.lower() != "none":
+                price += self.pricing.lookup_spread_price(spread, details.spread_type)
+            price = round(price, 2)
 
             # Create bagel using MenuItemTask with menu_item_type="bagel"
             bagel = MenuItemTask(
@@ -1167,7 +1189,15 @@ class ItemAdderHandler:
 
         # Look up item from menu to get price and skip_config flag
         menu_item = self.menu_lookup.lookup_menu_item(coffee_type) if coffee_type and self.menu_lookup else None
-        price = menu_item.get("base_price", 0) if menu_item else (self.pricing.lookup_coffee_price(coffee_type) if self.pricing else 0)
+        if menu_item and menu_item.get("base_price"):
+            price = menu_item.get("base_price", 0)
+        elif self.pricing and coffee_type:
+            try:
+                price = self.pricing.lookup_base_price(coffee_type)
+            except ValueError:
+                price = 0
+        else:
+            price = 0
 
         # Check if this drink should skip configuration questions
         # Check if this is a soda/bottled drink FIRST - these skip configuration

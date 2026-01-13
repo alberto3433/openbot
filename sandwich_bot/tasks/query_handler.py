@@ -419,7 +419,12 @@ class QueryHandler:
                 name = item.get('name', 'Unknown')
                 if lookup_type == "bagel":
                     bagel_type = name.lower().replace(" bagel", "").strip()
-                    price = self._pricing.lookup_bagel_price(bagel_type)
+                    try:
+                        base_price = self._pricing.lookup_base_price("Bagel")
+                        upcharge = self._pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
+                        price = base_price + upcharge
+                    except ValueError:
+                        price = 0
                 else:
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
@@ -577,7 +582,12 @@ class QueryHandler:
             name = best_match.get("name", "Unknown")
             if is_bagel_query or "bagel" in name.lower():
                 bagel_type = name.lower().replace(" bagel", "").strip()
-                price = self._pricing.lookup_bagel_price(bagel_type)
+                try:
+                    base_price = self._pricing.lookup_base_price("Bagel")
+                    upcharge = self._pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
+                    price = base_price + upcharge
+                except ValueError:
+                    price = 0
             else:
                 price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(

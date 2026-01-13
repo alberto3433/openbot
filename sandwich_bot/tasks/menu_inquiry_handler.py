@@ -176,7 +176,15 @@ class MenuInquiryHandler:
                 name = item.get('name', 'Unknown')
                 if lookup_type == "bagel":
                     bagel_type = name.lower().replace(" bagel", "").strip()
-                    price = self.pricing.lookup_bagel_price(bagel_type) if self.pricing else 0
+                    if self.pricing:
+                        try:
+                            base_price = self.pricing.lookup_base_price("Bagel")
+                            upcharge = self.pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
+                            price = base_price + upcharge
+                        except ValueError:
+                            price = 0
+                    else:
+                        price = 0
                 else:
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
@@ -786,10 +794,18 @@ class MenuInquiryHandler:
 
         if best_match and best_match_score >= 50:
             name = best_match.get("name", "Unknown")
-            # Bagels use _lookup_bagel_price since they don't store price in items_by_type
+            # Bagels use generic base price + type upcharge lookup
             if is_bagel_query or "bagel" in name.lower():
                 bagel_type = name.lower().replace(" bagel", "").strip()
-                price = self.pricing.lookup_bagel_price(bagel_type) if self.pricing else 0
+                if self.pricing:
+                    try:
+                        base_price = self.pricing.lookup_base_price("Bagel")
+                        upcharge = self.pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
+                        price = base_price + upcharge
+                    except ValueError:
+                        price = 0
+                else:
+                    price = 0
             else:
                 price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(

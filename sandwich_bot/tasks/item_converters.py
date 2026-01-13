@@ -447,7 +447,10 @@ class MenuItemConverter(ItemConverter):
             # with fallback to string comparison if database not available
             item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
             if "bread" in item_attrs or menu_item_type == "bagel":
-                base_price = pricing.get_bagel_base_price()
+                try:
+                    base_price = pricing.lookup_base_price("Bagel")
+                except ValueError:
+                    pass
             elif hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
                 base_price = pricing.lookup_menu_item_price(menu_item_name)
         if base_price is None:
@@ -607,7 +610,7 @@ class BagelConverter(ItemConverter):
             modifiers.append({"name": spread_name, "price": spread_price})
 
         if pricing:
-            base_price = pricing.get_bagel_base_price()
+            base_price = pricing.lookup_base_price("Bagel")
         else:
             raise ValueError(
                 "Pricing engine required to get bagel base price. "

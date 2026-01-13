@@ -2457,10 +2457,10 @@ class TakingItemsHandler:
                 if item.milk:
                     milk_slug = item.milk.lower().replace(" ", "_")
                     mss_slugs.append(milk_slug)
-                    # Look up price from menu_item_handler if available
+                    # Look up price from pricing engine
                     milk_price = 0.0
                     if pricing:
-                        milk_price = pricing.lookup_coffee_modifier_price(milk_slug, "milk") or 0.0
+                        milk_price = pricing.lookup_generic_modifier_price(milk_slug, "sized_beverage", "milk") or 0.0
                     mss_selections.append({
                         "slug": milk_slug,
                         "display_name": item.milk.title(),
@@ -2486,7 +2486,7 @@ class TakingItemsHandler:
                     mss_slugs.append(syrup_slug)
                     syrup_price = 0.0
                     if pricing:
-                        syrup_price = pricing.lookup_coffee_modifier_price(syrup_slug, "syrup") or 0.65
+                        syrup_price = pricing.lookup_generic_modifier_price(syrup_slug, "sized_beverage", "syrup") or 0.65
                     mss_selections.append({
                         "slug": syrup_slug,
                         "display_name": syrup.type.title(),

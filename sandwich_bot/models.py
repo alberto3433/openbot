@@ -584,8 +584,11 @@ class MenuItem(Base):
     # Abbreviation for text expansion (e.g., "oj" expands to "orange juice" before parsing)
     abbreviation = Column(String, nullable=True)
 
-    # Note: by_pound_category column removed - by-pound items now use item_type_id
-    # to point to ItemType entries (cheese, cold_cut, fish, salad, spread)
+    # Unit of sale: how this item is sold
+    # - 'each' (default): sold individually (bagels, sandwiches, drinks)
+    # - 'by_weight': sold by weight (cream cheese by the lb, smoked fish)
+    # - 'dozen': sold by the dozen (bagel packages)
+    unit_type = Column(String(20), nullable=False, default="each")
 
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify

@@ -1954,9 +1954,9 @@ class MenuItemConfigHandler(BaseHandler):
                     # For sized_beverage, look up price from pricing engine if not in option
                     if sel_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
                         # Try syrup price first, then milk
-                        sel_price = self.pricing.lookup_coffee_modifier_price(sel_slug, "syrup") or 0.0
+                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, "sized_beverage", "syrup") or 0.0
                         if sel_price == 0:
-                            sel_price = self.pricing.lookup_coffee_modifier_price(sel_slug, "milk") or 0.0
+                            sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, "sized_beverage", "milk") or 0.0
                         # Update the selection with the looked-up price
                         if sel_price > 0:
                             sel["price"] = sel_price
@@ -2032,12 +2032,12 @@ class MenuItemConfigHandler(BaseHandler):
                 # For sized_beverage attributes, look up price from pricing engine if not set
                 if option_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
                     if attr_slug == "size" and matched["slug"].lower() not in ("small", "s"):
-                        option_price = self.pricing.lookup_coffee_modifier_price(matched["slug"], "size") or 0.0
+                        option_price = self.pricing.lookup_attribute_option_upcharge("sized_beverage", "size", matched["slug"]) or 0.0
                     elif attr_slug == "temperature" and matched["slug"].lower() == "iced":
                         # Iced upcharge depends on size
                         size = item.attribute_values.get("size")
                         if size:
-                            option_price = self.pricing.lookup_iced_upcharge_by_size(size) or 0.0
+                            option_price = self.pricing.lookup_conditional_upcharge("sized_beverage", "size", size, "iced_price_modifier") or 0.0
 
                 # Store price if applicable and update unit_price
                 if option_price > 0:

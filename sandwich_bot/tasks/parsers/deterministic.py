@@ -1119,6 +1119,369 @@ extract_notes_from_input = extract_special_instructions_from_input
 # Helper Extraction Functions
 # =============================================================================
 
+
+# =============================================================================
+# Generic Data-Driven Extraction Functions
+# =============================================================================
+
+def _extract_attribute_value(
+    text: str,
+    item_type: str,
+    attr_slug: str
+) -> str | bool | None:
+    """Extract attribute value by looking up valid options from database.
+
+    This is a generic replacement for item-specific extractors like
+    _extract_bagel_type, _extract_size, _extract_iced, etc.
+
+    Args:
+        text: User input text (will be lowercased)
+        item_type: Item type slug (e.g., "bagel", "sized_beverage")
+        attr_slug: Attribute slug (e.g., "size", "toasted", "bread")
+
+    Returns:
+        Matched option value (slug or boolean), or None if no match
+
+    Example:
+        >>> _extract_attribute_value("large iced coffee", "sized_beverage", "size")
+        "large"
+        >>> _extract_attribute_value("everything bagel toasted", "bagel", "toasted")
+        True
+    """
+    text_lower = text.lower()
+
+    # Get attribute config for this item type
+    attrs = menu_cache.get_item_type_attributes(item_type)
+    attr_config = attrs.get(attr_slug)
+
+    if not attr_config:
+        return None
+
+    input_type = attr_config.get("input_type", "single_select")
+
+    # Boolean attributes (toasted, decaf, scooped, etc.)
+    if input_type == "boolean":
+        # Check for negative patterns first ("not toasted", "untoasted")
+        slug_lower = attr_slug.lower()
+        if re.search(rf"\b(?:not\s+{slug_lower}|un{slug_lower})\b", text_lower):
+            return False
+        # Check for positive pattern
+        if re.search(rf"\b{slug_lower}(?:ed)?\b", text_lower):
+            return True
+        return None
+
+    # Single/multi select attributes - check options
+    options = attr_config.get("options", [])
+
+    # Sort by length descending to match longer options first
+    # (e.g., "cinnamon raisin" before "plain")
+    options_sorted = sorted(options, key=lambda o: len(o.get("slug", "")), reverse=True)
+
+    for option in options_sorted:
+        slug = option.get("slug", "").lower()
+        display = option.get("display_name", "").lower()
+
+        # Check canonical slug
+        if slug and slug in text_lower:
+            return slug
+
+        # Check display name
+        if display and display in text_lower:
+            return slug
+
+        # Check aliases
+        for alias in option.get("aliases", []):
+            alias_lower = alias.lower()
+            if alias_lower in text_lower:
+                return slug
+
+    return None
+
+
+def _extract_all_attributes(
+    text: str,
+    item_type: str
+) -> dict[str, any]:
+    """Extract all attribute values for an item type from text.
+
+    Args:
+        text: User input text
+        item_type: Item type slug
+
+    Returns:
+        Dict mapping attribute slugs to extracted values
+    """
+    text_lower = text.lower()
+    attrs = menu_cache.get_item_type_attributes(item_type)
+    extracted = {}
+
+    for attr_slug in attrs.keys():
+        value = _extract_attribute_value(text_lower, item_type, attr_slug)
+        if value is not None:
+            extracted[attr_slug] = value
+
+    return extracted
+
+
+def _extract_modifiers_generic(
+    text: str,
+    item_type: str
+) -> list[str]:
+    """Extract all modifiers for an item type from text.
+
+    Uses the modifier category for the item type (food or beverage)
+    to determine which modifier groups to search.
+
+    Args:
+        text: User input text (lowercase)
+        item_type: Item type slug
+
+    Returns:
+        List of matched modifier names (normalized/canonical)
+    """
+    text_lower = text.lower()
+    found_modifiers = []
+
+    # Get modifier category for this item type (food or beverage)
+    modifier_category = menu_cache.get_modifier_category(item_type)
+
+    if modifier_category == "food":
+        # Food modifiers: proteins, cheeses, toppings, spreads
+        for protein in get_proteins():
+            if protein.lower() in text_lower:
+                found_modifiers.append(protein.lower())
+
+        for cheese in get_cheeses():
+            if cheese.lower() in text_lower:
+                found_modifiers.append(cheese.lower())
+
+        for topping in get_toppings():
+            if topping.lower() in text_lower:
+                found_modifiers.append(topping.lower())
+
+    elif modifier_category == "beverage":
+        # Beverage modifiers are handled differently (syrups, sweeteners, milk)
+        # These have quantities so they're extracted separately
+        pass
+
+    return found_modifiers
+
+
+def _detect_item_type(text: str) -> tuple[str | None, str | None]:
+    """Detect item type and matched menu item from text.
+
+    Uses database-driven trigger keywords for each item type.
+
+    Args:
+        text: User input text
+
+    Returns:
+        (item_type_slug, menu_item_name) or (None, None)
+
+    Example:
+        >>> _detect_item_type("large iced latte")
+        ("sized_beverage", "latte")
+        >>> _detect_item_type("everything bagel toasted")
+        ("bagel", "bagel")
+    """
+    text_lower = text.lower()
+
+    # Get all item type triggers from cache
+    all_triggers = menu_cache.get_item_type_triggers()
+
+    # Sort item types by trigger length (longer matches first)
+    # This ensures "bacon egg and cheese" matches before just "egg"
+    best_match = None
+    best_match_length = 0
+    best_item_type = None
+
+    for item_type_slug, triggers in all_triggers.items():
+        # Check each trigger keyword
+        for keyword in triggers:
+            keyword_lower = keyword.lower()
+            if keyword_lower in text_lower:
+                # Prefer longer matches
+                if len(keyword_lower) > best_match_length:
+                    best_match_length = len(keyword_lower)
+                    best_match = keyword
+                    best_item_type = item_type_slug
+
+    if best_item_type:
+        return best_item_type, best_match
+
+    return None, None
+
+
+def _is_modifier_chain(text: str) -> bool:
+    """Check if text is a single item with modifier chain.
+
+    Detects patterns like "large iced coffee with sugar and 2 vanilla syrups"
+    which should NOT be split on "and".
+
+    Returns:
+        True if text appears to be a single item with chained modifiers
+    """
+    if " with " not in text or " and " not in text:
+        return False
+
+    text_lower = text.lower()
+
+    # Get the part after "with"
+    parts = text_lower.split(" with ", 1)
+    if len(parts) < 2:
+        return False
+
+    after_with = parts[1]
+
+    if " and " not in after_with:
+        return False
+
+    # Get what's after "and"
+    and_parts = after_with.split(" and ", 1)
+    if len(and_parts) < 2:
+        return False
+
+    after_and = and_parts[1].strip()
+
+    # Check if after_and contains an item keyword (would indicate multi-item)
+    item_type, _ = _detect_item_type(after_and)
+    if item_type:
+        # Contains an item keyword - it's multi-item, not modifier chain
+        return False
+
+    # If no item keyword found, it's likely a modifier chain
+    return True
+
+
+def _protect_compound_phrases(
+    text: str,
+    compound_phrases: set[str]
+) -> tuple[str, dict[str, str]]:
+    """Replace compound phrases with placeholders to prevent splitting.
+
+    Args:
+        text: Input text (lowercase)
+        compound_phrases: Set of phrases containing " and " that shouldn't be split
+
+    Returns:
+        (modified_text, {placeholder: original_phrase})
+    """
+    placeholder_map = {}
+    result = text
+
+    # Sort by length descending to match longer phrases first
+    for phrase in sorted(compound_phrases, key=len, reverse=True):
+        if phrase in result:
+            placeholder = f"__COMPOUND_{len(placeholder_map)}__"
+            placeholder_map[placeholder] = phrase
+            result = result.replace(phrase, placeholder)
+
+    return result, placeholder_map
+
+
+def _restore_compound_phrases(
+    parts: list[str],
+    placeholder_map: dict[str, str]
+) -> list[str]:
+    """Restore compound phrases from placeholders.
+
+    Args:
+        parts: List of text parts (may contain placeholders)
+        placeholder_map: {placeholder: original_phrase}
+
+    Returns:
+        List of parts with placeholders replaced by original phrases
+    """
+    restored = []
+    for part in parts:
+        for placeholder, phrase in placeholder_map.items():
+            part = part.replace(placeholder, phrase)
+        restored.append(part)
+    return restored
+
+
+def _parse_item_generic(
+    text: str,
+    item_type: str,
+    menu_item_name: str | None = None
+) -> ParsedItemEntry | None:
+    """Parse any item type using database configuration.
+
+    This is a generic parser that uses database-driven attribute and modifier
+    extraction instead of item-type-specific logic. It works for all item types
+    that have proper configuration in the database.
+
+    Args:
+        text: User input text
+        item_type: Detected item type slug (e.g., "bagel", "sized_beverage")
+        menu_item_name: Matched menu item name (if any)
+
+    Returns:
+        ParsedItemEntry with extracted attributes and modifiers, or None if
+        unable to parse
+
+    Example:
+        >>> _parse_item_generic("large iced latte", "sized_beverage", "latte")
+        ParsedItemEntry(item_type="sized_beverage", item_name="latte",
+                       attribute_values={"size": "large", "temperature": "iced"})
+    """
+    text_lower = text.lower()
+
+    # Extract quantity from text
+    # Match patterns like "2 bagels", "three coffees", "a dozen bagels"
+    quantity = 1
+    qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?)\s+', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1).strip()
+        extracted_qty = _extract_quantity(qty_str)
+        if extracted_qty is not None:
+            quantity = extracted_qty
+
+    # Extract all attributes for this item type using database config
+    attribute_values = _extract_all_attributes(text_lower, item_type)
+
+    # Extract modifiers (proteins, spreads, toppings, etc.)
+    modifiers = _extract_modifiers_generic(text_lower, item_type)
+
+    # For beverages, also extract sweeteners and syrups using existing helpers
+    sweeteners = []
+    syrups = []
+    if item_type in ("sized_beverage", "espresso"):
+        from sandwich_bot.tasks.parsers.deterministic import extract_coffee_modifiers_from_input
+        coffee_mods = extract_coffee_modifiers_from_input(text)
+        if coffee_mods.sweetener:
+            sweeteners.append(SweetenerItem(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
+        if coffee_mods.flavor_syrup:
+            syrups.append(SyrupItem(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
+        # Extract milk if not already in attributes
+        if "milk" not in attribute_values and coffee_mods.milk:
+            attribute_values["milk"] = coffee_mods.milk
+        # Extract cream level if present
+        if coffee_mods.cream_level:
+            attribute_values["cream_level"] = coffee_mods.cream_level
+
+    # Check if this is a signature/speed menu item
+    is_signature = False
+    if menu_item_name:
+        signature_items = get_signature_item_aliases()
+        # Check if the menu item name matches any signature item
+        name_lower = menu_item_name.lower()
+        if name_lower in signature_items or menu_item_name in signature_items.values():
+            is_signature = True
+
+    return ParsedItemEntry(
+        item_type=item_type,
+        item_name=menu_item_name,
+        quantity=quantity,
+        attribute_values=attribute_values,
+        modifiers=modifiers,
+        sweeteners=sweeteners,
+        syrups=syrups,
+        is_signature=is_signature,
+        original_text=text,
+    )
+
+
 def _extract_quantity(text: str) -> int | None:
     """Extract quantity from text like '3', 'three', 'a couple of', 'a dozen'."""
     text = text.lower().strip()
@@ -3406,100 +3769,56 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
 # =============================================================================
 
 def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
-    """Parse multi-item orders like 'The Lexington and an orange juice'."""
+    """Parse multi-item orders like 'The Lexington and an orange juice'.
+
+    This function uses data-driven compound phrase protection and modifier chain
+    detection to properly split multi-item orders while preserving phrases like
+    "bacon egg and cheese" that should not be split.
+    """
     text = user_input.strip()
     text_lower = text.lower()
 
-    # Early exit: Don't split coffee orders where " and " connects modifiers
+    # --- Step 1: Check for modifier chain (don't split) ---
     # e.g., "large iced coffee with sugar and 2 vanilla syrups" should NOT be split
-    # e.g., "large latte with oat milk and 2 sugars" should NOT be split
-    # This allows the coffee parser to handle the complete input with all modifiers
-    if " with " in text_lower and " and " in text_lower:
-        # Check if this looks like a single coffee order with multiple modifiers
-        coffee_keywords = ["coffee", "latte", "cappuccino", "espresso", "americano",
-                          "macchiato", "mocha", "tea", "chai", "matcha", "cold brew"]
-        # Get modifier options from database (returns empty if not loaded)
-        sweeteners = _get_parser_sweetener_options()
-        syrups = _get_parser_syrup_options() + ["syrup"]  # Add generic "syrup" keyword
-        milks = _get_parser_milk_options() + ["milk"]  # Add generic "milk" keyword
-        # Note: "cream" is intentionally omitted from milks to avoid matching "cream cheese"
+    # Uses the data-driven _is_modifier_chain() function
+    if _is_modifier_chain(text_lower):
+        logger.debug("Multi-item: skipping split - detected modifier chain: '%s'", text[:60])
+        return None  # Let single-item parser handle the complete input
 
-        # Item keywords that indicate a separate item, not just modifiers
-        item_keywords = ["bagel", "sandwich", "classic", "leo", "traditional",
-                        "croissant", "muffin", "pastry", "donut", "cookie",
-                        "salad", "soup", "avocado toast"]
+    # --- Step 2: Protect compound phrases from splitting ---
+    # Get compound phrases from database (e.g., "bacon egg and cheese", "ham and cheese")
+    # Also include fallback phrases that may not be in database yet
+    db_compound_phrases = menu_cache.get_compound_phrases()
 
-        has_coffee = any(kw in text_lower for kw in coffee_keywords)
-        if has_coffee:
-            # Get the part after "with"
-            after_with = text_lower.split(" with ", 1)[1] if " with " in text_lower else ""
-            # Check if " and " connects sweetener/syrup/milk modifiers
-            # Pattern: "[modifier] and [modifier]" where modifiers are sweetener, syrup, or milk
-            if " and " in after_with:
-                before_and = after_with.split(" and ")[0].strip()
-                after_and = after_with.split(" and ", 1)[1].strip()
+    # Fallback compound phrases (will be removed once all are in database)
+    # These are kept for backward compatibility during migration
+    fallback_phrases = {
+        # Egg sandwich phrases
+        "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
+        "egg and cheese", "bacon and egg and cheese", "ham and egg and cheese",
+        "bacon eggs and cheese", "ham eggs and cheese",
+        # Ingredient combinations
+        "ham and cheese", "ham and egg", "bacon and egg",
+        "lox and cream cheese", "cream cheese and lox",
+        "salt and pepper", "eggs and bacon",
+        "black and white", "spinach and feta",
+        # Condiment pairs
+        "mayo and mustard", "mustard and mayo", "ketchup and mustard",
+        "lettuce and tomato", "tomato and lettuce",
+        "onions and peppers", "pickles and onions",
+    }
 
-                # If after_and contains an item keyword, it's a multi-item order, not modifiers
-                after_has_item = any(item in after_and for item in item_keywords)
-                if after_has_item:
-                    # Don't skip - this is a multi-item order like "coffee with milk and a bagel"
-                    pass
-                else:
-                    # Check modifier types for before_and
-                    before_is_sweetener = any(sw in before_and for sw in sweeteners)
-                    before_has_syrup = any(sy in before_and for sy in syrups)
-                    before_has_milk = any(m in before_and for m in milks)
+    # Combine database phrases with fallbacks
+    all_compound_phrases = db_compound_phrases | fallback_phrases
 
-                    # Check modifier types for after_and
-                    after_is_sweetener = any(sw in after_and for sw in sweeteners)
-                    after_has_syrup = any(sy in after_and for sy in syrups)
-                    after_has_milk = any(m in after_and for m in milks)
+    # Use helper to protect compound phrases
+    preserved_text, placeholder_map = _protect_compound_phrases(text_lower, all_compound_phrases)
 
-                    # Skip split if both parts are coffee modifiers (any combination)
-                    before_is_coffee_modifier = before_is_sweetener or before_has_syrup or before_has_milk
-                    after_is_coffee_modifier = after_is_sweetener or after_has_syrup or after_has_milk
-
-                    if before_is_coffee_modifier and after_is_coffee_modifier:
-                        logger.debug("Multi-item: skipping split - detected coffee with modifier pattern: '%s'", text[:60])
-                        return None  # Let coffee parser handle the complete input
-
-    compound_phrases = [
-        # Egg sandwich phrases (longer phrases first to match properly)
-        ("bacon egg and cheese", "BACON_EGG_CHEESE_PLACEHOLDER"),
-        ("ham egg and cheese", "HAM_EGG_CHEESE_PLACEHOLDER"),
-        ("sausage egg and cheese", "SAUSAGE_EGG_CHEESE_PLACEHOLDER"),
-        ("egg and cheese", "EGG_CHEESE_PLACEHOLDER"),
-        ("bacon and egg and cheese", "BACON_AND_EGG_CHEESE_PLACEHOLDER"),
-        ("ham and egg and cheese", "HAM_AND_EGG_CHEESE_PLACEHOLDER"),
-        ("bacon eggs and cheese", "BACON_EGGS_CHEESE_PLACEHOLDER"),
-        ("ham eggs and cheese", "HAM_EGGS_CHEESE_PLACEHOLDER"),
-        # Other compound phrases
-        ("ham and cheese", "HAM_CHEESE_PLACEHOLDER"),
-        ("ham and egg", "HAM_EGG_PLACEHOLDER"),
-        ("bacon and egg", "BACON_EGG_PLACEHOLDER"),
-        ("lox and cream cheese", "LOX_CC_PLACEHOLDER"),
-        ("cream cheese and lox", "CC_LOX_PLACEHOLDER"),
-        ("salt and pepper", "SALT_PEPPER_PLACEHOLDER"),
-        ("eggs and bacon", "EGGS_BACON_PLACEHOLDER"),
-        ("black and white", "BLACK_WHITE_PLACEHOLDER"),
-        ("spinach and feta", "SPINACH_FETA_PLACEHOLDER"),
-        # Condiment pairs (prevent splitting "with mayo and mustard")
-        ("mayo and mustard", "MAYO_MUSTARD_PLACEHOLDER"),
-        ("mustard and mayo", "MUSTARD_MAYO_PLACEHOLDER"),
-        ("ketchup and mustard", "KETCHUP_MUSTARD_PLACEHOLDER"),
-        ("lettuce and tomato", "LETTUCE_TOMATO_PLACEHOLDER"),
-        ("tomato and lettuce", "TOMATO_LETTUCE_PLACEHOLDER"),
-        ("onions and peppers", "ONIONS_PEPPERS_PLACEHOLDER"),
-        ("pickles and onions", "PICKLES_ONIONS_PLACEHOLDER"),
-    ]
-
-    preserved_text = text_lower
-    for phrase, placeholder in compound_phrases:
-        preserved_text = preserved_text.replace(phrase, placeholder)
-
+    # --- Step 3: Check if we have multiple items ---
     if " and " not in preserved_text and ", " not in preserved_text:
         return None
 
+    # Normalize separators for splitting
     preserved_text = preserved_text.replace(", and ", ", ")
     preserved_text = preserved_text.replace(" and ", ", ")
 
@@ -3507,13 +3826,11 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     if len(parts) < 2:
         return None
 
-    restored_parts = []
-    for part in parts:
-        restored = part.strip()
-        for phrase, placeholder in compound_phrases:
-            restored = restored.replace(placeholder, phrase)
-        if restored:
-            restored_parts.append(restored)
+    # --- Step 4: Restore compound phrases in parts ---
+    # Use helper to restore compound phrases from placeholders
+    restored_parts = _restore_compound_phrases(parts, placeholder_map)
+    # Filter out empty parts
+    restored_parts = [p for p in restored_parts if p.strip()]
 
     logger.info("Multi-item order split into %d parts: %s", len(restored_parts), restored_parts)
 

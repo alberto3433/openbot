@@ -135,6 +135,18 @@ class MenuDataCache:
         # Cached menu index (expensive to build, loaded once at startup)
         self._menu_index: dict[str, Any] = {}
 
+        # Data-driven parsing support
+        # Compound phrases - phrases containing " and " that shouldn't be split during parsing
+        # (e.g., "bacon egg and cheese", "ham and swiss")
+        self._compound_phrases: set[str] = set()
+
+        # Item type triggers - keywords that trigger detection of each item type
+        # Derived from menu item names (e.g., "latte" triggers "sized_beverage")
+        self._item_type_triggers: dict[str, set[str]] = {}  # item_type_slug -> set of trigger keywords
+
+        # Menu items by unit type - for filtering by how items are sold
+        self._by_unit_type_items: dict[str, set[str]] = {}  # unit_type -> set of item names (lowercase)
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -206,6 +218,11 @@ class MenuDataCache:
                 self._load_global_attribute_options(db)
                 self._load_item_type_metadata(db)
                 self._load_menu_index(db)
+
+                # Data-driven parsing support loaders
+                self._load_compound_phrases(db)
+                self._load_item_type_triggers(db)
+                self._load_by_unit_type_items(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -1427,6 +1444,149 @@ class MenuDataCache:
             "Menu index built in %.1f seconds with %d total items",
             elapsed,
             sum(len(v) for k, v in self._menu_index.items() if isinstance(v, list)),
+        )
+
+    def _load_compound_phrases(self, db: Session) -> None:
+        """Load compound phrases that shouldn't be split during multi-item parsing.
+
+        These are phrases containing " and " that represent single items or concepts,
+        like "bacon egg and cheese", "ham and swiss", "salt and pepper".
+
+        Source: Menu item names and aliases containing " and ".
+        """
+        from .models import MenuItem, MenuItemAlias, Ingredient, IngredientAlias
+
+        compound_phrases: set[str] = set()
+
+        # Get all menu item names containing " and "
+        menu_items_with_and = (
+            db.query(MenuItem.name)
+            .filter(MenuItem.name.ilike("% and %"))
+            .all()
+        )
+        for (name,) in menu_items_with_and:
+            compound_phrases.add(name.lower())
+
+        # Get all menu item aliases containing " and "
+        menu_aliases_with_and = (
+            db.query(MenuItemAlias.alias)
+            .filter(MenuItemAlias.alias.ilike("% and %"))
+            .all()
+        )
+        for (alias,) in menu_aliases_with_and:
+            compound_phrases.add(alias.lower())
+
+        # Get all ingredient names containing " and "
+        ingredients_with_and = (
+            db.query(Ingredient.name)
+            .filter(Ingredient.name.ilike("% and %"))
+            .all()
+        )
+        for (name,) in ingredients_with_and:
+            compound_phrases.add(name.lower())
+
+        # Get all ingredient aliases containing " and "
+        ingredient_aliases_with_and = (
+            db.query(IngredientAlias.alias)
+            .filter(IngredientAlias.alias.ilike("% and %"))
+            .all()
+        )
+        for (alias,) in ingredient_aliases_with_and:
+            compound_phrases.add(alias.lower())
+
+        self._compound_phrases = compound_phrases
+        logger.debug("Loaded %d compound phrases", len(compound_phrases))
+
+    def _load_item_type_triggers(self, db: Session) -> None:
+        """Load item type trigger keywords from menu item names.
+
+        Builds a mapping from item_type_slug -> set of keywords that trigger
+        detection of that item type. Keywords are derived from menu item names.
+
+        Example: "latte", "cappuccino", "espresso" -> "sized_beverage"
+        """
+        from .models import MenuItem, ItemType, MenuItemAlias
+
+        item_type_triggers: dict[str, set[str]] = {}
+
+        # Get all item types with their menu items
+        item_types = db.query(ItemType).all()
+
+        for item_type in item_types:
+            triggers: set[str] = set()
+
+            # Add the item type slug itself as a trigger
+            triggers.add(item_type.slug.lower())
+
+            # Add item type display name variations
+            if item_type.display_name:
+                triggers.add(item_type.display_name.lower())
+                # Add singular form if plural
+                if item_type.display_name.lower().endswith("s"):
+                    triggers.add(item_type.display_name.lower()[:-1])
+
+            # Get all menu items of this type
+            menu_items = (
+                db.query(MenuItem)
+                .options(joinedload(MenuItem.alias_records))
+                .filter(MenuItem.item_type_id == item_type.id)
+                .all()
+            )
+
+            for item in menu_items:
+                # Add full name (lowercase)
+                name_lower = item.name.lower()
+                triggers.add(name_lower)
+
+                # Add name without common suffixes
+                for suffix in [" sandwich", " bagel", " omelette", " salad"]:
+                    if name_lower.endswith(suffix):
+                        triggers.add(name_lower[:-len(suffix)])
+
+                # Add first word if multi-word (e.g., "Iced Coffee" -> "iced")
+                words = name_lower.split()
+                if len(words) > 1:
+                    triggers.add(words[0])
+
+                # Add aliases
+                for alias in item.aliases:
+                    alias_lower = alias.strip().lower()
+                    if alias_lower:
+                        triggers.add(alias_lower)
+
+            if triggers:
+                item_type_triggers[item_type.slug] = triggers
+
+        self._item_type_triggers = item_type_triggers
+        logger.debug(
+            "Loaded item type triggers: %s",
+            {k: len(v) for k, v in item_type_triggers.items()}
+        )
+
+    def _load_by_unit_type_items(self, db: Session) -> None:
+        """Load menu items grouped by unit_type.
+
+        Groups items by how they are sold:
+        - 'each': sold individually (bagels, sandwiches, drinks)
+        - 'by_weight': sold by weight (cream cheese by the lb, smoked fish)
+        - 'dozen': sold by the dozen (bagel packages)
+        """
+        from .models import MenuItem
+
+        by_unit_type: dict[str, set[str]] = {}
+
+        # Query all menu items with their unit_type
+        all_items = db.query(MenuItem.name, MenuItem.unit_type).all()
+
+        for name, unit_type in all_items:
+            if unit_type not in by_unit_type:
+                by_unit_type[unit_type] = set()
+            by_unit_type[unit_type].add(name.lower())
+
+        self._by_unit_type_items = by_unit_type
+        logger.debug(
+            "Loaded items by unit_type: %s",
+            {k: len(v) for k, v in by_unit_type.items()}
         )
 
     def _build_keyword_indices(self) -> None:
@@ -3135,6 +3295,121 @@ class MenuDataCache:
         info = self.get_qualifier_info(pattern)
         return info["category"] if info else None
 
+    # =========================================================================
+    # Data-Driven Parsing Support Methods
+    # =========================================================================
+
+    def get_compound_phrases(self) -> set[str]:
+        """
+        Get phrases containing ' and ' that shouldn't be split during parsing.
+
+        These phrases represent single items or concepts (like "bacon egg and cheese",
+        "ham and swiss", "salt and pepper") that should be protected from being
+        split when processing multi-item orders.
+
+        Returns:
+            Set of compound phrases (lowercase).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._compound_phrases.copy()
+
+    def get_item_type_triggers(self, item_type_slug: str | None = None) -> dict[str, set[str]] | set[str]:
+        """
+        Get trigger keywords for item types.
+
+        These keywords trigger detection of specific item types during parsing.
+        For example, "latte" or "cappuccino" trigger "sized_beverage".
+
+        Args:
+            item_type_slug: Optional specific item type to get triggers for.
+                If None, returns all triggers keyed by item type.
+
+        Returns:
+            If item_type_slug is provided: Set of trigger keywords for that type.
+            If item_type_slug is None: Dict mapping item_type_slug -> set of triggers.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        if item_type_slug is not None:
+            return self._item_type_triggers.get(item_type_slug, set()).copy()
+        return {k: v.copy() for k, v in self._item_type_triggers.items()}
+
+    def get_menu_items_by_unit_type(self, unit_type: str) -> set[str]:
+        """
+        Get menu items sold by a specific unit type.
+
+        Args:
+            unit_type: How items are sold - 'each', 'by_weight', or 'dozen'.
+
+        Returns:
+            Set of menu item names (lowercase) sold by that unit type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._by_unit_type_items.get(unit_type, set()).copy()
+
+    def is_by_weight_item(self, item_name: str) -> bool:
+        """
+        Check if an item is sold by weight.
+
+        Args:
+            item_name: The menu item name to check.
+
+        Returns:
+            True if the item is sold by weight, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return item_name.lower() in self._by_unit_type_items.get("by_weight", set())
+
+    def is_dozen_item(self, item_name: str) -> bool:
+        """
+        Check if an item is sold by the dozen.
+
+        Args:
+            item_name: The menu item name to check.
+
+        Returns:
+            True if the item is sold by the dozen, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return item_name.lower() in self._by_unit_type_items.get("dozen", set())
+
+    def detect_item_type_from_keyword(self, keyword: str) -> str | None:
+        """
+        Detect which item type a keyword belongs to.
+
+        Scans all item type triggers to find which item type (if any)
+        the given keyword triggers.
+
+        Args:
+            keyword: The keyword to check (e.g., "latte", "bagel", "omelette")
+
+        Returns:
+            The item_type_slug if found, None otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        keyword_lower = keyword.lower()
+        for item_type_slug, triggers in self._item_type_triggers.items():
+            if keyword_lower in triggers:
+                return item_type_slug
+        return None
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {
@@ -3156,6 +3431,9 @@ class MenuDataCache:
                 "item_type_fields": sum(len(fields) for fields in self._item_type_fields.values()),
                 "response_patterns": sum(len(p) for p in self._response_patterns.values()),
                 "modifier_qualifiers": len(self._modifier_qualifiers),
+                "compound_phrases": len(self._compound_phrases),
+                "item_type_triggers": sum(len(t) for t in self._item_type_triggers.values()),
+                "by_unit_type_items": {k: len(v) for k, v in self._by_unit_type_items.items()},
             },
             "keyword_indices": {
                 "spread_keywords": len(self._spread_keyword_index),

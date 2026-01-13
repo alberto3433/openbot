@@ -1,15 +1,19 @@
 """
 Pricing Engine for Order Items.
 
-This module handles all price lookups and calculations for menu items,
-including bagels, coffee, by-the-pound items, and their modifiers.
+This module handles all price lookups and calculations for menu items.
+All pricing is data-driven from the database - no hardcoded item types.
+
+Generic pricing formula:
+    total = base_price + sum(attribute_option.price_modifier) + conditional_modifiers + modifier_prices
 
 Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
 import re
-from typing import Callable
+import warnings
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,250 @@ class PricingEngine:
     def menu_data(self, value: dict | None):
         """Update menu data."""
         self._menu_data = value
+
+    # =========================================================================
+    # Generic Pricing Methods (Data-Driven)
+    # =========================================================================
+
+    def lookup_base_price(self, menu_item_name: str) -> float:
+        """Look up base price for any menu item by name.
+
+        This is the generic way to get base prices - works for bagels, coffee,
+        sandwiches, or any other menu item type.
+
+        Args:
+            menu_item_name: Name of the menu item (e.g., "Bagel", "Latte", "BLT")
+
+        Returns:
+            Base price for the menu item
+
+        Raises:
+            ValueError: If menu item not found in database
+        """
+        if not menu_item_name:
+            raise ValueError("menu_item_name is required for base price lookup")
+
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if menu_item and menu_item.get("base_price"):
+            return menu_item["base_price"]
+
+        # Try title case variation
+        menu_item = self._lookup_menu_item(menu_item_name.title())
+        if menu_item and menu_item.get("base_price"):
+            return menu_item["base_price"]
+
+        raise ValueError(
+            f"No price found for menu item '{menu_item_name}'. "
+            "Ensure the menu item exists in database with a base_price."
+        )
+
+    def lookup_attribute_option_upcharge(
+        self,
+        item_type: str,
+        attr_slug: str,
+        option_value: str,
+    ) -> float:
+        """Look up price modifier for an attribute option.
+
+        Generic method to get upcharges for any attribute option (size, bread type,
+        milk, syrup, etc.) from the database.
+
+        Args:
+            item_type: Item type slug (e.g., "bagel", "sized_beverage")
+            attr_slug: Attribute slug (e.g., "size", "bread", "milk")
+            option_value: Selected option value (e.g., "large", "gluten_free", "oat")
+
+        Returns:
+            Price modifier (upcharge) for the option, or 0.0 if not found
+        """
+        if not option_value:
+            return 0.0
+
+        option_lower = option_value.lower().strip()
+        normalized = option_lower.replace(" ", "_").replace("-", "_")
+
+        if not self._menu_data:
+            logger.warning("No menu_data available for attribute upcharge lookup")
+            return 0.0
+
+        item_types = self._menu_data.get("item_types", {})
+        type_data = item_types.get(item_type, {})
+        attributes = type_data.get("attributes", [])
+
+        for attr in attributes:
+            if attr.get("slug") == attr_slug:
+                options = attr.get("options", [])
+                for opt in options:
+                    opt_slug = opt.get("slug", "").lower().replace("-", "_")
+                    opt_name = opt.get("display_name", "").lower().replace(" ", "_")
+
+                    if opt_slug == normalized or opt_name == normalized or \
+                       opt_slug == option_lower:
+                        return opt.get("price_modifier", 0.0)
+
+        # Not found - log and return 0.0
+        logger.debug(
+            "Attribute option upcharge not found: %s.%s=%s",
+            item_type, attr_slug, option_value
+        )
+        return 0.0
+
+    def lookup_conditional_upcharge(
+        self,
+        item_type: str,
+        source_attr: str,
+        source_value: str,
+        modifier_column: str,
+    ) -> float:
+        """Look up a conditional price modifier from another attribute's options.
+
+        This handles cases like iced drinks where the upcharge depends on size:
+        - When temperature="iced", look up "iced_price_modifier" from size options
+
+        The pattern is: {condition_value}_price_modifier on the source attribute options.
+
+        Args:
+            item_type: Item type slug (e.g., "sized_beverage")
+            source_attr: Attribute to look up the modifier from (e.g., "size")
+            source_value: Selected value of source attribute (e.g., "large")
+            modifier_column: Column name for the conditional modifier (e.g., "iced_price_modifier")
+
+        Returns:
+            Conditional upcharge or 0.0 if not found
+        """
+        if not source_value:
+            return 0.0
+
+        source_lower = source_value.lower().strip()
+
+        if not self._menu_data:
+            return 0.0
+
+        item_types = self._menu_data.get("item_types", {})
+
+        # Check specified item type first, then fall back to others
+        types_to_check = [item_type] + [t for t in item_types.keys() if t != item_type]
+
+        for type_slug in types_to_check:
+            type_data = item_types.get(type_slug)
+            if not isinstance(type_data, dict):
+                continue
+
+            attrs = type_data.get("attributes", [])
+            for attr in attrs:
+                if not isinstance(attr, dict):
+                    continue
+                if attr.get("slug") == source_attr:
+                    options = attr.get("options", [])
+                    for opt in options:
+                        if not isinstance(opt, dict):
+                            continue
+                        opt_slug = opt.get("slug", "").lower()
+                        if opt_slug == source_lower or source_lower in opt_slug:
+                            upcharge = opt.get(modifier_column, 0.0)
+                            if upcharge > 0:
+                                logger.debug(
+                                    "Found conditional upcharge: %s.%s.%s = $%.2f",
+                                    source_attr, source_value, modifier_column, upcharge
+                                )
+                            return upcharge
+
+        return 0.0
+
+    def lookup_generic_modifier_price(
+        self,
+        modifier_name: str,
+        item_type: str,
+        modifier_type: str | None = None,
+    ) -> float:
+        """Look up price for any modifier (protein, spread, syrup, etc.).
+
+        Generic method that searches all attributes for a matching option.
+
+        Args:
+            modifier_name: Name of the modifier (e.g., "ham", "oat milk", "vanilla")
+            item_type: Item type to search (e.g., "bagel", "sized_beverage")
+            modifier_type: Optional hint for which attribute to search (e.g., "milk", "syrup")
+
+        Returns:
+            Price modifier or 0.0 if not found
+        """
+        if not modifier_name:
+            return 0.0
+
+        modifier_lower = modifier_name.lower().strip()
+        normalized = modifier_lower.replace(" ", "_").replace("-", "_")
+
+        # Remove common suffixes for matching
+        if normalized.endswith("_milk"):
+            normalized = normalized[:-5]
+        if normalized.endswith("_syrup"):
+            normalized = normalized[:-6]
+
+        if not self._menu_data:
+            logger.warning("No menu_data available for modifier price lookup")
+            return 0.0
+
+        item_types = self._menu_data.get("item_types", {})
+
+        # Search order: specified type first, then related types
+        types_to_check = [item_type]
+        # Add related types for better matching
+        if item_type == "bagel":
+            types_to_check.append("sandwich")
+        elif item_type in ("sized_beverage", "espresso"):
+            types_to_check.extend(["sized_beverage", "espresso"])
+        types_to_check.extend([t for t in item_types.keys() if t not in types_to_check])
+
+        for type_slug in types_to_check:
+            type_data = item_types.get(type_slug, {})
+            if not isinstance(type_data, dict):
+                continue
+
+            attributes = type_data.get("attributes", [])
+            for attr in attributes:
+                if not isinstance(attr, dict):
+                    continue
+
+                attr_slug = attr.get("slug", "")
+
+                # Skip bread attribute for bagels (handled separately as bagel type upcharge)
+                if attr_slug == "bread" and type_slug == "bagel":
+                    continue
+
+                # If modifier_type specified, only check matching attributes
+                if modifier_type and modifier_type not in attr_slug and attr_slug != modifier_type:
+                    # Also check consolidated attribute "milk_sweetener_syrup"
+                    if attr_slug != "milk_sweetener_syrup" or modifier_type not in ("milk", "syrup", "sweetener"):
+                        continue
+
+                options = attr.get("options", [])
+                for opt in options:
+                    if not isinstance(opt, dict):
+                        continue
+
+                    opt_slug = opt.get("slug", "").lower().replace("-", "_")
+                    opt_name = opt.get("display_name", "").lower().replace(" ", "_")
+
+                    if opt_slug == normalized or opt_name == normalized or \
+                       opt_slug == modifier_lower or modifier_lower in opt_slug:
+                        price = opt.get("price_modifier", 0.0)
+                        logger.debug(
+                            "Found modifier price: %s = $%.2f (from %s.%s)",
+                            modifier_name, price, type_slug, attr_slug
+                        )
+                        return price
+
+        # Not found
+        logger.warning(
+            "Modifier '%s' not found in database for item_type '%s'. Returning $0.00.",
+            modifier_name, item_type
+        )
+        return 0.0
+
+    # =========================================================================
+    # Legacy Helper Methods (kept for compatibility)
+    # =========================================================================
 
     def _get_specialty_bagel_types(self) -> set[str]:
         """
@@ -170,11 +418,12 @@ class PricingEngine:
         )
 
     # =========================================================================
-    # Bagel Pricing
+    # Bagel Pricing (Legacy - use generic methods instead)
     # =========================================================================
 
     def lookup_bagel_price(self, bagel_type: str | None) -> float:
-        """
+        """DEPRECATED: Use lookup_base_price() + lookup_attribute_option_upcharge() instead.
+
         Look up price for a bagel type.
 
         For regular bagel types (plain, everything, sesame, etc.), returns the
@@ -190,6 +439,11 @@ class PricingEngine:
         Raises:
             ValueError: If bagel price is not found in the database
         """
+        warnings.warn(
+            "lookup_bagel_price() is deprecated. Use lookup_base_price() + lookup_attribute_option_upcharge() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if not bagel_type:
             # Look up generic bagel price
             menu_item = self._lookup_menu_item("Bagel")
@@ -240,7 +494,8 @@ class PricingEngine:
         )
 
     def get_bagel_base_price(self) -> float:
-        """
+        """DEPRECATED: Use lookup_base_price("Bagel") instead.
+
         Get the base price for a regular bagel (without any specialty upcharge).
 
         Returns:
@@ -249,6 +504,11 @@ class PricingEngine:
         Raises:
             ValueError: If bagel price is not found in the database
         """
+        warnings.warn(
+            "get_bagel_base_price() is deprecated. Use lookup_base_price('Bagel') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         menu_item = self._lookup_menu_item("Bagel")
         if menu_item and menu_item.get("base_price"):
             return menu_item["base_price"]
@@ -257,7 +517,8 @@ class PricingEngine:
         )
 
     def get_bagel_type_upcharge(self, bagel_type: str | None) -> float:
-        """
+        """DEPRECATED: Use lookup_attribute_option_upcharge("bagel", "bread", bagel_type) instead.
+
         Get the upcharge for a specialty bagel type.
 
         Regular bagels (plain, everything, sesame, etc.) have no upcharge.
@@ -272,6 +533,11 @@ class PricingEngine:
         Returns:
             Upcharge amount (e.g., $0.80 for gluten free, $0.00 for regular)
         """
+        warnings.warn(
+            "get_bagel_type_upcharge() is deprecated. Use lookup_attribute_option_upcharge() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if not bagel_type:
             return 0.0
 
@@ -468,39 +734,187 @@ class PricingEngine:
         return round(total, 2)
 
     # =========================================================================
-    # Unified Price Recalculation
+    # Unified Price Recalculation (Generic, Data-Driven)
     # =========================================================================
 
     def recalculate_item_price(self, item) -> float:
-        """
-        Unified price recalculation that dispatches to the appropriate method based on item type.
+        """Generic price recalculation for any menu item type.
 
-        This is the preferred entry point for price recalculation. It determines the item
-        type and routes to the appropriate specialized method.
+        This is the preferred entry point for price recalculation. It calculates
+        price using a data-driven approach:
+
+        total = base_price
+              + sum(attribute_option.price_modifier for selected attributes)
+              + conditional_modifiers (e.g., iced upcharge varies by size)
+              + sum(modifier prices for proteins, spreads, extras, syrups)
 
         Args:
-            item: Any item task (MenuItemTask with various menu_item_type values)
+            item: Any item task (MenuItemTask)
 
         Returns:
             The new calculated price
         """
-        # Route to specialized methods based on item attributes (data-driven)
-        if hasattr(item, 'has_attribute'):
-            if item.has_attribute("bread"):
-                return self.recalculate_bagel_price(item)
-            if item.has_attribute("size"):
-                return self.recalculate_coffee_price(item)
+        # Get base price from menu item name
+        try:
+            base_price = self.lookup_base_price(item.menu_item_name)
+        except ValueError:
+            # Fallback to current unit_price if base lookup fails
+            base_price = getattr(item, 'unit_price', 0.0) or 0.0
+            logger.warning(
+                "Could not look up base price for '%s', using current: $%.2f",
+                item.menu_item_name, base_price
+            )
 
-        # For other menu items (sandwiches, omelettes, etc.)
-        if hasattr(item, 'menu_item_type'):
-            return self.recalculate_menu_item_price(item)
+        total = base_price
+        item_type = getattr(item, 'menu_item_type', None)
 
-        # Fallback: return current price if item type is unknown
-        logger.warning("Unknown item type for price recalculation: %s", type(item).__name__)
-        return getattr(item, 'unit_price', 0.0)
+        # Get attribute values from the item
+        attr_values = getattr(item, 'attribute_values', {})
+
+        # =====================================================================
+        # 1. Attribute option upcharges (size, bread type, etc.)
+        # =====================================================================
+
+        # Size upcharge (for beverages)
+        size_value = attr_values.get("size")
+        size_upcharge = 0.0
+        if size_value and size_value.lower() not in ("small", "s"):
+            size_upcharge = self.lookup_attribute_option_upcharge(
+                item_type or "sized_beverage", "size", size_value
+            )
+            total += size_upcharge
+
+        # Store on item if property exists
+        if hasattr(item, 'size_upcharge'):
+            item.size_upcharge = size_upcharge
+
+        # Bread/bagel type upcharge (for bagels)
+        bread_value = attr_values.get("bagel_type") or attr_values.get("bread")
+        bagel_type_upcharge = 0.0
+        if bread_value:
+            bagel_type_upcharge = self.lookup_attribute_option_upcharge(
+                item_type or "bagel", "bread", bread_value
+            )
+            total += bagel_type_upcharge
+
+        if hasattr(item, 'bagel_type_upcharge'):
+            item.bagel_type_upcharge = bagel_type_upcharge
+
+        # =====================================================================
+        # 2. Conditional upcharges (iced depends on size)
+        # =====================================================================
+
+        # Iced upcharge - varies by size, stored as iced_price_modifier on size options
+        temperature_value = attr_values.get("temperature")
+        iced_upcharge = 0.0
+        if temperature_value == "iced" and size_value:
+            iced_upcharge = self.lookup_conditional_upcharge(
+                item_type or "sized_beverage",
+                "size",
+                size_value,
+                "iced_price_modifier"
+            )
+            total += iced_upcharge
+
+        if hasattr(item, 'iced_upcharge'):
+            item.iced_upcharge = iced_upcharge
+
+        # =====================================================================
+        # 3. Modifier upcharges (milk, syrup, protein, spread, extras)
+        # =====================================================================
+
+        # Milk upcharge
+        milk_value = attr_values.get("milk")
+        milk_upcharge = 0.0
+        if milk_value:
+            milk_upcharge = self.lookup_generic_modifier_price(
+                milk_value, item_type or "sized_beverage", "milk"
+            )
+            total += milk_upcharge
+
+        if hasattr(item, 'milk_upcharge'):
+            item.milk_upcharge = milk_upcharge
+
+        # Syrup upcharge (sum of all syrups * quantities)
+        syrup_selections = attr_values.get("syrup_selections", [])
+        syrup_upcharge = 0.0
+        for syrup in syrup_selections:
+            if isinstance(syrup, dict):
+                flavor = syrup.get("flavor", "")
+                qty = syrup.get("quantity", 1) or 1
+                single_price = self.lookup_generic_modifier_price(
+                    flavor, item_type or "sized_beverage", "syrup"
+                )
+                entry_upcharge = single_price * qty
+                syrup_upcharge += entry_upcharge
+                syrup["price"] = entry_upcharge  # Store for adapter display
+        total += syrup_upcharge
+
+        if hasattr(item, 'syrup_upcharge'):
+            item.syrup_upcharge = syrup_upcharge
+
+        # Extra shots upcharge (for espresso drinks)
+        extra_shots = attr_values.get("extra_shots", 0)
+        extra_shots_upcharge = 0.0
+        if extra_shots > 0:
+            if extra_shots == 1:
+                extra_shots_upcharge = self.lookup_generic_modifier_price(
+                    "double_shot", item_type or "sized_beverage", "extras"
+                )
+            elif extra_shots >= 2:
+                extra_shots_upcharge = self.lookup_generic_modifier_price(
+                    "triple_shot", item_type or "sized_beverage", "extras"
+                )
+            total += extra_shots_upcharge
+
+        if hasattr(item, 'extra_shots_upcharge'):
+            item.extra_shots_upcharge = extra_shots_upcharge
+
+        # Protein upcharge (for bagels/sandwiches)
+        protein = getattr(item, 'sandwich_protein', None)
+        if protein:
+            protein_price = self.lookup_generic_modifier_price(
+                protein, item_type or "bagel"
+            )
+            total += protein_price
+
+        # Extras upcharge (for bagels/sandwiches - toppings, cheese, etc.)
+        extras = getattr(item, 'extras', None)
+        if extras:
+            for extra in extras:
+                extra_price = self.lookup_generic_modifier_price(
+                    extra, item_type or "bagel"
+                )
+                total += extra_price
+
+        # Spread upcharge (for bagels and menu items with sides)
+        spread = getattr(item, 'spread', None)
+        spread_type = getattr(item, 'spread_type', None)
+        spread_upcharge = 0.0
+        if spread and spread.lower() != "none":
+            spread_upcharge = self.lookup_spread_price(spread, spread_type)
+            total += spread_upcharge
+
+        if hasattr(item, 'spread_price'):
+            item.spread_price = spread_upcharge if spread_upcharge > 0 else None
+
+        # =====================================================================
+        # 4. Update item price
+        # =====================================================================
+
+        new_price = round(total, 2)
+        item.unit_price = new_price
+
+        logger.info(
+            "Recalculated price for %s: base=$%.2f -> total=$%.2f",
+            item.menu_item_name, base_price, new_price
+        )
+
+        return new_price
 
     def recalculate_bagel_price(self, item) -> float:
-        """
+        """DEPRECATED: Use recalculate_item_price() instead.
+
         Recalculate and update a bagel item's price based on its current modifiers.
 
         This should be called whenever a bagel's modifiers change (spread, protein, extras)
@@ -512,6 +926,11 @@ class PricingEngine:
         Returns:
             The new calculated price
         """
+        warnings.warn(
+            "recalculate_bagel_price() is deprecated. Use recalculate_item_price() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         # Get base bagel price (regular bagel, not specialty)
         base_price = self.get_bagel_base_price()
 
@@ -547,11 +966,12 @@ class PricingEngine:
         return new_price
 
     # =========================================================================
-    # Coffee Pricing
+    # Coffee Pricing (Legacy - use generic methods instead)
     # =========================================================================
 
     def lookup_coffee_price(self, coffee_type: str | None) -> float:
-        """
+        """DEPRECATED: Use lookup_base_price() instead.
+
         Look up price for a coffee type from the database.
 
         Args:
@@ -563,6 +983,11 @@ class PricingEngine:
         Raises:
             ValueError: If coffee price not found in database
         """
+        warnings.warn(
+            "lookup_coffee_price() is deprecated. Use lookup_base_price() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if not coffee_type:
             # Look for generic "Coffee" item
             menu_item = self._lookup_menu_item("Coffee")
@@ -588,7 +1013,8 @@ class PricingEngine:
         )
 
     def lookup_coffee_modifier_price(self, modifier_name: str, modifier_type: str = "syrup") -> float:
-        """
+        """DEPRECATED: Use lookup_generic_modifier_price() instead.
+
         Look up price modifier for a coffee add-on (syrup, milk, size).
 
         Searches the attribute_options in the database for matching modifier prices.
@@ -605,6 +1031,11 @@ class PricingEngine:
         Raises:
             ValueError: If menu_data is not available
         """
+        warnings.warn(
+            "lookup_coffee_modifier_price() is deprecated. Use lookup_generic_modifier_price() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if not modifier_name:
             return 0.0
 
@@ -675,7 +1106,8 @@ class PricingEngine:
         return 0.0
 
     def lookup_iced_upcharge_by_size(self, size: str | None) -> float:
-        """
+        """DEPRECATED: Use lookup_conditional_upcharge("sized_beverage", "size", size, "iced_price_modifier") instead.
+
         Look up the iced upcharge for a given size.
 
         The iced upcharge is stored per size in the attribute_options table
@@ -691,6 +1123,11 @@ class PricingEngine:
         Raises:
             ValueError: If menu_data is not available
         """
+        warnings.warn(
+            "lookup_iced_upcharge_by_size() is deprecated. Use lookup_conditional_upcharge() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if not size:
             return 0.0
 
@@ -862,7 +1299,8 @@ class PricingEngine:
         return total
 
     def recalculate_coffee_price(self, item) -> float:
-        """
+        """DEPRECATED: Use recalculate_item_price() instead.
+
         Recalculate and update a coffee item's price based on its current modifiers.
 
         Args:
@@ -871,6 +1309,11 @@ class PricingEngine:
         Returns:
             The new calculated price
         """
+        warnings.warn(
+            "recalculate_coffee_price() is deprecated. Use recalculate_item_price() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         # Get base price from drink type
         base_price = self.lookup_coffee_price(item.drink_type)
         total = base_price

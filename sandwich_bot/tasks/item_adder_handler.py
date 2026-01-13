@@ -403,6 +403,7 @@ class ItemAdderHandler:
         price = menu_item.get("base_price", 0.0)
         menu_item_id = menu_item.get("id")
         category = menu_item.get("item_type", "")  # item_type slug like "spread_sandwich"
+        is_signature = menu_item.get("is_signature", False)  # Signature item like "The Classic BEC"
 
         # Check if it's an omelette (requires side choice)
         is_omelette = "omelette" in canonical_name.lower() or "omelet" in canonical_name.lower()
@@ -445,6 +446,7 @@ class ItemAdderHandler:
                 toasted=toasted,  # Set toasted if specified upfront
                 bagel_choice=bagel_choice,  # Set bagel choice if specified upfront
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
+                is_signature=is_signature,  # Signature item flag from menu data
             )
             item.mark_in_progress()
             order.items.add_item(item)

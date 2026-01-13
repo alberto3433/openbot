@@ -832,6 +832,213 @@ class OpenInputResponse(BaseModel):
         description="List of parsed items from multi-item order detection. Used for generic item processing in handler."
     )
 
+    @model_validator(mode='after')
+    def sync_deprecated_fields_and_parsed_items(self) -> Self:
+        """Bidirectional sync between deprecated fields and parsed_items.
+
+        This ensures backward compatibility in both directions:
+        1. If parsed_items is populated → populate deprecated fields (for tests checking deprecated fields)
+        2. If deprecated fields are set but parsed_items is empty → populate parsed_items (for handler code)
+
+        This is a Phase 4 migration helper - deprecated fields will be removed eventually.
+        """
+        # Direction 2: If deprecated fields are set but parsed_items is empty, create parsed_items
+        if not self.parsed_items:
+            items_to_add = []
+
+            # Create bagel entry from deprecated fields
+            if self.new_bagel:
+                attr_values = {}
+                if self.new_bagel_type:
+                    attr_values["bread"] = self.new_bagel_type
+                if self.new_bagel_toasted is not None:
+                    attr_values["toasted"] = self.new_bagel_toasted
+                if self.new_bagel_scooped is not None:
+                    attr_values["scooped"] = self.new_bagel_scooped
+                if self.new_bagel_spread:
+                    attr_values["spread"] = self.new_bagel_spread
+                if self.new_bagel_spread_type:
+                    attr_values["spread_type"] = self.new_bagel_spread_type
+
+                modifiers = []
+                if self.new_bagel_proteins:
+                    modifiers.extend(self.new_bagel_proteins)
+                if self.new_bagel_cheeses:
+                    modifiers.extend(self.new_bagel_cheeses)
+                if self.new_bagel_toppings:
+                    modifiers.extend(self.new_bagel_toppings)
+
+                for _ in range(self.new_bagel_quantity):
+                    items_to_add.append(ParsedItemEntry(
+                        item_type="bagel",
+                        quantity=1,
+                        attribute_values=attr_values.copy(),
+                        modifiers=modifiers.copy(),
+                        needs_cheese_clarification=self.new_bagel_needs_cheese_clarification,
+                    ))
+
+            # Create coffee entry from deprecated fields
+            if self.new_coffee:
+                attr_values = {}
+                if self.new_coffee_size:
+                    attr_values["size"] = self.new_coffee_size
+                if self.new_coffee_iced is not None:
+                    attr_values["temperature"] = "iced" if self.new_coffee_iced else "hot"
+                if self.new_coffee_decaf is not None:
+                    attr_values["decaf"] = self.new_coffee_decaf
+                if self.new_coffee_milk:
+                    attr_values["milk"] = self.new_coffee_milk
+                if self.new_coffee_cream_level:
+                    attr_values["cream_level"] = self.new_coffee_cream_level
+
+                sweeteners = []
+                if self.new_coffee_sweetener:
+                    sweeteners.append(SweetenerItem(
+                        type=self.new_coffee_sweetener,
+                        quantity=self.new_coffee_sweetener_quantity or 1
+                    ))
+
+                syrups = []
+                if self.new_coffee_flavor_syrup:
+                    syrups.append(SyrupItem(
+                        type=self.new_coffee_flavor_syrup,
+                        quantity=self.new_coffee_syrup_quantity or 1
+                    ))
+
+                for _ in range(self.new_coffee_quantity):
+                    items_to_add.append(ParsedItemEntry(
+                        item_type="sized_beverage",
+                        item_name=self.new_coffee_type,
+                        quantity=1,
+                        attribute_values=attr_values.copy(),
+                        sweeteners=sweeteners.copy(),
+                        syrups=syrups.copy(),
+                        special_instructions=self.new_coffee_special_instructions,
+                    ))
+
+            # Create signature item entry from deprecated fields
+            if self.new_signature_item:
+                for _ in range(self.new_signature_item_quantity):
+                    items_to_add.append(ParsedMenuItemEntry(
+                        menu_item_name=self.new_signature_item_name,
+                        quantity=1,
+                        bagel_type=self.new_signature_item_bagel_choice,
+                        toasted=self.new_signature_item_toasted,
+                        modifiers=self.new_signature_item_modifications or [],
+                        is_signature=True,
+                    ))
+
+            # Create menu item entry from deprecated fields
+            if self.new_menu_item:
+                for _ in range(self.new_menu_item_quantity):
+                    items_to_add.append(ParsedMenuItemEntry(
+                        menu_item_name=self.new_menu_item,
+                        quantity=1,
+                        bagel_type=self.new_menu_item_bagel_choice,
+                        toasted=self.new_menu_item_toasted,
+                        modifiers=self.new_menu_item_modifications or [],
+                    ))
+
+            # Create side item entry from deprecated fields
+            if self.new_side_item:
+                for _ in range(self.new_side_item_quantity):
+                    items_to_add.append(ParsedMenuItemEntry(
+                        menu_item_name=self.new_side_item,
+                        quantity=1,
+                    ))
+
+            self.parsed_items = items_to_add
+            return self
+
+        # Direction 1: If parsed_items is populated, populate deprecated fields
+
+        # Find first bagel
+        bagels = [p for p in self.parsed_items if getattr(p, 'item_type', None) == 'bagel']
+        if bagels:
+            first_bagel = bagels[0]
+            self.new_bagel = True
+            self.new_bagel_quantity = len(bagels)
+            self.new_bagel_type = first_bagel.bagel_type
+            self.new_bagel_toasted = first_bagel.toasted
+            self.new_bagel_scooped = first_bagel.scooped
+            self.new_bagel_spread = first_bagel.spread
+            self.new_bagel_spread_type = first_bagel.spread_type
+            # Check for needs_cheese_clarification
+            if hasattr(first_bagel, 'needs_cheese_clarification'):
+                self.new_bagel_needs_cheese_clarification = first_bagel.needs_cheese_clarification
+            # Extract proteins from modifiers if present
+            # In ParsedItemEntry, all ingredients are combined in modifiers list
+            # For backwards compatibility, set new_bagel_proteins to the modifiers list
+            if first_bagel.modifiers:
+                self.new_bagel_proteins = list(first_bagel.modifiers)
+
+        # Find first coffee/sized_beverage
+        coffees = [p for p in self.parsed_items if getattr(p, 'item_type', None) == 'sized_beverage']
+        if coffees:
+            first_coffee = coffees[0]
+            self.new_coffee = True
+            self.new_coffee_quantity = len(coffees)
+            self.new_coffee_type = first_coffee.drink_type or first_coffee.item_name
+            self.new_coffee_size = first_coffee.size
+            # Handle temperature -> iced conversion
+            if first_coffee.temperature:
+                self.new_coffee_iced = first_coffee.temperature == "iced"
+            else:
+                self.new_coffee_iced = first_coffee.iced
+            self.new_coffee_decaf = first_coffee.decaf
+            self.new_coffee_milk = first_coffee.milk
+            # Handle sweeteners
+            if first_coffee.sweeteners:
+                self.new_coffee_sweetener = first_coffee.sweeteners[0].type
+                self.new_coffee_sweetener_quantity = first_coffee.sweeteners[0].quantity
+            # Handle syrups
+            if first_coffee.syrups:
+                self.new_coffee_flavor_syrup = first_coffee.syrups[0].type
+                self.new_coffee_syrup_quantity = first_coffee.syrups[0].quantity
+            if first_coffee.special_instructions:
+                self.new_coffee_special_instructions = first_coffee.special_instructions
+
+        # Find first signature item (identified by is_signature=True or item_type='signature_item')
+        signature_items = [p for p in self.parsed_items
+                          if getattr(p, 'is_signature', False) or getattr(p, 'item_type', None) == 'signature_item']
+        if signature_items:
+            first_sig = signature_items[0]
+            self.new_signature_item = True
+            self.new_signature_item_quantity = len(signature_items)
+            self.new_signature_item_name = getattr(first_sig, 'menu_item_name', None)
+            self.new_signature_item_toasted = first_sig.toasted
+            self.new_signature_item_bagel_choice = first_sig.bagel_type
+            if first_sig.modifiers:
+                self.new_signature_item_modifications = first_sig.modifiers
+
+        # Find first menu item (not bagel, not signature, not coffee)
+        # ParsedMenuItemEntry uses type='menu_item', ParsedItemEntry uses item_type
+        menu_items = [p for p in self.parsed_items
+                      if getattr(p, 'type', None) == 'menu_item'  # ParsedMenuItemEntry
+                      or getattr(p, 'item_type', None) in ('menu_item', 'spread_sandwich', 'side')
+                      or (getattr(p, 'type', None) == 'item' and getattr(p, 'item_type', None) not in ('bagel', 'sized_beverage', 'signature_item'))]
+        # Exclude signature items from menu items
+        menu_items = [m for m in menu_items if not getattr(m, 'is_signature', False)]
+        if menu_items:
+            first_menu = menu_items[0]
+            # Check if it's actually a menu item type
+            if getattr(first_menu, 'item_type', None) not in ('bagel', 'sized_beverage', 'signature_item', 'side'):
+                self.new_menu_item = getattr(first_menu, 'menu_item_name', None) or getattr(first_menu, 'item_name', None)
+                self.new_menu_item_quantity = len([m for m in menu_items if getattr(m, 'item_type', None) == getattr(first_menu, 'item_type', None)])
+                self.new_menu_item_toasted = first_menu.toasted
+                self.new_menu_item_bagel_choice = first_menu.bagel_type
+                if first_menu.modifiers:
+                    self.new_menu_item_modifications = first_menu.modifiers
+
+        # Find side items
+        side_items = [p for p in self.parsed_items if getattr(p, 'item_type', None) == 'side']
+        if side_items:
+            first_side = side_items[0]
+            self.new_side_item = getattr(first_side, 'menu_item_name', None) or getattr(first_side, 'item_name', None)
+            self.new_side_item_quantity = len(side_items)
+
+        return self
+
 
 
 class ByPoundCategoryResponse(BaseModel):

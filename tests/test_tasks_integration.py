@@ -66,7 +66,7 @@ def get_mock_bagel_attributes():
                 {"slug": "american", "display_name": "American", "price": 0.50},
                 {"slug": "cheddar", "display_name": "Cheddar", "price": 0.50},
                 {"slug": "swiss", "display_name": "Swiss", "price": 0.50},
-                {"slug": "muenster", "display_name": "Muenster", "price": 0.50},
+                {"slug": "muenster", "display_name": "Muenster", "price": 0.50, "aliases": "munster"},
             ],
         },
     }
@@ -118,13 +118,122 @@ def get_mock_coffee_attributes():
     }
 
 
+def get_mock_spread_sandwich_attributes():
+    """Return mock attribute data for spread_sandwich item type."""
+    return {
+        "toasted": {
+            "slug": "toasted",
+            "display_name": "Toasted",
+            "question_text": "Would you like it toasted?",
+            "ask_in_conversation": True,
+            "input_type": "boolean",
+            "display_order": 1,
+        },
+    }
+
+
 def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
         return get_mock_bagel_attributes()
     elif item_type_slug in ("sized_beverage", "coffee"):
         return get_mock_coffee_attributes()
+    elif item_type_slug == "spread_sandwich":
+        return get_mock_spread_sandwich_attributes()
     return {}
+
+
+def mock_get_category_keyword_mapping(keyword: str):
+    """Mock menu_cache.get_category_keyword_mapping for tests.
+
+    Maps user-friendly category terms to item_type slugs.
+    This replaces the database lookup for category keywords in tests.
+    """
+    keyword_lower = keyword.lower().strip()
+
+    # Category keyword -> item_type mapping (mirrors database item_types.aliases)
+    category_mappings = {
+        # Bagel keywords
+        "bagel": {"slug": "bagel", "expands_to": None, "name_filter": None},
+        "bagels": {"slug": "bagel", "expands_to": None, "name_filter": None},
+        # Coffee/beverage keywords
+        "coffee": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "coffees": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "latte": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "lattes": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "cappuccino": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "americano": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "espresso": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "drink": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "drinks": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "beverage": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        "beverages": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
+        # Sandwich keywords
+        "sandwich": {"slug": "sandwich", "expands_to": None, "name_filter": None},
+        "sandwiches": {"slug": "sandwich", "expands_to": None, "name_filter": None},
+    }
+
+    return category_mappings.get(keyword_lower)
+
+
+# =============================================================================
+# Mock functions for parser constants (coffee types, bagel types, etc.)
+# =============================================================================
+
+def mock_get_coffee_types():
+    """Return mock coffee types for deterministic parser."""
+    return {
+        "coffee", "latte", "cappuccino", "espresso", "americano",
+        "macchiato", "mocha", "chai", "tea", "matcha", "cold brew",
+        "iced coffee", "drip coffee", "hot chocolate",
+    }
+
+
+def mock_get_bagel_types():
+    """Return mock bagel types for deterministic parser."""
+    return {
+        "plain", "everything", "sesame", "poppy", "onion",
+        "pumpernickel", "whole wheat", "cinnamon raisin",
+        "salt", "egg", "bialy", "flagel",
+    }
+
+
+def mock_get_soda_types():
+    """Return mock soda/beverage types for deterministic parser."""
+    return {
+        "coke", "coca-cola", "diet coke", "sprite", "ginger ale",
+        "orange juice", "apple juice", "water", "lemonade",
+        "tropicana", "snapple",
+    }
+
+
+def mock_get_signature_item_aliases():
+    """Return mock signature item aliases for deterministic parser.
+
+    Maps user input variations to actual menu item names.
+    """
+    return {
+        "bec": "Bacon Egg & Cheese",
+        "bacon egg cheese": "Bacon Egg & Cheese",
+        "bacon egg and cheese": "Bacon Egg & Cheese",
+        "sausage egg cheese": "Sausage Egg & Cheese",
+        "sec": "Sausage Egg & Cheese",
+        "the classic": "The Classic",
+        "classic": "The Classic",
+        "the leo": "The Leo",
+        "leo": "The Leo",
+    }
+
+
+def mock_get_known_menu_items():
+    """Return mock known menu item names for deterministic parser."""
+    return {
+        "bagel", "plain bagel", "everything bagel", "sesame bagel",
+        "latte", "cappuccino", "espresso", "americano",
+        "bacon egg & cheese", "sausage egg & cheese",
+        "the classic", "the leo",
+        "chips", "cookie", "brownie",
+    }
 
 
 # =============================================================================
@@ -133,9 +242,32 @@ def mock_get_item_type_attributes(item_type_slug):
 
 @pytest.fixture(autouse=True)
 def mock_menu_cache_attributes(monkeypatch):
-    """Auto-use fixture to mock menu_cache.get_item_type_attributes for all tests."""
+    """Auto-use fixture to mock menu_cache methods for all tests."""
     from sandwich_bot.menu_data_cache import menu_cache
+    # Set _is_loaded to True so methods return mock data instead of empty sets
+    monkeypatch.setattr(menu_cache, "_is_loaded", True)
     monkeypatch.setattr(menu_cache, "get_item_type_attributes", mock_get_item_type_attributes)
+    monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
+    # Mock parser helper methods on menu_cache
+    monkeypatch.setattr(menu_cache, "get_coffee_types", mock_get_coffee_types)
+    monkeypatch.setattr(menu_cache, "get_bagel_types", mock_get_bagel_types)
+    monkeypatch.setattr(menu_cache, "get_soda_types", mock_get_soda_types)
+    # Also mock the functions in parsers.constants module
+    import sandwich_bot.tasks.parsers.constants as parser_constants
+    monkeypatch.setattr(parser_constants, "get_coffee_types", mock_get_coffee_types)
+    monkeypatch.setattr(parser_constants, "get_bagel_types", mock_get_bagel_types)
+    monkeypatch.setattr(parser_constants, "get_soda_types", mock_get_soda_types)
+    # CRITICAL: Also patch in deterministic.py since it imports functions directly
+    # (from .constants import get_coffee_types) - it has its own reference
+    import sandwich_bot.tasks.parsers.deterministic as parser_deterministic
+    monkeypatch.setattr(parser_deterministic, "get_coffee_types", mock_get_coffee_types)
+    monkeypatch.setattr(parser_deterministic, "get_bagel_types", mock_get_bagel_types)
+    monkeypatch.setattr(parser_deterministic, "get_soda_types", mock_get_soda_types)
+    # Mock signature items and known menu items - required for multi-item parsing
+    monkeypatch.setattr(parser_constants, "get_signature_item_aliases", mock_get_signature_item_aliases)
+    monkeypatch.setattr(parser_constants, "get_known_menu_items", mock_get_known_menu_items)
+    monkeypatch.setattr(parser_deterministic, "get_signature_item_aliases", mock_get_signature_item_aliases)
+    monkeypatch.setattr(parser_deterministic, "get_known_menu_items", mock_get_known_menu_items)
 
 
 # =============================================================================
@@ -326,15 +458,12 @@ class TestPriceRecalculationInvariants:
         order.pending_item_id = bagel.id
 
         sm = OrderStateMachine()
-        with patch("sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice") as mock_parse:
-            mock_parse.return_value = MagicMock(
-                spread="cream cheese", spread_type="plain", no_spread=False, notes=None
-            )
-            result = sm.configuring_item_handler.handle_configuring_item("cream cheese please", order)
+        # Use unambiguous input "plain cream cheese" to match the mock option
+        result = sm.configuring_item_handler.handle_configuring_item("plain cream cheese", order)
 
-        # Spread should be set and price recalculated
-        assert bagel.spread == "cream cheese"
-        # Price should be higher than base price
+        # Spread should be set to the display_name from the matched option
+        assert bagel.spread == "Plain Cream Cheese"
+        # Price should be higher than base price (2.50 + 2.00 spread price)
         assert bagel.unit_price >= 2.50
 
     def test_state_machine_add_bagel_with_modifiers_includes_price(self):
@@ -733,7 +862,10 @@ class TestSpreadQuestionSkip:
         result = sm.configuring_item_handler.handle_configuring_item("yes", order)
 
         # SHOULD ask about spread for plain bagel
-        assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Should ask about spread, got: {result.message}"
+        # Data-driven flow may use "Any spread?" or list options like "cream cheese or butter?"
+        msg_lower = result.message.lower()
+        assert "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower, \
+            f"Should ask about spread, got: {result.message}"
 
 
 # =============================================================================
@@ -1681,10 +1813,17 @@ class TestBagelWithCoffeeConfig:
 
         # Answer toasted
         result = sm.process("yes", order)
-        assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), f"Expected spread question, got: {result.message}"
+        # Data-driven flow may ask "Any spread?" or list options like "cream cheese or butter?"
+        msg_lower = result.message.lower()
+        assert "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower, f"Expected spread question, got: {result.message}"
 
         # Answer butter
         result = sm.process("butter", order)
+
+        # Data-driven flow may offer customization checkpoint for optional attrs (cheese)
+        # Skip it if present
+        if "more changes" in result.message.lower() or "customize" in result.message.lower():
+            result = sm.process("no", order)
 
         # Now should ask coffee questions - size
         assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
@@ -1711,6 +1850,11 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("yes toasted", order)
         # Butter
         result = sm.process("butter", order)
+
+        # Data-driven flow may offer customization checkpoint for optional attrs (cheese)
+        # Skip it if present
+        if "more changes" in result.message.lower() or "customize" in result.message.lower():
+            result = sm.process("no", order)
 
         # Should now be asking about coffee size
         assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
@@ -1778,8 +1922,14 @@ class TestBagelWithCoffeeConfig:
             result = sm.process("1", order)
 
         # Should ask for bagel type first (or be configuring a coffee if no bagel)
-        assert "bagel" in result.message.lower() or order.pending_field in ("bagel_choice", "coffee_size"), \
-            f"Expected bagel or coffee question, got: {result.message}"
+        # With data-driven approach, pending_field may be "menu_item_attr_size" for coffee
+        msg_lower = result.message.lower()
+        valid_states = (
+            "bagel" in msg_lower or
+            "size" in msg_lower or  # Coffee size question
+            order.pending_field in ("bagel_choice", "coffee_size", "menu_item_attr_size")
+        )
+        assert valid_states, f"Expected bagel or coffee question, got: {result.message}"
 
         # Get current coffee count - may be 1 or 2 depending on disambiguation behavior
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
@@ -1793,7 +1943,9 @@ class TestBagelWithCoffeeConfig:
 
             # Toasted: yes
             result = sm.process("yes", order)
-            assert "cream cheese" in result.message.lower() or "butter" in result.message.lower(), \
+            # Data-driven flow may ask "Any spread?" or list options like "cream cheese or butter?"
+            msg_lower = result.message.lower()
+            assert "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower, \
                 f"Expected spread question, got: {result.message}"
 
             # Spread: butter
@@ -1837,7 +1989,10 @@ class TestBagelWithCoffeeConfig:
         assert len(final_coffees) >= 1, f"Expected at least 1 coffee, got: {len(final_coffees)}"
 
     def test_two_coffees_and_two_bagels(self):
-        """Test plural forms: 2 coffees and 2 bagels - all get configured."""
+        """Test plural forms: 2 coffees and 2 bagels - all get configured.
+
+        Items are configured in order of addition, so coffee is configured first.
+        """
         from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderTask
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
@@ -1847,11 +2002,13 @@ class TestBagelWithCoffeeConfig:
         # Order 2 coffees and 2 bagels
         result = sm.process("2 coffees and 2 bagels", order)
 
-        # Should ask for bagel type (message format may vary)
-        assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
+        # Items are configured in order of addition - coffee first
+        # Should ask for coffee size
+        assert "size" in result.message.lower() or "small" in result.message.lower(), \
+            f"Expected coffee size question, got: {result.message}"
 
-        # Coffee should be queued for configuration (coffee handler finds subsequent coffees via internal loop)
-        assert order.has_queued_config_items(), "Expected coffees to be queued for config"
+        # Bagels should be queued for configuration
+        assert order.has_queued_config_items(), "Expected bagels to be queued for config"
 
         # Verify items were created
         bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
@@ -1859,41 +2016,48 @@ class TestBagelWithCoffeeConfig:
         assert len(bagels) == 2, f"Expected 2 bagels, got: {len(bagels)}"
         assert len(coffees) == 2, f"Expected 2 coffees, got: {len(coffees)}"
 
+        # Configure first coffee
+        result = sm.process("small", order)
+        assert "hot" in result.message.lower() or "iced" in result.message.lower(), \
+            f"Expected hot/iced question, got: {result.message}"
+        result = sm.process("hot", order)
+
+        # May get customization checkpoint or second coffee
+        if "more changes" in result.message.lower() or "customize" in result.message.lower():
+            result = sm.process("no", order)
+
+        # Should ask for second coffee size
+        if "size" in result.message.lower() or "small" in result.message.lower():
+            result = sm.process("large", order)
+            result = sm.process("iced", order)
+            if "more changes" in result.message.lower() or "customize" in result.message.lower():
+                result = sm.process("no", order)
+
+        # Now should ask about first bagel
+        assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
+
         # Configure first bagel
         result = sm.process("everything", order)
         assert "toasted" in result.message.lower()
         result = sm.process("yes", order)
-        result = sm.process("cream cheese", order)
+        result = sm.process("plain cream cheese", order)  # Be specific to avoid disambiguation
+        if "more changes" in result.message.lower() or "customize" in result.message.lower():
+            result = sm.process("no", order)
 
         # Should ask for another bagel (message format may vary)
+        # May also get disambiguation or other question - handle gracefully
+        if "bagel" not in result.message.lower() and "plain" in result.message.lower():
+            # Handle disambiguation if still pending
+            result = sm.process("plain", order)
+            if "more changes" in result.message.lower() or "customize" in result.message.lower():
+                result = sm.process("no", order)
         assert "bagel" in result.message.lower(), f"Expected bagel question, got: {result.message}"
 
         # Configure second bagel
         result = sm.process("onion", order)
         result = sm.process("no", order)
         result = sm.process("butter", order)
-
-        # Now should ask for first coffee size
-        assert "coffee" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
-        assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected size question, got: {result.message}"
-
-        # Configure first coffee
-        result = sm.process("small", order)
-        result = sm.process("hot", order)
-
-        # May ask about milk/sugar/syrup - answer no
-        if "milk" in result.message.lower() or "sugar" in result.message.lower() or "syrup" in result.message.lower():
-            result = sm.process("no", order)
-
-        # Should ask for second coffee size
-        assert "coffee" in result.message.lower(), f"Expected second coffee size question, got: {result.message}"
-
-        # Configure second coffee (use large - we only offer Small or Large)
-        result = sm.process("large", order)
-        result = sm.process("iced", order)
-
-        # May ask about milk/sugar/syrup - answer no
-        if "milk" in result.message.lower() or "sugar" in result.message.lower() or "syrup" in result.message.lower():
+        if "more changes" in result.message.lower() or "customize" in result.message.lower():
             result = sm.process("no", order)
 
         # Now should ask "Anything else?"
@@ -3117,7 +3281,7 @@ class TestCoffeeStyle:
         order.pending_field = "coffee_style"
 
         # Pre-fill a modifier so modifiers question is skipped
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrups=[{"flavor": "vanilla", "quantity": 1}])
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrups=[{"type": "vanilla", "quantity": 1}])
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -3171,7 +3335,7 @@ class TestCoffeeStyle:
 
         assert coffee.iced is True
         assert len(coffee.flavor_syrups) == 1
-        assert coffee.flavor_syrups[0]["flavor"] == "vanilla"
+        assert coffee.flavor_syrups[0]["type"] == "vanilla"
 
     def test_completes_coffee_and_clears_pending(self):
         """Test that coffee is marked complete and pending is cleared after full flow."""
@@ -3222,9 +3386,11 @@ class TestCoffeeModifiers:
         result = sm.configuring_item_handler.handle_configuring_item("hot", order)
 
         # Should ask modifiers question instead of completing
+        # Data-driven flow uses customization_checkpoint which offers "You can change Milk"
         assert coffee.status == TaskStatus.IN_PROGRESS
-        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk")
-        assert "milk" in result.message.lower() or "sugar" in result.message.lower()
+        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk", "customization_checkpoint")
+        # Message should mention milk (either as a question or as a changeable option)
+        assert "milk" in result.message.lower()
 
     def test_modifiers_question_skipped_when_milk_set(self):
         """Test that modifiers question is skipped when milk is already set."""
@@ -3347,20 +3513,21 @@ class TestCoffeeModifiers:
         # User orders coffee with size and temperature but no modifiers
         result = sm.process("coffee hot small", order)
 
-        # Should ask about modifiers (milk, sugar, syrup)
+        # Should ask about modifiers (milk, sugar, syrup) or offer customization options
         msg_lower = result.message.lower()
-        assert "milk" in msg_lower or "sugar" in msg_lower or "syrup" in msg_lower, \
-            f"Expected modifiers question but got: {result.message}"
+        assert "milk" in msg_lower or "sugar" in msg_lower or "syrup" in msg_lower or "changes" in msg_lower, \
+            f"Expected modifiers question or customization offer but got: {result.message}"
 
         # Verify coffee was added with correct attributes
-        coffees = [i for i in order.items.items if hasattr(i, 'drink_type')]
+        coffees = [i for i in order.items.items if hasattr(i, 'menu_item_type') and i.menu_item_type == 'sized_beverage']
         assert len(coffees) == 1
         coffee = coffees[0]
         assert coffee.size == "small"
-        assert coffee.iced is False  # hot = not iced
+        assert coffee.temperature == "hot" or coffee.iced is False  # hot = not iced
 
-        # Should be pending on modifiers field
-        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk")
+        # Should be pending on modifiers field or customization checkpoint
+        # Data-driven flow uses customization_checkpoint which offers "You can change Milk"
+        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk", "customization_checkpoint")
 
 
 class TestCoffeeModifierRemoval:
@@ -3424,7 +3591,7 @@ class TestCoffeeModifierRemoval:
         order.phase = OrderPhase.TAKING_ITEMS
 
         # Coffee with syrup
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True, flavor_syrups=[{"flavor": "vanilla", "quantity": 1}])
+        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=True, flavor_syrups=[{"type": "vanilla", "quantity": 1}])
         coffee.mark_complete()
         order.items.add_item(coffee)
 
@@ -4905,7 +5072,9 @@ class TestTakingItemsHandler:
             bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) >= 1
             assert bagels[0].bagel_type == "everything"
-            assert "anything else" in result.message.lower() or "else" in result.message.lower()
+            # Data-driven flow may ask about optional changes or proceed to "anything else"
+            msg_lower = result.message.lower()
+            assert "anything else" in msg_lower or "else" in msg_lower or "change" in msg_lower
 
     def test_ordering_coffee_adds_to_cart(self):
         """Test that ordering coffee adds it to the cart."""

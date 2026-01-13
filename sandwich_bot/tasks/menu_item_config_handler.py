@@ -62,7 +62,7 @@ class MenuItemConfigHandler(BaseHandler):
     # This allows checking if an attribute is already answered when stored under legacy key
     LEGACY_ATTR_ALIASES = {
         "bread": ["bagel_type"],  # DB uses "bread", legacy code uses "bagel_type"
-        "spread": ["spread_type"],  # DB uses "spread", legacy code uses "spread_type"
+        "spread_type": ["spread"],  # DB uses "spread_type", legacy code/parser uses "spread"
         # Note: temperature is now the canonical key, no alias needed
         # milk_sweetener_syrup is a consolidated attribute but _apply_extracted_modifiers
         # stores individual fields (sweetener, milk, flavor_syrup) for display purposes
@@ -96,6 +96,48 @@ class MenuItemConfigHandler(BaseHandler):
         if not item_type_slug:
             return False
         return item_type_slug in menu_cache.get_configurable_item_types()
+
+    # Legacy fields that should use slug instead of display_name
+    # These fields historically stored lowercase slugs like "plain", "everything"
+    LEGACY_FIELDS_USE_SLUG = {"bagel_type"}
+
+    def _set_legacy_field_if_applicable(
+        self,
+        item: "MenuItemTask",
+        attr_slug: str,
+        display_value: str | None,
+        slug_value: str | None = None,
+    ) -> None:
+        """Set legacy direct model fields for backward compatibility.
+
+        When setting attribute_values entries, also set the corresponding
+        legacy direct field on the model for code that reads from item.spread,
+        item.toasted, etc. instead of item.attribute_values.
+
+        Uses LEGACY_ATTR_ALIASES to determine the legacy field name.
+
+        Args:
+            item: The MenuItemTask being configured
+            attr_slug: The database attribute slug (e.g., "spread_type")
+            display_value: The display value to set (e.g., "Plain Cream Cheese")
+            slug_value: The slug value to set (e.g., "plain_cc") - used for fields
+                        that historically stored slugs instead of display names
+        """
+        # Check if this attribute has legacy aliases
+        legacy_aliases = self.LEGACY_ATTR_ALIASES.get(attr_slug, [])
+        for alias in legacy_aliases:
+            # Check if this alias is a direct field on the model
+            if hasattr(item, alias) and not alias.startswith("_"):
+                # Some legacy fields expect slugs, others expect display names
+                if alias in self.LEGACY_FIELDS_USE_SLUG and slug_value is not None:
+                    value = slug_value
+                else:
+                    value = display_value
+                setattr(item, alias, value)
+                logger.debug(
+                    "Set legacy field %s = %s for attr %s",
+                    alias, value, attr_slug
+                )
 
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
@@ -173,6 +215,13 @@ class MenuItemConfigHandler(BaseHandler):
                 if direct_value is not None:
                     logger.debug("  %s: FOUND in direct field", slug)
                     continue
+            # Also check legacy aliases as direct model fields (e.g., spread_type -> spread)
+            found_via_direct_alias = any(
+                getattr(item, alias, None) is not None for alias in legacy_aliases
+            )
+            if found_via_direct_alias:
+                logger.debug("  %s: FOUND via direct field alias %s", slug, legacy_aliases)
+                continue
             logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
             unanswered.append(attr)
         logger.info(
@@ -207,6 +256,12 @@ class MenuItemConfigHandler(BaseHandler):
                 direct_value = getattr(item, slug, None)
                 if direct_value is not None:
                     continue
+            # Also check legacy aliases as direct model fields (e.g., spread_type -> spread)
+            found_via_direct_alias = any(
+                getattr(item, alias, None) is not None for alias in legacy_aliases
+            )
+            if found_via_direct_alias:
+                continue
             unanswered.append(attr)
         return unanswered
 
@@ -1017,21 +1072,36 @@ class MenuItemConfigHandler(BaseHandler):
                 item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
 
         elif isinstance(modifiers, ExtractedCoffeeModifiers):
-            # Apply beverage-style modifiers using attribute_values
+            # Apply beverage-style modifiers using attribute_values AND proper list fields
             if modifiers.milk and "milk" not in item.attribute_values:
+                item.milk = modifiers.milk
                 item.attribute_values["milk"] = modifiers.milk
                 added_items.append(modifiers.milk)
 
             if modifiers.sweetener and "sweetener" not in item.attribute_values:
+                # Store in attribute_values for backwards compatibility
                 item.attribute_values["sweetener"] = modifiers.sweetener
                 if modifiers.sweetener_quantity > 1:
                     item.attribute_values["sweetener_quantity"] = modifiers.sweetener_quantity
+                # Also store in sweeteners list for proper data model
+                sweetener_entry = {
+                    "type": modifiers.sweetener,
+                    "quantity": modifiers.sweetener_quantity or 1
+                }
+                item.sweeteners.append(sweetener_entry)
                 added_items.append(modifiers.sweetener)
 
             if modifiers.flavor_syrup and "flavor_syrup" not in item.attribute_values:
+                # Store in attribute_values for backwards compatibility
                 item.attribute_values["flavor_syrup"] = modifiers.flavor_syrup
                 if modifiers.syrup_quantity > 1:
                     item.attribute_values["syrup_quantity"] = modifiers.syrup_quantity
+                # Also store in flavor_syrups list for proper data model
+                syrup_entry = {
+                    "type": modifiers.flavor_syrup,
+                    "quantity": modifiers.syrup_quantity or 1
+                }
+                item.flavor_syrups.append(syrup_entry)
                 added_items.append(f"{modifiers.flavor_syrup} syrup")
 
             if modifiers.cream_level and "cream_level" not in item.attribute_values:
@@ -1477,6 +1547,10 @@ class MenuItemConfigHandler(BaseHandler):
         else:
             item.attribute_values[attr_slug] = selected["slug"]
             item.attribute_values[f"{attr_slug}_selections"] = [selection]
+            # Also set legacy direct fields for backward compatibility
+            self._set_legacy_field_if_applicable(
+                item, attr_slug, selected["display_name"], slug_value=selected["slug"]
+            )
             # Update price if applicable
             if opt_price > 0:
                 price_key = f"{attr_slug}_price"
@@ -1584,6 +1658,11 @@ class MenuItemConfigHandler(BaseHandler):
         if legacy_field == "coffee_style":
             return self._handle_coffee_style_input(user_input, item, order)
 
+        # Special handling for coffee_modifiers -> uses extract_coffee_modifiers_from_input
+        # This parses complex modifier strings like "oat milk with 2 sugars and vanilla"
+        if legacy_field == "coffee_modifiers":
+            return self._handle_coffee_modifiers_input(user_input, item, order)
+
         # Delegate to generic attribute handler
         return self.handle_attribute_input(user_input, item, order, attr_slug)
 
@@ -1615,6 +1694,73 @@ class MenuItemConfigHandler(BaseHandler):
         return self._advance_to_next_question(
             item, order, {"slug": "iced"}, use_multi_item_orchestration=True
         )
+
+    def _handle_coffee_modifiers_input(
+        self, user_input: str, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult:
+        """Handle coffee modifiers input - special case for complex modifier parsing.
+
+        Uses extract_coffee_modifiers_from_input to parse user input like
+        "oat milk with 2 sugars and vanilla" and sets the appropriate fields.
+        """
+        user_lower = user_input.lower().strip()
+
+        # Check for "no thanks" / "nothing" / "that's it" to skip modifiers
+        skip_patterns = ["no", "nothing", "none", "that's it", "thats it", "i'm good", "im good", "nope"]
+        if any(p in user_lower for p in skip_patterns) and len(user_lower) < 20:
+            # Mark coffee as complete and advance
+            item.mark_complete()
+            order.clear_pending()
+            return self._get_next_question(order)
+
+        # Use the coffee modifier extractor to parse input
+        modifiers = extract_coffee_modifiers_from_input(user_input)
+
+        # Apply extracted modifiers to item using proper data structures
+        applied = []
+        if modifiers.milk:
+            item.milk = modifiers.milk
+            applied.append(modifiers.milk + " milk")
+
+        if modifiers.sweetener:
+            # Use sweeteners list format: [{"type": "sugar", "quantity": 2}]
+            sweetener_entry = {
+                "type": modifiers.sweetener,
+                "quantity": modifiers.sweetener_quantity or 1
+            }
+            item.sweeteners.append(sweetener_entry)
+            if modifiers.sweetener_quantity > 1:
+                applied.append(f"{modifiers.sweetener_quantity} {modifiers.sweetener}")
+            else:
+                applied.append(modifiers.sweetener)
+
+        if modifiers.flavor_syrup:
+            # Use flavor_syrups list format: [{"type": "vanilla", "quantity": 1}]
+            syrup_entry = {
+                "type": modifiers.flavor_syrup,
+                "quantity": modifiers.syrup_quantity or 1
+            }
+            item.flavor_syrups.append(syrup_entry)
+            if modifiers.syrup_quantity > 1:
+                applied.append(f"{modifiers.syrup_quantity} pumps {modifiers.flavor_syrup}")
+            else:
+                applied.append(f"{modifiers.flavor_syrup} syrup")
+
+        if modifiers.cream_level:
+            item.cream_level = modifiers.cream_level
+            applied.append(modifiers.cream_level + " cream")
+
+        # If nothing was extracted, ask again
+        if not applied:
+            return StateMachineResult(
+                message="Sorry, I didn't catch that. What kind of milk, sweetener, or syrup would you like? You can ask 'what options?' to see choices.",
+                order=order,
+            )
+
+        # Mark item as complete since we got modifier info
+        item.mark_complete()
+        order.clear_pending()
+        return self._get_next_question(order)
 
     def handle_attribute_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr_slug: str
@@ -1873,6 +2019,12 @@ class MenuItemConfigHandler(BaseHandler):
             else:
                 # Single select - store slug and use _selections format to support quantity
                 item.attribute_values[attr_slug] = matched["slug"]
+
+                # Also set legacy direct fields for backward compatibility
+                # (e.g., item.spread = value when spread_type is set)
+                self._set_legacy_field_if_applicable(
+                    item, attr_slug, matched["display_name"], slug_value=matched["slug"]
+                )
 
                 # Determine the price for this option
                 option_price = sel_price or 0.0
@@ -2151,8 +2303,17 @@ class MenuItemConfigHandler(BaseHandler):
             # Recalculate price and complete
             self._recalculate_item_price(item)
             item.mark_complete()
-            order.phase = OrderPhase.TAKING_ITEMS.value
             order.clear_pending()
+
+            # Check if there are more items to configure (e.g., coffee added with bagel)
+            if self._get_next_question:
+                next_result = self._get_next_question(order)
+                # If there's another item to configure, return that
+                if next_result and next_result.order.pending_field:
+                    return next_result
+
+            # No more items to configure - go back to taking items
+            order.phase = OrderPhase.TAKING_ITEMS.value
             return StateMachineResult(
                 message=f"Got it, {item.get_summary()}. Anything else?",
                 order=order,

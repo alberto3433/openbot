@@ -308,11 +308,23 @@ class ConfigHelperHandler:
 
         # Find matching items (fallback for non-ordinal cancellations)
         items_to_remove = []
+
+        # Map user category terms to item_type via database (e.g., "coffee" -> "sized_beverage")
+        # Uses category keywords from item_types.aliases in the database
+        from sandwich_bot.menu_data_cache import menu_cache
+        mapped_item_type = None
+        category_mapping = menu_cache.get_category_keyword_mapping(cancel_desc)
+        if not category_mapping:
+            category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
+        if category_mapping:
+            mapped_item_type = category_mapping.get("slug")
+
         for item in active_items:
             item_summary = item.get_summary().lower()
             item_name = getattr(item, 'menu_item_name', '') or ''
             item_name_lower = item_name.lower()
             item_type = getattr(item, 'item_type', '') or ''
+            menu_item_type = getattr(item, 'menu_item_type', '') or ''
 
             # Check for matches - be careful with empty strings
             matches = False
@@ -328,6 +340,12 @@ class ConfigHelperHandler:
                 matches = True
             # Check item_type for things like "coffee" -> matches item_type="coffee"
             elif item_type and (cancel_desc == item_type or singular_desc == item_type):
+                matches = True
+            # Check menu_item_type (e.g., "sized_beverage", "bagel")
+            elif menu_item_type and (cancel_desc == menu_item_type or singular_desc == menu_item_type):
+                matches = True
+            # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
+            elif mapped_item_type and menu_item_type == mapped_item_type:
                 matches = True
             elif any(word in item_summary for word in cancel_desc.split() if word):
                 matches = True

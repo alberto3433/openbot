@@ -1711,6 +1711,8 @@ class MenuDataCache:
                     "display_name": attr.display_name,
                     "question_text": attr.question_text,
                     "ask_in_conversation": attr.ask_in_conversation,
+                    "is_required": attr.is_required,
+                    "default_value": attr.default_value,
                     "input_type": attr.input_type,
                     "display_order": attr.display_order,
                     "allow_none": getattr(attr, 'allow_none', False),
@@ -1841,6 +1843,85 @@ class MenuDataCache:
     def clear_item_type_attributes_cache(self) -> None:
         """Clear the item type attributes cache (for testing or after DB changes)."""
         self._item_type_attributes = {}
+
+    def get_field_config(self, item_type_slug: str, field_slug: str) -> dict | None:
+        """Get field configuration for a specific attribute from database.
+
+        This method replaces the hardcoded DEFAULT_BAGEL_FIELDS and DEFAULT_COFFEE_FIELDS
+        in field_config.py with database-driven configuration.
+
+        Args:
+            item_type_slug: The item type (e.g., "bagel", "sized_beverage")
+            field_slug: The field/attribute slug (e.g., "bread", "toasted", "size")
+
+        Returns:
+            Dict with field config, or None if not found:
+            {
+                "required": True/False,
+                "ask_if_empty": True/False,
+                "question": "Question text?",
+                "default": <default value or None>,
+            }
+        """
+        import json
+
+        attrs = self.get_item_type_attributes(item_type_slug)
+        if field_slug not in attrs:
+            return None
+
+        attr = attrs[field_slug]
+
+        # Parse default_value from JSON string if present
+        default = None
+        if attr.get("default_value"):
+            try:
+                default = json.loads(attr["default_value"])
+            except (json.JSONDecodeError, TypeError):
+                default = attr["default_value"]
+
+        return {
+            "required": attr.get("is_required", False),
+            "ask_if_empty": attr.get("ask_in_conversation", True),
+            "question": attr.get("question_text"),
+            "default": default,
+        }
+
+    def get_all_field_configs(self, item_type_slug: str) -> dict:
+        """Get all field configurations for an item type from database.
+
+        Args:
+            item_type_slug: The item type (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            Dict mapping field slugs to their configs:
+            {
+                "bread": {"required": True, "ask_if_empty": True, ...},
+                "toasted": {"required": False, "ask_if_empty": True, ...},
+                ...
+            }
+        """
+        import json
+
+        attrs = self.get_item_type_attributes(item_type_slug)
+        result = {}
+
+        for field_slug, attr in attrs.items():
+            # Parse default_value from JSON string if present
+            default = None
+            if attr.get("default_value"):
+                try:
+                    default = json.loads(attr["default_value"])
+                except (json.JSONDecodeError, TypeError):
+                    default = attr["default_value"]
+
+            result[field_slug] = {
+                "required": attr.get("is_required", False),
+                "ask_if_empty": attr.get("ask_in_conversation", True),
+                "question": attr.get("question_text"),
+                "default": default,
+            }
+
+        return result
 
     def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
         """Resolve an option by alias or slug for a global attribute.

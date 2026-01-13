@@ -1,12 +1,14 @@
 """
 Field configuration for task fields.
 
-This module defines how fields are configured per item type,
-allowing the menu to specify:
+This module provides field configuration by loading from the database.
+Field configs include:
 - Required vs optional fields
 - Default values (if set, don't ask)
 - Whether to ask if empty (for optional fields)
 - The question to ask
+
+All configuration is loaded from the item_type_attributes table.
 """
 
 from typing import Any
@@ -24,103 +26,42 @@ class ItemTypeConfig(BaseModel):
 
 
 # =============================================================================
-# Default Field Configurations
+# Field Name Mapping
 # =============================================================================
 
-DEFAULT_BAGEL_FIELDS: dict[str, FieldConfig] = {
-    # Bagel type defaults to "plain bagel" if not specified
-    "bagel_type": FieldConfig(
-        name="bagel_type",
-        required=True,
-        default="plain bagel",
-        ask_if_empty=False,  # Don't ask - use default
-        question="What kind of bagel would you like?",
-    ),
-    "quantity": FieldConfig(
-        name="quantity",
-        required=True,
-        default=1,
-        ask_if_empty=False,
-        question=None,
-    ),
-    # Ask about spread FIRST (before toasted)
-    "spread": FieldConfig(
-        name="spread",
-        required=False,
-        default=None,
-        ask_if_empty=True,
-        question="Would you like cream cheese or butter on that?",
-    ),
-    # Then ask about toasted
-    "toasted": FieldConfig(
-        name="toasted",
-        required=True,
-        default=None,  # Must ask
-        ask_if_empty=True,
-        question="Would you like that toasted?",
-    ),
-    "extras": FieldConfig(
-        name="extras",
-        required=False,
-        default=[],
-        ask_if_empty=False,  # Don't ask about extras by default
-        question="Anything else on it?",
-    ),
-    "sandwich_protein": FieldConfig(
-        name="sandwich_protein",
-        required=False,
-        default=None,
-        ask_if_empty=False,  # Only ask if they indicated sandwich
-        question=None,
-    ),
+# Map code field names to database attribute slugs
+# Code uses legacy names like "bagel_type", database uses canonical names like "bread"
+_FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
+    "bagel": {
+        "bagel_type": "bread",
+        "toasted": "toasted",
+        "spread": "spread_type",  # DB uses "spread_type", legacy code uses "spread"
+        "extras": "toppings",
+        "sandwich_protein": "extra_protein",
+        "quantity": "quantity",  # May not exist in DB
+    },
+    "sized_beverage": {
+        "drink_type": "drink_type",  # Determined by menu_item_name, not attribute
+        "size": "size",
+        "iced": "temperature",
+        "milk": "milk_sweetener_syrup",  # Combined field
+        "sweetener": "milk_sweetener_syrup",  # Combined field
+        "extra_shots": "shots",
+    },
+}
+
+# Map item types to database slugs
+_ITEM_TYPE_TO_SLUG_MAP: dict[str, str] = {
+    "bagel": "bagel",
+    "coffee": "sized_beverage",
+    "sized_beverage": "sized_beverage",
 }
 
 
-DEFAULT_COFFEE_FIELDS: dict[str, FieldConfig] = {
-    "drink_type": FieldConfig(
-        name="drink_type",
-        required=True,
-        default=None,
-        ask_if_empty=True,
-        question="What kind of drink would you like - coffee, latte, tea?",
-    ),
-    "size": FieldConfig(
-        name="size",
-        required=True,
-        default=None,  # Must ask for size
-        ask_if_empty=True,
-        question="What size - small or large?",
-    ),
-    "iced": FieldConfig(
-        name="iced",
-        required=True,
-        default=None,  # Must ask
-        ask_if_empty=True,
-        question="Hot or iced?",
-    ),
-    "milk": FieldConfig(
-        name="milk",
-        required=False,
-        default=None,
-        ask_if_empty=False,  # Only capture if mentioned
-        question="What kind of milk?",
-    ),
-    "sweetener": FieldConfig(
-        name="sweetener",
-        required=False,
-        default=None,
-        ask_if_empty=False,  # Only capture if mentioned
-        question="Any sweetener?",
-    ),
-    "extra_shots": FieldConfig(
-        name="extra_shots",
-        required=False,
-        default=0,
-        ask_if_empty=False,
-        question=None,
-    ),
-}
-
+# =============================================================================
+# Order Flow Field Configurations (not item-specific)
+# These are used for checkout flow and are not in item_type_attributes table
+# =============================================================================
 
 DEFAULT_DELIVERY_METHOD_FIELDS: dict[str, FieldConfig] = {
     "order_type": FieldConfig(
@@ -210,108 +151,141 @@ def _deep_copy_fields(fields: dict[str, FieldConfig]) -> dict[str, FieldConfig]:
     return {name: config.model_copy() for name, config in fields.items()}
 
 
+def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
+    """Load field configurations from database for an item type.
+
+    Returns a dict mapping code field names to FieldConfig objects.
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    # Map item type to database slug
+    db_item_type = _ITEM_TYPE_TO_SLUG_MAP.get(item_type, item_type)
+
+    # Get field configs from database
+    db_configs = menu_cache.get_all_field_configs(db_item_type)
+    if not db_configs:
+        return {}
+
+    # Get the field name mapping for this item type
+    field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})
+
+    # Create a reverse map: slug -> field_name
+    slug_to_field = {v: k for k, v in field_map.items()}
+
+    result: dict[str, FieldConfig] = {}
+
+    for db_slug, config in db_configs.items():
+        # Map database slug to code field name
+        field_name = slug_to_field.get(db_slug, db_slug)
+
+        result[field_name] = FieldConfig(
+            name=field_name,
+            required=config.get("required", False),
+            default=config.get("default"),
+            ask_if_empty=config.get("ask_if_empty", True),
+            question=config.get("question"),
+        )
+
+    return result
+
+
 class MenuFieldConfig(BaseModel):
     """
     Menu-based field configuration.
 
-    This is loaded from the menu data and allows customization
-    of field requirements and defaults per store/menu.
+    Field configurations are loaded from the database via menu_data_cache.
+    Order flow fields (delivery, address, customer info, payment) use hardcoded defaults.
     """
 
-    bagel_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_BAGEL_FIELDS))
-    coffee_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_COFFEE_FIELDS))
-    delivery_method_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_DELIVERY_METHOD_FIELDS))
-    address_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_ADDRESS_FIELDS))
-    customer_info_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_CUSTOMER_INFO_FIELDS))
-    payment_fields: dict[str, FieldConfig] = Field(default_factory=lambda: _deep_copy_fields(DEFAULT_PAYMENT_FIELDS))
+    _bagel_fields: dict[str, FieldConfig] | None = None
+    _coffee_fields: dict[str, FieldConfig] | None = None
+    delivery_method_fields: dict[str, FieldConfig] = Field(
+        default_factory=lambda: _deep_copy_fields(DEFAULT_DELIVERY_METHOD_FIELDS)
+    )
+    address_fields: dict[str, FieldConfig] = Field(
+        default_factory=lambda: _deep_copy_fields(DEFAULT_ADDRESS_FIELDS)
+    )
+    customer_info_fields: dict[str, FieldConfig] = Field(
+        default_factory=lambda: _deep_copy_fields(DEFAULT_CUSTOMER_INFO_FIELDS)
+    )
+    payment_fields: dict[str, FieldConfig] = Field(
+        default_factory=lambda: _deep_copy_fields(DEFAULT_PAYMENT_FIELDS)
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def bagel_fields(self) -> dict[str, FieldConfig]:
+        """Load bagel field configs from database (lazy-loaded)."""
+        if self._bagel_fields is None:
+            self._bagel_fields = _load_fields_from_db("bagel")
+        return self._bagel_fields
+
+    @property
+    def coffee_fields(self) -> dict[str, FieldConfig]:
+        """Load coffee field configs from database (lazy-loaded)."""
+        if self._coffee_fields is None:
+            self._coffee_fields = _load_fields_from_db("sized_beverage")
+        return self._coffee_fields
 
     @classmethod
     def from_menu_data(cls, menu_data: dict | None) -> "MenuFieldConfig":
-        """
-        Create field config from menu data.
-
-        Menu data can override defaults like:
-        {
-            "field_config": {
-                "bagel": {
-                    "toasted": {"default": False, "ask_if_empty": False},
-                    "spread": {"ask_if_empty": False}
-                },
-                "coffee": {
-                    "size": {"default": "large", "ask_if_empty": True, "question": "What size?"}
-                }
-            }
-        }
-        """
-        config = cls()
-
-        if not menu_data:
-            return config
-
-        field_overrides = menu_data.get("field_config", {})
-
-        # Apply bagel overrides
-        if "bagel" in field_overrides:
-            config._apply_overrides(config.bagel_fields, field_overrides["bagel"])
-
-        # Apply coffee overrides
-        if "coffee" in field_overrides:
-            config._apply_overrides(config.coffee_fields, field_overrides["coffee"])
-
-        # Apply delivery method overrides
-        if "delivery_method" in field_overrides:
-            config._apply_overrides(config.delivery_method_fields, field_overrides["delivery_method"])
-
-        # Apply address overrides
-        if "address" in field_overrides:
-            config._apply_overrides(config.address_fields, field_overrides["address"])
-
-        # Apply customer info overrides
-        if "customer_info" in field_overrides:
-            config._apply_overrides(config.customer_info_fields, field_overrides["customer_info"])
-
-        # Apply payment overrides
-        if "payment" in field_overrides:
-            config._apply_overrides(config.payment_fields, field_overrides["payment"])
-
-        return config
-
-    def _apply_overrides(
-        self,
-        fields: dict[str, FieldConfig],
-        overrides: dict[str, dict],
-    ) -> None:
-        """Apply overrides to a field configuration dict."""
-        for field_name, override_values in overrides.items():
-            if field_name in fields:
-                # Update existing field config
-                for key, value in override_values.items():
-                    if hasattr(fields[field_name], key):
-                        setattr(fields[field_name], key, value)
-            else:
-                # Create new field config
-                fields[field_name] = FieldConfig(name=field_name, **override_values)
+        """Create field config from menu data (overrides not currently supported)."""
+        return cls()
 
     def get_fields_for_item_type(self, item_type: str) -> dict[str, FieldConfig]:
-        """Get field configs for a specific item type."""
+        """Get field configs for a specific item type from database."""
         if item_type == "bagel":
             return self.bagel_fields
-        elif item_type == "coffee":
+        elif item_type in ("coffee", "sized_beverage"):
             return self.coffee_fields
         else:
-            return {}
+            # Try loading from database for any item type
+            return _load_fields_from_db(item_type)
 
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
+def _get_db_field_config(item_type: str, field_name: str) -> dict | None:
+    """Get field config directly from database.
+
+    This is the preferred method - directly queries the database cache.
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    # Map item type to database slug
+    db_item_type = _ITEM_TYPE_TO_SLUG_MAP.get(item_type, item_type)
+
+    # Map field name to database slug
+    field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})
+    db_field_slug = field_map.get(field_name, field_name)
+
+    return menu_cache.get_field_config(db_item_type, db_field_slug)
+
+
 def get_field_config(
     item_type: str,
     field_name: str,
     menu_config: MenuFieldConfig | None = None,
 ) -> FieldConfig | None:
-    """Get field configuration for a specific field."""
+    """Get field configuration for a specific field.
+
+    First tries to load from database, falls back to MenuFieldConfig if needed.
+    """
+    # Try direct database lookup first
+    db_config = _get_db_field_config(item_type, field_name)
+    if db_config:
+        return FieldConfig(
+            name=field_name,
+            required=db_config.get("required", False),
+            default=db_config.get("default"),
+            ask_if_empty=db_config.get("ask_if_empty", True),
+            question=db_config.get("question"),
+        )
+
+    # Fall back to MenuFieldConfig for non-item fields (delivery, address, etc.)
     if menu_config is None:
         menu_config = MenuFieldConfig()
 
@@ -324,7 +298,13 @@ def get_default_value(
     field_name: str,
     menu_config: MenuFieldConfig | None = None,
 ) -> Any:
-    """Get default value for a field."""
+    """Get default value for a field from database."""
+    # Try direct database lookup
+    db_config = _get_db_field_config(item_type, field_name)
+    if db_config:
+        return db_config.get("default")
+
+    # Fall back to FieldConfig
     config = get_field_config(item_type, field_name, menu_config)
     if config:
         return config.default
@@ -337,7 +317,22 @@ def should_ask_field(
     current_value: Any,
     menu_config: MenuFieldConfig | None = None,
 ) -> bool:
-    """Check if we should ask about a field."""
+    """Check if we should ask about a field based on database config."""
+    # Try direct database lookup
+    db_config = _get_db_field_config(item_type, field_name)
+    if db_config:
+        ask_if_empty = db_config.get("ask_if_empty", True)
+        default = db_config.get("default")
+        # Should ask if: ask_if_empty is True AND current value is empty/None
+        if not ask_if_empty:
+            return False
+        if current_value is None:
+            return True
+        if isinstance(current_value, (list, dict)) and len(current_value) == 0:
+            return True
+        return False
+
+    # Fall back to FieldConfig
     config = get_field_config(item_type, field_name, menu_config)
     if config:
         return config.needs_asking(current_value)
@@ -349,7 +344,13 @@ def get_field_question(
     field_name: str,
     menu_config: MenuFieldConfig | None = None,
 ) -> str | None:
-    """Get the question to ask for a field."""
+    """Get the question to ask for a field from database."""
+    # Try direct database lookup
+    db_config = _get_db_field_config(item_type, field_name)
+    if db_config:
+        return db_config.get("question")
+
+    # Fall back to FieldConfig
     config = get_field_config(item_type, field_name, menu_config)
     if config:
         return config.question

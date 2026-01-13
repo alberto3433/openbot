@@ -419,6 +419,8 @@ class MenuItemTask(ItemTask):
         checking item type names directly. It queries the database to see
         what attributes are defined for this item's type.
 
+        Also supports legacy alias lookup (e.g., "spread" -> "spread_type").
+
         Examples:
             item.has_attribute("size")        # True for sized_beverage
             item.has_attribute("bagel_type")  # True for bagel (via 'bread' attr)
@@ -435,8 +437,21 @@ class MenuItemTask(ItemTask):
             return False
         from sandwich_bot.menu_data_cache import menu_cache
         attrs = menu_cache.get_item_type_attributes(self.menu_item_type)
-        # Return False if no attributes found (fail gracefully instead of fallback)
-        return attr_slug in attrs
+
+        # Direct check first
+        if attr_slug in attrs:
+            return True
+
+        # Check legacy aliases using the field-to-slug mapping from field_config
+        # This mapping defines: code_field_name -> db_attribute_slug
+        # Import inside method to avoid circular imports
+        from sandwich_bot.tasks.field_config import _FIELD_TO_SLUG_MAP
+        field_map = _FIELD_TO_SLUG_MAP.get(self.menu_item_type, {})
+        db_slug = field_map.get(attr_slug)
+        if db_slug and db_slug in attrs:
+            return True
+
+        return False
 
     # -------------------------------------------------------------------------
     # Bagel helper properties (for bagel items)
@@ -967,7 +982,7 @@ class OrderTask(BaseTask):
     # Used to build final summary like "Great, both toasted. Anything else?"
     multi_item_config_names: list[str] = Field(default_factory=list)
 
-    # Transient error storage for _add_parsed_item -> _process_multi_item_order communication
+    # Transient error storage for _add_parsed_item -> _process_items communication
     # This is a transient field that should not be serialized
     last_add_error: Any | None = Field(default=None, exclude=True)
 

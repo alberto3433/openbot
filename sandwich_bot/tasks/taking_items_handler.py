@@ -1713,6 +1713,15 @@ class TakingItemsHandler:
                 is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
                 singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
 
+                # Map user category terms to item_type via database (e.g., "coffee" -> "sized_beverage")
+                # Uses category keywords from item_types.aliases in the database
+                mapped_item_type = None
+                category_mapping = menu_cache.get_category_keyword_mapping(cancel_item_desc)
+                if not category_mapping:
+                    category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
+                if category_mapping:
+                    mapped_item_type = category_mapping.get("slug")
+
                 # Resolve aliases to canonical names (e.g., "coke" -> "Coca-Cola")
                 # Try all alias resolution functions in order
                 canonical_name = singular_desc
@@ -1730,6 +1739,7 @@ class TakingItemsHandler:
                     item_name = getattr(item, 'menu_item_name', '') or ''
                     item_name_lower = item_name.lower()
                     item_type = getattr(item, 'item_type', '') or ''
+                    menu_item_type = getattr(item, 'menu_item_type', '') or ''
 
                     # Check for matches - be careful with empty strings
                     matches = False
@@ -1745,6 +1755,12 @@ class TakingItemsHandler:
                         matches = True
                     # Check item_type for "coffees" -> item_type="coffee"
                     elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
+                        matches = True
+                    # Check menu_item_type (e.g., "sized_beverage", "bagel")
+                    elif menu_item_type and (cancel_item_desc == menu_item_type or singular_desc == menu_item_type):
+                        matches = True
+                    # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
+                    elif mapped_item_type and menu_item_type == mapped_item_type:
                         matches = True
                     elif any(word in item_summary for word in cancel_item_desc.split() if word):
                         matches = True
@@ -2011,10 +2027,10 @@ class TakingItemsHandler:
                 )
             # If they also ordered items, continue processing below
 
-        # NEW: Handle multi-item orders via parsed_items list (preferred path)
-        # This provides generic handling for any combination of item types
+        # Process all items via parsed_items list (unified path for any number of items)
+        # This is the primary code path - all parsing now populates parsed_items
         if parsed.parsed_items:
-            result = self._process_multi_item_order(parsed, order)
+            result = self._process_items(parsed, order)
             if result:
                 return result
 
@@ -2167,6 +2183,10 @@ class TakingItemsHandler:
             elif temp == "hot":
                 iced = False
 
+            # Track item count before to detect if item was actually added
+            # (disambiguation returns without adding to order)
+            items_before = len(order.items.items)
+
             # Use unified add_item() dispatcher
             result = self.item_adder_handler.add_item(
                 item_type=item_type,
@@ -2189,13 +2209,19 @@ class TakingItemsHandler:
                 original_input=item.original_text,
             )
             order = result.order
+            items_after = len(order.items.items)
 
-            # Build summary
-            drink_name = item.item_name or "coffee"
-            summary = drink_name
-            if item.quantity > 1:
-                summary = f"{item.quantity} {drink_name}s"
-            return order, summary
+            # Only return summary if item was actually added
+            # (disambiguation triggers pending_field without adding item)
+            if items_after > items_before:
+                drink_name = item.item_name or "coffee"
+                summary = drink_name
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {drink_name}s"
+                return order, summary
+            else:
+                # Item wasn't added (disambiguation or error) - return empty summary
+                return order, ""
 
         else:
             # Generic item type - use add_menu_item
@@ -2245,7 +2271,7 @@ class TakingItemsHandler:
             else:
                 # Item not found - store the error message for the caller
                 logger.info("Menu item '%s' not found - storing error result", item.menu_item_name)
-                order.last_add_error = result  # Store error for _process_multi_item_order
+                order.last_add_error = result  # Store error for _process_items
                 summary = ""  # Don't add to summaries
 
             return order, summary
@@ -2557,6 +2583,10 @@ class TakingItemsHandler:
             flavor_syrup = item.syrups[0].type if item.syrups else None
             syrup_qty = item.syrups[0].quantity if item.syrups else 1
 
+            # Track item count before to detect if item was actually added
+            # (disambiguation returns without adding to order)
+            items_before = len(order.items.items)
+
             result = self.item_adder_handler.add_item(
                 item_type="sized_beverage",
                 order=order,
@@ -2577,14 +2607,26 @@ class TakingItemsHandler:
                 original_input=item.original_text,
             )
             order = result.order
-            summary = item.drink_type
-            if item.size:
-                summary = f"{item.size} {summary}"
-            if item.temperature:
-                summary = f"{item.temperature} {summary}"
-            if item.quantity > 1:
-                summary = f"{item.quantity} {summary}s"
-            return order, summary
+            items_after = len(order.items.items)
+
+            # DEBUG: Log item counts to trace multi-item order issue
+            logger.info("ADD COFFEE DEBUG: items_before=%d, items_after=%d, drink_type=%s, pending_field=%s",
+                       items_before, items_after, item.drink_type, order.pending_field)
+
+            # Only return summary if item was actually added
+            # (disambiguation triggers pending_field without adding item)
+            if items_after > items_before:
+                summary = item.drink_type
+                if item.size:
+                    summary = f"{item.size} {summary}"
+                if item.temperature:
+                    summary = f"{item.temperature} {summary}"
+                if item.quantity > 1:
+                    summary = f"{item.quantity} {summary}s"
+                return order, summary
+            else:
+                # Item wasn't added (disambiguation or error) - return empty summary
+                return order, ""
 
         elif isinstance(item, ParsedSideItemEntry):
             side_name, error = self.item_adder_handler.add_side_item(
@@ -2603,13 +2645,16 @@ class TakingItemsHandler:
 
         return order, ""
 
-    def _process_multi_item_order(
+    def _process_items(
         self,
         parsed: OpenInputResponse,
         order: OrderTask,
     ) -> StateMachineResult | None:
         """
-        Process all items in a multi-item order using parsed_items list.
+        Process all items from parsed_items list (unified path for 1 or N items).
+
+        This is the primary code path for adding items to the order. All parsing
+        now populates parsed_items, making this the single unified processing path.
 
         Flow:
         1. Add all items to the order
@@ -3730,6 +3775,8 @@ class TakingItemsHandler:
                         drink.extra_shots = stored_shots
                     drink.mark_in_progress()
                     order.items.add_item(drink)
+                    logger.info("DRINK TYPE SELECTION: Added drink '%s' (id=%s), total items=%d",
+                                selected_name, drink.id[:8], len(order.items.items))
 
                     # Add multiple drinks if quantity > 1
                     for _ in range(stored_quantity - 1):

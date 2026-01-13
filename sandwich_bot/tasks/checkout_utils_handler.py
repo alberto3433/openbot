@@ -183,21 +183,18 @@ class CheckoutUtilsHandler:
                 return StateMachineResult(message=question, order=order)
 
             # Fall back to full config handlers for legacy queued items without names
-            if target_item:
-                if item_type == "bagel" and isinstance(target_item, MenuItemTask) and target_item.has_attribute("bread"):
-                    # Start bagel configuration
+            # Use data-driven attribute checks instead of item_type strings
+            if target_item and isinstance(target_item, MenuItemTask):
+                if target_item.has_attribute("bread"):
+                    # Bagel configuration (items with bread attribute)
                     if self._configure_next_incomplete_bagel:
                         return self._configure_next_incomplete_bagel(order)
-                elif item_type == "coffee" and isinstance(target_item, MenuItemTask) and target_item.has_attribute("size"):
-                    # Start coffee configuration
+                elif target_item.has_attribute("size"):
+                    # Sized beverage configuration (items with size attribute)
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
-                elif item_type == "espresso" and isinstance(target_item, MenuItemTask):
-                    # Start espresso configuration (espresso uses MenuItemTask)
-                    if self._configure_next_incomplete_menu_item:
-                        return self._configure_next_incomplete_menu_item(order)
-                elif item_type == "menu_item" and isinstance(target_item, MenuItemTask):
-                    # Start menu item configuration (for toasted question)
+                else:
+                    # Generic menu item configuration (espresso, sandwiches, etc.)
                     if self._configure_next_incomplete_menu_item:
                         return self._configure_next_incomplete_menu_item(order)
 

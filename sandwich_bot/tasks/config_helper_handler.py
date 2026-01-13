@@ -23,6 +23,59 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _get_removable_modifiers() -> set[str]:
+    """Get the set of removable modifier names from the database.
+
+    Combines proteins, toppings, cheeses, and spreads from the menu cache.
+    Falls back to a minimal hardcoded set if database is not available.
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    modifiers: set[str] = set()
+
+    # Get ingredients from database
+    proteins = menu_cache.get_proteins()
+    toppings = menu_cache.get_toppings()
+    cheeses = menu_cache.get_cheeses()
+    spreads = menu_cache.get_spreads()
+
+    # Combine all ingredient sets
+    modifiers.update(proteins)
+    modifiers.update(toppings)
+    modifiers.update(cheeses)
+    modifiers.update(spreads)
+
+    # Add common aliases/variations that might not be in DB
+    # These are generic terms that users might say
+    modifiers.update({
+        "egg", "eggs", "fried egg", "scrambled egg",
+        "cheese",  # Generic cheese
+        "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
+    })
+
+    # If database returned nothing, use minimal fallback
+    if len(modifiers) < 5:
+        logger.warning("Database returned few modifiers, using fallback set")
+        modifiers = {
+            # Proteins
+            "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
+            "lox", "nova", "salmon", "whitefish", "tuna",
+            # Eggs
+            "egg", "eggs", "fried egg", "scrambled egg",
+            # Cheeses
+            "cheese", "american", "american cheese", "swiss", "swiss cheese",
+            "cheddar", "cheddar cheese", "muenster", "muenster cheese",
+            "provolone", "provolone cheese",
+            # Spreads
+            "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
+            # Toppings
+            "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
+            "avocado", "capers",
+        }
+
+    return modifiers
+
 # Pattern to detect cancel/remove requests during configuration
 CANCEL_ITEM_PATTERN = re.compile(
     r"^(?:(?:can\s+you\s+)?(?:please\s+)?)?(?:remove|cancel|delete|take\s+off|get\s+rid\s+of|forget|nevermind|never\s+mind)"
@@ -115,23 +168,8 @@ class ConfigHelperHandler:
                 )
 
         # Check if this is a modifier removal on the current item being configured
-        # Known modifiers that can be removed from bagels
-        removable_modifiers = {
-            # Proteins
-            "bacon", "ham", "sausage", "turkey", "salami", "pastrami", "corned beef",
-            "lox", "nova", "salmon", "whitefish", "tuna",
-            # Eggs
-            "egg", "eggs", "fried egg", "scrambled egg",
-            # Cheeses
-            "cheese", "american", "american cheese", "swiss", "swiss cheese",
-            "cheddar", "cheddar cheese", "muenster", "muenster cheese",
-            "provolone", "provolone cheese",
-            # Spreads
-            "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
-            # Toppings
-            "tomato", "tomatoes", "lettuce", "onion", "onions", "pickle", "pickles",
-            "avocado", "capers",
-        }
+        # Get removable modifiers from database
+        removable_modifiers = _get_removable_modifiers()
 
         if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask) and current_item.has_attribute("bread"):
             modifier_removed = False

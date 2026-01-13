@@ -10,6 +10,7 @@ The task hierarchy represents the order capture process:
   - PaymentTask
 """
 
+import warnings
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
@@ -404,8 +405,13 @@ class MenuItemTask(ItemTask):
     def is_sized_beverage(self) -> bool:
         """Check if this is a sized beverage (coffee, latte, etc.).
 
-        DEPRECATED: Use has_attribute('size') instead for data-driven checks.
+        DEPRECATED: Use has_attribute('size') instead.
         """
+        warnings.warn(
+            "is_sized_beverage is deprecated. Use has_attribute('size') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return self.menu_item_type == "sized_beverage"
 
     # -------------------------------------------------------------------------
@@ -462,8 +468,13 @@ class MenuItemTask(ItemTask):
     def is_bagel(self) -> bool:
         """Check if this is a bagel item.
 
-        DEPRECATED: Use has_attribute('bread') or menu_item_type == 'bagel' instead.
+        DEPRECATED: Use has_attribute('bread') instead.
         """
+        warnings.warn(
+            "is_bagel is deprecated. Use has_attribute('bread') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return self.menu_item_type == "bagel"
 
     @property

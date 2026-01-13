@@ -1923,6 +1923,179 @@ class MenuDataCache:
 
         return result
 
+    def get_modifier_fields_for_item_type(self, item_type_slug: str) -> list[dict]:
+        """Get modifier field definitions for an item type from database.
+
+        This method loads ingredients linked to an item type via ItemTypeIngredient,
+        groups them by ingredient_group, and returns a list of modifier field configs.
+
+        This replaces the hardcoded BAGEL_MODIFIER_FIELDS and COFFEE_MODIFIER_FIELDS
+        in modifier_operations.py with database-driven configuration.
+
+        Args:
+            item_type_slug: The item type (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            List of modifier field configs, each containing:
+            {
+                "field_name": "spread",  # The attribute name on the item
+                "display_name": "spread",  # Human-readable name
+                "aliases": ["cream cheese", "cc", "schmear", ...],  # All recognized terms
+                "is_list": False,  # True for toppings, sweeteners, syrups
+                "ingredient_group": "spread",  # Database ingredient_group
+            }
+        """
+        from .db import SessionLocal
+        from .models import ItemType, ItemTypeIngredient, Ingredient
+
+        # Mapping from ingredient_group to field configuration
+        # Maps DB group names to the field names used in code
+        INGREDIENT_GROUP_TO_FIELD = {
+            # Bagel modifiers
+            "spread": {"field_name": "spread", "is_list": False},
+            "spread_type": {"field_name": "spread", "is_list": False},
+            "protein": {"field_name": "sandwich_protein", "is_list": False},
+            "extra_protein": {"field_name": "sandwich_protein", "is_list": False},
+            "topping": {"field_name": "extras", "is_list": True},
+            "toppings": {"field_name": "extras", "is_list": True},
+            "cheese": {"field_name": "extras", "is_list": True},  # Cheeses are extras
+            # Beverage modifiers
+            "milk": {"field_name": "milk", "is_list": False},
+            "sweetener": {"field_name": "sweeteners", "is_list": True},
+            "syrup": {"field_name": "flavor_syrups", "is_list": True},
+            "milk_sweetener_syrup": None,  # Handled specially - split by category
+        }
+
+        result = []
+        db = SessionLocal()
+
+        try:
+            # Find the item type
+            item_type = db.query(ItemType).filter(ItemType.slug == item_type_slug).first()
+            if not item_type:
+                logger.warning("Item type '%s' not found for modifier fields", item_type_slug)
+                return result
+
+            # Query all ingredients linked to this item type
+            ingredient_links = (
+                db.query(ItemTypeIngredient)
+                .options(
+                    joinedload(ItemTypeIngredient.ingredient)
+                    .joinedload(Ingredient.alias_records),
+                )
+                .filter(
+                    ItemTypeIngredient.item_type_id == item_type.id,
+                    ItemTypeIngredient.is_available == True,
+                )
+                .order_by(ItemTypeIngredient.ingredient_group, ItemTypeIngredient.display_order)
+                .all()
+            )
+
+            # Group ingredients by group (or category for milk_sweetener_syrup)
+            from collections import defaultdict
+            groups: dict[str, list[tuple[ItemTypeIngredient, Ingredient]]] = defaultdict(list)
+
+            for link in ingredient_links:
+                ingredient = link.ingredient
+                group = link.ingredient_group
+
+                # For the combined milk_sweetener_syrup group, use ingredient category
+                if group == "milk_sweetener_syrup":
+                    group = ingredient.category  # 'milk', 'sweetener', or 'syrup'
+
+                groups[group].append((link, ingredient))
+
+            # Convert each group to a modifier field
+            for group, items in groups.items():
+                field_config = INGREDIENT_GROUP_TO_FIELD.get(group)
+                if field_config is None:
+                    # Unknown group - skip or log
+                    logger.debug("Unknown ingredient_group '%s' - skipping", group)
+                    continue
+
+                # Collect all aliases for this group
+                aliases = []
+                for link, ingredient in items:
+                    # Add the ingredient name
+                    name_lower = ingredient.name.lower()
+                    if name_lower not in aliases:
+                        aliases.append(name_lower)
+
+                    # Add display_name_override if different
+                    if link.display_name_override:
+                        override_lower = link.display_name_override.lower()
+                        if override_lower not in aliases:
+                            aliases.append(override_lower)
+
+                    # Add all ingredient aliases
+                    for alias in ingredient.aliases:
+                        alias_lower = alias.strip().lower()
+                        if alias_lower and alias_lower not in aliases:
+                            aliases.append(alias_lower)
+
+                result.append({
+                    "field_name": field_config["field_name"],
+                    "display_name": group.replace("_", " "),
+                    "aliases": aliases,
+                    "is_list": field_config["is_list"],
+                    "ingredient_group": group,
+                })
+
+            # For bagel items, also add spread modifiers from attributes
+            # Spreads are stored as attribute options, not ingredients
+            if item_type_slug == "bagel":
+                from .models import ItemTypeAttribute, AttributeOption
+
+                # Look for spread_type attribute
+                spread_attr = (
+                    db.query(ItemTypeAttribute)
+                    .filter(
+                        ItemTypeAttribute.item_type_id == item_type.id,
+                        ItemTypeAttribute.slug == "spread_type",
+                    )
+                    .first()
+                )
+
+                if spread_attr:
+                    spread_aliases = ["cream cheese", "cc", "schmear", "butter", "spread"]
+
+                    # Also add individual spread option names as aliases
+                    spread_options = (
+                        db.query(AttributeOption)
+                        .filter(
+                            AttributeOption.item_type_attribute_id == spread_attr.id,
+                            AttributeOption.is_available == True,
+                        )
+                        .all()
+                    )
+
+                    for opt in spread_options:
+                        # Add display name
+                        display = (opt.display_name or opt.slug.replace("_", " ")).lower()
+                        if display and display not in spread_aliases:
+                            spread_aliases.append(display)
+
+                    result.append({
+                        "field_name": "spread",
+                        "display_name": "spread",
+                        "aliases": spread_aliases,
+                        "is_list": False,
+                        "ingredient_group": "spread_type",
+                    })
+
+            logger.debug(
+                "Loaded %d modifier field groups for %s: %s",
+                len(result), item_type_slug, [f["field_name"] for f in result]
+            )
+            return result
+
+        except Exception as e:
+            logger.error("Failed to load modifier fields for %s: %s", item_type_slug, e)
+            return result
+
+        finally:
+            db.close()
+
     def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
         """Resolve an option by alias or slug for a global attribute.
 

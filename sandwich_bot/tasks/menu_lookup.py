@@ -37,7 +37,10 @@ class MenuLookup:
         "lemonade": ["minute maid"],
     }
 
-    # Category keyword mappings for inference
+    # Category keyword mappings for inference (used to guess category of unknown items)
+    # NOTE: This is used for fallback inference, not direct lookup. Direct category
+    # lookup uses menu_cache.get_category_keyword_mapping(). This could be data-driven
+    # in the future but works well as a fallback.
     CATEGORY_KEYWORDS = {
         "drinks": [
             "juice", "coffee", "tea", "latte", "cappuccino", "espresso",

@@ -116,14 +116,64 @@ MENU_ITEM_MODIFIER_FIELDS = [
     ),
 ]
 
+def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField] | None:
+    """Load modifier fields from database for an item type.
+
+    Returns a list of ModifierField objects, or None if loading fails or no data.
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    try:
+        field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
+        if not field_configs:
+            logger.debug("No modifier fields from DB for %s, using fallback", item_type_slug)
+            return None
+
+        result = []
+        for config in field_configs:
+            # Add related_fields for spread (to clear spread_type and spread_price together)
+            related_fields = None
+            if config["field_name"] == "spread":
+                related_fields = ["spread_type", "spread_price"]
+
+            result.append(ModifierField(
+                field_name=config["field_name"],
+                display_name=config["display_name"],
+                aliases=config["aliases"],
+                is_list=config["is_list"],
+                related_fields=related_fields,
+            ))
+
+        logger.debug(
+            "Loaded %d modifier fields from DB for %s: %s",
+            len(result), item_type_slug,
+            [(f.field_name, len(f.aliases)) for f in result]
+        )
+        return result if result else None
+    except Exception as e:
+        logger.warning("Failed to load modifier fields from DB for %s: %s", item_type_slug, e)
+        return None
+
+
 def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
-    """Get the modifier field definitions for an item type."""
+    """Get the modifier field definitions for an item type.
+
+    First tries to load from database, falls back to hardcoded constants.
+    """
     if isinstance(item, MenuItemTask):
         # Items with bread attribute (bagels) use bagel modifier fields
         if item.has_attribute("bread"):
+            # Try database first
+            db_fields = _load_modifier_fields_from_db("bagel")
+            if db_fields:
+                return db_fields
             return BAGEL_MODIFIER_FIELDS
         # Items with size attribute (beverages) use coffee modifier fields
         elif item.has_attribute("size"):
+            # Try database first
+            db_fields = _load_modifier_fields_from_db("sized_beverage")
+            if db_fields:
+                return db_fields
             return COFFEE_MODIFIER_FIELDS
         return MENU_ITEM_MODIFIER_FIELDS
     else:
@@ -210,17 +260,36 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 
     fields = get_modifier_fields(item)
 
+    logger.debug(
+        "find_modifier_match: searching for '%s' in %d fields on %s",
+        normalized_input, len(fields), getattr(item, 'menu_item_name', 'unknown')
+    )
+
     for field in fields:
         value = getattr(item, field.field_name, None)
+        logger.debug(
+            "find_modifier_match: field=%s, value=%r, num_aliases=%d",
+            field.field_name, value, len(field.aliases)
+        )
         if value is None:
             continue
 
         # Check if user input matches the field's aliases
+        # Check for early matches
+        matching_aliases = [a for a in field.aliases if normalized_input == a or a in normalized_input]
+        if matching_aliases:
+            logger.debug(
+                "find_modifier_match: field=%s matched aliases=%s for input='%s'",
+                field.field_name, matching_aliases[:5], normalized_input
+            )
         for alias in field.aliases:
             if normalized_input == alias or alias in normalized_input:
                 if field.is_list:
                     # For lists, find the specific matching item
                     if isinstance(value, list):
+                        # Skip empty lists - nothing to match against
+                        if not value:
+                            continue
                         for list_item in value:
                             # Handle dict items (like sweeteners: [{type: "sugar"}])
                             if isinstance(list_item, dict):

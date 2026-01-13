@@ -56,20 +56,73 @@ OFF_TOPIC_PATTERNS = [
     re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
 ]
 
-# Words that are valid answers to configuration questions (should not trigger redirect)
-VALID_CONFIG_ANSWERS = {
-    # Size answers
-    "small", "large", "medium", "regular",
-    # Style answers
+# Generic words that are always valid answers to configuration questions
+_GENERIC_CONFIG_ANSWERS = {
+    # Affirmative answers
+    "yes", "no", "yeah", "nope", "sure", "please", "ok", "okay",
+    # Toasted-specific
+    "toasted", "not toasted", "untoasted",
+    # Style answers (generic)
     "hot", "iced", "cold",
-    # Toasted answers
-    "yes", "no", "yeah", "nope", "sure", "please", "toasted", "not toasted", "untoasted",
-    # Bagel types (common ones)
-    "plain", "everything", "sesame", "poppy", "wheat", "whole wheat", "onion",
-    "cinnamon", "cinnamon raisin", "pumpernickel", "salt", "garlic",
-    # Side choices
+    # Size answers (generic)
+    "small", "large", "medium", "regular",
+    # Side choices (generic)
     "bagel", "fruit", "fruit salad",
 }
+
+
+def _get_valid_config_answers() -> set[str]:
+    """Get the set of valid configuration answers from the database.
+
+    Combines generic answers with bagel types and size options from database.
+    Falls back to a minimal hardcoded set if database is not available.
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
+
+    answers = _GENERIC_CONFIG_ANSWERS.copy()
+
+    # Get bagel types from database
+    bagel_types = menu_cache.get_bagel_types()
+    answers.update(bagel_types)
+
+    # Get size options from database
+    size_options = menu_cache.get_global_attribute_options("size")
+    for opt in size_options:
+        if opt.get("display_name"):
+            answers.add(opt["display_name"].lower())
+        if opt.get("slug"):
+            answers.add(opt["slug"].lower())
+
+    # Get temperature options from database
+    temp_options = menu_cache.get_global_attribute_options("temperature")
+    for opt in temp_options:
+        if opt.get("display_name"):
+            answers.add(opt["display_name"].lower())
+        if opt.get("slug"):
+            answers.add(opt["slug"].lower())
+
+    # If database returned very little, use fallback
+    if len(answers) < 15:
+        logger.warning("Database returned few config answers, using fallback set")
+        answers.update({
+            # Bagel types fallback
+            "plain", "everything", "sesame", "poppy", "wheat", "whole wheat", "onion",
+            "cinnamon", "cinnamon raisin", "pumpernickel", "salt", "garlic",
+        })
+
+    return answers
+
+
+# Cache the config answers to avoid repeated database calls
+_cached_config_answers: set[str] | None = None
+
+
+def _get_cached_config_answers() -> set[str]:
+    """Get cached valid config answers, loading from database if needed."""
+    global _cached_config_answers
+    if _cached_config_answers is None:
+        _cached_config_answers = _get_valid_config_answers()
+    return _cached_config_answers
 
 
 def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> bool:
@@ -84,13 +137,16 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
     """
     input_lower = user_input.lower().strip()
 
+    # Get valid config answers from database (cached)
+    valid_config_answers = _get_cached_config_answers()
+
     # First check if this looks like a valid config answer
     # Simple answers like "small", "large", "hot", "iced", etc.
-    if input_lower in VALID_CONFIG_ANSWERS:
+    if input_lower in valid_config_answers:
         return False
 
     # Check for valid answers with minor variations
-    for answer in VALID_CONFIG_ANSWERS:
+    for answer in valid_config_answers:
         if input_lower == answer or input_lower == f"{answer} please":
             return False
 

@@ -92,28 +92,34 @@ ORDINAL_WORDS = {
 # backward compatibility during migration.
 
 def _is_bagel_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a bagel.
+    """Check if a ParsedItem represents a bagel (has bread attribute).
 
     Works with both:
-    - ParsedItemEntry: item_type == "bagel"
+    - ParsedItemEntry: item_type checked for bread attribute
     - ParsedBagelEntry (deprecated): type == "bagel"
     """
     item_type = getattr(item, 'item_type', None)
     if item_type:
-        return item_type == "bagel"
+        # Data-driven check: item type has bread attribute
+        attrs = menu_cache.get_item_type_attributes(item_type)
+        return "bread" in attrs
+    # Legacy format fallback
     return getattr(item, 'type', None) == "bagel"
 
 
 def _is_coffee_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a coffee/beverage.
+    """Check if a ParsedItem represents a coffee/beverage (has size attribute).
 
     Works with both:
-    - ParsedItemEntry: item_type == "sized_beverage"
+    - ParsedItemEntry: item_type checked for size attribute
     - ParsedCoffeeEntry (deprecated): type == "coffee"
     """
     item_type = getattr(item, 'item_type', None)
     if item_type:
-        return item_type == "sized_beverage"
+        # Data-driven check: item type has size attribute (sized beverages)
+        attrs = menu_cache.get_item_type_attributes(item_type)
+        return "size" in attrs
+    # Legacy format fallback
     return getattr(item, 'type', None) == "coffee"
 
 

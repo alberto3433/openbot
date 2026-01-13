@@ -17,6 +17,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from sandwich_bot.menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -300,7 +301,10 @@ class MenuItemConverter(ItemConverter):
         attribute_values = item_dict.get("attribute_values") or item_config.get("attribute_values") or {}
 
         # Restore beverage properties from item_config (legacy format)
-        if menu_item_type == "sized_beverage" and item_config:
+        # Data-driven check: item type has size attribute (sized beverages)
+        # with fallback to string comparison if database not available
+        item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
+        if ("size" in item_attrs or menu_item_type == "sized_beverage") and item_config:
             # Restore size
             if item_config.get("size") and "size" not in attribute_values:
                 attribute_values["size"] = item_config["size"]
@@ -439,8 +443,10 @@ class MenuItemConverter(ItemConverter):
         # Get base_price from pricing engine if available, or from item
         base_price = getattr(item, 'base_price', None)
         if base_price is None and pricing:
-            # For bagels, look up base price from pricing engine
-            if menu_item_type == "bagel":
+            # For bagels (items with bread attribute), look up base price from pricing engine
+            # with fallback to string comparison if database not available
+            item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
+            if "bread" in item_attrs or menu_item_type == "bagel":
                 base_price = pricing.get_bagel_base_price()
             elif hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
                 base_price = pricing.lookup_menu_item_price(menu_item_name)
@@ -701,8 +707,11 @@ class UnifiedItemConverter(ItemConverter):
         """Convert dict to appropriate ItemTask based on item_type."""
         item_type = item_dict.get("item_type") or item_dict.get("menu_item_type") or "menu_item"
 
-        # Route to specialized converter
-        if item_type == "bagel":
+        # Route to specialized converter using data-driven attribute checks
+        # with fallback to string comparison if database not available
+        item_attrs = menu_cache.get_item_type_attributes(item_type)
+        if "bread" in item_attrs or item_type == "bagel":
+            # Items with bread attribute (bagels) use BagelConverter
             return BagelConverter().from_dict(item_dict)
         elif item_type == "sandwich":
             return SandwichConverter().from_dict(item_dict)
@@ -717,15 +726,17 @@ class UnifiedItemConverter(ItemConverter):
         pricing: "PricingEngine | None" = None,
     ) -> Dict[str, Any]:
         """Convert ItemTask to dict based on its type."""
-        # Check menu_item_type for MenuItemTask
+        # Use data-driven attribute check for routing
+        # with fallback to string comparison if database not available
         menu_item_type = getattr(item, 'menu_item_type', None)
-
-        if menu_item_type == "bagel":
-            return BagelConverter().to_dict(item, pricing)
-        else:
-            # All other types (menu_item, sized_beverage, espresso, etc.)
-            # use MenuItemConverter
-            return MenuItemConverter().to_dict(item, pricing)
+        if menu_item_type:
+            item_attrs = menu_cache.get_item_type_attributes(menu_item_type)
+            if "bread" in item_attrs or menu_item_type == "bagel":
+                # Items with bread attribute (bagels) use BagelConverter
+                return BagelConverter().to_dict(item, pricing)
+        # All other types (menu_item, sized_beverage, espresso, etc.)
+        # use MenuItemConverter
+        return MenuItemConverter().to_dict(item, pricing)
 
 
 # -----------------------------------------------------------------------------
@@ -756,15 +767,19 @@ class ItemConverterRegistry:
         """
         Get converter for an ItemTask based on its type.
 
-        For MenuItemTask, routes based on menu_item_type:
-        - menu_item_type='bagel' -> BagelConverter
+        For MenuItemTask, routes based on menu_item_type using data-driven attribute checks:
+        - Items with bread attribute (bagels) -> BagelConverter
         - otherwise -> MenuItemConverter (handles all types including sized_beverage)
         """
         # Check if it's a MenuItemTask with specific menu_item_type
         if isinstance(item, MenuItemTask):
-            # All MenuItemTask types use MenuItemConverter (data-driven approach)
-            # This includes bagel, sized_beverage, espresso, deli_sandwich, etc.
-            # MenuItemConverter reads from attribute_values which is populated by the unified handler
+            menu_item_type = item.menu_item_type
+            if menu_item_type:
+                # Data-driven check with string fallback
+                item_attrs = menu_cache.get_item_type_attributes(menu_item_type)
+                if "bread" in item_attrs or menu_item_type == "bagel":
+                    return cls._converters.get("bagel")
+            # All other MenuItemTask types use MenuItemConverter
             return cls._converters.get("menu_item")
 
         return cls._converters.get(item.item_type)
@@ -781,9 +796,8 @@ ItemConverterRegistry.register(BagelConverter())
 ItemConverterRegistry.register(SandwichConverter())
 ItemConverterRegistry.register(UnifiedItemConverter())
 
-# All item types now use MenuItemConverter (unified data-driven approach)
-# This reads from attribute_values populated by the unified handler
-ItemConverterRegistry._converters["bagel"] = ItemConverterRegistry._converters["menu_item"]
+# Other item types use MenuItemConverter (unified data-driven approach)
+# Note: BagelConverter is kept separate for proper bagel item_type preservation
 ItemConverterRegistry._converters["coffee"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["drink"] = ItemConverterRegistry._converters["menu_item"]
 ItemConverterRegistry._converters["sized_beverage"] = ItemConverterRegistry._converters["menu_item"]

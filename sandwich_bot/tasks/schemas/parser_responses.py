@@ -6,6 +6,7 @@ in different states of the order flow. Each model constrains the possible
 interpretations of user input for a specific context.
 """
 
+import warnings
 from typing import Literal, Union, Self
 from pydantic import BaseModel, Field, model_validator
 
@@ -266,6 +267,17 @@ class ParsedBagelEntry(BaseModel):
     backward compatibility. New code should use ParsedItemEntry with
     item_type="bagel" and store attributes in attribute_values dict.
     """
+
+    @model_validator(mode="after")
+    def emit_deprecation_warning(self) -> Self:
+        """Emit deprecation warning when this class is instantiated."""
+        warnings.warn(
+            "ParsedBagelEntry is deprecated. Use ParsedItemEntry with item_type='bagel' instead.",
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        return self
+
     type: Literal["bagel"] = "bagel"
     bagel_type: str | None = None  # May be None if user just said "bagel" without type
     quantity: int = 1
@@ -298,6 +310,17 @@ class ParsedCoffeeEntry(BaseModel):
     backward compatibility. New code should use ParsedItemEntry with
     item_type="sized_beverage" and store attributes in attribute_values dict.
     """
+
+    @model_validator(mode="after")
+    def emit_deprecation_warning(self) -> Self:
+        """Emit deprecation warning when this class is instantiated."""
+        warnings.warn(
+            "ParsedCoffeeEntry is deprecated. Use ParsedItemEntry with item_type='sized_beverage' instead.",
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        return self
+
     type: Literal["coffee"] = "coffee"
     drink_type: str
     size: str | None = None

@@ -409,7 +409,7 @@ class TestOrderTaskToDict:
 
         assert len(result["items"]) == 1
         item = result["items"][0]
-        assert item["item_type"] == "menu_item"  # All beverages now use unified menu_item type
+        assert item["item_type"] == "sized_beverage"  # Preserves actual menu_item_type
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values

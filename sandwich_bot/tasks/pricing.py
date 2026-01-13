@@ -845,8 +845,8 @@ class PricingEngine:
             if size_upcharge > 0:
                 logger.debug("Coffee size upcharge: %s = +$%.2f", size, size_upcharge)
 
-        # Add milk alternative upcharge (regular milk is free)
-        if milk and milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
+        # Add milk alternative upcharge (lookup returns 0.0 for free/unknown milks)
+        if milk:
             milk_upcharge = self.lookup_coffee_modifier_price(milk, "milk")
             total += milk_upcharge
             if milk_upcharge > 0:
@@ -883,9 +883,9 @@ class PricingEngine:
             total += size_upcharge
         item.size_upcharge = size_upcharge
 
-        # Milk alternative upcharge (regular milk is free)
+        # Milk alternative upcharge (lookup returns 0.0 for free/unknown milks)
         milk_upcharge = 0.0
-        if item.milk and item.milk.lower() not in ("regular", "whole", "2%", "skim", "none", "no milk"):
+        if item.milk:
             milk_upcharge = self.lookup_coffee_modifier_price(item.milk, "milk")
             total += milk_upcharge
         item.milk_upcharge = milk_upcharge

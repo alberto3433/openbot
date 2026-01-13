@@ -1360,14 +1360,25 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
     }
 
     # Coffee-specific modifiers that should NOT be applied to menu items
-    coffee_modifiers = {
-        "oat milk", "almond milk", "soy milk", "coconut milk", "skim milk", "whole milk",
-        "oat", "almond", "soy", "coconut", "skim", "nonfat", "2%",
-        "vanilla", "caramel", "hazelnut", "mocha", "pumpkin spice", "cinnamon", "lavender",
-        "splenda", "stevia", "equal", "sweet n low", "honey",
-        "iced", "hot", "decaf", "black",
-        "small", "medium", "large",
-    }
+    # Build dynamically from database (fail-fast if not loaded)
+    coffee_modifiers: set[str] = set()
+    # Add milk types and short forms
+    for milk in menu_cache.get_beverage_milks():
+        milk_lower = milk.lower()
+        coffee_modifiers.add(milk_lower)
+        if milk_lower.endswith(" milk"):
+            coffee_modifiers.add(milk_lower[:-5])  # Short form like "oat"
+    # Add syrup types and short forms
+    for syrup in menu_cache.get_beverage_syrups():
+        syrup_lower = syrup.lower()
+        coffee_modifiers.add(syrup_lower)
+        if syrup_lower.endswith(" syrup"):
+            coffee_modifiers.add(syrup_lower[:-6])  # Short form like "vanilla"
+    # Add sweetener types
+    for sweetener in menu_cache.get_beverage_sweeteners():
+        coffee_modifiers.add(sweetener.lower())
+    # Add standard coffee modifiers (temperature, size, etc.)
+    coffee_modifiers.update({"iced", "hot", "decaf", "black", "small", "medium", "large", "nonfat", "2%"})
 
     # Pattern for "with X and Y" or "with X, Y, and Z"
     with_pattern = re.search(

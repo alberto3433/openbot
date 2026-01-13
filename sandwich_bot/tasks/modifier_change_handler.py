@@ -26,6 +26,7 @@ from .parsers.constants import (
     normalize_spread,
     normalize_coffee_size,
 )
+from sandwich_bot.menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -226,13 +227,18 @@ class ModifierChangeHandler:
         if new_value_lower in ("small", "large"):
             return False, [ModifierCategory.COFFEE_SIZE]
 
-        # Check for coffee milk - check longer patterns first
-        milk_patterns = [
-            "oat milk", "almond milk", "whole milk", "skim milk",
-            "2% milk", "soy milk", "coconut milk", "half and half",
-            "oat", "almond", "whole", "skim", "soy", "coconut",
-            "no milk", "black",
-        ]
+        # Check for coffee milk - build patterns from database
+        # Include full milk names and short forms (e.g., "oat milk" and "oat")
+        milk_patterns: list[str] = []
+        db_milks = menu_cache.get_beverage_milks()
+        for milk_name in db_milks:
+            milk_lower = milk_name.lower()
+            milk_patterns.append(milk_lower)
+            # Add short form (strip " milk" suffix)
+            if milk_lower.endswith(" milk"):
+                milk_patterns.append(milk_lower[:-5])
+        # Add special "no milk" patterns
+        milk_patterns.extend(["no milk", "black"])
         for milk in milk_patterns:
             if milk in new_value_lower:
                 return False, [ModifierCategory.COFFEE_MILK]

@@ -379,9 +379,9 @@ class TestPricingEngineGlutenFreeFromDatabase:
 
         pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
 
-        # Test gluten free variations
-        assert pricing.get_bagel_type_upcharge("gluten free") == 0.80
-        assert pricing.get_bagel_type_upcharge("gluten-free") == 0.80
+        # Test gluten free variations using generic method
+        assert pricing.lookup_attribute_option_upcharge("bagel", "bread", "gluten free") == 0.80
+        assert pricing.lookup_attribute_option_upcharge("bagel", "bread", "gluten-free") == 0.80
 
     def test_bagel_type_upcharges_regular(self):
         """Test that regular bagels have no upcharge from database."""
@@ -396,6 +396,6 @@ class TestPricingEngineGlutenFreeFromDatabase:
         pricing = PricingEngine(menu_data=menu_data, menu_lookup_func=menu_lookup)
 
         # Regular bagels should have $0 upcharge
-        assert pricing.get_bagel_type_upcharge("plain") == 0.0
-        assert pricing.get_bagel_type_upcharge("everything") == 0.0
-        assert pricing.get_bagel_type_upcharge("sesame") == 0.0
+        assert pricing.lookup_attribute_option_upcharge("bagel", "bread", "plain") == 0.0
+        assert pricing.lookup_attribute_option_upcharge("bagel", "bread", "everything") == 0.0
+        assert pricing.lookup_attribute_option_upcharge("bagel", "bread", "sesame") == 0.0

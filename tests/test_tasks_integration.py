@@ -4173,7 +4173,7 @@ class TestPriceInquiry:
 
         result = sm.query_handler.handle_price_inquiry("plain bagel", order)
 
-        # Should return a price (uses _lookup_bagel_price)
+        # Should return a price (uses lookup_base_price)
         assert "$" in result.message
         assert "bagel" in result.message.lower()
 

@@ -30,7 +30,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -287,8 +287,10 @@ class MenuDataCache:
                     spread_types.add(spread_type)
 
         # Load base spreads from ingredients with category='spread'
+        # Use joinedload to avoid N+1 queries when accessing aliases
         spread_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "spread")
             .all()
         )
@@ -332,8 +334,10 @@ class MenuDataCache:
         bagel_types_list = []
 
         # Query ingredients that are bagel types (category='bread')
+        # Use joinedload to avoid N+1 queries when accessing aliases
         bagel_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "bread")
             .filter(Ingredient.is_available == True)  # noqa: E712
             .order_by(Ingredient.name)
@@ -394,8 +398,10 @@ class MenuDataCache:
 
         proteins = set()
 
+        # Use joinedload to avoid N+1 queries when accessing aliases
         protein_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "protein")
             .all()
         )
@@ -429,8 +435,10 @@ class MenuDataCache:
         toppings = set()
 
         # Load toppings category
+        # Use joinedload to avoid N+1 queries when accessing aliases
         topping_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "topping")
             .all()
         )
@@ -445,8 +453,10 @@ class MenuDataCache:
                     toppings.add(alias)
 
         # Also load sauces as they function as toppings on bagels
+        # Use joinedload to avoid N+1 queries when accessing aliases
         sauce_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "sauce")
             .all()
         )
@@ -478,8 +488,10 @@ class MenuDataCache:
 
         cheeses = set()
 
+        # Use joinedload to avoid N+1 queries when accessing aliases
         cheese_ingredients = (
             db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
             .filter(Ingredient.category == "cheese")
             .all()
         )
@@ -517,8 +529,10 @@ class MenuDataCache:
 
         # Query sized_beverage and espresso items (coffee/tea that need configuration)
         # Espresso is a separate item type but should be recognized as a coffee for parsing
+        # Use joinedload to avoid N+1 queries when accessing aliases
         coffee_items = (
             db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
             .join(ItemType, MenuItem.item_type_id == ItemType.id)
             .filter(ItemType.slug.in_(["sized_beverage", "espresso"]))
             .all()
@@ -558,8 +572,10 @@ class MenuDataCache:
 
         # Query beverage items (item_type.slug = 'beverage')
         # These are sodas/bottled drinks that don't need size configuration
+        # Use joinedload to avoid N+1 queries when accessing aliases
         beverage_items = (
             db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
             .join(ItemType, MenuItem.item_type_id == ItemType.id)
             .filter(ItemType.slug == "beverage")
             .all()
@@ -674,7 +690,12 @@ class MenuDataCache:
             if item_type:
                 exclude_type_ids.add(item_type.id)
 
-        all_items = db.query(MenuItem).all()
+        # Use joinedload to avoid N+1 queries when accessing aliases
+        all_items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
+            .all()
+        )
         for item in all_items:
             # Skip items that have their own configuration flows
             if item.item_type_id in exclude_type_ids:
@@ -725,8 +746,10 @@ class MenuDataCache:
         # Query signature items (aliases are loaded via relationship)
         # Only signature items should be in this mapping
         # (non-signature items like "Coffee" have their own parsing flow)
+        # Use joinedload to avoid N+1 queries when accessing aliases
         signature_items = (
             db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
             .filter(MenuItem.is_signature == True)  # noqa: E712
             .all()
         )
@@ -775,8 +798,10 @@ class MenuDataCache:
         BY_POUND_CATEGORY_SLUGS = ["cheese", "cold_cut", "fish", "salad", "spread"]
 
         # Query items where item_type is a by-pound category
+        # Use joinedload to avoid N+1 queries when accessing aliases
         items = (
             db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
             .join(ItemType, MenuItem.item_type_id == ItemType.id)
             .filter(ItemType.slug.in_(BY_POUND_CATEGORY_SLUGS))
             .order_by(ItemType.slug, MenuItem.name)
@@ -883,7 +908,12 @@ class MenuDataCache:
         modifier_aliases: dict[str, str] = {}
 
         # Query all ingredients (aliases are loaded via relationship)
-        all_ingredients = db.query(Ingredient).all()
+        # Use joinedload to avoid N+1 queries when accessing aliases
+        all_ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
 
         ingredients_with_aliases_count = 0
         for ing in all_ingredients:
@@ -925,8 +955,10 @@ class MenuDataCache:
         alias_to_canonical: dict[str, str] = {}
 
         # Query side items (category = 'side')
+        # Use joinedload to avoid N+1 queries when accessing aliases
         items = (
             db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
             .filter(MenuItem.category == "side")
             .all()
         )
@@ -976,7 +1008,12 @@ class MenuDataCache:
         category_keywords: dict[str, dict] = {}
 
         # Query all item_types (aliases are loaded via relationship)
-        item_types = db.query(ItemType).all()
+        # Use joinedload to avoid N+1 queries when accessing aliases
+        item_types = (
+            db.query(ItemType)
+            .options(joinedload(ItemType.alias_records))
+            .all()
+        )
 
         item_types_with_aliases = 0
         for item_type in item_types:
@@ -1050,7 +1087,12 @@ class MenuDataCache:
         configurable_types: set[str] = set()
 
         # Load all item types with their modifier_category
-        item_types = db.query(ItemType).all()
+        # Use joinedload to avoid N+1 queries when accessing aliases
+        item_types = (
+            db.query(ItemType)
+            .options(joinedload(ItemType.alias_records))
+            .all()
+        )
         for item_type in item_types:
             slug = item_type.slug
             modifier_categories[slug] = item_type.modifier_category
@@ -1306,8 +1348,7 @@ class MenuDataCache:
         When an option has an ingredient_id, must_match and aliases are loaded
         from the linked Ingredient record (single source of truth).
         """
-        from sqlalchemy.orm import joinedload
-        from .models import GlobalAttribute, GlobalAttributeOption
+        from .models import GlobalAttribute, GlobalAttributeOption, Ingredient
 
         global_attribute_options: dict[str, list[dict]] = {}
 
@@ -1317,9 +1358,15 @@ class MenuDataCache:
 
             for attr in attributes:
                 # Eagerly load the ingredient relationship for options that have one
+                # Also load ingredient's alias_records and must_match_records to avoid N+1
                 options = (
                     db.query(GlobalAttributeOption)
-                    .options(joinedload(GlobalAttributeOption.ingredient))
+                    .options(
+                        joinedload(GlobalAttributeOption.ingredient)
+                        .joinedload(Ingredient.alias_records),
+                        joinedload(GlobalAttributeOption.ingredient)
+                        .joinedload(Ingredient.must_match_records),
+                    )
                     .filter(GlobalAttributeOption.global_attribute_id == attr.id)
                     .order_by(GlobalAttributeOption.display_order)
                     .all()
@@ -1741,9 +1788,15 @@ class MenuDataCache:
 
         if attr.loads_from_ingredients and attr.ingredient_group:
             # Load from item_type_ingredients + ingredients
+            # Use joinedload to avoid N+1 queries when accessing ingredient aliases/must_match
             ingredient_links = (
                 db.query(ItemTypeIngredient)
-                .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
+                .options(
+                    joinedload(ItemTypeIngredient.ingredient)
+                    .joinedload(Ingredient.alias_records),
+                    joinedload(ItemTypeIngredient.ingredient)
+                    .joinedload(Ingredient.must_match_records),
+                )
                 .filter(
                     ItemTypeIngredient.item_type_id == item_type_id,
                     ItemTypeIngredient.ingredient_group == attr.ingredient_group,

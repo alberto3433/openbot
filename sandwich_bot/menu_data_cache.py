@@ -147,6 +147,16 @@ class MenuDataCache:
         # Menu items by unit type - for filtering by how items are sold
         self._by_unit_type_items: dict[str, set[str]] = {}  # unit_type -> set of item names (lowercase)
 
+        # Generic caches for data-driven lookups (replaces domain-specific caches)
+        # Item names by ItemType slug (includes aliases)
+        self._item_names_by_type: dict[str, set[str]] = {}  # item_type_slug -> set of names/aliases
+        # Alias-to-canonical mapping by ItemType slug
+        self._item_alias_to_canonical_by_type: dict[str, dict[str, str]] = {}  # item_type_slug -> {alias -> canonical}
+        # Ingredients by category (protein, cheese, topping, spread, etc.)
+        self._ingredients_by_category: dict[str, set[str]] = {}  # category -> set of names/aliases
+        # Ingredients valid for each ItemType, grouped by category
+        self._ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}  # item_type_slug -> {category -> names}
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -223,6 +233,11 @@ class MenuDataCache:
                 self._load_compound_phrases(db)
                 self._load_item_type_triggers(db)
                 self._load_by_unit_type_items(db)
+
+                # Generic data-driven loaders (replace domain-specific functions)
+                self._load_generic_item_names(db)
+                self._load_generic_ingredients(db)
+                self._load_generic_ingredients_for_item_types(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -1583,6 +1598,161 @@ class MenuDataCache:
             {k: len(v) for k, v in by_unit_type.items()}
         )
 
+    def _load_generic_item_names(self, db: Session) -> None:
+        """Load all item names grouped by ItemType slug.
+
+        This is the generic replacement for domain-specific loaders like
+        _load_coffee_types, _load_soda_types, _load_bagel_types.
+
+        For each ItemType, loads:
+        - MenuItem names (lowercase)
+        - MenuItem aliases (lowercase)
+        - Alias-to-canonical name mapping
+        """
+        from .models import MenuItem, ItemType
+
+        item_names_by_type: dict[str, set[str]] = {}
+        alias_to_canonical_by_type: dict[str, dict[str, str]] = {}
+
+        # Query all menu items with their item types
+        items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
+            .all()
+        )
+
+        for item in items:
+            if not item.item_type:
+                continue
+
+            item_type_slug = item.item_type.slug
+            canonical_name = item.name
+
+            # Initialize dicts for this item type if needed
+            if item_type_slug not in item_names_by_type:
+                item_names_by_type[item_type_slug] = set()
+                alias_to_canonical_by_type[item_type_slug] = {}
+
+            # Add canonical name (lowercase for matching)
+            name_lower = canonical_name.lower()
+            item_names_by_type[item_type_slug].add(name_lower)
+            alias_to_canonical_by_type[item_type_slug][name_lower] = canonical_name
+
+            # Add aliases
+            for alias in item.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    item_names_by_type[item_type_slug].add(alias_lower)
+                    alias_to_canonical_by_type[item_type_slug][alias_lower] = canonical_name
+
+        self._item_names_by_type = item_names_by_type
+        self._item_alias_to_canonical_by_type = alias_to_canonical_by_type
+
+        logger.debug(
+            "Loaded generic item names for %d item types: %s",
+            len(item_names_by_type),
+            {k: len(v) for k, v in item_names_by_type.items()}
+        )
+
+    def _load_generic_ingredients(self, db: Session) -> None:
+        """Load all ingredients grouped by category.
+
+        This is the generic replacement for domain-specific loaders like
+        _load_proteins, _load_cheeses, _load_toppings.
+
+        For each category, loads:
+        - Ingredient names (lowercase)
+        - Ingredient aliases (lowercase)
+        """
+        from .models import Ingredient
+
+        ingredients_by_category: dict[str, set[str]] = {}
+
+        # Query all ingredients with their aliases
+        ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
+
+        for ing in ingredients:
+            category = ing.category
+            if not category:
+                continue
+
+            # Initialize set for this category if needed
+            if category not in ingredients_by_category:
+                ingredients_by_category[category] = set()
+
+            # Add ingredient name (lowercase for matching)
+            ingredients_by_category[category].add(ing.name.lower())
+
+            # Add aliases
+            for alias in ing.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_by_category[category].add(alias_lower)
+
+        self._ingredients_by_category = ingredients_by_category
+
+        logger.debug(
+            "Loaded generic ingredients for %d categories: %s",
+            len(ingredients_by_category),
+            {k: len(v) for k, v in ingredients_by_category.items()}
+        )
+
+    def _load_generic_ingredients_for_item_types(self, db: Session) -> None:
+        """Load ingredients valid for each ItemType, grouped by category.
+
+        Uses the ItemTypeIngredient junction table to determine which
+        ingredients are valid for each item type.
+
+        This is the generic replacement for domain-specific functions like
+        get_bagel_spreads that filter ingredients by item type.
+        """
+        from .models import ItemTypeIngredient, ItemType, Ingredient
+
+        ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}
+
+        # Query all item type ingredients with related data
+        type_ingredients = (
+            db.query(ItemTypeIngredient)
+            .options(
+                joinedload(ItemTypeIngredient.item_type),
+                joinedload(ItemTypeIngredient.ingredient).joinedload(Ingredient.alias_records)
+            )
+            .all()
+        )
+
+        for ti in type_ingredients:
+            if not ti.item_type or not ti.ingredient:
+                continue
+
+            item_type_slug = ti.item_type.slug
+            category = ti.ingredient.category or "uncategorized"
+
+            # Initialize nested dicts if needed
+            if item_type_slug not in ingredients_for_item_type:
+                ingredients_for_item_type[item_type_slug] = {}
+            if category not in ingredients_for_item_type[item_type_slug]:
+                ingredients_for_item_type[item_type_slug][category] = set()
+
+            # Add ingredient name (lowercase for matching)
+            ingredients_for_item_type[item_type_slug][category].add(ti.ingredient.name.lower())
+
+            # Add aliases
+            for alias in ti.ingredient.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_for_item_type[item_type_slug][category].add(alias_lower)
+
+        self._ingredients_for_item_type = ingredients_for_item_type
+
+        logger.debug(
+            "Loaded ingredients for %d item types",
+            len(ingredients_for_item_type)
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1737,6 +1907,181 @@ class MenuDataCache:
                 "Check that menu_items table has bottled_beverage items."
             )
         return self._soda_types.copy()
+
+    # -------------------------------------------------------------------------
+    # Generic Data-Driven Getters
+    # These replace domain-specific functions with generic, data-driven lookups
+    # -------------------------------------------------------------------------
+
+    def get_item_names(self, item_type_slug: str) -> set[str]:
+        """Get all MenuItem names and aliases for a given ItemType.
+
+        This is the generic replacement for domain-specific functions like
+        get_coffee_types(), get_soda_types(), get_bagel_types().
+
+        Args:
+            item_type_slug: The ItemType slug (e.g., "sized_beverage", "bagel", "beverage")
+
+        Returns:
+            Set of lowercase item names and aliases for matching user input.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded or item type not found.
+
+        Examples:
+            >>> menu_cache.get_item_names("sized_beverage")
+            {"latte", "cappuccino", "coffee", "matcha", ...}
+            >>> menu_cache.get_item_names("bagel")
+            {"plain", "everything", "sesame", ...}
+        """
+        self._ensure_loaded()
+        if item_type_slug not in self._item_names_by_type:
+            # Return empty set for unknown item types (not an error)
+            return set()
+        return self._item_names_by_type[item_type_slug].copy()
+
+    def resolve_item_alias(
+        self, alias: str, item_type_slug: str | None = None
+    ) -> str | None:
+        """Resolve an item alias to its canonical MenuItem name.
+
+        This is the generic replacement for domain-specific functions like
+        resolve_coffee_alias(), resolve_soda_alias().
+
+        Args:
+            alias: The alias to resolve (e.g., "coke", "matcha", "drip")
+            item_type_slug: Optional ItemType slug to restrict search.
+                           If None, searches all item types.
+
+        Returns:
+            Canonical MenuItem name (with original casing), or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.resolve_item_alias("coke", "beverage")
+            "Coca-Cola"
+            >>> menu_cache.resolve_item_alias("matcha", "sized_beverage")
+            "Seasonal Latte Matcha"
+            >>> menu_cache.resolve_item_alias("unknown")
+            None
+        """
+        self._ensure_loaded()
+        alias_lower = alias.lower().strip()
+
+        if item_type_slug:
+            # Search only in specified item type
+            type_aliases = self._item_alias_to_canonical_by_type.get(item_type_slug, {})
+            return type_aliases.get(alias_lower)
+        else:
+            # Search across all item types
+            for type_aliases in self._item_alias_to_canonical_by_type.values():
+                if alias_lower in type_aliases:
+                    return type_aliases[alias_lower]
+            return None
+
+    def get_ingredients(self, category: str) -> set[str]:
+        """Get all ingredient names and aliases for a given category.
+
+        This is the generic replacement for domain-specific functions like
+        get_proteins(), get_cheeses(), get_toppings().
+
+        Args:
+            category: The ingredient category (e.g., "protein", "cheese", "topping", "spread")
+
+        Returns:
+            Set of lowercase ingredient names and aliases for matching user input.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredients("protein")
+            {"bacon", "ham", "turkey", "egg", ...}
+            >>> menu_cache.get_ingredients("cheese")
+            {"american", "swiss", "provolone", "cheddar", ...}
+        """
+        self._ensure_loaded()
+        if category not in self._ingredients_by_category:
+            # Return empty set for unknown categories (not an error)
+            return set()
+        return self._ingredients_by_category[category].copy()
+
+    def get_ingredients_for_item_type(
+        self, item_type_slug: str, category: str | None = None
+    ) -> set[str]:
+        """Get ingredients valid for a specific ItemType, optionally filtered by category.
+
+        This is the generic replacement for domain-specific functions like
+        get_bagel_spreads() that filter ingredients by item type.
+
+        Uses the ItemTypeIngredient junction table to determine which
+        ingredients are valid for each item type.
+
+        Args:
+            item_type_slug: The ItemType slug (e.g., "bagel", "sandwich")
+            category: Optional ingredient category to filter by (e.g., "spread", "protein")
+
+        Returns:
+            Set of lowercase ingredient names and aliases valid for the item type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredients_for_item_type("bagel", "spread")
+            {"cream cheese", "butter", "scallion cream cheese", ...}
+            >>> menu_cache.get_ingredients_for_item_type("sandwich")
+            {"bacon", "ham", "turkey", "lettuce", "tomato", ...}  # All ingredients
+        """
+        self._ensure_loaded()
+
+        type_ingredients = self._ingredients_for_item_type.get(item_type_slug, {})
+        if not type_ingredients:
+            return set()
+
+        if category:
+            # Return only ingredients in the specified category
+            return type_ingredients.get(category, set()).copy()
+        else:
+            # Return all ingredients for this item type
+            all_ingredients: set[str] = set()
+            for cat_ingredients in type_ingredients.values():
+                all_ingredients.update(cat_ingredients)
+            return all_ingredients
+
+    def get_all_item_type_slugs(self) -> set[str]:
+        """Get all known ItemType slugs.
+
+        Returns:
+            Set of all ItemType slugs that have menu items.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_all_item_type_slugs()
+            {"bagel", "sized_beverage", "beverage", "sandwich", ...}
+        """
+        self._ensure_loaded()
+        return set(self._item_names_by_type.keys())
+
+    def get_all_ingredient_categories(self) -> set[str]:
+        """Get all known ingredient categories.
+
+        Returns:
+            Set of all ingredient category names.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_all_ingredient_categories()
+            {"protein", "cheese", "topping", "spread", "sauce", ...}
+        """
+        self._ensure_loaded()
+        return set(self._ingredients_by_category.keys())
 
     def get_beverage_milks(self) -> list[str]:
         """Get available milk options for beverages.

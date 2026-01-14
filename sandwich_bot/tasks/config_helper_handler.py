@@ -17,6 +17,8 @@ from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
 from .handler_config import HandlerConfig
 from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
+from sandwich_bot.menu_data_cache import menu_cache
+from sandwich_bot.exceptions import MenuDataNotLoadedError
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -31,11 +33,9 @@ def _get_removable_modifiers() -> set[str]:
     are "food" modifiers, then combines all ingredients from those categories.
     This is fully data-driven - no hardcoded category names.
 
-    Falls back to default categories if the ingredient_categories table is empty
-    (e.g., during tests that don't populate this table).
-
     Raises:
-        MenuDataNotLoadedError: If menu cache is not loaded or ingredient data is missing
+        MenuDataNotLoadedError: If menu cache is not loaded or no food categories
+            are configured in ingredient_categories table.
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
@@ -46,10 +46,11 @@ def _get_removable_modifiers() -> set[str]:
     # are "food" modifiers (protein, topping, sauce, cheese, spread, etc.)
     food_categories = menu_cache.get_ingredient_categories_by_modifier_type("food")
 
-    # Fallback to default categories if ingredient_categories table is empty
-    # (e.g., during tests that don't populate this table)
     if not food_categories:
-        food_categories = {"protein", "topping", "sauce", "cheese", "spread"}
+        raise MenuDataNotLoadedError(
+            "No food modifier categories found in database. "
+            "Check that ingredient_categories table has entries with modifier_type='food'."
+        )
 
     # Combine all ingredients from food modifier categories
     for category in food_categories:

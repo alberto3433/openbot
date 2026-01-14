@@ -465,7 +465,7 @@ class TestCriticalOrderScenarios:
         else:
             # Coffee might need disambiguation, which is acceptable behavior
             print("[INFO] TEST 5: Coffee not in cart - may need disambiguation")
-            print(f"[INFO] pending_drink_options: {order.pending_drink_options}")
+            print(f"[INFO] pending_item_options: {order.pending_item_options}")
 
         # At minimum, we should have the speed menu item
         assert len(active_items) >= 1, "Should have at least the speed menu item"

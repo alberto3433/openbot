@@ -122,13 +122,13 @@ class CheckoutUtilsHandler:
                         item_id[:8] if item_id else None, item_type, item_name, pending_field)
 
             # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
-            if item_type == "coffee_disambiguation" and order.pending_drink_options:
+            if item_type == "coffee_disambiguation" and order.pending_item_options:
                 logger.info("Processing queued coffee disambiguation")
                 order.pending_field = "drink_selection"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 # Build the clarification message
                 option_list = []
-                for i, option_item in enumerate(order.pending_drink_options, 1):
+                for i, option_item in enumerate(order.pending_item_options, 1):
                     name = option_item.get("name", "Unknown")
                     price = option_item.get("base_price", 0)
                     if price > 0:

@@ -633,7 +633,7 @@ class CheckoutHandler(BaseHandler):
                 logger.info("CONFIRMATION: result.order.phase = %s", result.order.phase)
 
                 # If there are pending drink options awaiting clarification, return that result
-                if result.order.pending_drink_options:
+                if result.order.pending_item_options:
                     logger.info("CONFIRMATION: Pending drink options, returning clarification message")
                     return result
 

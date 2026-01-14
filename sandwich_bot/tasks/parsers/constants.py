@@ -686,7 +686,8 @@ def get_spreads() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_spreads()
+        # Use generic get_ingredients function
+        cached = cache.get_ingredients("spread")
         if cached:
             return cached
     raise RuntimeError(
@@ -812,7 +813,8 @@ def get_proteins() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_proteins()
+        # Use generic get_ingredients function
+        cached = cache.get_ingredients("protein")
         if cached:
             return cached
     raise RuntimeError(
@@ -834,7 +836,10 @@ def get_toppings() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_toppings()
+        # Use generic get_ingredients function - toppings + sauces
+        toppings = cache.get_ingredients("topping")
+        sauces = cache.get_ingredients("sauce")
+        cached = toppings | sauces
         if cached:
             return cached
     raise RuntimeError(
@@ -856,7 +861,8 @@ def get_cheeses() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_cheeses()
+        # Use generic get_ingredients function
+        cached = cache.get_ingredients("cheese")
         if cached:
             return cached
     raise RuntimeError(
@@ -874,11 +880,14 @@ def get_coffee_types() -> set[str]:
     Get coffee/tea beverage types from the database.
 
     Returns data from cache if loaded (includes item names and aliases).
-    Falls back to common coffee types if cache not available.
+    Falls back to empty set if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_coffee_types()
+        # Use generic get_item_names function - combines sized_beverage + espresso
+        sized_bevs = cache.get_item_names("sized_beverage")
+        espresso = cache.get_item_names("espresso")
+        cached = sized_bevs | espresso
         if cached:
             return cached
     return set()
@@ -893,7 +902,8 @@ def get_soda_types() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_soda_types()
+        # Use generic get_item_names function
+        cached = cache.get_item_names("beverage")
         if cached:
             return cached
     return set()
@@ -1024,7 +1034,13 @@ def resolve_coffee_alias(name: str) -> str:
     """
     cache = _get_menu_cache()
     if cache:
-        return cache.resolve_coffee_alias(name)
+        # Use generic resolve_item_alias - search sized_beverage first, then espresso
+        result = cache.resolve_item_alias(name, "sized_beverage")
+        if result:
+            return result
+        result = cache.resolve_item_alias(name, "espresso")
+        if result:
+            return result
     return name
 
 
@@ -1041,7 +1057,10 @@ def resolve_soda_alias(name: str) -> str:
     """
     cache = _get_menu_cache()
     if cache:
-        return cache.resolve_soda_alias(name)
+        # Use generic resolve_item_alias
+        result = cache.resolve_item_alias(name, "beverage")
+        if result:
+            return result
     return name
 
 

@@ -1050,7 +1050,7 @@ class ItemAdderHandler:
                     order.set_menu_pagination(coffee_type_lower, DEFAULT_PAGINATION_SIZE, len(matching_drinks))
 
                 # Store filtered options for selection handling
-                order.pending_drink_options = matching_drinks
+                order.pending_item_options = matching_drinks
                 order.pending_field = "drink_type"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -1058,7 +1058,7 @@ class ItemAdderHandler:
                 # This preserves "large iced oat milk vanilla" when user clarifies "latte"
                 # Convert iced boolean to temperature string for storage
                 temperature_str = "iced" if iced is True else ("hot" if iced is False else None)
-                order.pending_coffee_modifiers = {
+                order.pending_item_modifiers = {
                     "size": size,
                     "temperature": temperature_str,
                     "milk": milk,
@@ -1144,7 +1144,7 @@ class ItemAdderHandler:
                     [item.get("name") for item in matching_items]
                 )
                 # Store the options and pending state
-                order.pending_drink_options = matching_items
+                order.pending_item_options = matching_items
                 order.pending_field = "drink_selection"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -1152,7 +1152,7 @@ class ItemAdderHandler:
                 # This preserves "large iced oat milk vanilla" when user clarifies "latte" vs "matcha latte"
                 # Convert iced boolean to temperature string for storage
                 temperature_str = "iced" if iced is True else ("hot" if iced is False else None)
-                order.pending_coffee_modifiers = {
+                order.pending_item_modifiers = {
                     "size": size,
                     "temperature": temperature_str,
                     "milk": milk,

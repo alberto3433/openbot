@@ -14,16 +14,6 @@ from typing import TYPE_CHECKING
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
 
-if TYPE_CHECKING:
-    from .handler_config import HandlerConfig
-    from .by_pound_handler import ByPoundHandler
-    from .config_helper_handler import ConfigHelperHandler
-    from .checkout_utils_handler import CheckoutUtilsHandler
-    from .modifier_change_handler import ModifierChangeHandler
-    from .item_adder_handler import ItemAdderHandler
-    from .taking_items_handler import TakingItemsHandler
-    from .menu_item_config_handler import MenuItemConfigHandler
-
 logger = logging.getLogger(__name__)
 
 

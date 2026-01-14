@@ -36,11 +36,11 @@ def _get_removable_modifiers() -> set[str]:
 
     modifiers: set[str] = set()
 
-    # Get ingredients from database (all raise MenuDataNotLoadedError if not available)
-    proteins = menu_cache.get_proteins()
-    toppings = menu_cache.get_toppings()
-    cheeses = menu_cache.get_cheeses()
-    spreads = menu_cache.get_spreads()
+    # Get ingredients from database using generic function
+    proteins = menu_cache.get_ingredients("protein")
+    toppings = menu_cache.get_ingredients("topping") | menu_cache.get_ingredients("sauce")
+    cheeses = menu_cache.get_ingredients("cheese")
+    spreads = menu_cache.get_ingredients("spread")
 
     # Combine all ingredient sets
     modifiers.update(proteins)

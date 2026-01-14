@@ -928,15 +928,11 @@ class OrderTask(BaseTask):
     # Each entry is a dict with: item_id, item_type (e.g., "coffee", "bagel")
     pending_config_queue: list[dict] = Field(default_factory=list)
 
-    # Multiple matching menu items for disambiguation
-    # Used when user says "orange juice" and there are 3 types
-    # Each entry is a dict with: name, base_price, id, etc.
-    pending_drink_options: list[dict] = Field(default_factory=list)
-
-    # Coffee modifiers stored during drink disambiguation
+    # Modifiers stored during item disambiguation
     # When user says "large iced oat milk latte" and we ask "Latte or Seasonal Matcha Latte?",
-    # we store the modifiers here so they can be applied when user clarifies the drink type
-    pending_coffee_modifiers: dict = Field(default_factory=dict)
+    # we store the modifiers here so they can be applied when user clarifies the item type
+    # Works for any item type (coffee, bagels, etc.), not just beverages
+    pending_item_modifiers: dict = Field(default_factory=dict)
 
     # Unknown drink request - stores the drink name user asked for that doesn't exist
     # Used to show "Sorry, we don't have X" message
@@ -1059,7 +1055,7 @@ class OrderTask(BaseTask):
         self.pending_field = None
         self.config_options_page = 0
         self.pending_suggested_item = None
-        self.pending_coffee_modifiers = {}
+        self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
 
     def clear_menu_pagination(self):

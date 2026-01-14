@@ -2714,9 +2714,9 @@ class TakingItemsHandler:
             logger.info("Pending drink type selection - presenting drink options")
 
             # Check if we have filtered options (partial term like "juice") or need full menu
-            if order.pending_drink_options:
+            if order.pending_item_options:
                 # Use pre-filtered options from add_coffee
-                all_drinks = order.pending_drink_options
+                all_drinks = order.pending_item_options
                 logger.info("Using %d pre-filtered drink options", len(all_drinks))
             else:
                 # Get full drink menu for generic "drink" request
@@ -2762,13 +2762,13 @@ class TakingItemsHandler:
 
         # Check if we're waiting for drink selection (e.g., "latte" matches Latte and Matcha Latte)
         # This handles disambiguation when a drink type matches multiple menu items
-        if order.pending_field == "drink_selection" and order.pending_drink_options:
-            logger.info("Pending drink selection - presenting %d options", len(order.pending_drink_options))
+        if order.pending_field == "drink_selection" and order.pending_item_options:
+            logger.info("Pending drink selection - presenting %d options", len(order.pending_item_options))
 
             # Build the clarification message from pending options
             # Format: numbered list showing each option
             option_list = []
-            for i, item in enumerate(order.pending_drink_options, 1):
+            for i, item in enumerate(order.pending_item_options, 1):
                 name = item.get("name", "Unknown")
                 price = item.get("base_price", 0)
                 if price > 0:
@@ -3367,7 +3367,7 @@ class TakingItemsHandler:
         Called when pending_field == "drink_selection" and user needs
         to choose from multiple matching drink items.
         """
-        if not order.pending_drink_options:
+        if not order.pending_item_options:
             order.clear_pending()
             return StateMachineResult(
                 message="What would you like to order?",
@@ -3375,7 +3375,7 @@ class TakingItemsHandler:
             )
 
         user_lower = user_input.lower().strip()
-        options = order.pending_drink_options
+        options = order.pending_item_options
 
         # Reject negative numbers or other invalid input early
         if user_lower.startswith('-') or user_lower.startswith('−'):
@@ -3462,7 +3462,7 @@ class TakingItemsHandler:
         selected_price = selected_item.get("base_price", 0)
 
         # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
-        stored_mods = order.pending_coffee_modifiers or {}
+        stored_mods = order.pending_item_modifiers or {}
         stored_size = stored_mods.get("size")
         stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
         stored_milk = stored_mods.get("milk")
@@ -3476,7 +3476,7 @@ class TakingItemsHandler:
         stored_instructions = stored_mods.get("special_instructions")
         stored_quantity = stored_mods.get("quantity", 1)
 
-        order.pending_drink_options = []
+        order.pending_item_options = []
         order.clear_pending()
 
         logger.info(
@@ -3644,8 +3644,8 @@ class TakingItemsHandler:
 
         # FIRST: Check if we have pending drink options (from disambiguation like "latte" matching multiple items)
         # If so, try to match the user's input against those options before doing anything else
-        if order.pending_drink_options:
-            options = order.pending_drink_options
+        if order.pending_item_options:
+            options = order.pending_item_options
             selected_item = None
 
             # Try to match by number (1, 2, 3, "first", "second", etc.)
@@ -3684,7 +3684,7 @@ class TakingItemsHandler:
                 selected_price = selected_item.get("base_price", 0)
 
                 # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
-                stored_mods = order.pending_coffee_modifiers or {}
+                stored_mods = order.pending_item_modifiers or {}
                 stored_size = stored_mods.get("size")
                 stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
                 stored_milk = stored_mods.get("milk")
@@ -3703,7 +3703,7 @@ class TakingItemsHandler:
                     selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
                 )
 
-                order.pending_drink_options = []
+                order.pending_item_options = []
                 order.clear_pending()
 
                 # Check if this drink should skip configuration

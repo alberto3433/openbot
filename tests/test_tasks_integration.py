@@ -248,11 +248,7 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "_is_loaded", True)
     monkeypatch.setattr(menu_cache, "get_item_type_attributes", mock_get_item_type_attributes)
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
-    # Mock parser helper methods on menu_cache
-    monkeypatch.setattr(menu_cache, "get_coffee_types", mock_get_coffee_types)
-    monkeypatch.setattr(menu_cache, "get_bagel_types", mock_get_bagel_types)
-    monkeypatch.setattr(menu_cache, "get_soda_types", mock_get_soda_types)
-    # Also mock the functions in parsers.constants module
+    # Mock the functions in parsers.constants module
     import sandwich_bot.tasks.parsers.constants as parser_constants
     monkeypatch.setattr(parser_constants, "get_coffee_types", mock_get_coffee_types)
     monkeypatch.setattr(parser_constants, "get_bagel_types", mock_get_bagel_types)
@@ -565,7 +561,7 @@ class TestAdditionalItemsAfterBagel:
 
         # With real menu data, "latte" matches multiple items (Latte, Seasonal Matcha Latte)
         # so disambiguation is triggered first
-        if "which would you like" in result.message.lower() or order.pending_drink_options:
+        if "which would you like" in result.message.lower() or order.pending_item_options:
             # Handle disambiguation - select the regular Latte
             result = sm.process("Latte", order)
 
@@ -674,7 +670,7 @@ class TestAdditionalItemsAfterBagel:
 
         # With real menu data, "latte" matches multiple items (Latte, Seasonal Matcha Latte)
         # so disambiguation is triggered first
-        if "which would you like" in result.message.lower() or order.pending_drink_options:
+        if "which would you like" in result.message.lower() or order.pending_item_options:
             # Handle disambiguation - select the regular Latte
             result = sm.process("Latte", order)
 
@@ -1780,7 +1776,7 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("a bagel and a latte", order)
 
         # With real menu data, "latte" may trigger disambiguation first
-        if "which would you like" in result.message.lower() or order.pending_drink_options:
+        if "which would you like" in result.message.lower() or order.pending_item_options:
             # Handle disambiguation - select the regular Latte
             result = sm.process("Latte", order)
 
@@ -1808,7 +1804,7 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("a bagel and a latte", order)
 
         # With real menu data, "latte" may trigger disambiguation first
-        if "which would you like" in result.message.lower() or order.pending_drink_options:
+        if "which would you like" in result.message.lower() or order.pending_item_options:
             result = sm.process("Latte", order)
 
         assert "bagel" in result.message.lower()
@@ -1847,7 +1843,7 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("a bagel and a latte", order)
 
         # With real menu data, "latte" may trigger disambiguation first
-        if "which would you like" in result.message.lower() or order.pending_drink_options:
+        if "which would you like" in result.message.lower() or order.pending_item_options:
             result = sm.process("Latte", order)
 
         # Complete bagel config: plain bagel
@@ -1922,7 +1918,7 @@ class TestBagelWithCoffeeConfig:
         # With real menu data, "latte" or "coffee" may trigger disambiguation
         # Handle up to 5 disambiguation rounds to avoid infinite loop
         for _ in range(5):
-            if not order.pending_drink_options:
+            if not order.pending_item_options:
                 break
             # Handle disambiguation - select the first option
             result = sm.process("1", order)
@@ -2141,9 +2137,9 @@ class TestDrinkClarification:
         )
 
         # Should ask for clarification with multiple matches
-        assert "which" in result.message.lower() or len(order.pending_drink_options) > 1
+        assert "which" in result.message.lower() or len(order.pending_item_options) > 1
         assert order.pending_field == "drink_type"  # Field is drink_type when asking for selection
-        assert len(order.pending_drink_options) == 3
+        assert len(order.pending_item_options) == 3
 
     def test_drink_selection_by_number(self):
         """Test selecting a drink by number."""
@@ -2164,7 +2160,7 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # Set up pending state as if we just asked for clarification
-        order.pending_drink_options = menu_data["drinks"]
+        order.pending_item_options = menu_data["drinks"]
         order.pending_field = "drink_selection"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -2177,7 +2173,7 @@ class TestDrinkClarification:
         assert coffees[0].drink_type == "Tropicana Orange Juice 46 oz"
         assert coffees[0].unit_price == 8.99
         assert order.pending_field is None
-        assert len(order.pending_drink_options) == 0
+        assert len(order.pending_item_options) == 0
 
     def test_drink_selection_by_name(self):
         """Test selecting a drink by name."""
@@ -2198,7 +2194,7 @@ class TestDrinkClarification:
         order = OrderTask()
 
         # Set up pending state
-        order.pending_drink_options = menu_data["drinks"]
+        order.pending_item_options = menu_data["drinks"]
         order.pending_field = "drink_selection"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -5852,7 +5848,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = []
+        order.pending_item_options = []
 
         result = sm.taking_items_handler.handle_drink_selection("1", order)
 
@@ -5865,7 +5861,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
@@ -5883,7 +5879,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Pepsi", "base_price": 2.50},
             {"name": "Dr Pepper", "base_price": 2.75},
         ]
@@ -5900,7 +5896,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Orange Juice", "base_price": 3.00},
             {"name": "Apple Juice", "base_price": 3.00},
         ]
@@ -5917,7 +5913,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
@@ -5936,7 +5932,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
@@ -5953,7 +5949,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Coke", "base_price": 2.50},
         ]
 
@@ -5969,7 +5965,7 @@ class TestDrinkSelectionHandler:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_drink_options = [
+        order.pending_item_options = [
             {"name": "Coca-Cola", "base_price": 2.50},
         ]
 

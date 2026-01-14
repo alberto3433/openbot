@@ -66,11 +66,6 @@ class MenuDataCache:
         self._bagel_spreads: set[str] = set()  # Combined patterns for matching
         self._bagel_types: set[str] = set()
         self._bagel_types_list: list[str] = []  # Ordered list for display/pagination
-        self._proteins: set[str] = set()
-        self._toppings: set[str] = set()
-        self._cheeses: set[str] = set()
-        self._coffee_types: set[str] = set()
-        self._soda_types: set[str] = set()
         self._known_menu_items: set[str] = set()
 
         # Beverage modifier options (from item_type_ingredients table)
@@ -79,8 +74,6 @@ class MenuDataCache:
         self._beverage_syrups: list[str] = []  # Ordered list of syrup options
 
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
-        self._coffee_alias_to_canonical: dict[str, str] = {}
-        self._soda_alias_to_canonical: dict[str, str] = {}
         self._signature_item_aliases: dict[str, str] = {}  # alias -> menu item name
         self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
         self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
@@ -208,11 +201,6 @@ class MenuDataCache:
                 # Load each category
                 self._load_spread_types(db)
                 self._load_bagel_types(db)
-                self._load_proteins(db)
-                self._load_toppings(db)
-                self._load_cheeses(db)
-                self._load_coffee_types(db)
-                self._load_soda_types(db)
                 self._load_beverage_modifiers(db)
                 self._load_known_menu_items(db)
                 self._load_signature_item_aliases(db)
@@ -247,20 +235,17 @@ class MenuDataCache:
 
                 logger.info(
                     "Menu data cache loaded: %d spread_types, %d bagel_types, "
-                    "%d proteins, %d toppings, %d cheeses, %d coffee_types, "
-                    "%d soda_types, %d menu_items, %d signature_item_aliases,"
-                    "%d by_pound_categories, %d abbreviations",
+                    "%d menu_items, %d signature_item_aliases, "
+                    "%d by_pound_categories, %d abbreviations, "
+                    "%d item_types, %d ingredient_categories",
                     len(self._spread_types),
                     len(self._bagel_types),
-                    len(self._proteins),
-                    len(self._toppings),
-                    len(self._cheeses),
-                    len(self._coffee_types),
-                    len(self._soda_types),
                     len(self._known_menu_items),
                     len(self._signature_item_aliases),
                     len(self._by_pound_items),
                     len(self._abbreviations),
+                    len(self._item_names_by_type),
+                    len(self._ingredients_by_category),
                 )
 
             except Exception as e:
@@ -412,217 +397,6 @@ class MenuDataCache:
 
         self._bagel_types = bagel_types
         self._bagel_types_list = bagel_types_list
-
-    def _load_proteins(self, db: Session) -> None:
-        """Load protein types from ingredients table.
-
-        Loads protein ingredient names and their aliases for matching user input.
-        Fails with RuntimeError if no proteins found in database.
-        """
-        from .models import Ingredient
-
-        proteins = set()
-
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        protein_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "protein")
-            .all()
-        )
-
-        for ing in protein_ingredients:
-            # Add the ingredient name
-            proteins.add(ing.name.lower())
-            # Also add aliases if present (now a list from child table)
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    proteins.add(alias)
-
-        # Fail if database has no proteins configured
-        if not proteins:
-            raise RuntimeError(
-                "No proteins found in database. Run migrations to populate ingredients table."
-            )
-
-        self._proteins = proteins
-
-    def _load_toppings(self, db: Session) -> None:
-        """Load topping types from ingredients table.
-
-        Loads topping ingredient names and their aliases for matching user input.
-        Also includes sauces (mayo, mustard, etc.) as they function as toppings.
-        Fails with RuntimeError if no toppings found in database.
-        """
-        from .models import Ingredient
-
-        toppings = set()
-
-        # Load toppings category
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        topping_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "topping")
-            .all()
-        )
-
-        for ing in topping_ingredients:
-            # Add the ingredient name
-            toppings.add(ing.name.lower())
-            # Also add aliases if present (now a list from child table)
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    toppings.add(alias)
-
-        # Also load sauces as they function as toppings on bagels
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        sauce_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "sauce")
-            .all()
-        )
-
-        for ing in sauce_ingredients:
-            toppings.add(ing.name.lower())
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    toppings.add(alias)
-
-        # Fail if database has no toppings configured
-        if not toppings:
-            raise RuntimeError(
-                "No toppings found in database. Run migrations to populate ingredients table."
-            )
-
-        self._toppings = toppings
-
-    def _load_cheeses(self, db: Session) -> None:
-        """Load sliced cheese types from ingredients table.
-
-        Loads cheese ingredient names and their aliases for matching user input.
-        Only loads actual sliced cheeses (American, Swiss, etc.), not cream cheese
-        spreads which are in the "spread" category.
-        Fails with RuntimeError if no cheeses found in database.
-        """
-        from .models import Ingredient
-
-        cheeses = set()
-
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        cheese_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "cheese")
-            .all()
-        )
-
-        for ing in cheese_ingredients:
-            # Add the ingredient name
-            cheeses.add(ing.name.lower())
-            # Also add aliases if present (now a list from child table)
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    cheeses.add(alias)
-
-        # Fail if database has no cheeses configured
-        if not cheeses:
-            raise RuntimeError(
-                "No cheeses found in database. Run migrations to populate ingredients table."
-            )
-
-        self._cheeses = cheeses
-
-    def _load_coffee_types(self, db: Session) -> None:
-        """Load coffee/tea beverage types from menu items.
-
-        Uses item_type='sized_beverage' or 'espresso' to identify coffee/tea drinks
-        that need configuration.
-
-        Includes both item names and their aliases for matching user input.
-        Also builds a mapping from aliases to canonical names.
-        """
-        from .models import MenuItem, ItemType
-
-        coffee_types = set()
-        alias_to_canonical = {}
-
-        # Query sized_beverage and espresso items (coffee/tea that need configuration)
-        # Espresso is a separate item type but should be recognized as a coffee for parsing
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        coffee_items = (
-            db.query(MenuItem)
-            .options(joinedload(MenuItem.alias_records))
-            .join(ItemType, MenuItem.item_type_id == ItemType.id)
-            .filter(ItemType.slug.in_(["sized_beverage", "espresso"]))
-            .all()
-        )
-
-        for item in coffee_items:
-            canonical_name = item.name.lower()
-            # Add the item name (lowercase)
-            coffee_types.add(canonical_name)
-            # Map canonical name to itself
-            alias_to_canonical[canonical_name] = item.name  # Preserve original casing
-
-            # Add all aliases if present (now a list from child table)
-            for alias in item.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    coffee_types.add(alias)
-                    # Map alias to canonical name (preserve original casing)
-                    alias_to_canonical[alias] = item.name
-
-        self._coffee_types = coffee_types
-        self._coffee_alias_to_canonical = alias_to_canonical
-
-    def _load_soda_types(self, db: Session) -> None:
-        """Load soda/bottled beverage types from menu items.
-
-        Uses item_type='beverage' to identify sodas/bottled drinks that don't
-        need configuration (as opposed to 'sized_beverage' for coffee/tea).
-
-        Includes both item names and their aliases for matching user input.
-        Also builds a mapping from aliases to canonical names.
-        """
-        from .models import MenuItem, ItemType
-
-        soda_types = set()
-        alias_to_canonical = {}
-
-        # Query beverage items (item_type.slug = 'beverage')
-        # These are sodas/bottled drinks that don't need size configuration
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        beverage_items = (
-            db.query(MenuItem)
-            .options(joinedload(MenuItem.alias_records))
-            .join(ItemType, MenuItem.item_type_id == ItemType.id)
-            .filter(ItemType.slug == "beverage")
-            .all()
-        )
-
-        for item in beverage_items:
-            canonical_name = item.name.lower()
-            # Add the item name (lowercase)
-            soda_types.add(canonical_name)
-            # Map canonical name to itself
-            alias_to_canonical[canonical_name] = item.name  # Preserve original casing
-
-            # Add all aliases if present (now a list from child table)
-            for alias in item.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    soda_types.add(alias)
-                    # Map alias to canonical name (preserve original casing)
-                    alias_to_canonical[alias] = item.name
-
-        self._soda_types = soda_types
-        self._soda_alias_to_canonical = alias_to_canonical
 
     def _load_beverage_modifiers(self, db: Session) -> None:
         """Load beverage modifier options (milk, sweetener, syrup) from the database.
@@ -1858,56 +1632,6 @@ class MenuDataCache:
             )
         return self._bagel_types_list.copy()
 
-    def get_proteins(self) -> set[str]:
-        """Get protein types (bacon, ham, etc.)."""
-        self._ensure_loaded()
-        if not self._proteins:
-            raise MenuDataNotLoadedError(
-                "No proteins found in database. "
-                "Check that ingredients table has records with category='protein'."
-            )
-        return self._proteins.copy()
-
-    def get_toppings(self) -> set[str]:
-        """Get topping types (tomato, onion, etc.)."""
-        self._ensure_loaded()
-        if not self._toppings:
-            raise MenuDataNotLoadedError(
-                "No toppings found in database. "
-                "Check that ingredients table has records with category='topping'."
-            )
-        return self._toppings.copy()
-
-    def get_cheeses(self) -> set[str]:
-        """Get cheese types (american, swiss, etc.)."""
-        self._ensure_loaded()
-        if not self._cheeses:
-            raise MenuDataNotLoadedError(
-                "No cheeses found in database. "
-                "Check that ingredients table has records with category='cheese'."
-            )
-        return self._cheeses.copy()
-
-    def get_coffee_types(self) -> set[str]:
-        """Get coffee/tea beverage types."""
-        self._ensure_loaded()
-        if not self._coffee_types:
-            raise MenuDataNotLoadedError(
-                "No coffee types found in database. "
-                "Check that menu_items table has sized_beverage items."
-            )
-        return self._coffee_types.copy()
-
-    def get_soda_types(self) -> set[str]:
-        """Get soda/bottled beverage types."""
-        self._ensure_loaded()
-        if not self._soda_types:
-            raise MenuDataNotLoadedError(
-                "No soda types found in database. "
-                "Check that menu_items table has bottled_beverage items."
-            )
-        return self._soda_types.copy()
-
     # -------------------------------------------------------------------------
     # Generic Data-Driven Getters
     # These replace domain-specific functions with generic, data-driven lookups
@@ -2923,42 +2647,6 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return self._bagel_types & self._spread_types
-
-    def resolve_coffee_alias(self, name: str) -> str:
-        """
-        Resolve a coffee/tea name or alias to its canonical menu item name.
-
-        Args:
-            name: User input like "matcha" or "latte"
-
-        Returns:
-            Canonical menu item name (e.g., "Seasonal Latte Matcha" for "matcha")
-            or the original name if no mapping found (semantic "not found").
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        name_lower = name.lower().strip()
-        return self._coffee_alias_to_canonical.get(name_lower, name)
-
-    def resolve_soda_alias(self, name: str) -> str:
-        """
-        Resolve a soda/beverage name or alias to its canonical menu item name.
-
-        Args:
-            name: User input like "coke" or "sprite"
-
-        Returns:
-            Canonical menu item name (e.g., "Coca-Cola" for "coke")
-            or the original name if no mapping found (semantic "not found").
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        name_lower = name.lower().strip()
-        return self._soda_alias_to_canonical.get(name_lower, name)
 
     def normalize_modifier(self, modifier: str) -> str:
         """
@@ -4058,11 +3746,6 @@ class MenuDataCache:
                 "spread_types": len(self._spread_types),
                 "bagel_spreads": len(self._bagel_spreads),
                 "bagel_types": len(self._bagel_types),
-                "proteins": len(self._proteins),
-                "toppings": len(self._toppings),
-                "cheeses": len(self._cheeses),
-                "coffee_types": len(self._coffee_types),
-                "soda_types": len(self._soda_types),
                 "known_menu_items": len(self._known_menu_items),
                 "by_pound_categories": len(self._by_pound_items),
                 "by_pound_aliases": len(self._by_pound_aliases),
@@ -4072,6 +3755,9 @@ class MenuDataCache:
                 "compound_phrases": len(self._compound_phrases),
                 "item_type_triggers": sum(len(t) for t in self._item_type_triggers.values()),
                 "by_unit_type_items": {k: len(v) for k, v in self._by_unit_type_items.items()},
+                # Generic data-driven caches
+                "item_names_by_type": {k: len(v) for k, v in self._item_names_by_type.items()},
+                "ingredients_by_category": {k: len(v) for k, v in self._ingredients_by_category.items()},
             },
             "keyword_indices": {
                 "spread_keywords": len(self._spread_keyword_index),

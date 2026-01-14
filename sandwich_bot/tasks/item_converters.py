@@ -372,33 +372,42 @@ class MenuItemConverter(ItemConverter):
         if bread_attr:
             bread_display = bread_attr.replace("_", " ").title()
             display_name = f"{menu_item_name} on {bread_display}"
-        elif side_choice == "fruit_salad":
-            display_name = f"{display_name} with fruit salad"
-        elif side_choice == "bagel":
-            if bagel_choice:
-                display_name = f"{display_name} with {bagel_choice} bagel"
+        elif side_choice:
+            # Data-driven side choice display: check for {side_choice}_choice field
+            choice_field = f"{side_choice}_choice"
+            specific_choice = getattr(item, choice_field, None)
+            if specific_choice:
+                display_name = f"{display_name} with {specific_choice} {side_choice}"
             else:
-                display_name = f"{display_name} with bagel"
+                side_display = side_choice.replace("_", " ")
+                display_name = f"{display_name} with {side_display}"
 
-        # Build side bagel config for omelettes
-        side_bagel_config = None
-        if side_choice == "bagel" and bagel_choice:
-            side_bagel_parts = [bagel_choice, "bagel"]
-            if toasted is True:
-                side_bagel_parts.append("toasted")
-            if spread and spread != "none":
-                side_bagel_parts.append(f"with {spread}")
-            side_bagel_config = {
-                "bagel_type": bagel_choice,
-                "toasted": toasted,
-                "spread": spread,
-                "description": " ".join(side_bagel_parts),
-            }
+        # Build side config for items with configurable sides
+        # Uses data-driven approach: check for {side_choice}_choice field
+        side_config = None
+        if side_choice:
+            choice_field = f"{side_choice}_choice"
+            specific_choice = getattr(item, choice_field, None)
+            if specific_choice:
+                side_parts = [specific_choice, side_choice]
+                if toasted is True:
+                    side_parts.append("toasted")
+                if spread and spread != "none":
+                    side_parts.append(f"with {spread}")
+                side_config = {
+                    f"{side_choice}_type": specific_choice,
+                    "toasted": toasted,
+                    "spread": spread,
+                    "description": " ".join(side_parts),
+                }
 
         # Build modifiers list with prices
         modifiers = []
-        if toasted is True and side_choice == "bagel":
-            modifiers.append({"name": "Toasted", "price": 0})
+        # Add toasted modifier if side choice type has "toasted" attribute
+        if toasted is True and side_choice:
+            side_attrs = menu_cache.get_item_type_attributes(side_choice)
+            if "toasted" in side_attrs:
+                modifiers.append({"name": "Toasted", "price": 0})
 
         # Add spread to modifiers if set
         spread_price = getattr(item, 'spread_price', None)
@@ -486,7 +495,7 @@ class MenuItemConverter(ItemConverter):
             # Bagel-specific fields at top level for backwards compatibility
             "bagel_type": bagel_type,
             "toppings": toppings_list,
-            "side_bagel_config": side_bagel_config,
+            "side_config": side_config,  # Generic side configuration (replaces side_bagel_config)
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
             # DB-driven attribute values
@@ -710,19 +719,20 @@ class UnifiedItemConverter(ItemConverter):
         return "unified"
 
     def from_dict(self, item_dict: Dict[str, Any]) -> ItemTask:
-        """Convert dict to appropriate ItemTask based on item_type."""
+        """Convert dict to appropriate ItemTask based on item_type.
+
+        Uses data-driven attribute checks to route to the appropriate converter.
+        Items with a "bread" attribute use BagelConverter; all others use MenuItemConverter.
+        """
         item_type = item_dict.get("item_type") or item_dict.get("menu_item_type") or "menu_item"
 
         # Route to specialized converter using data-driven attribute checks
-        # with fallback to string comparison if database not available
         item_attrs = menu_cache.get_item_type_attributes(item_type)
-        if "bread" in item_attrs or item_type == "bagel":
-            # Items with bread attribute (bagels) use BagelConverter
+        if "bread" in item_attrs:
+            # Items with bread attribute (bagels and similar) use BagelConverter
             return BagelConverter().from_dict(item_dict)
-        elif item_type == "sandwich":
-            return SandwichConverter().from_dict(item_dict)
         else:
-            # All other types (menu_item, coffee, drink, sized_beverage, espresso)
+            # All other types (menu_item, coffee, drink, sized_beverage, espresso, etc.)
             # use MenuItemConverter
             return MenuItemConverter().from_dict(item_dict)
 

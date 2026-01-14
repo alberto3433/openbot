@@ -88,21 +88,31 @@ class CheckoutUtilsHandler:
                     logger.info("Found incomplete coffee, starting configuration")
                     if self._configure_next_incomplete_coffee:
                         return self._configure_next_incomplete_coffee(order)
-                # Handle menu items with bagel sides that need toasted question
+                # Handle menu items with sides that need toasted question
+                # Uses data-driven approach: check if side_choice type has "toasted" attribute
                 elif isinstance(item, MenuItemTask):
-                    if item.side_choice == "bagel" and item.toasted is None:
-                        logger.info("Found menu item with bagel side needing toasted question")
-                        order.pending_item_id = item.id
-                        order.pending_field = "bagel:toasted"
-                        order.phase = OrderPhase.CONFIGURING_ITEM.value
-                        bagel_type = item.bagel_choice or "bagel"
-                        return StateMachineResult(
-                            message=f"Would you like the {bagel_type} bagel toasted?",
-                            order=order,
-                        )
+                    side_choice = getattr(item, 'side_choice', None)
+                    if side_choice and item.toasted is None:
+                        # Check if this side type has a "toasted" attribute
+                        side_attrs = menu_cache.get_item_type_attributes(side_choice)
+                        if "toasted" in side_attrs:
+                            logger.info("Found menu item with %s side needing toasted question", side_choice)
+                            order.pending_item_id = item.id
+                            order.pending_field = f"{side_choice}:toasted"
+                            order.phase = OrderPhase.CONFIGURING_ITEM.value
+                            # Get the specific choice (e.g., bagel_choice for side_choice="bagel")
+                            choice_field = f"{side_choice}_choice"
+                            specific_choice = getattr(item, choice_field, None) or side_choice
+                            return StateMachineResult(
+                                message=f"Would you like the {specific_choice} {side_choice} toasted?",
+                                order=order,
+                            )
+                        else:
+                            # Side type doesn't have toasted attribute - log and continue
+                            logger.info(f"Menu item in progress but side doesn't need toasted: {item.menu_item_name}")
                     else:
-                        # Menu item doesn't need bagel config - log and continue
-                        logger.info(f"Menu item in progress but no bagel config needed: {item.menu_item_name}")
+                        # Menu item doesn't need side config - log and continue
+                        logger.info(f"Menu item in progress but no side config needed: {item.menu_item_name}")
                 else:
                     # Other in-progress items - log warning
                     logger.warning(f"Found in-progress item without handler: {item}")
@@ -121,10 +131,10 @@ class CheckoutUtilsHandler:
             logger.info("Processing queued config item: id=%s, type=%s, name=%s, field=%s",
                         item_id[:8] if item_id else None, item_type, item_name, pending_field)
 
-            # Handle coffee disambiguation (when "coffee" matched multiple items like Coffee, Latte, etc.)
-            if item_type == "coffee_disambiguation" and order.pending_item_options:
-                logger.info("Processing queued coffee disambiguation")
-                order.pending_field = "drink_selection"
+            # Handle item disambiguation (when a keyword matched multiple menu items)
+            if item_type == "item_disambiguation" and order.pending_item_options:
+                logger.info("Processing queued item disambiguation")
+                order.pending_field = "item_selection"
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
                 # Build the clarification message
                 option_list = []
@@ -137,7 +147,7 @@ class CheckoutUtilsHandler:
                         option_list.append(f"{i}. {name}")
                 options_str = "\n".join(option_list)
                 return StateMachineResult(
-                    message=f"For your coffee - we have a few options:\n{options_str}\nWhich would you like?",
+                    message=f"We have a few options:\n{options_str}\nWhich would you like?",
                     order=order,
                 )
 

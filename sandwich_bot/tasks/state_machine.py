@@ -46,7 +46,6 @@ from .schemas import (
     ByPoundOrderItem,
     OpenInputResponse,
     ExtractedModifiers,
-    ExtractedCoffeeModifiers,
     # Re-export for backwards compatibility with tests
     BagelChoiceResponse,
     SpreadChoiceResponse,

@@ -201,6 +201,63 @@ def _calculate_customization_extras(
     return total_extra
 
 
+def _calculate_item_extras_generic(
+    item: Dict[str, Any],
+    menu_item: Dict[str, Any],
+    menu_index: Dict[str, Any],
+) -> float:
+    """
+    Calculate extras for any item type using the generic item_types system.
+
+    Iterates through all attributes defined for the item's type and calculates
+    price modifiers for any attribute values present on the item.
+
+    This is the data-driven approach - no hardcoded item types.
+    """
+    if not menu_index:
+        return 0.0
+
+    item_type_slug = item.get("item_type")
+    if not item_type_slug:
+        # Fall back to menu_item's type if available
+        item_type_slug = menu_item.get("item_type") if menu_item else None
+
+    if not item_type_slug:
+        return 0.0
+
+    item_types = menu_index.get("item_types", {})
+    item_type_data = item_types.get(item_type_slug, {})
+
+    if not item_type_data.get("is_configurable"):
+        return 0.0
+
+    total_extra = 0.0
+    item_config = item.get("item_config", {})
+
+    for attr in item_type_data.get("attributes", []):
+        attr_slug = attr.get("slug")
+        if not attr_slug:
+            continue
+
+        # Check both item top-level and item_config for attribute values
+        attr_value = item.get(attr_slug) or item_config.get(attr_slug)
+        if not attr_value:
+            continue
+
+        # Handle list attributes (toppings, sauces, extras)
+        if isinstance(attr_value, list):
+            for val in attr_value:
+                total_extra += _get_extra_price_for_choice(
+                    menu_item, attr_slug.title(), val, menu_index
+                )
+        else:
+            total_extra += _get_extra_price_for_choice(
+                menu_item, attr_slug.title(), attr_value, menu_index
+            )
+
+    return total_extra
+
+
 def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, returning_customer=None):
     state = deepcopy(order_state)
 
@@ -924,6 +981,8 @@ def _confirm(state, slots, menu_index):
     Confirm the order:
     - Recalculate all prices including customization extras
     - Always mark status as confirmed when we receive confirm_order
+
+    Uses data-driven pricing - no hardcoded item types.
     """
 
     total = 0
@@ -931,36 +990,15 @@ def _confirm(state, slots, menu_index):
         menu_item = _find_menu_item(menu_index, it["menu_item_name"])
         base = menu_item.get("base_price", 0) if menu_item else it.get("unit_price", 0)
 
-        # Calculate extras based on item type
-        extras = 0.0
-        item_type = it.get("item_type")
-
-        if item_type == "pizza":
-            # Pizza-specific pricing: size + crust + cheese + toppings + sauce
-            size_extra = _get_size_price_adjustment(it.get("size"), menu_item, menu_index)
-            extras = size_extra + _calculate_pizza_extras(
-                menu_item,
-                it.get("crust"),
-                it.get("cheese"),
-                it.get("toppings"),
-                it.get("sauces"),
-                menu_index,
-            )
-        elif item_type == "sandwich":
-            # Sandwich-specific pricing: bread + cheese + protein + toppings + sauces
-            extras = _calculate_customization_extras(
-                menu_item,
-                it.get("bread"),
-                it.get("cheese"),
-                it.get("protein"),
-                it.get("toppings"),
-                it.get("sauces"),
-                menu_index,
-            )
-        elif item_type == "drink":
-            # Drink-specific pricing: use item_config for coffee modifiers
-            # Keep the existing unit_price which was calculated correctly in _add_drink
-            extras = it.get("unit_price", base) - base  # Preserve existing extras
+        # Check if this item already has a calculated unit_price (e.g., from _add_drink)
+        # that should be preserved. This happens when pricing was calculated at add time.
+        existing_price = it.get("unit_price", 0)
+        if existing_price > 0 and existing_price != base:
+            # Item already has extras calculated - preserve them
+            extras = existing_price - base
+        else:
+            # Calculate extras using the generic data-driven approach
+            extras = _calculate_item_extras_generic(it, menu_item, menu_index)
 
         it["unit_price"] = base + extras
         it["line_total"] = it["unit_price"] * it["quantity"]

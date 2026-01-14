@@ -350,13 +350,20 @@ def _add_order_items(db: Session, order: Order, items: list) -> None:
         )
 
         # Include side choice in display name (for items without display_name)
+        # Uses data-driven approach: check for {side_choice}_choice field dynamically
         if not it.get("display_name"):
             side_choice = it.get("side_choice")
-            bagel_choice = it.get("bagel_choice")
-            if side_choice == "bagel" and bagel_choice:
-                menu_item_name = f"{menu_item_name} with {bagel_choice} bagel"
-            elif side_choice == "fruit_salad":
-                menu_item_name = f"{menu_item_name} with fruit salad"
+            if side_choice:
+                # Check for a specific choice field (e.g., bagel_choice for side_choice="bagel")
+                choice_field = f"{side_choice}_choice"
+                specific_choice = it.get(choice_field)
+                if specific_choice:
+                    # Side has a sub-selection (e.g., "plain bagel")
+                    menu_item_name = f"{menu_item_name} with {specific_choice} {side_choice}"
+                else:
+                    # Side has no sub-selection (e.g., "fruit salad")
+                    side_display = side_choice.replace("_", " ")
+                    menu_item_name = f"{menu_item_name} with {side_display}"
 
         item_type = it.get("item_type")
         quantity = it.get("quantity", 1)

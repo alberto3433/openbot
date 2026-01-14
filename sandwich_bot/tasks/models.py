@@ -665,16 +665,22 @@ class MenuItemTask(ItemTask):
             if extra_customizations:
                 parts.append(f"with {', '.join(extra_customizations)}")
 
-        # Add side choice info for omelettes
-        elif self.side_choice == "bagel" and self.bagel_choice:
-            bagel_parts = [self.bagel_choice, "bagel"]
-            if self.toasted:
-                bagel_parts.append("toasted")
-            if self.spread:
-                bagel_parts.append(f"with {self.spread}")
-            parts.append(f"with {' '.join(bagel_parts)}")
-        elif self.side_choice == "fruit_salad":
-            parts.append("with fruit salad")
+        # Add side choice info (data-driven approach)
+        elif self.side_choice:
+            # Check for {side_choice}_choice field dynamically
+            choice_field = f"{self.side_choice}_choice"
+            specific_choice = getattr(self, choice_field, None)
+            if specific_choice:
+                side_parts = [specific_choice, self.side_choice]
+                if self.toasted:
+                    side_parts.append("toasted")
+                if self.spread:
+                    side_parts.append(f"with {self.spread}")
+                parts.append(f"with {' '.join(side_parts)}")
+            else:
+                # Side has no sub-selection
+                side_display = self.side_choice.replace("_", " ")
+                parts.append(f"with {side_display}")
 
         if self.modifications:
             parts.append(f"({', '.join(self.modifications)})")
@@ -691,12 +697,18 @@ class MenuItemTask(ItemTask):
         return " ".join(parts)
 
     def get_missing_customizations(self) -> list[str]:
-        """Get list of missing required customizations."""
+        """Get list of missing required customizations.
+
+        Uses data-driven approach: check for {side_choice}_choice field dynamically.
+        """
         missing = []
         if self.requires_side_choice and not self.side_choice:
             missing.append("side_choice")
-        if self.side_choice == "bagel" and not self.bagel_choice:
-            missing.append("bagel_choice")
+        # Check if side_choice type needs a specific choice (e.g., bagel_choice for bagel)
+        if self.side_choice:
+            choice_field = f"{self.side_choice}_choice"
+            if hasattr(self, choice_field) and getattr(self, choice_field, None) is None:
+                missing.append(choice_field)
         return missing
 
     def is_fully_customized(self) -> bool:

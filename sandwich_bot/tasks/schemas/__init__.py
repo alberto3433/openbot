@@ -46,7 +46,7 @@ from .parser_responses import (
 )
 from .modifiers import (
     ExtractedModifiers,
-    ExtractedCoffeeModifiers,
+    QuantifiedModifier as ExtractedQuantifiedModifier,
 )
 from .result import StateMachineResult
 
@@ -91,7 +91,6 @@ __all__ = [
     "PhoneResponse",
     # Modifiers
     "ExtractedModifiers",
-    "ExtractedCoffeeModifiers",
     # Result
     "StateMachineResult",
 ]

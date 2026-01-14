@@ -14,7 +14,6 @@ from sandwich_bot.menu_data_cache import menu_cache
 from ..schemas import (
     OpenInputResponse,
     ExtractedModifiers,
-    ExtractedCoffeeModifiers,
     # Generic type for modifiers with quantity (sweeteners, syrups, etc.)
     QuantifiedModifier,
     # Qualifier conflict model
@@ -801,16 +800,17 @@ def extract_modifiers_with_qualifiers(
 
 def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     """
-    Extract bagel modifiers from user input using keyword matching.
+    Extract food modifiers from user input using keyword matching.
 
     This is a deterministic, non-LLM approach that scans the input for
-    known modifier keywords and extracts them by category.
+    known modifier keywords and extracts them by category. Supports
+    quantity parsing (e.g., "double bacon", "2 eggs", "extra ham").
 
     Args:
         user_input: The raw user input string
 
     Returns:
-        ExtractedModifiers with lists of found proteins, cheeses, toppings, spreads
+        ExtractedModifiers with categorized modifiers (protein, cheese, topping, spread)
     """
     result = ExtractedModifiers()
     input_lower = user_input.lower()
@@ -838,10 +838,42 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
         return before_ok and after_ok
 
     matched_spans: list[tuple[int, int]] = side_of_spans.copy() + bagel_type_spans.copy()
+    # Track which modifiers we've already added (to avoid duplicates)
+    added_modifiers: dict[str, set[str]] = {}
 
-    def find_and_add(modifier_set: set[str], target_list: list[str], category: str):
-        """Find modifiers from a set and add to target list."""
+    def extract_quantity_for_modifier(modifier: str, pos: int) -> int:
+        """Extract quantity prefix for a modifier (e.g., '2 bacon', 'double bacon')."""
+        # Look for quantity words/numbers before the modifier
+        # Check text before the match position
+        before_text = input_lower[:pos].strip()
+        if not before_text:
+            return 1
+
+        # Pattern: number or word directly before modifier
+        qty_pattern = re.compile(
+            r'(\d+|one|two|three|four|five|six|double|triple|extra)\s*$',
+            re.IGNORECASE
+        )
+        qty_match = qty_pattern.search(before_text)
+        if qty_match:
+            qty_str = qty_match.group(1).lower()
+            if qty_str.isdigit():
+                return int(qty_str)
+            elif qty_str == "double":
+                return 2
+            elif qty_str == "triple":
+                return 3
+            elif qty_str == "extra":
+                return 2  # "extra" typically means double
+            else:
+                return WORD_TO_NUM.get(qty_str, 1)
+        return 1
+
+    def find_and_add(modifier_set: set[str], category: str):
+        """Find modifiers from a set and add to result with quantities."""
         sorted_modifiers = sorted(modifier_set, key=len, reverse=True)
+        if category not in added_modifiers:
+            added_modifiers[category] = set()
 
         for modifier in sorted_modifiers:
             start = 0
@@ -859,17 +891,21 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
                     if not overlaps:
                         matched_spans.append((pos, end))
                         normalized = menu_cache.normalize_modifier(modifier)
-                        if normalized not in target_list:
-                            target_list.append(normalized)
-                            logger.debug(f"Extracted {category}: '{modifier}' -> '{normalized}'")
+                        if normalized not in added_modifiers[category]:
+                            added_modifiers[category].add(normalized)
+                            quantity = extract_quantity_for_modifier(modifier, pos)
+                            result.add(category, normalized, quantity)
+                            logger.debug(
+                                f"Extracted {category}: '{modifier}' -> '{normalized}' (qty={quantity})"
+                            )
 
                 start = pos + 1
 
     # Extract in order of specificity
-    find_and_add(get_bagel_spreads(), result.spreads, "spread")
-    find_and_add(get_proteins(), result.proteins, "protein")
-    find_and_add(get_cheeses(), result.cheeses, "cheese")
-    find_and_add(get_toppings(), result.toppings, "topping")
+    find_and_add(get_bagel_spreads(), "spread")
+    find_and_add(get_proteins(), "protein")
+    find_and_add(get_cheeses(), "cheese")
+    find_and_add(get_toppings(), "topping")
 
     # Special case: detect generic "cheese" even if not in database cheeses list
     # This handles "add cheese" where user wants sliced cheese but didn't specify type
@@ -882,12 +918,13 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
         # Check if we found any specific cheese types
         specific_cheeses = ["american", "swiss", "cheddar", "muenster", "provolone",
                             "gouda", "mozzarella", "pepper jack"]
-        has_specific_cheese = any(c in result.cheeses for c in specific_cheeses)
+        cheese_names = result.get_names("cheese")
+        has_specific_cheese = any(c in cheese_names for c in specific_cheeses)
         if not has_specific_cheese:
             # User said "cheese" without a specific type - needs clarification
-            if "cheese" not in result.cheeses:
-                result.cheeses.append("cheese")
-            result.needs_cheese_clarification = True
+            if "cheese" not in cheese_names:
+                result.add("cheese", "cheese")
+            result.needs_clarification["cheese"] = True
             logger.debug("Generic 'cheese' detected - needs clarification")
 
     # Extract special instructions (filter to only bagel-related ones)
@@ -904,17 +941,17 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     return result
 
 
-def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModifiers:
+def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedModifiers:
     """
-    Extract coffee modifiers from user input using keyword matching.
+    Extract coffee/beverage modifiers from user input using keyword matching.
 
     Args:
         user_input: The raw user input string
 
     Returns:
-        ExtractedCoffeeModifiers with sweetener, flavor_syrup, and milk if found
+        ExtractedModifiers with sweetener, syrup, milk, and style categories
     """
-    result = ExtractedCoffeeModifiers()
+    result = ExtractedModifiers()
     input_lower = user_input.lower()
 
     # Get options from database (with fallbacks)
@@ -923,6 +960,7 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
     milk_types = _get_parser_milk_options()
 
     # Extract milk type
+    extracted_milk = None
     for milk in milk_types:
         # Match patterns like "oat milk", "with oat", "almond milk"
         # For "almond", skip if it's followed by "syrup" (almond syrup is a flavor, not milk)
@@ -932,37 +970,38 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
         if re.search(rf'\b{re.escape(milk)}(?:\s+milk)?\b', input_lower):
             # Normalize milk type
             if milk in ("2%", "two percent"):
-                result.milk = "2%"
+                extracted_milk = "2%"
             elif milk in ("half and half", "half & half"):
-                result.milk = "half and half"
+                extracted_milk = "half and half"
             else:
-                result.milk = milk
-            logger.debug(f"Extracted coffee milk: {result.milk}")
+                extracted_milk = milk
+            result.add("milk", extracted_milk)
+            logger.debug(f"Extracted coffee milk: {extracted_milk}")
             break
 
     # Check for "black" (no milk)
-    if not result.milk and re.search(r'\bblack\b', input_lower):
-        result.milk = "none"
+    if not extracted_milk and re.search(r'\bblack\b', input_lower):
+        result.add("milk", "none")
         logger.debug("Extracted coffee milk: none (black)")
 
     # Check for cream level (dark, light, regular)
     # "dark" = less cream/milk, "light" = more cream/milk
     # Note: "light" for cream level is different from "light roast" - context is cream preference
     if re.search(r'\bdark\b', input_lower):
-        result.cream_level = "dark"
-        logger.debug("Extracted coffee cream_level: dark")
+        result.add("style", "dark")
+        logger.debug("Extracted coffee style: dark")
     elif re.search(r'\blight\b', input_lower):
         # Only match "light" if it's not followed by "roast" (to avoid "light roast" confusion)
         if not re.search(r'\blight\s+roast\b', input_lower):
-            result.cream_level = "light"
-            logger.debug("Extracted coffee cream_level: light")
+            result.add("style", "light")
+            logger.debug("Extracted coffee style: light")
     elif re.search(r'\bregular\b', input_lower):
-        result.cream_level = "regular"
-        logger.debug("Extracted coffee cream_level: regular")
+        result.add("style", "regular")
+        logger.debug("Extracted coffee style: regular")
 
     # Check for just "milk" without a type - default to whole milk
-    if not result.milk and re.search(r'\bmilk\b', input_lower):
-        result.milk = "whole"
+    if not result.has_category("milk") and re.search(r'\bmilk\b', input_lower):
+        result.add("milk", "whole")
         logger.debug("Extracted coffee milk: whole (default from 'milk')")
 
     # Extract sweetener with quantity
@@ -975,15 +1014,14 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
         if qty_match:
             qty_str = qty_match.group(1)
             if qty_str.isdigit():
-                result.sweetener_quantity = int(qty_str)
+                quantity = int(qty_str)
             else:
-                result.sweetener_quantity = WORD_TO_NUM.get(qty_str.lower(), 1)
-            result.sweetener = sweetener
-            logger.debug(f"Extracted coffee sweetener: {result.sweetener_quantity} {sweetener}")
+                quantity = WORD_TO_NUM.get(qty_str.lower(), 1)
+            result.add("sweetener", sweetener, quantity)
+            logger.debug(f"Extracted coffee sweetener: {quantity} {sweetener}")
             break
         elif re.search(rf'\b{sweetener}s?\b', input_lower):
-            result.sweetener = sweetener
-            result.sweetener_quantity = 1
+            result.add("sweetener", sweetener, 1)
             logger.debug(f"Extracted coffee sweetener: {sweetener}")
             break
 
@@ -1000,19 +1038,18 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
             if qty_match:
                 qty_str = qty_match.group(1).lower()
                 if qty_str.isdigit():
-                    result.syrup_quantity = int(qty_str)
+                    quantity = int(qty_str)
                 elif qty_str == "double":
-                    result.syrup_quantity = 2
+                    quantity = 2
                 elif qty_str == "triple":
-                    result.syrup_quantity = 3
+                    quantity = 3
                 else:
-                    result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
-                result.flavor_syrup = syrup
-                logger.debug(f"Extracted coffee flavor syrup: {result.syrup_quantity} {syrup}")
+                    quantity = WORD_TO_NUM.get(qty_str, 1)
+                result.add("syrup", syrup, quantity)
+                logger.debug(f"Extracted coffee flavor syrup: {quantity} {syrup}")
                 break
             elif re.search(r'\balmond\s+syrup\b', input_lower):
-                result.flavor_syrup = syrup
-                result.syrup_quantity = 1
+                result.add("syrup", syrup, 1)
                 logger.debug(f"Extracted coffee flavor syrup: {syrup}")
                 break
         else:
@@ -1025,26 +1062,25 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
             if qty_match:
                 qty_str = qty_match.group(1).lower()
                 if qty_str.isdigit():
-                    result.syrup_quantity = int(qty_str)
+                    quantity = int(qty_str)
                 elif qty_str == "double":
-                    result.syrup_quantity = 2
+                    quantity = 2
                 elif qty_str == "triple":
-                    result.syrup_quantity = 3
+                    quantity = 3
                 else:
-                    result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
-                result.flavor_syrup = syrup
-                logger.debug(f"Extracted coffee flavor syrup: {result.syrup_quantity} {syrup}")
+                    quantity = WORD_TO_NUM.get(qty_str, 1)
+                result.add("syrup", syrup, quantity)
+                logger.debug(f"Extracted coffee flavor syrup: {quantity} {syrup}")
                 break
             elif re.search(rf'\b{syrup}\b', input_lower):
-                result.flavor_syrup = syrup
-                result.syrup_quantity = 1
+                result.add("syrup", syrup, 1)
                 logger.debug(f"Extracted coffee flavor syrup: {syrup}")
                 break
 
     # Check for generic "syrup" request without a specific flavor
     # e.g., "with syrup", "add syrup", "2 syrups"
-    if not result.flavor_syrup and re.search(r'\bsyrups?\b', input_lower):
-        result.wants_syrup = True
+    if not result.has_category("syrup") and re.search(r'\bsyrups?\b', input_lower):
+        result.needs_clarification["syrup"] = True
         # Extract quantity from "2 syrups", "two syrups", "double syrup", etc.
         qty_pattern = re.compile(
             r'(\d+|one|two|three|four|five|six|double|triple)\s+syrups?\b',
@@ -1054,14 +1090,16 @@ def extract_coffee_modifiers_from_input(user_input: str) -> ExtractedCoffeeModif
         if qty_match:
             qty_str = qty_match.group(1).lower()
             if qty_str.isdigit():
-                result.syrup_quantity = int(qty_str)
+                quantity = int(qty_str)
             elif qty_str == "double":
-                result.syrup_quantity = 2
+                quantity = 2
             elif qty_str == "triple":
-                result.syrup_quantity = 3
+                quantity = 3
             else:
-                result.syrup_quantity = WORD_TO_NUM.get(qty_str, 1)
-            logger.debug("User requested %d syrups without specifying flavor", result.syrup_quantity)
+                quantity = WORD_TO_NUM.get(qty_str, 1)
+            # Store the requested quantity for when the syrup flavor is specified
+            result.needs_clarification["syrup_quantity"] = quantity
+            logger.debug("User requested %d syrups without specifying flavor", quantity)
         else:
             logger.debug("User requested syrup without specifying flavor")
 
@@ -3981,7 +4019,7 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Get modifiers and attribute options for deprioritizing modifier-based triggers
     all_modifiers = menu_cache.get_all_modifier_words()
     all_attr_options = menu_cache.get_all_attribute_option_words()
-    # Get coffee types - these are primary triggers for sized_beverage, not just modifiers
+    # Get coffee types - these are primary triggers for beverage item types
     coffee_types = get_coffee_types()
     coffee_types_lower = {c.lower() for c in coffee_types}
 
@@ -3994,9 +4032,10 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         # Best: item type matches the trigger word (bagel -> bagel)
         if item_type.lower() == trigger_lower:
             return 0
-        # Also best: trigger is a known coffee/beverage type and item_type is sized_beverage
+        # Also best: trigger is a known coffee/beverage type and item_type is a beverage type
         # e.g., "latte" -> sized_beverage should have high priority
-        if trigger_lower in coffee_types_lower and item_type == "sized_beverage":
+        # Use data-driven check instead of hardcoding "sized_beverage"
+        if trigger_lower in coffee_types_lower and menu_cache.get_modifier_category(item_type) == "beverage":
             return 1
         # Also best: trigger matches another item type name exactly
         # This means the trigger is likely targeting that specific type, not this one
@@ -4658,14 +4697,16 @@ def parse_open_input_deterministic(
     if reduce_to_one_match:
         # Extract item type if specified (any of the capture groups)
         item_type = None
+        all_item_type_slugs = menu_cache.get_configurable_item_types()
         for i in range(1, 6):  # Check all capture groups
             if reduce_to_one_match.group(i):
                 item_type = reduce_to_one_match.group(i).lower()
-                # Normalize plurals
-                if item_type.endswith('s') and item_type not in ('drinks',):
-                    item_type = item_type[:-1]  # bagels -> bagel
-                if item_type == 'drinks':
-                    item_type = 'drink'
+                # Normalize plurals using data-driven approach:
+                # Check if the word matches an item type, if not try without 's'
+                if item_type not in all_item_type_slugs and item_type.endswith('s'):
+                    singular = item_type[:-1]
+                    if singular in all_item_type_slugs:
+                        item_type = singular
                 break
 
         # Return special cancel_item value to signal quantity reduction

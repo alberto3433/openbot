@@ -173,6 +173,9 @@ class MenuDataCache:
         self._item_alias_to_canonical_by_type: dict[str, dict[str, str]] = {}  # item_type_slug -> {alias -> canonical}
         # Ingredients by category (protein, cheese, topping, spread, etc.)
         self._ingredients_by_category: dict[str, set[str]] = {}  # category -> set of names/aliases
+        # Ingredient details by category (for generic modifier handling)
+        # category -> list of {slug, name, aliases: [pattern, ...]}
+        self._ingredient_details_by_category: dict[str, list[dict]] = {}
         # Ingredients valid for each ItemType, grouped by category
         self._ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}  # item_type_slug -> {category -> names}
 
@@ -1286,10 +1289,12 @@ class MenuDataCache:
         For each category, loads:
         - Ingredient names (lowercase)
         - Ingredient aliases (lowercase)
+        - Full ingredient details (slug, name, aliases) for generic modifier handling
         """
         from .models import Ingredient
 
         ingredients_by_category: dict[str, set[str]] = {}
+        ingredient_details_by_category: dict[str, list[dict]] = {}
 
         # Query all ingredients with their aliases
         ingredients = (
@@ -1303,20 +1308,32 @@ class MenuDataCache:
             if not category:
                 continue
 
-            # Initialize set for this category if needed
+            # Initialize structures for this category if needed
             if category not in ingredients_by_category:
                 ingredients_by_category[category] = set()
+                ingredient_details_by_category[category] = []
 
             # Add ingredient name (lowercase for matching)
-            ingredients_by_category[category].add(ing.name.lower())
+            name_lower = ing.name.lower()
+            ingredients_by_category[category].add(name_lower)
 
-            # Add aliases
+            # Build list of all matching patterns (name + aliases, lowercase)
+            patterns = [name_lower]
             for alias in ing.aliases:
                 alias_lower = alias.strip().lower()
                 if alias_lower:
                     ingredients_by_category[category].add(alias_lower)
+                    patterns.append(alias_lower)
+
+            # Store full ingredient details for generic modifier handling
+            ingredient_details_by_category[category].append({
+                "slug": ing.slug,
+                "name": ing.name,  # Original display name
+                "patterns": patterns,  # All lowercase patterns for matching
+            })
 
         self._ingredients_by_category = ingredients_by_category
+        self._ingredient_details_by_category = ingredient_details_by_category
 
         logger.debug(
             "Loaded generic ingredients for %d categories: %s",
@@ -1696,6 +1713,47 @@ class MenuDataCache:
             # Return empty set for unknown categories (not an error)
             return set()
         return self._ingredients_by_category[category].copy()
+
+    def get_ingredient_details(self, category: str) -> list[dict]:
+        """Get full ingredient details for a category (slug, name, patterns).
+
+        This is the generic method for data-driven modifier handling.
+        Returns ingredient details including database slugs for storage
+        and display names for UI, replacing domain-specific functions like
+        _get_milk_options_espresso(), _get_sweetener_options(), etc.
+
+        Args:
+            category: The ingredient category (e.g., "milk", "sweetener", "syrup")
+
+        Returns:
+            List of ingredient detail dicts, each containing:
+            - slug: Database identifier (e.g., "oat_milk")
+            - name: Display name (e.g., "Oat Milk")
+            - patterns: List of lowercase patterns for matching (name + aliases)
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredient_details("milk")
+            [
+                {"slug": "oat_milk", "name": "Oat Milk", "patterns": ["oat milk", "oat"]},
+                {"slug": "whole_milk", "name": "Whole Milk", "patterns": ["whole milk", "whole"]},
+                ...
+            ]
+            >>> menu_cache.get_ingredient_details("sweetener")
+            [
+                {"slug": "sugar", "name": "Sugar", "patterns": ["sugar"]},
+                {"slug": "splenda", "name": "Splenda", "patterns": ["splenda"]},
+                ...
+            ]
+        """
+        self._ensure_loaded()
+        if category not in self._ingredient_details_by_category:
+            # Return empty list for unknown categories (not an error)
+            return []
+        # Return a deep copy to prevent mutation
+        return [detail.copy() for detail in self._ingredient_details_by_category[category]]
 
     def get_ingredients_for_item_type(
         self, item_type_slug: str, category: str | None = None

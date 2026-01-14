@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache, singularize
 from .models import OrderTask, MenuItemTask
-from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers, ExtractedCoffeeModifiers
+from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers import extract_modifiers_from_input, extract_coffee_modifiers_from_input
 from .handler_config import BaseHandler
@@ -966,20 +966,20 @@ class MenuItemConfigHandler(BaseHandler):
 
     def _extract_modifiers_from_input(
         self, user_input: str, item_type: str
-    ) -> ExtractedModifiers | ExtractedCoffeeModifiers | None:
+    ) -> ExtractedModifiers | None:
         """
         Extract modifiers from user input based on item type.
 
         Uses the appropriate extraction function for the item type:
-        - Food items: extract_modifiers_from_input() -> ExtractedModifiers
-        - Beverage items: extract_coffee_modifiers_from_input() -> ExtractedCoffeeModifiers
+        - Food items: extract_modifiers_from_input() -> ExtractedModifiers (protein, cheese, topping, spread)
+        - Beverage items: extract_coffee_modifiers_from_input() -> ExtractedModifiers (milk, sweetener, syrup, style)
 
         Args:
             user_input: Raw user input string
             item_type: The item type slug (e.g., "deli_sandwich", "espresso")
 
         Returns:
-            ExtractedModifiers or ExtractedCoffeeModifiers, or None if no extraction
+            ExtractedModifiers with category-based storage, or None if no extraction
             is configured for this item type
         """
         # Get modifier category from database via menu_cache
@@ -992,20 +992,20 @@ class MenuItemConfigHandler(BaseHandler):
                 return modifiers
         elif extraction_type == "beverage":
             modifiers = extract_coffee_modifiers_from_input(user_input)
-            if modifiers.milk or modifiers.sweetener or modifiers.flavor_syrup or modifiers.has_special_instructions():
+            if modifiers.has_modifiers() or modifiers.has_special_instructions():
                 logger.debug("Extracted beverage modifiers from input: %s", modifiers)
                 return modifiers
 
         return None
 
     def _apply_extracted_modifiers(
-        self, item: MenuItemTask, modifiers: ExtractedModifiers | ExtractedCoffeeModifiers
+        self, item: MenuItemTask, modifiers: ExtractedModifiers
     ) -> str | None:
         """
         Apply extracted modifiers to a menu item.
 
         Handles both food-style modifiers (proteins, cheeses, etc.) and
-        beverage-style modifiers (milk, sweetener, syrup).
+        beverage-style modifiers (milk, sweetener, syrup) using category-based access.
 
         Args:
             item: The menu item to apply modifiers to
@@ -1016,84 +1016,85 @@ class MenuItemConfigHandler(BaseHandler):
         """
         added_items = []
 
-        if isinstance(modifiers, ExtractedModifiers):
-            # Apply food-style modifiers
-            # Proteins: first one to extra_protein if not set, rest to toppings
-            if modifiers.proteins:
-                if not item.extra_protein:
-                    item.extra_protein = modifiers.proteins[0]
-                    item.toppings.extend(modifiers.proteins[1:])
-                else:
-                    item.toppings.extend(modifiers.proteins)
-                added_items.extend(modifiers.proteins)
+        # Apply food-style modifiers (protein, cheese, topping, spread categories)
+        # Proteins: first one to extra_protein if not set, rest to toppings
+        proteins = modifiers.get_names("protein")
+        if proteins:
+            if not item.extra_protein:
+                item.extra_protein = proteins[0]
+                item.toppings.extend(proteins[1:])
+            else:
+                item.toppings.extend(proteins)
+            added_items.extend(proteins)
 
-            # Cheeses to toppings
-            if modifiers.needs_cheese_clarification:
-                if "cheese" not in item.toppings:
-                    item.toppings.append("cheese")
-                item.needs_cheese_clarification = True
-                added_items.append("cheese")
-            elif modifiers.cheeses:
-                item.toppings.extend(modifiers.cheeses)
-                added_items.extend(modifiers.cheeses)
+        # Cheeses to toppings
+        if modifiers.needs_clarification.get("cheese"):
+            if "cheese" not in item.toppings:
+                item.toppings.append("cheese")
+            item.needs_cheese_clarification = True
+            added_items.append("cheese")
+        else:
+            cheeses = modifiers.get_names("cheese")
+            if cheeses:
+                item.toppings.extend(cheeses)
+                added_items.extend(cheeses)
 
-            # Toppings from modifiers to item.toppings
-            if modifiers.toppings:
-                item.toppings.extend(modifiers.toppings)
-                added_items.extend(modifiers.toppings)
+        # Toppings from modifiers to item.toppings
+        toppings = modifiers.get_names("topping")
+        if toppings:
+            item.toppings.extend(toppings)
+            added_items.extend(toppings)
 
-            # Spreads: set if not already set
-            if modifiers.spreads and not item.spread:
-                item.spread = modifiers.spreads[0]
-                added_items.extend(modifiers.spreads)
+        # Spreads: set if not already set
+        spreads = modifiers.get_names("spread")
+        if spreads and not item.spread:
+            item.spread = spreads[0]
+            added_items.extend(spreads)
 
-            # Special instructions
-            if modifiers.has_special_instructions():
-                existing = item.special_instructions or ""
-                new_instr = modifiers.get_special_instructions_string()
-                item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
+        # Apply beverage-style modifiers (milk, sweetener, syrup, style categories)
+        milk = modifiers.get_first("milk")
+        if milk and "milk" not in item.attribute_values:
+            item.milk = milk.name
+            item.attribute_values["milk"] = milk.name
+            added_items.append(milk.name)
 
-        elif isinstance(modifiers, ExtractedCoffeeModifiers):
-            # Apply beverage-style modifiers using attribute_values AND proper list fields
-            if modifiers.milk and "milk" not in item.attribute_values:
-                item.milk = modifiers.milk
-                item.attribute_values["milk"] = modifiers.milk
-                added_items.append(modifiers.milk)
+        sweetener = modifiers.get_first("sweetener")
+        if sweetener and "sweetener" not in item.attribute_values:
+            # Store in attribute_values for backwards compatibility
+            item.attribute_values["sweetener"] = sweetener.name
+            if sweetener.quantity > 1:
+                item.attribute_values["sweetener_quantity"] = sweetener.quantity
+            # Also store in sweeteners list for proper data model
+            sweetener_entry = {
+                "type": sweetener.name,
+                "quantity": sweetener.quantity
+            }
+            item.sweeteners.append(sweetener_entry)
+            added_items.append(sweetener.name)
 
-            if modifiers.sweetener and "sweetener" not in item.attribute_values:
-                # Store in attribute_values for backwards compatibility
-                item.attribute_values["sweetener"] = modifiers.sweetener
-                if modifiers.sweetener_quantity > 1:
-                    item.attribute_values["sweetener_quantity"] = modifiers.sweetener_quantity
-                # Also store in sweeteners list for proper data model
-                sweetener_entry = {
-                    "type": modifiers.sweetener,
-                    "quantity": modifiers.sweetener_quantity or 1
-                }
-                item.sweeteners.append(sweetener_entry)
-                added_items.append(modifiers.sweetener)
+        syrup = modifiers.get_first("syrup")
+        if syrup and "flavor_syrup" not in item.attribute_values:
+            # Store in attribute_values for backwards compatibility
+            item.attribute_values["flavor_syrup"] = syrup.name
+            if syrup.quantity > 1:
+                item.attribute_values["syrup_quantity"] = syrup.quantity
+            # Also store in flavor_syrups list for proper data model
+            syrup_entry = {
+                "type": syrup.name,
+                "quantity": syrup.quantity
+            }
+            item.flavor_syrups.append(syrup_entry)
+            added_items.append(f"{syrup.name} syrup")
 
-            if modifiers.flavor_syrup and "flavor_syrup" not in item.attribute_values:
-                # Store in attribute_values for backwards compatibility
-                item.attribute_values["flavor_syrup"] = modifiers.flavor_syrup
-                if modifiers.syrup_quantity > 1:
-                    item.attribute_values["syrup_quantity"] = modifiers.syrup_quantity
-                # Also store in flavor_syrups list for proper data model
-                syrup_entry = {
-                    "type": modifiers.flavor_syrup,
-                    "quantity": modifiers.syrup_quantity or 1
-                }
-                item.flavor_syrups.append(syrup_entry)
-                added_items.append(f"{modifiers.flavor_syrup} syrup")
+        style = modifiers.get_first("style")
+        if style and "cream_level" not in item.attribute_values:
+            item.attribute_values["cream_level"] = style.name
 
-            if modifiers.cream_level and "cream_level" not in item.attribute_values:
-                item.attribute_values["cream_level"] = modifiers.cream_level
-
-            # Special instructions
-            if modifiers.has_special_instructions():
-                existing = item.special_instructions or ""
-                new_instr = modifiers.get_special_instructions_string()
-                item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
+        # Special instructions (applies to both food and beverage)
+        if modifiers.has_special_instructions():
+            existing = item.special_instructions or ""
+            new_instr = modifiers.get_special_instructions_string()
+            item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
 
         # Build acknowledgment string
         if not added_items:
@@ -1699,37 +1700,41 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Apply extracted modifiers to item using proper data structures
         applied = []
-        if modifiers.milk:
-            item.milk = modifiers.milk
-            applied.append(modifiers.milk + " milk")
+        milk = modifiers.get_first("milk")
+        if milk:
+            item.milk = milk.name
+            applied.append(milk.name + " milk")
 
-        if modifiers.sweetener:
+        sweetener = modifiers.get_first("sweetener")
+        if sweetener:
             # Use sweeteners list format: [{"type": "sugar", "quantity": 2}]
             sweetener_entry = {
-                "type": modifiers.sweetener,
-                "quantity": modifiers.sweetener_quantity or 1
+                "type": sweetener.name,
+                "quantity": sweetener.quantity
             }
             item.sweeteners.append(sweetener_entry)
-            if modifiers.sweetener_quantity > 1:
-                applied.append(f"{modifiers.sweetener_quantity} {modifiers.sweetener}")
+            if sweetener.quantity > 1:
+                applied.append(f"{sweetener.quantity} {sweetener.name}")
             else:
-                applied.append(modifiers.sweetener)
+                applied.append(sweetener.name)
 
-        if modifiers.flavor_syrup:
+        syrup = modifiers.get_first("syrup")
+        if syrup:
             # Use flavor_syrups list format: [{"type": "vanilla", "quantity": 1}]
             syrup_entry = {
-                "type": modifiers.flavor_syrup,
-                "quantity": modifiers.syrup_quantity or 1
+                "type": syrup.name,
+                "quantity": syrup.quantity
             }
             item.flavor_syrups.append(syrup_entry)
-            if modifiers.syrup_quantity > 1:
-                applied.append(f"{modifiers.syrup_quantity} pumps {modifiers.flavor_syrup}")
+            if syrup.quantity > 1:
+                applied.append(f"{syrup.quantity} pumps {syrup.name}")
             else:
-                applied.append(f"{modifiers.flavor_syrup} syrup")
+                applied.append(f"{syrup.name} syrup")
 
-        if modifiers.cream_level:
-            item.cream_level = modifiers.cream_level
-            applied.append(modifiers.cream_level + " cream")
+        style = modifiers.get_first("style")
+        if style:
+            item.cream_level = style.name
+            applied.append(style.name + " cream")
 
         # If nothing was extracted, ask again
         if not applied:
@@ -2075,14 +2080,17 @@ class MenuItemConfigHandler(BaseHandler):
             stored_modifiers = {"_quantity": quantity}
             if extracted_mods:
                 # Convert extracted modifiers to dict for storage
-                if hasattr(extracted_mods, "milk") and extracted_mods.milk:
-                    stored_modifiers["milk"] = extracted_mods.milk
-                if hasattr(extracted_mods, "sweetener") and extracted_mods.sweetener:
-                    stored_modifiers["sweetener"] = extracted_mods.sweetener
-                if hasattr(extracted_mods, "syrup") and extracted_mods.syrup:
-                    stored_modifiers["syrup"] = extracted_mods.syrup
-                if hasattr(extracted_mods, "size") and extracted_mods.size:
-                    stored_modifiers["size"] = extracted_mods.size
+                milk = extracted_mods.get_first("milk")
+                if milk:
+                    stored_modifiers["milk"] = milk.name
+                sweetener = extracted_mods.get_first("sweetener")
+                if sweetener:
+                    stored_modifiers["sweetener"] = sweetener.name
+                    stored_modifiers["sweetener_quantity"] = sweetener.quantity
+                syrup = extracted_mods.get_first("syrup")
+                if syrup:
+                    stored_modifiers["syrup"] = syrup.name
+                    stored_modifiers["syrup_quantity"] = syrup.quantity
                 # Note: temperature comes from parsed items, not modifier extraction
 
             # Store disambiguation state

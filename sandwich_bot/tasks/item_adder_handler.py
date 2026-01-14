@@ -19,6 +19,7 @@ from .schemas import OrderPhase, StateMachineResult, BagelOrderDetails, Extracte
 from .handler_config import HandlerConfig
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink
 from .disambiguation_handler import DisambiguationHandler
+from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
@@ -108,7 +109,7 @@ class ItemAdderHandler:
         Returns:
             StateMachineResult with next question or confirmation
         """
-        from .schemas import ExtractedCoffeeModifiers
+        from .schemas import ExtractedModifiers
 
         quantity = max(1, quantity)
 
@@ -123,7 +124,8 @@ class ItemAdderHandler:
         )
 
         # Handle beverages that may need disambiguation
-        if item_type == "sized_beverage" or kwargs.get("coffee_type") or kwargs.get("drink_type"):
+        is_beverage_type = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
+        if is_beverage_type or kwargs.get("coffee_type") or kwargs.get("drink_type"):
             drink_name = kwargs.get("coffee_type") or kwargs.get("drink_type") or ""
             drink_name_lower = drink_name.lower().strip()
             standard_coffee_types = get_coffee_types()
@@ -193,7 +195,8 @@ class ItemAdderHandler:
 
         # Build extracted modifiers for beverages
         extracted_modifiers = kwargs.get("extracted_modifiers")
-        if item_type == "sized_beverage" and not extracted_modifiers:
+        is_beverage = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
+        if is_beverage and not extracted_modifiers:
             # Create coffee modifiers from kwargs if not already provided
             sweetener = kwargs.get("sweetener")
             sweetener_quantity = kwargs.get("sweetener_quantity", 1)
@@ -203,15 +206,17 @@ class ItemAdderHandler:
             cream_level = kwargs.get("cream_level")
             special_instructions = kwargs.get("special_instructions")
             if any([sweetener, flavor_syrup, milk, cream_level, special_instructions]):
-                extracted_modifiers = ExtractedCoffeeModifiers(
-                    sweetener=sweetener,
-                    sweetener_quantity=sweetener_quantity,
-                    flavor_syrup=flavor_syrup,
-                    syrup_quantity=syrup_quantity,
-                    milk=milk,
-                    cream_level=cream_level,
-                    special_instructions=[special_instructions] if special_instructions else [],
-                )
+                extracted_modifiers = ExtractedModifiers()
+                if sweetener:
+                    extracted_modifiers.add("sweetener", sweetener, sweetener_quantity)
+                if flavor_syrup:
+                    extracted_modifiers.add("syrup", flavor_syrup, syrup_quantity)
+                if milk:
+                    extracted_modifiers.add("milk", milk)
+                if cream_level:
+                    extracted_modifiers.add("style", cream_level)
+                if special_instructions:
+                    extracted_modifiers.special_instructions = [special_instructions]
 
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
@@ -230,7 +235,7 @@ class ItemAdderHandler:
         )
 
         # Apply beverage-specific properties not in standard attributes
-        if item_type == "sized_beverage":
+        if item_type and menu_cache.get_modifier_category(item_type) == "beverage":
             drink_name = kwargs.get("coffee_type") or kwargs.get("drink_type")
             for item in order.items.items:
                 if (getattr(item, 'menu_item_name', None) == drink_name and
@@ -261,11 +266,13 @@ class ItemAdderHandler:
             Dict with name, item_type, base_price, id, is_signature
         """
         # Determine canonical name and price
-        if item_type == "bagel":
+        is_bread_item = item_type and menu_cache.item_type_has_attribute(item_type, "bread")
+        is_beverage_item = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
+        if is_bread_item:
             canonical_name = "Bagel"
             base_price = self.pricing.lookup_base_price("Bagel") if self.pricing else 0.0
             menu_item_id = None
-        elif item_type == "sized_beverage":
+        elif is_beverage_item:
             canonical_name = kwargs.get("coffee_type") or kwargs.get("drink_type") or item_name
             # Look up price from menu or pricing engine
             menu_data = self.menu_lookup.lookup_menu_item(canonical_name) if self.menu_lookup else None

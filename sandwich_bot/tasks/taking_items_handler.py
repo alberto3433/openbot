@@ -24,7 +24,6 @@ from .schemas import (
     StateMachineResult,
     OpenInputResponse,
     ExtractedModifiers,
-    ExtractedCoffeeModifiers,
     CoffeeOrderDetails,
     # ParsedItem types for multi-item handling
     ParsedItemEntry,  # New unified type
@@ -123,99 +122,189 @@ def _is_coffee_entry(item: "ParsedItem") -> bool:
     return getattr(item, 'type', None) == "coffee"
 
 
-def _get_syrup_options() -> list[str]:
-    """Get syrup options from database, converted to lowercase for matching.
+def _get_beverage_modifier_patterns(category: str) -> set[str]:
+    """Get all matching patterns for a beverage modifier category.
 
-    Returns list of syrup names like ["vanilla", "caramel", "hazelnut", ...].
+    This is the generic replacement for _get_syrup_options(), _get_sweetener_options(), etc.
+    Returns a flat set of all patterns that can match this category for input detection.
 
-    Raises:
-        MenuDataNotLoadedError: If menu cache is not loaded
-    """
-    db_syrups = menu_cache.get_ingredients("syrup")
-    # Convert display names like "Vanilla Syrup" -> "vanilla"
-    return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
+    Args:
+        category: The ingredient category (e.g., "syrup", "milk", "sweetener")
 
-
-def _get_milk_options_coffee() -> list[tuple[str, str]]:
-    """Get milk options for sized_beverage MenuItemTask from database.
-
-    Returns list of (pattern, value) tuples like [("oat milk", "oat"), ...].
+    Returns:
+        Set of lowercase patterns for matching user input.
 
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_milks = menu_cache.get_ingredients("milk")
-    options = []
-    for milk in db_milks:
-        milk_lower = milk.lower()
-        # Create value: "Oat Milk" -> "oat", "Half & Half" -> "half and half"
-        value = milk_lower.replace(" milk", "").replace("&", "and").strip()
-        # Add full pattern first ("oat milk"), then short form ("oat")
-        options.append((milk_lower.replace("&", "and"), value))
-        short_form = value.replace(" and ", " ").strip()
-        if short_form != milk_lower.replace("&", "and"):
-            options.append((short_form, value))
-    # Add generic "milk" at the end to default to whole milk
-    options.append(("milk", "whole"))
-    return options
+    details = menu_cache.get_ingredient_details(category)
+    patterns = set()
+    for detail in details:
+        patterns.update(detail["patterns"])
+    return patterns
 
 
-def _get_milk_options_espresso() -> list[tuple[str, str, str]]:
-    """Get milk options for espresso-type MenuItemTask from database.
+def _match_beverage_modifier(
+    input_lower: str, category: str
+) -> dict | None:
+    """Match user input against a beverage modifier category and return details.
 
-    Returns list of (pattern, slug, display_name) tuples.
+    This is the generic replacement for the various _get_*_options functions.
+    Uses database slugs and display names instead of manually constructing them.
 
-    Raises:
-        MenuDataNotLoadedError: If menu cache is not loaded
-    """
-    db_milks = menu_cache.get_ingredients("milk")
-    options = []
-    for milk in db_milks:
-        milk_lower = milk.lower()
-        # Create slug: "Oat Milk" -> "oat_milk", "Half & Half" -> "half_n_half"
-        slug = milk_lower.replace(" ", "_").replace("&", "n").replace("__", "_")
-        display = milk  # Keep original display name
-        # Add full pattern first
-        pattern = milk_lower.replace("&", "and")
-        options.append((pattern, slug, display))
-        # Add short form (without "milk")
-        short_form = milk_lower.replace(" milk", "").replace("&", "and").strip()
-        if short_form != pattern:
-            options.append((short_form, slug, display))
-    return options
+    Args:
+        input_lower: Lowercase user input to match against
+        category: The ingredient category (e.g., "syrup", "milk", "sweetener")
 
-
-def _get_sweetener_options() -> list[str]:
-    """Get sweetener options from database, converted to lowercase for matching.
-
-    Returns list of sweetener names like ["sugar", "splenda", ...].
+    Returns:
+        Dict with {slug, name, pattern} if matched, None otherwise.
+        - slug: Database identifier for storage (e.g., "oat_milk")
+        - name: Display name for UI (e.g., "Oat Milk")
+        - pattern: The pattern that matched (e.g., "oat")
 
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_sweeteners = menu_cache.get_ingredients("sweetener")
-    # Convert display names to lowercase patterns
-    # Handle special cases like "Sweet N Low" -> "sweet n low"
-    return [s.lower().replace("'", "").strip() for s in db_sweeteners]
+    details = menu_cache.get_ingredient_details(category)
+    for detail in details:
+        for pattern in detail["patterns"]:
+            if pattern in input_lower:
+                return {
+                    "slug": detail["slug"],
+                    "name": detail["name"],
+                    "pattern": pattern,
+                }
+    return None
 
 
-def _get_sweetener_options_espresso() -> list[tuple[str, str, str]]:
-    """Get sweetener options for espresso-type MenuItemTask from database.
+def _get_all_beverage_modifier_patterns() -> set[str]:
+    """Get all beverage modifier patterns for input detection.
 
-    Returns list of (name, slug, display_name) tuples.
+    Returns combined patterns for syrup, milk, and sweetener categories.
+    Used to detect if user input contains any beverage modifier.
 
-    Raises:
-        MenuDataNotLoadedError: If menu cache is not loaded
+    Returns:
+        Set of all beverage modifier patterns (lowercase).
     """
-    db_sweeteners = menu_cache.get_ingredients("sweetener")
-    options = []
-    for sweetener in db_sweeteners:
-        name = sweetener.lower().replace("'", "").strip()
-        # Create slug: "Sweet N Low" -> "sweet_n_low"
-        slug = name.replace(" ", "_")
-        display = sweetener
-        options.append((name, slug, display))
-    return options
+    patterns = set()
+    for category in ["syrup", "milk", "sweetener"]:
+        patterns.update(_get_beverage_modifier_patterns(category))
+    # Add generic category keywords
+    patterns.update({"syrup", "sweetener", "milk"})
+    return patterns
+
+
+def _extract_quantity_from_input(input_lower: str, pattern: str) -> int:
+    """Extract quantity from user input for a modifier.
+
+    Handles patterns like "2 vanilla", "two sugars", "double shot".
+
+    Args:
+        input_lower: Lowercase user input
+        pattern: The modifier pattern to look for quantity before
+
+    Returns:
+        Quantity (defaults to 1 if not found)
+    """
+    word_to_num = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "double": 2, "triple": 3
+    }
+    qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{re.escape(pattern)}', input_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        return int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
+    return 1
+
+
+def _add_beverage_modifier_to_item(
+    item: "MenuItemTask",
+    slug: str,
+    display_name: str,
+    quantity: int = 1,
+    category: str | None = None,
+) -> bool:
+    """Add a beverage modifier to an item using the unified storage model.
+
+    Uses milk_sweetener_syrup_selections for all beverage modifiers.
+    This is the single unified storage model for milk, sweeteners, and syrups.
+
+    Args:
+        item: The MenuItemTask to modify
+        slug: Database slug for the modifier (e.g., "oat_milk")
+        display_name: Display name for the modifier (e.g., "Oat Milk")
+        quantity: Quantity (default 1, used for sweeteners/syrups)
+        category: Optional category for logging ("milk", "sweetener", "syrup")
+
+    Returns:
+        True if modifier was added, False if already present
+    """
+    # Get current selections (unified storage)
+    mss_slugs = item.attribute_values.get("milk_sweetener_syrup", [])
+    mss_selections = item.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+    # Check if already present
+    if slug in mss_slugs:
+        return False
+
+    # Add the modifier
+    mss_slugs.append(slug)
+    mss_selections.append({
+        "slug": slug,
+        "display_name": display_name,
+        "quantity": quantity,
+    })
+
+    # Update item
+    item.attribute_values["milk_sweetener_syrup"] = mss_slugs
+    item.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+    logger.info(
+        "Added %s modifier: %s (qty=%d) to %s",
+        category or "beverage",
+        slug,
+        quantity,
+        item.item_name or item.menu_item_type
+    )
+    return True
+
+
+def _add_beverage_modifiers_from_input(
+    item: "MenuItemTask",
+    input_lower: str,
+) -> bool:
+    """Add all matching beverage modifiers from user input to an item.
+
+    Scans input for milk, sweetener, and syrup modifiers and adds them
+    using the unified storage model (milk_sweetener_syrup_selections).
+
+    Args:
+        item: The MenuItemTask to modify
+        input_lower: Lowercase user input to scan for modifiers
+
+    Returns:
+        True if any modifiers were added, False otherwise
+    """
+    made_change = False
+
+    # Check each beverage modifier category
+    for category in ["syrup", "milk", "sweetener"]:
+        match = _match_beverage_modifier(input_lower, category)
+        if match:
+            # Extract quantity from input
+            quantity = _extract_quantity_from_input(input_lower, match["pattern"])
+
+            # Add to item using unified storage
+            if _add_beverage_modifier_to_item(
+                item,
+                slug=match["slug"],
+                display_name=match["name"],
+                quantity=quantity,
+                category=category,
+            ):
+                made_change = True
+
+    return made_change
 
 
 def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
@@ -541,22 +630,21 @@ class TakingItemsHandler:
             re.search(pattern, input_lower) for pattern in add_modifier_patterns
         )
 
-        # Coffee modifiers that should trigger modification instead of new item
-        # Build from database-driven helper functions
-        coffee_modifiers = set(_get_syrup_options()) | {"syrup"}
-        coffee_modifiers |= {pattern for pattern, _ in _get_milk_options_coffee()}
-        coffee_modifiers |= set(_get_sweetener_options()) | {"sweetener"}
-
-        has_coffee_modifier = any(mod in input_lower for mod in coffee_modifiers)
+        # Beverage modifiers that should trigger modification instead of new item
+        # Built from database using generic helper
+        beverage_modifiers = _get_all_beverage_modifier_patterns()
+        has_beverage_modifier = any(mod in input_lower for mod in beverage_modifiers)
 
         # Check if this is a pure modifier input (e.g., "2 vanilla syrups", "vanilla syrup")
         # that should be added to an existing beverage
         is_pure_modifier_input = False
-        if has_coffee_modifier and active_items:
+        if has_beverage_modifier and active_items:
             last_item = active_items[-1]
+            # Check if item is a beverage (has milk attribute or beverage modifier category)
             is_beverage = (
                 isinstance(last_item, MenuItemTask) and
-                last_item.has_attribute("milk")  # Beverages have milk attribute
+                (last_item.has_attribute("milk") or
+                 menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
             )
             if is_beverage:
                 # Check if input is ONLY a modifier (no other item keywords)
@@ -567,143 +655,19 @@ class TakingItemsHandler:
                     is_pure_modifier_input = True
 
         # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
-        if (is_add_modifier_request or is_pure_modifier_input) and has_coffee_modifier and active_items:
+        if (is_add_modifier_request or is_pure_modifier_input) and has_beverage_modifier and active_items:
             last_item = active_items[-1]
-            if isinstance(last_item, MenuItemTask) and last_item.has_attribute("milk"):
-                made_change = False
-
-                # Check for syrup - add to array if not already present
-                syrup_options = _get_syrup_options()
-                for syrup in syrup_options:
-                    if syrup in input_lower:
-                        # Check if this syrup is already in the list
-                        existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
-                        if syrup not in existing_syrups:
-                            # Extract quantity: "2 vanilla syrups", "double vanilla"
-                            quantity = 1
-                            qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{syrup}', input_lower)
-                            if qty_match:
-                                qty_str = qty_match.group(1)
-                                word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "double": 2, "triple": 3}
-                                quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                            last_item.flavor_syrups.append({"flavor": syrup, "quantity": quantity})
-                            logger.info("Early add modifier: added syrup '%s' (qty=%d) to coffee (now has %d syrups)",
-                                      syrup, quantity, len(last_item.flavor_syrups))
-                            made_change = True
-                        break
-
-                # Check for milk options (alternatives and regular)
-                milk_options = _get_milk_options_coffee()
-                for pattern, milk_value in milk_options:
-                    if pattern in input_lower:
-                        if last_item.milk != milk_value:
-                            old_milk = last_item.milk or "none"
-                            last_item.milk = milk_value
-                            logger.info("Early add modifier: added milk '%s' to coffee (was '%s')", milk_value, old_milk)
-                            made_change = True
-                        break
-
-                # Check for sweeteners - add to array if not already present
-                sweetener_options = _get_sweetener_options()
-                for sweetener in sweetener_options:
-                    if sweetener in input_lower:
-                        # Check if this sweetener type is already in the list
-                        existing_sweeteners = [s.get("type") for s in last_item.sweeteners]
-                        if sweetener not in existing_sweeteners:
-                            quantity = 1
-                            # Check for quantity: "two sugars", "2 splenda"
-                            qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener}', input_lower)
-                            if qty_match:
-                                qty_str = qty_match.group(1)
-                                word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                                quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                            last_item.sweeteners.append({"type": sweetener, "quantity": quantity})
-                            logger.info("Early add modifier: added sweetener '%s' (qty=%d) to coffee",
-                                      sweetener, quantity)
-                            made_change = True
-                        break
+            # Unified beverage modifier handling using milk_sweetener_syrup_selections
+            is_beverage = (
+                isinstance(last_item, MenuItemTask) and
+                (last_item.has_attribute("milk") or
+                 menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
+            )
+            if is_beverage:
+                made_change = _add_beverage_modifiers_from_input(last_item, input_lower)
 
                 if made_change:
                     self.pricing.recalculate_item_price(last_item)
-                    updated_summary = last_item.get_summary()
-                    return StateMachineResult(
-                        message=f"Sure, I've added that to your {updated_summary}. Anything else?",
-                        order=order,
-                    )
-
-            # Also handle beverage MenuItemTask (espresso and other beverage types)
-            elif isinstance(last_item, MenuItemTask) and menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage":
-                made_change = False
-
-                # Get current milk_sweetener_syrup selections
-                mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
-                mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
-
-                # Check for syrup - add to attribute_values
-                syrup_options = _get_syrup_options()
-                for syrup in syrup_options:
-                    if syrup in input_lower:
-                        syrup_slug = syrup.lower().replace(" ", "_")
-                        if syrup_slug not in mss_slugs:
-                            # Extract quantity
-                            quantity = 1
-                            qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{syrup}', input_lower)
-                            if qty_match:
-                                qty_str = qty_match.group(1)
-                                word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "double": 2, "triple": 3}
-                                quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                            mss_slugs.append(syrup_slug)
-                            mss_selections.append({
-                                "slug": syrup_slug,
-                                "display_name": syrup.title(),
-                                "quantity": quantity,
-                            })
-                            logger.info("Early add modifier: added syrup '%s' (qty=%d) to espresso",
-                                      syrup, quantity)
-                            made_change = True
-                        break
-
-                # Check for milk options
-                milk_options = _get_milk_options_espresso()
-                for pattern, milk_slug, milk_display in milk_options:
-                    if pattern in input_lower:
-                        if milk_slug not in mss_slugs:
-                            mss_slugs.append(milk_slug)
-                            mss_selections.append({
-                                "slug": milk_slug,
-                                "display_name": milk_display,
-                                "quantity": 1,
-                            })
-                            logger.info("Early add modifier: added milk '%s' to espresso", milk_slug)
-                            made_change = True
-                        break
-
-                # Check for sweeteners
-                sweetener_options = _get_sweetener_options_espresso()
-                for sweetener_name, sweetener_slug, sweetener_display in sweetener_options:
-                    if sweetener_name in input_lower:
-                        if sweetener_slug not in mss_slugs:
-                            quantity = 1
-                            qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener_name}', input_lower)
-                            if qty_match:
-                                qty_str = qty_match.group(1)
-                                word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                                quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                            mss_slugs.append(sweetener_slug)
-                            mss_selections.append({
-                                "slug": sweetener_slug,
-                                "display_name": sweetener_display,
-                                "quantity": quantity,
-                            })
-                            logger.info("Early add modifier: added sweetener '%s' (qty=%d) to espresso",
-                                      sweetener_name, quantity)
-                            made_change = True
-                        break
-
-                if made_change:
-                    # Update attribute_values
-                    last_item.attribute_values["milk_sweetener_syrup"] = mss_slugs
-                    last_item.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
                     updated_summary = last_item.get_summary()
                     return StateMachineResult(
                         message=f"Sure, I've added that to your {updated_summary}. Anything else?",
@@ -823,22 +787,21 @@ class TakingItemsHandler:
                 re.search(pattern, input_lower) for pattern in add_modifier_patterns
             )
 
-            # Coffee modifiers that should trigger modification instead of new item
-            # Build from database-driven helper functions
-            coffee_modifiers = set(_get_syrup_options()) | {"syrup"}
-            coffee_modifiers |= {pattern for pattern, _ in _get_milk_options_coffee()}
-            coffee_modifiers |= set(_get_sweetener_options()) | {"sweetener"}
-
-            has_coffee_modifier = any(mod in input_lower for mod in coffee_modifiers)
+            # Beverage modifiers that should trigger modification instead of new item
+            # Built from database using generic helper
+            beverage_modifiers = _get_all_beverage_modifier_patterns()
+            has_beverage_modifier = any(mod in input_lower for mod in beverage_modifiers)
 
             # Check if this is a pure modifier input (e.g., "2 vanilla syrups", "vanilla syrup")
             # that should be added to an existing beverage
             is_pure_modifier_input = False
-            if has_coffee_modifier and active_items:
+            if has_beverage_modifier and active_items:
                 last_item_check = active_items[-1]
+                # Check if item is a beverage (has milk attribute or beverage modifier category)
                 is_beverage = (
                     isinstance(last_item_check, MenuItemTask) and
-                    last_item_check.has_attribute("milk")  # Beverages have milk attribute
+                    (last_item_check.has_attribute("milk") or
+                     menu_cache.get_modifier_category(last_item_check.menu_item_type) == "beverage")
                 )
                 if is_beverage:
                     # Check if input is ONLY a modifier (no other item keywords)
@@ -849,143 +812,19 @@ class TakingItemsHandler:
                         is_pure_modifier_input = True
 
             # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
-            if (is_add_modifier_request or is_pure_modifier_input) and has_coffee_modifier and active_items:
+            if (is_add_modifier_request or is_pure_modifier_input) and has_beverage_modifier and active_items:
                 last_item = active_items[-1]
-                if isinstance(last_item, MenuItemTask) and last_item.has_attribute("milk"):
-                    made_change = False
-
-                    # Check for syrup - add to array if not already present
-                    syrup_options = _get_syrup_options()
-                    for syrup in syrup_options:
-                        if syrup in input_lower:
-                            # Check if this syrup is already in the list
-                            existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
-                            if syrup not in existing_syrups:
-                                # Extract quantity: "2 vanilla syrups", "double vanilla"
-                                quantity = 1
-                                qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{syrup}', input_lower)
-                                if qty_match:
-                                    qty_str = qty_match.group(1)
-                                    word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "double": 2, "triple": 3}
-                                    quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                                last_item.flavor_syrups.append({"flavor": syrup, "quantity": quantity})
-                                logger.info("Add modifier: added syrup '%s' (qty=%d) to coffee (now has %d syrups)",
-                                          syrup, quantity, len(last_item.flavor_syrups))
-                                made_change = True
-                            break
-
-                    # Check for milk options (alternatives and regular)
-                    milk_options = _get_milk_options_coffee()
-                    for pattern, milk_value in milk_options:
-                        if pattern in input_lower:
-                            if last_item.milk != milk_value:
-                                old_milk = last_item.milk or "none"
-                                last_item.milk = milk_value
-                                logger.info("Add modifier: added milk '%s' to coffee (was '%s')", milk_value, old_milk)
-                                made_change = True
-                            break
-
-                    # Check for sweeteners - add to array if not already present
-                    sweetener_options = _get_sweetener_options()
-                    for sweetener in sweetener_options:
-                        if sweetener in input_lower:
-                            # Check if this sweetener type is already in the list
-                            existing_sweeteners = [s.get("type") for s in last_item.sweeteners]
-                            if sweetener not in existing_sweeteners:
-                                quantity = 1
-                                # Check for quantity: "two sugars", "2 splenda"
-                                qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener}', input_lower)
-                                if qty_match:
-                                    qty_str = qty_match.group(1)
-                                    word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                                    quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                                last_item.sweeteners.append({"type": sweetener, "quantity": quantity})
-                                logger.info("Add modifier: added sweetener '%s' (qty=%d) to coffee",
-                                          sweetener, quantity)
-                                made_change = True
-                            break
+                # Unified beverage modifier handling using milk_sweetener_syrup_selections
+                is_beverage = (
+                    isinstance(last_item, MenuItemTask) and
+                    (last_item.has_attribute("milk") or
+                     menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
+                )
+                if is_beverage:
+                    made_change = _add_beverage_modifiers_from_input(last_item, input_lower)
 
                     if made_change:
                         self.pricing.recalculate_item_price(last_item)
-                        updated_summary = last_item.get_summary()
-                        return StateMachineResult(
-                            message=f"Sure, I've added that to your {updated_summary}. Anything else?",
-                            order=order,
-                        )
-
-                # Also handle beverage MenuItemTask (espresso and other beverage types)
-                elif isinstance(last_item, MenuItemTask) and menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage":
-                    made_change = False
-
-                    # Get current milk_sweetener_syrup selections
-                    mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
-                    mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
-
-                    # Check for syrup - add to attribute_values
-                    syrup_options = _get_syrup_options()
-                    for syrup in syrup_options:
-                        if syrup in input_lower:
-                            syrup_slug = syrup.lower().replace(" ", "_")
-                            if syrup_slug not in mss_slugs:
-                                # Extract quantity
-                                quantity = 1
-                                qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{syrup}', input_lower)
-                                if qty_match:
-                                    qty_str = qty_match.group(1)
-                                    word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "double": 2, "triple": 3}
-                                    quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                                mss_slugs.append(syrup_slug)
-                                mss_selections.append({
-                                    "slug": syrup_slug,
-                                    "display_name": syrup.title(),
-                                    "quantity": quantity,
-                                })
-                                logger.info("Add modifier: added syrup '%s' (qty=%d) to espresso",
-                                          syrup, quantity)
-                                made_change = True
-                            break
-
-                    # Check for milk options
-                    milk_options = _get_milk_options_espresso()
-                    for pattern, milk_slug, milk_display in milk_options:
-                        if pattern in input_lower:
-                            if milk_slug not in mss_slugs:
-                                mss_slugs.append(milk_slug)
-                                mss_selections.append({
-                                    "slug": milk_slug,
-                                    "display_name": milk_display,
-                                    "quantity": 1,
-                                })
-                                logger.info("Add modifier: added milk '%s' to espresso", milk_slug)
-                                made_change = True
-                            break
-
-                    # Check for sweeteners
-                    sweetener_options = _get_sweetener_options_espresso()
-                    for sweetener_name, sweetener_slug, sweetener_display in sweetener_options:
-                        if sweetener_name in input_lower:
-                            if sweetener_slug not in mss_slugs:
-                                quantity = 1
-                                qty_match = re.search(rf'(\d+|one|two|three|four|five)\s+{sweetener_name}', input_lower)
-                                if qty_match:
-                                    qty_str = qty_match.group(1)
-                                    word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                                    quantity = int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-                                mss_slugs.append(sweetener_slug)
-                                mss_selections.append({
-                                    "slug": sweetener_slug,
-                                    "display_name": sweetener_display,
-                                    "quantity": quantity,
-                                })
-                                logger.info("Add modifier: added sweetener '%s' (qty=%d) to espresso",
-                                          sweetener_name, quantity)
-                                made_change = True
-                            break
-
-                    if made_change:
-                        # Update attribute_values
-                        last_item.attribute_values["milk_sweetener_syrup"] = mss_slugs
-                        last_item.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
                         updated_summary = last_item.get_summary()
                         return StateMachineResult(
                             message=f"Sure, I've added that to your {updated_summary}. Anything else?",
@@ -1299,29 +1138,33 @@ class TakingItemsHandler:
                 # If no new items parsed and last item accepts food modifiers, try applying as modifiers
                 if not has_new_items and isinstance(last_item, MenuItemTask) and last_item.has_attribute("spread") and raw_user_input:
                     modifiers = extract_modifiers_from_input(raw_user_input)
-                    has_modifiers = modifiers.proteins or modifiers.cheeses or modifiers.toppings
+                    proteins = modifiers.get_names("protein")
+                    cheeses = modifiers.get_names("cheese")
+                    toppings = modifiers.get_names("topping")
+                    spreads = modifiers.get_names("spread")
+                    has_modifiers = proteins or cheeses or toppings
 
                     if has_modifiers:
                         # Apply modifiers to existing bagel instead of replacing
                         logger.info("Replacement: applying modifiers to existing bagel: %s", modifiers)
 
                         # Update protein - replace existing
-                        if modifiers.proteins:
-                            last_item.extra_protein = modifiers.proteins[0]
+                        if proteins:
+                            last_item.extra_protein = proteins[0]
                             # Additional proteins go to toppings (replace existing toppings)
-                            last_item.toppings = list(modifiers.proteins[1:])
+                            last_item.toppings = list(proteins[1:])
                         else:
                             # Clear protein if not in new modifiers
                             last_item.extra_protein = None
                             last_item.toppings = []
 
                         # Add cheeses and toppings to item.toppings
-                        last_item.toppings.extend(modifiers.cheeses)
-                        last_item.toppings.extend(modifiers.toppings)
+                        last_item.toppings.extend(cheeses)
+                        last_item.toppings.extend(toppings)
 
                         # Update spread if specified
-                        if modifiers.spreads:
-                            last_item.spread = modifiers.spreads[0]
+                        if spreads:
+                            last_item.spread = spreads[0]
                         else:
                             last_item.spread = "none"
 
@@ -1427,62 +1270,83 @@ class TakingItemsHandler:
                         logger.info("Replacement: changed coffee to regular (not decaf)")
                         made_change = True
 
-                    # Check for milk changes - order matters, check longer patterns first
-                    milk_options = _get_milk_options_coffee() + [("no milk", "none"), ("black", "none")]
-                    new_milk = None
-                    for pattern, milk_value in milk_options:
-                        if pattern in input_lower:
-                            new_milk = milk_value
-                            break
+                    # Check for milk changes using generic matcher
+                    milk_match = _match_beverage_modifier(input_lower, "milk")
+                    # Also check for "no milk" / "black" patterns
+                    if "no milk" in input_lower or "black" in input_lower:
+                        milk_match = {"slug": "none", "name": "None", "pattern": "no milk"}
 
-                    if new_milk and new_milk != last_item.milk:
-                        old_milk = last_item.milk or "none"
-                        last_item.milk = new_milk if new_milk != "none" else None
-                        logger.info("Replacement: changed coffee milk from '%s' to '%s'", old_milk, new_milk)
-                        made_change = True
+                    if milk_match:
+                        new_milk_slug = milk_match["slug"]
+                        # Use unified storage model
+                        if _add_beverage_modifier_to_item(
+                            last_item, new_milk_slug, milk_match["name"],
+                            quantity=1, category="milk"
+                        ):
+                            made_change = True
 
                     # Check for milk removal: "without milk", "remove the milk"
-                    if (("without milk" in input_lower or "remove milk" in input_lower or
-                         "remove the milk" in input_lower) and last_item.milk):
-                        old_milk = last_item.milk
-                        last_item.milk = None
-                        last_item.milk_upcharge = 0.0
-                        logger.info("Replacement: removed coffee milk '%s'", old_milk)
-                        made_change = True
+                    if ("without milk" in input_lower or "remove milk" in input_lower or
+                        "remove the milk" in input_lower):
+                        # Remove milk from unified storage
+                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
+                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
+                        milk_details = menu_cache.get_ingredient_details("milk")
+                        milk_slugs = {d["slug"] for d in milk_details}
+                        # Filter out any milk entries
+                        new_slugs = [s for s in mss_slugs if s not in milk_slugs]
+                        new_selections = [s for s in mss_selections if s.get("slug") not in milk_slugs]
+                        if len(new_slugs) != len(mss_slugs):
+                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
+                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
+                            logger.info("Replacement: removed milk from beverage")
+                            made_change = True
 
-                    # Check for flavor syrup changes - add to array if not already present
-                    syrup_options = _get_syrup_options()
-                    new_syrup = None
-                    for syrup in syrup_options:
-                        if syrup in input_lower:
-                            new_syrup = syrup
-                            break
-
-                    if new_syrup:
-                        existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
-                        if new_syrup not in existing_syrups:
-                            last_item.flavor_syrups.append({"flavor": new_syrup, "quantity": 1})
-                            logger.info("Replacement: added coffee syrup '%s' (now has %d syrups)",
-                                      new_syrup, len(last_item.flavor_syrups))
+                    # Check for flavor syrup changes using generic matcher
+                    syrup_match = _match_beverage_modifier(input_lower, "syrup")
+                    if syrup_match:
+                        quantity = _extract_quantity_from_input(input_lower, syrup_match["pattern"])
+                        if _add_beverage_modifier_to_item(
+                            last_item, syrup_match["slug"], syrup_match["name"],
+                            quantity=quantity, category="syrup"
+                        ):
                             made_change = True
 
                     # Check for syrup removal: "no syrup", "remove the syrup"
                     if ("no syrup" in input_lower or "remove syrup" in input_lower or
-                        "without syrup" in input_lower) and last_item.flavor_syrups:
-                        old_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
-                        last_item.flavor_syrups = []
-                        logger.info("Replacement: removed all coffee syrups %s", old_syrups)
-                        made_change = True
+                        "without syrup" in input_lower):
+                        # Remove syrups from unified storage
+                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
+                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
+                        syrup_details = menu_cache.get_ingredient_details("syrup")
+                        syrup_slugs = {d["slug"] for d in syrup_details}
+                        # Filter out any syrup entries
+                        new_slugs = [s for s in mss_slugs if s not in syrup_slugs]
+                        new_selections = [s for s in mss_selections if s.get("slug") not in syrup_slugs]
+                        if len(new_slugs) != len(mss_slugs):
+                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
+                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
+                            logger.info("Replacement: removed all syrups from beverage")
+                            made_change = True
 
                     # Check for sweetener removal: "without sugar", "remove the sugar"
-                    if (("without sugar" in input_lower or "remove sugar" in input_lower or
-                         "remove the sugar" in input_lower or "no sugar" in input_lower or
-                         "without sweetener" in input_lower or "remove sweetener" in input_lower or
-                         "no sweetener" in input_lower) and last_item.sweeteners):
-                        old_sweeteners = [s.get("type") for s in last_item.sweeteners]
-                        last_item.sweeteners = []
-                        logger.info("Replacement: removed all coffee sweeteners %s", old_sweeteners)
-                        made_change = True
+                    if ("without sugar" in input_lower or "remove sugar" in input_lower or
+                        "remove the sugar" in input_lower or "no sugar" in input_lower or
+                        "without sweetener" in input_lower or "remove sweetener" in input_lower or
+                        "no sweetener" in input_lower):
+                        # Remove sweeteners from unified storage
+                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
+                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
+                        sweetener_details = menu_cache.get_ingredient_details("sweetener")
+                        sweetener_slugs = {d["slug"] for d in sweetener_details}
+                        # Filter out any sweetener entries
+                        new_slugs = [s for s in mss_slugs if s not in sweetener_slugs]
+                        new_selections = [s for s in mss_selections if s.get("slug") not in sweetener_slugs]
+                        if len(new_slugs) != len(mss_slugs):
+                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
+                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
+                            logger.info("Replacement: removed all sweeteners from beverage")
+                            made_change = True
 
                     # If any changes were made, recalculate price and return
                     if made_change:
@@ -1593,15 +1457,23 @@ class TakingItemsHandler:
                     # Find items to remove (keep first, remove rest)
                     items_to_check = active_items
                     if item_type:
-                        # Filter by item type using attribute checks
-                        if item_type == "bagel":
-                            items_to_check = [i for i in active_items if isinstance(i, MenuItemTask) and i.has_attribute("bread")]
-                        elif item_type in ("coffee", "drink"):
-                            items_to_check = [
-                                i for i in active_items
-                                if isinstance(i, MenuItemTask) and i.has_attribute("size")
-                            ]
-                        elif item_type == "sandwich":
+                        # Filter by item type using data-driven attribute checks
+                        # Look up the primary attribute for this item type from the database
+                        type_attrs = menu_cache.get_item_type_attributes(item_type)
+                        if type_attrs:
+                            # Get the first required attribute as the discriminator
+                            # Items with this attribute are considered to be of this type
+                            primary_attr = type_attrs[0] if type_attrs else None
+                            if primary_attr:
+                                items_to_check = [
+                                    i for i in active_items
+                                    if isinstance(i, MenuItemTask) and i.has_attribute(primary_attr)
+                                ]
+                            else:
+                                # No specific attribute - match all menu items
+                                items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
+                        else:
+                            # Unknown item type - match all menu items
                             items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
 
                     if len(items_to_check) > 1:
@@ -2108,13 +1980,14 @@ class TakingItemsHandler:
             for mod in item.modifiers:
                 category = menu_cache.get_ingredient_category(mod)
                 if category == "protein":
-                    extracted_mods.proteins.append(mod)
+                    extracted_mods.add("protein", mod)
                 elif category == "cheese":
-                    extracted_mods.cheeses.append(mod)
+                    extracted_mods.add("cheese", mod)
                 else:
-                    extracted_mods.toppings.append(mod)
+                    extracted_mods.add("topping", mod)
 
-            extracted_mods.needs_cheese_clarification = item.needs_cheese_clarification
+            if item.needs_cheese_clarification:
+                extracted_mods.needs_clarification["cheese"] = True
             if item.special_instructions:
                 extracted_mods.special_instructions = [item.special_instructions]
 
@@ -2128,7 +2001,7 @@ class TakingItemsHandler:
                 scooped=item.attribute_values.get("scooped"),
                 spread=item.attribute_values.get("spread"),
                 spread_type=item.attribute_values.get("spread_type"),
-                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
+                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_clarification.get("cheese") else None,
             )
             order = result.order
 
@@ -2265,15 +2138,23 @@ class TakingItemsHandler:
             extracted_mods = ExtractedModifiers()
             # For ParsedItemEntry, all modifiers are combined in item.modifiers
             # For deprecated ParsedBagelEntry, modifiers are categorized
-            extracted_mods.proteins = list(item.proteins) if item.proteins else []
-            extracted_mods.cheeses = list(item.cheeses) if item.cheeses else []
-            extracted_mods.toppings = list(item.toppings) if item.toppings else []
+            if item.proteins:
+                for p in item.proteins:
+                    extracted_mods.add("protein", p)
+            if item.cheeses:
+                for c in item.cheeses:
+                    extracted_mods.add("cheese", c)
+            if item.toppings:
+                for t in item.toppings:
+                    extracted_mods.add("topping", t)
             # If using unified ParsedItemEntry, combined modifiers are in item.modifiers
             # Store them in toppings (they'll be recategorized by add_bagel)
-            if not extracted_mods.proteins and not extracted_mods.cheeses and not extracted_mods.toppings:
+            if not extracted_mods.has_modifiers():
                 if hasattr(item, 'modifiers') and item.modifiers:
-                    extracted_mods.toppings = list(item.modifiers)
-            extracted_mods.needs_cheese_clarification = item.needs_cheese_clarification
+                    for m in item.modifiers:
+                        extracted_mods.add("topping", m)
+            if item.needs_cheese_clarification:
+                extracted_mods.needs_clarification["cheese"] = True
             # Convert special_instructions string to list for ExtractedModifiers
             if item.special_instructions:
                 extracted_mods.special_instructions = [item.special_instructions]
@@ -2288,7 +2169,7 @@ class TakingItemsHandler:
                 scooped=item.scooped,
                 spread=item.spread,
                 spread_type=item.spread_type,
-                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
+                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_clarification.get("cheese") else None,
             )
             order = result.order
             # Build summary - handle None bread
@@ -2819,17 +2700,22 @@ class TakingItemsHandler:
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
                 if isinstance(item, MenuItemTask):
-                    # Omelettes need side choice first (bagel or fruit salad)
+                    # Items that need side choice first (e.g., omelettes with bagel or fruit salad)
                     # These don't share a handler loop - each must be queued individually
                     if item.requires_side_choice and item.side_choice is None:
                         individual_items.append((item.id, item.menu_item_name, "menu_item", "side_choice"))
-                    # If omelette chose bagel, need bagel questions (handled by bagel config handler)
-                    elif item.side_choice == "bagel":
-                        if not item.bagel_choice:
-                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
-                        elif item.toasted is None:
+                    # If item has a configurable side choice, check if it needs further config
+                    # Uses data-driven approach: check for {side_choice}_choice field dynamically
+                    elif item.side_choice:
+                        choice_field = f"{item.side_choice}_choice"
+                        specific_choice = getattr(item, choice_field, None)
+                        # Check if side type has "toasted" attribute using data lookup
+                        side_attrs = menu_cache.get_item_type_attributes(item.side_choice)
+                        if hasattr(item, choice_field) and not specific_choice:
+                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", choice_field))
+                        elif "toasted" in side_attrs and item.toasted is None:
                             bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
-                        elif item.spread is None:
+                        elif "spread" in side_attrs and item.spread is None:
                             bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
                     # Check if this menu item contains a bagel (e.g., Classic BEC)
                     elif not item.requires_side_choice:
@@ -2940,33 +2826,52 @@ class TakingItemsHandler:
         first_item_id, first_item_name, first_item_type, first_field = items_needing_config[0]
 
         # Build the question for the first item
+        # Uses data-driven approach where possible
         if first_field == "side_choice":
-            question = f"Would you like a bagel or fruit salad with your {first_item_name}?"
+            # TODO: Side options should come from database
+            question = f"What would you like on the side with your {first_item_name}?"
         elif first_field == "toasted":
-            # Check if this is an omelette bagel side vs a spread sandwich
+            # Check if this is an item with a configurable side choice
             menu_item = next((i for i in order.items.items if i.id == first_item_id), None)
-            if isinstance(menu_item, MenuItemTask) and menu_item.side_choice == "bagel":
-                # Omelette with bagel side - ask about bagel being toasted
-                bagel_desc = f"{menu_item.bagel_choice} bagel" if menu_item.bagel_choice else "bagel"
-                question = f"Got it, {bagel_desc}! Would you like that toasted?"
+            if isinstance(menu_item, MenuItemTask) and menu_item.side_choice:
+                # Item with configurable side - ask about side being toasted
+                choice_field = f"{menu_item.side_choice}_choice"
+                specific_choice = getattr(menu_item, choice_field, None)
+                if specific_choice:
+                    side_desc = f"{specific_choice} {menu_item.side_choice}"
+                else:
+                    side_desc = menu_item.side_choice.replace("_", " ")
+                question = f"Got it, {side_desc}! Would you like that toasted?"
             else:
                 question = f"Got it! Would you like the {first_item_name} toasted?"
-        elif first_field == "bagel_choice":
-            question = f"Got it! What kind of bagel would you like for the {first_item_name}?"
-        elif first_field == "bagel_type":
-            question = f"Got it! What kind of bagel would you like?"
+        elif first_field.endswith("_choice"):
+            # Generic handling for side choice sub-selections (e.g., bagel_choice)
+            # Extract the side type from the field name (e.g., "bagel" from "bagel_choice")
+            side_type = first_field.replace("_choice", "")
+            side_display = side_type.replace("_", " ")
+            question = f"Got it! What kind of {side_display} would you like for the {first_item_name}?"
+        elif first_field.endswith("_type"):
+            # Generic handling for type selections (e.g., bagel_type)
+            item_type = first_field.replace("_type", "")
+            item_display = item_type.replace("_", " ")
+            question = f"Got it! What kind of {item_display} would you like?"
         elif first_field == "spread":
             # Find the item to check if it's toasted
             item = next((i for i in order.items.items if i.id == first_item_id), None)
             if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
-                # Bagel or other item with bread attribute
+                # Item with bread attribute
                 toasted_desc = " toasted" if item.toasted else ""
                 question = f"Got it, {first_item_name}{toasted_desc}! Would you like cream cheese or butter on that?"
-            elif isinstance(item, MenuItemTask) and item.side_choice == "bagel":
-                # Omelette with bagel side
-                bagel_desc = f"{item.bagel_choice} bagel" if item.bagel_choice else "bagel"
+            elif isinstance(item, MenuItemTask) and item.side_choice:
+                # Item with configurable side
+                choice_field = f"{item.side_choice}_choice"
+                specific_choice = getattr(item, choice_field, None)
+                if specific_choice:
+                    side_desc = f"{specific_choice} {item.side_choice}"
+                else:
+                    side_desc = item.side_choice.replace("_", " ")
                 toasted_desc = " toasted" if item.toasted else ""
-                question = f"Got it, {bagel_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
+                question = f"Got it, {side_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
             else:
                 question = f"Got it! Would you like cream cheese or butter on that?"
         elif first_field == "coffee_size":

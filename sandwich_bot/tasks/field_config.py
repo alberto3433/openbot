@@ -35,7 +35,7 @@ _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
     "bagel": {
         "bagel_type": "bread",
         "toasted": "toasted",
-        "spread": "spread_type",  # DB uses "spread_type", legacy code uses "spread"
+        "spread": "spread",  # Now matches DB
         "extras": "toppings",
         "sandwich_protein": "extra_protein",
         "quantity": "quantity",  # May not exist in DB

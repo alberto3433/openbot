@@ -387,13 +387,13 @@ class TestCriticalOrderScenarios:
 
         print(f"Bagels in cart: {len(bagels)}")
         for i, bagel in enumerate(bagels):
-            print(f"  Bagel {i+1}: type={bagel.bagel_type}, toasted={bagel.toasted}, spread={bagel.spread}")
+            print(f"  Bagel {i+1}: type={bagel.bread}, toasted={bagel.toasted}, spread={bagel.spread}")
 
         assert len(bagels) == 2, f"Should have 2 bagels, got {len(bagels)}"
 
         # Both should have same config
         for bagel in bagels:
-            assert bagel.bagel_type == "plain", f"Bagel type should be plain, got {bagel.bagel_type}"
+            assert bagel.bread == "plain", f"Bagel type should be plain, got {bagel.bread}"
             assert bagel.toasted == True, f"Bagel should be toasted, got {bagel.toasted}"
 
         print("[PASS] TEST 4: Multiple same items added correctly")
@@ -644,11 +644,11 @@ class TestCriticalOrderScenarios:
 
         if bagels:
             bagel = bagels[0]
-            print(f"Bagel: type={bagel.bagel_type}, toasted={bagel.toasted}")
+            print(f"Bagel: type={bagel.bread}, toasted={bagel.toasted}")
             print(f"Spread: {bagel.spread}")
             print(f"Toppings: {bagel.toppings}")
 
-            assert bagel.bagel_type == "everything", f"Should be everything bagel, got {bagel.bagel_type}"
+            assert bagel.bread == "everything", f"Should be everything bagel, got {bagel.bread}"
             assert bagel.toasted == True, "Should be toasted"
 
         print("[PASS] TEST 8: Complex modifiers parsed")

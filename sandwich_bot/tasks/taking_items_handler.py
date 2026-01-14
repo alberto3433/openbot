@@ -631,8 +631,8 @@ class TakingItemsHandler:
                         order=order,
                     )
 
-            # Also handle espresso MenuItemTask
-            elif isinstance(last_item, MenuItemTask) and last_item.menu_item_type == "espresso":
+            # Also handle beverage MenuItemTask (espresso and other beverage types)
+            elif isinstance(last_item, MenuItemTask) and menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage":
                 made_change = False
 
                 # Get current milk_sweetener_syrup selections
@@ -913,8 +913,8 @@ class TakingItemsHandler:
                             order=order,
                         )
 
-                # Also handle espresso MenuItemTask
-                elif isinstance(last_item, MenuItemTask) and last_item.menu_item_type == "espresso":
+                # Also handle beverage MenuItemTask (espresso and other beverage types)
+                elif isinstance(last_item, MenuItemTask) and menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage":
                     made_change = False
 
                     # Get current milk_sweetener_syrup selections
@@ -1076,7 +1076,7 @@ class TakingItemsHandler:
             if target_desc:
                 # Explicit target - find matching item by bread/bagel type
                 for item in items_with_bread:
-                    item_bagel_type = (item.bagel_type or "").lower()
+                    item_bagel_type = (item.bread or "").lower()
                     # Match if the target description contains the bagel type
                     # e.g., "cinnamon raisin" matches a cinnamon raisin bagel
                     if item_bagel_type and item_bagel_type in target_desc:
@@ -1197,7 +1197,7 @@ class TakingItemsHandler:
                             # Unknown modifier type, add to toppings anyway
                             if modifier not in target_item.toppings:
                                 target_item.toppings.append(modifier)
-                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bagel_type)
+                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bread)
 
                 # Recalculate price
                 self.pricing.recalculate_item_price(target_item)
@@ -1205,7 +1205,7 @@ class TakingItemsHandler:
                 updated_summary = target_item.get_summary()
                 logger.info(
                     "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s, add_modifiers=%s",
-                    target_item.bagel_type, parsed.modify_new_spread, parsed.modify_new_spread_type,
+                    target_item.bread, parsed.modify_new_spread, parsed.modify_new_spread_type,
                     parsed.modify_add_modifiers
                 )
                 return StateMachineResult(
@@ -1278,14 +1278,14 @@ class TakingItemsHandler:
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
                 bagel_entry = next(
                     (item for item in parsed.parsed_items
-                     if _is_bagel_entry(item) and item.bagel_type),
+                     if _is_bagel_entry(item) and item.bread),
                     None
                 )
                 if has_new_items and bagel_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
-                    old_type = last_item.bagel_type or "plain"
-                    last_item.bagel_type = bagel_entry.bagel_type
+                    old_type = last_item.bread or "plain"
+                    last_item.bread = bagel_entry.bread
                     logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
-                               old_type, bagel_entry.bagel_type)
+                               old_type, bagel_entry.bread)
 
                     # Recalculate price if needed
                     self.pricing.recalculate_item_price(last_item)
@@ -1371,8 +1371,8 @@ class TakingItemsHandler:
                                 break
 
                         if new_bagel_type:
-                            old_type = last_item.bagel_type or "plain"
-                            last_item.bagel_type = new_bagel_type
+                            old_type = last_item.bread or "plain"
+                            last_item.bread = new_bagel_type
                             logger.info("Replacement: changed bagel type from '%s' to '%s'", old_type, new_bagel_type)
 
                             # Recalculate price if needed
@@ -1808,14 +1808,9 @@ class TakingItemsHandler:
             item_type = parsed.duplicate_new_item_type
             logger.info("Adding new %s (from 'another %s' pattern)", item_type, item_type)
 
-            # Map common terms to item type slugs
-            item_type_map = {
-                "bagel": "bagel",
-                "sandwich": "bagel",  # Sandwiches use bagel flow (bread-based)
-                "coffee": "sized_beverage",
-                "espresso": "espresso",
-            }
-            mapped_type = item_type_map.get(item_type)
+            # Use data-driven lookup from ItemType aliases
+            category_info = menu_cache.get_category_keyword_mapping(item_type)
+            mapped_type = category_info.get("slug") if category_info else None
 
             if mapped_type:
                 # Use unified add_item() dispatcher (routes based on attributes)
@@ -2108,12 +2103,12 @@ class TakingItemsHandler:
         if item_type == "bagel":
             # Build ExtractedModifiers from modifiers list
             extracted_mods = ExtractedModifiers()
-            # Parse modifiers into categories
+            # Parse modifiers into categories using data-driven lookup
             for mod in item.modifiers:
-                mod_lower = mod.lower()
-                if mod_lower in ("bacon", "ham", "sausage", "turkey", "egg", "lox", "salmon", "nova"):
+                category = menu_cache.get_ingredient_category(mod)
+                if category == "protein":
                     extracted_mods.proteins.append(mod)
-                elif mod_lower in ("american", "swiss", "cheddar", "muenster", "provolone"):
+                elif category == "cheese":
                     extracted_mods.cheeses.append(mod)
                 else:
                     extracted_mods.toppings.append(mod)
@@ -2244,7 +2239,7 @@ class TakingItemsHandler:
                 item.quantity,
                 order,
                 item.toasted,
-                item.bagel_type,
+                item.bread,
                 item.modifiers,
             )
             order = result.order
@@ -2286,7 +2281,7 @@ class TakingItemsHandler:
                 item_type="bagel",
                 order=order,
                 quantity=item.quantity,
-                bagel_type=item.bagel_type,
+                bagel_type=item.bread,
                 toasted=item.toasted,
                 scooped=item.scooped,
                 spread=item.spread,
@@ -2294,8 +2289,8 @@ class TakingItemsHandler:
                 extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_cheese_clarification else None,
             )
             order = result.order
-            # Build summary - handle None bagel_type
-            bagel_desc = f"{item.bagel_type} bagel" if item.bagel_type else "bagel"
+            # Build summary - handle None bread
+            bagel_desc = f"{item.bread} bagel" if item.bread else "bagel"
             summary = bagel_desc
             if item.toasted:
                 summary += " toasted"
@@ -2357,8 +2352,8 @@ class TakingItemsHandler:
                             summary = ", ".join(modifier_summary_parts) + " added"
                             return order, summary
 
-                    # Add to MenuItemTask espresso (data-driven flow)
-                    elif isinstance(last_item, MenuItemTask) and last_item.menu_item_type == "espresso":
+                    # Add to MenuItemTask beverage (data-driven flow)
+                    elif isinstance(last_item, MenuItemTask) and menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage":
                         modifier_summary_parts = []
 
                         # Get existing selections or initialize empty list
@@ -2697,7 +2692,7 @@ class TakingItemsHandler:
                         display_name = parsed_item.item_name or summary
                     elif _is_bagel_entry(parsed_item):
                         item_type = "bagel"
-                        display_name = f"{parsed_item.bagel_type} bagel" if parsed_item.bagel_type else "bagel"
+                        display_name = f"{parsed_item.bread} bagel" if parsed_item.bread else "bagel"
                     elif _is_coffee_entry(parsed_item):
                         item_type = "coffee"
                         display_name = parsed_item.drink_type

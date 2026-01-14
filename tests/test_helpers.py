@@ -9,8 +9,8 @@ from sandwich_bot.tasks.models import MenuItemTask, TaskStatus
 
 
 def create_bagel_task(
-    bagel_type: str = None,
-    bagel_type_upcharge: float = 0.0,
+    bread: str = None,
+    bread_upcharge: float = 0.0,
     toasted: bool = None,
     spread: str = None,
     spread_type: str = None,
@@ -18,11 +18,18 @@ def create_bagel_task(
     extra_protein: str = None,
     quantity: int = 1,
     unit_price: float = 0.0,
+    # Legacy parameter names for backwards compatibility
+    bagel_type: str = None,
+    bagel_type_upcharge: float = 0.0,
 ) -> MenuItemTask:
     """Create a MenuItemTask configured as a bagel.
 
     This is a replacement for the removed BagelItemTask class.
     """
+    # Support legacy parameter names
+    bread = bread or bagel_type
+    bread_upcharge = bread_upcharge or bagel_type_upcharge
+
     bagel = MenuItemTask(
         menu_item_name="Bagel",
         menu_item_type="bagel",
@@ -31,10 +38,10 @@ def create_bagel_task(
         quantity=quantity,
         unit_price=unit_price,
     )
-    if bagel_type:
-        bagel.bagel_type = bagel_type
-    if bagel_type_upcharge:
-        bagel.bagel_type_upcharge = bagel_type_upcharge
+    if bread:
+        bagel.bread = bread
+    if bread_upcharge:
+        bagel.bread_upcharge = bread_upcharge
     if spread_type:
         bagel.spread_type = spread_type
     if extras:
@@ -74,11 +81,11 @@ def create_coffee_task(
     )
     if size:
         coffee.size = size
-    # Handle style parameter (converts to iced bool)
+    # Handle style/iced parameters - convert to temperature string
     if style is not None and iced is None:
-        coffee.iced = style.lower() == "iced"
+        coffee.temperature = style.lower()  # "iced" or "hot"
     elif iced is not None:
-        coffee.iced = iced
+        coffee.temperature = "iced" if iced else "hot"
     if decaf:
         coffee.decaf = decaf
     if milk:

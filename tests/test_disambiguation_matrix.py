@@ -231,7 +231,10 @@ class TestSpecificItemsWithGenericSuffix:
             f"'{user_input}' should match {min_matches}-{max_matches} items, got {len(matches)}: {[m['name'] for m in matches]}"
 
     @pytest.mark.parametrize("user_input,should_disambiguate", [
-        ("bagel chips", True),       # Multiple matches - should disambiguate
+        # Note: "bagel chips" now has an exact menu item match (id 379: "Bagel Chips")
+        # so it no longer triggers disambiguation - it adds the generic chips directly.
+        # Use "bbq bagel chips" to test disambiguation between flavors.
+        ("bagel chips", False),      # Exact match for "Bagel Chips" menu item
     ])
     def test_specific_item_disambiguation_behavior(self, item_handler, user_input, should_disambiguate, fresh_order):
         """Handler should disambiguate or add directly based on match count."""

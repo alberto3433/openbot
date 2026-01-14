@@ -41,7 +41,7 @@ def create_bagel_task(
         unit_price=unit_price,
     )
     if bagel_type:
-        bagel.bagel_type = bagel_type
+        bagel.bread = bagel_type
     if extras:
         bagel.toppings = extras
     return bagel
@@ -463,7 +463,7 @@ class TestFillSlot:
         slot = orch.get_next_slot()  # bagel_type
         orch.fill_slot(slot, "everything")
 
-        assert bagel.bagel_type == "everything"
+        assert bagel.bread == "everything"
 
 
 class TestSyncDbOrderToTask:

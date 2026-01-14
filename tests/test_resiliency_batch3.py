@@ -36,7 +36,7 @@ class TestNaturalLanguageVariation:
 
         # Should be a plain bagel
         bagel = bagels[0]
-        assert bagel.bagel_type == "plain", f"Should be plain bagel, got: {bagel.bagel_type}"
+        assert bagel.bread == "plain", f"Should be plain bagel, got: {bagel.bread}"
 
     def test_lemme_get_a_coffee(self):
         """

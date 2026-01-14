@@ -1593,7 +1593,10 @@ class MenuItemConfigHandler(BaseHandler):
         if "size" in modifiers:
             item.size = modifiers["size"]
         if "iced" in modifiers:
-            item.iced = modifiers["iced"]
+            # Convert iced boolean to temperature string
+            item.temperature = "iced" if modifiers["iced"] else "hot"
+        if "temperature" in modifiers:
+            item.temperature = modifiers["temperature"]
         if "decaf" in modifiers:
             item.decaf = modifiers["decaf"]
 
@@ -2039,8 +2042,7 @@ class MenuItemConfigHandler(BaseHandler):
                     stored_modifiers["syrup"] = extracted_mods.syrup
                 if hasattr(extracted_mods, "size") and extracted_mods.size:
                     stored_modifiers["size"] = extracted_mods.size
-                if hasattr(extracted_mods, "iced") and extracted_mods.iced is not None:
-                    stored_modifiers["iced"] = extracted_mods.iced
+                # Note: temperature comes from parsed items, not modifier extraction
 
             # Store disambiguation state
             order.pending_attr_disambiguation = {

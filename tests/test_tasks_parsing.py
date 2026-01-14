@@ -73,7 +73,7 @@ class TestParsedBagelItem:
         """Test default values are correct."""
         bagel = ParsedBagelItem()
         assert bagel.item_type == "bagel"
-        assert bagel.bagel_type is None
+        assert bagel.bread is None
         assert bagel.quantity == 1
         assert bagel.toasted is None
         assert bagel.spread is None
@@ -82,14 +82,14 @@ class TestParsedBagelItem:
     def test_full_bagel(self):
         """Test creating a fully specified bagel."""
         bagel = ParsedBagelItem(
-            bagel_type="everything",
+            bread="everything",
             quantity=2,
             toasted=True,
             spread="cream cheese",
             spread_type="scallion",
             toppings=["lox", "tomato", "capers"],
         )
-        assert bagel.bagel_type == "everything"
+        assert bagel.bread == "everything"
         assert bagel.quantity == 2
         assert bagel.toasted is True
         assert bagel.spread == "cream cheese"
@@ -172,8 +172,8 @@ class TestParsedInput:
         """Test parsing result with multiple items."""
         parsed = ParsedInput(
             new_bagels=[
-                ParsedBagelItem(bagel_type="everything", toasted=True),
-                ParsedBagelItem(bagel_type="plain"),
+                ParsedBagelItem(bread="everything", toasted=True),
+                ParsedBagelItem(bread="plain"),
             ],
             new_coffees=[
                 ParsedCoffeeItem(drink_type="latte", size="large", iced=True),
@@ -181,7 +181,7 @@ class TestParsedInput:
         )
         assert len(parsed.new_bagels) == 2
         assert len(parsed.new_coffees) == 1
-        assert parsed.new_bagels[0].bagel_type == "everything"
+        assert parsed.new_bagels[0].bread == "everything"
         assert parsed.new_coffees[0].iced is True
 
     def test_order_with_answers(self):
@@ -261,7 +261,7 @@ class TestParseUserMessageMocked:
         # Create a mock client that returns a predefined ParsedInput
         mock_result = ParsedInput(
             new_bagels=[
-                ParsedBagelItem(bagel_type="everything", toasted=True)
+                ParsedBagelItem(bread="everything", toasted=True)
             ]
         )
 
@@ -277,14 +277,14 @@ class TestParseUserMessageMocked:
         )
 
         assert len(result.new_bagels) == 1
-        assert result.new_bagels[0].bagel_type == "everything"
+        assert result.new_bagels[0].bread == "everything"
         assert result.new_bagels[0].toasted is True
 
     def test_parse_multi_item_order(self):
         """Test parsing a multi-item order."""
         mock_result = ParsedInput(
             new_bagels=[
-                ParsedBagelItem(bagel_type="sesame", spread="cream cheese")
+                ParsedBagelItem(bread="sesame", spread="cream cheese")
             ],
             new_coffees=[
                 ParsedCoffeeItem(drink_type="latte", size="large", iced=True)
@@ -375,7 +375,7 @@ class TestParseUserMessageIntegration:
 
         assert len(result.new_bagels) >= 1
         bagel = result.new_bagels[0]
-        assert bagel.bagel_type == "everything"
+        assert bagel.bread == "everything"
         assert bagel.toasted is True
         assert bagel.spread == "cream cheese"
 
@@ -1275,15 +1275,15 @@ class TestFindNthItemOfType:
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
-            BagelItemTask(bagel_type="plain"),
+            BagelItemTask(bread="plain"),
             CoffeeItemTask(drink_type="latte"),
-            BagelItemTask(bagel_type="everything"),
+            BagelItemTask(bread="everything"),
         ]
 
         result = find_nth_item_of_type(items, "bagel", 1)
         assert result is not None
         item, idx = result
-        assert item.bagel_type == "plain"
+        assert item.bread == "plain"
         assert idx == 0
 
     def test_find_second_bagel(self):
@@ -1292,15 +1292,15 @@ class TestFindNthItemOfType:
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
-            BagelItemTask(bagel_type="plain"),
+            BagelItemTask(bread="plain"),
             CoffeeItemTask(drink_type="latte"),
-            BagelItemTask(bagel_type="everything"),
+            BagelItemTask(bread="everything"),
         ]
 
         result = find_nth_item_of_type(items, "bagel", 2)
         assert result is not None
         item, idx = result
-        assert item.bagel_type == "everything"
+        assert item.bread == "everything"
         assert idx == 2
 
     def test_find_nth_item_generic(self):
@@ -1309,9 +1309,9 @@ class TestFindNthItemOfType:
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
-            BagelItemTask(bagel_type="plain"),
+            BagelItemTask(bread="plain"),
             CoffeeItemTask(drink_type="latte"),
-            BagelItemTask(bagel_type="everything"),
+            BagelItemTask(bread="everything"),
         ]
 
         # "2nd item" should return the coffee (index 1)
@@ -1327,8 +1327,8 @@ class TestFindNthItemOfType:
         from tests.test_helpers import BagelItemTask
 
         items = [
-            BagelItemTask(bagel_type="plain"),
-            BagelItemTask(bagel_type="everything"),
+            BagelItemTask(bread="plain"),
+            BagelItemTask(bread="everything"),
         ]
 
         # Asking for 5th bagel when only 2 exist
@@ -2103,11 +2103,11 @@ class TestSplitQuantityBagelParsing:
         assert result.new_bagel_type == "plain"
         assert len(result.parsed_items) == 2
         # First bagel: scallion cream cheese
-        assert result.parsed_items[0].bagel_type == "plain"
+        assert result.parsed_items[0].bread == "plain"
         assert result.parsed_items[0].spread == "cream cheese"
         assert result.parsed_items[0].spread_type == "scallion"
         # Second bagel: lox (normalized to canonical name from database)
-        assert result.parsed_items[1].bagel_type == "plain"
+        assert result.parsed_items[1].bread == "plain"
         assert result.parsed_items[1].spread == "Nova Scotia Salmon"
 
     def test_two_bagels_toasted_variants(self):
@@ -2174,11 +2174,11 @@ class TestSplitQuantityBagelParsing:
         assert result.new_bagel_type == "plain"
         assert len(result.parsed_items) == 2
         # First bagel: cream cheese (from "cc" alias), toasted
-        assert result.parsed_items[0].bagel_type == "plain"
+        assert result.parsed_items[0].bread == "plain"
         assert result.parsed_items[0].spread == "cream cheese"
         assert result.parsed_items[0].toasted is True
         # Second bagel: lox, not toasted
-        assert result.parsed_items[1].bagel_type == "plain"
+        assert result.parsed_items[1].bread == "plain"
         assert result.parsed_items[1].spread == "Nova Scotia Salmon"
         assert result.parsed_items[1].toasted is False
 
@@ -2195,9 +2195,9 @@ class TestSplitQuantityBagelParsing:
         assert result.new_bagel_quantity == 2
         assert len(result.parsed_items) == 2
         # First bagel: plain
-        assert result.parsed_items[0].bagel_type == "plain"
+        assert result.parsed_items[0].bread == "plain"
         # Second bagel: everything
-        assert result.parsed_items[1].bagel_type == "everything"
+        assert result.parsed_items[1].bread == "everything"
 
     def test_uneven_split_one_toasted_two_not(self):
         """Test parsing '3 bagels, one toasted, two not toasted'.
@@ -2406,9 +2406,9 @@ class TestParsedItemsMultiItem:
         leo = leo_items[0]
         # The Leo may have bread attribute extracted
         bread_attr = getattr(leo, 'attribute_values', {}).get('bread')
-        bagel_type = getattr(leo, 'bagel_type', bread_attr)
+        bread = getattr(leo, 'bread', bread_attr)
         # Accept "wheat" or "whole_wheat_bagel" (database slug)
-        assert bagel_type and "wheat" in bagel_type, f"Expected wheat bagel, got {bagel_type}"
+        assert bread and "wheat" in bread, f"Expected wheat bagel, got {bread}"
 
     def test_bagel_and_coffee_both_in_parsed_items(self):
         """Test that bagel + coffee both appear in parsed_items."""

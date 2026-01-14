@@ -33,11 +33,12 @@ class ItemTypeConfig(BaseModel):
 # Only entries where code field name differs from DB slug
 # If not in map, field name is used directly as the DB slug
 _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
-    "bagel": {
-        "bagel_type": "bread",
-    },
+    # Phase 1.1 completed: bagel_type renamed to bread in code
+    # Phase 1.2 completed: iced renamed to temperature in code
+    # milk/sweetener mappings must remain - they are separate Python properties
+    # (milk: str, sweeteners: list) that share a single DB attribute (milk_sweetener_syrup)
+    # for options validation. Cannot consolidate without major restructuring.
     "sized_beverage": {
-        "iced": "temperature",
         "milk": "milk_sweetener_syrup",
         "sweetener": "milk_sweetener_syrup",
     },
@@ -191,8 +192,8 @@ class MenuFieldConfig(BaseModel):
     Order flow fields (delivery, address, customer info, payment) use hardcoded defaults.
     """
 
-    _bagel_fields: dict[str, FieldConfig] | None = None
-    _coffee_fields: dict[str, FieldConfig] | None = None
+    # Generic cache for all item type field configs (lazy-loaded)
+    _fields_cache: dict[str, dict[str, FieldConfig]] = {}
     delivery_method_fields: dict[str, FieldConfig] = Field(
         default_factory=lambda: _deep_copy_fields(DEFAULT_DELIVERY_METHOD_FIELDS)
     )
@@ -208,34 +209,19 @@ class MenuFieldConfig(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    @property
-    def bagel_fields(self) -> dict[str, FieldConfig]:
-        """Load bagel field configs from database (lazy-loaded)."""
-        if self._bagel_fields is None:
-            self._bagel_fields = _load_fields_from_db("bagel")
-        return self._bagel_fields
-
-    @property
-    def coffee_fields(self) -> dict[str, FieldConfig]:
-        """Load coffee field configs from database (lazy-loaded)."""
-        if self._coffee_fields is None:
-            self._coffee_fields = _load_fields_from_db("sized_beverage")
-        return self._coffee_fields
-
     @classmethod
     def from_menu_data(cls, menu_data: dict | None) -> "MenuFieldConfig":
         """Create field config from menu data (overrides not currently supported)."""
         return cls()
 
     def get_fields_for_item_type(self, item_type: str) -> dict[str, FieldConfig]:
-        """Get field configs for a specific item type from database."""
-        if item_type == "bagel":
-            return self.bagel_fields
-        elif item_type in ("coffee", "sized_beverage"):
-            return self.coffee_fields
-        else:
-            # Try loading from database for any item type
-            return _load_fields_from_db(item_type)
+        """Get field configs for a specific item type from database.
+
+        Uses a generic cache for all item types - no hardcoded item type checks.
+        """
+        if item_type not in self._fields_cache:
+            self._fields_cache[item_type] = _load_fields_from_db(item_type)
+        return self._fields_cache[item_type]
 
 
 # =============================================================================

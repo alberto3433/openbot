@@ -148,7 +148,9 @@ class ItemAdderHandler:
 
             # Check if this needs disambiguation via menu lookup
             # Generic terms or unknown drink types go through disambiguation
-            if drink_name_lower in self.GENERIC_DRINK_TERMS or (
+            from sandwich_bot.menu_data_cache import menu_cache
+            is_generic_drink = menu_cache.is_category_reference(drink_name_lower) == "drink"
+            if is_generic_drink or (
                 drink_name_lower and drink_name_lower not in standard_coffee_types
             ):
                 # Try lookup with disambiguation
@@ -159,7 +161,7 @@ class ItemAdderHandler:
                     order=order,
                     modifiers=beverage_modifiers,
                     pending_field="drink_type",
-                    item_type_filter="sized_beverage" if drink_name_lower not in self.GENERIC_DRINK_TERMS else None,
+                    item_type_filter="sized_beverage" if not is_generic_drink else None,
                 )
 
                 # If disambiguation needed, return that
@@ -176,7 +178,7 @@ class ItemAdderHandler:
                         kwargs["coffee_type"] = canonical_name
                     elif kwargs.get("drink_type"):
                         kwargs["drink_type"] = canonical_name
-                elif drink_name_lower and drink_name_lower not in self.GENERIC_DRINK_TERMS:
+                elif drink_name_lower and not is_generic_drink:
                     # Unknown drink - mark for error handling
                     order.pending_field = "drink_type"
                     order.unknown_drink_request = drink_name
@@ -341,37 +343,37 @@ class ItemAdderHandler:
 
         return attrs
 
-    # Generic category terms that should trigger disambiguation when multiple items match
-    # These are base terms - we check if item_name equals OR ends with these
-    GENERIC_CATEGORY_TERMS = frozenset([
-        "cookie", "cookies", "muffin", "muffins", "brownie", "brownies",
-        "donut", "donuts", "doughnut", "doughnuts", "pastry", "pastries",
-        "chip", "chips",
-        "juice", "soda", "coke", "sprite",  # Beverages for disambiguation
-        "omelette", "omelettes", "omelet", "omelets",  # Omelettes for disambiguation
-        "egg omelette", "egg omelet",  # "egg omelette" is generic, not specific
-    ])
-
     def _extract_generic_term(self, item_name: str) -> str | None:
         """Extract a generic category term from item_name if present.
+
+        Uses data-driven matching - checks if the term or its suffix matches
+        multiple menu items, indicating it's a generic term that needs disambiguation.
 
         Returns the generic term for searching, or None if no generic term found.
 
         Examples:
-        - "chips" -> "chips"
-        - "Bagel Chips" -> "chips"
+        - "chips" -> "chips" (if multiple chip items exist)
+        - "Bagel Chips" -> "chips" (suffix matches multiple items)
         - "Potato Chips" -> "chips"
         - "Chocolate Chip Cookie" -> "cookie"
-        - "Turkey Club" -> None
+        - "Turkey Club" -> None (specific item)
         """
+        from sandwich_bot.menu_data_cache import menu_cache
         item_lower = item_name.lower().strip()
-        # Exact match
-        if item_lower in self.GENERIC_CATEGORY_TERMS:
+
+        # Check if exact term matches multiple menu items
+        matches = menu_cache.search_menu_items_by_name(item_lower)
+        if len(matches) > 1:
             return item_lower
-        # Check if ends with a generic term (e.g., "Bagel Chips" ends with "chips")
-        for term in self.GENERIC_CATEGORY_TERMS:
-            if item_lower.endswith(" " + term):
-                return term
+
+        # Check if last word is a generic term (matches multiple items)
+        words = item_lower.split()
+        if len(words) > 1:
+            last_word = words[-1]
+            suffix_matches = menu_cache.search_menu_items_by_name(last_word)
+            if len(suffix_matches) > 1:
+                return last_word
+
         return None
 
     def add_menu_item(
@@ -713,11 +715,6 @@ class ItemAdderHandler:
                     order=order,
                 )
 
-    # Generic drink terms that should show all beverages
-    GENERIC_DRINK_TERMS = frozenset([
-        "drink", "drinks", "beverage", "beverages", "something to drink",
-    ])
-
     def _lookup_menu_item_with_disambiguation(
         self,
         item_name: str,
@@ -749,9 +746,10 @@ class ItemAdderHandler:
         """
         item_lower = item_name.lower().strip()
 
-        # Check for generic drink terms (drink, beverage, etc.)
+        # Check for generic drink terms using data-driven category reference
         from sandwich_bot.menu_data_cache import menu_cache
-        is_generic_drink = item_lower in self.GENERIC_DRINK_TERMS
+        category_slug = menu_cache.is_category_reference(item_lower)
+        is_generic_drink = category_slug == "drink"  # Matches "drink", "drinks", "beverage", etc.
         if is_generic_drink:
             # Generic drink request - show all beverages from category
             all_drinks = menu_cache.get_items_by_category("drink")
@@ -768,9 +766,10 @@ class ItemAdderHandler:
                 )
                 return (None, result)
 
-        # Check for generic category terms (chips, cookies, etc.)
+        # Check for generic category terms (chips, cookies, etc.) - data-driven
         generic_term = self._extract_generic_term(item_name)
-        is_exact_generic = item_lower in self.GENERIC_CATEGORY_TERMS
+        # Input is "exact generic" if it directly matches multiple items (e.g., "chips")
+        is_exact_generic = generic_term == item_lower
 
         # Step 1: Try to find matches
         matching_items = []

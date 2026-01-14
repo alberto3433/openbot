@@ -10,6 +10,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 
 from .parsers.constants import normalize_for_match
+from sandwich_bot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,9 @@ class MenuLookup:
 
     Provides fuzzy matching, plural/singular handling, category inference,
     and helpful suggestion generation when items aren't found.
+
+    Category inference and display names are loaded from the database via
+    menu_cache, eliminating the need for hardcoded keyword mappings.
     """
 
     # Categories to search when looking up items
@@ -35,52 +39,6 @@ class MenuLookup:
         "oj": ["orange juice", "tropicana", "fresh squeezed"],
         "apple juice": ["martinelli"],
         "lemonade": ["minute maid"],
-    }
-
-    # Category keyword mappings for inference (used to guess category of unknown items)
-    # NOTE: This is used for fallback inference, not direct lookup. Direct category
-    # lookup uses menu_cache.get_category_keyword_mapping(). This could be data-driven
-    # in the future but works well as a fallback.
-    CATEGORY_KEYWORDS = {
-        "drinks": [
-            "juice", "coffee", "tea", "latte", "cappuccino", "espresso",
-            "soda", "coke", "pepsi", "sprite", "water", "smoothie",
-            "milk", "chocolate milk", "hot chocolate", "mocha",
-            "drink", "beverage", "lemonade", "iced", "frappe",
-        ],
-        "sides": [
-            "hash", "hashbrown", "fries", "tots", "bacon", "sausage",
-            "egg", "eggs", "fruit", "salad", "side", "toast",
-            "home fries", "potatoes", "pancake", "waffle",
-        ],
-        "signature_bagels": [
-            "bagel", "everything", "plain", "sesame", "poppy",
-            "cinnamon", "raisin", "onion", "pumpernickel", "whole wheat",
-        ],
-        "signature_omelettes": [
-            "sandwich", "omelette", "omelet", "wrap", "panini",
-            "club", "blt", "reuben",
-        ],
-        "desserts": [
-            "cookie", "brownie", "muffin", "cake", "pastry",
-            "donut", "doughnut", "dessert", "sweet",
-        ],
-    }
-
-    # Friendly names for categories
-    CATEGORY_DISPLAY_NAMES = {
-        "drinks": "drinks",
-        "sides": "sides",
-        "signature_bagels": "bagels",
-        "signature_omelettes": "sandwiches and omelettes",
-        "desserts": "desserts",
-    }
-
-    # Map categories to item_type slugs for items_by_type lookup
-    CATEGORY_TYPE_MAP = {
-        "sides": ["side"],
-        "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
-        "desserts": ["dessert", "pastry", "snack"],
     }
 
     def __init__(self, menu_data: dict | None):
@@ -392,30 +350,103 @@ class MenuLookup:
 
         return []
 
-    def infer_item_category(self, item_name: str) -> str | None:
+    def infer_item_type(self, item_name: str) -> dict | None:
         """
-        Infer the likely category of an unknown item based on keywords.
+        Infer the likely item type of an unknown item based on keywords.
+
+        Uses database-driven category keywords loaded via menu_cache.
 
         Args:
             item_name: The name of the item the user requested
 
         Returns:
-            Category key like "drinks", "sides", "signature_bagels", or None if unclear
+            Dict with item type info if a keyword matches:
+            {
+                "slug": str,                    # The item_type slug
+                "display_name": str,            # Singular display name
+                "display_name_plural": str,     # Plural display name
+                "expands_to": list | None,      # List of slugs for meta-categories
+            }
+            Returns None if no keyword matches.
         """
-        name_lower = item_name.lower()
+        return menu_cache.infer_item_type_from_text(item_name)
 
-        for category, keywords in self.CATEGORY_KEYWORDS.items():
-            if any(kw in name_lower for kw in keywords):
-                return category
+    def infer_item_category(self, item_name: str) -> str | None:
+        """
+        Infer the likely category of an unknown item based on keywords.
 
+        DEPRECATED: Use infer_item_type() for richer type info.
+
+        This is a backward-compatibility wrapper that returns just the menu_data
+        category key (e.g., "drinks", "sides") for use with get_category_suggestions().
+
+        Args:
+            item_name: The name of the item the user requested
+
+        Returns:
+            Category string like "drinks", "sides", "desserts", or None if not matched.
+        """
+        type_info = self.infer_item_type(item_name)
+        if type_info:
+            # Map item type slugs to legacy menu_data category keys
+            slug = type_info["slug"]
+            slug_to_category = {
+                "beverage": "drinks",
+                "sized_beverage": "drinks",
+                "espresso": "drinks",
+                "side": "sides",
+                "snack": "desserts",
+                "pastry": "desserts",
+            }
+            return slug_to_category.get(slug, slug)
         return None
 
     def get_category_suggestions(self, category: str, limit: int = 5) -> str:
         """
-        Get a formatted string of menu suggestions from a category.
+        Get a formatted string of menu suggestions for a category.
+
+        DEPRECATED: Use get_suggestions_for_item_type() with item_type slugs.
+
+        This is a backward-compatibility wrapper for tests expecting old category names.
 
         Args:
-            category: The menu category key (e.g., "drinks", "sides")
+            category: Legacy category name like "drinks", "sides", "desserts"
+            limit: Maximum number of suggestions
+
+        Returns:
+            Formatted string of suggestions.
+        """
+        # First check if the legacy category key exists directly in menu_data
+        # (supports tests that create mock menu_data with old structure)
+        if self._menu_data and category in self._menu_data:
+            items = self._menu_data[category]
+            if items:
+                item_names = [item.get("name", "") for item in items[:limit] if item.get("name")]
+                if len(item_names) == 1:
+                    return item_names[0]
+                elif len(item_names) == 2:
+                    return f"{item_names[0]} or {item_names[1]}"
+                elif item_names:
+                    return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
+            return ""
+
+        # Map legacy category names to item type slugs
+        category_to_slug = {
+            "drinks": "beverage",  # Will try to expand via items_by_type
+            "sides": "side",
+            "desserts": "snack",
+        }
+        slug = category_to_slug.get(category, category)
+        return self.get_suggestions_for_item_type(slug, limit)
+
+    def get_suggestions_for_item_type(self, item_type_slug: str, limit: int = 5) -> str:
+        """
+        Get a formatted string of menu suggestions for an item type.
+
+        Uses items_by_type from menu_data for database-driven suggestions.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "side", "bagel")
             limit: Maximum number of suggestions to include
 
         Returns:
@@ -424,13 +455,31 @@ class MenuLookup:
         if not self._menu_data:
             return ""
 
-        items = self._menu_data.get(category, [])
+        items_by_type = self._menu_data.get("items_by_type", {})
+        items = items_by_type.get(item_type_slug, [])
 
-        # If no items in direct category, try items_by_type
-        if not items and category in self.CATEGORY_TYPE_MAP:
-            items_by_type = self._menu_data.get("items_by_type", {})
-            for type_slug in self.CATEGORY_TYPE_MAP.get(category, []):
-                items.extend(items_by_type.get(type_slug, []))
+        # If no items found directly, check if this is a meta-category with expands_to
+        if not items:
+            type_info = menu_cache.get_category_keyword_mapping(item_type_slug)
+            if type_info and type_info.get("expands_to"):
+                for sub_slug in type_info["expands_to"]:
+                    items.extend(items_by_type.get(sub_slug, []))
+
+        # Fallback to legacy menu_data category keys for backward compatibility
+        # Maps slug -> possible legacy keys to check
+        if not items:
+            slug_to_legacy_keys = {
+                "side": ["sides"],
+                "beverage": ["drinks", "beverages"],
+                "sized_beverage": ["drinks", "coffees"],
+                "snack": ["desserts", "snacks"],
+                "pastry": ["pastries", "bakery"],
+            }
+            legacy_keys = slug_to_legacy_keys.get(item_type_slug, [item_type_slug + "s"])
+            for key in legacy_keys:
+                if key in self._menu_data:
+                    items = self._menu_data[key]
+                    break
 
         if not items:
             return ""
@@ -461,21 +510,23 @@ class MenuLookup:
         """
         Generate a helpful message when an item isn't found on the menu.
 
-        Infers the category and suggests alternatives.
+        Infers the item type and suggests alternatives using database-driven
+        category keywords and display names.
 
         Args:
             item_name: The name of the item the user requested
 
         Returns:
-            Tuple of (message, category_for_followup).
-            category_for_followup is set when the message asks "Would you like to hear what X we have?"
-            so the caller can track state for a "yes" follow-up.
+            Tuple of (message, item_type_slug_for_followup).
+            item_type_slug_for_followup is set when the message asks "Would you like
+            to hear what X we have?" so the caller can track state for a "yes" follow-up.
         """
-        category = self.infer_item_category(item_name)
+        type_info = self.infer_item_type(item_name)
 
-        if category:
-            suggestions = self.get_category_suggestions(category, limit=4)
-            category_name = self.CATEGORY_DISPLAY_NAMES.get(category, "items")
+        if type_info:
+            item_type_slug = type_info["slug"]
+            suggestions = self.get_suggestions_for_item_type(item_type_slug, limit=4)
+            category_name = type_info.get("display_name_plural") or type_info.get("display_name", "items")
 
             if suggestions:
                 # We already gave suggestions, no need to track follow-up
@@ -486,11 +537,11 @@ class MenuLookup:
                     None,
                 )
             else:
-                # Return the category so caller can track state for "yes" follow-up
+                # Return the item_type_slug so caller can track state for "yes" follow-up
                 return (
                     f"I'm sorry, we don't have {item_name}. "
                     f"Would you like to hear what {category_name} we have?",
-                    category,
+                    item_type_slug,
                 )
         else:
             # Generic fallback

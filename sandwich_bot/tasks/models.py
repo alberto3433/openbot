@@ -429,7 +429,7 @@ class MenuItemTask(ItemTask):
 
         Examples:
             item.has_attribute("size")        # True for sized_beverage
-            item.has_attribute("bagel_type")  # True for bagel (via 'bread' attr)
+            item.has_attribute("bread")       # True for bagel
             item.has_attribute("spread")      # True for bagel, some sandwiches
             item.has_attribute("milk")        # True for sized_beverage
 
@@ -478,28 +478,27 @@ class MenuItemTask(ItemTask):
         return self.menu_item_type == "bagel"
 
     @property
-    def bagel_type(self) -> str | None:
-        """Get bagel type from attribute_values."""
-        # Check both 'bagel_type' and 'bread' for compatibility
-        return self.attribute_values.get("bagel_type") or self.attribute_values.get("bread")
+    def bread(self) -> str | None:
+        """Get bread type from attribute_values."""
+        return self.attribute_values.get("bread")
 
-    @bagel_type.setter
-    def bagel_type(self, value: str | None) -> None:
-        """Set bagel type in attribute_values."""
+    @bread.setter
+    def bread(self, value: str | None) -> None:
+        """Set bread type in attribute_values."""
         if value is not None:
-            self.attribute_values["bagel_type"] = value
-        elif "bagel_type" in self.attribute_values:
-            del self.attribute_values["bagel_type"]
+            self.attribute_values["bread"] = value
+        elif "bread" in self.attribute_values:
+            del self.attribute_values["bread"]
 
     @property
-    def bagel_type_upcharge(self) -> float:
-        """Get bagel type upcharge from attribute_values."""
-        return self.attribute_values.get("bagel_type_upcharge", 0.0)
+    def bread_upcharge(self) -> float:
+        """Get bread type upcharge from attribute_values."""
+        return self.attribute_values.get("bread_upcharge", 0.0)
 
-    @bagel_type_upcharge.setter
-    def bagel_type_upcharge(self, value: float) -> None:
-        """Set bagel type upcharge in attribute_values."""
-        self.attribute_values["bagel_type_upcharge"] = value
+    @bread_upcharge.setter
+    def bread_upcharge(self, value: float) -> None:
+        """Set bread type upcharge in attribute_values."""
+        self.attribute_values["bread_upcharge"] = value
 
     @property
     def scooped(self) -> bool | None:
@@ -1087,7 +1086,7 @@ class OrderTask(BaseTask):
             item_id: The item's unique ID
             item_type: Type of item (bagel, coffee, signature_item, etc.)
             item_name: Display name for abbreviated follow-up questions
-            pending_field: The field to configure (toasted, bagel_type, etc.)
+            pending_field: The field to configure (toasted, bread, etc.)
         """
         # Don't add duplicates - handle mixed types (strings from category inquiry, dicts from item config)
         for entry in self.pending_config_queue:

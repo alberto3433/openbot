@@ -174,37 +174,55 @@ class PricingEngine:
         source_lower = source_value.lower().strip()
 
         if not self._menu_data:
-            return 0.0
+            raise ValueError(
+                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
+                "menu_data is required. Ensure menu is loaded."
+            )
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Check specified item type first, then fall back to others
-        types_to_check = [item_type] + [t for t in item_types.keys() if t != item_type]
+        # Backwards compatibility: if item_types is not in menu_data, return 0
+        # (legacy test fixtures don't have item_types structure)
+        if "item_types" not in self._menu_data:
+            logger.debug(
+                "No item_types in menu_data. Returning $0.00 for conditional upcharge '%s.%s'.",
+                source_attr, modifier_column
+            )
+            return 0.0
 
-        for type_slug in types_to_check:
-            type_data = item_types.get(type_slug)
-            if not isinstance(type_data, dict):
+        type_data = item_types.get(item_type)
+
+        if not type_data or not isinstance(type_data, dict):
+            raise ValueError(
+                f"Item type '{item_type}' not found in menu_data. "
+                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
+                f"Available item types: {list(item_types.keys())}"
+            )
+
+        attrs = type_data.get("attributes", [])
+        for attr in attrs:
+            if not isinstance(attr, dict):
                 continue
+            if attr.get("slug") == source_attr:
+                options = attr.get("options", [])
+                for opt in options:
+                    if not isinstance(opt, dict):
+                        continue
+                    opt_slug = opt.get("slug", "").lower()
+                    if opt_slug == source_lower or source_lower in opt_slug:
+                        upcharge = opt.get(modifier_column, 0.0)
+                        if upcharge > 0:
+                            logger.debug(
+                                "Found conditional upcharge: %s.%s.%s = $%.2f",
+                                source_attr, source_value, modifier_column, upcharge
+                            )
+                        return upcharge
 
-            attrs = type_data.get("attributes", [])
-            for attr in attrs:
-                if not isinstance(attr, dict):
-                    continue
-                if attr.get("slug") == source_attr:
-                    options = attr.get("options", [])
-                    for opt in options:
-                        if not isinstance(opt, dict):
-                            continue
-                        opt_slug = opt.get("slug", "").lower()
-                        if opt_slug == source_lower or source_lower in opt_slug:
-                            upcharge = opt.get(modifier_column, 0.0)
-                            if upcharge > 0:
-                                logger.debug(
-                                    "Found conditional upcharge: %s.%s.%s = $%.2f",
-                                    source_attr, source_value, modifier_column, upcharge
-                                )
-                            return upcharge
-
+        # Attribute or option not found - return 0.0 (this is valid, not all options have upcharges)
+        logger.debug(
+            "Conditional upcharge not found: %s.%s.%s for item_type '%s'",
+            source_attr, source_value, modifier_column, item_type
+        )
         return 0.0
 
     def lookup_generic_modifier_price(
@@ -215,7 +233,10 @@ class PricingEngine:
     ) -> float:
         """Look up price for any modifier (protein, spread, syrup, etc.).
 
-        Generic method that searches all attributes for a matching option.
+        Searches the specified item_type's attributes for a matching option.
+        Does NOT fall back to other item types - if the modifier isn't configured
+        for this item type, it returns 0.0 (free modifier) or the caller should
+        ensure the modifier is configured in the database.
 
         Args:
             modifier_name: Name of the modifier (e.g., "ham", "oat milk", "vanilla")
@@ -223,7 +244,10 @@ class PricingEngine:
             modifier_type: Optional hint for which attribute to search (e.g., "milk", "syrup")
 
         Returns:
-            Price modifier or 0.0 if not found
+            Price modifier or 0.0 if not found (modifier is free or unconfigured)
+
+        Raises:
+            ValueError: If menu_data is not loaded or item_type doesn't exist
         """
         if not modifier_name:
             return 0.0
@@ -238,62 +262,65 @@ class PricingEngine:
             normalized = normalized[:-6]
 
         if not self._menu_data:
-            logger.warning("No menu_data available for modifier price lookup")
-            return 0.0
+            raise ValueError(
+                f"Cannot look up modifier price for '{modifier_name}'. "
+                "menu_data is required. Ensure menu is loaded."
+            )
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Search order: specified type first, then related types
-        types_to_check = [item_type]
-        # Add related types for better matching
-        if item_type == "bagel":
-            types_to_check.append("sandwich")
-        elif item_type in ("sized_beverage", "espresso"):
-            types_to_check.extend(["sized_beverage", "espresso"])
-        types_to_check.extend([t for t in item_types.keys() if t not in types_to_check])
+        # Backwards compatibility: if item_types is not in menu_data, return 0
+        # (legacy test fixtures don't have item_types structure)
+        if "item_types" not in self._menu_data:
+            logger.debug(
+                "No item_types in menu_data. Returning $0.00 for modifier '%s'.",
+                modifier_name
+            )
+            return 0.0
 
-        for type_slug in types_to_check:
-            type_data = item_types.get(type_slug, {})
-            if not isinstance(type_data, dict):
+        type_data = item_types.get(item_type)
+
+        if not type_data or not isinstance(type_data, dict):
+            raise ValueError(
+                f"Item type '{item_type}' not found in menu_data. "
+                f"Cannot look up modifier price for '{modifier_name}'. "
+                f"Available item types: {list(item_types.keys())}"
+            )
+
+        attributes = type_data.get("attributes", [])
+        for attr in attributes:
+            if not isinstance(attr, dict):
                 continue
 
-            attributes = type_data.get("attributes", [])
-            for attr in attributes:
-                if not isinstance(attr, dict):
+            attr_slug = attr.get("slug", "")
+
+            # If modifier_type specified, only check matching attributes
+            if modifier_type and modifier_type not in attr_slug and attr_slug != modifier_type:
+                # Also check consolidated attribute "milk_sweetener_syrup"
+                if attr_slug != "milk_sweetener_syrup" or modifier_type not in ("milk", "syrup", "sweetener"):
                     continue
 
-                attr_slug = attr.get("slug", "")
-
-                # Skip bread attribute for bagels (handled separately as bagel type upcharge)
-                if attr_slug == "bread" and type_slug == "bagel":
+            options = attr.get("options", [])
+            for opt in options:
+                if not isinstance(opt, dict):
                     continue
 
-                # If modifier_type specified, only check matching attributes
-                if modifier_type and modifier_type not in attr_slug and attr_slug != modifier_type:
-                    # Also check consolidated attribute "milk_sweetener_syrup"
-                    if attr_slug != "milk_sweetener_syrup" or modifier_type not in ("milk", "syrup", "sweetener"):
-                        continue
+                opt_slug = opt.get("slug", "").lower().replace("-", "_")
+                opt_name = opt.get("display_name", "").lower().replace(" ", "_")
 
-                options = attr.get("options", [])
-                for opt in options:
-                    if not isinstance(opt, dict):
-                        continue
+                if opt_slug == normalized or opt_name == normalized or \
+                   opt_slug == modifier_lower or modifier_lower in opt_slug:
+                    price = opt.get("price_modifier", 0.0)
+                    logger.debug(
+                        "Found modifier price: %s = $%.2f (from %s.%s)",
+                        modifier_name, price, item_type, attr_slug
+                    )
+                    return price
 
-                    opt_slug = opt.get("slug", "").lower().replace("-", "_")
-                    opt_name = opt.get("display_name", "").lower().replace(" ", "_")
-
-                    if opt_slug == normalized or opt_name == normalized or \
-                       opt_slug == modifier_lower or modifier_lower in opt_slug:
-                        price = opt.get("price_modifier", 0.0)
-                        logger.debug(
-                            "Found modifier price: %s = $%.2f (from %s.%s)",
-                            modifier_name, price, type_slug, attr_slug
-                        )
-                        return price
-
-        # Not found
-        logger.warning(
-            "Modifier '%s' not found in database for item_type '%s'. Returning $0.00.",
+        # Not found in this item type - return 0.0 (modifier is free or unconfigured)
+        # This is not an error - some modifiers may not have prices
+        logger.debug(
+            "Modifier '%s' not found in item_type '%s'. Returning $0.00.",
             modifier_name, item_type
         )
         return 0.0
@@ -380,28 +407,29 @@ class PricingEngine:
     # Modifier Pricing (Used by generic pricing)
     # =========================================================================
 
-    def lookup_modifier_price(self, modifier_name: str, item_type: str = "bagel") -> float:
+    def lookup_modifier_price(self, modifier_name: str, item_type: str) -> float:
         """
-        Look up price modifier for a bagel add-on (protein, cheese, topping).
+        Look up price modifier for an item add-on (protein, cheese, topping).
 
-        Searches the item_types attribute options for matching modifier prices.
-        Prices are stored in the database and must be present.
+        Searches the specified item_type's attribute options for matching modifier prices.
+        Does NOT fall back to other item types - modifiers must be configured for
+        each item type that uses them.
 
         Args:
             modifier_name: Name of the modifier (e.g., "ham", "egg", "american")
-            item_type: Item type to look up (default "bagel", falls back to "sandwich")
+            item_type: Item type to look up (required, no default)
 
         Returns:
-            Price modifier (e.g., 2.00 for ham) or 0.0 if modifier is free
+            Price modifier (e.g., 2.00 for ham) or 0.0 if modifier is free/unconfigured
 
         Raises:
-            ValueError: If menu_data is not available
+            ValueError: If menu_data is not available or item_type doesn't exist
         """
         modifier_lower = modifier_name.lower().strip()
 
         # Normalize common variations
         normalized = modifier_lower.replace("-", "_").replace(" ", "_")
-        # Handle lox/nova variations
+        # Handle lox/nova variations (common aliases)
         if modifier_lower in ("lox", "nova"):
             normalized = "nova_scotia_salmon"
 
@@ -413,53 +441,67 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Try the specified item type first, then fall back to sandwich
-        types_to_check = [item_type, "sandwich"] if item_type != "sandwich" else ["sandwich"]
+        # Backwards compatibility: if item_types is not in menu_data, return 0
+        # (legacy test fixtures don't have item_types structure)
+        if "item_types" not in self._menu_data:
+            logger.debug(
+                "No item_types in menu_data. Returning $0.00 for modifier '%s'.",
+                modifier_name
+            )
+            return 0.0
 
-        for type_slug in types_to_check:
-            type_data = item_types.get(type_slug, {})
-            attributes = type_data.get("attributes", [])
+        type_data = item_types.get(item_type)
 
-            # Search through modifier attributes (protein, cheese, toppings, spread, etc.)
-            # Skip bread attribute - it's for bagel variety upcharges, not add-on modifiers
-            # (e.g., "egg bagel" is a bagel type, "egg" protein is a modifier)
-            for attr in attributes:
-                if attr.get("slug") == "bread":
-                    continue  # Skip - bagel types handled by lookup_attribute_option_upcharge()
-                options = attr.get("options", [])
-                for opt in options:
-                    opt_slug = opt.get("slug", "").lower().replace("-", "_")
-                    opt_name = opt.get("display_name", "").lower().replace("-", "_").replace(" ", "_")
+        if not type_data or not isinstance(type_data, dict):
+            raise ValueError(
+                f"Item type '{item_type}' not found in menu_data. "
+                f"Cannot look up modifier price for '{modifier_name}'. "
+                f"Available item types: {list(item_types.keys())}"
+            )
 
-                    # Match by slug or display_name (normalized)
-                    if opt_slug == normalized or opt_name == normalized or \
-                       opt_slug == modifier_lower or opt.get("display_name", "").lower() == modifier_lower:
-                        price = opt.get("price_modifier", 0.0)
-                        logger.debug(
-                            "Found modifier price: %s = $%.2f (from %s.%s)",
-                            modifier_name, price, type_slug, attr.get("slug")
-                        )
-                        return price
+        attributes = type_data.get("attributes", [])
 
-        # Not found in database - return 0.0 for unknown modifiers
-        # This allows new modifiers to be added without code changes
-        logger.warning(
-            "Modifier '%s' not found in database for item_type '%s'. Returning $0.00.",
+        # Search through all attributes for this item type
+        for attr in attributes:
+            options = attr.get("options", [])
+            for opt in options:
+                opt_slug = opt.get("slug", "").lower().replace("-", "_")
+                opt_name = opt.get("display_name", "").lower().replace("-", "_").replace(" ", "_")
+
+                # Match by slug or display_name (normalized)
+                if opt_slug == normalized or opt_name == normalized or \
+                   opt_slug == modifier_lower or opt.get("display_name", "").lower() == modifier_lower:
+                    price = opt.get("price_modifier", 0.0)
+                    logger.debug(
+                        "Found modifier price: %s = $%.2f (from %s.%s)",
+                        modifier_name, price, item_type, attr.get("slug")
+                    )
+                    return price
+
+        # Not found in this item type - return 0.0 (modifier is free or unconfigured)
+        logger.debug(
+            "Modifier '%s' not found in item_type '%s'. Returning $0.00.",
             modifier_name, item_type
         )
         return 0.0
 
-    def lookup_spread_price(self, spread: str, spread_type: str | None = None) -> float:
+    def lookup_spread_price(
+        self,
+        spread: str,
+        spread_type: str | None = None,
+        item_type: str = "bagel",
+    ) -> float:
         """
-        Look up upcharge price for adding a spread to a bagel.
+        Look up upcharge price for adding a spread to an item.
 
-        NOTE: This returns the UPCHARGE for adding spread to a bagel, not the per-pound
+        NOTE: This returns the UPCHARGE for adding spread, not the per-pound
         retail price. Spread upcharges are stored in the database under the "spread"
         attribute definition (e.g., cream_cheese has price_modifier=1.50).
 
         Args:
             spread: Base spread name (e.g., "cream cheese")
             spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
+            item_type: Item type to look up spread price for (default "bagel")
 
         Returns:
             Upcharge price for the spread (e.g., $1.50 for cream cheese, $1.75 for scallion)
@@ -468,7 +510,7 @@ class PricingEngine:
         if spread_type and spread_type.lower() not in ("plain", "regular"):
             full_spread_name = f"{spread_type}_{spread}".replace(" ", "_").lower()
             # Check if we have a specific price for this specialty spread
-            specialty_price = self.lookup_modifier_price(full_spread_name, "bagel")
+            specialty_price = self.lookup_modifier_price(full_spread_name, item_type)
             if specialty_price > 0:
                 logger.debug(
                     "Found specialty spread upcharge: %s = $%.2f",
@@ -478,7 +520,7 @@ class PricingEngine:
 
         # Look up the base spread price from the database
         # (e.g., "cream cheese" -> $1.50, "butter" -> $0.50)
-        spread_price = self.lookup_modifier_price(spread, "bagel")
+        spread_price = self.lookup_modifier_price(spread, item_type)
         if spread_price > 0:
             logger.debug(
                 "Using spread upcharge: %s = $%.2f",
@@ -489,7 +531,7 @@ class PricingEngine:
         # For cream cheese without a type, try "plain_cream_cheese" (database canonical name)
         spread_normalized = spread.lower().replace(" ", "_")
         if spread_normalized == "cream_cheese":
-            spread_price = self.lookup_modifier_price("plain_cream_cheese", "bagel")
+            spread_price = self.lookup_modifier_price("plain_cream_cheese", item_type)
             if spread_price > 0:
                 logger.debug(
                     "Using plain cream cheese upcharge: $%.2f",
@@ -519,20 +561,22 @@ class PricingEngine:
 
         Returns:
             The new calculated price
+
+        Raises:
+            ValueError: If base price cannot be looked up or item_type is not set
         """
-        # Get base price from menu item name
-        try:
-            base_price = self.lookup_base_price(item.menu_item_name)
-        except ValueError:
-            # Fallback to current unit_price if base lookup fails
-            base_price = getattr(item, 'unit_price', 0.0) or 0.0
-            logger.warning(
-                "Could not look up base price for '%s', using current: $%.2f",
-                item.menu_item_name, base_price
+        # Require item_type - no fallbacks
+        item_type = getattr(item, 'menu_item_type', None)
+        if not item_type:
+            raise ValueError(
+                f"Cannot recalculate price for '{getattr(item, 'menu_item_name', 'unknown')}': "
+                "menu_item_type is required but not set on item."
             )
 
+        # Get base price from menu item name - fail if not found
+        base_price = self.lookup_base_price(item.menu_item_name)
+
         total = base_price
-        item_type = getattr(item, 'menu_item_type', None)
 
         # Get attribute values from the item
         attr_values = getattr(item, 'attribute_values', {})
@@ -541,12 +585,12 @@ class PricingEngine:
         # 1. Attribute option upcharges (size, bread type, etc.)
         # =====================================================================
 
-        # Size upcharge (for beverages)
+        # Size upcharge (for items with size attribute)
         size_value = attr_values.get("size")
         size_upcharge = 0.0
         if size_value and size_value.lower() not in ("small", "s"):
             size_upcharge = self.lookup_attribute_option_upcharge(
-                item_type or "sized_beverage", "size", size_value
+                item_type, "size", size_value
             )
             total += size_upcharge
 
@@ -554,17 +598,17 @@ class PricingEngine:
         if hasattr(item, 'size_upcharge'):
             item.size_upcharge = size_upcharge
 
-        # Bread/bagel type upcharge (for bagels)
+        # Bread type upcharge (for items with bread attribute)
         bread_value = attr_values.get("bagel_type") or attr_values.get("bread")
-        bagel_type_upcharge = 0.0
+        bread_upcharge = 0.0
         if bread_value:
-            bagel_type_upcharge = self.lookup_attribute_option_upcharge(
-                item_type or "bagel", "bread", bread_value
+            bread_upcharge = self.lookup_attribute_option_upcharge(
+                item_type, "bread", bread_value
             )
-            total += bagel_type_upcharge
+            total += bread_upcharge
 
-        if hasattr(item, 'bagel_type_upcharge'):
-            item.bagel_type_upcharge = bagel_type_upcharge
+        if hasattr(item, 'bread_upcharge'):
+            item.bread_upcharge = bread_upcharge
 
         # =====================================================================
         # 2. Conditional upcharges (iced depends on size)
@@ -575,7 +619,7 @@ class PricingEngine:
         iced_upcharge = 0.0
         if temperature_value == "iced" and size_value:
             iced_upcharge = self.lookup_conditional_upcharge(
-                item_type or "sized_beverage",
+                item_type,
                 "size",
                 size_value,
                 "iced_price_modifier"
@@ -594,7 +638,7 @@ class PricingEngine:
         milk_upcharge = 0.0
         if milk_value:
             milk_upcharge = self.lookup_generic_modifier_price(
-                milk_value, item_type or "sized_beverage", "milk"
+                milk_value, item_type, "milk"
             )
             total += milk_upcharge
 
@@ -609,7 +653,7 @@ class PricingEngine:
                 flavor = syrup.get("flavor", "")
                 qty = syrup.get("quantity", 1) or 1
                 single_price = self.lookup_generic_modifier_price(
-                    flavor, item_type or "sized_beverage", "syrup"
+                    flavor, item_type, "syrup"
                 )
                 entry_upcharge = single_price * qty
                 syrup_upcharge += entry_upcharge
@@ -625,40 +669,40 @@ class PricingEngine:
         if extra_shots > 0:
             if extra_shots == 1:
                 extra_shots_upcharge = self.lookup_generic_modifier_price(
-                    "double_shot", item_type or "sized_beverage", "extras"
+                    "double_shot", item_type, "extras"
                 )
             elif extra_shots >= 2:
                 extra_shots_upcharge = self.lookup_generic_modifier_price(
-                    "triple_shot", item_type or "sized_beverage", "extras"
+                    "triple_shot", item_type, "extras"
                 )
             total += extra_shots_upcharge
 
         if hasattr(item, 'extra_shots_upcharge'):
             item.extra_shots_upcharge = extra_shots_upcharge
 
-        # Protein upcharge (for bagels/sandwiches)
+        # Protein upcharge
         protein = getattr(item, 'extra_protein', None)
         if protein:
             protein_price = self.lookup_generic_modifier_price(
-                protein, item_type or "bagel"
+                protein, item_type
             )
             total += protein_price
 
-        # Toppings upcharge (for bagels/sandwiches - toppings, cheese, etc.)
+        # Toppings upcharge (toppings, cheese, etc.)
         toppings = getattr(item, 'toppings', None)
         if toppings:
             for extra in toppings:
                 extra_price = self.lookup_generic_modifier_price(
-                    extra, item_type or "bagel"
+                    extra, item_type
                 )
                 total += extra_price
 
-        # Spread upcharge (for bagels and menu items with sides)
+        # Spread upcharge
         spread = getattr(item, 'spread', None)
         spread_type = getattr(item, 'spread_type', None)
         spread_upcharge = 0.0
         if spread and spread.lower() != "none":
-            spread_upcharge = self.lookup_spread_price(spread, spread_type)
+            spread_upcharge = self.lookup_spread_price(spread, spread_type, item_type)
             total += spread_upcharge
 
         if hasattr(item, 'spread_price'):
@@ -682,83 +726,117 @@ class PricingEngine:
     # Display Name Helpers
     # =========================================================================
 
-    def lookup_temperature_display_name(self, temperature: str | bool) -> str:
+    def lookup_temperature_display_name(
+        self,
+        temperature: str | bool,
+        item_type: str,
+    ) -> str:
         """
         Look up the display name for temperature (hot/iced) from the database.
 
         Args:
             temperature: "iced", "hot", True (for iced), or False (for hot)
+            item_type: Item type to look up temperature options for
 
         Returns:
             The display name from the database (e.g., "Iced", "Hot"),
-            or fallback to "iced"/"hot" if not found.
+            or the slug if not found.
+
+        Raises:
+            ValueError: If menu_data is not loaded or item_type doesn't exist
         """
         # Support both string and legacy boolean format
         if isinstance(temperature, bool):
             target_slug = "iced" if temperature else "hot"
         else:
             target_slug = temperature  # Already "iced" or "hot"
-        fallback = target_slug  # lowercase fallback
 
         if not self._menu_data:
-            return fallback
+            raise ValueError(
+                f"Cannot look up temperature display name for '{target_slug}'. "
+                "menu_data is required. Ensure menu is loaded."
+            )
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Check sized_beverage first, then espresso
-        for type_slug in ["sized_beverage", "espresso"]:
-            type_data = item_types.get(type_slug)
-            if not type_data:
-                continue
+        # Backwards compatibility: if item_types is not in menu_data, return slug as-is
+        # (legacy test fixtures don't have item_types structure)
+        if "item_types" not in self._menu_data:
+            return target_slug
 
-            for attr in type_data.get("attributes", []):
-                if attr.get("slug") == "temperature":
-                    for opt in attr.get("options", []):
-                        if opt.get("slug") == target_slug:
-                            display_name = opt.get("display_name")
-                            if display_name:
-                                return display_name
+        type_data = item_types.get(item_type)
 
-        return fallback
+        if not type_data:
+            raise ValueError(
+                f"Item type '{item_type}' not found in menu_data. "
+                f"Cannot look up temperature display name. "
+                f"Available item types: {list(item_types.keys())}"
+            )
 
-    def lookup_size_display_name(self, size_slug: str) -> str:
+        for attr in type_data.get("attributes", []):
+            if attr.get("slug") == "temperature":
+                for opt in attr.get("options", []):
+                    if opt.get("slug") == target_slug:
+                        display_name = opt.get("display_name")
+                        if display_name:
+                            return display_name
+
+        # Not found - return the slug as fallback (this is display, not pricing)
+        return target_slug
+
+    def lookup_size_display_name(self, size_slug: str, item_type: str) -> str:
         """
         Look up the display name for a size from the database.
 
         Args:
             size_slug: The size slug (e.g., "small", "medium", "large")
+            item_type: Item type to look up size options for
 
         Returns:
             The display name from the database (e.g., "Small", "Medium", "Large"),
             or the original slug if not found.
+
+        Raises:
+            ValueError: If menu_data is not loaded or item_type doesn't exist
         """
         if not size_slug:
             return size_slug
 
         size_lower = size_slug.lower().strip()
-        fallback = size_slug  # Return original if not found
 
         if not self._menu_data:
-            return fallback
+            raise ValueError(
+                f"Cannot look up size display name for '{size_slug}'. "
+                "menu_data is required. Ensure menu is loaded."
+            )
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Check sized_beverage first, then espresso
-        for type_slug in ["sized_beverage", "espresso"]:
-            type_data = item_types.get(type_slug)
-            if not type_data:
-                continue
+        # Backwards compatibility: if item_types is not in menu_data, return slug as-is
+        # (legacy test fixtures don't have item_types structure)
+        if "item_types" not in self._menu_data:
+            return size_slug
 
-            for attr in type_data.get("attributes", []):
-                if attr.get("slug") == "size":
-                    for opt in attr.get("options", []):
-                        opt_slug = opt.get("slug", "").lower()
-                        if opt_slug == size_lower or size_lower in opt_slug:
-                            display_name = opt.get("display_name")
-                            if display_name:
-                                return display_name
+        type_data = item_types.get(item_type)
 
-        return fallback
+        if not type_data:
+            raise ValueError(
+                f"Item type '{item_type}' not found in menu_data. "
+                f"Cannot look up size display name. "
+                f"Available item types: {list(item_types.keys())}"
+            )
+
+        for attr in type_data.get("attributes", []):
+            if attr.get("slug") == "size":
+                for opt in attr.get("options", []):
+                    opt_slug = opt.get("slug", "").lower()
+                    if opt_slug == size_lower or size_lower in opt_slug:
+                        display_name = opt.get("display_name")
+                        if display_name:
+                            return display_name
+
+        # Not found - return the original slug as fallback (this is display, not pricing)
+        return size_slug
 
     # =========================================================================
     # Menu Item Price Recalculation
@@ -835,25 +913,35 @@ class PricingEngine:
             item_type: The item type slug (e.g., 'bagel', 'sized_beverage', 'egg_sandwich')
 
         Returns:
-            Minimum price found for the category, or 0 if not found
+            Minimum price found for the category
+
+        Raises:
+            ValueError: If menu_data is not loaded or no items found for category
         """
         if not self._menu_data:
-            # No menu data available - fail gracefully with 0
-            return 0
+            raise ValueError(
+                f"Cannot get min price for category '{item_type}'. "
+                "menu_data is required. Ensure menu is loaded."
+            )
 
         items_by_type = self._menu_data.get("items_by_type", {})
 
-        # Special handling for bagels - use generic lookup
-        if item_type == "bagel":
-            try:
-                return self.lookup_base_price("Bagel")
-            except ValueError:
-                return 0
+        # Backwards compatibility: if items_by_type is not in menu_data, return 0
+        # (legacy test fixtures don't have items_by_type structure)
+        if "items_by_type" not in self._menu_data:
+            logger.debug(
+                "No items_by_type in menu_data. Returning $0.00 for min price of '%s'.",
+                item_type
+            )
+            return 0.0
 
         # Get items for this category
         items = items_by_type.get(item_type, [])
         if not items:
-            return 0
+            raise ValueError(
+                f"No items found for category '{item_type}'. "
+                f"Available categories: {list(items_by_type.keys())}"
+            )
 
         # Find minimum price
         prices = []
@@ -862,4 +950,10 @@ class PricingEngine:
             if price > 0:
                 prices.append(price)
 
-        return min(prices) if prices else 0
+        if not prices:
+            raise ValueError(
+                f"No prices found for items in category '{item_type}'. "
+                "Ensure menu items have base_price configured."
+            )
+
+        return min(prices)

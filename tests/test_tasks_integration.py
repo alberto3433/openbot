@@ -300,9 +300,9 @@ class TestStateMachineMultiBagel:
 
         # Verify ONLY the first bagel has type set (one-at-a-time approach)
         bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
-        assert bagels[0].bagel_type == "plain", "First bagel should be plain"
-        assert bagels[1].bagel_type is None, "Second bagel should not have type yet"
-        assert bagels[2].bagel_type is None, "Third bagel should not have type yet"
+        assert bagels[0].bread == "plain", "First bagel should be plain"
+        assert bagels[1].bread is None, "Second bagel should not have type yet"
+        assert bagels[2].bread is None, "Third bagel should not have type yet"
 
         # Should ask about TOASTED for first bagel (fully configure each bagel)
         # Data-driven handler uses item_type:attr_slug format
@@ -384,8 +384,8 @@ class TestMixedItemBagelChoice:
             assert omelette.bagel_choice == "plain", \
                 f"Omelette should have bagel_choice=plain, got {omelette.bagel_choice}"
             # The cream cheese bagel should NOT be configured yet
-            assert cc_bagel.bagel_type is None, \
-                f"CC bagel should not have bagel_type yet, got {cc_bagel.bagel_type}"
+            assert cc_bagel.bread is None, \
+                f"CC bagel should not have bagel_type yet, got {cc_bagel.bread}"
 
             # Should ask about toasted for the omelette's bagel next
             assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "menu_item_bagel_toasted", "bagel:toasted")
@@ -427,7 +427,7 @@ class TestMixedItemBagelChoice:
             result = sm.configuring_item_handler.handle_configuring_item("plain", order)
 
         assert omelette.bagel_choice == "plain"
-        assert cc_bagel.bagel_type is None  # Not configured yet
+        assert cc_bagel.bread is None  # Not configured yet
         assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "menu_item_bagel_toasted", "bagel:toasted")  # Asks toasted for omelette's bagel
 
 
@@ -497,7 +497,7 @@ class TestPriceRecalculationInvariants:
         assert len(bagels) == 1
 
         bagel = bagels[0]
-        assert bagel.bagel_type == "wheat"
+        assert bagel.bread == "wheat"
         assert bagel.extra_protein == "ham"
         assert "egg" in bagel.toppings
         assert "american" in bagel.toppings
@@ -967,7 +967,7 @@ class TestOrderTypeUpfront:
         # Should have added the bagel
         bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
         assert len(bagels) == 1
-        assert bagels[0].bagel_type == "plain"
+        assert bagels[0].bread == "plain"
 
     def test_checkout_asks_for_name_when_order_type_set_upfront(self):
         """Test that checkout asks for name when order type was set upfront.
@@ -1880,7 +1880,7 @@ class TestBagelWithCoffeeConfig:
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 1
         assert len(coffees) == 1
-        assert bagels[0].bagel_type == "plain"
+        assert bagels[0].bread == "plain"
         assert coffees[0].size == "large"
         assert coffees[0].iced is False
 
@@ -2070,7 +2070,7 @@ class TestBagelWithCoffeeConfig:
         coffees = [i for i in order.items.items if getattr(i, 'is_sized_beverage', False)]
         assert len(bagels) == 2
         assert len(coffees) == 2
-        assert all(b.bagel_type is not None for b in bagels), "All bagels should have type set"
+        assert all(b.bread is not None for b in bagels), "All bagels should have type set"
         assert all(c.size is not None for c in coffees), "All coffees should have size set"
 
     def test_bagel_and_menu_item(self):
@@ -3203,7 +3203,7 @@ class TestCoffeeSize:
         active_items = order.items.get_active_items()
         # Should only have the bagel left
         assert len(active_items) == 1
-        assert active_items[0].bagel_type == "plain"
+        assert active_items[0].bread == "plain"
         assert order.phase == OrderPhase.TAKING_ITEMS.value
         assert "removed" in result.message.lower()
 
@@ -5021,7 +5021,7 @@ class TestGreetingHandler:
             # Should have added a bagel
             bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) >= 1
-            assert bagels[0].bagel_type == "plain"
+            assert bagels[0].bread == "plain"
 
     def test_greeting_with_coffee_order_adds_item(self):
         """Test that greeting with coffee order adds coffee to cart."""
@@ -5080,7 +5080,7 @@ class TestTakingItemsHandler:
 
             bagels = [i for i in order.items.items if getattr(i, 'is_bagel', False)]
             assert len(bagels) >= 1
-            assert bagels[0].bagel_type == "everything"
+            assert bagels[0].bread == "everything"
             # Data-driven flow may ask about optional changes or proceed to "anything else"
             msg_lower = result.message.lower()
             assert "anything else" in msg_lower or "else" in msg_lower or "change" in msg_lower
@@ -5202,7 +5202,7 @@ class TestTakingItemsHandler:
             # Should only have the bagel left
             active_items = order.items.get_active_items()
             assert len(active_items) == 1
-            assert active_items[0].bagel_type == "plain"
+            assert active_items[0].bread == "plain"
             assert "removed" in result.message.lower()
             assert "2 coffees" in result.message.lower()
 

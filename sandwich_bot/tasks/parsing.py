@@ -20,7 +20,7 @@ class ParsedBagelItem(BaseModel):
     """A parsed bagel item from user input."""
 
     item_type: Literal["bagel"] = "bagel"
-    bagel_type: str | None = Field(
+    bread: str | None = Field(
         default=None,
         description="Type of bagel: plain, everything, sesame, poppy, onion, cinnamon raisin, etc."
     )

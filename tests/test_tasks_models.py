@@ -45,7 +45,7 @@ def create_bagel_task(
         unit_price=unit_price,
     )
     if bagel_type:
-        bagel.bagel_type = bagel_type
+        bagel.bread = bagel_type
     if spread_type:
         bagel.spread_type = spread_type
     if extras:
@@ -198,7 +198,7 @@ class TestBagelItemTask:
         assert bagel.item_type == "menu_item"
         assert bagel.menu_item_type == "bagel"
         assert bagel.quantity == 1
-        assert bagel.bagel_type is None
+        assert bagel.bread is None
         assert bagel.toasted is None
         assert bagel.spread is None
         assert bagel.toppings == []
@@ -237,7 +237,7 @@ class TestBagelItemTask:
     def test_get_missing_required_fields(self):
         """Test finding missing required fields."""
         bagel = create_bagel_task()  # No fields set
-        bagel_fields = MenuFieldConfig().bagel_fields
+        bagel_fields = MenuFieldConfig().get_fields_for_item_type("bagel")
 
         missing = bagel.get_missing_required_fields(bagel_fields)
 
@@ -253,7 +253,7 @@ class TestBagelItemTask:
             bagel_type="plain",
             toasted=False,
         )
-        bagel_fields = MenuFieldConfig().bagel_fields
+        bagel_fields = MenuFieldConfig().get_fields_for_item_type("bagel")
 
         missing = bagel.get_missing_required_fields(bagel_fields)
         assert len(missing) == 0
@@ -261,13 +261,13 @@ class TestBagelItemTask:
     def test_get_fields_to_ask(self):
         """Test getting fields that need asking."""
         bagel = create_bagel_task()
-        bagel_fields = MenuFieldConfig().bagel_fields
+        bagel_fields = MenuFieldConfig().get_fields_for_item_type("bagel")
 
         to_ask = bagel.get_fields_to_ask(bagel_fields)
         field_names = [f.name for f in to_ask]
 
         # Database config: bagel_type, toasted, spread have ask_if_empty=True
-        assert "bagel_type" in field_names  # ask_if_empty=True
+        assert "bread" in field_names  # ask_if_empty=True
         assert "toasted" in field_names  # ask_if_empty=True
         assert "spread" in field_names  # ask_if_empty=True
         # extras maps to toppings which has ask_if_empty=False
@@ -278,7 +278,7 @@ class TestBagelItemTask:
     def test_get_progress(self):
         """Test progress calculation."""
         bagel = create_bagel_task()
-        bagel_fields = MenuFieldConfig().bagel_fields
+        bagel_fields = MenuFieldConfig().get_fields_for_item_type("bagel")
         progress = bagel.get_progress(bagel_fields)
         # Database config: all fields are optional (required=False)
         # When no required fields, progress depends on is_complete() status
@@ -333,7 +333,7 @@ class TestCoffeeItemTask:
 
     def test_coffee_fields_with_size_config(self):
         """Test that size field is configured to always ask."""
-        coffee_fields = MenuFieldConfig().coffee_fields
+        coffee_fields = MenuFieldConfig().get_fields_for_item_type("sized_beverage")
         # Size must be explicitly asked (no default, always ask)
         assert coffee_fields["size"].default is None
         assert coffee_fields["size"].ask_if_empty is True
@@ -409,7 +409,7 @@ class TestItemsTask:
 
         active = items_task.get_active_items()
         assert len(active) == 1
-        assert active[0].bagel_type == "everything"
+        assert active[0].bread == "everything"
 
     def test_get_current_item(self):
         """Get item that's in progress."""
@@ -553,12 +553,14 @@ class TestMenuFieldConfig:
         """Test default configuration loaded from database."""
         config = MenuFieldConfig()
 
-        # Fields are loaded from database via field name mapping
-        assert "bagel_type" in config.bagel_fields
+        # Fields are loaded from database via get_fields_for_item_type()
+        bagel_fields = config.get_fields_for_item_type("bagel")
+        assert "bread" in bagel_fields
         # Coffee fields include size (from database)
-        assert "size" in config.coffee_fields
+        coffee_fields = config.get_fields_for_item_type("sized_beverage")
+        assert "size" in coffee_fields
         # Database config: toasted is optional (required=False)
-        assert config.bagel_fields["toasted"].required is False
+        assert bagel_fields["toasted"].required is False
 
     def test_from_menu_data_ignores_overrides(self):
         """Test that from_menu_data returns config without applying overrides.
@@ -578,15 +580,16 @@ class TestMenuFieldConfig:
 
         # from_menu_data returns default config - overrides not supported
         # Database config is the source of truth
-        assert "bagel_type" in config.bagel_fields
-        assert "toasted" in config.bagel_fields
+        bagel_fields = config.get_fields_for_item_type("bagel")
+        assert "bread" in bagel_fields
+        assert "toasted" in bagel_fields
 
     def test_get_fields_for_item_type(self):
         """Test getting fields for specific item types."""
         config = MenuFieldConfig()
 
         bagel_fields = config.get_fields_for_item_type("bagel")
-        assert "bagel_type" in bagel_fields
+        assert "bread" in bagel_fields
 
         coffee_fields = config.get_fields_for_item_type("coffee")
         # Coffee maps to sized_beverage which has size field
@@ -616,14 +619,14 @@ class TestFieldConfigHelpers:
         size_default = get_default_value("coffee", "size")
         assert size_default is None
 
-        # Database config: bagel_type has no default
-        bagel_type_default = get_default_value("bagel", "bagel_type")
-        assert bagel_type_default is None
+        # Database config: bread has no default
+        bread_default = get_default_value("bagel", "bread")
+        assert bread_default is None
 
     def test_should_ask_field(self):
         """Test should_ask_field function with database config."""
-        # Database config: bagel_type has ask_if_empty=True, no default
-        assert should_ask_field("bagel", "bagel_type", None) is True
+        # Database config: bread has ask_if_empty=True, no default
+        assert should_ask_field("bagel", "bread", None) is True
 
         # Database config: toasted has ask_if_empty=True
         assert should_ask_field("bagel", "toasted", None) is True

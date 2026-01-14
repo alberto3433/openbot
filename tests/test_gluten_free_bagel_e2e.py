@@ -93,9 +93,9 @@ class TestGlutenFreeBagelE2E:
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]
-        assert bagel.bagel_type == "gluten free", f"Should be gluten free, got: {bagel.bagel_type}"
+        assert bagel.bread == "gluten free", f"Should be gluten free, got: {bagel.bread}"
         assert bagel.toasted is True, "Should be toasted"
-        assert bagel.bagel_type_upcharge == 0.80, f"Should have $0.80 upcharge, got: {bagel.bagel_type_upcharge}"
+        assert bagel.bread_upcharge == 0.80, f"Should have $0.80 upcharge, got: {bagel.bread_upcharge}"
 
         # Verify price includes upcharge ($2.20 base + $0.80 upcharge = $3.00)
         assert bagel.unit_price == 3.00, f"Unit price should be $3.00, got: {bagel.unit_price}"
@@ -119,10 +119,10 @@ class TestGlutenFreeBagelE2E:
         assert len(bagels) == 1, f"Should have 1 bagel, got {len(bagels)}"
 
         bagel = bagels[0]
-        assert bagel.bagel_type == "gluten free", f"Should be gluten free, got: {bagel.bagel_type}"
+        assert bagel.bread == "gluten free", f"Should be gluten free, got: {bagel.bread}"
         assert bagel.toasted is True, "Should be toasted"
         assert bagel.spread == "cream cheese", f"Should have cream cheese, got: {bagel.spread}"
-        assert bagel.bagel_type_upcharge == 0.80, f"Should have $0.80 upcharge, got: {bagel.bagel_type_upcharge}"
+        assert bagel.bread_upcharge == 0.80, f"Should have $0.80 upcharge, got: {bagel.bread_upcharge}"
 
         # $2.20 base + $0.80 gluten free + $1.50 cream cheese = $4.50
         expected_price = 4.50
@@ -194,8 +194,8 @@ class TestGlutenFreeBagelE2E:
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]
-        assert bagel.bagel_type == "plain", f"Should be plain, got: {bagel.bagel_type}"
-        assert bagel.bagel_type_upcharge == 0.0, f"Should have no upcharge, got: {bagel.bagel_type_upcharge}"
+        assert bagel.bread == "plain", f"Should be plain, got: {bagel.bread}"
+        assert bagel.bread_upcharge == 0.0, f"Should have no upcharge, got: {bagel.bread_upcharge}"
 
         # $2.20 base, no upcharge
         assert bagel.unit_price == 2.20, f"Unit price should be $2.20, got: {bagel.unit_price}"

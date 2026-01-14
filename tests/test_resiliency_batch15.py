@@ -36,9 +36,9 @@ class TestCorrectionsAfterMisunderstanding:
 
         # Should have plain bagel or acknowledge correction
         if bagels:
-            has_plain = any(b.bagel_type == "plain" for b in bagels)
+            has_plain = any(b.bread == "plain" for b in bagels)
             assert has_plain or "plain" in result.message.lower(), \
-                f"Should correct to plain. Types: {[b.bagel_type for b in bagels]}"
+                f"Should correct to plain. Types: {[b.bread for b in bagels]}"
 
     def test_i_meant_the_small_one(self):
         """

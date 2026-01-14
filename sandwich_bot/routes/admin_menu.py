@@ -109,6 +109,9 @@ def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[st
     for alias in list(item.alias_records):
         db.delete(alias)
 
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
+
     # Validate and add new aliases if provided
     if aliases_str:
         try:
@@ -139,6 +142,9 @@ def _set_menu_item_categories(db: Session, item: MenuItem, category_ids: Optiona
     # Clear existing category assignments
     for cr in list(item.category_records):
         db.delete(cr)
+
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
 
     # Add new category assignments
     for cat_id in category_ids:

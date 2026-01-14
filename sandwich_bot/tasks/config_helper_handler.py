@@ -635,10 +635,10 @@ class ConfigHelperHandler:
         item.side_choice = parsed.choice
 
         if parsed.choice == "bagel":
-            if parsed.bagel_type:
+            if parsed.bread:
                 # User specified bagel type upfront (e.g., "plain bagel")
                 # Set bagel_choice but don't mark complete - still need toasted/spread questions
-                item.bagel_choice = parsed.bagel_type
+                item.bagel_choice = parsed.bread
 
                 # Also apply toasted if specified (e.g., "plain bagel toasted")
                 if parsed.toasted is not None:
@@ -658,14 +658,14 @@ class ConfigHelperHandler:
                 if item.toasted is None:
                     order.pending_field = "bagel:toasted"
                     return StateMachineResult(
-                        message=f"Ok, {parsed.bagel_type} bagel. Would you like that toasted?",
+                        message=f"Ok, {parsed.bread} bagel. Would you like that toasted?",
                         order=order,
                     )
                 elif item.spread is None:
                     order.pending_field = "bagel:spread_type"
                     toasted_desc = " toasted" if item.toasted else ""
                     return StateMachineResult(
-                        message=f"Ok, {parsed.bagel_type} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
+                        message=f"Ok, {parsed.bread} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
                         order=order,
                     )
                 else:
@@ -719,12 +719,12 @@ class ConfigHelperHandler:
         # Parse the bagel choice
         parsed = parse_bagel_choice(user_input, num_pending_bagels=1)
 
-        if parsed.bagel_type:
+        if parsed.bread:
             # Set the bagel choice on the menu item
-            item.bagel_choice = parsed.bagel_type
+            item.bagel_choice = parsed.bread
             logger.info(
                 "Set bagel_choice='%s' on menu item '%s'",
-                parsed.bagel_type, item.menu_item_name
+                parsed.bread, item.menu_item_name
             )
 
             # Clear pending and continue to next question

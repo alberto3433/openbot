@@ -37,6 +37,44 @@ from .exceptions import MenuDataNotLoadedError
 logger = logging.getLogger(__name__)
 
 
+def singularize(word: str) -> str:
+    """Convert plural to singular form. Handles common English patterns.
+
+    This is a simple helper for data-driven category/item matching.
+    Does not handle irregular plurals - those should be defined as aliases in the database.
+
+    Examples:
+        >>> singularize("pastries")
+        'pastry'
+        >>> singularize("cookies")
+        'cookie'
+        >>> singularize("boxes")
+        'box'
+        >>> singularize("drinks")
+        'drink'
+        >>> singularize("glass")
+        'glass'
+    """
+    word = word.lower().strip()
+    if not word:
+        return word
+
+    # Don't singularize words ending in 'ss' (glass, boss, etc.)
+    if word.endswith("ss"):
+        return word
+    # -ies -> -y (pastries -> pastry, cookies -> cookie)
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    # -es after s, sh, ch, x, z -> remove -es (boxes -> box, dishes -> dish)
+    if word.endswith("es") and len(word) > 2:
+        if word[-3] in "shxz" or word[-4:-2] == "ch":
+            return word[:-2]
+    # -s -> remove s (drinks -> drink, bagels -> bagel)
+    if word.endswith("s"):
+        return word[:-1]
+    return word
+
+
 class MenuDataCache:
     """
     Singleton cache for menu data loaded from the database.
@@ -160,6 +198,10 @@ class MenuDataCache:
         # Available category slugs with display names
         self._available_categories: dict[str, str] = {}  # slug -> display_name
 
+        # Modifier categories for menu inquiries (toppings, proteins, milks, etc.)
+        # Maps slug -> {display_name, loads_from_ingredients, ingredient_category, description}
+        self._modifier_categories: dict[str, dict] = {}
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -240,6 +282,9 @@ class MenuDataCache:
 
                 # Load menu item categories (drink, food, etc.)
                 self._load_menu_item_categories(db)
+
+                # Load modifier categories (toppings, proteins, milks, etc.)
+                self._load_modifier_categories(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -840,11 +885,17 @@ class MenuDataCache:
             # Get name_filter if present
             name_filter = getattr(item_type, 'name_filter', None)
 
+            # Get display names for price inquiry responses
+            display_name = item_type.display_name
+            display_name_plural = item_type.display_name_plural or f"{display_name}s"
+
             # Create category info dict
             category_info = {
                 "slug": slug,
                 "expands_to": expands_to,
                 "name_filter": name_filter,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
             }
 
             # Add slug itself as a key
@@ -1630,6 +1681,37 @@ class MenuDataCache:
             {k: len(v) for k, v in menu_items_by_category.items()}
         )
 
+    def _load_modifier_categories(self, db: Session) -> None:
+        """Load modifier categories for menu inquiries (toppings, proteins, milks, etc.).
+
+        This provides data-driven configuration for handling "what X do you have?" questions.
+        Each category specifies whether it loads from ingredients or has a static description.
+
+        Loads:
+        - _modifier_categories: slug -> {display_name, loads_from_ingredients, ingredient_category, description}
+        """
+        from .models import ModifierCategory
+
+        modifier_categories: dict[str, dict] = {}
+
+        categories = db.query(ModifierCategory).all()
+        for cat in categories:
+            modifier_categories[cat.slug] = {
+                "display_name": cat.display_name,
+                "loads_from_ingredients": cat.loads_from_ingredients,
+                "ingredient_category": cat.ingredient_category,
+                "description": cat.description,
+                "prompt_suffix": cat.prompt_suffix,
+            }
+
+        self._modifier_categories = modifier_categories
+
+        logger.debug(
+            "Loaded modifier categories: %d categories (%s)",
+            len(modifier_categories),
+            list(modifier_categories.keys())
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1970,6 +2052,37 @@ class MenuDataCache:
         self._ensure_loaded()
         return set(self._ingredients_by_category.keys())
 
+    def get_ingredient_category(self, ingredient_name: str) -> str | None:
+        """Get the category for an ingredient by name or alias.
+
+        Performs a reverse lookup to find which category contains the ingredient.
+        This is used for data-driven ingredient categorization instead of hardcoded
+        lists like ("bacon", "ham", "sausage", ...).
+
+        Args:
+            ingredient_name: The ingredient name or alias to look up (case-insensitive)
+
+        Returns:
+            The category slug (e.g., "protein", "cheese", "topping") or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredient_category("bacon")
+            "protein"
+            >>> menu_cache.get_ingredient_category("swiss")
+            "cheese"
+            >>> menu_cache.get_ingredient_category("lettuce")
+            "topping"
+        """
+        self._ensure_loaded()
+        name_lower = ingredient_name.lower().strip()
+        for category, ingredients in self._ingredients_by_category.items():
+            if name_lower in ingredients:
+                return category
+        return None
+
     def get_ingredient_categories_by_modifier_type(self, modifier_type: str) -> set[str]:
         """Get all ingredient category slugs for a given modifier type.
 
@@ -2035,6 +2148,65 @@ class MenuDataCache:
                 "Check item_type_ingredients table for sized_beverage syrup options."
             )
         return self._beverage_syrups.copy()
+
+    def get_modifier_categories_for_inquiry(self) -> dict[str, dict]:
+        """Get all modifier categories for menu inquiry handling.
+
+        Returns dict mapping slug -> {display_name, loads_from_ingredients, ingredient_category, description}.
+        Used by menu_inquiry_handler to answer "what X do you have?" questions.
+        """
+        self._ensure_loaded()
+        return self._modifier_categories.copy()
+
+    def get_modifier_category_items(self, slug: str) -> set[str]:
+        """Get items for a specific modifier category.
+
+        This is the generic data-driven method for getting modifier items.
+        Replaces hardcoded getters like get_toppings(), get_proteins(), etc.
+
+        Args:
+            slug: The modifier category slug (e.g., "toppings", "proteins", "milks")
+
+        Returns:
+            Set of item names for the category. Returns empty set if category not found.
+
+        Note:
+            For ingredient-backed categories, uses get_ingredients().
+            For beverage categories (milks, sweeteners, syrups), uses specialized getters.
+        """
+        self._ensure_loaded()
+
+        cat_info = self._modifier_categories.get(slug)
+        if not cat_info:
+            return set()
+
+        # Handle ingredient-backed categories
+        if cat_info.get("loads_from_ingredients"):
+            ingredient_category = cat_info.get("ingredient_category")
+            if ingredient_category:
+                return self.get_ingredients(ingredient_category)
+            return set()
+
+        # Handle beverage modifier categories (milks, sweeteners, syrups)
+        # These return lists, so convert to sets for consistency
+        if slug == "milks":
+            try:
+                return set(self._beverage_milks)
+            except MenuDataNotLoadedError:
+                return set()
+        elif slug == "sweeteners":
+            try:
+                return set(self._beverage_sweeteners)
+            except MenuDataNotLoadedError:
+                return set()
+        elif slug == "syrups":
+            try:
+                return set(self._beverage_syrups)
+            except MenuDataNotLoadedError:
+                return set()
+
+        # Unknown category type
+        return set()
 
     def get_known_menu_items(self) -> set[str]:
         """Get all known menu item names."""
@@ -3367,6 +3539,86 @@ class MenuDataCache:
         self._ensure_loaded()
         return sorted(self._category_keywords.keys())
 
+    def is_category_reference(self, term: str) -> str | None:
+        """Check if a term matches a category name/slug (case-insensitive).
+
+        Handles pluralization dynamically using the singularize helper.
+        This is a data-driven replacement for hardcoded GENERIC_DRINK_TERMS
+        and similar constants.
+
+        Args:
+            term: User input like "drinks", "beverage", "cookies", "muffin"
+
+        Returns:
+            Category slug if match found, None otherwise.
+
+        Examples:
+            >>> menu_cache.is_category_reference("drinks")
+            "sized_beverage"  # or whatever the DB slug is
+            >>> menu_cache.is_category_reference("cookie")
+            "pastry"  # if cookie maps to pastry category
+            >>> menu_cache.is_category_reference("random word")
+            None
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+
+        # Direct lookup first
+        mapping = self._category_keywords.get(term_lower)
+        if mapping:
+            return mapping["slug"]
+
+        # Try singularized form
+        term_singular = singularize(term_lower)
+        if term_singular != term_lower:
+            mapping = self._category_keywords.get(term_singular)
+            if mapping:
+                return mapping["slug"]
+
+        return None
+
+    def search_menu_items_by_name(self, term: str) -> list[dict]:
+        """Find menu items where the name contains the search term.
+
+        This is a data-driven replacement for GENERIC_CATEGORY_TERMS matching.
+        Use for disambiguation when user says something generic like "cookie"
+        or "muffin" that could match multiple specific items.
+
+        Args:
+            term: Search term (e.g., "muffin", "cookie", "chip")
+
+        Returns:
+            List of matching menu item dicts with keys:
+            - name: Menu item name
+            - item_type: Item type slug
+            - base_price: Base price if available
+
+        Examples:
+            >>> menu_cache.search_menu_items_by_name("muffin")
+            [{"name": "Blueberry Muffin", "item_type": "pastry", "base_price": 3.50},
+             {"name": "Corn Muffin", "item_type": "pastry", "base_price": 3.50}]
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+        term_singular = singularize(term_lower)
+
+        matches = []
+
+        # Search through known menu items
+        for item_name in self._known_menu_items:
+            item_lower = item_name.lower()
+            # Match if term or singular form is in the item name
+            if term_lower in item_lower or term_singular in item_lower:
+                # Try to get item type from menu index
+                item_info = self._menu_index.get(item_name, {})
+                matches.append({
+                    "name": item_name,
+                    "item_type": item_info.get("item_type", "menu_item"),
+                    "base_price": item_info.get("base_price", 0.0),
+                })
+
+        return matches
+
     def resolve_item_type_slug(self, name_or_alias: str) -> str:
         """
         Resolve an item type name or alias to its canonical database slug.
@@ -3406,6 +3658,79 @@ class MenuDataCache:
 
         # Pass-through: return input unchanged if not found
         return name_or_alias
+
+    def infer_item_type_from_text(self, text: str) -> dict | None:
+        """
+        Infer item type by checking if any category keyword appears in the text.
+
+        This is used for fallback inference when an item isn't found on the menu.
+        It scans the text for any word that matches a category keyword/alias
+        and returns the corresponding item type info.
+
+        Args:
+            text: User input text like "orange juice" or "blueberry muffin"
+
+        Returns:
+            Dict with item type info if a keyword is found:
+            {
+                "slug": str,                    # The item_type slug
+                "display_name": str,            # Singular display name
+                "display_name_plural": str,     # Plural display name for suggestions
+                "expands_to": list | None,      # List of slugs to query (for meta-categories)
+            }
+            Returns None if no keyword matches.
+
+        Examples:
+            >>> cache.infer_item_type_from_text("orange juice")
+            {"slug": "sized_beverage", "display_name": "Sized Beverage", ...}
+            >>> cache.infer_item_type_from_text("blueberry muffin")
+            {"slug": "pastry", "display_name": "Pastry", ...}
+            >>> cache.infer_item_type_from_text("something random")
+            None
+        """
+        self._ensure_loaded()
+
+        text_lower = text.lower()
+        words = text_lower.split()
+
+        # Check each word against category keywords
+        for word in words:
+            if word in self._category_keywords:
+                return self._category_keywords[word]
+
+        # Check if any multi-word keyword is contained in the text
+        for keyword, info in self._category_keywords.items():
+            if " " in keyword and keyword in text_lower:
+                return info
+
+        return None
+
+    def get_item_type_display_name(self, item_type_slug: str, plural: bool = False) -> str:
+        """
+        Get the display name for an item type slug.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+            plural: If True, return plural form for suggestions
+
+        Returns:
+            Display name string. Returns slug if not found.
+
+        Examples:
+            >>> cache.get_item_type_display_name("sized_beverage")
+            "Sized Beverage"
+            >>> cache.get_item_type_display_name("sized_beverage", plural=True)
+            "coffees and teas"
+        """
+        self._ensure_loaded()
+
+        info = self._category_keywords.get(item_type_slug)
+        if info:
+            if plural:
+                return info.get("display_name_plural", info.get("display_name", item_type_slug) + "s")
+            return info.get("display_name", item_type_slug)
+
+        return item_type_slug
 
     # =========================================================================
     # Partial Matching Methods

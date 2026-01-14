@@ -40,9 +40,9 @@ def create_bagel_task(
         unit_price=unit_price,
     )
     if bagel_type:
-        bagel.bagel_type = bagel_type
+        bagel.bread = bagel_type
     if bagel_type_upcharge:
-        bagel.bagel_type_upcharge = bagel_type_upcharge
+        bagel.bread_upcharge = bagel_type_upcharge
     if extras:
         bagel.toppings = extras
     return bagel
@@ -258,7 +258,7 @@ class TestDictToOrderTask:
         assert order.items.get_item_count() == 2  # quantity is 2
         item = order.items.items[0]
         assert isinstance(item, MenuItemTask) and item.is_bagel
-        assert item.bagel_type == "everything bagel"
+        assert item.bread == "everything bagel"
         assert item.toasted is True
         assert item.spread == "cream cheese"
         assert item.toppings == ["lox", "capers"]
@@ -388,7 +388,7 @@ class TestOrderTaskToDict:
         assert item["bagel_type"] == "sesame"
         assert item["toasted"] is True
         assert item["spread"] == "butter"
-        assert item["extras"] == ["tomato"]  # Bagels use "extras" not "toppings"
+        assert item["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
         assert item["quantity"] == 1
         assert item["unit_price"] == 4.99
 

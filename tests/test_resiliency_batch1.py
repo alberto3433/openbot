@@ -41,7 +41,7 @@ class TestReplacementModificationScenarios:
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
-        assert updated_bagel.bagel_type == "plain", "Bagel type should be preserved"
+        assert updated_bagel.bread == "plain", "Bagel type should be preserved"
         assert updated_bagel.toasted is True, "Toasted should be preserved"
         # Spread is stored as spread="cream cheese" + spread_type="veggie" = "veggie cream cheese"
         assert updated_bagel.spread_type == "veggie", f"Spread type should be veggie, got: {updated_bagel.spread_type}"
@@ -261,7 +261,7 @@ class TestReplacementModificationScenarios:
 
         # All bagels should have the same type
         for b in bagels:
-            assert b.bagel_type == "everything", "Bagel type should be preserved"
+            assert b.bread == "everything", "Bagel type should be preserved"
 
     def test_remove_modifier_remove_the_bacon(self):
         """

@@ -352,11 +352,11 @@ class ModifierChangeHandler:
                 if bagel_type.endswith(" bagel"):
                     bagel_type = bagel_type[:-6].strip()
 
-            old_value = getattr(item, 'bagel_type', None) or getattr(item, 'bagel_choice', None)
+            old_value = getattr(item, 'bread', None) or getattr(item, 'bagel_choice', None)
 
-            # Try to set bagel_type or bagel_choice depending on item type
-            if hasattr(item, 'bagel_type'):
-                item.bagel_type = bagel_type
+            # Try to set bread or bagel_choice depending on item type
+            if hasattr(item, 'bread'):
+                item.bread = bagel_type
             elif hasattr(item, 'bagel_choice'):
                 item.bagel_choice = bagel_type
             else:

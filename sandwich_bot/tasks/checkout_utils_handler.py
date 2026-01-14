@@ -79,7 +79,7 @@ class CheckoutUtilsHandler:
             if item.status == TaskStatus.IN_PROGRESS:
                 # Handle bagels that need configuration (items with bread attribute)
                 if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
-                    if item.bagel_type is None or item.toasted is None:
+                    if item.bread is None or item.toasted is None:
                         logger.info("Found incomplete bagel, starting configuration")
                         if self._configure_next_incomplete_bagel:
                             return self._configure_next_incomplete_bagel(order)

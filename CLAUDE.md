@@ -168,6 +168,30 @@ All food-domain behavior must be **data-driven**, not hardcoded. The codebase sh
 2. No new item-specific Pydantic models
 3. No hardcoded item/modifier lists - query the database
 4. No conditionals that check for specific item type names
+5. No cross-type fallback mechanisms (see below)
+
+### No Fallback Mechanisms
+
+**Do NOT create "fallback" patterns** where one item type falls back to another for pricing, attributes, or behavior. Examples of what to avoid:
+
+```python
+# WRONG: Fallback chain for pricing
+if item_type == "bagel":
+    types_to_check.append("sandwich")  # "fall back to sandwich prices"
+
+# WRONG: Database column for fallback relationships
+ALTER TABLE item_types ADD COLUMN modifier_fallback_types JSONB;
+UPDATE item_types SET modifier_fallback_types = '["sandwich"]' WHERE slug = 'bagel';
+```
+
+**Why fallbacks are harmful:**
+1. **Hidden coupling** - Creates implicit dependencies between item types that aren't visible in the schema
+2. **Unpredictable behavior** - When bagel pricing changes, sandwich pricing silently affects bagels
+3. **Not truly data-driven** - Fallbacks encode business logic ("bagels are like sandwiches") in config, not data
+4. **Debugging nightmares** - "Why did this bagel price change?" requires tracing through fallback chains
+5. **Migration hazards** - Removing or renaming an item type can break unrelated item types
+
+**The correct approach:** Each item type should be fully self-contained. If a bagel needs the same modifier prices as a sandwich, configure those prices explicitly on the bagel item type. Explicit duplication is better than implicit coupling.
 
 ### Legacy Code
 Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt. Do not extend them - work toward consolidating into generic handlers.

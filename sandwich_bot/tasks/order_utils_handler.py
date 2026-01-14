@@ -175,8 +175,8 @@ class OrderUtilsHandler:
                     unit_price=template_item.unit_price,
                 )
                 # Copy bagel-specific fields via property setters
-                if template_item.bagel_type:
-                    new_item.bagel_type = template_item.bagel_type
+                if template_item.bread:
+                    new_item.bread = template_item.bread
                 if template_item.spread_type:
                     new_item.spread_type = template_item.spread_type
                 if template_item.extra_protein:

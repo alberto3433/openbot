@@ -142,10 +142,10 @@ class ParsedItemEntry(BaseModel):
     needs_cheese_clarification: bool = False
     wants_syrup: bool = False  # User said "syrup" without specifying flavor
 
-    # Convenience properties for backward compatibility during migration
+    # Bread type property (aligned with DB attribute slug)
     @property
-    def bagel_type(self) -> str | None:
-        """Get bagel type from attribute_values."""
+    def bread(self) -> str | None:
+        """Get bread type from attribute_values."""
         return self.attribute_values.get("bread")
 
     @property
@@ -234,8 +234,8 @@ class ParsedItemEntry(BaseModel):
     def from_bagel_entry(cls, entry: "ParsedBagelEntry") -> "ParsedItemEntry":
         """Convert a ParsedBagelEntry to ParsedItemEntry."""
         attr_values = {}
-        if entry.bagel_type:
-            attr_values["bread"] = entry.bagel_type
+        if entry.bread:
+            attr_values["bread"] = entry.bread
         if entry.toasted is not None:
             attr_values["toasted"] = entry.toasted
         if entry.scooped is not None:
@@ -305,7 +305,7 @@ class ParsedMenuItemEntry(BaseModel):
     type: Literal["menu_item"] = "menu_item"
     menu_item_name: str
     quantity: int = 1
-    bagel_type: str | None = None
+    bread: str | None = None
     toasted: bool | None = None
     modifiers: list[str] = Field(default_factory=list)
     is_signature: bool = False  # True for signature items like "The Classic BEC"
@@ -330,7 +330,7 @@ class ParsedBagelEntry(BaseModel):
         return self
 
     type: Literal["bagel"] = "bagel"
-    bagel_type: str | None = None  # May be None if user just said "bagel" without type
+    bread: str | None = None  # May be None if user just said "bagel" without type
     quantity: int = 1
     toasted: bool | None = None
     scooped: bool | None = None  # True if bagel should be scooped out
@@ -454,7 +454,7 @@ class SideChoiceResponse(BaseModel):
     choice: Literal["bagel", "fruit_salad", "unclear"] = Field(
         description="What side the user chose: 'bagel', 'fruit_salad', or 'unclear' if not understood"
     )
-    bagel_type: str | None = Field(
+    bread: str | None = Field(
         default=None,
         description="If user specified a bagel type (e.g., 'plain bagel' -> 'plain'), capture it here"
     )
@@ -474,7 +474,7 @@ class SideChoiceResponse(BaseModel):
 
 class BagelChoiceResponse(BaseModel):
     """Parser output when waiting for bagel type selection."""
-    bagel_type: str | None = Field(
+    bread: str | None = Field(
         default=None,
         description="The type of bagel: plain, everything, sesame, pumpernickel, etc."
     )
@@ -1043,7 +1043,7 @@ class OpenInputResponse(BaseModel):
             first_bagel = bagels[0]
             self.new_bagel = True
             self.new_bagel_quantity = len(bagels)
-            self.new_bagel_type = first_bagel.bagel_type
+            self.new_bagel_type = first_bagel.bread
             self.new_bagel_toasted = first_bagel.toasted
             self.new_bagel_scooped = first_bagel.scooped
             self.new_bagel_spread = first_bagel.spread
@@ -1092,7 +1092,7 @@ class OpenInputResponse(BaseModel):
             self.new_signature_item_quantity = len(signature_items)
             self.new_signature_item_name = getattr(first_sig, 'menu_item_name', None) or getattr(first_sig, 'item_name', None)
             self.new_signature_item_toasted = first_sig.toasted
-            self.new_signature_item_bagel_choice = first_sig.bagel_type
+            self.new_signature_item_bagel_choice = first_sig.bread
             if first_sig.modifiers:
                 self.new_signature_item_modifications = first_sig.modifiers
 
@@ -1111,7 +1111,7 @@ class OpenInputResponse(BaseModel):
                 self.new_menu_item = getattr(first_menu, 'menu_item_name', None) or getattr(first_menu, 'item_name', None)
                 self.new_menu_item_quantity = len([m for m in menu_items if getattr(m, 'item_type', None) == getattr(first_menu, 'item_type', None)])
                 self.new_menu_item_toasted = first_menu.toasted
-                self.new_menu_item_bagel_choice = first_menu.bagel_type
+                self.new_menu_item_bagel_choice = first_menu.bread
                 if first_menu.modifiers:
                     self.new_menu_item_modifications = first_menu.modifiers
 

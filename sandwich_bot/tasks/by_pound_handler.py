@@ -10,6 +10,8 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
+from sandwich_bot.menu_data_cache import menu_cache
+
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult, ByPoundOrderItem
 from .parsers import parse_by_pound_category
@@ -204,18 +206,20 @@ class ByPoundHandler(BaseHandler):
             # Try direct category first
             items = self._menu_data.get(category, [])
 
-            # If no items, try items_by_type
+            # If no items, try items_by_type using data-driven lookup
             if not items:
-                type_map = {
-                    "sides": ["side"],
-                    "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
-                    "desserts": ["dessert", "pastry", "snack"],  # Combine dessert, pastry, and snack types
-                    "signature_bagels": ["signature_item"],
-                    "signature_omelettes": ["omelette"],
-                }
                 items_by_type = self._menu_data.get("items_by_type", {})
-                for type_slug in type_map.get(category, []):
-                    items.extend(items_by_type.get(type_slug, []))
+                # Use data-driven lookup from ItemType aliases/expands_to
+                category_info = menu_cache.get_category_keyword_mapping(category)
+                if category_info:
+                    # Check if this category expands to multiple types
+                    expands_to = category_info.get("expands_to")
+                    if expands_to:
+                        for type_slug in expands_to:
+                            items.extend(items_by_type.get(type_slug, []))
+                    else:
+                        # Single type - use the slug directly
+                        items.extend(items_by_type.get(category_info.get("slug"), []))
 
         if not items:
             return StateMachineResult(

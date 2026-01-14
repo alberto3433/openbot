@@ -100,6 +100,7 @@ class ItemConverter(ABC):
         skip_slugs: set | None = None,
         price_lookup_fn=None,
         include_free_in_modifiers: bool = False,
+        item_type: str | None = None,
     ) -> float:
         """
         Generic data-driven processing of attribute_values into modifiers/free_details.
@@ -117,6 +118,7 @@ class ItemConverter(ABC):
                              for custom price lookups (e.g., coffee-specific lookups)
             include_free_in_modifiers: If True, add free items to modifiers with price=0
                                        instead of to free_details (useful for cart display)
+            item_type: Item type slug for pricing/display name lookups
 
         Returns:
             Total upcharge amount from all processed attributes
@@ -203,12 +205,12 @@ class ItemConverter(ABC):
             else:
                 # String attribute (e.g., size: "large", milk: "oat")
                 display_name = str(attr_value).replace("_", " ").title()
-                # Use pricing engine display name lookup if available
-                if pricing:
+                # Use pricing engine display name lookup if available and item_type is set
+                if pricing and item_type:
                     if attr_slug == "size" and hasattr(pricing, 'lookup_size_display_name'):
-                        display_name = pricing.lookup_size_display_name(attr_value) or display_name
+                        display_name = pricing.lookup_size_display_name(attr_value, item_type) or display_name
                     elif attr_slug == "temperature" and hasattr(pricing, 'lookup_temperature_display_name'):
-                        display_name = pricing.lookup_temperature_display_name(attr_value) or display_name
+                        display_name = pricing.lookup_temperature_display_name(attr_value, item_type) or display_name
 
             # Skip if display name is empty
             if not display_name:
@@ -404,8 +406,8 @@ class MenuItemConverter(ItemConverter):
         spread_type = getattr(item, 'spread_type', None) or attribute_values.get("spread_type")
         if spread and spread.lower() != "none":
             # Look up spread price from pricing engine if not already set
-            if spread_price is None and pricing and hasattr(pricing, 'lookup_spread_price'):
-                spread_price = pricing.lookup_spread_price(spread, spread_type) or 0
+            if spread_price is None and pricing and hasattr(pricing, 'lookup_spread_price') and menu_item_type:
+                spread_price = pricing.lookup_spread_price(spread, spread_type, menu_item_type) or 0
             spread_name = spread
             if spread_type and spread_type != "plain":
                 spread_name = f"{spread_type} {spread}"
@@ -415,15 +417,15 @@ class MenuItemConverter(ItemConverter):
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
 
-        # Add extra_protein and toppings for bagels (with prices from pricing engine)
+        # Add extra_protein and toppings (with prices from pricing engine)
         extra_protein = getattr(item, 'extra_protein', None)
         toppings = getattr(item, 'toppings', []) or []
-        if extra_protein and pricing and hasattr(pricing, 'lookup_modifier_price'):
-            protein_price = pricing.lookup_modifier_price(extra_protein) or 0
+        if extra_protein and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
+            protein_price = pricing.lookup_modifier_price(extra_protein, menu_item_type) or 0
             modifiers.append({"name": extra_protein, "price": protein_price})
         for extra in toppings:
-            if pricing and hasattr(pricing, 'lookup_modifier_price'):
-                extra_price = pricing.lookup_modifier_price(extra) or 0
+            if pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
+                extra_price = pricing.lookup_modifier_price(extra, menu_item_type) or 0
                 modifiers.append({"name": extra, "price": extra_price})
 
         # Convert DB-driven attribute_values to modifiers for cart display
@@ -436,6 +438,7 @@ class MenuItemConverter(ItemConverter):
             pricing=pricing,
             skip_slugs={"bread"},  # bread is in display_name
             include_free_in_modifiers=True,  # Add free items to modifiers with price=0
+            item_type=menu_item_type,
         )
 
         customization_offered = getattr(item, 'customization_offered', False)
@@ -531,9 +534,9 @@ class BagelConverter(ItemConverter):
 
         # Set bagel-specific fields via property setters (stored in attribute_values)
         if item_dict.get("bagel_type"):
-            bagel.bagel_type = item_dict.get("bagel_type")
+            bagel.bread = item_dict.get("bagel_type")
         if item_dict.get("bagel_type_upcharge"):
-            bagel.bagel_type_upcharge = item_dict.get("bagel_type_upcharge", 0.0)
+            bagel.bread_upcharge = item_dict.get("bagel_type_upcharge", 0.0)
         if item_dict.get("scooped") is not None:
             bagel.scooped = item_dict.get("scooped")
         if item_dict.get("spread_type"):
@@ -555,8 +558,8 @@ class BagelConverter(ItemConverter):
         item: ItemTask,
         pricing: "PricingEngine | None" = None,
     ) -> Dict[str, Any]:
-        bagel_type = getattr(item, 'bagel_type', None)
-        bagel_type_upcharge = getattr(item, 'bagel_type_upcharge', 0.0) or 0.0
+        bagel_type = getattr(item, 'bread', None)
+        bagel_type_upcharge = getattr(item, 'bread_upcharge', 0.0) or 0.0
         spread = getattr(item, 'spread', None)
         spread_type = getattr(item, 'spread_type', None)
         toasted = getattr(item, 'toasted', None)
@@ -587,7 +590,7 @@ class BagelConverter(ItemConverter):
                     "Pricing engine required for protein modifier price. "
                     "Ensure pricing parameter is passed to order_task_to_dict."
                 )
-            protein_price = pricing.lookup_modifier_price(extra_protein)
+            protein_price = pricing.lookup_modifier_price(extra_protein, self.item_type)
             modifiers.append({"name": extra_protein, "price": protein_price})
 
         for topping in toppings:
@@ -596,7 +599,7 @@ class BagelConverter(ItemConverter):
                     "Pricing engine required for modifier prices. "
                     "Ensure pricing parameter is passed to order_task_to_dict."
                 )
-            topping_price = pricing.lookup_modifier_price(topping)
+            topping_price = pricing.lookup_modifier_price(topping, self.item_type)
             modifiers.append({"name": topping, "price": topping_price})
 
         if spread and spread.lower() != "none":
@@ -608,7 +611,7 @@ class BagelConverter(ItemConverter):
                     "Pricing engine required for spread price. "
                     "Ensure pricing parameter is passed to order_task_to_dict."
                 )
-            spread_price = pricing.lookup_spread_price(spread, spread_type)
+            spread_price = pricing.lookup_spread_price(spread, spread_type, self.item_type)
             modifiers.append({"name": spread_name, "price": spread_price})
 
         if pricing:
@@ -671,12 +674,12 @@ class SandwichConverter(ItemConverter):
         )
 
         # Set bagel-specific fields via property setters
-        bagel.bagel_type = bagel_type
+        bagel.bread = bagel_type
         if item_dict.get("toppings"):
             bagel.toppings = item_dict.get("toppings") or []
 
         self._restore_common_fields(bagel, item_dict)
-        if bagel.bagel_type and bagel.toasted is not None:
+        if bagel.bread and bagel.toasted is not None:
             bagel.mark_complete()
         return bagel
 

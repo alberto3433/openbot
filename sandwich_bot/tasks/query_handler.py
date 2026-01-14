@@ -11,6 +11,8 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from sandwich_bot.menu_data_cache import menu_cache
+
 from .schemas import OrderPhase
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
@@ -287,16 +289,14 @@ class QueryHandler:
 
         # TRUE category terms - these return the full category, not filtered results
         # When a user asks for "coffee", they want ALL sized beverages (lattes, cappuccinos, etc.)
+        # Category terms are defined via ItemType aliases in the database
         # Note: "tea", "latte", "espresso" are NOT category terms - they use partial matching
         # to filter items containing that keyword in the name
-        category_terms = {
-            "coffee": "sized_beverage",
-            "soda": "beverage",
-        }
+        category_info = menu_cache.get_category_keyword_mapping(menu_query_type.lower())
 
-        # HYBRID APPROACH: For terms not in category_terms, try partial string matching
+        # HYBRID APPROACH: For terms not in category aliases, try partial string matching
         # This handles "juice", "snapple", "mocha", "chai", "iced", etc.
-        if menu_query_type.lower() not in category_terms:
+        if not category_info:
             sized_items = items_by_type.get("sized_beverage", [])
             cold_items = items_by_type.get("beverage", [])
             all_drinks = sized_items + cold_items
@@ -386,7 +386,8 @@ class QueryHandler:
                 order=order,
             )
 
-        lookup_type = category_terms.get(menu_query_type, menu_query_type)
+        # Use category_info slug if available, otherwise use the original query type
+        lookup_type = category_info.get("slug") if category_info else menu_query_type
         items = items_by_type.get(lookup_type, [])
 
         if not items:
@@ -442,12 +443,15 @@ class QueryHandler:
         )
 
     def handle_soda_clarification(self, order: "OrderTask") -> StateMachineResult:
-        """Handle when user orders a generic 'soda' without specifying type."""
-        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
-        beverages = items_by_type.get("beverage", [])
+        """Handle when user orders a generic 'soda' without specifying type.
 
-        if beverages:
-            soda_names = [item.get("name", "") for item in beverages[:6]]
+        Uses data-driven lookup from the 'soda' category in the database.
+        """
+        # Get items from category-based lookup
+        category_items = menu_cache.get_items_by_category("soda")
+
+        if category_items:
+            soda_names = [item.get("name", "") for item in category_items[:6]]
             soda_names = [name for name in soda_names if name]
             if len(soda_names) > 3:
                 soda_list = ", ".join(soda_names[:3]) + ", and others"
@@ -486,52 +490,22 @@ class QueryHandler:
         query_lower = item_query.lower().strip()
         query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
 
-        # Generic category map
-        generic_category_map = {
-            "bagel": ("bagel", "bagels"),
-            "coffee": ("sized_beverage", "coffees"),
-            "latte": ("sized_beverage", "lattes"),
-            "cappuccino": ("sized_beverage", "cappuccinos"),
-            "espresso": ("sized_beverage", "espressos"),
-            "tea": ("sized_beverage", "teas"),
-            "drink": ("beverage", "drinks"),
-            "beverage": ("beverage", "beverages"),
-            "soda": ("beverage", "sodas"),
-            "omelette": ("omelette", "omelettes"),
-            "side": ("side", "sides"),
-        }
-
+        # Special handling for "sandwich" - too broad, need to ask what kind
         if query_lower == "sandwich":
             return StateMachineResult(
                 message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
                 order=order,
             )
 
-        sandwich_type_map = {
-            "egg sandwich": ("egg_sandwich", "egg sandwiches"),
-            "fish sandwich": ("fish_sandwich", "fish sandwiches"),
-            "cream cheese sandwich": ("spread_sandwich", "cream cheese sandwiches"),
-            "spread sandwich": ("spread_sandwich", "spread sandwiches"),
-            "salad sandwich": ("salad_sandwich", "salad sandwiches"),
-            "deli sandwich": ("deli_sandwich", "deli sandwiches"),
-            "signature sandwich": ("signature_items", "signature sandwiches"),
-        }
-
-        if query_lower in sandwich_type_map:
-            item_type, display_name = sandwich_type_map[query_lower]
+        # Use data-driven lookup from ItemType aliases for category price inquiries
+        category_info = menu_cache.get_category_keyword_mapping(query_lower)
+        if category_info and self._pricing:
+            item_type = category_info.get("slug")
+            display_name_plural = category_info.get("display_name_plural", f"{query_lower}s")
             min_price = self._pricing.get_min_price_for_category(item_type)
             if min_price > 0:
                 return StateMachineResult(
-                    message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
-                    order=order,
-                )
-
-        if query_lower in generic_category_map:
-            item_type, display_name = generic_category_map[query_lower]
-            min_price = self._pricing.get_min_price_for_category(item_type)
-            if min_price > 0:
-                return StateMachineResult(
-                    message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
+                    message=f"Our {display_name_plural} start at ${min_price:.2f}. Would you like one?",
                     order=order,
                 )
 

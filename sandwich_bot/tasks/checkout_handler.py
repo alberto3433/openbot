@@ -815,7 +815,7 @@ class CheckoutHandler(BaseHandler):
         )
         # Set bagel-specific fields via property setters
         if bagel_type:
-            bagel.bagel_type = bagel_type
+            bagel.bread = bagel_type
         if spread_type:
             bagel.spread_type = spread_type
         bagel.status = TaskStatus.COMPLETE
@@ -842,14 +842,19 @@ class CheckoutHandler(BaseHandler):
         menu_item_name = prev_item.get("menu_item_name")
         drink_type = prev_item.get("coffee_type") or prev_item.get("drink_type") or menu_item_name
 
-        # Convert style ("iced"/"hot") to iced boolean
+        # Get temperature from style or previous item
         style = prev_item.get("style")
-        if style == "iced":
-            iced = True
-        elif style == "hot":
-            iced = False
+        if style in ("iced", "hot"):
+            temperature = style
         else:
-            iced = prev_item.get("iced")
+            # Convert legacy iced boolean to temperature string
+            iced_val = prev_item.get("iced")
+            if iced_val is True:
+                temperature = "iced"
+            elif iced_val is False:
+                temperature = "hot"
+            else:
+                temperature = prev_item.get("temperature")
 
         size = prev_item.get("size")
         milk = prev_item.get("milk")
@@ -865,8 +870,8 @@ class CheckoutHandler(BaseHandler):
         )
         if size:
             coffee.size = size
-        if iced is not None:
-            coffee.iced = iced
+        if temperature:
+            coffee.temperature = temperature
         if milk:
             coffee.milk = milk
         if sweetener:
@@ -888,9 +893,9 @@ class CheckoutHandler(BaseHandler):
         desc_parts = []
         if size:
             desc_parts.append(size)
-        if iced is True:
+        if temperature == "iced":
             desc_parts.append("iced")
-        elif iced is False:
+        elif temperature == "hot":
             desc_parts.append("hot")
         desc_parts.append(drink_type or "coffee")
         if milk:

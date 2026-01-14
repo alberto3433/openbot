@@ -15,7 +15,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from sandwich_bot.menu_data_cache import menu_cache
+from sandwich_bot.menu_data_cache import menu_cache, singularize
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers, ExtractedCoffeeModifiers
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
@@ -315,11 +315,10 @@ class MenuItemConfigHandler(BaseHandler):
         text = re.sub(r'^(one|two|three|four|five|six|seven|eight|nine|ten)\s+', '', text, flags=re.IGNORECASE)
         text = re.sub(r'^(a|an)\s+', '', text)  # "a scrambled egg", "an egg"
 
-        # Normalize common food plurals to singular for matching
-        # "eggs" → "egg", "bagels" → "bagel", "syrups" → "syrup"
-        text = re.sub(r'\beggs\b', 'egg', text)
-        text = re.sub(r'\bbagels\b', 'bagel', text)
-        text = re.sub(r'\bsyrups\b', 'syrup', text)
+        # Normalize plurals to singular for matching using generic singularize function
+        # "eggs" → "egg", "bagels" → "bagel", "syrups" → "syrup", etc.
+        words = text.split()
+        text = " ".join(singularize(word) for word in words)
 
         # Also handle exact matches: "two" → "double", "3" → "triple"
         if text in SHOT_NORMALIZATIONS:
@@ -1609,33 +1608,72 @@ class MenuItemConfigHandler(BaseHandler):
     # Handle User Input for Different States
     # =========================================================================
 
-    def _handle_coffee_style_input(
+    def _handle_temperature_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Handle coffee style (hot/iced) input - special case for boolean mapping."""
+        """Handle temperature attribute input using DB-driven option matching."""
         user_lower = user_input.lower().strip()
 
-        # Check for iced indicators
-        iced_patterns = ["iced", "ice", "cold"]
-        hot_patterns = ["hot", "warm"]
+        # Get temperature options from database
+        try:
+            temp_options = menu_cache.get_global_attribute_options("temperature")
+        except Exception:
+            # Fallback if temperature options not configured
+            temp_options = []
 
-        if any(p in user_lower for p in iced_patterns):
-            item.temperature = "iced"
-        elif any(p in user_lower for p in hot_patterns):
-            item.temperature = "hot"
+        # Build pattern -> option_slug mapping from DB options and their aliases
+        pattern_to_option: dict[str, str] = {}
+        for opt in temp_options:
+            slug = opt["slug"].lower()
+            display = opt["display_name"].lower()
+            pattern_to_option[slug] = slug
+            pattern_to_option[display] = slug
+            # Add aliases if present
+            aliases = opt.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [a.strip() for a in aliases.split("|") if a.strip()]
+            for alias in aliases:
+                pattern_to_option[alias.lower()] = slug
+
+        # Add common fallback patterns if not already in DB options
+        # These are universal temperature descriptors across all beverages
+        # Only add if the specific pattern isn't already defined
+        iced_fallbacks = ["iced", "ice", "cold"]
+        for pattern in iced_fallbacks:
+            if pattern not in pattern_to_option:
+                pattern_to_option[pattern] = "iced"
+        hot_fallbacks = ["hot", "warm"]
+        for pattern in hot_fallbacks:
+            if pattern not in pattern_to_option:
+                pattern_to_option[pattern] = "hot"
+
+        # Match user input against patterns
+        matched_option = None
+        for pattern, option_slug in pattern_to_option.items():
+            if pattern in user_lower:
+                matched_option = option_slug
+                break
+
+        if matched_option:
+            item.temperature = matched_option
         else:
-            # Couldn't determine - ask again
+            # Couldn't determine - ask again with DB option names
+            option_names = [opt["display_name"] for opt in temp_options]
+            if option_names:
+                options_str = " or ".join(option_names)
+            else:
+                options_str = "hot or iced"
             return StateMachineResult(
-                message="Would you like that hot or iced?",
+                message=f"Would you like that {options_str}?",
                 order=order,
             )
 
         # Extract and apply any additional modifiers from the input
         self._extract_and_apply_modifiers(user_input, item)
 
-        # Advance to next question using the multi-item flow for beverages
+        # Advance to next question using the multi-item flow
         return self._advance_to_next_question(
-            item, order, {"slug": "iced"}, use_multi_item_orchestration=True
+            item, order, {"slug": "temperature"}, use_multi_item_orchestration=True
         )
 
     def _handle_coffee_modifiers_input(
@@ -1715,9 +1753,9 @@ class MenuItemConfigHandler(BaseHandler):
             return disambiguation_result
 
         # Special handling for attributes with custom parsing requirements
-        # These are beverage attributes that need special input parsing
+        # Temperature attribute needs pattern matching against option aliases
         if attr_slug in ("iced", "temperature"):
-            return self._handle_coffee_style_input(user_input, item, order)
+            return self._handle_temperature_input(user_input, item, order)
         if attr_slug == "milk_sweetener_syrup":
             return self._handle_coffee_modifiers_input(user_input, item, order)
 
@@ -1910,12 +1948,13 @@ class MenuItemConfigHandler(BaseHandler):
                     sel_qty = sel.get("quantity", 1) or 1
                     sel_slug = sel.get("slug", "")
 
-                    # For sized_beverage, look up price from pricing engine if not in option
-                    if sel_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
+                    # Look up price from pricing engine if not in option
+                    # Pass actual item type - pricing engine returns 0 for non-applicable types
+                    if sel_price == 0 and self.pricing:
                         # Try syrup price first, then milk
-                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, "sized_beverage", "syrup") or 0.0
+                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type, "syrup") or 0.0
                         if sel_price == 0:
-                            sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, "sized_beverage", "milk") or 0.0
+                            sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type, "milk") or 0.0
                         # Update the selection with the looked-up price
                         if sel_price > 0:
                             sel["price"] = sel_price
@@ -1988,15 +2027,17 @@ class MenuItemConfigHandler(BaseHandler):
                 # Determine the price for this option
                 option_price = sel_price or 0.0
 
-                # For sized_beverage attributes, look up price from pricing engine if not set
-                if option_price == 0 and self.pricing and item.menu_item_type == "sized_beverage":
-                    if attr_slug == "size" and matched["slug"].lower() not in ("small", "s"):
-                        option_price = self.pricing.lookup_attribute_option_upcharge("sized_beverage", "size", matched["slug"]) or 0.0
+                # Look up price from pricing engine if not set
+                # Pass actual item type - pricing engine returns 0 for non-applicable types
+                if option_price == 0 and self.pricing:
+                    if attr_slug == "size":
+                        # Size upcharge - pricing engine returns price_modifier (0 for base sizes)
+                        option_price = self.pricing.lookup_attribute_option_upcharge(item.menu_item_type, "size", matched["slug"]) or 0.0
                     elif attr_slug == "temperature" and matched["slug"].lower() == "iced":
-                        # Iced upcharge depends on size
+                        # Iced upcharge depends on size - conditional lookup
                         size = item.attribute_values.get("size")
                         if size:
-                            option_price = self.pricing.lookup_conditional_upcharge("sized_beverage", "size", size, "iced_price_modifier") or 0.0
+                            option_price = self.pricing.lookup_conditional_upcharge(item.menu_item_type, "size", size, "iced_price_modifier") or 0.0
 
                 # Store price if applicable and update unit_price
                 if option_price > 0:

@@ -633,8 +633,8 @@ class PricingEngine:
         # 3. Modifier upcharges (milk, syrup, protein, spread, extras)
         # =====================================================================
 
-        # Milk upcharge
-        milk_value = attr_values.get("milk")
+        # Milk upcharge - use item.milk property (handles unified storage)
+        milk_value = item.milk if hasattr(item, 'milk') else attr_values.get("milk")
         milk_upcharge = 0.0
         if milk_value:
             milk_upcharge = self.lookup_generic_modifier_price(
@@ -646,11 +646,13 @@ class PricingEngine:
             item.milk_upcharge = milk_upcharge
 
         # Syrup upcharge (sum of all syrups * quantities)
-        syrup_selections = attr_values.get("syrup_selections", [])
+        # Use item.flavor_syrups property (handles unified storage with category filtering)
+        syrup_selections = item.flavor_syrups if hasattr(item, 'flavor_syrups') else attr_values.get("syrup_selections", [])
         syrup_upcharge = 0.0
         for syrup in syrup_selections:
             if isinstance(syrup, dict):
-                flavor = syrup.get("flavor", "")
+                # Support both old format ("flavor") and new unified format ("slug")
+                flavor = syrup.get("slug") or syrup.get("flavor", "")
                 qty = syrup.get("quantity", 1) or 1
                 single_price = self.lookup_generic_modifier_price(
                     flavor, item_type, "syrup"

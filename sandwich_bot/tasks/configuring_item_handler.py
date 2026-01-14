@@ -12,6 +12,7 @@ import re
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
+from sandwich_bot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -365,13 +366,17 @@ class ConfiguringItemHandler:
         if order.pending_field == "side_choice":
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
 
-        # Handle bagel_choice for menu items with bagel sides (e.g., omelettes, salads)
-        # These items have side_choice="bagel" and need to specify which bagel type
+        # Handle bread_choice for menu items with bread-based sides (e.g., omelettes, salads)
+        # Data-driven: check if side_choice references an item type that has bread attribute
         if order.pending_field == "bagel_choice" and isinstance(item, MenuItemTask):
-            if getattr(item, 'side_choice', None) == "bagel":
-                return self.config_helper_handler.handle_bagel_choice_for_side(
-                    user_input, item, order
-                )
+            side_choice = getattr(item, 'side_choice', None)
+            if side_choice:
+                # Check if the side choice item type has a bread attribute (data-driven)
+                side_attrs = menu_cache.get_item_type_attributes(side_choice)
+                if "bread" in side_attrs:
+                    return self.config_helper_handler.handle_bagel_choice_for_side(
+                        user_input, item, order
+                    )
 
         # Handle espresso legacy fields - route to menu_item_handler
         if order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):

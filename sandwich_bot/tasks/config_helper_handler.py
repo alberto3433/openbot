@@ -634,7 +634,11 @@ class ConfigHelperHandler:
         # Apply the choice
         item.side_choice = parsed.choice
 
-        if parsed.choice == "bagel":
+        # Data-driven: check if choice is a bread-based side (has bread attribute)
+        choice_attrs = menu_cache.get_item_type_attributes(parsed.choice) if parsed.choice else {}
+        is_bread_side = "bread" in choice_attrs
+
+        if is_bread_side:
             if parsed.bread:
                 # User specified bagel type upfront (e.g., "plain bagel")
                 # Set bagel_choice but don't mark complete - still need toasted/spread questions

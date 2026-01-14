@@ -2472,47 +2472,55 @@ class MenuDataCache:
                     "ingredient_group": group,
                 })
 
-            # For bagel items, also add spread modifiers from attributes
+            # For any item type with spread_type attribute, add spread modifiers
             # Spreads are stored as attribute options, not ingredients
-            if item_type_slug == "bagel":
-                from .models import ItemTypeAttribute, AttributeOption
+            # Data-driven: check for spread_type attribute instead of hardcoded item type
+            from .models import ItemTypeAttribute, AttributeOption
 
-                # Look for spread_type attribute
-                spread_attr = (
-                    db.query(ItemTypeAttribute)
+            spread_attr = (
+                db.query(ItemTypeAttribute)
+                .filter(
+                    ItemTypeAttribute.item_type_id == item_type.id,
+                    ItemTypeAttribute.slug == "spread_type",
+                )
+                .first()
+            )
+
+            if spread_attr:
+                # Start with empty aliases - all aliases come from database
+                spread_aliases = []
+
+                # Get spread option names and aliases from database
+                spread_options = (
+                    db.query(AttributeOption)
                     .filter(
-                        ItemTypeAttribute.item_type_id == item_type.id,
-                        ItemTypeAttribute.slug == "spread_type",
+                        AttributeOption.item_type_attribute_id == spread_attr.id,
+                        AttributeOption.is_available == True,
                     )
-                    .first()
+                    .all()
                 )
 
-                if spread_attr:
-                    spread_aliases = ["cream cheese", "cc", "schmear", "butter", "spread"]
+                for opt in spread_options:
+                    # Add display name
+                    display = (opt.display_name or opt.slug.replace("_", " ")).lower()
+                    if display and display not in spread_aliases:
+                        spread_aliases.append(display)
+                    # Also add slug as an alias
+                    slug_alias = opt.slug.lower().replace("_", " ")
+                    if slug_alias and slug_alias not in spread_aliases:
+                        spread_aliases.append(slug_alias)
 
-                    # Also add individual spread option names as aliases
-                    spread_options = (
-                        db.query(AttributeOption)
-                        .filter(
-                            AttributeOption.item_type_attribute_id == spread_attr.id,
-                            AttributeOption.is_available == True,
-                        )
-                        .all()
-                    )
+                # Also add the category name "spread" as a catch-all alias
+                if "spread" not in spread_aliases:
+                    spread_aliases.append("spread")
 
-                    for opt in spread_options:
-                        # Add display name
-                        display = (opt.display_name or opt.slug.replace("_", " ")).lower()
-                        if display and display not in spread_aliases:
-                            spread_aliases.append(display)
-
-                    result.append({
-                        "field_name": "spread",
-                        "display_name": "spread",
-                        "aliases": spread_aliases,
-                        "is_list": False,
-                        "ingredient_group": "spread_type",
-                    })
+                result.append({
+                    "field_name": "spread",
+                    "display_name": "spread",
+                    "aliases": spread_aliases,
+                    "is_list": False,
+                    "ingredient_group": "spread_type",
+                })
 
             logger.debug(
                 "Loaded %d modifier field groups for %s: %s",
@@ -3306,6 +3314,49 @@ class MenuDataCache:
                 })
 
         return matches
+
+    def get_menu_item_names_by_category(self, category_slug: str) -> set[str]:
+        """Get all menu item names that belong to a category.
+
+        This is a data-driven replacement for hardcoded beverage/food keyword lists.
+        Returns item names and their aliases for pattern matching.
+
+        Args:
+            category_slug: Category slug (e.g., "beverage", "bagel", "sandwich")
+
+        Returns:
+            Set of menu item names and aliases in that category
+
+        Examples:
+            >>> menu_cache.get_menu_item_names_by_category("beverage")
+            {"Latte", "Cappuccino", "Espresso", "Coffee", "Cold Brew", ...}
+        """
+        self._ensure_loaded()
+        names = set()
+
+        # Get all menu items and filter by category
+        for item_name, item_info in self._menu_index.items():
+            item_category = item_info.get("category", "")
+            # Match category directly or check if category contains the slug
+            if item_category == category_slug or category_slug in item_category.lower():
+                names.add(item_name)
+                # Also add any aliases for this item
+                aliases = item_info.get("aliases", [])
+                if aliases:
+                    names.update(aliases)
+
+        # Also check modifier_category for item types
+        for item_name, item_info in self._menu_index.items():
+            item_type = item_info.get("item_type", "")
+            if item_type:
+                modifier_cat = self.get_modifier_category(item_type)
+                if modifier_cat == category_slug:
+                    names.add(item_name)
+                    aliases = item_info.get("aliases", [])
+                    if aliases:
+                        names.update(aliases)
+
+        return names
 
     def resolve_item_type_slug(self, name_or_alias: str) -> str:
         """

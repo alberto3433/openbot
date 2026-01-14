@@ -886,14 +886,20 @@ class CheckoutHandler(BaseHandler):
         if milk:
             coffee.milk = milk
         if sweetener:
-            coffee.attribute_values["sweetener_selections"] = [{
-                "type": sweetener,
-                "quantity": prev_item.get("sweetener_quantity", 1)
+            # Use property setter which handles unified storage model
+            coffee.sweeteners = [{
+                "slug": sweetener,
+                "display_name": sweetener.replace("_", " ").title(),
+                "quantity": prev_item.get("sweetener_quantity", 1),
+                "category": "sweetener",
             }]
         if flavor_syrup:
-            coffee.attribute_values["syrup_selections"] = [{
-                "flavor": flavor_syrup,
-                "quantity": 1
+            # Use property setter which handles unified storage model
+            coffee.flavor_syrups = [{
+                "slug": flavor_syrup,
+                "display_name": flavor_syrup.replace("_", " ").title(),
+                "quantity": 1,
+                "category": "syrup",
             }]
 
         coffee.status = TaskStatus.COMPLETE

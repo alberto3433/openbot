@@ -24,18 +24,6 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 
-# Category slugs for special handling (from database)
-# These are slugs, not food names - used for routing to appropriate handlers
-SPREAD_CATEGORY_SLUG = "spread"
-BEVERAGE_CATEGORY_SLUGS = ("beverage_all", "beverage", "drink")
-SANDWICH_CATEGORY_SLUGS = ("sandwich", "sandwich_all")
-DESSERT_CATEGORY_SLUG = "dessert"
-CHEESES_CATEGORY_SLUG = "cheeses"
-
-if TYPE_CHECKING:
-    from .handler_config import HandlerConfig
-    from .pricing import PricingEngine
-
 logger = logging.getLogger(__name__)
 
 # NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
@@ -112,6 +100,38 @@ class MenuInquiryHandler:
 
         # Fallback message
         return "egg sandwiches, fish sandwiches, cream cheese sandwiches, deli sandwiches, and more"
+
+    def _get_category_subtypes_message(self, category_info: dict) -> str:
+        """Build a message listing sub-types for any virtual category from database.
+
+        Args:
+            category_info: Category info dict with expands_to list of sub-category slugs.
+
+        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
+        based on the category's expanded types.
+        """
+        try:
+            expands_to = category_info.get("expands_to", [])
+            if expands_to:
+                # Get display names for the expanded types
+                subtypes = []
+                for slug in expands_to:
+                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
+                    if subtype_info:
+                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
+                        subtypes.append(display)
+
+                if subtypes:
+                    if len(subtypes) <= 3:
+                        return ", ".join(subtypes)
+                    else:
+                        return ", ".join(subtypes[:4]) + ", and more"
+        except Exception as e:
+            logger.warning("Failed to get category subtypes from database: %s", e)
+
+        # Fallback - use the category's display name
+        display_name = category_info.get("display_name_plural", category_info.get("display_name", "items"))
+        return f"various {display_name}"
 
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.
@@ -229,19 +249,21 @@ class MenuInquiryHandler:
 
         if show_prices:
             item_list = []
+            # Check if this item type uses attribute-based pricing (has "bread" attribute)
+            item_type_attrs = menu_cache.get_item_type_attributes(lookup_type)
+            uses_attribute_pricing = "bread" in item_type_attrs
             for item in batch:
                 name = item.get('name', 'Unknown')
-                if lookup_type == "bagel":
-                    bagel_type = name.lower().replace(" bagel", "").strip()
-                    if self.pricing:
-                        try:
-                            base_price = self.pricing.lookup_base_price("Bagel")
-                            upcharge = self.pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
-                            price = base_price + upcharge
-                        except ValueError:
-                            price = 0
-                    else:
-                        price = 0
+                if uses_attribute_pricing and self.pricing:
+                    # Item type uses base + attribute upcharge pricing
+                    # Extract the attribute value from the item name (e.g., "Plain Bagel" -> "plain")
+                    attr_value = name.lower().replace(f" {lookup_type}", "").strip()
+                    try:
+                        base_price = self.pricing.lookup_base_price(lookup_type.title())
+                        upcharge = self.pricing.lookup_attribute_option_upcharge(lookup_type, "bread", attr_value)
+                        price = base_price + upcharge
+                    except ValueError:
+                        price = item.get('price') or item.get('base_price') or 0
                 else:
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
@@ -510,11 +532,13 @@ class MenuInquiryHandler:
                     continue
 
             # For cheeses category, filter out items that belong in spreads
-            # (cream cheese variants, and items containing "spread" in name)
-            if category == CHEESES_CATEGORY_SLUG:
-                if "cream cheese" in item_lower or " cc" in item_lower:
-                    continue
-                if "spread" in item_lower:
+            # Use data-driven category lookup to check if item is a spread
+            category_info = menu_cache.get_category_keyword_mapping(category)
+            is_cheese_category = category_info and category_info.get("slug") == "cheeses"
+            if is_cheese_category:
+                # Check if this item belongs in the spread category via database lookup
+                item_category = menu_cache.get_ingredient_category(item_lower)
+                if item_category == "spread":
                     continue
 
             # Track base form
@@ -557,19 +581,25 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle spread/cream cheese queries as by-the-pound category
-        spread_aliases = (SPREAD_CATEGORY_SLUG, "cream_cheese", "cream cheese")
-        if menu_query_type in spread_aliases:
+        # Handle by-the-pound categories (spread, cream cheese, etc.)
+        # Check if this category routes to by-pound handler via database
+        category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
+        if category_info and category_info.get("is_by_pound"):
+            category_slug = category_info.get("slug")
             if self._list_by_pound_category:
-                return self._list_by_pound_category(SPREAD_CATEGORY_SLUG, order)
+                return self._list_by_pound_category(category_slug, order)
+            display_name = category_info.get("display_name_plural", "items")
             return StateMachineResult(
-                message="We have various cream cheeses and spreads. Would you like to hear about them?",
+                message=f"We have various {display_name}. Would you like to hear about them?",
                 order=order,
             )
 
-        # Handle beverage queries (beverage_all from DB, or legacy beverage/drink terms)
-        if menu_query_type in BEVERAGE_CATEGORY_SLUGS:
+        # Handle beverage queries - use category info from database
+        if not category_info:
+            category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
+        if category_info and menu_cache.get_modifier_category(category_info.get("slug", "")) == "beverage":
             items, category_key = self._get_items_for_category(menu_query_type)
+            display_name = category_info.get("display_name_plural", "beverages")
             if items:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
                 # Save pagination state if there are more items
@@ -578,40 +608,23 @@ class MenuInquiryHandler:
                 else:
                     order.clear_menu_pagination()
                 return StateMachineResult(
-                    message=f"Our beverages include: {items_str}. Would you like any of these?",
+                    message=f"Our {display_name} include: {items_str}. Would you like any of these?",
                     order=order,
                 )
             return StateMachineResult(
-                message="I don't have any beverages on the menu right now. Is there anything else I can help you with?",
+                message=f"I don't have any {display_name} on the menu right now. Is there anything else I can help you with?",
                 order=order,
             )
 
-        # Handle "sandwich" or "sandwich_all" specially - too broad, need to ask what kind
-        # TODO: Make this data-driven via is_virtual flag on ItemType
-        if menu_query_type in SANDWICH_CATEGORY_SLUGS:
-            # Build sandwich sub-types message from database
-            sandwich_subtypes = self._get_sandwich_subtypes_message()
+        # Handle virtual categories (those with expands_to) - too broad, need to ask what kind
+        if not category_info:
+            category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
+        if category_info and category_info.get("expands_to"):
+            # Build sub-types message from database using the expanded types
+            subtypes_message = self._get_category_subtypes_message(category_info)
+            display_name = category_info.get("display_name", menu_query_type)
             return StateMachineResult(
-                message=f"We have {sandwich_subtypes}. What kind of sandwich would you like?",
-                order=order,
-            )
-
-        # Handle dessert queries (DB maps dessert terms to "dessert" slug)
-        if menu_query_type == DESSERT_CATEGORY_SLUG:
-            items, category_key = self._get_items_for_category("dessert")
-            if items:
-                items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
-                # Save pagination state if there are more items
-                if has_more:
-                    order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
-                else:
-                    order.clear_menu_pagination()
-                return StateMachineResult(
-                    message=f"For desserts and pastries, we have: {items_str}. Would you like any of these?",
-                    order=order,
-                )
-            return StateMachineResult(
-                message="I don't have any desserts on the menu right now. What else can I get for you?",
+                message=f"We have {subtypes_message}. What kind of {display_name} would you like?",
                 order=order,
             )
 
@@ -736,18 +749,17 @@ class MenuInquiryHandler:
         # Strip leading "a " or "an " from the query
         query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
 
-        # Special handling for "sandwich" - too broad, need to ask what kind
-        # TODO: Make this data-driven by adding a "prompt_for_subtype" flag to ItemType
-        if query_lower in SANDWICH_CATEGORY_SLUGS or query_lower == "sandwich":
-            sandwich_subtypes = self._get_sandwich_subtypes_message()
+        # Use data-driven lookup from ItemType aliases for category handling
+        category_info = menu_cache.get_category_keyword_mapping(query_lower)
+
+        # Handle virtual categories (those with expands_to) - too broad, need to ask what kind
+        if category_info and category_info.get("expands_to"):
+            subtypes_message = self._get_category_subtypes_message(category_info)
+            display_name = category_info.get("display_name", query_lower)
             return StateMachineResult(
-                message=f"We have {sandwich_subtypes}. What kind of sandwich would you like?",
+                message=f"We have {subtypes_message}. What kind of {display_name} would you like?",
                 order=order,
             )
-
-        # Use data-driven lookup from ItemType aliases for category price inquiries
-        # This replaces hardcoded generic_category_map and sandwich_type_map
-        category_info = menu_cache.get_category_keyword_mapping(query_lower)
         if category_info and self.pricing:
             item_type = category_info.get("slug")
             display_name_plural = category_info.get("display_name_plural", f"{query_lower}s")
@@ -790,39 +802,49 @@ class MenuInquiryHandler:
             if best_match_score == 100:
                 break
 
-        # Check bagels specifically (they may not be in items_by_type with prices)
-        bagel_items = items_by_type.get("bagel", [])
-        is_bagel_query = "bagel" in query_lower
-        if is_bagel_query and not best_match:
-            # Try to find a matching bagel
-            for bagel in bagel_items:
-                bagel_name = bagel.get("name", "").lower()
-                if query_lower in bagel_name or bagel_name in query_lower:
-                    best_match = bagel
-                    best_match_score = 75
-                    break
-
-            # If they asked about a specific bagel type but we didn't find it,
-            # give the general bagel price if available
-            if not best_match and bagel_items:
-                # Use the first bagel price as the general price
-                best_match = bagel_items[0]
-                best_match_score = 50
+        # Check for items that use attribute-based pricing (e.g., items with "bread" attribute)
+        # These items may not have direct prices in items_by_type
+        matched_item_type = None
+        for item_type_slug in items_by_type.keys():
+            item_type_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+            if "bread" in item_type_attrs and item_type_slug in query_lower:
+                items_for_type = items_by_type.get(item_type_slug, [])
+                if not best_match and items_for_type:
+                    # Try to find a matching item
+                    for item in items_for_type:
+                        item_name = item.get("name", "").lower()
+                        if query_lower in item_name or item_name in query_lower:
+                            best_match = item
+                            best_match_score = 75
+                            matched_item_type = item_type_slug
+                            break
+                    # If they asked about a specific type but we didn't find it,
+                    # give the general price if available
+                    if not best_match and items_for_type:
+                        best_match = items_for_type[0]
+                        best_match_score = 50
+                        matched_item_type = item_type_slug
+                break
 
         if best_match and best_match_score >= 50:
             name = best_match.get("name", "Unknown")
-            # Bagels use generic base price + type upcharge lookup
-            if is_bagel_query or "bagel" in name.lower():
-                bagel_type = name.lower().replace(" bagel", "").strip()
-                if self.pricing:
-                    try:
-                        base_price = self.pricing.lookup_base_price("Bagel")
-                        upcharge = self.pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
-                        price = base_price + upcharge
-                    except ValueError:
-                        price = 0
-                else:
-                    price = 0
+            # Check if item type uses attribute-based pricing (base + upcharge)
+            item_type_slug = matched_item_type or best_match.get("item_type")
+            if item_type_slug:
+                item_type_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                uses_attribute_pricing = "bread" in item_type_attrs
+            else:
+                uses_attribute_pricing = False
+
+            if uses_attribute_pricing and item_type_slug and self.pricing:
+                # Extract attribute value from name (e.g., "Plain Bagel" -> "plain")
+                attr_value = name.lower().replace(f" {item_type_slug}", "").strip()
+                try:
+                    base_price = self.pricing.lookup_base_price(item_type_slug.title())
+                    upcharge = self.pricing.lookup_attribute_option_upcharge(item_type_slug, "bread", attr_value)
+                    price = base_price + upcharge
+                except ValueError:
+                    price = best_match.get("price") or best_match.get("base_price") or 0
             else:
                 price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(

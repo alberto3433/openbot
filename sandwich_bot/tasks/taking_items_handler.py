@@ -102,7 +102,7 @@ def _is_bagel_entry(item: "ParsedItem") -> bool:
         # Data-driven check: item type has bread attribute
         attrs = menu_cache.get_item_type_attributes(item_type)
         return "bread" in attrs
-    # Legacy format fallback
+    # Legacy format fallback for ParsedBagelEntry
     return getattr(item, 'type', None) == "bagel"
 
 
@@ -118,7 +118,7 @@ def _is_coffee_entry(item: "ParsedItem") -> bool:
         # Data-driven check: item type has size attribute (sized beverages)
         attrs = menu_cache.get_item_type_attributes(item_type)
         return "size" in attrs
-    # Legacy format fallback
+    # Legacy format fallback for ParsedCoffeeEntry
     return getattr(item, 'type', None) == "coffee"
 
 
@@ -249,11 +249,14 @@ def _add_beverage_modifier_to_item(
 
     # Add the modifier
     mss_slugs.append(slug)
-    mss_selections.append({
+    selection_entry = {
         "slug": slug,
         "display_name": display_name,
         "quantity": quantity,
-    })
+    }
+    if category:
+        selection_entry["category"] = category
+    mss_selections.append(selection_entry)
 
     # Update item
     item.attribute_values["milk_sweetener_syrup"] = mss_slugs
@@ -413,6 +416,20 @@ class TakingItemsHandler:
     Manages greeting, processing new item orders, and
     multi-item order coordination.
     """
+
+    # Type annotations for instance variables
+    model: str
+    pricing: "PricingEngine | None"
+    _menu_data: dict
+    item_adder_handler: "ItemAdderHandler | None"
+    menu_inquiry_handler: "MenuInquiryHandler | None"
+    store_info_handler: "StoreInfoHandler | None"
+    by_pound_handler: "ByPoundHandler | None"
+    checkout_utils_handler: "CheckoutUtilsHandler | None"
+    checkout_handler: "CheckoutHandler | None"
+    _spread_types: list[str]
+    _returning_customer: dict | None
+    _set_repeat_info_callback: Callable[[bool, str | None], None] | None
 
     def __init__(
         self,
@@ -921,8 +938,9 @@ class TakingItemsHandler:
                     if item_bagel_type and item_bagel_type in target_desc:
                         target_item = item
                         break
-                    # Also match if target is just "bagel" and there's only one item with bread
-                    if target_desc == "bagel" and len(items_with_bread) == 1:
+                    # Also match if target is a category reference (e.g., "bagel") and there's only one item with bread
+                    target_category = menu_cache.is_category_reference(target_desc)
+                    if target_category and len(items_with_bread) == 1:
                         target_item = item
                         break
                 # Also check menu items by name if no bagel matched
@@ -2188,16 +2206,14 @@ class TakingItemsHandler:
             # be added to the last beverage instead of creating a new coffee
             drink_type_lower = (item.drink_type or "").lower()
             has_modifiers = bool(item.syrups or item.sweeteners or item.milk or item.wants_syrup)
-            is_default_drink_type = drink_type_lower == "coffee"
+            # Check if drink type is a generic category reference (not a specific menu item)
+            is_default_drink_type = bool(menu_cache.is_category_reference(drink_type_lower))
 
-            # Check if original input contains a real beverage keyword
+            # Check if original input contains a real beverage keyword from the database
             original_text_lower = (item.original_text or "").lower()
-            beverage_keywords = {
-                "coffee", "latte", "cappuccino", "espresso", "americano", "macchiato",
-                "mocha", "tea", "chai", "matcha", "cold brew", "drip", "iced coffee",
-                "hot coffee", "coke", "soda", "juice", "water", "drink", "beverage",
-            }
-            has_explicit_drink = any(kw in original_text_lower for kw in beverage_keywords)
+            # Get beverage names from database (menu items in beverage category + their aliases)
+            beverage_names = menu_cache.get_menu_item_names_by_category("beverage")
+            has_explicit_drink = any(name.lower() in original_text_lower for name in beverage_names)
 
             # If this is a modifier-only input (no explicit drink type), add to last beverage
             if has_modifiers and is_default_drink_type and not has_explicit_drink:
@@ -2293,18 +2309,15 @@ class TakingItemsHandler:
                             summary = ", ".join(modifier_summary_parts) + " added"
                             return order, summary
 
-            # Check if this is an espresso drink - route to data-driven flow via MenuItemConfigHandler
-            is_espresso = drink_type_lower == "espresso"
+            # Check if this is an espresso-type drink (has shots attribute) - route to data-driven flow
+            menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
+            drink_menu_item = menu_lookup.lookup_menu_item(drink_type_lower) if menu_lookup else None
+            drink_item_type = drink_menu_item.get("item_type") if drink_menu_item else None
+            is_espresso_type = drink_item_type and menu_cache.item_type_has_attribute(drink_item_type, "shots")
 
-            if is_espresso and self.item_adder_handler and self.item_adder_handler.menu_item_handler:
-                # Look up Espresso from menu
-                menu_lookup = self.item_adder_handler.menu_lookup
-                espresso_items = menu_lookup.lookup_menu_items("espresso") if menu_lookup else []
-                espresso_menu_item = None
-                for mi in espresso_items:
-                    if mi.get("name", "").lower() == "espresso":
-                        espresso_menu_item = mi
-                        break
+            if is_espresso_type and self.item_adder_handler and self.item_adder_handler.menu_item_handler:
+                # Use the looked-up menu item for espresso-type drinks
+                espresso_menu_item = drink_menu_item
 
                 base_price = espresso_menu_item.get("base_price", 3.50) if espresso_menu_item else 3.50
                 menu_item_id = espresso_menu_item.get("id") if espresso_menu_item else None

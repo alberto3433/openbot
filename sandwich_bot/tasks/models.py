@@ -256,16 +256,57 @@ class MenuItemTask(ItemTask):
 
     @property
     def milk(self) -> str | None:
-        """Get milk type from attribute_values."""
+        """Get milk type from unified storage (milk_sweetener_syrup_selections).
+
+        Returns the slug of the first milk modifier, or falls back to legacy
+        attribute_values["milk"] for backward compatibility.
+        """
+        # Check unified storage first
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+        for entry in mss_selections:
+            if entry.get("category") == "milk":
+                return entry.get("slug")
+        # Fall back to legacy storage
         return self.attribute_values.get("milk")
 
     @milk.setter
     def milk(self, value: str | None) -> None:
-        """Set milk type in attribute_values."""
+        """Set milk type in unified storage (milk_sweetener_syrup_selections).
+
+        Updates the unified storage model. Also clears legacy storage if present.
+        """
+        # Initialize unified storage if needed
+        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+        # Remove existing milk entries
+        mss_slugs = [s for s in mss_slugs if not self._is_milk_slug(s, mss_selections)]
+        mss_selections = [e for e in mss_selections if e.get("category") != "milk"]
+
         if value is not None:
-            self.attribute_values["milk"] = value
-        elif "milk" in self.attribute_values:
+            # Add new milk entry
+            mss_slugs.append(value)
+            mss_selections.append({
+                "slug": value,
+                "display_name": value.replace("_", " ").title(),
+                "quantity": 1,
+                "category": "milk",
+            })
+
+        # Update unified storage
+        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+        # Clear legacy storage
+        if "milk" in self.attribute_values:
             del self.attribute_values["milk"]
+
+    def _is_milk_slug(self, slug: str, selections: list[dict]) -> bool:
+        """Check if a slug is a milk entry in the selections list."""
+        for entry in selections:
+            if entry.get("slug") == slug and entry.get("category") == "milk":
+                return True
+        return False
 
     @property
     def cream_level(self) -> str | None:
@@ -282,33 +323,113 @@ class MenuItemTask(ItemTask):
 
     @property
     def sweeteners(self) -> list[dict]:
-        """Get sweeteners list from attribute_values.
+        """Get sweeteners list from unified storage (milk_sweetener_syrup_selections).
 
-        Creates the list if it doesn't exist, so .append() works correctly.
+        Returns entries with category="sweetener". Falls back to legacy storage
+        for backward compatibility.
         """
+        # Check unified storage first
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
+        if sweetener_entries:
+            return sweetener_entries
+        # Fall back to legacy storage
         if "sweetener_selections" not in self.attribute_values:
             self.attribute_values["sweetener_selections"] = []
         return self.attribute_values["sweetener_selections"]
 
     @sweeteners.setter
     def sweeteners(self, value: list[dict]) -> None:
-        """Set sweeteners list in attribute_values."""
-        self.attribute_values["sweetener_selections"] = value or []
+        """Set sweeteners list in unified storage (milk_sweetener_syrup_selections).
+
+        Updates the unified storage model. Also clears legacy storage if present.
+        """
+        # Initialize unified storage if needed
+        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+        # Remove existing sweetener entries
+        mss_slugs = [s for s in mss_slugs if not self._is_sweetener_slug(s, mss_selections)]
+        mss_selections = [e for e in mss_selections if e.get("category") != "sweetener"]
+
+        # Add new sweetener entries
+        for entry in (value or []):
+            slug = entry.get("slug", "")
+            if slug and slug not in mss_slugs:
+                mss_slugs.append(slug)
+                # Ensure category is set
+                entry_with_category = {**entry, "category": "sweetener"}
+                mss_selections.append(entry_with_category)
+
+        # Update unified storage
+        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+        # Clear legacy storage
+        if "sweetener_selections" in self.attribute_values:
+            del self.attribute_values["sweetener_selections"]
+
+    def _is_sweetener_slug(self, slug: str, selections: list[dict]) -> bool:
+        """Check if a slug is a sweetener entry in the selections list."""
+        for entry in selections:
+            if entry.get("slug") == slug and entry.get("category") == "sweetener":
+                return True
+        return False
 
     @property
     def flavor_syrups(self) -> list[dict]:
-        """Get flavor syrups list from attribute_values.
+        """Get flavor syrups list from unified storage (milk_sweetener_syrup_selections).
 
-        Creates the list if it doesn't exist, so .append() works correctly.
+        Returns entries with category="syrup". Falls back to legacy storage
+        for backward compatibility.
         """
+        # Check unified storage first
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+        syrup_entries = [e for e in mss_selections if e.get("category") == "syrup"]
+        if syrup_entries:
+            return syrup_entries
+        # Fall back to legacy storage
         if "syrup_selections" not in self.attribute_values:
             self.attribute_values["syrup_selections"] = []
         return self.attribute_values["syrup_selections"]
 
     @flavor_syrups.setter
     def flavor_syrups(self, value: list[dict]) -> None:
-        """Set flavor syrups list in attribute_values."""
-        self.attribute_values["syrup_selections"] = value or []
+        """Set flavor syrups list in unified storage (milk_sweetener_syrup_selections).
+
+        Updates the unified storage model. Also clears legacy storage if present.
+        """
+        # Initialize unified storage if needed
+        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+        # Remove existing syrup entries
+        mss_slugs = [s for s in mss_slugs if not self._is_syrup_slug(s, mss_selections)]
+        mss_selections = [e for e in mss_selections if e.get("category") != "syrup"]
+
+        # Add new syrup entries
+        for entry in (value or []):
+            slug = entry.get("slug", "")
+            if slug and slug not in mss_slugs:
+                mss_slugs.append(slug)
+                # Ensure category is set
+                entry_with_category = {**entry, "category": "syrup"}
+                mss_selections.append(entry_with_category)
+
+        # Update unified storage
+        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+        # Clear legacy storage
+        if "syrup_selections" in self.attribute_values:
+            del self.attribute_values["syrup_selections"]
+
+    def _is_syrup_slug(self, slug: str, selections: list[dict]) -> bool:
+        """Check if a slug is a syrup entry in the selections list."""
+        for entry in selections:
+            if entry.get("slug") == slug and entry.get("category") == "syrup":
+                return True
+        return False
 
     @property
     def wants_syrup(self) -> bool:
@@ -393,18 +514,16 @@ class MenuItemTask(ItemTask):
 
     @property
     def is_espresso(self) -> bool:
-        """Check if this is an espresso drink (has shots but no size attribute).
+        """Check if this is an espresso drink (has shots attribute).
 
-        Data-driven: checks item type capabilities rather than item type slug.
+        Data-driven: checks if item type has the 'shots' attribute,
+        which identifies espresso-style items that can have extra shots.
+        This is a capability check, not a name check.
         """
-        # Espresso-style items have shots attribute but no size
-        if self.has_attribute("shots") and not self.has_attribute("size"):
-            return True
-        # Also check if a sized beverage is named "espresso" (menu item name)
-        if self.has_attribute("size"):
-            drink_type = self.menu_item_name.lower() if self.menu_item_name else ""
-            return drink_type == "espresso"
-        return False
+        # Espresso-style items have shots attribute
+        # This covers both pure espresso (shots without size) and
+        # espresso-based drinks that allow shot customization
+        return self.has_attribute("shots")
 
     @property
     def is_sized_beverage(self) -> bool:

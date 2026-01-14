@@ -12,7 +12,7 @@ import re
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .parsers.constants import DEFAULT_PAGINATION_SIZE
+from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -632,55 +632,77 @@ class StoreInfoHandler:
             "syrups": format_list(syrups),
         }
 
+    def _format_food_modifiers_list(self) -> dict[str, str]:
+        """Get formatted lists of food modifiers from the database cache."""
+        from ..menu_data_cache import menu_cache
+
+        def format_list(items: list[str]) -> str:
+            if not items:
+                return ""
+            if len(items) == 1:
+                return items[0]
+            if len(items) == 2:
+                return f"{items[0]} or {items[1]}"
+            # Limit to 4 items for display
+            items = items[:4]
+            return ", ".join(items[:-1]) + ", or " + items[-1]
+
+        # Get options from cache using generic ingredient lookups
+        proteins = list(menu_cache.get_ingredients("protein"))
+        cheeses = list(menu_cache.get_ingredients("cheese"))
+        toppings = list(menu_cache.get_ingredients("topping"))
+        spreads = list(menu_cache.get_ingredients("spread"))
+
+        return {
+            "proteins": format_list(proteins),
+            "cheeses": format_list(cheeses),
+            "toppings": format_list(toppings),
+            "spreads": format_list(spreads),
+        }
+
     def _describe_item_modifiers(
         self,
         item_type: str,
         order: OrderTask,
     ) -> StateMachineResult:
         """Describe all available modifiers for a specific item type."""
-        # Get dynamic beverage modifier lists from database
+        from ..menu_data_cache import menu_cache
+
+        # Get dynamic modifier lists from database
         bev_mods = self._format_beverage_modifiers_list()
+        food_mods = self._format_food_modifiers_list()
 
-        item_modifiers = {
-            "coffee": (
-                "For coffee, you can add:\n"
-                f"• Sweeteners: {bev_mods['sweeteners']}\n"
-                f"• Milk: {bev_mods['milks']}\n"
-                f"• Flavor syrups: {bev_mods['syrups']}\n"
-                "Just let me know what you'd like!"
-            ),
-            "tea": (
-                "For tea, you can add:\n"
-                f"• Sweeteners: {bev_mods['sweeteners']}\n"
-                f"• Milk: {bev_mods['milks']}\n"
-                "What would you like in your tea?"
-            ),
-            "hot_chocolate": (
-                "For hot chocolate, you can add whipped cream or extra chocolate. "
-                "What would you like?"
-            ),
-            "bagel": (
-                "For bagels, you can add:\n"
-                "• Spreads: cream cheese (plain, scallion, vegetable), butter, peanut butter, or Nutella\n"
-                "• Proteins: bacon, lox, whitefish, or eggs\n"
-                "• Cheeses: American, Swiss, cheddar, muenster\n"
-                "• Veggies: tomato, onion, lettuce, cucumber, capers\n"
-                "What sounds good?"
-            ),
-            "sandwich": (
-                "For sandwiches, you can customize with:\n"
-                "• Extra proteins: bacon, ham, turkey\n"
-                "• Cheeses: American, Swiss, cheddar, muenster, provolone\n"
-                "• Veggies: lettuce, tomato, onion, pickles\n"
-                "• Sauces: mayo, mustard, hot sauce\n"
-                "What would you like to add or change?"
-            ),
-        }
+        # Check the modifier category for this item type
+        modifier_category = menu_cache.get_modifier_category(item_type)
+        item_type_display = get_item_type_display_name(item_type)
 
-        message = item_modifiers.get(
-            item_type,
-            "We have various add-ons available. What would you like to add?"
-        )
+        if modifier_category == "beverage":
+            # Build beverage modifier message dynamically
+            parts = [f"For {item_type_display}, you can add:"]
+            if bev_mods['sweeteners']:
+                parts.append(f"• Sweeteners: {bev_mods['sweeteners']}")
+            if bev_mods['milks']:
+                parts.append(f"• Milk: {bev_mods['milks']}")
+            if bev_mods['syrups']:
+                parts.append(f"• Flavor syrups: {bev_mods['syrups']}")
+            parts.append("Just let me know what you'd like!")
+            message = "\n".join(parts)
+        elif modifier_category == "food":
+            # Build food modifier message dynamically
+            parts = [f"For {item_type_display}, you can add:"]
+            if food_mods['spreads']:
+                parts.append(f"• Spreads: {food_mods['spreads']}")
+            if food_mods['proteins']:
+                parts.append(f"• Proteins: {food_mods['proteins']}")
+            if food_mods['cheeses']:
+                parts.append(f"• Cheeses: {food_mods['cheeses']}")
+            if food_mods['toppings']:
+                parts.append(f"• Toppings: {food_mods['toppings']}")
+            parts.append("What sounds good?")
+            message = "\n".join(parts)
+        else:
+            # Generic fallback
+            message = "We have various add-ons available. What would you like to add?"
 
         return StateMachineResult(message=message, order=order)
 

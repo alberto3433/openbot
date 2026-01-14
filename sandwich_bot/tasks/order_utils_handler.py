@@ -18,10 +18,6 @@ from .models import (
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
 
-if TYPE_CHECKING:
-    from .handler_config import HandlerConfig
-    from ..services.message_builder import MessageBuilder
-
 logger = logging.getLogger(__name__)
 
 
@@ -113,36 +109,22 @@ class OrderUtilsHandler:
             return None
 
         # Find matching items in the order
+        # Synonyms/aliases come from the database, not hardcoded here
         active_items = order.items.get_active_items()
         matching_items = []
-
-        # Build search terms including synonyms
-        # (e.g., "orange juice" should also match "tropicana")
-        drink_synonyms = {
-            "orange juice": ["tropicana", "fresh squeezed"],
-            "oj": ["orange juice", "tropicana", "fresh squeezed"],
-            "apple juice": ["martinelli"],
-            "lemonade": ["minute maid"],
-        }
-        search_terms = [item_name]
-        for generic_term, synonyms in drink_synonyms.items():
-            if generic_term in item_name:
-                search_terms.extend(synonyms)
 
         for item in active_items:
             item_summary = item.get_summary().lower()
             item_type = getattr(item, 'drink_type', '') or getattr(item, 'menu_item_name', '') or ''
             item_type_lower = item_type.lower()
 
-            # Check if any search term matches
-            for search_term in search_terms:
-                if (search_term in item_summary or
-                    search_term in item_type_lower or
-                    item_type_lower in search_term or
-                    # Handle partial matches
-                    any(word in item_summary for word in search_term.split() if len(word) > 3)):
-                    matching_items.append(item)
-                    break  # Don't add same item multiple times
+            # Check if item_name matches
+            if (item_name in item_summary or
+                item_name in item_type_lower or
+                item_type_lower in item_name or
+                # Handle partial matches
+                any(word in item_summary for word in item_name.split() if len(word) > 3)):
+                matching_items.append(item)
 
         if not matching_items:
             logger.info("QUANTITY_CHANGE: No matching items found for '%s'", item_name)

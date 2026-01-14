@@ -366,9 +366,10 @@ class QueryHandler:
                 order=order,
             )
 
-        # Handle spread/cream cheese queries
-        # Note: "cream_cheese" and "cream cheese" should be added as aliases in the database
-        if menu_query_type in (SPREAD_CATEGORY_SLUG, "cream_cheese", "cream cheese"):
+        # Handle spread/cream cheese queries using data-driven category lookup
+        # Category aliases (like "cream cheese" -> "spread") are defined in the database
+        category_slug = menu_cache.is_category_reference(menu_query_type)
+        if category_slug == SPREAD_CATEGORY_SLUG:
             return self.list_by_pound_category(SPREAD_CATEGORY_SLUG, order)
 
         # TRUE category terms - these return the full category, not filtered results

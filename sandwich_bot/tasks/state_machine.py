@@ -17,6 +17,7 @@ from .models import (
     OrderTask,
     MenuItemTask,
     ItemTask,
+    TaskStatus,
 )
 from .pricing import PricingEngine
 from .menu_lookup import MenuLookup

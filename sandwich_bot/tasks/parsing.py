@@ -44,9 +44,9 @@ class ParsedBagelItem(BaseModel):
         default_factory=list,
         description="Additional toppings: lox, bacon, tomato, onion, capers, etc."
     )
-    sandwich_protein: str | None = Field(
+    extra_protein: str | None = Field(
         default=None,
-        description="Sandwich protein if this is a sandwich: egg, bacon, sausage, etc."
+        description="Extra protein if this is a sandwich: egg, bacon, sausage, etc."
     )
 
 

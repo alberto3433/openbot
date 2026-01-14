@@ -15,7 +15,7 @@ def create_bagel_task(
     spread: str = None,
     spread_type: str = None,
     extras: list = None,
-    sandwich_protein: str = None,
+    extra_protein: str = None,
     quantity: int = 1,
     unit_price: float = 0.0,
 ) -> MenuItemTask:
@@ -39,8 +39,8 @@ def create_bagel_task(
         bagel.spread_type = spread_type
     if extras:
         bagel.extras = extras
-    if sandwich_protein:
-        bagel.sandwich_protein = sandwich_protein
+    if extra_protein:
+        bagel.extra_protein = extra_protein
     return bagel
 
 

@@ -195,8 +195,8 @@ def _get_pending_item_description(item: "ItemTask") -> str:
         # Items with bread attribute (bagels) - describe based on what's been specified
         if item.has_attribute("bread"):
             parts = []
-            if item.sandwich_protein:
-                parts.append(item.sandwich_protein)
+            if item.extra_protein:
+                parts.append(item.extra_protein)
             if item.extras:
                 parts.extend(item.extras[:2])  # Limit to avoid long descriptions
             if parts:

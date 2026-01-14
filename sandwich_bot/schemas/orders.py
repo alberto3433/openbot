@@ -135,7 +135,7 @@ class OrderItemOut(BaseModel):
                 obj_dict['item_type'] = item_config.get('item_type')
                 obj_dict['size'] = item_config.get('size')
                 obj_dict['bread'] = item_config.get('bread') or item_config.get('bagel_type') or item_config.get('bagel_choice')
-                obj_dict['protein'] = item_config.get('protein') or item_config.get('sandwich_protein')
+                obj_dict['protein'] = item_config.get('protein') or item_config.get('extra_protein')
                 obj_dict['cheese'] = item_config.get('cheese') or item_config.get('spread')
                 obj_dict['toppings'] = item_config.get('toppings') or item_config.get('extras')
                 obj_dict['sauces'] = item_config.get('sauces')

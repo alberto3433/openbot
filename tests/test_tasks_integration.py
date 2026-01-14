@@ -498,7 +498,7 @@ class TestPriceRecalculationInvariants:
 
         bagel = bagels[0]
         assert bagel.bagel_type == "wheat"
-        assert bagel.sandwich_protein == "ham"
+        assert bagel.extra_protein == "ham"
         assert "egg" in bagel.extras
         assert "american" in bagel.extras
 
@@ -840,7 +840,7 @@ class TestSpreadQuestionSkip:
         bagel = BagelItemTask(
             bagel_type="wheat",
             toasted=True,
-            sandwich_protein="egg",
+            extra_protein="egg",
             extras=["ham", "american"],
         )
         bagel.mark_in_progress()
@@ -877,7 +877,7 @@ class TestSpreadQuestionSkip:
         bagel = BagelItemTask(
             bagel_type="plain",
             toasted=True,
-            # No sandwich_protein or extras
+            # No extra_protein or extras
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
@@ -6470,7 +6470,7 @@ class TestModifierRemovalDuringConfig:
         order = OrderTask()
         bagel = BagelItemTask(
             bagel_type="everything",
-            sandwich_protein="bacon",
+            extra_protein="bacon",
             extras=["Egg"],
         )
         bagel.mark_in_progress()
@@ -6492,7 +6492,7 @@ class TestModifierRemovalDuringConfig:
         remaining_bagel = active_items[0]
         from tests.test_helpers import is_bagel_item
         assert is_bagel_item(remaining_bagel), "Item should be a bagel"
-        assert remaining_bagel.sandwich_protein is None, "Bacon should be removed"
+        assert remaining_bagel.extra_protein is None, "Bacon should be removed"
 
         # Verify egg is still there
         assert remaining_bagel.extras == ["Egg"], "Egg should still be in extras"
@@ -6518,7 +6518,7 @@ class TestModifierRemovalDuringConfig:
         order = OrderTask()
         bagel = BagelItemTask(
             bagel_type="plain",
-            sandwich_protein="bacon",
+            extra_protein="bacon",
             extras=["Egg", "cheese"],
         )
         bagel.mark_in_progress()
@@ -6534,7 +6534,7 @@ class TestModifierRemovalDuringConfig:
         assert len(active_items) == 1, "Bagel should NOT be removed"
 
         remaining_bagel = active_items[0]
-        assert remaining_bagel.sandwich_protein == "bacon", "Bacon should still be there"
+        assert remaining_bagel.extra_protein == "bacon", "Bacon should still be there"
         assert "Egg" not in remaining_bagel.extras, "Egg should be removed from extras"
         assert "cheese" in remaining_bagel.extras, "Cheese should still be in extras"
 

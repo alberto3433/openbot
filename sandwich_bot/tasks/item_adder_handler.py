@@ -574,12 +574,12 @@ class ItemAdderHandler:
 
         # Build extras list from extracted modifiers
         extras: list[str] = []
-        sandwich_protein: str | None = None
+        extra_protein: str | None = None
 
         if extracted_modifiers and extracted_modifiers.has_modifiers():
-            # First protein goes to sandwich_protein field
+            # First protein goes to extra_protein field
             if extracted_modifiers.proteins:
-                sandwich_protein = extracted_modifiers.proteins[0]
+                extra_protein = extracted_modifiers.proteins[0]
                 # Additional proteins go to extras
                 extras.extend(extracted_modifiers.proteins[1:])
 
@@ -595,13 +595,13 @@ class ItemAdderHandler:
 
             logger.info(
                 "Extracted modifiers: protein=%s, extras=%s, spread=%s",
-                sandwich_protein, extras, spread
+                extra_protein, extras, spread
             )
 
         # Calculate total price including modifiers
         price = base_price + bagel_type_upcharge
-        if sandwich_protein:
-            price += self.pricing.lookup_modifier_price(sandwich_protein)
+        if extra_protein:
+            price += self.pricing.lookup_modifier_price(extra_protein)
         for extra in extras:
             price += self.pricing.lookup_modifier_price(extra)
         if spread and spread.lower() != "none":
@@ -640,8 +640,8 @@ class ItemAdderHandler:
             bagel.scooped = scooped
         if spread_type:
             bagel.spread_type = spread_type
-        if sandwich_protein:
-            bagel.sandwich_protein = sandwich_protein
+        if extra_protein:
+            bagel.extra_protein = extra_protein
         if extras:
             bagel.extras = extras
         if needs_cheese:
@@ -654,7 +654,7 @@ class ItemAdderHandler:
 
         logger.info(
             "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, special_instructions=%s",
-            bagel_type, toasted, spread, spread_type, sandwich_protein, extras, special_instructions
+            bagel_type, toasted, spread, spread_type, extra_protein, extras, special_instructions
         )
 
         # Use unified configuration flow which reads questions from database
@@ -693,16 +693,16 @@ class ItemAdderHandler:
         for i in range(quantity):
             # Build extras list from extracted modifiers (apply to first bagel only)
             extras: list[str] = []
-            sandwich_protein: str | None = None
+            extra_protein: str | None = None
             bagel_spread = spread
 
             # Extract special instructions for first bagel
             special_instructions: str | None = None
 
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
-                # First protein goes to sandwich_protein field
+                # First protein goes to extra_protein field
                 if extracted_modifiers.proteins:
-                    sandwich_protein = extracted_modifiers.proteins[0]
+                    extra_protein = extracted_modifiers.proteins[0]
                     # Additional proteins go to extras
                     extras.extend(extracted_modifiers.proteins[1:])
 
@@ -718,7 +718,7 @@ class ItemAdderHandler:
 
                 logger.info(
                     "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
-                    sandwich_protein, extras, bagel_spread
+                    extra_protein, extras, bagel_spread
                 )
 
             # Apply special instructions to first bagel
@@ -734,8 +734,8 @@ class ItemAdderHandler:
 
             # Calculate total price including modifiers (for first bagel with modifiers)
             price = base_price + bagel_type_upcharge
-            if sandwich_protein:
-                price += self.pricing.lookup_modifier_price(sandwich_protein)
+            if extra_protein:
+                price += self.pricing.lookup_modifier_price(extra_protein)
             for extra in extras:
                 price += self.pricing.lookup_modifier_price(extra)
             if bagel_spread and bagel_spread.lower() != "none":
@@ -758,8 +758,8 @@ class ItemAdderHandler:
                 bagel.scooped = scooped
             if spread_type:
                 bagel.spread_type = spread_type
-            if sandwich_protein:
-                bagel.sandwich_protein = sandwich_protein
+            if extra_protein:
+                bagel.extra_protein = extra_protein
             if extras:
                 bagel.extras = extras
             if needs_cheese:
@@ -804,16 +804,16 @@ class ItemAdderHandler:
 
             # Build extras list from extracted modifiers (apply to first bagel only)
             extras: list[str] = []
-            sandwich_protein: str | None = None
+            extra_protein: str | None = None
             spread = details.spread
 
             # Extract special instructions for first bagel
             special_instructions: str | None = None
 
             if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
-                # First protein goes to sandwich_protein field
+                # First protein goes to extra_protein field
                 if extracted_modifiers.proteins:
-                    sandwich_protein = extracted_modifiers.proteins[0]
+                    extra_protein = extracted_modifiers.proteins[0]
                     # Additional proteins go to extras
                     extras.extend(extracted_modifiers.proteins[1:])
 
@@ -829,7 +829,7 @@ class ItemAdderHandler:
 
                 logger.info(
                     "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
-                    sandwich_protein, extras, spread
+                    extra_protein, extras, spread
                 )
 
             # Apply special instructions to first bagel
@@ -845,8 +845,8 @@ class ItemAdderHandler:
 
             # Calculate total price including modifiers
             price = base_price + bagel_type_upcharge
-            if sandwich_protein:
-                price += self.pricing.lookup_modifier_price(sandwich_protein)
+            if extra_protein:
+                price += self.pricing.lookup_modifier_price(extra_protein)
             for extra in extras:
                 price += self.pricing.lookup_modifier_price(extra)
             if spread and spread.lower() != "none":
@@ -867,8 +867,8 @@ class ItemAdderHandler:
                 bagel.bagel_type = details.bagel_type
             if details.spread_type:
                 bagel.spread_type = details.spread_type
-            if sandwich_protein:
-                bagel.sandwich_protein = sandwich_protein
+            if extra_protein:
+                bagel.extra_protein = extra_protein
             if extras:
                 bagel.extras = extras
             if needs_cheese:

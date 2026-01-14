@@ -637,7 +637,7 @@ class PricingEngine:
             item.extra_shots_upcharge = extra_shots_upcharge
 
         # Protein upcharge (for bagels/sandwiches)
-        protein = getattr(item, 'sandwich_protein', None)
+        protein = getattr(item, 'extra_protein', None)
         if protein:
             protein_price = self.lookup_generic_modifier_price(
                 protein, item_type or "bagel"

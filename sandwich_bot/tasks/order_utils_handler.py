@@ -179,8 +179,8 @@ class OrderUtilsHandler:
                     new_item.bagel_type = template_item.bagel_type
                 if template_item.spread_type:
                     new_item.spread_type = template_item.spread_type
-                if template_item.sandwich_protein:
-                    new_item.sandwich_protein = template_item.sandwich_protein
+                if template_item.extra_protein:
+                    new_item.extra_protein = template_item.extra_protein
                 if template_item.extras:
                     new_item.extras = list(template_item.extras)
                 new_item.mark_complete()

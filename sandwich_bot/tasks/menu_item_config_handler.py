@@ -1019,10 +1019,10 @@ class MenuItemConfigHandler(BaseHandler):
 
         if isinstance(modifiers, ExtractedModifiers):
             # Apply food-style modifiers
-            # Proteins: first one to sandwich_protein if not set, rest to extras
+            # Proteins: first one to extra_protein if not set, rest to extras
             if modifiers.proteins:
-                if not item.sandwich_protein:
-                    item.sandwich_protein = modifiers.proteins[0]
+                if not item.extra_protein:
+                    item.extra_protein = modifiers.proteins[0]
                     item.extras.extend(modifiers.proteins[1:])
                 else:
                     item.extras.extend(modifiers.proteins)
@@ -2014,7 +2014,7 @@ class MenuItemConfigHandler(BaseHandler):
             # NOTE: Do NOT call _extract_and_apply_modifiers here.
             # The user's input was a direct answer to the attribute question.
             # Extracting modifiers would cause duplicates (e.g., "2 scrambled eggs"
-            # would add scrambled_egg to both add_egg_selections AND extras/sandwich_protein).
+            # would add scrambled_egg to both add_egg_selections AND extras/extra_protein).
 
             # Acknowledgment with quantity and qualifier
             ack_name = matched["display_name"]

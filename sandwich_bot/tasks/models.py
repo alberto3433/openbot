@@ -543,17 +543,17 @@ class MenuItemTask(ItemTask):
         self.attribute_values["extras"] = value or []
 
     @property
-    def sandwich_protein(self) -> str | None:
-        """Get sandwich protein from attribute_values."""
-        return self.attribute_values.get("sandwich_protein")
+    def extra_protein(self) -> str | None:
+        """Get extra protein from attribute_values."""
+        return self.attribute_values.get("extra_protein")
 
-    @sandwich_protein.setter
-    def sandwich_protein(self, value: str | None) -> None:
-        """Set sandwich protein in attribute_values."""
+    @extra_protein.setter
+    def extra_protein(self, value: str | None) -> None:
+        """Set extra protein in attribute_values."""
         if value is not None:
-            self.attribute_values["sandwich_protein"] = value
-        elif "sandwich_protein" in self.attribute_values:
-            del self.attribute_values["sandwich_protein"]
+            self.attribute_values["extra_protein"] = value
+        elif "extra_protein" in self.attribute_values:
+            del self.attribute_values["extra_protein"]
 
     @property
     def needs_cheese_clarification(self) -> bool:

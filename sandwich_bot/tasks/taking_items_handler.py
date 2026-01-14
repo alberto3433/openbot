@@ -1178,9 +1178,9 @@ class TakingItemsHandler:
 
                         # Check if the base modifier is a protein
                         if base_modifier in {p.lower() for p in known_proteins}:
-                            # If no sandwich_protein set, use that field
-                            if not target_item.sandwich_protein:
-                                target_item.sandwich_protein = modifier  # Store full qualified modifier
+                            # If no extra_protein set, use that field
+                            if not target_item.extra_protein:
+                                target_item.extra_protein = modifier  # Store full qualified modifier
                             else:
                                 # Already have a protein, add to extras
                                 if modifier not in target_item.extras:
@@ -1307,12 +1307,12 @@ class TakingItemsHandler:
 
                         # Update protein - replace existing
                         if modifiers.proteins:
-                            last_item.sandwich_protein = modifiers.proteins[0]
+                            last_item.extra_protein = modifiers.proteins[0]
                             # Additional proteins go to extras (replace existing extras)
                             last_item.extras = list(modifiers.proteins[1:])
                         else:
                             # Clear protein if not in new modifiers
-                            last_item.sandwich_protein = None
+                            last_item.extra_protein = None
                             last_item.extras = []
 
                         # Add cheeses and toppings to extras

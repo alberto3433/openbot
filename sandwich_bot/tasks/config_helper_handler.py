@@ -164,9 +164,9 @@ class ConfigHelperHandler:
             modifier_removed = False
             removed_modifier_name = cancel_desc
 
-            # Check sandwich_protein
-            if current_item.sandwich_protein and cancel_desc in current_item.sandwich_protein.lower():
-                current_item.sandwich_protein = None
+            # Check extra_protein
+            if current_item.extra_protein and cancel_desc in current_item.extra_protein.lower():
+                current_item.extra_protein = None
                 modifier_removed = True
                 logger.info("Modifier removal during config: removed protein '%s' from bagel", cancel_desc)
 

@@ -21,6 +21,14 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 
+# Category slugs for special handling (from database)
+# These are slugs, not food names - used for routing to appropriate handlers
+SPREAD_CATEGORY_SLUG = "spread"
+BEVERAGE_CATEGORY_SLUGS = ("beverage_all", "beverage", "drink", "sized_beverage")
+DESSERT_CATEGORY_SLUGS = ("dessert", "pastry", "snack")
+SANDWICH_CATEGORY_SLUG = "sandwich"
+BAGEL_TYPE_SLUG = "bagel"
+
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
 
@@ -82,6 +90,81 @@ class QueryHandler:
     @store_info.setter
     def store_info(self, value: dict | None):
         self._store_info = value or {}
+
+    # =========================================================================
+    # Helper Methods for Data-Driven Messages
+    # =========================================================================
+
+    def _get_sandwich_subtypes_message(self) -> str:
+        """Build a message listing sandwich sub-types from database.
+
+        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
+        based on available item types that contain "sandwich" in their display name.
+        """
+        try:
+            # Get all category keywords and filter for sandwich-related types
+            category_info = menu_cache.get_category_keyword_mapping(SANDWICH_CATEGORY_SLUG)
+            if category_info and category_info.get("expands_to"):
+                # Get display names for the expanded types
+                subtypes = []
+                for slug in category_info["expands_to"]:
+                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
+                    if subtype_info:
+                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
+                        subtypes.append(display)
+
+                if subtypes:
+                    if len(subtypes) <= 3:
+                        return ", ".join(subtypes)
+                    else:
+                        return ", ".join(subtypes[:4]) + ", and more"
+        except Exception as e:
+            logger.warning("Failed to get sandwich subtypes from database: %s", e)
+
+        # Fallback message
+        return "egg sandwiches, fish sandwiches, cream cheese sandwiches, deli sandwiches, and more"
+
+    def _get_available_menu_categories_message(self) -> str:
+        """Build a message listing a few available menu categories from database.
+
+        Returns a formatted string like "sandwiches or beverages" for use in
+        helpful suggestions when an item isn't found.
+        """
+        try:
+            # Get a few main categories to suggest
+            categories = menu_cache.get_available_menu_categories()
+            if categories:
+                # Pick 2-3 main categories
+                display_names = list(categories.values())[:3]
+                if len(display_names) == 1:
+                    return display_names[0].lower()
+                elif len(display_names) == 2:
+                    return f"{display_names[0].lower()} or {display_names[1].lower()}"
+                else:
+                    return f"{display_names[0].lower()}, {display_names[1].lower()}, or {display_names[2].lower()}"
+        except Exception as e:
+            logger.warning("Failed to get available categories from database: %s", e)
+
+        # Fallback message
+        return "sandwiches or egg dishes"
+
+    def _get_by_pound_categories_message(self) -> str:
+        """Build a message listing available by-pound categories from database."""
+        try:
+            category_names = get_by_pound_category_names()
+            if category_names:
+                names = list(category_names.values())
+                if len(names) == 1:
+                    return names[0]
+                elif len(names) == 2:
+                    return f"{names[0]} and {names[1]}"
+                else:
+                    return ", ".join(names[:-1]) + f", and {names[-1]}"
+        except Exception as e:
+            logger.warning("Failed to get by-pound categories from database: %s", e)
+
+        # Fallback message
+        return "cheeses, spreads, cold cuts, fish, and salads"
 
     # =========================================================================
     # Store Info Handlers
@@ -284,8 +367,9 @@ class QueryHandler:
             )
 
         # Handle spread/cream cheese queries
-        if menu_query_type in ("spread", "cream_cheese", "cream cheese"):
-            return self.list_by_pound_category("spread", order)
+        # Note: "cream_cheese" and "cream cheese" should be added as aliases in the database
+        if menu_query_type in (SPREAD_CATEGORY_SLUG, "cream_cheese", "cream cheese"):
+            return self.list_by_pound_category(SPREAD_CATEGORY_SLUG, order)
 
         # TRUE category terms - these return the full category, not filtered results
         # When a user asks for "coffee", they want ALL sized beverages (lattes, cappuccinos, etc.)
@@ -350,22 +434,25 @@ class QueryHandler:
             )
 
         # Handle "sandwich" specially
-        if menu_query_type == "sandwich":
+        if menu_query_type == SANDWICH_CATEGORY_SLUG:
+            sandwich_types = self._get_sandwich_subtypes_message()
             return StateMachineResult(
-                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
+                message=f"We have {sandwich_types}. What kind of sandwich would you like?",
                 order=order,
             )
 
-        # Handle dessert queries
-        dessert_queries = (
-            "dessert", "desserts", "pastry", "pastries", "sweet", "sweets",
-            "sweet stuff", "bakery", "baked goods", "treats", "treat",
+        # Handle dessert queries - check if query maps to a dessert-type category
+        is_dessert_query = (
+            (category_info and category_info.get("slug") in DESSERT_CATEGORY_SLUGS)
+            or menu_query_type in DESSERT_CATEGORY_SLUGS
+            # User input variations that may not be in DB aliases yet
+            or menu_query_type in ("sweet", "sweets", "sweet stuff", "bakery", "baked goods", "treats", "treat")
         )
-        if menu_query_type in dessert_queries:
-            dessert_items = items_by_type.get("dessert", [])
-            pastry_items = items_by_type.get("pastry", [])
-            snack_items = items_by_type.get("snack", [])
-            items = dessert_items + pastry_items + snack_items
+        if is_dessert_query:
+            # Collect items from all dessert-related categories
+            items = []
+            for slug in DESSERT_CATEGORY_SLUGS:
+                items.extend(items_by_type.get(slug, []))
             if items:
                 if show_prices:
                     item_list = [
@@ -491,9 +578,10 @@ class QueryHandler:
         query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
 
         # Special handling for "sandwich" - too broad, need to ask what kind
-        if query_lower == "sandwich":
+        if query_lower == SANDWICH_CATEGORY_SLUG:
+            sandwich_types = self._get_sandwich_subtypes_message()
             return StateMachineResult(
-                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
+                message=f"We have {sandwich_types}. What kind of sandwich would you like?",
                 order=order,
             )
 
@@ -601,12 +689,29 @@ class QueryHandler:
 
     def _recommend_bagels(self, order: "OrderTask") -> StateMachineResult:
         """Recommend popular bagel options."""
-        message = (
-            "Our most popular bagels are everything and plain! "
-            "The everything bagel with scallion cream cheese is a customer favorite. "
-            "We also have sesame, cinnamon raisin, and pumpernickel if you're feeling adventurous. "
-            "Would you like to try one?"
-        )
+        # Try to get bagel types from database
+        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
+        bagels = items_by_type.get(BAGEL_TYPE_SLUG, [])
+
+        if bagels and len(bagels) >= 3:
+            # Get bagel names and pick a few to recommend
+            bagel_names = [b.get("name", "").replace(" Bagel", "").replace(" bagel", "") for b in bagels[:5]]
+            bagel_names = [n for n in bagel_names if n]  # Filter empty
+            if len(bagel_names) >= 2:
+                popular = ", ".join(bagel_names[:2])
+                others = ", ".join(bagel_names[2:4]) if len(bagel_names) > 2 else ""
+                if others:
+                    message = (
+                        f"Our most popular bagels are {popular}! "
+                        f"We also have {others} if you're feeling adventurous. "
+                        "Would you like to try one?"
+                    )
+                else:
+                    message = f"Our most popular bagels are {popular}! Would you like to try one?"
+                return StateMachineResult(message=message, order=order)
+
+        # Fallback message when database items not available
+        message = "We have a great selection of bagels! Would you like to try one?"
         return StateMachineResult(message=message, order=order)
 
     def _recommend_sandwiches(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
@@ -638,17 +743,37 @@ class QueryHandler:
 
     def _recommend_coffee(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """Recommend popular coffee options."""
-        message = (
-            "Our lattes are really popular - you can get them hot or iced! "
-            "We also have great drip coffee if you want something simple. "
-            "Would you like a coffee?"
-        )
+        # Try to get beverage names from database
+        sized_beverages = items_by_type.get("sized_beverage", [])
+        cold_beverages = items_by_type.get("beverage", [])
+
+        coffee_names = []
+        for item in sized_beverages[:5]:
+            name = item.get("name", "")
+            if name:
+                coffee_names.append(name)
+
+        if len(coffee_names) >= 2:
+            popular = coffee_names[0]
+            also_have = coffee_names[1]
+            message = (
+                f"Our {popular} is really popular - you can get it hot or iced! "
+                f"We also have great {also_have} if you want something different. "
+                "Would you like a coffee?"
+            )
+        elif coffee_names:
+            message = f"Our {coffee_names[0]} is really popular! Would you like one?"
+        else:
+            # Fallback message when database items not available
+            message = "We have a great selection of coffee drinks! Would you like one?"
+
         return StateMachineResult(message=message, order=order)
 
     def _recommend_breakfast(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """Recommend breakfast options."""
         signature_items = items_by_type.get("signature_item", [])
         omelettes = items_by_type.get("omelette", [])
+        bagels = items_by_type.get(BAGEL_TYPE_SLUG, [])
 
         recommendations = []
         for item in signature_items[:1]:
@@ -656,7 +781,11 @@ class QueryHandler:
             if name:
                 recommendations.append(name)
 
-        recommendations.append("an everything bagel with cream cheese")
+        # Try to recommend a bagel from the database
+        if bagels:
+            bagel_name = bagels[0].get("name", "").replace(" Bagel", "").replace(" bagel", "")
+            if bagel_name:
+                recommendations.append(f"a {bagel_name} bagel")
 
         if omelettes:
             name = omelettes[0].get("name", "")
@@ -667,7 +796,8 @@ class QueryHandler:
             items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
             message = f"For breakfast, I'd suggest {items_str}. What sounds good?"
         else:
-            message = "For breakfast, our bagels with cream cheese are always a hit, or try one of our egg sandwiches! What sounds good?"
+            # Fallback message when database items not available
+            message = "For breakfast, we have great bagels and signature items! What sounds good?"
 
         return StateMachineResult(message=message, order=order)
 
@@ -691,27 +821,52 @@ class QueryHandler:
             items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}" if len(recommendations) > 1 else recommendations[0]
             message = f"For lunch, I'd recommend {items_str}. What sounds good?"
         else:
-            message = "For lunch, our sandwiches are great! We have egg sandwiches, signature sandwiches, and salad sandwiches. What sounds good?"
+            # Get sandwich subtypes from database for fallback message
+            sandwich_types = self._get_sandwich_subtypes_message()
+            message = f"For lunch, our sandwiches are great! We have {sandwich_types}. What sounds good?"
 
         return StateMachineResult(message=message, order=order)
 
     def _recommend_general(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
         """General recommendation when no specific category is asked."""
         signature_items = items_by_type.get("signature_item", [])
+        bagels = items_by_type.get(BAGEL_TYPE_SLUG, [])
+        beverages = items_by_type.get("sized_beverage", [])
+
         signature_item_name = signature_items[0].get("name", "") if signature_items else None
+        bagel_name = bagels[0].get("name", "").replace(" Bagel", "").replace(" bagel", "") if bagels else None
+        beverage_name = beverages[0].get("name", "") if beverages else None
 
         if signature_item_name:
-            message = (
-                f"Our {signature_item_name} is really popular! "
-                "We're also known for our everything bagels with cream cheese, and our lattes are great too. "
-                "What are you in the mood for?"
-            )
+            # Build recommendation with available items from database
+            also_have = []
+            if bagel_name:
+                also_have.append(f"our {bagel_name} bagels")
+            if beverage_name:
+                also_have.append(f"our {beverage_name}s")
+
+            if also_have:
+                also_str = " and ".join(also_have)
+                message = (
+                    f"Our {signature_item_name} is really popular! "
+                    f"We're also known for {also_str}. "
+                    "What are you in the mood for?"
+                )
+            else:
+                message = f"Our {signature_item_name} is really popular! What are you in the mood for?"
         else:
-            message = (
-                "Our everything bagel with scallion cream cheese is a customer favorite! "
-                "We also have great egg sandwiches and lattes. "
-                "What are you in the mood for?"
-            )
+            # Fallback using database items if available
+            if bagel_name and beverage_name:
+                message = (
+                    f"Our {bagel_name} bagels are a customer favorite! "
+                    f"We also have great {beverage_name}s. "
+                    "What are you in the mood for?"
+                )
+            elif bagel_name:
+                message = f"Our {bagel_name} bagels are a customer favorite! What are you in the mood for?"
+            else:
+                # Generic fallback when no database items available
+                message = "We have a great selection of bagels and sandwiches! What are you in the mood for?"
 
         return StateMachineResult(message=message, order=order)
 
@@ -768,9 +923,10 @@ class QueryHandler:
             order.pending_suggested_item = formatted_name
             order.pending_field = "confirm_suggested_item"
         else:
+            available_categories = self._get_available_menu_categories_message()
             message = (
                 f"I don't have detailed information about \"{item_query}\" right now. "
-                "Would you like me to tell you what sandwiches or egg dishes we have?"
+                f"Would you like me to tell you what {available_categories} we have?"
             )
 
         return StateMachineResult(message=message, order=order)
@@ -906,8 +1062,9 @@ class QueryHandler:
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "by_pound_category"
+        categories_list = self._get_by_pound_categories_message()
         return StateMachineResult(
-            message="We have cheeses, spreads, cold cuts, fish, and salads as food by the pound. Which are you interested in?",
+            message=f"We have {categories_list} as food by the pound. Which are you interested in?",
             order=order,
         )
 
@@ -917,11 +1074,15 @@ class QueryHandler:
         order: "OrderTask",
     ) -> StateMachineResult:
         """List items in a specific by-the-pound category."""
-        if category == "spread" and self._menu_data:
+        if category == SPREAD_CATEGORY_SLUG and self._menu_data:
+            # For spreads, filter cheese_types list by name patterns
+            # TODO: Move spread item names to database configuration
             cheese_types = self._menu_data.get("cheese_types", [])
+            # Filter for items that are spreads (cream cheese variants, butters, etc.)
+            spread_patterns = ("cream cheese", "spread", "butter")
             items = [
                 name for name in cheese_types
-                if any(kw in name.lower() for kw in ["cream cheese", "spread", "butter"])
+                if any(pattern in name.lower() for pattern in spread_patterns)
             ]
         else:
             by_pound_items = get_by_pound_items()
@@ -942,7 +1103,8 @@ class QueryHandler:
 
         order.clear_pending()
 
-        if category == "spread":
+        # For spreads, don't say "food by the pound" since they're also used on bagels
+        if category == SPREAD_CATEGORY_SLUG:
             message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
         else:
             message = f"Our {category_name} food by the pound include: {items_list}. Would you like any of these, or something else?"
@@ -962,33 +1124,35 @@ class QueryHandler:
         order: "OrderTask",
     ) -> StateMachineResult:
         """List items in a menu category (drinks, desserts, sides, etc.)."""
-        category_name = {
-            "drinks": "drinks",
-            "sides": "sides",
-            "signature_bagels": "bagels",
-            "signature_omelettes": "sandwiches and omelettes",
-            "desserts": "desserts",
-        }.get(category, "items")
+        # Get category info from database-loaded cache
+        category_info = menu_cache.get_category_keyword_mapping(category)
+        if category_info:
+            display_name = category_info.get("display_name_plural") or category_info.get("display_name", category)
+            expands_to = category_info.get("expands_to")
+            slug = category_info.get("slug")
+        else:
+            display_name = category
+            expands_to = None
+            slug = category
 
         items = []
         if self._menu_data:
+            # Try direct category key first
             items = self._menu_data.get(category, [])
 
             if not items:
-                type_map = {
-                    "sides": ["side"],
-                    "drinks": ["drink", "coffee", "soda", "sized_beverage", "beverage"],
-                    "desserts": ["dessert", "pastry", "snack"],
-                    "signature_bagels": ["signature_item"],
-                    "signature_omelettes": ["omelette"],
-                }
                 items_by_type = self._menu_data.get("items_by_type", {})
-                for type_slug in type_map.get(category, []):
-                    items.extend(items_by_type.get(type_slug, []))
+                # Use expands_to from database if available
+                if expands_to:
+                    for type_slug in expands_to:
+                        items.extend(items_by_type.get(type_slug, []))
+                else:
+                    # Fall back to direct slug lookup
+                    items.extend(items_by_type.get(slug, []))
 
         if not items:
             return StateMachineResult(
-                message=f"I don't have information on {category_name} right now. What would you like to order?",
+                message=f"I don't have information on {display_name} right now. What would you like to order?",
                 order=order,
             )
 
@@ -996,7 +1160,7 @@ class QueryHandler:
         items_str = self._format_item_list(item_names)
 
         return StateMachineResult(
-            message=f"For {category_name}, we have: {items_str}. Would you like any of these?",
+            message=f"For {display_name}, we have: {items_str}. Would you like any of these?",
             order=order,
         )
 

@@ -4302,7 +4302,8 @@ class TestItemDescriptionInquiry:
         result = sm.query_handler.handle_item_description_inquiry("mystery sandwich", order)
 
         assert "don't have" in result.message.lower() or "not" in result.message.lower()
-        assert "sandwiches" in result.message.lower() or "help" in result.message.lower()
+        # Should offer to tell user what categories are available (data-driven)
+        assert "would you like" in result.message.lower() or "we have" in result.message.lower()
 
     def test_does_not_modify_order(self):
         """Test that description inquiry does NOT add item to order."""

@@ -167,8 +167,41 @@ All food-domain behavior must be **data-driven**, not hardcoded. The codebase sh
 1. No new item-specific files or handlers
 2. No new item-specific Pydantic models
 3. No hardcoded item/modifier lists - query the database
-4. No conditionals that check for specific item type names
+4. **No conditionals that check for specific item type slugs** - this includes ANY string literal like `"bagel"`, `"coffee"`, `"sized_beverage"`, `"espresso"`, `"sandwich"`, etc.
 5. No cross-type fallback mechanisms (see below)
+
+### What "No Hardcoded Slugs" Means
+
+**WRONG - Checking item type slugs:**
+```python
+if item.menu_item_type == "sized_beverage":
+    # do something for beverages
+if item.menu_item_type == "bagel":
+    # do something for bagels
+if item.menu_item_type in ("espresso", "coffee"):
+    # do something for coffee items
+```
+
+**WRONG - Using slug constants:**
+```python
+BEVERAGE_TYPES = {"sized_beverage", "espresso", "coffee"}
+if item.menu_item_type in BEVERAGE_TYPES:
+    # still hardcoded, just moved to a constant
+```
+
+**CORRECT - Query item type capabilities from database:**
+```python
+# Check if item type has a specific attribute
+if menu_cache.item_type_has_attribute(item.menu_item_type, "temperature"):
+    # item needs temperature configuration
+
+# Check item type category from database
+item_category = menu_cache.get_item_type_category(item.menu_item_type)
+if item_category == "beverage":
+    # handle beverage logic
+```
+
+The database should define item type capabilities (which attributes they have, what category they belong to). Code should query these capabilities, not check for specific item type names.
 
 ### No Fallback Mechanisms
 
@@ -200,7 +233,9 @@ Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.
 Before committing any order handling code, verify:
 1. Could this exact code handle a sushi restaurant?
 2. If I delete all rows from `menu_items` and add new ones, does the code still work?
-3. Are there ZERO string literals that match food items?
+3. Are there ZERO string literals that match food items OR item type slugs?
+   - This includes: `"bagel"`, `"coffee"`, `"sized_beverage"`, `"espresso"`, `"sandwich"`, `"omelette"`, etc.
+   - Search the code for these strings - if you find them in conditionals, it's a violation
 
 If any answer is "no", refactor to be data-driven.
 
@@ -237,17 +272,18 @@ def get_modifier_fields(item):
 
 **CORRECT - Fail fast with context:**
 ```python
-def get_proteins(self) -> set[str]:
+def get_attribute_options(self, attribute_slug: str) -> list[str]:
     if not self._is_loaded:
-        raise MenuDataNotLoadedError(
-            "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup."
+        raise DataNotLoadedError(
+            "Data cache not loaded. Ensure cache.load_from_db() is called at startup."
         )
-    if not self._proteins:
-        raise MenuDataNotLoadedError(
-            "No proteins found in database. "
-            "Check that ingredients table has records with category='protein'."
+    options = self._attribute_options.get(attribute_slug)
+    if options is None:
+        raise DataNotLoadedError(
+            f"No options found for attribute '{attribute_slug}'. "
+            f"Check that attribute_options table has records for this attribute."
         )
-    return self._proteins.copy()
+    return options.copy()
 ```
 
 ### Exception Class
@@ -265,23 +301,7 @@ The following **lookup/search functions** may return `None` or the original inpu
 
 These functions **MUST still throw** `MenuDataNotLoadedError` if the cache is not loaded.
 
-## Key Patterns
-
-### Item Configuration Storage
-
-Items store all details in `item_config` JSON column:
-```python
-{
-    "item_type": "bagel",
-    "bagel_type": "plain",
-    "toasted": True,
-    "modifiers": [{"name": "nova scotia salmon", "price": 6.00}],
-    "base_price": 2.75,
-    "free_details": ["toasted"]
-}
-```
-
-### Test Organization
+## Test Organization
 
 - **Parsing tests**: `test_tasks_parsing.py` - validates input recognition
 - **Adapter tests**: `test_tasks_adapter.py` - validates data conversion

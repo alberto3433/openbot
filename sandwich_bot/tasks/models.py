@@ -187,8 +187,8 @@ class MenuItemTask(ItemTask):
 
     @property
     def drink_type(self) -> str | None:
-        """Get drink type (alias for menu_item_name for beverages)."""
-        return self.menu_item_name if self.menu_item_type == "sized_beverage" else None
+        """Get drink type (alias for menu_item_name for beverages with size attribute)."""
+        return self.menu_item_name if self.has_attribute("size") else None
 
     @drink_type.setter
     def drink_type(self, value: str | None) -> None:
@@ -393,10 +393,15 @@ class MenuItemTask(ItemTask):
 
     @property
     def is_espresso(self) -> bool:
-        """Check if this is an espresso drink (no size, always hot)."""
-        if self.menu_item_type == "espresso":
+        """Check if this is an espresso drink (has shots but no size attribute).
+
+        Data-driven: checks item type capabilities rather than item type slug.
+        """
+        # Espresso-style items have shots attribute but no size
+        if self.has_attribute("shots") and not self.has_attribute("size"):
             return True
-        if self.menu_item_type == "sized_beverage":
+        # Also check if a sized beverage is named "espresso" (menu item name)
+        if self.has_attribute("size"):
             drink_type = self.menu_item_name.lower() if self.menu_item_name else ""
             return drink_type == "espresso"
         return False
@@ -412,7 +417,7 @@ class MenuItemTask(ItemTask):
             DeprecationWarning,
             stacklevel=2
         )
-        return self.menu_item_type == "sized_beverage"
+        return self.has_attribute("size")
 
     # -------------------------------------------------------------------------
     # Generic attribute query method (data-driven)
@@ -475,7 +480,7 @@ class MenuItemTask(ItemTask):
             DeprecationWarning,
             stacklevel=2
         )
-        return self.menu_item_type == "bagel"
+        return self.has_attribute("bread")
 
     @property
     def bread(self) -> str | None:
@@ -566,8 +571,8 @@ class MenuItemTask(ItemTask):
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
-        # Handle espresso display name (shots and decaf info)
-        if self.menu_item_type == "espresso":
+        # Handle espresso-style items (have shots attribute but no size)
+        if self.has_attribute("shots") and not self.has_attribute("size"):
             shots_slug = self.attribute_values.get("shots", "single_shot")
             decaf = self.attribute_values.get("decaf", False)
 
@@ -578,13 +583,13 @@ class MenuItemTask(ItemTask):
                 "quad_shot": "Quad ",
             }
             shots_prefix = shots_display_map.get(shots_slug, "")
-            display_name = f"{shots_prefix}Espresso"
+            display_name = f"{shots_prefix}{self.menu_item_name or 'Espresso'}"
             if decaf:
                 display_name = f"Decaf {display_name}"
             return display_name
 
-        # Handle sized_beverage display name (coffee, latte, etc.)
-        if self.menu_item_type == "sized_beverage":
+        # Handle sized beverage display (items with size attribute)
+        if self.has_attribute("size"):
             parts = []
             if self.size:
                 parts.append(self.size)
@@ -640,8 +645,8 @@ class MenuItemTask(ItemTask):
                     continue  # Already handled above
                 if key.endswith("_price") or key.endswith("_selections"):
                     continue  # Internal price/selection data, not for display
-                # Skip espresso-specific fields that are in the display name
-                if self.menu_item_type == "espresso" and key in ("shots", "decaf"):
+                # Skip espresso-style fields that are in the display name (items with shots but no size)
+                if self.has_attribute("shots") and not self.has_attribute("size") and key in ("shots", "decaf"):
                     continue  # Already handled in get_display_name()
                 if value is True:
                     extra_customizations.append(key.replace("_", " ").title())

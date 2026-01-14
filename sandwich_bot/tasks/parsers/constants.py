@@ -670,7 +670,8 @@ def get_spread_types() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_spread_types()
+        # Use generic get_ingredients - spread types are ingredients with category="spread"
+        cached = cache.get_ingredients("spread")
         if cached:
             return cached
     raise RuntimeError(
@@ -706,7 +707,8 @@ def get_bagel_spreads() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_bagel_spreads()
+        # Use generic get_ingredients_for_item_type to get spreads valid for bagels
+        cached = cache.get_ingredients_for_item_type("bagel", "spread")
         if cached:
             return cached
     raise RuntimeError(
@@ -725,9 +727,10 @@ def get_bagel_only_types() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_bagel_only_types()
-        if cached is not None:
-            return cached
+        # Compute as set difference: bagel types that aren't spread types
+        bagel_types = cache.get_item_names("bagel")
+        spread_types = cache.get_ingredients("spread")
+        return bagel_types - spread_types
     raise RuntimeError(
         "Bagel-only types not available. Ensure menu_data_cache is loaded from the database."
     )
@@ -744,9 +747,10 @@ def get_spread_only_types() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_spread_only_types()
-        if cached is not None:
-            return cached
+        # Compute as set difference: spread types that aren't bagel types
+        bagel_types = cache.get_item_names("bagel")
+        spread_types = cache.get_ingredients("spread")
+        return spread_types - bagel_types
     raise RuntimeError(
         "Spread-only types not available. Ensure menu_data_cache is loaded from the database."
     )
@@ -763,9 +767,10 @@ def get_ambiguous_modifiers() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_ambiguous_modifiers()
-        if cached is not None:
-            return cached
+        # Compute as set intersection: types that are both bagel and spread types
+        bagel_types = cache.get_item_names("bagel")
+        spread_types = cache.get_ingredients("spread")
+        return bagel_types & spread_types
     raise RuntimeError(
         "Ambiguous modifiers not available. Ensure menu_data_cache is loaded from the database."
     )
@@ -776,11 +781,12 @@ def get_bagel_types() -> set[str]:
     Get bagel types (plain, everything, etc.) from the database.
 
     Returns data from cache if loaded (includes item names and aliases).
-    Falls back to common bagel types if cache not available.
+    Falls back to empty set if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_bagel_types()
+        # Use generic get_item_names to get bagel menu item names and aliases
+        cached = cache.get_item_names("bagel")
         if cached:
             return cached
     return set()
@@ -791,12 +797,13 @@ def get_bagel_types_list() -> list[str]:
     Get ordered list of bagel types for display/pagination.
 
     Returns data from cache if loaded, otherwise returns empty list.
-    Unlike get_bagel_types() which returns a set with aliases,
-    this returns an ordered list without aliases for display purposes.
+    Returns an alphabetically sorted list of bagel type names.
     """
     cache = _get_menu_cache()
     if cache:
-        return cache.get_bagel_types_list()
+        # Use generic get_item_names and convert to sorted list
+        bagel_names = cache.get_item_names("bagel")
+        return sorted(bagel_names)
     return []
 
 
@@ -1100,8 +1107,7 @@ def find_spread_matches(query: str) -> list[str]:
     """
     Find spread types that match a partial query.
 
-    Uses the cache's keyword index for efficient partial matching.
-    Falls back to simple substring matching if cache not available.
+    Uses substring matching against spread ingredients.
 
     Args:
         query: User input like "walnut" or "honey walnut"
@@ -1119,12 +1125,39 @@ def find_spread_matches(query: str) -> list[str]:
         ["scallion"]
     """
     cache = _get_menu_cache()
-    if cache:
-        return cache.find_spread_matches(query)
+    if not cache:
+        raise RuntimeError(
+            "Spread matching not available. Ensure menu_data_cache is loaded with spread data from the database."
+        )
 
-    raise RuntimeError(
-        "Spread matching not available. Ensure menu_data_cache is loaded with spread data from the database."
-    )
+    query_lower = query.lower().strip()
+
+    # Remove "cream cheese" from query if present
+    query_lower = query_lower.replace("cream cheese", "").strip()
+
+    if not query_lower:
+        return []
+
+    spread_types = cache.get_ingredients("spread")
+
+    # Check for exact match first
+    if query_lower in spread_types:
+        return [query_lower]
+
+    # Substring matching
+    matches = set()
+    for spread_type in spread_types:
+        if query_lower in spread_type or spread_type in query_lower:
+            matches.add(spread_type)
+
+    # Also check for word matches
+    for word in query_lower.split():
+        if len(word) > 2:
+            for spread_type in spread_types:
+                if word in spread_type.split():
+                    matches.add(spread_type)
+
+    return sorted(matches)
 
 
 def find_bagel_matches(query: str) -> list[str]:
@@ -1138,9 +1171,37 @@ def find_bagel_matches(query: str) -> list[str]:
         List of matching bagel types, or empty list if cache not available.
     """
     cache = _get_menu_cache()
-    if cache:
-        return cache.find_bagel_matches(query)
-    return []
+    if not cache:
+        return []
+
+    query_lower = query.lower().strip()
+
+    # Remove "bagel" from query if present
+    query_lower = query_lower.replace("bagel", "").strip()
+
+    if not query_lower:
+        return []
+
+    bagel_types = cache.get_item_names("bagel")
+
+    # Check for exact match first
+    if query_lower in bagel_types:
+        return [query_lower]
+
+    # Substring matching
+    matches = set()
+    for bagel_type in bagel_types:
+        if query_lower in bagel_type or bagel_type in query_lower:
+            matches.add(bagel_type)
+
+    # Also check for word matches
+    for word in query_lower.split():
+        if len(word) > 2:
+            for bagel_type in bagel_types:
+                if word in bagel_type.split():
+                    matches.add(bagel_type)
+
+    return sorted(matches)
 
 
 # =============================================================================

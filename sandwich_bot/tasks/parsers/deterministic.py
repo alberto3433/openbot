@@ -77,7 +77,7 @@ def _get_parser_syrup_options() -> list[str]:
     Returns list of syrup names in lowercase like ["vanilla", "caramel", ...].
     Returns empty list if database not loaded (fail gracefully, no fallback).
     """
-    db_syrups = menu_cache.get_beverage_syrups()
+    db_syrups = menu_cache.get_ingredients("syrup")
     if db_syrups:
         return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
     return []
@@ -92,7 +92,7 @@ def _get_parser_sweetener_options() -> list[str]:
     Note: Always includes generic "sugar" for common user phrases like
     "coffee with sugar" even if database only has brand names like "Domino Sugar".
     """
-    db_sweeteners = menu_cache.get_beverage_sweeteners()
+    db_sweeteners = menu_cache.get_ingredients("sweetener")
     if db_sweeteners:
         # Include common variations
         options = []
@@ -116,7 +116,7 @@ def _get_parser_milk_options() -> list[str]:
     Returns list of milk type patterns in lowercase.
     Returns empty list if database not loaded (fail gracefully, no fallback).
     """
-    db_milks = menu_cache.get_beverage_milks()
+    db_milks = menu_cache.get_ingredients("milk")
     if db_milks:
         options = []
         for milk in db_milks:
@@ -1532,7 +1532,8 @@ def _parse_item_generic(
     # For beverages, also extract sweeteners and syrups using existing helpers
     sweeteners = []
     syrups = []
-    if item_type in ("sized_beverage", "espresso"):
+    modifier_category = menu_cache.get_modifier_category(item_type) if item_type else None
+    if modifier_category == "beverage":
         from sandwich_bot.tasks.parsers.deterministic import extract_coffee_modifiers_from_input
         coffee_mods = extract_coffee_modifiers_from_input(text)
         if coffee_mods.sweetener:
@@ -1817,19 +1818,19 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
     # Build dynamically from database (fail-fast if not loaded)
     coffee_modifiers: set[str] = set()
     # Add milk types and short forms
-    for milk in menu_cache.get_beverage_milks():
+    for milk in menu_cache.get_ingredients("milk"):
         milk_lower = milk.lower()
         coffee_modifiers.add(milk_lower)
         if milk_lower.endswith(" milk"):
             coffee_modifiers.add(milk_lower[:-5])  # Short form like "oat"
     # Add syrup types and short forms
-    for syrup in menu_cache.get_beverage_syrups():
+    for syrup in menu_cache.get_ingredients("syrup"):
         syrup_lower = syrup.lower()
         coffee_modifiers.add(syrup_lower)
         if syrup_lower.endswith(" syrup"):
             coffee_modifiers.add(syrup_lower[:-6])  # Short form like "vanilla"
     # Add sweetener types
-    for sweetener in menu_cache.get_beverage_sweeteners():
+    for sweetener in menu_cache.get_ingredients("sweetener"):
         coffee_modifiers.add(sweetener.lower())
     # Add standard coffee modifiers (temperature, size, etc.)
     coffee_modifiers.update({"iced", "hot", "decaf", "black", "small", "medium", "large", "nonfat", "2%"})

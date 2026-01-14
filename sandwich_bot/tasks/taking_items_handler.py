@@ -131,7 +131,7 @@ def _get_syrup_options() -> list[str]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_syrups = menu_cache.get_beverage_syrups()
+    db_syrups = menu_cache.get_ingredients("syrup")
     # Convert display names like "Vanilla Syrup" -> "vanilla"
     return [s.lower().replace(" syrup", "").strip() for s in db_syrups]
 
@@ -144,7 +144,7 @@ def _get_milk_options_coffee() -> list[tuple[str, str]]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_milks = menu_cache.get_beverage_milks()
+    db_milks = menu_cache.get_ingredients("milk")
     options = []
     for milk in db_milks:
         milk_lower = milk.lower()
@@ -168,7 +168,7 @@ def _get_milk_options_espresso() -> list[tuple[str, str, str]]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_milks = menu_cache.get_beverage_milks()
+    db_milks = menu_cache.get_ingredients("milk")
     options = []
     for milk in db_milks:
         milk_lower = milk.lower()
@@ -193,7 +193,7 @@ def _get_sweetener_options() -> list[str]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_sweeteners = menu_cache.get_beverage_sweeteners()
+    db_sweeteners = menu_cache.get_ingredients("sweetener")
     # Convert display names to lowercase patterns
     # Handle special cases like "Sweet N Low" -> "sweet n low"
     return [s.lower().replace("'", "").strip() for s in db_sweeteners]
@@ -207,7 +207,7 @@ def _get_sweetener_options_espresso() -> list[tuple[str, str, str]]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
     """
-    db_sweeteners = menu_cache.get_beverage_sweeteners()
+    db_sweeteners = menu_cache.get_ingredients("sweetener")
     options = []
     for sweetener in db_sweeteners:
         name = sweetener.lower().replace("'", "").strip()
@@ -2100,7 +2100,8 @@ class TakingItemsHandler:
         """
         item_type = item.item_type
 
-        if item_type == "bagel":
+        # Data-driven check: items with bread attribute (bagel-like)
+        if menu_cache.item_type_has_attribute(item_type, "bread"):
             # Build ExtractedModifiers from modifiers list
             extracted_mods = ExtractedModifiers()
             # Parse modifiers into categories using data-driven lookup
@@ -2143,7 +2144,8 @@ class TakingItemsHandler:
                     summary += " toasted"
             return order, summary
 
-        elif item_type in ("sized_beverage", "espresso"):
+        # Data-driven check: beverage items (modifier_category == "beverage")
+        elif menu_cache.get_modifier_category(item_type) == "beverage":
             # Convert sweeteners and syrups to the format expected by add_item
             sweetener = None
             sweetener_quantity = 1
@@ -2833,8 +2835,14 @@ class TakingItemsHandler:
                     elif not item.requires_side_choice:
                         # DB-driven items use MenuItemConfigHandler
                         # They should NOT go through the bagel handler's hardcoded toasted question
-                        # Phase 6: Added "bagel" and "sized_beverage" for unified configuration
-                        if item.menu_item_type in ("deli_sandwich", "egg_sandwich", "fish_sandwich", "spread_sandwich", "espresso", "bagel", "sized_beverage"):
+                        # TODO: This list of item types should be data-driven (e.g., check if item type
+                        # has is_configurable=True in DB, or has any ask_in_conversation attributes).
+                        # For now, using a configurable item type check via database query.
+                        item_attrs = menu_cache.get_item_type_attributes(item.menu_item_type) if item.menu_item_type else {}
+                        has_configurable_attrs = any(
+                            attr.get("ask_in_conversation", False) for attr in item_attrs.values()
+                        )
+                        if has_configurable_attrs:
                             individual_items.append((item.id, item.menu_item_name, "menu_item", "menu_item_config"))
                         elif item.has_attribute("size"):
                             # Items with size attribute (coffee, latte, etc.) use coffee config handler

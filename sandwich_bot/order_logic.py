@@ -720,14 +720,18 @@ def _update_sandwich(state, slots, menu_index):
     """
     item_index = slots.get("item_index")
 
-    # If no index provided, try to find the last sandwich/bagel item in the order
+    # If no index provided, try to find the last item that can have toppings/modifiers
     if item_index is None:
+        from sandwich_bot.menu_data_cache import menu_cache
         for i in range(len(state["items"]) - 1, -1, -1):
             item_type = state["items"][i].get("item_type", "").lower()
-            # Match sandwich, bagel, or items with bagel in the name/bread
-            if item_type in ("sandwich", "bagel"):
-                item_index = i
-                break
+            # Data-driven check: items with bread attribute or food modifier category
+            if item_type:
+                modifier_cat = menu_cache.get_modifier_category(item_type)
+                has_bread = menu_cache.item_type_has_attribute(item_type, "bread")
+                if modifier_cat == "food" or has_bread:
+                    item_index = i
+                    break
             # Also check if it's a bagel sandwich by name or bread
             item_name = (state["items"][i].get("menu_item_name") or "").lower()
             bread = (state["items"][i].get("bread") or "").lower()

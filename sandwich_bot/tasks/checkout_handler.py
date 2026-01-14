@@ -24,6 +24,7 @@ from .models import (
 )
 from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers, OpenInputResponse
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
+from ..menu_data_cache import menu_cache
 from .parsers import (
     validate_email_address,
     validate_phone_number,
@@ -754,10 +755,20 @@ class CheckoutHandler(BaseHandler):
             quantity = prev_item.get("quantity", 1)
             qty_word = self._quantity_to_words(quantity)
 
-            # Add each item based on type
-            if item_type == "bagel":
+            # Add each item based on type using data-driven checks
+            # Legacy item types ("drink", "coffee") need special handling
+            is_beverage_item = False
+            if item_type:
+                # Check database for modifier category
+                modifier_cat = menu_cache.get_modifier_category(item_type)
+                is_beverage_item = modifier_cat == "beverage"
+                # Also handle legacy item types that aren't in database
+                if not is_beverage_item and item_type in ("drink", "coffee"):
+                    is_beverage_item = True
+
+            if menu_cache.item_type_has_attribute(item_type, "bread") if item_type else False:
                 self._add_repeat_bagel(prev_item, order, quantity, qty_word, items_added)
-            elif item_type in ("coffee", "drink"):
+            elif is_beverage_item:
                 self._add_repeat_coffee(prev_item, order, quantity, qty_word, items_added)
             elif menu_item_name:
                 self._add_repeat_menu_item(prev_item, order, quantity, qty_word, items_added)

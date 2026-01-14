@@ -15,12 +15,12 @@ Features:
 Usage:
     from sandwich_bot.menu_data_cache import menu_cache
 
-    # Get spread types (returns set)
-    spread_types = menu_cache.get_spread_types()
+    # Get ingredients by category (returns set)
+    milks = menu_cache.get_ingredients("milk")
 
     # Find partial matches for disambiguation
-    matches = menu_cache.find_spread_matches("walnut")
-    # Returns: ["honey walnut", "maple raisin walnut"]
+    matches = menu_cache.find_menu_item_matches("classic")
+    # Returns: ["classic egg sandwich", "classic blt"]
 """
 
 import asyncio
@@ -99,17 +99,7 @@ class MenuDataCache:
             return
 
         # Core data sets
-        self._spreads: set[str] = set()
-        self._spread_types: set[str] = set()
-        self._bagel_spreads: set[str] = set()  # Combined patterns for matching
-        self._bagel_types: set[str] = set()
-        self._bagel_types_list: list[str] = []  # Ordered list for display/pagination
         self._known_menu_items: set[str] = set()
-
-        # Beverage modifier options (from item_type_ingredients table)
-        self._beverage_milks: list[str] = []  # Ordered list of milk options
-        self._beverage_sweeteners: list[str] = []  # Ordered list of sweetener options
-        self._beverage_syrups: list[str] = []  # Ordered list of syrup options
 
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
         self._signature_item_aliases: dict[str, str] = {}  # alias -> menu item name
@@ -159,8 +149,6 @@ class MenuDataCache:
         self._configurable_item_types: set[str] = set()
 
         # Keyword indices for partial matching
-        self._spread_keyword_index: dict[str, list[str]] = {}
-        self._bagel_keyword_index: dict[str, list[str]] = {}
         self._menu_item_keyword_index: dict[str, list[str]] = {}
 
         # Cached menu index (expensive to build, loaded once at startup)
@@ -251,9 +239,6 @@ class MenuDataCache:
                 logger.info("Loading menu data cache from database...")
 
                 # Load each category
-                self._load_spread_types(db)
-                self._load_bagel_types(db)
-                self._load_beverage_modifiers(db)
                 self._load_known_menu_items(db)
                 self._load_signature_item_aliases(db)
                 self._load_by_pound_items(db)
@@ -293,12 +278,9 @@ class MenuDataCache:
                 self._is_loaded = True
 
                 logger.info(
-                    "Menu data cache loaded: %d spread_types, %d bagel_types, "
-                    "%d menu_items, %d signature_item_aliases, "
+                    "Menu data cache loaded: %d menu_items, %d signature_item_aliases, "
                     "%d by_pound_categories, %d abbreviations, "
                     "%d item_types, %d ingredient_categories",
-                    len(self._spread_types),
-                    len(self._bagel_types),
                     len(self._known_menu_items),
                     len(self._signature_item_aliases),
                     len(self._by_pound_items),
@@ -312,204 +294,6 @@ class MenuDataCache:
                 if fail_on_error:
                     raise RuntimeError(f"Failed to load menu data cache: {e}") from e
                 # Keep existing cache if available
-
-    def _load_spread_types(self, db: Session) -> None:
-        """Load spread types from cream cheese menu items and base spreads from ingredients.
-
-        Also builds the _bagel_spreads set which combines base spreads with their
-        variety types for pattern matching (e.g., "scallion cream cheese", "scallion").
-        """
-        import re
-        from .models import MenuItem, Ingredient
-
-        spread_types = set()
-        spreads = set()
-        bagel_spreads = set()
-
-        # Load from cream cheese menu items
-        # Items like "Honey Walnut Cream Cheese (1/4 lb)" -> extract "honey walnut"
-        cream_cheese_items = (
-            db.query(MenuItem)
-            .filter(MenuItem.category == "cream_cheese")
-            .all()
-        )
-
-        for item in cream_cheese_items:
-            name = item.name.lower()
-            # Remove weight suffix like "(1/4 lb)", "(1 lb)"
-            name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
-
-            # Extract spread type from name
-            # "honey walnut cream cheese" -> "honey walnut"
-            # "plain cream cheese" -> "plain"
-            if "cream cheese" in name:
-                spread_type = name.replace("cream cheese", "").strip()
-                if spread_type and spread_type != "plain":
-                    spread_types.add(spread_type)
-                spreads.add("cream cheese")
-
-        # Also check spread_sandwich menu items
-        spread_sandwiches = (
-            db.query(MenuItem)
-            .filter(MenuItem.category == "spread_sandwich")
-            .all()
-        )
-
-        for item in spread_sandwiches:
-            name = item.name.lower()
-            # "Scallion Cream Cheese Sandwich" -> "scallion"
-            name = name.replace("sandwich", "").strip()
-            if "cream cheese" in name:
-                spread_type = name.replace("cream cheese", "").strip()
-                if spread_type and spread_type not in ("plain", "regular"):
-                    spread_types.add(spread_type)
-
-        # Load base spreads from ingredients with category='spread'
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        spread_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "spread")
-            .all()
-        )
-        for ing in spread_ingredients:
-            spreads.add(ing.name.lower())
-            # Also add aliases (now a list from child table)
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    spreads.add(alias)
-
-        # Build bagel_spreads - all patterns for matching spreads in user input
-        # This combines base spreads with spread types
-        for spread in spreads:
-            bagel_spreads.add(spread)
-            # Add "plain X" variation for cream cheese
-            if spread == "cream cheese":
-                bagel_spreads.add("plain cream cheese")
-
-        # Add spread type variations (e.g., "scallion cream cheese", "scallion")
-        for spread_type in spread_types:
-            bagel_spreads.add(spread_type)
-            bagel_spreads.add(f"{spread_type} cream cheese")
-
-        # Add specific known patterns
-        bagel_spreads.add("lox spread")
-
-        self._spreads = spreads
-        self._spread_types = spread_types
-        self._bagel_spreads = bagel_spreads
-
-    def _load_bagel_types(self, db: Session) -> None:
-        """Load bagel types from ingredients table.
-
-        Parses bagel names and includes aliases for matching.
-        Also builds an ordered list for display/pagination.
-        """
-        from .models import Ingredient
-
-        bagel_types = set()
-        bagel_types_list = []
-
-        # Query ingredients that are bagel types (category='bread')
-        # Use joinedload to avoid N+1 queries when accessing aliases
-        bagel_ingredients = (
-            db.query(Ingredient)
-            .options(joinedload(Ingredient.alias_records))
-            .filter(Ingredient.category == "bread")
-            .filter(Ingredient.is_available == True)  # noqa: E712
-            .order_by(Ingredient.name)
-            .all()
-        )
-
-        for ing in bagel_ingredients:
-            name = ing.name.lower()
-
-            # Parse bagel type from name
-            # "Plain Bagel" -> "plain", "Everything Bagel" -> "everything"
-            # "Bialy" -> "bialy" (no "bagel" suffix)
-            if "bagel" in name:
-                bagel_type = name.replace("bagel", "").strip()
-            else:
-                # Handle items without "bagel" in name (e.g., "Bialy")
-                bagel_type = name.strip()
-
-            if bagel_type:
-                bagel_types.add(bagel_type)
-                # Add to ordered list (display name without "Bagel" suffix)
-                display_name = bagel_type.title() if bagel_type != "gluten free" else "Gluten Free"
-                if bagel_type not in [bt.lower() for bt in bagel_types_list]:
-                    bagel_types_list.append(bagel_type)
-
-            # Add aliases if present (now a list from child table)
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    bagel_types.add(alias)
-
-        # Fail if database has no bagel types configured
-        if not bagel_types:
-            raise RuntimeError(
-                "No bagel types found in database. Run migrations to populate ingredients table "
-                "with bread category items."
-            )
-
-        self._bagel_types = bagel_types
-        self._bagel_types_list = bagel_types_list
-
-    def _load_beverage_modifiers(self, db: Session) -> None:
-        """Load beverage modifier options (milk, sweetener, syrup) from the database.
-
-        Queries the item_type_ingredients table for sized_beverage modifiers.
-        The ingredient_group may be 'milk_sweetener_syrup' (consolidated) or the legacy
-        individual groups (milk, sweetener, syrup). We categorize by ingredient.category
-        to properly split modifiers into milks, sweeteners, and syrups.
-
-        Results are ordered by display_order and store display names for user-facing text.
-        """
-        from .models import ItemType, ItemTypeIngredient, Ingredient
-
-        # Find the sized_beverage item type
-        sized_beverage = db.query(ItemType).filter(ItemType.slug == "sized_beverage").first()
-        if not sized_beverage:
-            logger.warning("No sized_beverage item type found - beverage modifiers not loaded")
-            return
-
-        # Query all drink modifiers (both consolidated 'milk_sweetener_syrup' group
-        # and legacy individual groups)
-        modifiers = (
-            db.query(ItemTypeIngredient, Ingredient)
-            .join(Ingredient, ItemTypeIngredient.ingredient_id == Ingredient.id)
-            .filter(ItemTypeIngredient.item_type_id == sized_beverage.id)
-            .filter(ItemTypeIngredient.ingredient_group.in_(
-                ['milk_sweetener_syrup', 'milk', 'sweetener', 'syrup']
-            ))
-            .filter(ItemTypeIngredient.is_available == True)
-            .order_by(ItemTypeIngredient.display_order)
-            .all()
-        )
-
-        # Clear existing lists
-        self._beverage_milks.clear()
-        self._beverage_sweeteners.clear()
-        self._beverage_syrups.clear()
-
-        # Categorize by ingredient.category (the source of truth)
-        for link, ingredient in modifiers:
-            display_name = link.display_name_override or ingredient.name
-            category = ingredient.category
-
-            if category == 'milk':
-                self._beverage_milks.append(display_name)
-            elif category == 'sweetener':
-                self._beverage_sweeteners.append(display_name)
-            elif category == 'syrup':
-                self._beverage_syrups.append(display_name)
-            # Skip other categories (they may be linked but not beverage modifiers)
-
-        logger.debug("Loaded beverage modifiers: %d milks, %d sweeteners, %d syrups",
-                    len(self._beverage_milks), len(self._beverage_sweeteners),
-                    len(self._beverage_syrups))
 
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names and aliases for recognition.
@@ -1720,19 +1504,11 @@ class MenuDataCache:
             "with", "and", "or", "on", "in",
         }
 
-        # Build spread type keyword index
-        self._spread_keyword_index = self._build_index(self._spread_types, skip_words)
-
-        # Build bagel type keyword index
-        self._bagel_keyword_index = self._build_index(self._bagel_types, skip_words)
-
         # Build menu item keyword index
         self._menu_item_keyword_index = self._build_index(self._known_menu_items, skip_words)
 
         logger.debug(
-            "Built keyword indices: %d spread keywords, %d bagel keywords, %d menu keywords",
-            len(self._spread_keyword_index),
-            len(self._bagel_keyword_index),
+            "Built keyword indices: %d menu keywords",
             len(self._menu_item_keyword_index),
         )
 
@@ -1760,62 +1536,6 @@ class MenuDataCache:
                 "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup. "
                 "Check that the database connection is working and migrations have run."
             )
-
-    def get_spreads(self) -> set[str]:
-        """Get base spread types (cream cheese, butter, etc.)."""
-        self._ensure_loaded()
-        if not self._spreads:
-            raise MenuDataNotLoadedError(
-                "No spreads found in database. "
-                "Check that ingredients table has records with category='spread'."
-            )
-        return self._spreads.copy()
-
-    def get_spread_types(self) -> set[str]:
-        """Get cream cheese variety types (scallion, honey walnut, etc.)."""
-        self._ensure_loaded()
-        if not self._spread_types:
-            raise MenuDataNotLoadedError(
-                "No spread types found in database. "
-                "Check that menu_items table has records with category='cream_cheese'."
-            )
-        return self._spread_types.copy()
-
-    def get_bagel_spreads(self) -> set[str]:
-        """Get all spread patterns for matching in user input.
-
-        Returns combined set of:
-        - Base spreads (cream cheese, butter, etc.)
-        - Spread types (scallion, honey walnut, etc.)
-        - Combined patterns (scallion cream cheese, etc.)
-        """
-        self._ensure_loaded()
-        if not self._bagel_spreads:
-            raise MenuDataNotLoadedError(
-                "No bagel spreads found in database. "
-                "Check ingredients and menu_items tables for spread data."
-            )
-        return self._bagel_spreads.copy()
-
-    def get_bagel_types(self) -> set[str]:
-        """Get bagel types (plain, everything, etc.) including aliases."""
-        self._ensure_loaded()
-        if not self._bagel_types:
-            raise MenuDataNotLoadedError(
-                "No bagel types found in database. "
-                "Check attribute_options table for 'bread' attribute options."
-            )
-        return self._bagel_types.copy()
-
-    def get_bagel_types_list(self) -> list[str]:
-        """Get ordered list of bagel types for display/pagination."""
-        self._ensure_loaded()
-        if not self._bagel_types_list:
-            raise MenuDataNotLoadedError(
-                "No bagel types list found in database. "
-                "Check attribute_options table for 'bread' attribute options."
-            )
-        return self._bagel_types_list.copy()
 
     # -------------------------------------------------------------------------
     # Generic Data-Driven Getters
@@ -2110,45 +1830,6 @@ class MenuDataCache:
         self._ensure_loaded()
         return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
 
-    def get_beverage_milks(self) -> list[str]:
-        """Get available milk options for beverages.
-
-        Returns ordered list of milk display names from the database.
-        """
-        self._ensure_loaded()
-        if not self._beverage_milks:
-            raise MenuDataNotLoadedError(
-                "No beverage milks found in database. "
-                "Check item_type_ingredients table for sized_beverage milk options."
-            )
-        return self._beverage_milks.copy()
-
-    def get_beverage_sweeteners(self) -> list[str]:
-        """Get available sweetener options for beverages.
-
-        Returns ordered list of sweetener display names from the database.
-        """
-        self._ensure_loaded()
-        if not self._beverage_sweeteners:
-            raise MenuDataNotLoadedError(
-                "No beverage sweeteners found in database. "
-                "Check item_type_ingredients table for sized_beverage sweetener options."
-            )
-        return self._beverage_sweeteners.copy()
-
-    def get_beverage_syrups(self) -> list[str]:
-        """Get available syrup/flavor options for beverages.
-
-        Returns ordered list of syrup display names from the database.
-        """
-        self._ensure_loaded()
-        if not self._beverage_syrups:
-            raise MenuDataNotLoadedError(
-                "No beverage syrups found in database. "
-                "Check item_type_ingredients table for sized_beverage syrup options."
-            )
-        return self._beverage_syrups.copy()
-
     def get_modifier_categories_for_inquiry(self) -> dict[str, dict]:
         """Get all modifier categories for menu inquiry handling.
 
@@ -2162,17 +1843,13 @@ class MenuDataCache:
         """Get items for a specific modifier category.
 
         This is the generic data-driven method for getting modifier items.
-        Replaces hardcoded getters like get_toppings(), get_proteins(), etc.
+        All modifier categories are backed by ingredients in the database.
 
         Args:
             slug: The modifier category slug (e.g., "toppings", "proteins", "milks")
 
         Returns:
             Set of item names for the category. Returns empty set if category not found.
-
-        Note:
-            For ingredient-backed categories, uses get_ingredients().
-            For beverage categories (milks, sweeteners, syrups), uses specialized getters.
         """
         self._ensure_loaded()
 
@@ -2185,25 +1862,6 @@ class MenuDataCache:
             ingredient_category = cat_info.get("ingredient_category")
             if ingredient_category:
                 return self.get_ingredients(ingredient_category)
-            return set()
-
-        # Handle beverage modifier categories (milks, sweeteners, syrups)
-        # These return lists, so convert to sets for consistency
-        if slug == "milks":
-            try:
-                return set(self._beverage_milks)
-            except MenuDataNotLoadedError:
-                return set()
-        elif slug == "sweeteners":
-            try:
-                return set(self._beverage_sweeteners)
-            except MenuDataNotLoadedError:
-                return set()
-        elif slug == "syrups":
-            try:
-                return set(self._beverage_syrups)
-            except MenuDataNotLoadedError:
-                return set()
 
         # Unknown category type
         return set()
@@ -2368,6 +2026,27 @@ class MenuDataCache:
         result = self._load_item_type_attributes_from_db(item_type_slug)
         self._item_type_attributes[item_type_slug] = result
         return result
+
+    def item_type_has_attribute(self, item_type_slug: str, attribute_slug: str) -> bool:
+        """Check if an item type has a specific attribute.
+
+        This is the preferred data-driven way to check item type capabilities
+        instead of checking item type slugs directly (e.g., `if item_type == "sized_beverage"`).
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+            attribute_slug: The attribute slug to check for (e.g., "temperature", "toasted")
+
+        Returns:
+            True if the item type has the attribute, False otherwise.
+
+        Example:
+            >>> # Instead of: if item.menu_item_type == "sized_beverage":
+            >>> if menu_cache.item_type_has_attribute(item.menu_item_type, "temperature"):
+            ...     # Handle temperature configuration
+        """
+        attrs = self.get_item_type_attributes(item_type_slug)
+        return attribute_slug in attrs
 
     def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
         """Load item type attributes from database.
@@ -2965,51 +2644,6 @@ class MenuDataCache:
 
         return None  # No match found - semantic "not found"
 
-    def get_bagel_only_types(self) -> set[str]:
-        """Get bagel types that are NOT also spread types.
-
-        These are unambiguous bagel types - when a user says "change it to plain",
-        we know they mean the bagel type, not a spread type.
-
-        Returns:
-            Set of bagel types that don't exist as spread types.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._bagel_types - self._spread_types
-
-    def get_spread_only_types(self) -> set[str]:
-        """Get spread types that are NOT also bagel types.
-
-        These are unambiguous spread types - when a user says "change it to scallion",
-        we know they mean the spread type, not a bagel type.
-
-        Returns:
-            Set of spread types that don't exist as bagel types.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._spread_types - self._bagel_types
-
-    def get_ambiguous_modifiers(self) -> set[str]:
-        """Get types that are BOTH bagel types AND spread types.
-
-        These are ambiguous - when a user says "change it to blueberry",
-        we need to ask for clarification (blueberry bagel vs blueberry cream cheese).
-
-        Returns:
-            Set of types that exist as both bagel and spread types.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._bagel_types & self._spread_types
-
     def normalize_modifier(self, modifier: str) -> str:
         """
         Normalize a modifier name or alias to its canonical Ingredient name.
@@ -3204,10 +2838,6 @@ class MenuDataCache:
                 if aliases:
                     for alias in aliases:
                         answers.add(alias.lower())
-
-        # Add bagel types
-        if self._bagel_types:
-            answers.update(self._bagel_types)
 
         # Add side item names (for side choice questions)
         if self._side_items:
@@ -3736,88 +3366,6 @@ class MenuDataCache:
     # Partial Matching Methods
     # =========================================================================
 
-    def find_spread_matches(self, query: str) -> list[str]:
-        """
-        Find spread types that match a partial query.
-
-        Args:
-            query: User input like "walnut" or "honey walnut"
-
-        Returns:
-            List of matching spread types. Empty if no matches.
-            Single item if exact match.
-            Multiple items if disambiguation needed.
-
-        Examples:
-            >>> cache.find_spread_matches("walnut")
-            ["honey walnut", "maple raisin walnut"]
-            >>> cache.find_spread_matches("honey walnut")
-            ["honey walnut"]
-            >>> cache.find_spread_matches("scallion")
-            ["scallion"]
-        """
-        query_lower = query.lower().strip()
-
-        # Remove "cream cheese" from query if present
-        query_lower = query_lower.replace("cream cheese", "").strip()
-
-        if not query_lower:
-            return []
-
-        # Check for exact match first
-        if query_lower in self._spread_types:
-            return [query_lower]
-
-        # Check keyword index for partial matches
-        matches = set()
-        for word in query_lower.split():
-            if word in self._spread_keyword_index:
-                matches.update(self._spread_keyword_index[word])
-
-        # If no keyword matches, try substring matching
-        if not matches:
-            for spread_type in self._spread_types:
-                if query_lower in spread_type or spread_type in query_lower:
-                    matches.add(spread_type)
-
-        return sorted(matches)
-
-    def find_bagel_matches(self, query: str) -> list[str]:
-        """
-        Find bagel types that match a partial query.
-
-        Args:
-            query: User input like "cinnamon" or "whole wheat"
-
-        Returns:
-            List of matching bagel types.
-        """
-        query_lower = query.lower().strip()
-
-        # Remove "bagel" from query if present
-        query_lower = query_lower.replace("bagel", "").strip()
-
-        if not query_lower:
-            return []
-
-        # Check for exact match first
-        if query_lower in self._bagel_types:
-            return [query_lower]
-
-        # Check keyword index
-        matches = set()
-        for word in query_lower.split():
-            if word in self._bagel_keyword_index:
-                matches.update(self._bagel_keyword_index[word])
-
-        # Substring matching
-        if not matches:
-            for bagel_type in self._bagel_types:
-                if query_lower in bagel_type or bagel_type in query_lower:
-                    matches.add(bagel_type)
-
-        return sorted(matches)
-
     def find_menu_item_matches(self, query: str) -> list[str]:
         """
         Find menu items that match a partial query.
@@ -4297,10 +3845,6 @@ class MenuDataCache:
             "is_loaded": self._is_loaded,
             "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,
             "counts": {
-                "spreads": len(self._spreads),
-                "spread_types": len(self._spread_types),
-                "bagel_spreads": len(self._bagel_spreads),
-                "bagel_types": len(self._bagel_types),
                 "known_menu_items": len(self._known_menu_items),
                 "by_pound_categories": len(self._by_pound_items),
                 "by_pound_aliases": len(self._by_pound_aliases),
@@ -4315,8 +3859,6 @@ class MenuDataCache:
                 "ingredients_by_category": {k: len(v) for k, v in self._ingredients_by_category.items()},
             },
             "keyword_indices": {
-                "spread_keywords": len(self._spread_keyword_index),
-                "bagel_keywords": len(self._bagel_keyword_index),
                 "menu_item_keywords": len(self._menu_item_keyword_index),
             },
         }

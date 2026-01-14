@@ -612,10 +612,10 @@ class StoreInfoHandler:
         """Get formatted lists of beverage modifiers from the database cache."""
         from ..menu_data_cache import menu_cache
 
-        # Get options from cache
-        milks = menu_cache.get_beverage_milks()
-        sweeteners = menu_cache.get_beverage_sweeteners()
-        syrups = menu_cache.get_beverage_syrups()
+        # Get options from cache using generic ingredient lookups
+        milks = list(menu_cache.get_ingredients("milk"))
+        sweeteners = list(menu_cache.get_ingredients("sweetener"))
+        syrups = list(menu_cache.get_ingredients("syrup"))
 
         def format_list(items: list[str]) -> str:
             if not items:

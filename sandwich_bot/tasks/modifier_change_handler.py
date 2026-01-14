@@ -101,12 +101,11 @@ class ModifierChangeHandler:
         """Get compound spread phrases from the database.
 
         Returns phrases like "scallion cream cheese" that indicate a spread type.
-        Uses menu_cache.get_bagel_spreads() filtered for phrases containing
-        "cream cheese" or "spread".
+        Filters spreads for phrases containing "cream cheese" or "spread".
         """
         if self._spread_phrases is None:
             try:
-                all_spreads = menu_cache.get_bagel_spreads()
+                all_spreads = menu_cache.get_ingredients_for_item_type("bagel", "spread")
                 self._spread_phrases = {
                     s for s in all_spreads
                     if "cream cheese" in s or " spread" in s
@@ -237,37 +236,31 @@ class ModifierChangeHandler:
         if is_attr_option and attr_slug:
             return False, [attr_slug]
 
-        # Check for unambiguous bread-only types (from database)
+        # Check for unambiguous or ambiguous bread/spread types
         try:
-            if new_value_lower in menu_cache.get_bagel_only_types():
+            bagel_types = menu_cache.get_item_names("bagel")
+            spread_types = menu_cache.get_ingredients("spread")
+
+            # Compute disambiguation sets
+            bagel_only = bagel_types - spread_types
+            spread_only = spread_types - bagel_types
+            ambiguous = bagel_types & spread_types
+
+            # Check for unambiguous bread-only types
+            if new_value_lower in bagel_only:
                 return False, [ATTR_BREAD]
-        except Exception:
-            pass
 
-        # Check for unambiguous spread-only types (from database)
-        try:
-            if new_value_lower in menu_cache.get_spread_only_types():
+            # Check for unambiguous spread-only types
+            if new_value_lower in spread_only:
                 return False, [ATTR_SPREAD_TYPE]
-        except Exception:
-            pass
 
-        # Check for ambiguous modifiers (from database)
-        try:
-            if new_value_lower in menu_cache.get_ambiguous_modifiers():
+            # Check for ambiguous modifiers
+            if new_value_lower in ambiguous:
                 # This could be either bread or spread_type - needs clarification
                 return True, [ATTR_BREAD, ATTR_SPREAD_TYPE]
-        except Exception:
-            pass
 
-        # Check if it's a known bagel/bread type
-        try:
-            bagel_types = menu_cache.get_bagel_types()
-            spread_types = menu_cache.get_spread_types()
-
+            # Check if it's a known bagel/bread type (should be covered above, but safety check)
             if new_value_lower in bagel_types:
-                if new_value_lower in spread_types:
-                    # Also a spread type - ambiguous
-                    return True, [ATTR_BREAD, ATTR_SPREAD_TYPE]
                 return False, [ATTR_BREAD]
 
             # Check if it's a known spread type
@@ -279,7 +272,7 @@ class ModifierChangeHandler:
         # Check for milk options - build patterns from database
         try:
             milk_patterns: list[str] = []
-            db_milks = menu_cache.get_beverage_milks()
+            db_milks = menu_cache.get_ingredients("milk")
             for milk_name in db_milks:
                 milk_lower = milk_name.lower()
                 milk_patterns.append(milk_lower)

@@ -1121,10 +1121,19 @@ class OpenInputResponse(BaseModel):
                     self.new_menu_item_modifications = first_menu.modifiers
 
         # Find side items
-        side_items = [p for p in self.parsed_items if getattr(p, 'item_type', None) == 'side']
+        # Check both 'item_type' (ParsedItemEntry) and 'type' (ParsedSideItemEntry) attributes
+        side_items = [
+            p for p in self.parsed_items
+            if getattr(p, 'item_type', None) == 'side' or getattr(p, 'type', None) == 'side'
+        ]
         if side_items:
             first_side = side_items[0]
-            self.new_side_item = getattr(first_side, 'menu_item_name', None) or getattr(first_side, 'item_name', None)
+            # Check side_name (ParsedSideItemEntry), item_name (ParsedItemEntry), or menu_item_name
+            self.new_side_item = (
+                getattr(first_side, 'side_name', None)
+                or getattr(first_side, 'item_name', None)
+                or getattr(first_side, 'menu_item_name', None)
+            )
             self.new_side_item_quantity = len(side_items)
 
         return self

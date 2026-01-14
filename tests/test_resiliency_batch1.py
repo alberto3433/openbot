@@ -333,8 +333,8 @@ class TestReplacementModificationScenarios:
             f"Should ask about spread. Got: {result.message}"
 
         # Should be in CONFIGURING_ITEM phase with pending_field for spread
-        # Accept both legacy "spread" and new "menu_item_attr_spread" and "bagel:spread_type" formats
-        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type"), \
+        # Accept legacy "spread", data-driven "bagel:spread", and alternate formats
+        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type", "bagel:spread"), \
             f"Should be pending spread question. Got pending_field: {result.order.pending_field}"
 
     def test_bagel_not_toasted_should_ask_about_spread(self):
@@ -361,8 +361,8 @@ class TestReplacementModificationScenarios:
             f"Should ask about spread. Got: {result.message}"
 
         # Should be in CONFIGURING_ITEM phase with pending_field for spread
-        # Accept both legacy "spread" and new "menu_item_attr_spread" and "bagel:spread_type" formats
-        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type"), \
+        # Accept legacy "spread", data-driven "bagel:spread", and alternate formats
+        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type", "bagel:spread"), \
             f"Should be pending spread question. Got pending_field: {result.order.pending_field}"
 
     def test_bagel_with_extras_skips_spread_question(self):

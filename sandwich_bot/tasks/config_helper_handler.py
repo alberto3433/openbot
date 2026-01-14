@@ -419,23 +419,57 @@ class ConfigHelperHandler:
         order: OrderTask,
         item: ItemTask,
     ) -> str | None:
-        """Get the current configuration question being asked."""
+        """Get the current configuration question being asked.
+
+        Uses database-driven question lookup for attribute-based fields.
+        The pending_field format is "item_type:attr_slug" (e.g., "bagel:toasted").
+        """
+        from sandwich_bot.menu_data_cache import menu_cache
+
         field = order.pending_field
-        if field == "toasted":
-            return "Would you like that toasted?"
-        elif field == "spread":
-            return "What would you like on it?"
-        elif field == "bagel_choice":
-            return "What kind of bagel would you like?"
-        elif field == "coffee_size":
-            return "What size would you like? Small or Large?"
-        elif field == "coffee_style":
-            return "Would you like that hot or iced?"
-        elif field == "cheese_choice":
-            return "What kind of cheese would you like?"
-        elif field == "side_choice":
+        if not field:
+            return None
+
+        # Special case: side_choice is flow control, not a DB attribute
+        # TODO: Future enhancement - support menu items as components of other items
+        if field == "side_choice":
             return "Would you like a bagel or fruit salad with it?"
-        return None
+
+        # Parse pending_field to get item_type and attr_slug
+        # Format: "item_type:attr_slug" (e.g., "bagel:toasted", "sized_beverage:size")
+        if ":" in field:
+            item_type, attr_slug = field.split(":", 1)
+        else:
+            # Legacy format without colon - try to infer from item
+            if isinstance(item, MenuItemTask) and item.menu_item_type:
+                item_type = item.menu_item_type
+                attr_slug = field
+            else:
+                return None
+
+        # Look up attribute from database
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type)
+        except Exception:
+            return None
+
+        attr = attrs.get(attr_slug)
+        if not attr:
+            return None
+
+        # Use question_text from DB if available, otherwise generate
+        db_question = attr.get("question_text")
+        if db_question:
+            return db_question
+
+        # Generate question based on input_type and display_name
+        input_type = attr.get("input_type", "single_select")
+        attr_name = attr.get("display_name", attr_slug).lower()
+
+        if input_type == "boolean":
+            return f"Would you like it {attr_name}?"
+        else:
+            return f"What kind of {attr_name} would you like?"
 
     def handle_change_clarification_response(
         self,

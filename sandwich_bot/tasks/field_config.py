@@ -46,7 +46,7 @@ _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
         "iced": "temperature",
         "milk": "milk_sweetener_syrup",  # Combined field
         "sweetener": "milk_sweetener_syrup",  # Combined field
-        "extra_shots": "shots",
+        "extra_shots": "extra_shots",  # Now matches DB
     },
 }
 

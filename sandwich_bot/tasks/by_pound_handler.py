@@ -18,6 +18,9 @@ from .parsers import parse_by_pound_category
 from .parsers.constants import get_by_pound_items, get_by_pound_category_names
 from .handler_config import HandlerConfig, BaseHandler
 
+# Slugs for by-pound item types that have special display handling
+BY_POUND_SPREAD_SLUG = "spread"
+
 if TYPE_CHECKING:
     from .pricing import PricingEngine
 
@@ -51,6 +54,20 @@ class ByPoundHandler(BaseHandler):
         # Handler-specific callback
         self._process_taking_items_input = process_taking_items_input or kwargs.get("process_taking_items_input")
 
+    def _get_by_pound_categories_message(self) -> str:
+        """Build a message listing available by-pound categories from database."""
+        category_names = get_by_pound_category_names()
+        if not category_names:
+            return "food by the pound"
+
+        names = list(category_names.values())
+        if len(names) == 1:
+            return names[0]
+        elif len(names) == 2:
+            return f"{names[0]} and {names[1]}"
+        else:
+            return ", ".join(names[:-1]) + f", and {names[-1]}"
+
     def handle_by_pound_inquiry(
         self,
         category: str | None,
@@ -64,8 +81,9 @@ class ByPoundHandler(BaseHandler):
         # General inquiry - list all categories and ask which they're interested in
         order.phase = OrderPhase.CONFIGURING_ITEM
         order.pending_field = "by_pound_category"
+        categories_list = self._get_by_pound_categories_message()
         return StateMachineResult(
-            message="We have cheeses, spreads, cold cuts, fish, and salads as food by the pound. Which are you interested in?",
+            message=f"We have {categories_list} as food by the pound. Which are you interested in?",
             order=order,
         )
 
@@ -78,8 +96,9 @@ class ByPoundHandler(BaseHandler):
         parsed = parse_by_pound_category(user_input, model=self.model)
 
         if parsed.unclear:
+            categories_list = self._get_by_pound_categories_message()
             return StateMachineResult(
-                message="Which would you like to hear about? Cheeses, spreads, cold cuts, fish, or salads?",
+                message=f"Which would you like to hear about? {categories_list.capitalize()}?",
                 order=order,
             )
 
@@ -101,17 +120,9 @@ class ByPoundHandler(BaseHandler):
         order: OrderTask,
     ) -> StateMachineResult:
         """List items in a specific by-the-pound category."""
-        # For spreads, fetch from menu_data (cheese_types contains cream cheese options)
-        if category == "spread" and self._menu_data:
-            cheese_types = self._menu_data.get("cheese_types", [])
-            # Filter to only cream cheese, spreads, and butter
-            items = [
-                name for name in cheese_types
-                if any(kw in name.lower() for kw in ["cream cheese", "spread", "butter"])
-            ]
-        else:
-            by_pound_items = get_by_pound_items()
-            items = by_pound_items.get(category, [])
+        # Get items from database via menu_cache
+        by_pound_items = get_by_pound_items()
+        items = by_pound_items.get(category, [])
         category_name = get_by_pound_category_names().get(category, category)
 
         if not items:
@@ -132,7 +143,7 @@ class ByPoundHandler(BaseHandler):
         # Phase derived by orchestrator
 
         # For spreads, don't say "food by the pound" since they're also used on bagels
-        if category == "spread":
+        if category == BY_POUND_SPREAD_SLUG:
             message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
         else:
             message = f"Our {category_name} food by the pound include: {items_list}. Would you like any of these, or something else?"
@@ -192,13 +203,9 @@ class ByPoundHandler(BaseHandler):
         order: OrderTask,
     ) -> StateMachineResult:
         """List items in a menu category (drinks, desserts, sides, etc.)."""
-        category_name = {
-            "drinks": "drinks",
-            "sides": "sides",
-            "signature_bagels": "bagels",
-            "signature_omelettes": "sandwiches and omelettes",
-            "desserts": "desserts",
-        }.get(category, "items")
+        # Get category display name from database
+        category_info = menu_cache.get_category_keyword_mapping(category)
+        category_name = category_info.get("display_name", category) if category_info else category
 
         # Get items from menu_data
         items = []
@@ -207,19 +214,16 @@ class ByPoundHandler(BaseHandler):
             items = self._menu_data.get(category, [])
 
             # If no items, try items_by_type using data-driven lookup
-            if not items:
+            if not items and category_info:
                 items_by_type = self._menu_data.get("items_by_type", {})
-                # Use data-driven lookup from ItemType aliases/expands_to
-                category_info = menu_cache.get_category_keyword_mapping(category)
-                if category_info:
-                    # Check if this category expands to multiple types
-                    expands_to = category_info.get("expands_to")
-                    if expands_to:
-                        for type_slug in expands_to:
-                            items.extend(items_by_type.get(type_slug, []))
-                    else:
-                        # Single type - use the slug directly
-                        items.extend(items_by_type.get(category_info.get("slug"), []))
+                # Check if this category expands to multiple types
+                expands_to = category_info.get("expands_to")
+                if expands_to:
+                    for type_slug in expands_to:
+                        items.extend(items_by_type.get(type_slug, []))
+                else:
+                    # Single type - use the slug directly
+                    items.extend(items_by_type.get(category_info.get("slug"), []))
 
         if not items:
             return StateMachineResult(

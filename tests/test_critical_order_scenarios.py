@@ -134,14 +134,16 @@ class TestCriticalOrderScenarios:
                 break  # All done
 
             # Check pending_field to determine the correct response
+            # pending_field format is now "item_type:attribute" (e.g., "sized_beverage:size")
             pending = order.pending_field or ""
+            pending_attr = pending.split(":")[-1] if ":" in pending else pending
 
-            if "size" in pending or "what size" in msg_lower:
+            if pending_attr == "size" or "what size" in msg_lower:
                 result = sm.process("small", order)
                 order = result.order
                 print(f"User: small")
                 print(f"Bot: {result.message}")
-            elif "temperature" in pending or ("hot" in msg_lower and "iced" in msg_lower):
+            elif pending_attr == "temperature" or ("hot" in msg_lower and "iced" in msg_lower):
                 result = sm.process("hot", order)
                 order = result.order
                 print(f"User: hot")

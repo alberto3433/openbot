@@ -92,8 +92,8 @@ class ItemAdderHandler:
         Unified item adder using data-driven configuration.
 
         All item types flow through _create_configurable_item() which handles
-        DB-driven configuration. The only exception is beverages that need
-        disambiguation (generic/unknown drink types) which use _add_coffee().
+        DB-driven configuration. Beverages that need disambiguation also use
+        the generic flow via _lookup_menu_item_with_disambiguation().
 
         Args:
             item_type: The item type slug (e.g., "bagel", "sized_beverage", "deli_sandwich")
@@ -122,34 +122,66 @@ class ItemAdderHandler:
             item_type
         )
 
-        # Check if this is a beverage that needs disambiguation
-        # (generic request like "drink" or unknown type that needs menu lookup)
+        # Handle beverages that may need disambiguation
         if item_type == "sized_beverage" or kwargs.get("coffee_type") or kwargs.get("drink_type"):
             drink_name = kwargs.get("coffee_type") or kwargs.get("drink_type") or ""
             drink_name_lower = drink_name.lower().strip()
             standard_coffee_types = get_coffee_types()
-            generic_terms = {"drink", "drinks", "beverage", "beverages", "something to drink", ""}
 
-            if drink_name_lower in generic_terms or drink_name_lower not in standard_coffee_types:
-                # Needs disambiguation - delegate to _add_coffee
-                return self._add_coffee(
-                    coffee_type=drink_name or None,
-                    size=kwargs.get("size"),
-                    iced=kwargs.get("iced"),
-                    milk=kwargs.get("milk"),
-                    sweetener=kwargs.get("sweetener"),
-                    sweetener_quantity=kwargs.get("sweetener_quantity", 1),
-                    flavor_syrup=kwargs.get("flavor_syrup"),
+            # Build modifiers dict for storage during disambiguation
+            iced = kwargs.get("iced")
+            temperature_str = "iced" if iced is True else ("hot" if iced is False else None)
+            beverage_modifiers = {
+                "size": kwargs.get("size"),
+                "temperature": temperature_str,
+                "milk": kwargs.get("milk"),
+                "sweetener": kwargs.get("sweetener"),
+                "sweetener_quantity": kwargs.get("sweetener_quantity", 1),
+                "flavor_syrup": kwargs.get("flavor_syrup"),
+                "syrup_quantity": kwargs.get("syrup_quantity", 1),
+                "decaf": kwargs.get("decaf"),
+                "cream_level": kwargs.get("cream_level"),
+                "extra_shots": kwargs.get("extra_shots", 0),
+                "special_instructions": kwargs.get("special_instructions"),
+                "quantity": quantity,
+            }
+
+            # Check if this needs disambiguation via menu lookup
+            # Generic terms or unknown drink types go through disambiguation
+            if drink_name_lower in self.GENERIC_DRINK_TERMS or (
+                drink_name_lower and drink_name_lower not in standard_coffee_types
+            ):
+                # Try lookup with disambiguation
+                # Use drink_type for all drink disambiguation, filter by type for specific drinks
+                menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
+                    item_name=drink_name or "drink",
                     quantity=quantity,
                     order=order,
-                    special_instructions=kwargs.get("special_instructions"),
-                    decaf=kwargs.get("decaf"),
-                    syrup_quantity=kwargs.get("syrup_quantity", 1),
-                    wants_syrup=kwargs.get("wants_syrup", False),
-                    cream_level=kwargs.get("cream_level"),
-                    extra_shots=kwargs.get("extra_shots", 0),
-                    original_input=kwargs.get("original_input"),
+                    modifiers=beverage_modifiers,
+                    pending_field="drink_type",
+                    item_type_filter="sized_beverage" if drink_name_lower not in self.GENERIC_DRINK_TERMS else None,
                 )
+
+                # If disambiguation needed, return that
+                if disambiguation_result:
+                    return disambiguation_result
+
+                # If menu item found, use canonical name for later flow
+                if menu_item:
+                    canonical_name = menu_item.get("name", drink_name)
+                    item_name = canonical_name
+                    item_type = menu_item.get("item_type", "sized_beverage")
+                    # Update kwargs so _build_menu_item_dict uses canonical name
+                    if kwargs.get("coffee_type"):
+                        kwargs["coffee_type"] = canonical_name
+                    elif kwargs.get("drink_type"):
+                        kwargs["drink_type"] = canonical_name
+                elif drink_name_lower and drink_name_lower not in self.GENERIC_DRINK_TERMS:
+                    # Unknown drink - mark for error handling
+                    order.pending_field = "drink_type"
+                    order.unknown_drink_request = drink_name
+                    order.phase = OrderPhase.CONFIGURING_ITEM.value
+                    return StateMachineResult(message="", order=order)
 
         # Build menu_item dict
         menu_item = self._build_menu_item_dict(item_type, item_name, kwargs)
@@ -162,14 +194,20 @@ class ItemAdderHandler:
         if item_type == "sized_beverage" and not extracted_modifiers:
             # Create coffee modifiers from kwargs if not already provided
             sweetener = kwargs.get("sweetener")
+            sweetener_quantity = kwargs.get("sweetener_quantity", 1)
             flavor_syrup = kwargs.get("flavor_syrup")
+            syrup_quantity = kwargs.get("syrup_quantity", 1)
+            milk = kwargs.get("milk")
+            cream_level = kwargs.get("cream_level")
             special_instructions = kwargs.get("special_instructions")
-            extra_shots = kwargs.get("extra_shots", 0)
-            if any([sweetener, flavor_syrup, special_instructions, extra_shots]):
+            if any([sweetener, flavor_syrup, milk, cream_level, special_instructions]):
                 extracted_modifiers = ExtractedCoffeeModifiers(
-                    sweeteners=[sweetener] if sweetener else [],
-                    syrups=[flavor_syrup] if flavor_syrup else [],
-                    extra_shots=extra_shots,
+                    sweetener=sweetener,
+                    sweetener_quantity=sweetener_quantity,
+                    flavor_syrup=flavor_syrup,
+                    syrup_quantity=syrup_quantity,
+                    milk=milk,
+                    cream_level=cream_level,
                     special_instructions=[special_instructions] if special_instructions else [],
                 )
 
@@ -595,14 +633,23 @@ class ItemAdderHandler:
         menu_item_id = menu_item.get("id")
         item_type = menu_item.get("item_type")  # e.g., "bagel", "sized_beverage", "deli_sandwich"
         is_signature = menu_item.get("is_signature", False)
+        skip_config = menu_item.get("skip_config", False)
 
         # Check if this item type is configurable (has attributes in DB)
+        # But also respect skip_config flag (item type has no ask_in_conversation attributes)
         configurable_types = menu_cache.get_configurable_item_types()
         is_configurable = item_type in configurable_types if item_type else False
 
+        # Check for soda/bottled drinks that skip config even without the flag
+        if not skip_config and is_soda_drink(canonical_name):
+            skip_config = True
+
+        # If skip_config is set, don't configure even if item type is configurable
+        needs_configuration = is_configurable and not skip_config
+
         logger.info(
-            "Creating item: name='%s', type='%s', price=$%.2f, qty=%d, configurable=%s",
-            canonical_name, item_type, price, quantity, is_configurable
+            "Creating item: name='%s', type='%s', price=$%.2f, qty=%d, configurable=%s, skip_config=%s, needs_config=%s",
+            canonical_name, item_type, price, quantity, is_configurable, skip_config, needs_configuration
         )
 
         # Create the requested quantity of items
@@ -621,6 +668,11 @@ class ItemAdderHandler:
                 for attr_name, attr_value in pre_filled_attributes.items():
                     if attr_value is not None:
                         item.attribute_values[attr_name] = attr_value
+                        # Sync to direct model fields for backwards compatibility
+                        if attr_name == "toasted" and hasattr(item, "toasted"):
+                            item.toasted = attr_value
+                        elif attr_name in ("spread", "spread_type") and hasattr(item, "spread"):
+                            item.spread = attr_value
 
             # Apply extracted modifiers if provided
             if extracted_modifiers and self.menu_item_handler:
@@ -630,8 +682,8 @@ class ItemAdderHandler:
             if self.pricing:
                 self.pricing.recalculate_item_price(item)
 
-            # Mark status based on configurability
-            if is_configurable:
+            # Mark status based on whether item needs configuration
+            if needs_configuration:
                 item.mark_in_progress()
             else:
                 item.mark_complete()
@@ -640,8 +692,8 @@ class ItemAdderHandler:
             if first_item is None:
                 first_item = item
 
-        # If configurable, start the configuration flow
-        if is_configurable and self.menu_item_handler:
+        # If item needs configuration, start the configuration flow
+        if needs_configuration and self.menu_item_handler:
             # Capture any attributes from original user input
             if user_input:
                 self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
@@ -661,11 +713,19 @@ class ItemAdderHandler:
                     order=order,
                 )
 
+    # Generic drink terms that should show all beverages
+    GENERIC_DRINK_TERMS = frozenset([
+        "drink", "drinks", "beverage", "beverages", "something to drink",
+    ])
+
     def _lookup_menu_item_with_disambiguation(
         self,
         item_name: str,
         quantity: int,
         order: OrderTask,
+        modifiers: dict | None = None,
+        pending_field: str = "item_selection",
+        item_type_filter: str | None = None,
     ) -> tuple[dict | None, StateMachineResult | None]:
         """
         Look up a menu item, handling disambiguation if multiple matches.
@@ -676,6 +736,10 @@ class ItemAdderHandler:
             item_name: Name of item to look up
             quantity: Number of items (stored during disambiguation)
             order: Current order task
+            modifiers: Optional dict of modifiers to store during disambiguation (for beverages)
+            pending_field: The pending_field value to use (default: "item_selection",
+                          use "drink_selection" or "drink_type" for beverages)
+            item_type_filter: Optional item type to filter matches (e.g., "sized_beverage")
 
         Returns:
             Tuple of (menu_item, result):
@@ -684,6 +748,25 @@ class ItemAdderHandler:
             - (None, None): Item not found
         """
         item_lower = item_name.lower().strip()
+
+        # Check for generic drink terms (drink, beverage, etc.)
+        from sandwich_bot.menu_data_cache import menu_cache
+        is_generic_drink = item_lower in self.GENERIC_DRINK_TERMS
+        if is_generic_drink:
+            # Generic drink request - show all beverages from category
+            all_drinks = menu_cache.get_items_by_category("drink")
+            if all_drinks:
+                logger.info("Generic drink request '%s', showing %d drinks", item_name, len(all_drinks))
+                result = self.disambiguation_handler.start_disambiguation(
+                    item_name="drink",
+                    matching_items=all_drinks,
+                    order=order,
+                    quantity=quantity,
+                    pending_field="drink_type",
+                    modifiers=modifiers,
+                    show_prices=False,
+                )
+                return (None, result)
 
         # Check for generic category terms (chips, cookies, etc.)
         generic_term = self._extract_generic_term(item_name)
@@ -695,6 +778,13 @@ class ItemAdderHandler:
 
         if search_term:
             matching_items = self.menu_lookup.lookup_menu_items(search_term)
+
+        # Filter by item_type if specified
+        if item_type_filter and matching_items:
+            matching_items = [
+                item for item in matching_items
+                if item.get("item_type") == item_type_filter
+            ]
 
         # Step 2: Handle results
         if len(matching_items) == 1:
@@ -722,7 +812,8 @@ class ItemAdderHandler:
                 matching_items=matching_items,
                 order=order,
                 quantity=quantity,
-                pending_field="item_selection",
+                pending_field=pending_field,
+                modifiers=modifiers,
                 show_prices=not is_exact_generic,  # Show prices for specific items, not generic
             )
             return (None, result)
@@ -776,7 +867,8 @@ class ItemAdderHandler:
                 matching_items=matching_items,
                 order=order,
                 quantity=quantity,
-                pending_field="item_selection",
+                pending_field=pending_field,
+                modifiers=modifiers,
                 show_prices=True,
             )
             return (None, result)
@@ -823,6 +915,7 @@ class ItemAdderHandler:
 
         # Check if this is a generic drink request (no specific type)
         # If so, present drink options instead of defaulting to coffee
+        from sandwich_bot.menu_data_cache import menu_cache
         generic_drink_terms = {"drink", "drinks", "beverage", "beverages", "something to drink"}
         coffee_type_lower = (coffee_type or "").lower().strip()
         is_generic_drink_request = (
@@ -830,12 +923,9 @@ class ItemAdderHandler:
             coffee_type_lower in generic_drink_terms
         )
 
-        if is_generic_drink_request and self.menu_lookup:
-            # Get drink items from menu
-            items_by_type = self.menu_lookup.menu_data.get("items_by_type", {})
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            all_drinks = sized_items + cold_items
+        if is_generic_drink_request:
+            # Get drink items from category-based lookup
+            all_drinks = menu_cache.get_items_by_category("drink")
 
             if all_drinks:
                 # Show first batch of drinks with pagination
@@ -873,11 +963,8 @@ class ItemAdderHandler:
 
         # Check if this is a partial drink category (juice, soda, tea, etc.)
         # Filter drinks to only show matching items instead of full menu
-        if coffee_type_lower and self.menu_lookup:
-            items_by_type = self.menu_lookup.menu_data.get("items_by_type", {})
-            sized_items = items_by_type.get("sized_beverage", [])
-            cold_items = items_by_type.get("beverage", [])
-            all_drinks = sized_items + cold_items
+        if coffee_type_lower:
+            all_drinks = menu_cache.get_items_by_category("drink")
 
             # Filter drinks that contain the search term AND pass the required_match_phrases filter
             # Use original_input for the match filter to preserve full context (e.g., "boxed coffee" vs "coffee")
@@ -895,7 +982,7 @@ class ItemAdderHandler:
                 matched_price = matched_drink.get("base_price", 0)
 
                 # Check if this is a sized beverage that needs configuration
-                is_sized_beverage = matched_drink in sized_items
+                is_sized_beverage = matched_drink.get("item_type") == "sized_beverage"
                 needs_size_config = is_sized_beverage and (size is None or iced is None)
 
                 # For sized beverages without size/iced, always ask for configuration

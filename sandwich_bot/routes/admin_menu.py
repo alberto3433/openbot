@@ -64,6 +64,8 @@ from ..db import get_db
 from ..models import (
     MenuItem,
     MenuItemAlias,
+    MenuItemCategory,
+    Category,
     ItemTypeAttribute,
     MenuItemAttributeValue,
     MenuItemAttributeSelection,
@@ -118,12 +120,47 @@ def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[st
             db.add(MenuItemAlias(menu_item=item, alias=alias))
 
 
+def _set_menu_item_categories(db: Session, item: MenuItem, category_ids: Optional[List[int]]) -> None:
+    """
+    Set menu item categories from a list of category IDs.
+    Clears existing category assignments and creates new ones.
+
+    Args:
+        db: Database session
+        item: The menu item to update
+        category_ids: List of category IDs to assign (None means don't change)
+
+    Raises:
+        HTTPException: If any category ID is invalid
+    """
+    if category_ids is None:
+        return
+
+    # Clear existing category assignments
+    for cr in list(item.category_records):
+        db.delete(cr)
+
+    # Add new category assignments
+    for cat_id in category_ids:
+        # Verify category exists
+        category = db.query(Category).filter(Category.id == cat_id).first()
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Category with ID {cat_id} not found"
+            )
+        db.add(MenuItemCategory(menu_item_id=item.id, category_id=cat_id))
+
+
 def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """Convert MenuItem model to response schema."""
     try:
         meta = json.loads(item.extra_metadata) if item.extra_metadata else {}
     except (json.JSONDecodeError, TypeError):
         meta = {}
+
+    # Get category IDs from the category_records relationship
+    category_ids = [cr.category_id for cr in item.category_records] if item.category_records else []
 
     return MenuItemOut(
         id=item.id,
@@ -138,6 +175,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         aliases=item.aliases,
         abbreviation=item.abbreviation,
         required_match_phrases=item.required_match_phrases,
+        category_ids=category_ids,
     )
 
 
@@ -257,7 +295,10 @@ def admin_menu(
     """List all menu items. Requires admin authentication."""
     items = (
         db.query(MenuItem)
-        .options(joinedload(MenuItem.alias_records))
+        .options(
+            joinedload(MenuItem.alias_records),
+            joinedload(MenuItem.category_records),
+        )
         .order_by(MenuItem.id.asc())
         .all()
     )
@@ -297,6 +338,9 @@ def create_menu_item(
 
     # Add aliases through child table
     _set_menu_item_aliases(db, item, payload.aliases)
+
+    # Add category assignments
+    _set_menu_item_categories(db, item, payload.category_ids)
 
     # Add attribute values if provided (form-based relational storage)
     if payload.attributes and payload.item_type_id:
@@ -355,6 +399,8 @@ def update_menu_item(
         item.abbreviation = payload.abbreviation
     if payload.required_match_phrases is not None:
         item.required_match_phrases = payload.required_match_phrases
+    if payload.category_ids is not None:
+        _set_menu_item_categories(db, item, payload.category_ids)
 
     # Update attribute values if provided (form-based relational storage)
     if payload.attributes is not None:

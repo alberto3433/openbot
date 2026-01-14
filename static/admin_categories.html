@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Menu Item Categories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .container {
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-body {
+      padding: 20px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #d32f2f;
+      color: #fff;
+      border-color: #d32f2f;
+    }
+    .btn.danger:hover {
+      background: #c62828;
+    }
+    .btn.small {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    th {
+      background: #fafafa;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #666;
+    }
+    tr:hover {
+      background: #f9f9f9;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    .count-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #e3f2fd;
+      color: #1565c0;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header .close-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-header .close-btn:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Menu Item Categories</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_global_attributes.html">Global Attrs</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
+      <a href="/static/admin_categories.html"><strong>Item Cats</strong></a>
+      <a href="/static/admin_modifier_categories.html">Mod Cats</a>
+      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="section">
+      <div class="section-header">
+        <span>Categories</span>
+        <button class="btn primary" onclick="openCreateModal()">+ Add Category</button>
+      </div>
+      <div class="section-body">
+        <div id="loadingState" class="loading">Loading categories...</div>
+        <div id="emptyState" class="empty-state" style="display: none;">
+          No categories found. Click "Add Category" to create one.
+        </div>
+        <table id="categoriesTable" style="display: none;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Slug</th>
+              <th>Description</th>
+              <th>Menu Items</th>
+              <th style="width: 100px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="categoriesBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="section">
+      <div class="section-header">How Menu Item Categories Work</div>
+      <div class="section-body" style="font-size: 13px; color: #666;">
+        <p><strong>Categories</strong> are high-level classifications for menu items. They enable generic search requests like "I want a drink" to return all items in the "drink" category.</p>
+        <p><strong>Name:</strong> Display name shown in the UI (e.g., "Drink", "Food").</p>
+        <p><strong>Slug:</strong> Unique identifier used for search matching (e.g., "drink", "food"). This is what users type to search by category.</p>
+        <p><strong>Description:</strong> Optional explanation of what items belong in this category.</p>
+        <p><strong>Menu Items:</strong> A menu item can belong to multiple categories. Assign categories in the Menu Item edit screen.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Modal -->
+  <div id="categoryModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="modalTitle">Add Category</span>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="categoryForm">
+          <input type="hidden" id="categoryId" />
+          <div class="form-group">
+            <label for="nameInput">Name *</label>
+            <input type="text" id="nameInput" required placeholder="e.g., Drink, Food, Dessert" />
+            <div class="hint">Display name shown in the UI</div>
+          </div>
+          <div class="form-group">
+            <label for="slugInput">Slug *</label>
+            <input type="text" id="slugInput" required placeholder="e.g., drink, food, dessert" pattern="[a-z0-9_-]+" />
+            <div class="hint">Unique identifier for search matching (lowercase letters, numbers, hyphens)</div>
+          </div>
+          <div class="form-group">
+            <label for="descriptionInput">Description</label>
+            <textarea id="descriptionInput" placeholder="Optional description of what items belong in this category"></textarea>
+            <div class="hint">Helps explain the category's purpose</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deleteCategory()">Delete</button>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="saveCategory()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "/admin/categories";
+    let categories = [];
+
+    // Toast container reference
+    const toastContainer = document.getElementById("toastContainer");
+
+    // Toast notification function
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Button state management
+    function setSaveButtonState(button, state, originalText = "Save") {
+      if (!button) return;
+      switch (state) {
+        case "saving":
+          button.disabled = true;
+          button.classList.add("saving");
+          button.classList.remove("saved");
+          button.textContent = "Saving...";
+          break;
+        case "saved":
+          button.disabled = false;
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.textContent = "Saved!";
+          setTimeout(() => {
+            button.classList.remove("saved");
+            button.textContent = originalText;
+          }, 2000);
+          break;
+        case "error":
+        default:
+          button.disabled = false;
+          button.classList.remove("saving", "saved");
+          button.textContent = originalText;
+      }
+    }
+
+    // Load categories from API
+    async function loadCategories() {
+      try {
+        const response = await fetch(API_BASE, { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        categories = data.categories;
+        renderCategories();
+      } catch (error) {
+        console.error("Failed to load categories:", error);
+        showToast("Failed to load categories", "error");
+        document.getElementById("loadingState").textContent = "Failed to load. Please refresh.";
+      }
+    }
+
+    // Render categories table
+    function renderCategories() {
+      const tbody = document.getElementById("categoriesBody");
+      const table = document.getElementById("categoriesTable");
+      const loading = document.getElementById("loadingState");
+      const empty = document.getElementById("emptyState");
+
+      loading.style.display = "none";
+
+      if (categories.length === 0) {
+        table.style.display = "none";
+        empty.style.display = "block";
+        return;
+      }
+
+      empty.style.display = "none";
+      table.style.display = "table";
+
+      tbody.innerHTML = categories.map(c => `
+        <tr>
+          <td><strong>${escapeHtml(c.name)}</strong></td>
+          <td><code>${escapeHtml(c.slug)}</code></td>
+          <td>${escapeHtml(c.description || '-')}</td>
+          <td><span class="count-badge">${c.menu_item_count} items</span></td>
+          <td>
+            <button class="btn small" onclick="openEditModal(${c.id})">Edit</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // Open create modal
+    function openCreateModal() {
+      document.getElementById("modalTitle").textContent = "Add Category";
+      document.getElementById("categoryId").value = "";
+      document.getElementById("nameInput").value = "";
+      document.getElementById("slugInput").value = "";
+      document.getElementById("descriptionInput").value = "";
+      document.getElementById("deleteBtn").style.display = "none";
+      document.getElementById("categoryModal").classList.add("active");
+    }
+
+    // Open edit modal
+    function openEditModal(id) {
+      const category = categories.find(c => c.id === id);
+      if (!category) return;
+
+      document.getElementById("modalTitle").textContent = "Edit Category";
+      document.getElementById("categoryId").value = category.id;
+      document.getElementById("nameInput").value = category.name;
+      document.getElementById("slugInput").value = category.slug;
+      document.getElementById("descriptionInput").value = category.description || "";
+      document.getElementById("deleteBtn").style.display = "block";
+      document.getElementById("categoryModal").classList.add("active");
+    }
+
+    // Close modal
+    function closeModal() {
+      document.getElementById("categoryModal").classList.remove("active");
+    }
+
+    // Save category
+    async function saveCategory() {
+      const saveBtn = document.querySelector('#categoryModal .modal-footer .btn.primary');
+      const id = document.getElementById("categoryId").value;
+      const name = document.getElementById("nameInput").value.trim();
+      const slug = document.getElementById("slugInput").value.trim().toLowerCase();
+      const description = document.getElementById("descriptionInput").value.trim() || null;
+
+      if (!name || !slug) {
+        showToast("Name and Slug are required", "error");
+        return;
+      }
+
+      // Validate slug format
+      if (!/^[a-z0-9_-]+$/.test(slug)) {
+        showToast("Slug must contain only lowercase letters, numbers, hyphens, and underscores", "error");
+        return;
+      }
+
+      const payload = { name, slug, description };
+
+      setSaveButtonState(saveBtn, "saving");
+      try {
+        let response;
+        if (id) {
+          // Update
+          response = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+        } else {
+          // Create
+          response = await fetch(API_BASE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        setSaveButtonState(saveBtn, "saved", "Save");
+        showToast(`Category "${name}" saved successfully!`, "success");
+        closeModal();
+        loadCategories();
+      } catch (error) {
+        console.error("Failed to save:", error);
+        setSaveButtonState(saveBtn, "error", "Save");
+        showToast(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    // Delete category
+    async function deleteCategory() {
+      const id = document.getElementById("categoryId").value;
+      if (!id) return;
+
+      const category = categories.find(c => c.id == id);
+      if (category && category.menu_item_count > 0) {
+        showToast(`Cannot delete - ${category.menu_item_count} menu items are assigned to this category`, "error");
+        return;
+      }
+
+      if (!confirm("Are you sure you want to delete this category?")) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/${id}`, {
+          method: "DELETE",
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Category deleted", "success");
+        closeModal();
+        loadCategories();
+      } catch (error) {
+        console.error("Failed to delete:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Auto-generate slug from name
+    document.getElementById("nameInput").addEventListener("input", function(e) {
+      const slugInput = document.getElementById("slugInput");
+      // Only auto-generate if slug is empty or matches a previous auto-generated value
+      if (!slugInput.value || slugInput.dataset.autoGenerated === "true") {
+        const slug = e.target.value.toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+        slugInput.value = slug;
+        slugInput.dataset.autoGenerated = "true";
+      }
+    });
+
+    // Mark slug as manually edited
+    document.getElementById("slugInput").addEventListener("input", function() {
+      this.dataset.autoGenerated = "false";
+    });
+
+    // Close modal on outside click
+    document.getElementById("categoryModal").addEventListener("click", function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") closeModal();
+    });
+
+    // Initial load
+    loadCategories();
+  </script>
+</body>
+</html>

@@ -154,6 +154,12 @@ class MenuDataCache:
         # Maps modifier_type ("food", "beverage") to set of category slugs
         self._ingredient_categories_by_modifier_type: dict[str, set[str]] = {}
 
+        # Menu item categories (high-level classifications like "drink", "food")
+        # Maps category slug -> list of menu item dicts (id, name, item_type_slug)
+        self._menu_items_by_category_slug: dict[str, list[dict]] = {}
+        # Available category slugs with display names
+        self._available_categories: dict[str, str] = {}  # slug -> display_name
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -231,6 +237,9 @@ class MenuDataCache:
                 self._load_generic_ingredients(db)
                 self._load_generic_ingredients_for_item_types(db)
                 self._load_ingredient_category_metadata(db)
+
+                # Load menu item categories (drink, food, etc.)
+                self._load_menu_item_categories(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -1562,6 +1571,63 @@ class MenuDataCache:
             {k: len(v) for k, v in categories_by_modifier_type.items()}
         )
 
+    def _load_menu_item_categories(self, db: Session) -> None:
+        """Load menu item categories (drink, food, etc.) for category-based searches.
+
+        When a user says "I want a drink", we need to look up all items in the "drink"
+        category to present disambiguation options.
+
+        Loads:
+        - _available_categories: slug -> display_name mapping
+        - _menu_items_by_category_slug: slug -> list of item dicts
+        """
+        from .models import Category, MenuItemCategory, MenuItem, ItemType
+
+        available_categories: dict[str, str] = {}
+        menu_items_by_category: dict[str, list[dict]] = {}
+
+        # Load all categories
+        categories = db.query(Category).all()
+        for cat in categories:
+            available_categories[cat.slug] = cat.name
+            menu_items_by_category[cat.slug] = []
+
+        # Load menu items by category
+        category_assignments = (
+            db.query(MenuItemCategory)
+            .join(MenuItem, MenuItemCategory.menu_item_id == MenuItem.id)
+            .join(Category, MenuItemCategory.category_id == Category.id)
+            .add_columns(
+                MenuItem.id.label("menu_item_id"),
+                MenuItem.name.label("menu_item_name"),
+                MenuItem.item_type_id.label("item_type_id"),
+                Category.slug.label("category_slug"),
+            )
+            .all()
+        )
+
+        # Also get item_type slugs for quick lookup
+        item_type_slugs = {it.id: it.slug for it in db.query(ItemType).all()}
+
+        for assignment in category_assignments:
+            item_type_slug = item_type_slugs.get(assignment.item_type_id)
+            item_dict = {
+                "id": assignment.menu_item_id,
+                "name": assignment.menu_item_name,
+                "item_type_slug": item_type_slug,
+            }
+            if assignment.category_slug in menu_items_by_category:
+                menu_items_by_category[assignment.category_slug].append(item_dict)
+
+        self._available_categories = available_categories
+        self._menu_items_by_category_slug = menu_items_by_category
+
+        logger.debug(
+            "Loaded menu item categories: %d categories, items by category: %s",
+            len(available_categories),
+            {k: len(v) for k, v in menu_items_by_category.items()}
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1698,6 +1764,66 @@ class MenuDataCache:
             # Return empty set for unknown item types (not an error)
             return set()
         return self._item_names_by_type[item_type_slug].copy()
+
+    def get_items_by_category(self, category_slug: str) -> list[dict]:
+        """Get all menu items in a given high-level category (drink, food, etc.).
+
+        This enables generic searches like "I want a drink" to return all items
+        categorized as drinks for disambiguation.
+
+        Args:
+            category_slug: The category slug (e.g., "drink", "food")
+
+        Returns:
+            List of dicts with menu item info: [{"id": int, "name": str, "item_type_slug": str}]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_items_by_category("drink")
+            [{"id": 1, "name": "Coca-Cola", "item_type_slug": "beverage"},
+             {"id": 2, "name": "Coffee", "item_type_slug": "sized_beverage"}, ...]
+        """
+        self._ensure_loaded()
+        return self._menu_items_by_category_slug.get(category_slug, []).copy()
+
+    def is_category_slug(self, keyword: str) -> bool:
+        """Check if a keyword is a valid high-level category slug.
+
+        Args:
+            keyword: The keyword to check (e.g., "drink", "food")
+
+        Returns:
+            True if keyword is a valid category slug.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.is_category_slug("drink")
+            True
+            >>> menu_cache.is_category_slug("coffee")
+            False
+        """
+        self._ensure_loaded()
+        return keyword.lower() in self._available_categories
+
+    def get_available_menu_categories(self) -> dict[str, str]:
+        """Get all available high-level menu categories.
+
+        Returns:
+            Dict mapping category slug to display name.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_available_menu_categories()
+            {"drink": "Drink", "food": "Food"}
+        """
+        self._ensure_loaded()
+        return self._available_categories.copy()
 
     def resolve_item_alias(
         self, alias: str, item_type_slug: str | None = None

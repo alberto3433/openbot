@@ -450,7 +450,8 @@
       <a href="/static/admin_modifiers.html">Modifiers</a>
       <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html">Item Types</a>
-      <a href="/static/admin_modifier_categories.html">Categories</a>
+      <a href="/static/admin_categories.html">Item Cats</a>
+      <a href="/static/admin_modifier_categories.html">Mod Cats</a>
       <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
@@ -526,6 +527,14 @@
         </div>
 
         <div class="field">
+          <label>Categories</label>
+          <div class="attr-checkbox-group" id="categoriesContainer">
+            <!-- Category chips will be rendered here -->
+          </div>
+          <small style="color: #666; font-size: 0.8em;">Select categories this item belongs to (e.g., Drink, Food)</small>
+        </div>
+
+        <div class="field">
           <label>Aliases (synonyms for matching)</label>
           <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
             <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
@@ -568,6 +577,7 @@
     let filteredItems = [];
     let currentIndex = -1;
     let itemTypes = []; // Store item types for dropdown
+    let allCategories = []; // Store categories for multi-select
 
     const menuListEl = document.getElementById("menuList");
     const categoryFilterEl = document.getElementById("categoryFilter");
@@ -709,6 +719,59 @@
       }
     }
 
+    // Load categories for the multi-select
+    async function loadCategories() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/categories`, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        allCategories = data.categories || [];
+      } catch (err) {
+        console.error("Error loading categories:", err);
+        allCategories = [];
+      }
+    }
+
+    // Render category chips in the container
+    function renderCategoryChips(selectedIds = []) {
+      const container = document.getElementById("categoriesContainer");
+      if (!container) return;
+
+      if (allCategories.length === 0) {
+        container.innerHTML = '<span style="color: #888; font-size: 12px;">No categories defined. <a href="/static/admin_categories.html">Create categories</a></span>';
+        return;
+      }
+
+      let html = '';
+      for (const cat of allCategories) {
+        const isSelected = selectedIds.includes(cat.id);
+        const selectedClass = isSelected ? 'selected' : '';
+        const checked = isSelected ? 'checked' : '';
+        html += `<label class="attr-chip ${selectedClass}" data-category-id="${cat.id}">`;
+        html += `<input type="checkbox" value="${cat.id}" ${checked}>`;
+        html += `${cat.name}`;
+        html += `</label>`;
+      }
+      container.innerHTML = html;
+
+      // Add click listeners for chips
+      container.querySelectorAll(".attr-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const checkbox = chip.querySelector("input[type='checkbox']");
+          checkbox.checked = !checkbox.checked;
+          chip.classList.toggle("selected", checkbox.checked);
+        });
+      });
+    }
+
+    // Get selected category IDs
+    function getSelectedCategoryIds() {
+      const container = document.getElementById("categoriesContainer");
+      if (!container) return [];
+      const checkboxes = container.querySelectorAll("input[type='checkbox']:checked");
+      return Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+    }
+
     function buildCategoryFilterFromItemTypes() {
       categoryFilterEl.innerHTML = '<option value="">All categories</option>';
       itemTypes.forEach(it => {
@@ -816,6 +879,9 @@
       clearTags(aliasesContainerEl, aliasInputEl);
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
+      // Reset categories to none selected
+      renderCategoryChips([]);
+
       // Clear attributes tab
       attributesContainerEl.innerHTML = '<div class="no-attrs-message">Create or select a menu item to configure its attributes.</div>';
       currentAttributeFormData = null;
@@ -855,6 +921,9 @@
       setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
       setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
 
+      // Render category chips with item's current categories
+      renderCategoryChips(item.category_ids || []);
+
       // Load attributes for the Attributes tab
       loadAttributeForm(item.id);
 
@@ -877,6 +946,9 @@
       const aliasValues = getTagValues(aliasesContainerEl);
       const requiredPhraseValues = getTagValues(requiredPhrasesContainerEl);
 
+      // Get selected category IDs
+      const selectedCategoryIds = getSelectedCategoryIds();
+
       const payload = {
         name: itemNameEl.value.trim(),
         description: itemDescriptionEl.value.trim() || null,
@@ -885,7 +957,8 @@
         is_signature: itemSignatureEl.checked,
         base_price: parseFloat(itemPriceEl.value || "0"),
         aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
-        required_match_phrases: requiredPhraseValues.length > 0 ? requiredPhraseValues.join(",") : null
+        required_match_phrases: requiredPhraseValues.length > 0 ? requiredPhraseValues.join(",") : null,
+        category_ids: selectedCategoryIds
       };
 
       if (!payload.name) {
@@ -1168,9 +1241,9 @@
 
     // ==================== End Attribute Tab Functions ====================
 
-    // Initialize: load item types first, then menu items
+    // Initialize: load item types and categories first, then menu items
     async function init() {
-      await loadItemTypes();
+      await Promise.all([loadItemTypes(), loadCategories()]);
       await loadMenuItems();
     }
     init();

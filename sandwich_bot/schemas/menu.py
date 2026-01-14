@@ -77,6 +77,7 @@ class MenuItemOut(BaseModel):
         item_type_id: Foreign key to ItemType for configuration options
         aliases: List of synonyms for matching (e.g., ["coke", "coca cola"])
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
+        category_ids: List of category IDs this item belongs to (e.g., [1, 2] for drink & food)
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +93,7 @@ class MenuItemOut(BaseModel):
     aliases: list[str] = []
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
+    category_ids: List[int] = []
 
 
 class MenuItemAttributeValueInput(BaseModel):
@@ -128,6 +130,7 @@ class MenuItemCreate(BaseModel):
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
         attributes: Attribute values keyed by slug (optional, requires item_type_id)
+        category_ids: List of category IDs to assign (optional)
 
     Example:
         {
@@ -136,6 +139,7 @@ class MenuItemCreate(BaseModel):
             "is_signature": true,
             "base_price": 10.99,
             "item_type_id": 3,
+            "category_ids": [1, 2],
             "attributes": {
                 "bread": {"option_id": 5, "still_ask": true},
                 "protein": {"option_id": 12},
@@ -155,6 +159,7 @@ class MenuItemCreate(BaseModel):
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
     attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None
+    category_ids: Optional[List[int]] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -175,6 +180,7 @@ class MenuItemUpdate(BaseModel):
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
         attributes: Update attribute values keyed by slug (optional)
+        category_ids: List of category IDs to assign (replaces existing)
 
     Example:
         # Update only the price
@@ -185,6 +191,9 @@ class MenuItemUpdate(BaseModel):
 
         # Update attributes
         {"attributes": {"bread": {"option_id": 5}, "toasted": {"value_boolean": true}}}
+
+        # Update categories
+        {"category_ids": [1, 2]}
     """
     name: Optional[str] = None
     description: Optional[str] = None
@@ -198,3 +207,4 @@ class MenuItemUpdate(BaseModel):
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
     attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None
+    category_ids: Optional[List[int]] = None

@@ -214,9 +214,13 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
                                 return False
             except Exception:
                 pass
-            # Fallback: allow generic customization words
-            if any(kw in input_lower for kw in ["egg", "cheese", "topping", "extra", "protein"]):
-                return False
+            # Allow ingredient category names (data-driven from database)
+            try:
+                category_names = menu_cache.get_all_ingredient_categories()
+                if any(cat in input_lower for cat in category_names):
+                    return False
+            except Exception:
+                pass
 
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:

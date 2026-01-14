@@ -56,13 +56,9 @@ def _get_removable_modifiers() -> set[str]:
     for category in food_categories:
         modifiers.update(menu_cache.get_ingredients(category))
 
-    # Add common aliases/variations that might not be in DB
-    # These are generic terms that users might say
-    modifiers.update({
-        "egg", "eggs", "fried egg", "scrambled egg",
-        "cheese",  # Generic cheese
-        "cream cheese", "butter", "mayo", "mayonnaise", "mustard",
-    })
+    # Also include all modifier aliases from the database
+    # This covers variations like "egg" vs "eggs", "mayo" vs "mayonnaise", etc.
+    modifiers.update(menu_cache.get_all_modifier_words())
 
     return modifiers
 

@@ -50,6 +50,10 @@ class ItemType(Base):
     # Modifier extraction category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
     modifier_category = Column(String(20), nullable=True)
 
+    # By-pound items: sold by weight (cheese, cold cuts, fish, salads, spreads)
+    # These have quantity-based pricing and no configuration attributes
+    is_by_pound = Column(Boolean, nullable=False, default=False)
+
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
     type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")

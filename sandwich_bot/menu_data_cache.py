@@ -804,16 +804,13 @@ class MenuDataCache:
         by_pound_items: dict[str, list[str]] = {}
         by_pound_aliases: dict[str, tuple[str, str]] = {}
 
-        # By-pound category slugs (these are ItemType slugs)
-        BY_POUND_CATEGORY_SLUGS = ["cheese", "cold_cut", "fish", "salad", "spread"]
-
-        # Query items where item_type is a by-pound category
+        # Query items where item_type.is_by_pound = True (data-driven)
         # Use joinedload to avoid N+1 queries when accessing aliases
         items = (
             db.query(MenuItem)
             .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
             .join(ItemType, MenuItem.item_type_id == ItemType.id)
-            .filter(ItemType.slug.in_(BY_POUND_CATEGORY_SLUGS))
+            .filter(ItemType.is_by_pound == True)  # noqa: E712
             .order_by(ItemType.slug, MenuItem.name)
             .all()
         )
@@ -873,14 +870,11 @@ class MenuDataCache:
 
         category_names: dict[str, str] = {}
 
-        # By-pound category slugs
-        BY_POUND_CATEGORY_SLUGS = ["cheese", "cold_cut", "fish", "salad", "spread"]
-
         try:
-            # Query ItemType for by-pound categories
+            # Query ItemTypes where is_by_pound = True (data-driven)
             item_types = (
                 db.query(ItemType)
-                .filter(ItemType.slug.in_(BY_POUND_CATEGORY_SLUGS))
+                .filter(ItemType.is_by_pound == True)  # noqa: E712
                 .all()
             )
 

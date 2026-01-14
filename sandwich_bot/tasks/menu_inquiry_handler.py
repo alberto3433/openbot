@@ -24,6 +24,14 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 
+# Category slugs for special handling (from database)
+# These are slugs, not food names - used for routing to appropriate handlers
+SPREAD_CATEGORY_SLUG = "spread"
+BEVERAGE_CATEGORY_SLUGS = ("beverage_all", "beverage", "drink")
+SANDWICH_CATEGORY_SLUGS = ("sandwich", "sandwich_all")
+DESSERT_CATEGORY_SLUG = "dessert"
+CHEESES_CATEGORY_SLUG = "cheeses"
+
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .pricing import PricingEngine
@@ -75,6 +83,59 @@ class MenuInquiryHandler:
     @menu_data.setter
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
+
+    def _get_sandwich_subtypes_message(self) -> str:
+        """Build a message listing sandwich sub-types from database.
+
+        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
+        based on available item types that contain "sandwich" in their display name.
+        """
+        try:
+            # Get all category keywords and filter for sandwich-related types
+            category_info = menu_cache.get_category_keyword_mapping("sandwich")
+            if category_info and category_info.get("expands_to"):
+                # Get display names for the expanded types
+                subtypes = []
+                for slug in category_info["expands_to"]:
+                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
+                    if subtype_info:
+                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
+                        subtypes.append(display)
+
+                if subtypes:
+                    if len(subtypes) <= 3:
+                        return ", ".join(subtypes)
+                    else:
+                        return ", ".join(subtypes[:4]) + ", and more"
+        except Exception as e:
+            logger.warning("Failed to get sandwich subtypes from database: %s", e)
+
+        # Fallback message
+        return "egg sandwiches, fish sandwiches, cream cheese sandwiches, deli sandwiches, and more"
+
+    def _get_available_menu_categories_message(self) -> str:
+        """Build a message listing a few available menu categories from database.
+
+        Returns a formatted string like "sandwiches or beverages" for use in
+        helpful suggestions when an item isn't found.
+        """
+        try:
+            # Get a few main categories to suggest
+            categories = menu_cache.get_available_menu_categories()
+            if categories:
+                # Pick 2-3 main categories
+                display_names = list(categories.values())[:3]
+                if len(display_names) == 1:
+                    return display_names[0].lower()
+                elif len(display_names) == 2:
+                    return f"{display_names[0].lower()} or {display_names[1].lower()}"
+                else:
+                    return f"{display_names[0].lower()}, {display_names[1].lower()}, or {display_names[2].lower()}"
+        except Exception as e:
+            logger.warning("Failed to get available categories from database: %s", e)
+
+        # Fallback message
+        return "sandwiches or egg dishes"
 
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
@@ -448,11 +509,12 @@ class MenuInquiryHandler:
                 if singular in seen_base:
                     continue
 
-            # For cheeses category, filter out cream cheese variants (those belong in spreads)
-            if category == "cheeses":
+            # For cheeses category, filter out items that belong in spreads
+            # (cream cheese variants, and items containing "spread" in name)
+            if category == CHEESES_CATEGORY_SLUG:
                 if "cream cheese" in item_lower or " cc" in item_lower:
                     continue
-                if item_lower in ("avocado spread", "lox spread"):
+                if "spread" in item_lower:
                     continue
 
             # Track base form
@@ -496,17 +558,17 @@ class MenuInquiryHandler:
             )
 
         # Handle spread/cream cheese queries as by-the-pound category
-        if menu_query_type in ("spread", "cream_cheese", "cream cheese"):
+        spread_aliases = (SPREAD_CATEGORY_SLUG, "cream_cheese", "cream cheese")
+        if menu_query_type in spread_aliases:
             if self._list_by_pound_category:
-                return self._list_by_pound_category("spread", order)
+                return self._list_by_pound_category(SPREAD_CATEGORY_SLUG, order)
             return StateMachineResult(
                 message="We have various cream cheeses and spreads. Would you like to hear about them?",
                 order=order,
             )
 
         # Handle beverage queries (beverage_all from DB, or legacy beverage/drink terms)
-        # DB maps "drinks"/"beverages" to "beverage_all" slug
-        if menu_query_type in ("beverage_all", "beverage", "drink"):
+        if menu_query_type in BEVERAGE_CATEGORY_SLUGS:
             items, category_key = self._get_items_for_category(menu_query_type)
             if items:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
@@ -525,14 +587,17 @@ class MenuInquiryHandler:
             )
 
         # Handle "sandwich" or "sandwich_all" specially - too broad, need to ask what kind
-        if menu_query_type in ("sandwich", "sandwich_all"):
+        # TODO: Make this data-driven via is_virtual flag on ItemType
+        if menu_query_type in SANDWICH_CATEGORY_SLUGS:
+            # Build sandwich sub-types message from database
+            sandwich_subtypes = self._get_sandwich_subtypes_message()
             return StateMachineResult(
-                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
+                message=f"We have {sandwich_subtypes}. What kind of sandwich would you like?",
                 order=order,
             )
 
         # Handle dessert queries (DB maps dessert terms to "dessert" slug)
-        if menu_query_type == "dessert":
+        if menu_query_type == DESSERT_CATEGORY_SLUG:
             items, category_key = self._get_items_for_category("dessert")
             if items:
                 items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
@@ -673,9 +738,10 @@ class MenuInquiryHandler:
 
         # Special handling for "sandwich" - too broad, need to ask what kind
         # TODO: Make this data-driven by adding a "prompt_for_subtype" flag to ItemType
-        if query_lower == "sandwich":
+        if query_lower in SANDWICH_CATEGORY_SLUGS or query_lower == "sandwich":
+            sandwich_subtypes = self._get_sandwich_subtypes_message()
             return StateMachineResult(
-                message="We have egg sandwiches, fish sandwiches, cream cheese sandwiches, signature sandwiches, deli sandwiches, and more. What kind of sandwich would you like?",
+                message=f"We have {sandwich_subtypes}. What kind of sandwich would you like?",
                 order=order,
             )
 
@@ -833,9 +899,11 @@ class MenuInquiryHandler:
             order.pending_field = "confirm_suggested_item"
         else:
             # Item not found - offer to help find it
+            # Get available categories for a helpful suggestion
+            available_categories = self._get_available_menu_categories_message()
             message = (
                 f"I don't have detailed information about \"{item_query}\" right now. "
-                "Would you like me to tell you what sandwiches or egg dishes we have?"
+                f"Would you like me to tell you what {available_categories} we have?"
             )
 
         return StateMachineResult(message=message, order=order)

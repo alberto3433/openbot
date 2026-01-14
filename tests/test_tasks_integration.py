@@ -3930,101 +3930,107 @@ class TestSideChoice:
 # =============================================================================
 
 class TestSodaClarification:
-    """Tests for _handle_soda_clarification."""
+    """Tests for _handle_soda_clarification.
+
+    Note: These tests mock menu_cache.get_items_by_category since the code
+    is now data-driven and queries the database directly.
+    """
 
     def test_lists_available_sodas_from_menu(self):
-        """Test that available sodas are listed from menu data."""
+        """Test that available sodas are listed from category lookup."""
+        from unittest.mock import patch
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={
-            "items_by_type": {
-                "beverage": [
-                    {"name": "Coke"},
-                    {"name": "Diet Coke"},
-                    {"name": "Sprite"},
-                    {"name": "Ginger Ale"},
-                ],
-            }
-        })
+        mock_sodas = [
+            {"name": "Coke"},
+            {"name": "Diet Coke"},
+            {"name": "Sprite"},
+            {"name": "Ginger Ale"},
+        ]
+
+        sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_soda_clarification(order)
+        with patch("sandwich_bot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.query_handler.handle_soda_clarification(order)
 
         assert "what kind" in result.message.lower()
         assert "coke" in result.message.lower()
 
     def test_lists_many_sodas_with_and_others(self):
         """Test that long list uses 'and others' format."""
+        from unittest.mock import patch
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={
-            "items_by_type": {
-                "beverage": [
-                    {"name": "Coke"},
-                    {"name": "Diet Coke"},
-                    {"name": "Sprite"},
-                    {"name": "Ginger Ale"},
-                    {"name": "Root Beer"},
-                    {"name": "Lemonade"},
-                ],
-            }
-        })
+        mock_sodas = [
+            {"name": "Coke"},
+            {"name": "Diet Coke"},
+            {"name": "Sprite"},
+            {"name": "Ginger Ale"},
+            {"name": "Root Beer"},
+            {"name": "Lemonade"},
+        ]
+
+        sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_soda_clarification(order)
+        with patch("sandwich_bot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.query_handler.handle_soda_clarification(order)
 
         assert "and others" in result.message.lower()
 
     def test_fallback_when_no_menu_data(self):
-        """Test fallback message when no menu beverages."""
+        """Test fallback message when no sodas in category."""
+        from unittest.mock import patch
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
-        # Pass empty dict to explicitly override global menu_data
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_soda_clarification(order)
+        # Mock empty category result
+        with patch("sandwich_bot.tasks.query_handler.menu_cache.get_items_by_category", return_value=[]):
+            result = sm.query_handler.handle_soda_clarification(order)
 
         assert "what kind" in result.message.lower()
+        # Fallback message has hardcoded sodas
         assert "coke" in result.message.lower()
         assert "sprite" in result.message.lower()
 
     def test_fallback_with_empty_beverages(self):
-        """Test fallback when beverages list is empty."""
+        """Test fallback when category returns empty list."""
+        from unittest.mock import patch
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={
-            "items_by_type": {
-                "beverage": [],
-            }
-        })
+        sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_soda_clarification(order)
+        # Mock empty category result
+        with patch("sandwich_bot.tasks.query_handler.menu_cache.get_items_by_category", return_value=[]):
+            result = sm.query_handler.handle_soda_clarification(order)
 
         # Should use fallback message
         assert "coke" in result.message.lower()
 
     def test_two_sodas_uses_and_format(self):
         """Test that two sodas uses proper 'and' format."""
+        from unittest.mock import patch
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={
-            "items_by_type": {
-                "beverage": [
-                    {"name": "Coke"},
-                    {"name": "Sprite"},
-                ],
-            }
-        })
+        mock_sodas = [
+            {"name": "Coke"},
+            {"name": "Sprite"},
+        ]
+
+        sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_soda_clarification(order)
+        with patch("sandwich_bot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.query_handler.handle_soda_clarification(order)
 
         # Should have "Coke, and Sprite" or similar format
         assert "coke" in result.message.lower()

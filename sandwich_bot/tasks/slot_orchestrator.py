@@ -17,6 +17,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from ..menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -253,47 +254,57 @@ class ItemSlotDefinition:
     condition: Callable[[ItemTask], bool] | None = None
 
 
-# Item slot definitions by item type
-BAGEL_SLOTS: list[ItemSlotDefinition] = [
-    ItemSlotDefinition("bagel_type", "What kind of bagel?", required=True),
-    ItemSlotDefinition("toasted", "Would you like it toasted?", required=True),
-    ItemSlotDefinition("spread", "Any spread - cream cheese, butter?", required=False),
-]
-
-COFFEE_SLOTS: list[ItemSlotDefinition] = [
-    ItemSlotDefinition("size", "What size - small or large?", required=True),
-    ItemSlotDefinition("iced", "Hot or iced?", required=True),
-    ItemSlotDefinition("milk", "Any milk?", required=False),
-    ItemSlotDefinition("sweetener", "Any sweetener?", required=False),
-]
-
-MENU_ITEM_SLOTS: list[ItemSlotDefinition] = [
-    ItemSlotDefinition(
-        "side_choice",
-        "Would you like that with a bagel or fruit salad?",
-        required=True,
-        condition=lambda item: getattr(item, "requires_side_choice", False),
-    ),
-    ItemSlotDefinition(
-        "bagel_choice",
-        "What kind of bagel?",
-        required=True,
-        condition=lambda item: getattr(item, "side_choice", None) == "bagel",
-    ),
-]
-
-
 def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
-    """Get slot definitions for an item based on its type."""
-    if isinstance(item, MenuItemTask):
-        # Items with bread attribute (bagels) use bagel slots
-        if item.has_attribute("bread"):
-            return BAGEL_SLOTS
-        # Items with size attribute (beverages) use coffee slots
-        elif item.has_attribute("size"):
-            return COFFEE_SLOTS
-        return MENU_ITEM_SLOTS
-    else:
+    """Get slot definitions for an item based on its type.
+
+    Loads attribute definitions from the database via menu_cache and converts
+    them to ItemSlotDefinition objects. Only attributes with ask_in_conversation=True
+    are included.
+
+    Args:
+        item: The item to get slots for
+
+    Returns:
+        List of ItemSlotDefinition objects sorted by display_order
+    """
+    if not isinstance(item, MenuItemTask):
+        return []
+
+    item_type = item.menu_item_type
+    if not item_type:
+        return []
+
+    try:
+        # Get attributes from database
+        attributes = menu_cache.get_item_type_attributes(item_type)
+        if not attributes:
+            return []
+
+        # Build slot definitions from attributes that should be asked
+        slots: list[ItemSlotDefinition] = []
+        for attr_slug, attr_info in attributes.items():
+            # Only include attributes that should be asked in conversation
+            if not attr_info.get("ask_in_conversation", False):
+                continue
+
+            question = attr_info.get("question_text") or f"What {attr_info.get('display_name', attr_slug)}?"
+            is_required = attr_info.get("is_required", False)
+            display_order = attr_info.get("display_order", 999)
+
+            slot = ItemSlotDefinition(
+                field_name=attr_slug,
+                question=question,
+                required=is_required,
+            )
+            # Store display_order for sorting
+            slots.append((display_order, slot))
+
+        # Sort by display_order and return just the slots
+        slots.sort(key=lambda x: x[0])
+        return [slot for _, slot in slots]
+
+    except Exception as e:
+        logger.warning(f"Failed to load slots for item type {item_type}: {e}")
         return []
 
 

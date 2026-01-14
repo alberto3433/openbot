@@ -1019,28 +1019,28 @@ class MenuItemConfigHandler(BaseHandler):
 
         if isinstance(modifiers, ExtractedModifiers):
             # Apply food-style modifiers
-            # Proteins: first one to extra_protein if not set, rest to extras
+            # Proteins: first one to extra_protein if not set, rest to toppings
             if modifiers.proteins:
                 if not item.extra_protein:
                     item.extra_protein = modifiers.proteins[0]
-                    item.extras.extend(modifiers.proteins[1:])
+                    item.toppings.extend(modifiers.proteins[1:])
                 else:
-                    item.extras.extend(modifiers.proteins)
+                    item.toppings.extend(modifiers.proteins)
                 added_items.extend(modifiers.proteins)
 
-            # Cheeses to extras
+            # Cheeses to toppings
             if modifiers.needs_cheese_clarification:
-                if "cheese" not in item.extras:
-                    item.extras.append("cheese")
+                if "cheese" not in item.toppings:
+                    item.toppings.append("cheese")
                 item.needs_cheese_clarification = True
                 added_items.append("cheese")
             elif modifiers.cheeses:
-                item.extras.extend(modifiers.cheeses)
+                item.toppings.extend(modifiers.cheeses)
                 added_items.extend(modifiers.cheeses)
 
-            # Toppings to extras
+            # Toppings from modifiers to item.toppings
             if modifiers.toppings:
-                item.extras.extend(modifiers.toppings)
+                item.toppings.extend(modifiers.toppings)
                 added_items.extend(modifiers.toppings)
 
             # Spreads: set if not already set

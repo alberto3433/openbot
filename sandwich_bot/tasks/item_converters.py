@@ -415,13 +415,13 @@ class MenuItemConverter(ItemConverter):
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
 
-        # Add extra_protein and extras for bagels (with prices from pricing engine)
+        # Add extra_protein and toppings for bagels (with prices from pricing engine)
         extra_protein = getattr(item, 'extra_protein', None)
-        extras = getattr(item, 'extras', []) or []
+        toppings = getattr(item, 'toppings', []) or []
         if extra_protein and pricing and hasattr(pricing, 'lookup_modifier_price'):
             protein_price = pricing.lookup_modifier_price(extra_protein) or 0
             modifiers.append({"name": extra_protein, "price": protein_price})
-        for extra in extras:
+        for extra in toppings:
             if pricing and hasattr(pricing, 'lookup_modifier_price'):
                 extra_price = pricing.lookup_modifier_price(extra) or 0
                 modifiers.append({"name": extra, "price": extra_price})
@@ -462,7 +462,7 @@ class MenuItemConverter(ItemConverter):
         spread_type = attribute_values.get("spread_type")
         scooped = attribute_values.get("scooped")
         extra_protein = getattr(item, 'extra_protein', None)
-        extras = getattr(item, 'extras', []) or []
+        toppings_list = getattr(item, 'toppings', []) or []
 
         result = self._build_common_dict_fields(item)
         # Use the actual menu_item_type for backwards compatibility
@@ -484,7 +484,7 @@ class MenuItemConverter(ItemConverter):
             "spread": spread,
             # Bagel-specific fields at top level for backwards compatibility
             "bagel_type": bagel_type,
-            "extras": extras,
+            "toppings": toppings_list,
             "side_bagel_config": side_bagel_config,
             "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
@@ -505,7 +505,7 @@ class MenuItemConverter(ItemConverter):
                 "toasted": toasted if toasted is not None else attribute_values.get("toasted"),
                 "scooped": scooped,
                 "extra_protein": extra_protein,
-                "extras": extras,
+                "toppings": toppings_list,
             },
         })
         return result
@@ -540,8 +540,10 @@ class BagelConverter(ItemConverter):
             bagel.spread_type = item_dict.get("spread_type")
         if item_dict.get("extra_protein"):
             bagel.extra_protein = item_dict.get("extra_protein")
-        if item_dict.get("extras"):
-            bagel.extras = item_dict.get("extras") or []
+        # Check both toppings and extras for backwards compatibility
+        toppings_data = item_dict.get("toppings") or item_dict.get("extras")
+        if toppings_data:
+            bagel.toppings = toppings_data
         if item_dict.get("needs_cheese_clarification"):
             bagel.needs_cheese_clarification = item_dict.get("needs_cheese_clarification", False)
 
@@ -560,7 +562,7 @@ class BagelConverter(ItemConverter):
         toasted = getattr(item, 'toasted', None)
         scooped = getattr(item, 'scooped', None)
         extra_protein = getattr(item, 'extra_protein', None)
-        extras = getattr(item, 'extras', []) or []
+        toppings = getattr(item, 'toppings', []) or []
 
         display_name = "Bagel"
 
@@ -588,14 +590,14 @@ class BagelConverter(ItemConverter):
             protein_price = pricing.lookup_modifier_price(extra_protein)
             modifiers.append({"name": extra_protein, "price": protein_price})
 
-        for extra in extras:
+        for topping in toppings:
             if not pricing:
                 raise ValueError(
                     "Pricing engine required for modifier prices. "
                     "Ensure pricing parameter is passed to order_task_to_dict."
                 )
-            extra_price = pricing.lookup_modifier_price(extra)
-            modifiers.append({"name": extra, "price": extra_price})
+            topping_price = pricing.lookup_modifier_price(topping)
+            modifiers.append({"name": topping, "price": topping_price})
 
         if spread and spread.lower() != "none":
             spread_name = spread
@@ -628,7 +630,7 @@ class BagelConverter(ItemConverter):
             "toasted": toasted,
             "scooped": scooped,
             "extra_protein": extra_protein,
-            "extras": extras,
+            "toppings": toppings,
             "needs_cheese_clarification": getattr(item, 'needs_cheese_clarification', False),
             "base_price": base_price,
             "modifiers": modifiers,
@@ -641,7 +643,7 @@ class BagelConverter(ItemConverter):
                 "toasted": toasted,
                 "scooped": scooped,
                 "extra_protein": extra_protein,
-                "extras": extras,
+                "toppings": toppings,
                 "modifiers": modifiers,
                 "base_price": base_price,
             },
@@ -671,7 +673,7 @@ class SandwichConverter(ItemConverter):
         # Set bagel-specific fields via property setters
         bagel.bagel_type = bagel_type
         if item_dict.get("toppings"):
-            bagel.extras = item_dict.get("toppings") or []
+            bagel.toppings = item_dict.get("toppings") or []
 
         self._restore_common_fields(bagel, item_dict)
         if bagel.bagel_type and bagel.toasted is not None:

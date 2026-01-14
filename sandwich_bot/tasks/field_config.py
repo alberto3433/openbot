@@ -35,7 +35,6 @@ class ItemTypeConfig(BaseModel):
 _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
     "bagel": {
         "bagel_type": "bread",
-        "extras": "toppings",
     },
     "sized_beverage": {
         "iced": "temperature",

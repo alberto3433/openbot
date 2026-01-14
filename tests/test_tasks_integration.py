@@ -499,8 +499,8 @@ class TestPriceRecalculationInvariants:
         bagel = bagels[0]
         assert bagel.bagel_type == "wheat"
         assert bagel.extra_protein == "ham"
-        assert "egg" in bagel.extras
-        assert "american" in bagel.extras
+        assert "egg" in bagel.toppings
+        assert "american" in bagel.toppings
 
         # Price should include modifiers - actual prices from database
         # Base bagel price + protein + extras
@@ -2488,7 +2488,7 @@ class TestCheeseChoice:
         result = sm.configuring_item_handler.handle_configuring_item("brie", order)
 
         # Should re-prompt, not add cheese
-        assert len(bagel.extras) == 0
+        assert len(bagel.toppings) == 0
         assert "What kind of cheese" in result.message
         assert bagel.needs_cheese_clarification is True
 
@@ -6495,13 +6495,13 @@ class TestModifierRemovalDuringConfig:
         assert remaining_bagel.extra_protein is None, "Bacon should be removed"
 
         # Verify egg is still there
-        assert remaining_bagel.extras == ["Egg"], "Egg should still be in extras"
+        assert remaining_bagel.toppings == ["Egg"], "Egg should still be in toppings"
 
         # Verify we continue with the config question
         assert "removed" in result.message.lower() and "bacon" in result.message.lower()
 
-    def test_remove_egg_during_config_removes_from_extras(self):
-        """Test removing an extra (egg) during config removes it from extras list."""
+    def test_remove_egg_during_config_removes_from_toppings(self):
+        """Test removing an extra (egg) during config removes it from toppings list."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
         from tests.test_helpers import BagelItemTask
@@ -6519,7 +6519,7 @@ class TestModifierRemovalDuringConfig:
         bagel = BagelItemTask(
             bagel_type="plain",
             extra_protein="bacon",
-            extras=["Egg", "cheese"],
+            toppings=["Egg", "cheese"],
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
@@ -6535,8 +6535,8 @@ class TestModifierRemovalDuringConfig:
 
         remaining_bagel = active_items[0]
         assert remaining_bagel.extra_protein == "bacon", "Bacon should still be there"
-        assert "Egg" not in remaining_bagel.extras, "Egg should be removed from extras"
-        assert "cheese" in remaining_bagel.extras, "Cheese should still be in extras"
+        assert "Egg" not in remaining_bagel.toppings, "Egg should be removed from toppings"
+        assert "cheese" in remaining_bagel.toppings, "Cheese should still be in toppings"
 
     def test_remove_nonexistent_modifier_falls_through_to_item_search(self):
         """Test that removing a modifier not on the item falls through to item search logic."""

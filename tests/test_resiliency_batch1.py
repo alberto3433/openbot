@@ -280,7 +280,7 @@ class TestReplacementModificationScenarios:
             toasted=True,
             extra_protein="bacon",
         )
-        bagel.extras = ["egg"]
+        bagel.toppings = ["egg"]
         bagel.mark_complete()
         order.items.add_item(bagel)
 
@@ -291,19 +291,19 @@ class TestReplacementModificationScenarios:
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
-        # Bacon should be removed from extra_protein or extras
+        # Bacon should be removed from extra_protein or toppings
         has_bacon = (
             (updated_bagel.extra_protein and "bacon" in updated_bagel.extra_protein.lower()) or
-            any("bacon" in e.lower() for e in (updated_bagel.extras or []))
+            any("bacon" in e.lower() for e in (updated_bagel.toppings or []))
         )
-        assert not has_bacon, f"Bacon should be removed. protein={updated_bagel.extra_protein}, extras={updated_bagel.extras}"
+        assert not has_bacon, f"Bacon should be removed. protein={updated_bagel.extra_protein}, toppings={updated_bagel.toppings}"
 
         # Egg should still be there
         has_egg = (
             (updated_bagel.extra_protein and "egg" in updated_bagel.extra_protein.lower()) or
-            any("egg" in e.lower() for e in (updated_bagel.extras or []))
+            any("egg" in e.lower() for e in (updated_bagel.toppings or []))
         )
-        assert has_egg, f"Egg should be preserved. protein={updated_bagel.extra_protein}, extras={updated_bagel.extras}"
+        assert has_egg, f"Egg should be preserved. protein={updated_bagel.extra_protein}, toppings={updated_bagel.toppings}"
 
     def test_bagel_toasted_should_ask_about_spread(self):
         """

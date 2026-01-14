@@ -159,9 +159,11 @@ def send_payment_link_email(
                                 details.append(f"{sweetener_qty} {formatted}s")
                             else:
                                 details.append(formatted)
-                if config.get("extras"):
-                    extras = config["extras"] if isinstance(config["extras"], list) else [config["extras"]]
-                    for e in extras:
+                # Check both toppings and extras for backwards compatibility
+                toppings_data = config.get("toppings") or config.get("extras")
+                if toppings_data:
+                    toppings_list = toppings_data if isinstance(toppings_data, list) else [toppings_data]
+                    for e in toppings_list:
                         if e:
                             details.append(str(e).replace("_", " "))
 

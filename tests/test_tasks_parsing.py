@@ -77,7 +77,7 @@ class TestParsedBagelItem:
         assert bagel.quantity == 1
         assert bagel.toasted is None
         assert bagel.spread is None
-        assert bagel.extras == []
+        assert bagel.toppings == []
 
     def test_full_bagel(self):
         """Test creating a fully specified bagel."""
@@ -87,14 +87,14 @@ class TestParsedBagelItem:
             toasted=True,
             spread="cream cheese",
             spread_type="scallion",
-            extras=["lox", "tomato", "capers"],
+            toppings=["lox", "tomato", "capers"],
         )
         assert bagel.bagel_type == "everything"
         assert bagel.quantity == 2
         assert bagel.toasted is True
         assert bagel.spread == "cream cheese"
         assert bagel.spread_type == "scallion"
-        assert bagel.extras == ["lox", "tomato", "capers"]
+        assert bagel.toppings == ["lox", "tomato", "capers"]
 
 
 class TestParsedCoffeeItem:

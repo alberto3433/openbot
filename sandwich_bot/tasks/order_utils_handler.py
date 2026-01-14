@@ -181,8 +181,8 @@ class OrderUtilsHandler:
                     new_item.spread_type = template_item.spread_type
                 if template_item.extra_protein:
                     new_item.extra_protein = template_item.extra_protein
-                if template_item.extras:
-                    new_item.extras = list(template_item.extras)
+                if template_item.toppings:
+                    new_item.toppings = list(template_item.toppings)
                 new_item.mark_complete()
                 order.items.add_item(new_item)
                 logger.info("QUANTITY_CHANGE: Added copy of bagel")

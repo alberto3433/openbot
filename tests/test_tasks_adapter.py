@@ -44,7 +44,7 @@ def create_bagel_task(
     if bagel_type_upcharge:
         bagel.bagel_type_upcharge = bagel_type_upcharge
     if extras:
-        bagel.extras = extras
+        bagel.toppings = extras
     return bagel
 
 
@@ -261,7 +261,7 @@ class TestDictToOrderTask:
         assert item.bagel_type == "everything bagel"
         assert item.toasted is True
         assert item.spread == "cream cheese"
-        assert item.extras == ["lox", "capers"]
+        assert item.toppings == ["lox", "capers"]
         assert item.quantity == 2
         assert item.unit_price == 5.99
 

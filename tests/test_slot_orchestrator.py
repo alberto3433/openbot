@@ -43,7 +43,7 @@ def create_bagel_task(
     if bagel_type:
         bagel.bagel_type = bagel_type
     if extras:
-        bagel.extras = extras
+        bagel.toppings = extras
     return bagel
 
 

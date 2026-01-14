@@ -528,19 +528,19 @@ class MenuItemTask(ItemTask):
             del self.attribute_values["spread_type"]
 
     @property
-    def extras(self) -> list[str]:
-        """Get extras list from attribute_values.
+    def toppings(self) -> list[str]:
+        """Get toppings list from attribute_values.
 
         Creates the list if it doesn't exist, so .append() works correctly.
         """
-        if "extras" not in self.attribute_values:
-            self.attribute_values["extras"] = []
-        return self.attribute_values["extras"]
+        if "toppings" not in self.attribute_values:
+            self.attribute_values["toppings"] = []
+        return self.attribute_values["toppings"]
 
-    @extras.setter
-    def extras(self, value: list[str]) -> None:
-        """Set extras list in attribute_values."""
-        self.attribute_values["extras"] = value or []
+    @toppings.setter
+    def toppings(self, value: list[str]) -> None:
+        """Set toppings list in attribute_values."""
+        self.attribute_values["toppings"] = value or []
 
     @property
     def extra_protein(self) -> str | None:

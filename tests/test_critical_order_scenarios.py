@@ -644,7 +644,7 @@ class TestCriticalOrderScenarios:
             bagel = bagels[0]
             print(f"Bagel: type={bagel.bagel_type}, toasted={bagel.toasted}")
             print(f"Spread: {bagel.spread}")
-            print(f"Extras: {bagel.extras}")
+            print(f"Toppings: {bagel.toppings}")
 
             assert bagel.bagel_type == "everything", f"Should be everything bagel, got {bagel.bagel_type}"
             assert bagel.toasted == True, "Should be toasted"

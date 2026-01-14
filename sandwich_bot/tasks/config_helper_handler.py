@@ -170,16 +170,16 @@ class ConfigHelperHandler:
                 modifier_removed = True
                 logger.info("Modifier removal during config: removed protein '%s' from bagel", cancel_desc)
 
-            # Check extras list
-            if current_item.extras:
-                new_extras = []
-                for extra in current_item.extras:
-                    if cancel_desc not in extra.lower():
-                        new_extras.append(extra)
+            # Check toppings list
+            if current_item.toppings:
+                new_toppings = []
+                for topping in current_item.toppings:
+                    if cancel_desc not in topping.lower():
+                        new_toppings.append(topping)
                     else:
                         modifier_removed = True
-                        logger.info("Modifier removal during config: removed extra '%s' from bagel", extra)
-                current_item.extras = new_extras
+                        logger.info("Modifier removal during config: removed topping '%s' from bagel", topping)
+                current_item.toppings = new_toppings
 
             # Check spread
             if current_item.spread and cancel_desc in current_item.spread.lower():

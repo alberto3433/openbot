@@ -11,10 +11,6 @@ from typing import Callable, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import OrderTask, ItemTask
     from .schemas import StateMachineResult
-    from .pricing import PricingEngine
-    from .menu_lookup import MenuLookup
-    from ..services.message_builder import MessageBuilder
-
 
 @dataclass
 class HandlerConfig:

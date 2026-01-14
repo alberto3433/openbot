@@ -38,7 +38,7 @@ def create_bagel_task(
     if spread_type:
         bagel.spread_type = spread_type
     if extras:
-        bagel.extras = extras
+        bagel.toppings = extras
     if extra_protein:
         bagel.extra_protein = extra_protein
     return bagel

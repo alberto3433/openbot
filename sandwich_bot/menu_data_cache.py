@@ -2350,9 +2350,9 @@ class MenuDataCache:
             "spread_type": {"field_name": "spread", "is_list": False},
             "protein": {"field_name": "extra_protein", "is_list": False},
             "extra_protein": {"field_name": "extra_protein", "is_list": False},
-            "topping": {"field_name": "extras", "is_list": True},
-            "toppings": {"field_name": "extras", "is_list": True},
-            "cheese": {"field_name": "extras", "is_list": True},  # Cheeses are extras
+            "topping": {"field_name": "toppings", "is_list": True},
+            "toppings": {"field_name": "toppings", "is_list": True},
+            "cheese": {"field_name": "toppings", "is_list": True},  # Cheeses are toppings
             # Beverage modifiers
             "milk": {"field_name": "milk", "is_list": False},
             "sweetener": {"field_name": "sweeteners", "is_list": True},

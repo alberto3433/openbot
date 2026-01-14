@@ -40,7 +40,7 @@ class ParsedBagelItem(BaseModel):
         default=None,
         description="Specific spread variety: plain, scallion, veggie, lox, etc."
     )
-    extras: list[str] = Field(
+    toppings: list[str] = Field(
         default_factory=list,
         description="Additional toppings: lox, bacon, tomato, onion, capers, etc."
     )

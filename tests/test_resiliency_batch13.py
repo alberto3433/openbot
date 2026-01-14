@@ -78,7 +78,7 @@ class TestPreparationPreferences:
         has_cc = (
             bagel.spread == "cream cheese" or
             "cream cheese" in (bagel.notes or "") or
-            "cream cheese" in str(bagel.extras or [])
+            "cream cheese" in str(bagel.toppings or [])
         )
         assert has_cc or "cream cheese" in result.message.lower(), \
             f"Should note cream cheese. Message: {result.message}"

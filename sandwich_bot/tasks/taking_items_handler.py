@@ -1182,21 +1182,21 @@ class TakingItemsHandler:
                             if not target_item.extra_protein:
                                 target_item.extra_protein = modifier  # Store full qualified modifier
                             else:
-                                # Already have a protein, add to extras
-                                if modifier not in target_item.extras:
-                                    target_item.extras.append(modifier)
+                                # Already have a protein, add to toppings
+                                if modifier not in target_item.toppings:
+                                    target_item.toppings.append(modifier)
                         # Check if the base modifier is a cheese
                         elif base_modifier in {c.lower() for c in known_cheeses}:
-                            if modifier not in target_item.extras:
-                                target_item.extras.append(modifier)
+                            if modifier not in target_item.toppings:
+                                target_item.toppings.append(modifier)
                         # Check if the base modifier is a topping
                         elif base_modifier in {t.lower() for t in known_toppings}:
-                            if modifier not in target_item.extras:
-                                target_item.extras.append(modifier)
+                            if modifier not in target_item.toppings:
+                                target_item.toppings.append(modifier)
                         else:
-                            # Unknown modifier type, add to extras anyway
-                            if modifier not in target_item.extras:
-                                target_item.extras.append(modifier)
+                            # Unknown modifier type, add to toppings anyway
+                            if modifier not in target_item.toppings:
+                                target_item.toppings.append(modifier)
                         logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bagel_type)
 
                 # Recalculate price
@@ -1308,16 +1308,16 @@ class TakingItemsHandler:
                         # Update protein - replace existing
                         if modifiers.proteins:
                             last_item.extra_protein = modifiers.proteins[0]
-                            # Additional proteins go to extras (replace existing extras)
-                            last_item.extras = list(modifiers.proteins[1:])
+                            # Additional proteins go to toppings (replace existing toppings)
+                            last_item.toppings = list(modifiers.proteins[1:])
                         else:
                             # Clear protein if not in new modifiers
                             last_item.extra_protein = None
-                            last_item.extras = []
+                            last_item.toppings = []
 
-                        # Add cheeses and toppings to extras
-                        last_item.extras.extend(modifiers.cheeses)
-                        last_item.extras.extend(modifiers.toppings)
+                        # Add cheeses and toppings to item.toppings
+                        last_item.toppings.extend(modifiers.cheeses)
+                        last_item.toppings.extend(modifiers.toppings)
 
                         # Update spread if specified
                         if modifiers.spreads:

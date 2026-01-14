@@ -49,7 +49,7 @@ def create_bagel_task(
     if spread_type:
         bagel.spread_type = spread_type
     if extras:
-        bagel.extras = extras
+        bagel.toppings = extras
     return bagel
 
 
@@ -201,7 +201,7 @@ class TestBagelItemTask:
         assert bagel.bagel_type is None
         assert bagel.toasted is None
         assert bagel.spread is None
-        assert bagel.extras == []
+        assert bagel.toppings == []
 
     def test_get_display_name(self):
         """Test display name generation."""

@@ -18,6 +18,7 @@ from .models import (
 from .schemas import OrderPhase, StateMachineResult, BagelOrderDetails, ExtractedModifiers
 from .handler_config import HandlerConfig
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types, is_soda_drink
+from .disambiguation_handler import DisambiguationHandler
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
@@ -68,6 +69,9 @@ class ItemAdderHandler:
         self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
         self.menu_item_handler = menu_item_handler or kwargs.get("menu_item_handler")
         self._menu_data: dict = {}
+
+        # Generic disambiguation handler
+        self.disambiguation_handler = DisambiguationHandler()
 
     @property
     def menu_data(self) -> dict:
@@ -130,28 +134,62 @@ class ItemAdderHandler:
         quantity: int = 1,
         **kwargs,
     ) -> StateMachineResult:
-        """Internal: Route bagel item to _add_bagel or _add_bagels."""
-        if quantity > 1:
-            return self._add_bagels(
-                quantity=quantity,
-                bagel_type=kwargs.get("bagel_type"),
-                toasted=kwargs.get("toasted"),
-                scooped=kwargs.get("scooped"),
-                spread=kwargs.get("spread"),
-                spread_type=kwargs.get("spread_type"),
-                order=order,
-                extracted_modifiers=kwargs.get("extracted_modifiers"),
-            )
-        else:
-            return self._add_bagel(
-                bagel_type=kwargs.get("bagel_type"),
-                order=order,
-                toasted=kwargs.get("toasted"),
-                scooped=kwargs.get("scooped"),
-                spread=kwargs.get("spread"),
-                spread_type=kwargs.get("spread_type"),
-                extracted_modifiers=kwargs.get("extracted_modifiers"),
-            )
+        """Internal: Add bagel(s) using the generic data-driven flow.
+
+        Routes through _create_configurable_item() which:
+        - Creates MenuItemTask with menu_item_type="bagel"
+        - Applies pre-filled attributes (bread type, toasted, spread, etc.)
+        - Applies extracted modifiers (proteins, cheeses, toppings)
+        - Starts DB-driven configuration via MenuItemConfigHandler
+        """
+        # Build menu_item dict for bagel
+        base_price = self.pricing.lookup_base_price("Bagel") if self.pricing else 0.0
+        menu_item = {
+            "name": "Bagel",
+            "item_type": "bagel",
+            "base_price": base_price,
+            "id": None,  # Not a specific menu item
+            "is_signature": False,
+        }
+
+        # Map bagel kwargs to pre_filled_attributes
+        # Use DB canonical names: "bread" for bagel_type, "spread_type" for spread
+        pre_filled_attributes = {}
+
+        bagel_type = kwargs.get("bagel_type")
+        if bagel_type:
+            pre_filled_attributes["bread"] = bagel_type
+
+        toasted = kwargs.get("toasted")
+        if toasted is not None:
+            pre_filled_attributes["toasted"] = toasted
+
+        scooped = kwargs.get("scooped")
+        if scooped is not None:
+            pre_filled_attributes["scooped"] = scooped
+
+        spread = kwargs.get("spread")
+        spread_type = kwargs.get("spread_type")
+        if spread:
+            # Store both canonical and legacy keys for compatibility
+            pre_filled_attributes["spread_type"] = spread
+            if spread_type:
+                # If spread_type is specified separately (e.g., "plain", "scallion")
+                pre_filled_attributes["spread_variety"] = spread_type
+
+        logger.info(
+            "ADD BAGEL via generic flow: qty=%d, pre_filled=%s",
+            quantity, {k: v for k, v in pre_filled_attributes.items() if v is not None}
+        )
+
+        # Route through generic item creation
+        return self._create_configurable_item(
+            menu_item=menu_item,
+            order=order,
+            quantity=quantity,
+            pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
+            extracted_modifiers=kwargs.get("extracted_modifiers"),
+        )
 
     def _add_coffee_item(
         self,
@@ -159,25 +197,136 @@ class ItemAdderHandler:
         quantity: int = 1,
         **kwargs,
     ) -> StateMachineResult:
-        """Internal: Route coffee/beverage item to _add_coffee."""
-        return self._add_coffee(
-            coffee_type=kwargs.get("coffee_type") or kwargs.get("drink_type"),
-            size=kwargs.get("size"),
-            iced=kwargs.get("iced"),
-            milk=kwargs.get("milk"),
-            sweetener=kwargs.get("sweetener"),
-            sweetener_quantity=kwargs.get("sweetener_quantity", 1),
-            flavor_syrup=kwargs.get("flavor_syrup"),
-            quantity=quantity,
-            order=order,
-            special_instructions=kwargs.get("special_instructions"),
-            decaf=kwargs.get("decaf"),
-            syrup_quantity=kwargs.get("syrup_quantity", 1),
-            wants_syrup=kwargs.get("wants_syrup", False),
-            cream_level=kwargs.get("cream_level"),
-            extra_shots=kwargs.get("extra_shots", 0),
-            original_input=kwargs.get("original_input"),
+        """Internal: Add beverage using generic flow or _add_coffee for disambiguation.
+
+        Routes known drink types through _create_configurable_item() which uses
+        DB-driven configuration. Falls back to _add_coffee() for:
+        - Generic drink requests (no type specified)
+        - Partial term matching (needs disambiguation)
+        - Menu item lookup for unknown types
+        """
+        coffee_type = kwargs.get("coffee_type") or kwargs.get("drink_type")
+        coffee_type_lower = (coffee_type or "").lower().strip()
+
+        # Check if this is a known coffee type that can go through generic flow
+        # These are standard beverage types that don't need menu lookup disambiguation
+        standard_coffee_types = get_coffee_types()
+        is_known_coffee_type = coffee_type_lower in standard_coffee_types
+
+        # Generic or partial drink requests need the complex _add_coffee logic
+        generic_drink_terms = {"drink", "drinks", "beverage", "beverages", "something to drink", ""}
+        needs_disambiguation = (
+            coffee_type_lower in generic_drink_terms or
+            not is_known_coffee_type
         )
+
+        if needs_disambiguation:
+            # Use _add_coffee for disambiguation and menu lookup
+            return self._add_coffee(
+                coffee_type=coffee_type,
+                size=kwargs.get("size"),
+                iced=kwargs.get("iced"),
+                milk=kwargs.get("milk"),
+                sweetener=kwargs.get("sweetener"),
+                sweetener_quantity=kwargs.get("sweetener_quantity", 1),
+                flavor_syrup=kwargs.get("flavor_syrup"),
+                quantity=quantity,
+                order=order,
+                special_instructions=kwargs.get("special_instructions"),
+                decaf=kwargs.get("decaf"),
+                syrup_quantity=kwargs.get("syrup_quantity", 1),
+                wants_syrup=kwargs.get("wants_syrup", False),
+                cream_level=kwargs.get("cream_level"),
+                extra_shots=kwargs.get("extra_shots", 0),
+                original_input=kwargs.get("original_input"),
+            )
+
+        # Known coffee type - route through generic data-driven flow
+        # Look up price from menu or pricing engine
+        menu_item_data = self.menu_lookup.lookup_menu_item(coffee_type) if self.menu_lookup else None
+        if menu_item_data and menu_item_data.get("base_price"):
+            base_price = menu_item_data.get("base_price", 0)
+        elif self.pricing:
+            try:
+                base_price = self.pricing.lookup_base_price(coffee_type)
+            except ValueError:
+                base_price = 0
+        else:
+            base_price = 0
+
+        # Build menu_item dict
+        menu_item = {
+            "name": coffee_type,
+            "item_type": "sized_beverage",
+            "base_price": base_price,
+            "id": menu_item_data.get("id") if menu_item_data else None,
+            "is_signature": False,
+        }
+
+        # Map beverage kwargs to pre_filled_attributes
+        pre_filled_attributes = {}
+
+        size = kwargs.get("size")
+        if size:
+            pre_filled_attributes["size"] = size
+
+        iced = kwargs.get("iced")
+        if iced is not None:
+            pre_filled_attributes["temperature"] = "iced" if iced else "hot"
+
+        decaf = kwargs.get("decaf")
+        if decaf is not None:
+            pre_filled_attributes["decaf"] = decaf
+
+        milk = kwargs.get("milk")
+        if milk:
+            pre_filled_attributes["milk"] = milk
+
+        logger.info(
+            "ADD BEVERAGE via generic flow: type=%s, qty=%d, pre_filled=%s",
+            coffee_type, quantity, {k: v for k, v in pre_filled_attributes.items() if v is not None}
+        )
+
+        # Create ExtractedCoffeeModifiers from kwargs for additional modifiers
+        from .schemas import ExtractedCoffeeModifiers
+        coffee_modifiers = None
+        sweetener = kwargs.get("sweetener")
+        flavor_syrup = kwargs.get("flavor_syrup")
+        special_instructions = kwargs.get("special_instructions")
+        cream_level = kwargs.get("cream_level")
+        extra_shots = kwargs.get("extra_shots", 0)
+
+        if any([sweetener, flavor_syrup, special_instructions, cream_level, extra_shots]):
+            coffee_modifiers = ExtractedCoffeeModifiers(
+                sweeteners=[sweetener] if sweetener else [],
+                syrups=[flavor_syrup] if flavor_syrup else [],
+                extra_shots=extra_shots,
+                special_instructions=[special_instructions] if special_instructions else [],
+            )
+            # Note: cream_level is set directly below
+
+        # Route through generic item creation
+        result = self._create_configurable_item(
+            menu_item=menu_item,
+            order=order,
+            quantity=quantity,
+            pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
+            extracted_modifiers=coffee_modifiers,
+        )
+
+        # Apply additional properties that aren't in standard attributes
+        # These need to be set after item creation
+        for item in order.items.items:
+            if (getattr(item, 'menu_item_name', None) == coffee_type and
+                    item.status.value == "in_progress"):
+                if cream_level:
+                    item.cream_level = cream_level
+                if kwargs.get("wants_syrup"):
+                    item.wants_syrup = True
+                if kwargs.get("syrup_quantity", 1) > 1:
+                    item.pending_syrup_quantity = kwargs.get("syrup_quantity")
+
+        return result
 
     # Generic category terms that should trigger disambiguation when multiple items match
     # These are base terms - we check if item_name equals OR ends with these
@@ -221,172 +370,23 @@ class ItemAdderHandler:
         bagel_choice: str | None = None,
         modifications: list[str] | None = None,
     ) -> StateMachineResult:
-        """Add a menu item and determine next question."""
+        """Add a menu item and determine next question.
+
+        Uses DisambiguationHandler for unified disambiguation logic.
+        """
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
 
-        item_lower = item_name.lower().strip()
-
-        # Check if the item_name is or contains a generic category term (like "cookie", "muffin", "chips")
-        generic_term = self._extract_generic_term(item_name)
-
-        # Determine if this is an EXACT generic term (e.g., "chips") vs a specific item ending with
-        # a generic term (e.g., "potato chips"). Only the former should always trigger disambiguation.
-        is_exact_generic = item_lower in self.GENERIC_CATEGORY_TERMS
-
-        if is_exact_generic:
-            # User said exactly "chips", "cookies", etc. - always disambiguate if multiple matches
-            matching_items = self.menu_lookup.lookup_menu_items(generic_term)
-            if len(matching_items) > 1:
-                logger.info(
-                    "Exact generic term '%s' matched %d items - asking for disambiguation",
-                    generic_term, len(matching_items)
-                )
-                order.pending_item_options = matching_items
-                order.pending_item_quantity = quantity
-                order.pending_field = "item_selection"
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-                option_list = []
-                for i, item in enumerate(matching_items[:6], 1):
-                    name = item.get("name", "Unknown")
-                    option_list.append(f"{i}. {name}")
-
-                options_str = "\n".join(option_list)
-                return StateMachineResult(
-                    message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
-                    order=order,
-                )
-            elif len(matching_items) == 1:
-                menu_item = matching_items[0]
-                logger.info("Generic term '%s' matched single item: %s", generic_term, menu_item.get("name"))
-            else:
-                menu_item = None
-        else:
-            # Not an exact generic term - but item may end with a generic term
-            # First try to find matches for the user's SPECIFIC input (e.g., "bagel chips")
-            # Only if that fails, fall back to generic term search
-            if generic_term:
-                # First, try exact match for the specific item name
-                matching_items = self.menu_lookup.lookup_menu_items(item_name)
-                if len(matching_items) == 1:
-                    # Single match - use it directly (no disambiguation needed)
-                    menu_item = matching_items[0]
-                    logger.info("Specific item '%s' matched single item: %s", item_name, menu_item.get("name"))
-                elif len(matching_items) > 1:
-                    # Multiple matches for specific input - disambiguate among these
-                    logger.info(
-                        "Specific item '%s' matched %d items - asking for disambiguation",
-                        item_name, len(matching_items)
-                    )
-                    order.pending_item_options = matching_items
-                    order.pending_item_quantity = quantity
-                    order.pending_field = "item_selection"
-                    order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-                    option_list = []
-                    for i, item in enumerate(matching_items[:6], 1):
-                        name = item.get("name", "Unknown")
-                        option_list.append(f"{i}. {name}")
-
-                    options_str = "\n".join(option_list)
-                    return StateMachineResult(
-                        message=f"We have a few {item_name} options:\n{options_str}\nWhich would you like?",
-                        order=order,
-                    )
-                else:
-                    # No matches for specific input - fall back to regular lookup
-                    menu_item = self.menu_lookup.lookup_menu_item(item_name)
-            else:
-                # No generic term - regular lookup
-                menu_item = self.menu_lookup.lookup_menu_item(item_name)
-
-        # Log omelette items in menu for debugging
-        omelette_items = self._menu_data.get("items_by_type", {}).get("omelette", [])
-        logger.info(
-            "Menu lookup for '%s': found=%s, omelette_items=%s",
-            item_name,
-            menu_item is not None,
-            [i.get("name") for i in omelette_items],
+        # Step 1: Look up menu item with disambiguation handling
+        menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
+            item_name, quantity, order
         )
 
-        # If item not found in menu, try finding partial matches for disambiguation
-        if not menu_item:
-            logger.warning("Menu item not found: '%s' - trying partial match", item_name)
+        # If disambiguation is needed, return the question
+        if disambiguation_result:
+            return disambiguation_result
 
-            # Try to find partial matches (similar to orange juice disambiguation)
-            # First, get singular form for better matching (cookies -> cookie)
-            item_lower = item_name.lower()
-            search_terms = [item_lower]
-            if item_lower.endswith('ies'):
-                # Try both: "ladies" -> "lady", and "cookies" -> "cookie"
-                search_terms.append(item_lower[:-3] + 'y')  # ladies -> lady
-                search_terms.append(item_lower[:-1])  # cookies -> cookie
-            elif item_lower.endswith('es'):
-                search_terms.append(item_lower[:-2])  # dishes -> dish
-            elif item_lower.endswith('s') and len(item_lower) > 2:
-                search_terms.append(item_lower[:-1])  # bagels -> bagel
-
-            # First, try _lookup_menu_items for each search term
-            matching_items = []
-            for term in search_terms:
-                matching_items = self.menu_lookup.lookup_menu_items(term)
-                if matching_items:
-                    break
-
-            # If no matches from _lookup_menu_items, try a direct search through items_by_type
-            # (same approach as _get_category_suggestions which we know finds the items)
-            if not matching_items and self._menu_data:
-                items_by_type = self._menu_data.get("items_by_type", {})
-                for type_slug, type_items in items_by_type.items():
-                    for item in type_items:
-                        item_name_db = item.get("name", "").lower()
-                        for term in search_terms:
-                            if term in item_name_db:
-                                matching_items.append(item)
-                                break
-                logger.info(
-                    "Direct items_by_type search for %s: found %d items",
-                    search_terms, len(matching_items)
-                )
-
-            if matching_items:
-                # Found partial matches - offer disambiguation
-                logger.info(
-                    "Found %d partial matches for '%s': %s",
-                    len(matching_items),
-                    item_name,
-                    [item.get("name") for item in matching_items]
-                )
-
-                if len(matching_items) == 1:
-                    # Only one match - use it directly
-                    menu_item = matching_items[0]
-                    logger.info("Single partial match found, using: %s", menu_item.get("name"))
-                else:
-                    # Multiple matches - ask user to clarify
-                    order.pending_item_options = matching_items
-                    order.pending_item_quantity = quantity
-                    order.pending_field = "item_selection"
-                    order.phase = OrderPhase.CONFIGURING_ITEM.value
-
-                    # Build the clarification message (with prices for specific item lookups)
-                    option_list = []
-                    for i, item in enumerate(matching_items[:6], 1):  # Limit to 6 options
-                        name = item.get("name", "Unknown")
-                        price = item.get("base_price", 0)
-                        if price > 0:
-                            option_list.append(f"{i}. {name} (${price:.2f})")
-                        else:
-                            option_list.append(f"{i}. {name}")
-
-                    options_str = "\n".join(option_list)
-                    return StateMachineResult(
-                        message=f"We have a few options for {item_name}:\n{options_str}\nWhich would you like?",
-                        order=order,
-                    )
-
-        # If still no match, provide helpful suggestions
+        # If item not found, provide helpful suggestions
         if not menu_item:
             message, category_for_followup = self.menu_lookup.get_not_found_message(item_name)
             if category_for_followup:
@@ -398,6 +398,33 @@ class ItemAdderHandler:
                 order=order,
             )
 
+        # Step 2: Create the item using existing logic
+        # (Phase 4 will replace this with _create_configurable_item())
+        return self._create_menu_item_from_lookup(
+            menu_item=menu_item,
+            item_name=item_name,
+            quantity=quantity,
+            order=order,
+            toasted=toasted,
+            bagel_choice=bagel_choice,
+            modifications=modifications,
+        )
+
+    def _create_menu_item_from_lookup(
+        self,
+        menu_item: dict,
+        item_name: str,
+        quantity: int,
+        order: OrderTask,
+        toasted: bool | None = None,
+        bagel_choice: str | None = None,
+        modifications: list[str] | None = None,
+    ) -> StateMachineResult:
+        """Create a menu item from lookup result.
+
+        This is the existing item creation logic, extracted for clarity.
+        Phase 4 will consolidate this with _create_configurable_item().
+        """
         # Use the canonical name from menu if found
         canonical_name = menu_item.get("name", item_name)
         price = menu_item.get("base_price", 0.0)
@@ -555,344 +582,242 @@ class ItemAdderHandler:
             order=order,
         )
 
-    def _add_bagel(
+    # =========================================================================
+    # Generic Item Creation (Data-Driven)
+    # =========================================================================
+
+    def _create_configurable_item(
         self,
-        bagel_type: str | None,
+        menu_item: dict,
         order: OrderTask,
-        toasted: bool | None = None,
-        scooped: bool | None = None,
-        spread: str | None = None,
-        spread_type: str | None = None,
-        extracted_modifiers: ExtractedModifiers | None = None,
+        quantity: int = 1,
+        user_input: str | None = None,
+        pre_filled_attributes: dict | None = None,
+        extracted_modifiers: "ExtractedModifiers | None" = None,
     ) -> StateMachineResult:
-        """Internal: Add a bagel and start configuration, pre-filling any provided details."""
-        # Look up base bagel price and type upcharge from database
-        base_price = self.pricing.lookup_base_price("Bagel")
-        bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
-            "bagel", "bread", bagel_type
-        ) if bagel_type else 0.0
+        """
+        Create an item and start its configuration flow if needed.
 
-        # Build extras list from extracted modifiers
-        extras: list[str] = []
-        extra_protein: str | None = None
+        This is the generic, data-driven item creation method. It handles all item types
+        by checking the database for configuration requirements.
 
-        if extracted_modifiers and extracted_modifiers.has_modifiers():
-            # First protein goes to extra_protein field
-            if extracted_modifiers.proteins:
-                extra_protein = extracted_modifiers.proteins[0]
-                # Additional proteins go to extras
-                extras.extend(extracted_modifiers.proteins[1:])
+        Args:
+            menu_item: Menu item dict from lookup (must have 'name', 'item_type', 'base_price')
+            order: Current order task
+            quantity: Number of items to create (default: 1)
+            user_input: Original user input for attribute extraction (optional)
+            pre_filled_attributes: Dict of attribute values to pre-fill (optional)
+            extracted_modifiers: ExtractedModifiers object to apply (optional)
 
-            # Cheeses go to extras
-            extras.extend(extracted_modifiers.cheeses)
+        Returns:
+            StateMachineResult with next question or confirmation
+        """
+        from sandwich_bot.menu_data_cache import menu_cache
 
-            # Toppings go to extras
-            extras.extend(extracted_modifiers.toppings)
+        # Extract item details
+        canonical_name = menu_item.get("name", "item")
+        price = menu_item.get("base_price", 0.0)
+        menu_item_id = menu_item.get("id")
+        item_type = menu_item.get("item_type")  # e.g., "bagel", "sized_beverage", "deli_sandwich"
+        is_signature = menu_item.get("is_signature", False)
 
-            # If modifiers include a spread, use it (unless already specified)
-            if not spread and extracted_modifiers.spreads:
-                spread = extracted_modifiers.spreads[0]
+        # Check if this item type is configurable (has attributes in DB)
+        configurable_types = menu_cache.get_configurable_item_types()
+        is_configurable = item_type in configurable_types if item_type else False
 
-            logger.info(
-                "Extracted modifiers: protein=%s, extras=%s, spread=%s",
-                extra_protein, extras, spread
+        logger.info(
+            "Creating item: name='%s', type='%s', price=$%.2f, qty=%d, configurable=%s",
+            canonical_name, item_type, price, quantity, is_configurable
+        )
+
+        # Create the requested quantity of items
+        first_item = None
+        for _ in range(quantity):
+            item = MenuItemTask(
+                menu_item_name=canonical_name,
+                menu_item_id=menu_item_id,
+                unit_price=price,
+                menu_item_type=item_type,
+                is_signature=is_signature,
             )
 
-        # Calculate total price including modifiers
-        price = base_price + bagel_type_upcharge
-        if extra_protein:
-            price += self.pricing.lookup_modifier_price(extra_protein)
-        for extra in extras:
-            price += self.pricing.lookup_modifier_price(extra)
-        if spread and spread.lower() != "none":
-            price += self.pricing.lookup_spread_price(spread, spread_type)
-        price = round(price, 2)
-        logger.info(
-            "Bagel price: base=$%.2f + type_upcharge=$%.2f + modifiers -> total=$%.2f",
-            base_price, bagel_type_upcharge, price
-        )
+            # Apply pre-filled attributes
+            if pre_filled_attributes:
+                for attr_name, attr_value in pre_filled_attributes.items():
+                    if attr_value is not None:
+                        item.attribute_values[attr_name] = attr_value
 
-        # Extract special instructions from modifiers
-        special_instructions: str | None = None
-        if extracted_modifiers and extracted_modifiers.has_special_instructions():
-            special_instructions = extracted_modifiers.get_special_instructions_string()
-            logger.info("Applying special instructions to bagel: %s", special_instructions)
+            # Apply extracted modifiers if provided
+            if extracted_modifiers and self.menu_item_handler:
+                self.menu_item_handler._apply_extracted_modifiers(item, extracted_modifiers)
 
-        # Check if bagel needs cheese clarification
-        needs_cheese = False
-        if extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
-            needs_cheese = True
-            logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
+            # Recalculate price with modifiers
+            if self.pricing:
+                self.pricing.recalculate_item_price(item)
 
-        # Create bagel with all provided details (using MenuItemTask with menu_item_type="bagel")
-        bagel = MenuItemTask(
-            menu_item_name="Bagel",
-            menu_item_type="bagel",
-            toasted=toasted,
-            spread=spread,
-            unit_price=price,
-            special_instructions=special_instructions,
-        )
-        # Set bagel-specific fields via property setters
-        if bagel_type:
-            bagel.bagel_type = bagel_type
-        if scooped is not None:
-            bagel.scooped = scooped
-        if spread_type:
-            bagel.spread_type = spread_type
-        if extra_protein:
-            bagel.extra_protein = extra_protein
-        if extras:
-            bagel.extras = extras
-        if needs_cheese:
-            bagel.needs_cheese_clarification = needs_cheese
-        bagel.mark_in_progress()
-        order.items.add_item(bagel)
+            # Mark status based on configurability
+            if is_configurable:
+                item.mark_in_progress()
+            else:
+                item.mark_complete()
 
-        # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-        self.pricing.recalculate_item_price(bagel)
+            order.items.add_item(item)
+            if first_item is None:
+                first_item = item
 
-        logger.info(
-            "Adding bagel: type=%s, toasted=%s, spread=%s, spread_type=%s, protein=%s, extras=%s, special_instructions=%s",
-            bagel_type, toasted, spread, spread_type, extra_protein, extras, special_instructions
-        )
+        # If configurable, start the configuration flow
+        if is_configurable and self.menu_item_handler:
+            # Capture any attributes from original user input
+            if user_input:
+                self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
+            # Start configuration flow
+            return self.menu_item_handler.get_first_question(first_item, order)
+        else:
+            # Not configurable - item is complete
+            order.clear_pending()
+            if quantity > 1:
+                return StateMachineResult(
+                    message=f"Got it, {quantity} {canonical_name}. Anything else?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"Got it, {canonical_name}. Anything else?",
+                    order=order,
+                )
 
-        # Use unified configuration flow which reads questions from database
-        # and handles all business rules (skip spread if has toppings, etc.)
-        return self._configure_next_incomplete_bagel(order)
-
-    def _add_bagels(
+    def _lookup_menu_item_with_disambiguation(
         self,
+        item_name: str,
         quantity: int,
-        bagel_type: str | None,
-        toasted: bool | None,
-        scooped: bool | None,
-        spread: str | None,
-        spread_type: str | None,
         order: OrderTask,
-        extracted_modifiers: ExtractedModifiers | None = None,
-    ) -> StateMachineResult:
+    ) -> tuple[dict | None, StateMachineResult | None]:
         """
-        Internal: Add multiple bagels with the same configuration.
+        Look up a menu item, handling disambiguation if multiple matches.
 
-        Creates all bagels upfront, then configures them one at a time.
-        Extracted modifiers are applied to the first bagel.
+        Uses DisambiguationHandler for unified disambiguation logic.
+
+        Args:
+            item_name: Name of item to look up
+            quantity: Number of items (stored during disambiguation)
+            order: Current order task
+
+        Returns:
+            Tuple of (menu_item, result):
+            - (menu_item, None): Single match found
+            - (None, result): Disambiguation needed, result contains the question
+            - (None, None): Item not found
         """
-        logger.info(
-            "Adding %d bagels: type=%s, toasted=%s, spread=%s, spread_type=%s",
-            quantity, bagel_type, toasted, spread, spread_type
-        )
+        item_lower = item_name.lower().strip()
 
-        # Look up base bagel price and type upcharge from database
-        base_price = self.pricing.lookup_base_price("Bagel")
-        bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
-            "bagel", "bread", bagel_type
-        ) if bagel_type else 0.0
+        # Check for generic category terms (chips, cookies, etc.)
+        generic_term = self._extract_generic_term(item_name)
+        is_exact_generic = item_lower in self.GENERIC_CATEGORY_TERMS
 
-        # Create all the bagels
-        for i in range(quantity):
-            # Build extras list from extracted modifiers (apply to first bagel only)
-            extras: list[str] = []
-            extra_protein: str | None = None
-            bagel_spread = spread
+        # Step 1: Try to find matches
+        matching_items = []
+        search_term = generic_term if is_exact_generic else item_name
 
-            # Extract special instructions for first bagel
-            special_instructions: str | None = None
+        if search_term:
+            matching_items = self.menu_lookup.lookup_menu_items(search_term)
 
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
-                # First protein goes to extra_protein field
-                if extracted_modifiers.proteins:
-                    extra_protein = extracted_modifiers.proteins[0]
-                    # Additional proteins go to extras
-                    extras.extend(extracted_modifiers.proteins[1:])
+        # Step 2: Handle results
+        if len(matching_items) == 1:
+            # Single match - return it directly
+            menu_item = matching_items[0]
+            logger.info("Single match for '%s': %s", item_name, menu_item.get("name"))
+            return (menu_item, None)
 
-                # Cheeses go to extras
-                extras.extend(extracted_modifiers.cheeses)
+        elif len(matching_items) > 1:
+            # Multiple matches - check for exact match first
+            exact_match = self.disambiguation_handler.check_exact_match(item_name, matching_items)
+            if exact_match:
+                return (exact_match, None)
 
-                # Toppings go to extras
-                extras.extend(extracted_modifiers.toppings)
+            # Check if user already has one in cart
+            cart_match = self.disambiguation_handler.check_cart_match(matching_items, order)
+            if cart_match:
+                return (cart_match, None)
 
-                # If modifiers include a spread, use it (unless already specified)
-                if not bagel_spread and extracted_modifiers.spreads:
-                    bagel_spread = extracted_modifiers.spreads[0]
-
-                logger.info(
-                    "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
-                    extra_protein, extras, bagel_spread
-                )
-
-            # Apply special instructions to first bagel
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_special_instructions():
-                special_instructions = extracted_modifiers.get_special_instructions_string()
-                logger.info("Applying special instructions to first bagel: %s", special_instructions)
-
-            # Check if first bagel needs cheese clarification
-            needs_cheese = False
-            if i == 0 and extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
-                needs_cheese = True
-                logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
-
-            # Calculate total price including modifiers (for first bagel with modifiers)
-            price = base_price + bagel_type_upcharge
-            if extra_protein:
-                price += self.pricing.lookup_modifier_price(extra_protein)
-            for extra in extras:
-                price += self.pricing.lookup_modifier_price(extra)
-            if bagel_spread and bagel_spread.lower() != "none":
-                price += self.pricing.lookup_spread_price(bagel_spread, spread_type)
-            price = round(price, 2)
-
-            # Create bagel using MenuItemTask with menu_item_type="bagel"
-            bagel = MenuItemTask(
-                menu_item_name="Bagel",
-                menu_item_type="bagel",
-                toasted=toasted,
-                spread=bagel_spread,
-                unit_price=price,
-                special_instructions=special_instructions,
+            # Need disambiguation
+            logger.info("Multiple matches for '%s' (%d items), starting disambiguation",
+                       item_name, len(matching_items))
+            result = self.disambiguation_handler.start_disambiguation(
+                item_name=item_name,
+                matching_items=matching_items,
+                order=order,
+                quantity=quantity,
+                pending_field="item_selection",
+                show_prices=not is_exact_generic,  # Show prices for specific items, not generic
             )
-            # Set bagel-specific fields via property setters
-            if bagel_type:
-                bagel.bagel_type = bagel_type
-            if scooped is not None:
-                bagel.scooped = scooped
-            if spread_type:
-                bagel.spread_type = spread_type
-            if extra_protein:
-                bagel.extra_protein = extra_protein
-            if extras:
-                bagel.extras = extras
-            if needs_cheese:
-                bagel.needs_cheese_clarification = needs_cheese
+            return (None, result)
 
-            # Mark complete if all fields provided (and no cheese clarification needed), otherwise in_progress
-            if bagel_type and toasted is not None and bagel_spread is not None and not needs_cheese:
-                bagel.mark_complete()
-            else:
-                bagel.mark_in_progress()
-            order.items.add_item(bagel)
+        # Step 3: No matches - try partial search
+        # Try singular form (cookies -> cookie)
+        search_terms = [item_lower]
+        if item_lower.endswith('ies'):
+            search_terms.append(item_lower[:-3] + 'y')
+            search_terms.append(item_lower[:-1])
+        elif item_lower.endswith('es'):
+            search_terms.append(item_lower[:-2])
+        elif item_lower.endswith('s') and len(item_lower) > 2:
+            search_terms.append(item_lower[:-1])
 
-            # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-            self.pricing.recalculate_item_price(bagel)
+        for term in search_terms:
+            matching_items = self.menu_lookup.lookup_menu_items(term)
+            if matching_items:
+                break
 
-        # Find first incomplete bagel and start configuring it
-        return self._configure_next_incomplete_bagel(order)
+        # Step 4: Try direct items_by_type search as fallback
+        if not matching_items and self._menu_data:
+            items_by_type = self._menu_data.get("items_by_type", {})
+            for type_slug, type_items in items_by_type.items():
+                for item in type_items:
+                    item_name_db = item.get("name", "").lower()
+                    for term in search_terms:
+                        if term in item_name_db:
+                            matching_items.append(item)
+                            break
+            if matching_items:
+                logger.info("Direct items_by_type search for %s: found %d items",
+                           search_terms, len(matching_items))
 
-    def _add_bagels_from_details(
-        self,
-        bagel_details: list[BagelOrderDetails],
-        order: OrderTask,
-        extracted_modifiers: ExtractedModifiers | None = None,
-    ) -> StateMachineResult:
-        """
-        Internal: Add multiple bagels with different configurations.
+        # Step 5: Handle partial match results
+        if len(matching_items) == 1:
+            menu_item = matching_items[0]
+            logger.info("Single partial match for '%s': %s", item_name, menu_item.get("name"))
+            return (menu_item, None)
+        elif len(matching_items) > 1:
+            # Check for exact match among partials
+            exact_match = self.disambiguation_handler.check_exact_match(item_name, matching_items)
+            if exact_match:
+                return (exact_match, None)
 
-        Creates all bagels upfront, then configures incomplete ones one at a time.
-        Extracted modifiers are applied to the first bagel.
-        """
-        logger.info("Adding %d bagels from details", len(bagel_details))
-
-        for i, details in enumerate(bagel_details):
-            # Look up base price and bagel type upcharge from database
-            try:
-                base_price = self.pricing.lookup_base_price("Bagel")
-            except ValueError:
-                base_price = 0
-            bagel_type_upcharge = self.pricing.lookup_attribute_option_upcharge(
-                "bagel", "bread", details.bagel_type
-            ) if details.bagel_type else 0.0
-
-            # Build extras list from extracted modifiers (apply to first bagel only)
-            extras: list[str] = []
-            extra_protein: str | None = None
-            spread = details.spread
-
-            # Extract special instructions for first bagel
-            special_instructions: str | None = None
-
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_modifiers():
-                # First protein goes to extra_protein field
-                if extracted_modifiers.proteins:
-                    extra_protein = extracted_modifiers.proteins[0]
-                    # Additional proteins go to extras
-                    extras.extend(extracted_modifiers.proteins[1:])
-
-                # Cheeses go to extras
-                extras.extend(extracted_modifiers.cheeses)
-
-                # Toppings go to extras
-                extras.extend(extracted_modifiers.toppings)
-
-                # If modifiers include a spread, use it (unless already specified)
-                if not spread and extracted_modifiers.spreads:
-                    spread = extracted_modifiers.spreads[0]
-
-                logger.info(
-                    "Applying extracted modifiers to first bagel: protein=%s, extras=%s, spread=%s",
-                    extra_protein, extras, spread
-                )
-
-            # Apply special instructions to first bagel
-            if i == 0 and extracted_modifiers and extracted_modifiers.has_special_instructions():
-                special_instructions = extracted_modifiers.get_special_instructions_string()
-                logger.info("Applying special instructions to first bagel: %s", special_instructions)
-
-            # Check if first bagel needs cheese clarification
-            needs_cheese = False
-            if i == 0 and extracted_modifiers and extracted_modifiers.needs_cheese_clarification:
-                needs_cheese = True
-                logger.info("Bagel needs cheese clarification (user said 'cheese' without type)")
-
-            # Calculate total price including modifiers
-            price = base_price + bagel_type_upcharge
-            if extra_protein:
-                price += self.pricing.lookup_modifier_price(extra_protein)
-            for extra in extras:
-                price += self.pricing.lookup_modifier_price(extra)
-            if spread and spread.lower() != "none":
-                price += self.pricing.lookup_spread_price(spread, details.spread_type)
-            price = round(price, 2)
-
-            # Create bagel using MenuItemTask with menu_item_type="bagel"
-            bagel = MenuItemTask(
-                menu_item_name="Bagel",
-                menu_item_type="bagel",
-                toasted=details.toasted,
-                spread=spread,
-                unit_price=price,
-                special_instructions=special_instructions,
+            # Need disambiguation
+            logger.info("Multiple partial matches for '%s' (%d items), starting disambiguation",
+                       item_name, len(matching_items))
+            result = self.disambiguation_handler.start_disambiguation(
+                item_name=item_name,
+                matching_items=matching_items,
+                order=order,
+                quantity=quantity,
+                pending_field="item_selection",
+                show_prices=True,
             )
-            # Set bagel-specific fields via property setters
-            if details.bagel_type:
-                bagel.bagel_type = details.bagel_type
-            if details.spread_type:
-                bagel.spread_type = details.spread_type
-            if extra_protein:
-                bagel.extra_protein = extra_protein
-            if extras:
-                bagel.extras = extras
-            if needs_cheese:
-                bagel.needs_cheese_clarification = needs_cheese
+            return (None, result)
 
-            # Mark complete if all fields provided (and no cheese clarification needed)
-            if details.bagel_type and details.toasted is not None and details.spread is not None and not needs_cheese:
-                bagel.mark_complete()
-            else:
-                bagel.mark_in_progress()
+        # Step 6: Still no match - try single item lookup as last resort
+        menu_item = self.menu_lookup.lookup_menu_item(item_name)
+        if menu_item:
+            return (menu_item, None)
 
-            order.items.add_item(bagel)
+        # Not found
+        logger.warning("Menu item not found: '%s'", item_name)
+        return (None, None)
 
-            # Recalculate price to set bagel_type_upcharge field (e.g., gluten free +$0.80)
-            self.pricing.recalculate_item_price(bagel)
-
-            logger.info(
-                "Bagel %d: type=%s, toasted=%s, spread=%s (status=%s)",
-                i + 1, details.bagel_type, details.toasted, details.spread,
-                bagel.status.value
-            )
-
-        # Find first incomplete bagel and start configuring it
-        return self._configure_next_incomplete_bagel(order)
+    # =========================================================================
+    # Beverage Handling (with disambiguation)
+    # =========================================================================
 
     def _add_coffee(
         self,

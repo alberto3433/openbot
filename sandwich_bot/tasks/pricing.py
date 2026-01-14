@@ -644,10 +644,10 @@ class PricingEngine:
             )
             total += protein_price
 
-        # Extras upcharge (for bagels/sandwiches - toppings, cheese, etc.)
-        extras = getattr(item, 'extras', None)
-        if extras:
-            for extra in extras:
+        # Toppings upcharge (for bagels/sandwiches - toppings, cheese, etc.)
+        toppings = getattr(item, 'toppings', None)
+        if toppings:
+            for extra in toppings:
                 extra_price = self.lookup_generic_modifier_price(
                     extra, item_type or "bagel"
                 )

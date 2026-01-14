@@ -197,8 +197,8 @@ def _get_pending_item_description(item: "ItemTask") -> str:
             parts = []
             if item.extra_protein:
                 parts.append(item.extra_protein)
-            if item.extras:
-                parts.extend(item.extras[:2])  # Limit to avoid long descriptions
+            if item.toppings:
+                parts.extend(item.toppings[:2])  # Limit to avoid long descriptions
             if parts:
                 return " ".join(parts) + " bagel"
             return "bagel"

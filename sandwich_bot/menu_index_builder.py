@@ -404,13 +404,16 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             index["items_by_type"]["signature_items"].append(item_json)
 
         cat = (item.category or "").lower()
-        # Handle both "sandwich"/"pizza" and "signature" categories for main items
-        # Use substring matching to handle categories like "Signature Sandwich"
+        # Data-driven main item detection:
+        # - Check if category matches the primary item type
+        # - Check if category contains the primary type slug (e.g., "Signature Sandwich" contains "sandwich")
+        # - Check if item type matches the primary type
+        # - Check if category contains "signature" (for signature menu items)
         is_main_item_type = (
             cat == primary_type_slug
-            or "sandwich" in cat
+            or primary_type_slug in cat
             or "signature" in cat
-            or cat == "bagel"
+            or item_type_slug == primary_type_slug
         )
         if is_main_item_type and item.is_signature:
             index[signature_key].append(item_json)
@@ -437,16 +440,16 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     index["cheese_types"] = [ing.name for ing in cheese_ingredients]
     index["cheese_prices"] = {ing.name.lower(): ing.base_price for ing in cheese_ingredients}
 
-    # Cream cheese flavors - extracted from ingredients with 'Cream Cheese' in name
-    # These are used for listing cream cheese options to customers
-    cream_cheese_flavors = []
-    for ing in cheese_ingredients:
-        if "cream cheese" in ing.name.lower():
-            # Extract flavor (e.g., "Plain Cream Cheese" -> "plain")
-            flavor = ing.name.lower().replace(" cream cheese", "").strip()
-            if flavor and flavor not in cream_cheese_flavors:
-                cream_cheese_flavors.append(flavor)
-    index["cream_cheese_flavors"] = cream_cheese_flavors
+    # Spread flavors - extracted from spread category ingredients
+    # Data-driven: use spread category from database instead of hardcoded "cream cheese"
+    spread_ingredients = preloaded_ingredients.get("spread", [])
+    spread_flavors = []
+    for ing in spread_ingredients:
+        # Use ingredient name directly (e.g., "Plain Cream Cheese", "Scallion Cream Cheese")
+        spread_flavors.append(ing.name)
+    index["spread_flavors"] = spread_flavors
+    # Also keep the legacy key for backward compatibility
+    index["cream_cheese_flavors"] = spread_flavors
 
     # Sauce types - all ingredients with category 'sauce'
     sauce_ingredients = preloaded_ingredients.get("sauce", [])

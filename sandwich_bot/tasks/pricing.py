@@ -507,9 +507,12 @@ class PricingEngine:
             Upcharge price for the spread (e.g., $1.50 for cream cheese, $1.75 for scallion)
         """
         # Build full spread name for specialty spreads (e.g., "scallion cream cheese")
-        if spread_type and spread_type.lower() not in ("plain", "regular"):
-            full_spread_name = f"{spread_type}_{spread}".replace(" ", "_").lower()
-            # Check if we have a specific price for this specialty spread
+        # Check if spread_type is a specialty variant by looking it up in the database
+        # Common non-specialty terms (plain, regular) indicate the base spread
+        if spread_type:
+            spread_type_lower = spread_type.lower()
+            # Try to look up the specialty spread first
+            full_spread_name = f"{spread_type_lower}_{spread}".replace(" ", "_").lower()
             specialty_price = self.lookup_modifier_price(full_spread_name, item_type)
             if specialty_price > 0:
                 logger.debug(
@@ -517,6 +520,7 @@ class PricingEngine:
                     full_spread_name, specialty_price
                 )
                 return specialty_price
+            # If specialty not found, fall through to base spread lookup
 
         # Look up the base spread price from the database
         # (e.g., "cream cheese" -> $1.50, "butter" -> $0.50)
@@ -528,16 +532,16 @@ class PricingEngine:
             )
             return spread_price
 
-        # For cream cheese without a type, try "plain_cream_cheese" (database canonical name)
+        # Try normalized form with "plain_" prefix (database canonical name pattern)
         spread_normalized = spread.lower().replace(" ", "_")
-        if spread_normalized == "cream_cheese":
-            spread_price = self.lookup_modifier_price("plain_cream_cheese", item_type)
-            if spread_price > 0:
-                logger.debug(
-                    "Using plain cream cheese upcharge: $%.2f",
-                    spread_price
-                )
-                return spread_price
+        plain_spread_name = f"plain_{spread_normalized}"
+        spread_price = self.lookup_modifier_price(plain_spread_name, item_type)
+        if spread_price > 0:
+            logger.debug(
+                "Using plain spread upcharge: %s = $%.2f",
+                plain_spread_name, spread_price
+            )
+            return spread_price
 
         return spread_price
 

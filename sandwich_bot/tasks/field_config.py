@@ -25,26 +25,6 @@ class ItemTypeConfig(BaseModel):
     fields: dict[str, FieldConfig] = Field(default_factory=dict)
 
 
-# =============================================================================
-# Field Name Mapping
-# =============================================================================
-
-# Map code field names to database attribute slugs
-# Only entries where code field name differs from DB slug
-# If not in map, field name is used directly as the DB slug
-_FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
-    # Phase 1.1 completed: bagel_type renamed to bread in code
-    # Phase 1.2 completed: iced renamed to temperature in code
-    # milk/sweetener mappings must remain - they are separate Python properties
-    # (milk: str, sweeteners: list) that share a single DB attribute (milk_sweetener_syrup)
-    # for options validation. Cannot consolidate without major restructuring.
-    "sized_beverage": {
-        "milk": "milk_sweetener_syrup",
-        "sweetener": "milk_sweetener_syrup",
-    },
-}
-
-
 
 # =============================================================================
 # Order Flow Field Configurations (not item-specific)
@@ -161,11 +141,16 @@ def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
             f"Check that item_type_attributes table has entries for this item type."
         )
 
-    # Get the field name mapping for this item type
-    field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})
+    # Get the field name mapping for this item type (data-driven from DB)
+    # This maps code field names (ingredient categories) to attribute slugs
+    field_map = menu_cache.get_field_to_slug_map(db_item_type)
 
     # Create a reverse map: slug -> field_name
-    slug_to_field = {v: k for k, v in field_map.items()}
+    # Note: Multiple field names may map to the same slug, we keep the first one found
+    slug_to_field: dict[str, str] = {}
+    for field_name, slug in field_map.items():
+        if slug not in slug_to_field:
+            slug_to_field[slug] = field_name
 
     result: dict[str, FieldConfig] = {}
 
@@ -238,9 +223,8 @@ def _get_db_field_config(item_type: str, field_name: str) -> dict | None:
     # Resolve item type alias to canonical database slug (data-driven)
     db_item_type = menu_cache.resolve_item_type_slug(item_type)
 
-    # Map field name to database slug
-    field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})
-    db_field_slug = field_map.get(field_name, field_name)
+    # Map field name to database slug (data-driven from DB ingredient categories)
+    db_field_slug = menu_cache.resolve_field_to_slug(db_item_type, field_name)
 
     return menu_cache.get_field_config(db_item_type, db_field_slug)
 

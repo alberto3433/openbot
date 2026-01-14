@@ -138,6 +138,12 @@ class MenuDataCache:
         # This is the single source of truth for attribute configs
         self._item_type_attributes: dict[str, dict] = {}  # item_type_slug -> {attr_slug -> attr_config}
 
+        # Field-to-slug mapping: maps code field names to DB attribute slugs
+        # For attributes that load from ingredients, multiple field names (ingredient categories)
+        # can map to one attribute slug (e.g., "milk" -> "milk_sweetener_syrup")
+        # Lazily populated alongside _item_type_attributes
+        self._field_to_slug_map: dict[str, dict[str, str]] = {}  # item_type_slug -> {field_name -> attr_slug}
+
         # Item type modifier categories ("food" or "beverage") - replaces MODIFIER_EXTRACTION_TYPE
         self._item_type_modifier_categories: dict[str, str | None] = {}  # item_type_slug -> modifier_category
 
@@ -2204,10 +2210,31 @@ class MenuDataCache:
                     "is_global_attribute": True,
                 }
 
+            # Build field-to-slug mapping for this item type
+            # For attributes that load from ingredients, use ingredient categories as field names
+            field_map: dict[str, str] = {}
+            for attr_slug, attr_config in result.items():
+                options = attr_config.get("options", [])
+                # Extract unique categories from options (if they have category field)
+                categories = {opt.get("category") for opt in options if opt.get("category")}
+                if categories:
+                    # Multiple field names (categories) map to this attribute slug
+                    for category in categories:
+                        field_map[category] = attr_slug
+                # Note: If no categories, field_name == attr_slug (no mapping needed)
+
+            # Store the mapping
+            self._field_to_slug_map[item_type_slug] = field_map
+
             logger.info(
                 "Loaded %d attributes for %s: %s",
                 len(result), item_type_slug, list(result.keys())
             )
+            if field_map:
+                logger.debug(
+                    "Field-to-slug map for %s: %s",
+                    item_type_slug, field_map
+                )
             return result
 
         finally:
@@ -2274,6 +2301,43 @@ class MenuDataCache:
     def clear_item_type_attributes_cache(self) -> None:
         """Clear the item type attributes cache (for testing or after DB changes)."""
         self._item_type_attributes = {}
+        self._field_to_slug_map = {}
+
+    def get_field_to_slug_map(self, item_type_slug: str) -> dict[str, str]:
+        """Get the field-to-slug mapping for an item type.
+
+        For attributes that load from ingredients, code field names (ingredient categories)
+        may differ from the DB attribute slug. This method returns a mapping that can be
+        used to resolve code field names to DB attribute slugs.
+
+        For example, for sized_beverage:
+            {"milk": "milk_sweetener_syrup", "sweetener": "milk_sweetener_syrup", "syrup": "milk_sweetener_syrup"}
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+
+        Returns:
+            Dict mapping field_name -> attribute_slug for fields that differ.
+            Empty dict if no mappings are needed (all field names = attribute slugs).
+        """
+        # Ensure attributes are loaded (which also populates field_to_slug_map)
+        self.get_item_type_attributes(item_type_slug)
+        return self._field_to_slug_map.get(item_type_slug, {})
+
+    def resolve_field_to_slug(self, item_type_slug: str, field_name: str) -> str:
+        """Resolve a code field name to its DB attribute slug.
+
+        If no mapping exists, returns the field_name unchanged (field_name == slug).
+
+        Args:
+            item_type_slug: The item type slug
+            field_name: The code field name (e.g., "milk", "sweetener")
+
+        Returns:
+            The DB attribute slug (e.g., "milk_sweetener_syrup" or the field_name itself)
+        """
+        field_map = self.get_field_to_slug_map(item_type_slug)
+        return field_map.get(field_name, field_name)
 
     def get_field_config(self, item_type_slug: str, field_slug: str) -> dict | None:
         """Get field configuration for a specific attribute from database.

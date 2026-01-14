@@ -150,7 +150,6 @@ class ItemAdderHandler:
 
             # Check if this needs disambiguation via menu lookup
             # Generic terms or unknown drink types go through disambiguation
-            from sandwich_bot.menu_data_cache import menu_cache
             is_generic_drink = menu_cache.is_category_reference(drink_name_lower) == "drink"
             if is_generic_drink or (
                 drink_name_lower and drink_name_lower not in standard_coffee_types
@@ -365,7 +364,6 @@ class ItemAdderHandler:
         - "Chocolate Chip Cookie" -> "cookie"
         - "Turkey Club" -> None (specific item)
         """
-        from sandwich_bot.menu_data_cache import menu_cache
         item_lower = item_name.lower().strip()
 
         # Check if exact term matches multiple menu items
@@ -634,8 +632,6 @@ class ItemAdderHandler:
         Returns:
             StateMachineResult with next question or confirmation
         """
-        from sandwich_bot.menu_data_cache import menu_cache
-
         # Extract item details
         canonical_name = menu_item.get("name", "item")
         price = menu_item.get("base_price", 0.0)
@@ -754,7 +750,6 @@ class ItemAdderHandler:
         item_lower = item_name.lower().strip()
 
         # Check for generic drink terms using data-driven category reference
-        from sandwich_bot.menu_data_cache import menu_cache
         category_slug = menu_cache.is_category_reference(item_lower)
         is_generic_drink = category_slug == "drink"  # Matches "drink", "drinks", "beverage", etc.
         if is_generic_drink:

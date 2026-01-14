@@ -1600,6 +1600,7 @@ class MenuDataCache:
             .add_columns(
                 MenuItem.id.label("menu_item_id"),
                 MenuItem.name.label("menu_item_name"),
+                MenuItem.base_price.label("base_price"),
                 MenuItem.item_type_id.label("item_type_id"),
                 Category.slug.label("category_slug"),
             )
@@ -1614,7 +1615,8 @@ class MenuDataCache:
             item_dict = {
                 "id": assignment.menu_item_id,
                 "name": assignment.menu_item_name,
-                "item_type_slug": item_type_slug,
+                "base_price": assignment.base_price,
+                "item_type": item_type_slug,  # Use 'item_type' key to match expectations
             }
             if assignment.category_slug in menu_items_by_category:
                 menu_items_by_category[assignment.category_slug].append(item_dict)

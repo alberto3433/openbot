@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict[str, Any]]:
     """
     Find a menu item by name across all categories.
-    Returns the full menu item dict including recipe and choice_groups.
+    Returns the full menu item dict including default_config.
     """
     if not menu_index or not item_name:
         return None
@@ -127,10 +127,10 @@ def _get_extra_price_for_choice(
     """
     Look up the extra_price for a specific customization choice.
 
-    First tries the generic item_types system, then falls back to recipe data.
+    Uses the generic item_types system to look up price modifiers.
 
     Args:
-        menu_item: The menu item dict with recipe data
+        menu_item: The menu item dict
         choice_group_name: The group name (e.g., "Bread", "Cheese")
         choice_value: The selected choice name (e.g., "Wheat", "Swiss")
         menu_index: Optional menu index dict containing generic item_types
@@ -141,44 +141,30 @@ def _get_extra_price_for_choice(
     if not choice_value:
         return 0.0
 
-    # Try generic item_types system first (if menu_index provided)
-    if menu_index:
-        item_types = menu_index.get("item_types", {})
-        # Map choice_group_name to attribute slug
-        attr_slug = choice_group_name.lower()
-        if attr_slug == "sauce":
-            attr_slug = "sauces"
-
-        # Get the item type for the menu item (default to "sandwich")
-        item_type_slug = "sandwich"
-        if menu_item:
-            item_type_slug = menu_item.get("item_type", "sandwich") or "sandwich"
-
-        item_type_data = item_types.get(item_type_slug, {})
-        if item_type_data.get("is_configurable"):
-            for attr in item_type_data.get("attributes", []):
-                if attr.get("slug") == attr_slug:
-                    for opt in attr.get("options", []):
-                        opt_name = opt.get("display_name", "").lower()
-                        opt_slug = opt.get("slug", "").lower()
-                        choice_lower = choice_value.lower()
-                        if opt_name == choice_lower or opt_slug == choice_lower:
-                            return float(opt.get("price_modifier", 0.0))
-
-    # Fall back to recipe-based lookup
-    if not menu_item:
+    if not menu_index:
         return 0.0
 
-    recipe = menu_item.get("recipe")
-    if not recipe:
-        return 0.0
+    item_types = menu_index.get("item_types", {})
+    # Map choice_group_name to attribute slug
+    attr_slug = choice_group_name.lower()
+    if attr_slug == "sauce":
+        attr_slug = "sauces"
 
-    choice_groups = recipe.get("choice_groups", [])
-    for group in choice_groups:
-        if group.get("name", "").lower() == choice_group_name.lower():
-            for option in group.get("options", []):
-                if option.get("name", "").lower() == choice_value.lower():
-                    return float(option.get("extra_price", 0.0))
+    # Get the item type for the menu item (default to "sandwich")
+    item_type_slug = "sandwich"
+    if menu_item:
+        item_type_slug = menu_item.get("item_type", "sandwich") or "sandwich"
+
+    item_type_data = item_types.get(item_type_slug, {})
+    if item_type_data.get("is_configurable"):
+        for attr in item_type_data.get("attributes", []):
+            if attr.get("slug") == attr_slug:
+                for opt in attr.get("options", []):
+                    opt_name = opt.get("display_name", "").lower()
+                    opt_slug = opt.get("slug", "").lower()
+                    choice_lower = choice_value.lower()
+                    if opt_name == choice_lower or opt_slug == choice_lower:
+                        return float(opt.get("price_modifier", 0.0))
 
     return 0.0
 
@@ -195,7 +181,7 @@ def _calculate_customization_extras(
     """
     Calculate the total extra price from all customization choices.
 
-    Uses the generic item_types system when available, falls back to recipe data.
+    Uses the generic item_types system to look up price modifiers.
     """
     total_extra = 0.0
 

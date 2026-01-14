@@ -89,244 +89,219 @@ class ItemAdderHandler:
         **kwargs,
     ) -> StateMachineResult:
         """
-        Unified item adder that routes to appropriate handler based on item type attributes.
+        Unified item adder using data-driven configuration.
 
-        This is the data-driven entry point for adding items. Instead of checking
-        item type names, callers should use this method which routes based on
-        what attributes the item type has in the database.
+        All item types flow through _create_configurable_item() which handles
+        DB-driven configuration. The only exception is beverages that need
+        disambiguation (generic/unknown drink types) which use _add_coffee().
 
         Args:
-            item_type: The item type slug (e.g., "bagel", "sized_beverage", "espresso")
+            item_type: The item type slug (e.g., "bagel", "sized_beverage", "deli_sandwich")
             order: The current order
             quantity: Number of items to add (default 1)
-            **kwargs: Item-specific parameters passed to the specialized handler
+            **kwargs: Item-specific parameters:
+                - bagel_type, toasted, scooped, spread, spread_type (for bagels)
+                - coffee_type/drink_type, size, iced, milk, sweetener, etc. (for beverages)
+                - item_name, modifications, bagel_choice (for menu items)
+                - extracted_modifiers (for any item with modifiers)
 
         Returns:
             StateMachineResult with next question or confirmation
         """
-        from sandwich_bot.menu_data_cache import menu_cache
+        from .schemas import ExtractedCoffeeModifiers
 
-        # Get attributes for this item type from database
-        attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+        quantity = max(1, quantity)
 
-        # Route based on attributes (data-driven, not type names)
-        if "bread" in attrs:
-            # Items with bread attribute (bagels) - use bagel handler
-            return self._add_bagel_item(order, quantity, **kwargs)
-        elif "size" in attrs:
-            # Items with size attribute (beverages) - use coffee handler
-            return self._add_coffee_item(order, quantity, **kwargs)
-        else:
-            # Generic menu item - use menu item handler
-            item_name = kwargs.get("item_name") or kwargs.get("menu_item_name") or item_type
-            return self.add_menu_item(
-                item_name=item_name,
-                quantity=quantity,
-                order=order,
-                toasted=kwargs.get("toasted"),
-                bagel_choice=kwargs.get("bagel_choice"),
-                modifications=kwargs.get("modifications"),
-            )
-
-    def _add_bagel_item(
-        self,
-        order: OrderTask,
-        quantity: int = 1,
-        **kwargs,
-    ) -> StateMachineResult:
-        """Internal: Add bagel(s) using the generic data-driven flow.
-
-        Routes through _create_configurable_item() which:
-        - Creates MenuItemTask with menu_item_type="bagel"
-        - Applies pre-filled attributes (bread type, toasted, spread, etc.)
-        - Applies extracted modifiers (proteins, cheeses, toppings)
-        - Starts DB-driven configuration via MenuItemConfigHandler
-        """
-        # Build menu_item dict for bagel
-        base_price = self.pricing.lookup_base_price("Bagel") if self.pricing else 0.0
-        menu_item = {
-            "name": "Bagel",
-            "item_type": "bagel",
-            "base_price": base_price,
-            "id": None,  # Not a specific menu item
-            "is_signature": False,
-        }
-
-        # Map bagel kwargs to pre_filled_attributes
-        # Use DB canonical names: "bread" for bagel_type, "spread_type" for spread
-        pre_filled_attributes = {}
-
-        bagel_type = kwargs.get("bagel_type")
-        if bagel_type:
-            pre_filled_attributes["bread"] = bagel_type
-
-        toasted = kwargs.get("toasted")
-        if toasted is not None:
-            pre_filled_attributes["toasted"] = toasted
-
-        scooped = kwargs.get("scooped")
-        if scooped is not None:
-            pre_filled_attributes["scooped"] = scooped
-
-        spread = kwargs.get("spread")
-        spread_type = kwargs.get("spread_type")
-        if spread:
-            # Store both canonical and legacy keys for compatibility
-            pre_filled_attributes["spread_type"] = spread
-            if spread_type:
-                # If spread_type is specified separately (e.g., "plain", "scallion")
-                pre_filled_attributes["spread_variety"] = spread_type
-
-        logger.info(
-            "ADD BAGEL via generic flow: qty=%d, pre_filled=%s",
-            quantity, {k: v for k, v in pre_filled_attributes.items() if v is not None}
+        # Determine item name from various kwargs
+        item_name = (
+            kwargs.get("item_name") or
+            kwargs.get("menu_item_name") or
+            kwargs.get("coffee_type") or
+            kwargs.get("drink_type") or
+            kwargs.get("bagel_type") or
+            item_type
         )
 
-        # Route through generic item creation
-        return self._create_configurable_item(
-            menu_item=menu_item,
-            order=order,
-            quantity=quantity,
-            pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
-            extracted_modifiers=kwargs.get("extracted_modifiers"),
-        )
+        # Check if this is a beverage that needs disambiguation
+        # (generic request like "drink" or unknown type that needs menu lookup)
+        if item_type == "sized_beverage" or kwargs.get("coffee_type") or kwargs.get("drink_type"):
+            drink_name = kwargs.get("coffee_type") or kwargs.get("drink_type") or ""
+            drink_name_lower = drink_name.lower().strip()
+            standard_coffee_types = get_coffee_types()
+            generic_terms = {"drink", "drinks", "beverage", "beverages", "something to drink", ""}
 
-    def _add_coffee_item(
-        self,
-        order: OrderTask,
-        quantity: int = 1,
-        **kwargs,
-    ) -> StateMachineResult:
-        """Internal: Add beverage using generic flow or _add_coffee for disambiguation.
-
-        Routes known drink types through _create_configurable_item() which uses
-        DB-driven configuration. Falls back to _add_coffee() for:
-        - Generic drink requests (no type specified)
-        - Partial term matching (needs disambiguation)
-        - Menu item lookup for unknown types
-        """
-        coffee_type = kwargs.get("coffee_type") or kwargs.get("drink_type")
-        coffee_type_lower = (coffee_type or "").lower().strip()
-
-        # Check if this is a known coffee type that can go through generic flow
-        # These are standard beverage types that don't need menu lookup disambiguation
-        standard_coffee_types = get_coffee_types()
-        is_known_coffee_type = coffee_type_lower in standard_coffee_types
-
-        # Generic or partial drink requests need the complex _add_coffee logic
-        generic_drink_terms = {"drink", "drinks", "beverage", "beverages", "something to drink", ""}
-        needs_disambiguation = (
-            coffee_type_lower in generic_drink_terms or
-            not is_known_coffee_type
-        )
-
-        if needs_disambiguation:
-            # Use _add_coffee for disambiguation and menu lookup
-            return self._add_coffee(
-                coffee_type=coffee_type,
-                size=kwargs.get("size"),
-                iced=kwargs.get("iced"),
-                milk=kwargs.get("milk"),
-                sweetener=kwargs.get("sweetener"),
-                sweetener_quantity=kwargs.get("sweetener_quantity", 1),
-                flavor_syrup=kwargs.get("flavor_syrup"),
-                quantity=quantity,
-                order=order,
-                special_instructions=kwargs.get("special_instructions"),
-                decaf=kwargs.get("decaf"),
-                syrup_quantity=kwargs.get("syrup_quantity", 1),
-                wants_syrup=kwargs.get("wants_syrup", False),
-                cream_level=kwargs.get("cream_level"),
-                extra_shots=kwargs.get("extra_shots", 0),
-                original_input=kwargs.get("original_input"),
-            )
-
-        # Known coffee type - route through generic data-driven flow
-        # Look up price from menu or pricing engine
-        menu_item_data = self.menu_lookup.lookup_menu_item(coffee_type) if self.menu_lookup else None
-        if menu_item_data and menu_item_data.get("base_price"):
-            base_price = menu_item_data.get("base_price", 0)
-        elif self.pricing:
-            try:
-                base_price = self.pricing.lookup_base_price(coffee_type)
-            except ValueError:
-                base_price = 0
-        else:
-            base_price = 0
+            if drink_name_lower in generic_terms or drink_name_lower not in standard_coffee_types:
+                # Needs disambiguation - delegate to _add_coffee
+                return self._add_coffee(
+                    coffee_type=drink_name or None,
+                    size=kwargs.get("size"),
+                    iced=kwargs.get("iced"),
+                    milk=kwargs.get("milk"),
+                    sweetener=kwargs.get("sweetener"),
+                    sweetener_quantity=kwargs.get("sweetener_quantity", 1),
+                    flavor_syrup=kwargs.get("flavor_syrup"),
+                    quantity=quantity,
+                    order=order,
+                    special_instructions=kwargs.get("special_instructions"),
+                    decaf=kwargs.get("decaf"),
+                    syrup_quantity=kwargs.get("syrup_quantity", 1),
+                    wants_syrup=kwargs.get("wants_syrup", False),
+                    cream_level=kwargs.get("cream_level"),
+                    extra_shots=kwargs.get("extra_shots", 0),
+                    original_input=kwargs.get("original_input"),
+                )
 
         # Build menu_item dict
-        menu_item = {
-            "name": coffee_type,
-            "item_type": "sized_beverage",
-            "base_price": base_price,
-            "id": menu_item_data.get("id") if menu_item_data else None,
-            "is_signature": False,
-        }
+        menu_item = self._build_menu_item_dict(item_type, item_name, kwargs)
 
-        # Map beverage kwargs to pre_filled_attributes
-        pre_filled_attributes = {}
+        # Build pre_filled_attributes from kwargs
+        pre_filled_attributes = self._extract_pre_filled_attributes(item_type, kwargs)
 
-        size = kwargs.get("size")
-        if size:
-            pre_filled_attributes["size"] = size
-
-        iced = kwargs.get("iced")
-        if iced is not None:
-            pre_filled_attributes["temperature"] = "iced" if iced else "hot"
-
-        decaf = kwargs.get("decaf")
-        if decaf is not None:
-            pre_filled_attributes["decaf"] = decaf
-
-        milk = kwargs.get("milk")
-        if milk:
-            pre_filled_attributes["milk"] = milk
+        # Build extracted modifiers for beverages
+        extracted_modifiers = kwargs.get("extracted_modifiers")
+        if item_type == "sized_beverage" and not extracted_modifiers:
+            # Create coffee modifiers from kwargs if not already provided
+            sweetener = kwargs.get("sweetener")
+            flavor_syrup = kwargs.get("flavor_syrup")
+            special_instructions = kwargs.get("special_instructions")
+            extra_shots = kwargs.get("extra_shots", 0)
+            if any([sweetener, flavor_syrup, special_instructions, extra_shots]):
+                extracted_modifiers = ExtractedCoffeeModifiers(
+                    sweeteners=[sweetener] if sweetener else [],
+                    syrups=[flavor_syrup] if flavor_syrup else [],
+                    extra_shots=extra_shots,
+                    special_instructions=[special_instructions] if special_instructions else [],
+                )
 
         logger.info(
-            "ADD BEVERAGE via generic flow: type=%s, qty=%d, pre_filled=%s",
-            coffee_type, quantity, {k: v for k, v in pre_filled_attributes.items() if v is not None}
+            "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
+            item_type, item_name, quantity,
+            {k: v for k, v in pre_filled_attributes.items() if v is not None}
         )
 
-        # Create ExtractedCoffeeModifiers from kwargs for additional modifiers
-        from .schemas import ExtractedCoffeeModifiers
-        coffee_modifiers = None
-        sweetener = kwargs.get("sweetener")
-        flavor_syrup = kwargs.get("flavor_syrup")
-        special_instructions = kwargs.get("special_instructions")
-        cream_level = kwargs.get("cream_level")
-        extra_shots = kwargs.get("extra_shots", 0)
-
-        if any([sweetener, flavor_syrup, special_instructions, cream_level, extra_shots]):
-            coffee_modifiers = ExtractedCoffeeModifiers(
-                sweeteners=[sweetener] if sweetener else [],
-                syrups=[flavor_syrup] if flavor_syrup else [],
-                extra_shots=extra_shots,
-                special_instructions=[special_instructions] if special_instructions else [],
-            )
-            # Note: cream_level is set directly below
-
-        # Route through generic item creation
+        # Create item through generic flow
         result = self._create_configurable_item(
             menu_item=menu_item,
             order=order,
             quantity=quantity,
+            user_input=kwargs.get("original_input"),
             pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
-            extracted_modifiers=coffee_modifiers,
+            extracted_modifiers=extracted_modifiers,
         )
 
-        # Apply additional properties that aren't in standard attributes
-        # These need to be set after item creation
-        for item in order.items.items:
-            if (getattr(item, 'menu_item_name', None) == coffee_type and
-                    item.status.value == "in_progress"):
-                if cream_level:
-                    item.cream_level = cream_level
-                if kwargs.get("wants_syrup"):
-                    item.wants_syrup = True
-                if kwargs.get("syrup_quantity", 1) > 1:
-                    item.pending_syrup_quantity = kwargs.get("syrup_quantity")
+        # Apply beverage-specific properties not in standard attributes
+        if item_type == "sized_beverage":
+            drink_name = kwargs.get("coffee_type") or kwargs.get("drink_type")
+            for item in order.items.items:
+                if (getattr(item, 'menu_item_name', None) == drink_name and
+                        item.status.value == "in_progress"):
+                    if kwargs.get("cream_level"):
+                        item.cream_level = kwargs.get("cream_level")
+                    if kwargs.get("wants_syrup"):
+                        item.wants_syrup = True
+                    if kwargs.get("syrup_quantity", 1) > 1:
+                        item.pending_syrup_quantity = kwargs.get("syrup_quantity")
 
         return result
+
+    def _build_menu_item_dict(
+        self,
+        item_type: str,
+        item_name: str,
+        kwargs: dict,
+    ) -> dict:
+        """Build menu_item dict for _create_configurable_item().
+
+        Args:
+            item_type: The item type slug
+            item_name: The item name (e.g., "Bagel", "Latte", "Turkey Club")
+            kwargs: Original kwargs with item details
+
+        Returns:
+            Dict with name, item_type, base_price, id, is_signature
+        """
+        # Determine canonical name and price
+        if item_type == "bagel":
+            canonical_name = "Bagel"
+            base_price = self.pricing.lookup_base_price("Bagel") if self.pricing else 0.0
+            menu_item_id = None
+        elif item_type == "sized_beverage":
+            canonical_name = kwargs.get("coffee_type") or kwargs.get("drink_type") or item_name
+            # Look up price from menu or pricing engine
+            menu_data = self.menu_lookup.lookup_menu_item(canonical_name) if self.menu_lookup else None
+            if menu_data and menu_data.get("base_price"):
+                base_price = menu_data.get("base_price", 0)
+                menu_item_id = menu_data.get("id")
+            elif self.pricing:
+                try:
+                    base_price = self.pricing.lookup_base_price(canonical_name)
+                except ValueError:
+                    base_price = 0
+                menu_item_id = None
+            else:
+                base_price = 0
+                menu_item_id = None
+        else:
+            # Generic menu item - look up from menu
+            canonical_name = item_name
+            menu_data = self.menu_lookup.lookup_menu_item(item_name) if self.menu_lookup else None
+            if menu_data:
+                canonical_name = menu_data.get("name", item_name)
+                base_price = menu_data.get("base_price", 0)
+                menu_item_id = menu_data.get("id")
+            else:
+                base_price = 0
+                menu_item_id = None
+
+        return {
+            "name": canonical_name,
+            "item_type": item_type,
+            "base_price": base_price,
+            "id": menu_item_id,
+            "is_signature": False,
+        }
+
+    def _extract_pre_filled_attributes(self, item_type: str, kwargs: dict) -> dict:
+        """Extract pre-filled attributes from kwargs based on item type.
+
+        Maps various kwargs to canonical attribute names used in the database.
+
+        Args:
+            item_type: The item type slug
+            kwargs: Original kwargs with item details
+
+        Returns:
+            Dict of attribute_slug -> value for pre-filling
+        """
+        attrs = {}
+
+        # Bagel attributes
+        if kwargs.get("bagel_type"):
+            attrs["bread"] = kwargs["bagel_type"]
+        if kwargs.get("toasted") is not None:
+            attrs["toasted"] = kwargs["toasted"]
+        if kwargs.get("scooped") is not None:
+            attrs["scooped"] = kwargs["scooped"]
+        if kwargs.get("spread"):
+            attrs["spread_type"] = kwargs["spread"]
+        if kwargs.get("spread_type"):
+            attrs["spread_variety"] = kwargs["spread_type"]
+
+        # Beverage attributes
+        if kwargs.get("size"):
+            attrs["size"] = kwargs["size"]
+        if kwargs.get("iced") is not None:
+            attrs["temperature"] = "iced" if kwargs["iced"] else "hot"
+        if kwargs.get("decaf") is not None:
+            attrs["decaf"] = kwargs["decaf"]
+        if kwargs.get("milk"):
+            attrs["milk"] = kwargs["milk"]
+
+        # Menu item attributes
+        if kwargs.get("bagel_choice"):
+            attrs["bagel_choice"] = kwargs["bagel_choice"]
+
+        return attrs
 
     # Generic category terms that should trigger disambiguation when multiple items match
     # These are base terms - we check if item_name equals OR ends with these

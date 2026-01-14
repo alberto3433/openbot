@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 from .models import (
     MenuItem,
     Ingredient,
-    Recipe,
     IngredientStoreAvailability,
     MenuItemStoreAvailability,
     ItemType,
@@ -192,54 +191,6 @@ def _preload_item_type_ingredients(db: Session) -> Dict[tuple, List]:
     return by_type_group
 
 
-def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
-    if not recipe:
-        return None
-
-    # Base (always included) ingredients
-    base_ingredients: List[Dict[str, Any]] = []
-    for ri in recipe.ingredients:
-        ingr = ri.ingredient
-        base_ingredients.append({
-            "ingredient_id": ingr.id,
-            "name": ingr.name,
-            "category": ingr.category,
-            "quantity": ri.quantity,
-            "unit": ri.unit_override or ingr.unit,
-            "is_required": ri.is_required,
-        })
-
-    # Choice groups (Bread, Cheese, Sauce, etc.)
-    choice_groups: List[Dict[str, Any]] = []
-    for cg in recipe.choice_groups:
-        group = {
-            "id": cg.id,
-            "name": cg.name,
-            "min_choices": cg.min_choices,
-            "max_choices": cg.max_choices,
-            "is_required": cg.is_required,
-            "options": [],
-        }
-        for ci in cg.choices:
-            ingr = ci.ingredient
-            group["options"].append({
-                "ingredient_id": ingr.id,
-                "name": ingr.name,
-                "category": ingr.category,
-                "is_default": ci.is_default,
-                "extra_price": ci.extra_price,
-            })
-        choice_groups.append(group)
-
-    return {
-        "id": recipe.id,
-        "name": recipe.name,
-        "description": recipe.description,
-        "base_ingredients": base_ingredients,
-        "choice_groups": choice_groups,
-    }
-
-
 def _preload_menu_item_configs(db: Session) -> Dict[int, Dict[str, Any]]:
     """
     Pre-load all menu item attribute configurations in batched queries.
@@ -360,7 +311,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         db.query(MenuItem)
         .options(
             joinedload(MenuItem.item_type),
-            joinedload(MenuItem.recipe),
         )
         .order_by(MenuItem.id.asc())
         .all()
@@ -413,8 +363,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     }
 
     for item in items:
-        recipe_json = _recipe_to_dict(item.recipe) if item.recipe else None
-
         # Get default_config from relational data (menu_item_attribute_values/selections)
         # Falls back to extra_metadata for legacy items not yet migrated
         default_config = _build_default_config_from_relational(item.id, preloaded_configs)
@@ -442,7 +390,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "is_signature": bool(item.is_signature),
             "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
             "base_price": float(item.base_price),
-            "recipe": recipe_json,
             "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
             "required_match_phrases": item.required_match_phrases,  # Comma-separated phrases for match filtering
@@ -585,9 +532,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         preloaded_global_options,
         preloaded_type_ingredients,
     )
-
-    # Add list of menu items that contain bagels (for bagel configuration questions)
-    index["bagel_menu_items"] = _build_bagel_menu_items(db)
 
     # Build by-pound prices from menu_items with category "by_the_lb" or "cream_cheese"
     # These are items like "Nova Scotia Salmon (1 lb)" -> $44.00
@@ -910,86 +854,6 @@ def _build_item_types_data(
         }
 
     return result
-
-
-def _build_bagel_menu_items(db: Session) -> List[Dict[str, Any]]:
-    """
-    Find all menu items that contain a bagel as an ingredient.
-
-    These items need bagel configuration questions (bagel type, toasted).
-
-    Checks for:
-    1. Base ingredients with category='bread' and name containing 'bagel'
-    2. Choice groups named 'Bagel' or similar
-    3. Choice group options that are bagel ingredients
-
-    Returns:
-        List of dicts with: id, name, default_bagel_type (from recipe default or None)
-    """
-    bagel_menu_items: List[Dict[str, Any]] = []
-    seen_item_ids: set = set()
-
-    # Get all menu items with recipes
-    items_with_recipes = (
-        db.query(MenuItem)
-        .filter(MenuItem.recipe_id.isnot(None))
-        .all()
-    )
-
-    for item in items_with_recipes:
-        if item.id in seen_item_ids:
-            continue
-
-        recipe = item.recipe
-        if not recipe:
-            continue
-
-        has_bagel = False
-        default_bagel_type = None
-
-        # Check 1: Base ingredients with category='bread' and name contains 'bagel'
-        for ri in recipe.ingredients:
-            ing = ri.ingredient
-            if ing.category and ing.category.lower() == "bread":
-                if "bagel" in ing.name.lower():
-                    has_bagel = True
-                    # Use this as default bagel type
-                    default_bagel_type = ing.name
-                    break
-
-        # Check 2 & 3: Choice groups named 'Bagel' or with bagel options
-        if not has_bagel:
-            for cg in recipe.choice_groups:
-                # Check if group name suggests bagel (e.g., "Bagel", "Bagel Type", "Bread")
-                group_name_lower = cg.name.lower() if cg.name else ""
-                is_bagel_group = "bagel" in group_name_lower
-
-                for ci in cg.choices:
-                    ing = ci.ingredient
-                    # Check if ingredient is a bagel
-                    is_bagel_ingredient = (
-                        ing.category and ing.category.lower() == "bread" and
-                        "bagel" in ing.name.lower()
-                    )
-                    # Also check group name for "bread" groups with bagel options
-                    if is_bagel_ingredient or (is_bagel_group and ing.category and ing.category.lower() == "bread"):
-                        has_bagel = True
-                        # Use default choice as default bagel type
-                        if ci.is_default:
-                            default_bagel_type = ing.name
-                        break
-                if has_bagel:
-                    break
-
-        if has_bagel:
-            seen_item_ids.add(item.id)
-            bagel_menu_items.append({
-                "id": item.id,
-                "name": item.name,
-                "default_bagel_type": default_bagel_type,
-            })
-
-    return bagel_menu_items
 
 
 def _build_by_pound_prices(db: Session) -> Dict[str, float]:

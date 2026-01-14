@@ -609,9 +609,6 @@ class MenuItem(Base):
     contains_sesame = Column(Boolean, nullable=True)
     contains_nuts = Column(Boolean, nullable=True)
 
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    recipe = relationship("Recipe", back_populates="menu_items")
-
     order_items = relationship(
         "OrderItem",
         back_populates="menu_item",
@@ -621,11 +618,22 @@ class MenuItem(Base):
     attribute_values = relationship("MenuItemAttributeValue", back_populates="menu_item", cascade="all, delete-orphan")
     attribute_selections = relationship("MenuItemAttributeSelection", back_populates="menu_item", cascade="all, delete-orphan")
     alias_records = relationship("MenuItemAlias", back_populates="menu_item", cascade="all, delete-orphan")
+    category_records = relationship("MenuItemCategory", back_populates="menu_item", cascade="all, delete-orphan")
 
     @property
     def aliases(self) -> list[str]:
         """Get list of aliases from child table."""
         return [a.alias for a in self.alias_records]
+
+    @property
+    def categories(self) -> list[str]:
+        """Get list of category slugs from child table."""
+        return [c.category.slug for c in self.category_records]
+
+    @property
+    def category_names(self) -> list[str]:
+        """Get list of category display names from child table."""
+        return [c.category.name for c in self.category_records]
 
     @property
     def aliases_str(self) -> str | None:
@@ -644,6 +652,45 @@ class MenuItemAlias(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     menu_item = relationship("MenuItem", back_populates="alias_records")
+
+
+# --- Menu Item Categories (many-to-many) ---
+
+class Category(Base):
+    """Predefined categories for menu items (e.g., 'drink', 'food')."""
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), nullable=False, unique=True)  # Display name: "Drink", "Food"
+    slug = Column(String(50), nullable=False, unique=True, index=True)  # Lowercase identifier: "drink", "food"
+    description = Column(String(200), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Relationship to menu items via join table
+    menu_item_categories = relationship("MenuItemCategory", back_populates="category", cascade="all, delete-orphan")
+
+    @property
+    def menu_items(self) -> list:
+        """Get all menu items in this category."""
+        return [mic.menu_item for mic in self.menu_item_categories]
+
+
+class MenuItemCategory(Base):
+    """Join table linking menu items to categories (many-to-many)."""
+    __tablename__ = "menu_item_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Unique constraint: a menu item can only be in a category once
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "category_id", name="uix_menu_item_category"),
+    )
+
+    menu_item = relationship("MenuItem", back_populates="category_records")
+    category = relationship("Category", back_populates="menu_item_categories")
 
 
 # --- Per-store menu item availability (86 system) ---
@@ -697,8 +744,6 @@ class Ingredient(Base):
     abbreviation = Column(String, nullable=True)
 
     # relationships
-    recipe_items = relationship("RecipeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
-    choice_for = relationship("RecipeChoiceItem", back_populates="ingredient", cascade="all, delete-orphan")
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
     attribute_option_links = relationship("AttributeOptionIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
@@ -858,73 +903,6 @@ class ItemTypeIngredient(Base):
     # Relationships
     item_type = relationship("ItemType", back_populates="type_ingredients")
     ingredient = relationship("Ingredient", back_populates="item_type_links")
-
-
-# --- New Recipe model ---
-
-class Recipe(Base):
-    __tablename__ = "recipes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-
-    # One recipe can be used by one or more menu items (though in practice it's usually 1:1)
-    menu_items = relationship("MenuItem", back_populates="recipe")
-
-    # relationships to ingredients and choice groups
-    ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
-    choice_groups = relationship("RecipeChoiceGroup", back_populates="recipe", cascade="all, delete-orphan")
-
-
-# --- New RecipeIngredient model (base, always-included items) ---
-
-class RecipeIngredient(Base):
-    __tablename__ = "recipe_ingredients"
-
-    id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
-
-    quantity = Column(Float, nullable=False)         # e.g. 2.0
-    unit_override = Column(String, nullable=True)    # override Ingredient.unit if needed
-    is_required = Column(Boolean, nullable=False, default=True)
-
-    recipe = relationship("Recipe", back_populates="ingredients")
-    ingredient = relationship("Ingredient", back_populates="recipe_items")
-
-
-# --- New RecipeChoiceGroup model (e.g. "Bread", "Cheese", "Sauce") ---
-
-class RecipeChoiceGroup(Base):
-    __tablename__ = "recipe_choice_groups"
-
-    id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
-
-    name = Column(String, nullable=False)            # 'Bread', 'Cheese', 'Sauce', etc.
-    min_choices = Column(Integer, nullable=False, default=1)
-    max_choices = Column(Integer, nullable=False, default=1)
-    is_required = Column(Boolean, nullable=False, default=True)
-
-    recipe = relationship("Recipe", back_populates="choice_groups")
-    choices = relationship("RecipeChoiceItem", back_populates="choice_group", cascade="all, delete-orphan")
-
-
-# --- New RecipeChoiceItem model (the options inside a choice group) ---
-
-class RecipeChoiceItem(Base):
-    __tablename__ = "recipe_choice_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    choice_group_id = Column(Integer, ForeignKey("recipe_choice_groups.id"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
-
-    is_default = Column(Boolean, nullable=False, default=False)
-    extra_price = Column(Float, nullable=False, default=0.0)
-
-    choice_group = relationship("RecipeChoiceGroup", back_populates="choices")
-    ingredient = relationship("Ingredient", back_populates="choice_for")
 
 
 # --- Chat Session model for persistence ---

@@ -29,11 +29,6 @@ class QuantifiedModifier(BaseModel):
     quantity: int = 1
 
 
-# Backward-compatible aliases (use QuantifiedModifier in new code)
-SweetenerItem = QuantifiedModifier
-SyrupItem = QuantifiedModifier
-
-
 class QualifierConflict(BaseModel):
     """A conflict between two qualifiers for the same modifier."""
     modifier: str  # The modifier with conflicting qualifiers (e.g., "mayo")
@@ -110,7 +105,7 @@ class ParsedItemEntry(BaseModel):
             item_type="sized_beverage",
             item_name="Latte",
             attribute_values={"size": "large", "temperature": "iced", "milk": "oat"},
-            syrups=[SyrupItem(type="vanilla", quantity=1)],
+            syrups=[QuantifiedModifier(type="vanilla", quantity=1)],
         )
     """
     type: Literal["item"] = "item"
@@ -128,8 +123,8 @@ class ParsedItemEntry(BaseModel):
     modifiers: list[str] = Field(default_factory=list)
 
     # Structured modifiers for beverages (need quantity info)
-    sweeteners: list[SweetenerItem] = Field(default_factory=list)
-    syrups: list[SyrupItem] = Field(default_factory=list)
+    sweeteners: list[QuantifiedModifier] = Field(default_factory=list)
+    syrups: list[QuantifiedModifier] = Field(default_factory=list)
 
     # Special instructions text
     special_instructions: str | None = None
@@ -284,8 +279,8 @@ class ParsedItemEntry(BaseModel):
             attr_values["extra_shots"] = entry.extra_shots
 
         # Convert sweeteners and syrups
-        sweeteners = [SweetenerItem(type=s.type, quantity=s.quantity) for s in entry.sweeteners]
-        syrups = [SyrupItem(type=s.type, quantity=s.quantity) for s in entry.syrups]
+        sweeteners = [QuantifiedModifier(type=s.type, quantity=s.quantity) for s in entry.sweeteners]
+        syrups = [QuantifiedModifier(type=s.type, quantity=s.quantity) for s in entry.syrups]
 
         return cls(
             item_type="sized_beverage",
@@ -399,10 +394,10 @@ class ParsedCoffeeEntry(BaseModel):
     cream_level: str | None = None
 
     # Sweeteners - supports multiple (e.g., "2 sugars and 1 splenda")
-    sweeteners: list[SweetenerItem] = Field(default_factory=list)
+    sweeteners: list[QuantifiedModifier] = Field(default_factory=list)
 
     # Flavor syrups - supports multiple (e.g., "vanilla and caramel")
-    syrups: list[SyrupItem] = Field(default_factory=list)
+    syrups: list[QuantifiedModifier] = Field(default_factory=list)
 
     # Flag for when user says "syrup" without specifying flavor
     wants_syrup: bool = False
@@ -972,14 +967,14 @@ class OpenInputResponse(BaseModel):
 
                 sweeteners = []
                 if self.new_coffee_sweetener:
-                    sweeteners.append(SweetenerItem(
+                    sweeteners.append(QuantifiedModifier(
                         type=self.new_coffee_sweetener,
                         quantity=self.new_coffee_sweetener_quantity or 1
                     ))
 
                 syrups = []
                 if self.new_coffee_flavor_syrup:
-                    syrups.append(SyrupItem(
+                    syrups.append(QuantifiedModifier(
                         type=self.new_coffee_flavor_syrup,
                         quantity=self.new_coffee_syrup_quantity or 1
                     ))

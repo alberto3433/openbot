@@ -15,9 +15,8 @@ from ..schemas import (
     OpenInputResponse,
     ExtractedModifiers,
     ExtractedCoffeeModifiers,
-    # Helper types for modifiers with quantity
-    SweetenerItem,
-    SyrupItem,
+    # Generic type for modifiers with quantity (sweeteners, syrups, etc.)
+    QuantifiedModifier,
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
@@ -1537,9 +1536,9 @@ def _parse_item_generic(
         from sandwich_bot.tasks.parsers.deterministic import extract_coffee_modifiers_from_input
         coffee_mods = extract_coffee_modifiers_from_input(text)
         if coffee_mods.sweetener:
-            sweeteners.append(SweetenerItem(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
+            sweeteners.append(QuantifiedModifier(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
         if coffee_mods.flavor_syrup:
-            syrups.append(SyrupItem(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
+            syrups.append(QuantifiedModifier(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
         # Extract milk if not already in attributes
         if "milk" not in attribute_values and coffee_mods.milk:
             attribute_values["milk"] = coffee_mods.milk
@@ -3079,11 +3078,11 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     # Build sweeteners list from coffee_mods
     sweeteners = []
     if coffee_mods.sweetener:
-        sweeteners.append(SweetenerItem(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
+        sweeteners.append(QuantifiedModifier(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
     # Build syrups list from coffee_mods
     syrups = []
     if coffee_mods.flavor_syrup:
-        syrups.append(SyrupItem(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
+        syrups.append(QuantifiedModifier(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
 
     parsed_items = [
         _build_coffee_parsed_item(

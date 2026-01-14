@@ -30,23 +30,18 @@ class ItemTypeConfig(BaseModel):
 # =============================================================================
 
 # Map code field names to database attribute slugs
-# Code uses legacy names like "bagel_type", database uses canonical names like "bread"
+# Only entries where code field name differs from DB slug
+# If not in map, field name is used directly as the DB slug
 _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
     "bagel": {
         "bagel_type": "bread",
-        "toasted": "toasted",
-        "spread": "spread",  # Now matches DB
         "extras": "toppings",
         "sandwich_protein": "extra_protein",
-        "quantity": "quantity",  # May not exist in DB
     },
     "sized_beverage": {
-        "drink_type": "drink_type",  # Determined by menu_item_name, not attribute
-        "size": "size",
         "iced": "temperature",
-        "milk": "milk_sweetener_syrup",  # Combined field
-        "sweetener": "milk_sweetener_syrup",  # Combined field
-        "extra_shots": "extra_shots",  # Now matches DB
+        "milk": "milk_sweetener_syrup",
+        "sweetener": "milk_sweetener_syrup",
     },
 }
 

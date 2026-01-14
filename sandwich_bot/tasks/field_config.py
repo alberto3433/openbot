@@ -36,7 +36,6 @@ _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
     "bagel": {
         "bagel_type": "bread",
         "extras": "toppings",
-        "sandwich_protein": "extra_protein",
     },
     "sized_beverage": {
         "iced": "temperature",
@@ -45,12 +44,6 @@ _FIELD_TO_SLUG_MAP: dict[str, dict[str, str]] = {
     },
 }
 
-# Map item types to database slugs
-_ITEM_TYPE_TO_SLUG_MAP: dict[str, str] = {
-    "bagel": "bagel",
-    "coffee": "sized_beverage",
-    "sized_beverage": "sized_beverage",
-}
 
 
 # =============================================================================
@@ -157,8 +150,8 @@ def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
     from sandwich_bot.menu_data_cache import menu_cache
     from sandwich_bot.exceptions import MenuDataNotLoadedError
 
-    # Map item type to database slug
-    db_item_type = _ITEM_TYPE_TO_SLUG_MAP.get(item_type, item_type)
+    # Resolve item type alias to canonical database slug (data-driven)
+    db_item_type = menu_cache.resolve_item_type_slug(item_type)
 
     # Get field configs from database (raises if cache not loaded)
     db_configs = menu_cache.get_all_field_configs(db_item_type)
@@ -257,8 +250,8 @@ def _get_db_field_config(item_type: str, field_name: str) -> dict | None:
     """
     from sandwich_bot.menu_data_cache import menu_cache
 
-    # Map item type to database slug
-    db_item_type = _ITEM_TYPE_TO_SLUG_MAP.get(item_type, item_type)
+    # Resolve item type alias to canonical database slug (data-driven)
+    db_item_type = menu_cache.resolve_item_type_slug(item_type)
 
     # Map field name to database slug
     field_map = _FIELD_TO_SLUG_MAP.get(db_item_type, {})

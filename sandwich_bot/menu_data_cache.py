@@ -2348,8 +2348,8 @@ class MenuDataCache:
             # Bagel modifiers
             "spread": {"field_name": "spread", "is_list": False},
             "spread_type": {"field_name": "spread", "is_list": False},
-            "protein": {"field_name": "sandwich_protein", "is_list": False},
-            "extra_protein": {"field_name": "sandwich_protein", "is_list": False},
+            "protein": {"field_name": "extra_protein", "is_list": False},
+            "extra_protein": {"field_name": "extra_protein", "is_list": False},
             "topping": {"field_name": "extras", "is_list": True},
             "toppings": {"field_name": "extras", "is_list": True},
             "cheese": {"field_name": "extras", "is_list": True},  # Cheeses are extras
@@ -3238,6 +3238,46 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return sorted(self._category_keywords.keys())
+
+    def resolve_item_type_slug(self, name_or_alias: str) -> str:
+        """
+        Resolve an item type name or alias to its canonical database slug.
+
+        This method enables data-driven item type resolution, eliminating
+        the need for hardcoded mappings. It uses the item_type_aliases table
+        loaded into _category_keywords.
+
+        Args:
+            name_or_alias: Item type name or alias (e.g., "coffee", "bagel",
+                           "sized_beverage"). Case-insensitive.
+
+        Returns:
+            The canonical item type slug from the database.
+            If no mapping is found, returns the input unchanged (pass-through).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.resolve_item_type_slug("coffee")
+            "sized_beverage"
+            >>> cache.resolve_item_type_slug("bagel")
+            "bagel"
+            >>> cache.resolve_item_type_slug("sized_beverage")
+            "sized_beverage"
+            >>> cache.resolve_item_type_slug("unknown_type")
+            "unknown_type"  # Pass-through for unknown types
+        """
+        self._ensure_loaded()
+
+        name_lower = name_or_alias.lower().strip()
+        category_info = self._category_keywords.get(name_lower)
+
+        if category_info and "slug" in category_info:
+            return category_info["slug"]
+
+        # Pass-through: return input unchanged if not found
+        return name_or_alias
 
     # =========================================================================
     # Partial Matching Methods

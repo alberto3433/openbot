@@ -169,3 +169,38 @@ class ExtractedModifiers:
         if self.needs_clarification:
             parts.append(f"needs_clarification={self.needs_clarification}")
         return f"ExtractedModifiers({', '.join(parts)})"
+
+    # Backward-compatible property accessors for legacy attribute-style access
+    # These allow code like `mods.milk` instead of `mods.get_first_name("milk")`
+
+    @property
+    def milk(self) -> str | None:
+        """Get the first milk type (backward-compatible accessor)."""
+        return self.get_first_name("milk")
+
+    @property
+    def sweetener(self) -> str | None:
+        """Get the first sweetener name (backward-compatible accessor)."""
+        return self.get_first_name("sweetener")
+
+    @property
+    def sweetener_quantity(self) -> int:
+        """Get the first sweetener quantity (backward-compatible accessor)."""
+        first = self.get_first("sweetener")
+        return first.quantity if first else 0
+
+    @property
+    def flavor_syrup(self) -> str | None:
+        """Get the first syrup name (backward-compatible accessor)."""
+        return self.get_first_name("syrup")
+
+    @property
+    def syrup_quantity(self) -> int:
+        """Get the first syrup quantity (backward-compatible accessor)."""
+        first = self.get_first("syrup")
+        return first.quantity if first else 0
+
+    @property
+    def cream_level(self) -> str | None:
+        """Get the cream/style level (backward-compatible accessor)."""
+        return self.get_first_name("style")

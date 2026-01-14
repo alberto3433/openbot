@@ -496,11 +496,11 @@ class ConfigHelperHandler:
             return None
 
         # Try to resolve the clarification
-        category, error = self.modifier_change_handler.resolve_clarification(
+        attr_slug, error = self.modifier_change_handler.resolve_clarification(
             clarification, user_input
         )
 
-        if category is None:
+        if attr_slug is None:
             # Couldn't understand the response
             logger.info("CHANGE CLARIFICATION: Couldn't understand response '%s'", user_input)
             return StateMachineResult(
@@ -518,7 +518,7 @@ class ConfigHelperHandler:
         result = self.modifier_change_handler.apply_change(
             order=order,
             item_id=item_id,
-            category=category,
+            attr_slug=attr_slug,
             new_value=new_value,
         )
 
@@ -561,7 +561,7 @@ class ConfigHelperHandler:
             # Store clarification state
             order.pending_change_clarification = {
                 "new_value": change_request.new_value,
-                "possible_categories": [c.value for c in change_request.possible_categories],
+                "possible_attributes": list(change_request.possible_attributes),
                 "item_id": item_id,
             }
 
@@ -569,8 +569,8 @@ class ConfigHelperHandler:
             return StateMachineResult(message=msg, order=order)
 
         # Unambiguous - apply the change directly
-        if change_request.possible_categories:
-            category = change_request.possible_categories[0]
+        if change_request.possible_attributes:
+            attr_slug = change_request.possible_attributes[0]
 
             # Find target item
             active_items = order.items.get_active_items()
@@ -583,7 +583,7 @@ class ConfigHelperHandler:
             result = self.modifier_change_handler.apply_change(
                 order=order,
                 item_id=None,  # Last item
-                category=category,
+                attr_slug=attr_slug,
                 new_value=change_request.new_value,
             )
 

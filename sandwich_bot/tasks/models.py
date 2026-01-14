@@ -951,7 +951,7 @@ class OrderTask(BaseTask):
 
     # Pending modifier change clarification
     # Used when user says "change it to blueberry" and we need to clarify bagel vs spread
-    # Dict with: new_value, possible_categories (as strings), item_id
+    # Dict with: new_value, possible_attributes (list of attribute slugs), item_id
     pending_change_clarification: dict | None = None
 
     # Pending duplicate selection

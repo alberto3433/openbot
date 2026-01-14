@@ -80,6 +80,7 @@ from .admin_testing import admin_testing_router
 from .admin_item_type_attributes import admin_item_type_attributes_router
 from .admin_response_patterns import admin_response_patterns_router
 from .admin_modifier_qualifiers import admin_modifier_qualifiers_router
+from .admin_ingredient_categories import admin_ingredient_categories_router
 from .admin_global_attributes import admin_global_attributes_router, admin_item_type_global_attrs_router
 from .public import public_stores_router, public_company_router
 from .tts import tts_router
@@ -98,6 +99,7 @@ __all__ = [
     "admin_item_type_attributes_router",
     "admin_response_patterns_router",
     "admin_modifier_qualifiers_router",
+    "admin_ingredient_categories_router",
     "admin_global_attributes_router",
     "admin_item_type_global_attrs_router",
     "public_stores_router",

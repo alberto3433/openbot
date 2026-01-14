@@ -150,6 +150,10 @@ class MenuDataCache:
         # Ingredients valid for each ItemType, grouped by category
         self._ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}  # item_type_slug -> {category -> names}
 
+        # Ingredient category metadata (for data-driven modifier type lookups)
+        # Maps modifier_type ("food", "beverage") to set of category slugs
+        self._ingredient_categories_by_modifier_type: dict[str, set[str]] = {}
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -226,6 +230,7 @@ class MenuDataCache:
                 self._load_generic_item_names(db)
                 self._load_generic_ingredients(db)
                 self._load_generic_ingredients_for_item_types(db)
+                self._load_ingredient_category_metadata(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -1527,6 +1532,36 @@ class MenuDataCache:
             len(ingredients_for_item_type)
         )
 
+    def _load_ingredient_category_metadata(self, db: Session) -> None:
+        """Load ingredient category metadata for data-driven modifier type lookups.
+
+        This allows querying which ingredient categories belong to which modifier type
+        (food vs beverage) without hardcoding category names.
+
+        Example:
+            get_ingredient_categories_by_modifier_type("food")
+            -> {"protein", "topping", "sauce", "cheese", "spread"}
+        """
+        from .models import IngredientCategory
+
+        categories_by_modifier_type: dict[str, set[str]] = {}
+
+        # Query all ingredient categories
+        categories = db.query(IngredientCategory).all()
+
+        for cat in categories:
+            if cat.modifier_type:
+                if cat.modifier_type not in categories_by_modifier_type:
+                    categories_by_modifier_type[cat.modifier_type] = set()
+                categories_by_modifier_type[cat.modifier_type].add(cat.slug)
+
+        self._ingredient_categories_by_modifier_type = categories_by_modifier_type
+
+        logger.debug(
+            "Loaded ingredient category metadata: %s",
+            {k: len(v) for k, v in categories_by_modifier_type.items()}
+        )
+
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
         # Words to skip in keyword indexing
@@ -1806,6 +1841,33 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return set(self._ingredients_by_category.keys())
+
+    def get_ingredient_categories_by_modifier_type(self, modifier_type: str) -> set[str]:
+        """Get all ingredient category slugs for a given modifier type.
+
+        This is used to dynamically determine which ingredient categories
+        should be used for food modifiers vs beverage modifiers without
+        hardcoding category names.
+
+        Args:
+            modifier_type: The modifier type ("food" or "beverage")
+
+        Returns:
+            Set of ingredient category slugs for the given modifier type.
+            Returns empty set if modifier_type is not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredient_categories_by_modifier_type("food")
+            {"protein", "topping", "sauce", "cheese", "spread"}
+
+            >>> menu_cache.get_ingredient_categories_by_modifier_type("beverage")
+            {"milk", "sweetener", "syrup"}
+        """
+        self._ensure_loaded()
+        return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
 
     def get_beverage_milks(self) -> list[str]:
         """Get available milk options for beverages.

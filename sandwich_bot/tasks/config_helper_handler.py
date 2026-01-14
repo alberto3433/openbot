@@ -27,7 +27,12 @@ logger = logging.getLogger(__name__)
 def _get_removable_modifiers() -> set[str]:
     """Get the set of removable modifier names from the database.
 
-    Combines proteins, toppings, cheeses, and spreads from the menu cache.
+    Uses the ingredient_categories table to determine which ingredient categories
+    are "food" modifiers, then combines all ingredients from those categories.
+    This is fully data-driven - no hardcoded category names.
+
+    Falls back to default categories if the ingredient_categories table is empty
+    (e.g., during tests that don't populate this table).
 
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded or ingredient data is missing
@@ -36,17 +41,19 @@ def _get_removable_modifiers() -> set[str]:
 
     modifiers: set[str] = set()
 
-    # Get ingredients from database using generic function
-    proteins = menu_cache.get_ingredients("protein")
-    toppings = menu_cache.get_ingredients("topping") | menu_cache.get_ingredients("sauce")
-    cheeses = menu_cache.get_ingredients("cheese")
-    spreads = menu_cache.get_ingredients("spread")
+    # Get all food modifier ingredient categories from database
+    # This is data-driven: ingredient_categories table defines which categories
+    # are "food" modifiers (protein, topping, sauce, cheese, spread, etc.)
+    food_categories = menu_cache.get_ingredient_categories_by_modifier_type("food")
 
-    # Combine all ingredient sets
-    modifiers.update(proteins)
-    modifiers.update(toppings)
-    modifiers.update(cheeses)
-    modifiers.update(spreads)
+    # Fallback to default categories if ingredient_categories table is empty
+    # (e.g., during tests that don't populate this table)
+    if not food_categories:
+        food_categories = {"protein", "topping", "sauce", "cheese", "spread"}
+
+    # Combine all ingredients from food modifier categories
+    for category in food_categories:
+        modifiers.update(menu_cache.get_ingredients(category))
 
     # Add common aliases/variations that might not be in DB
     # These are generic terms that users might say

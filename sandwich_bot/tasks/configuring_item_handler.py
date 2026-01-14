@@ -9,7 +9,6 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
-from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase

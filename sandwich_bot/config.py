@@ -189,4 +189,5 @@ ADMIN_PAGES = {
     "modifier_categories": "admin_modifier_categories.html",
     "modifier_qualifiers": "admin_modifier_qualifiers.html",
     "global_attributes": "admin_global_attributes.html",
+    "ingredient_categories": "admin_ingredient_categories.html",
 }

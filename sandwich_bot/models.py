@@ -757,6 +757,32 @@ class IngredientMustMatch(Base):
     ingredient = relationship("Ingredient", back_populates="must_match_records")
 
 
+# --- Ingredient Category Metadata ---
+
+class IngredientCategory(Base):
+    """
+    Metadata about ingredient categories (protein, topping, cheese, milk, etc.).
+
+    This table provides classification of ingredient categories for data-driven
+    lookups. The modifier_type field indicates whether ingredients in this category
+    are used as food modifiers (bagels, sandwiches) or beverage modifiers (coffee).
+
+    Examples:
+        - protein, topping, sauce, cheese, spread -> modifier_type="food"
+        - milk, sweetener, syrup -> modifier_type="beverage"
+        - bread -> modifier_type=None (not a modifier, used for item types)
+    """
+    __tablename__ = "ingredient_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(50), unique=True, nullable=False, index=True)  # "protein", "topping", etc.
+    display_name = Column(String(100), nullable=False)  # "Proteins", "Toppings", etc.
+    modifier_type = Column(String(20), nullable=True)  # "food", "beverage", or None
+    display_order = Column(Integer, nullable=False, default=0)  # For UI ordering
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 # --- Per-store ingredient availability (86 system) ---
 
 class IngredientStoreAvailability(Base):

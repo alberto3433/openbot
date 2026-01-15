@@ -59,6 +59,13 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict
 
 
+class SizePriceOut(BaseModel):
+    """Size price entry for a menu item."""
+    size_id: int
+    size_name: str
+    price: float
+
+
 class MenuItemOut(BaseModel):
     """
     Response model for menu item data.
@@ -94,23 +101,14 @@ class MenuItemOut(BaseModel):
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
     category_ids: List[int] = []
+    size_category_id: Optional[int] = None
+    size_prices: List[SizePriceOut] = []
 
 
-class MenuItemAttributeValueInput(BaseModel):
-    """
-    Input model for setting a single attribute value.
-
-    Set the appropriate value field based on the attribute's input_type:
-    - single_select: set option_id
-    - multi_select: set selected_option_ids
-    - boolean: set value_boolean
-    - text: set value_text
-    """
-    option_id: Optional[int] = None
-    selected_option_ids: Optional[List[int]] = None
-    value_boolean: Optional[bool] = None
-    value_text: Optional[str] = None
-    still_ask: Optional[bool] = None
+class SizePriceInput(BaseModel):
+    """Size price entry for creating/updating a menu item."""
+    size_id: int
+    price: float
 
 
 class MenuItemCreate(BaseModel):
@@ -129,7 +127,6 @@ class MenuItemCreate(BaseModel):
         item_type_id: Link to ItemType for configuration (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        attributes: Attribute values keyed by slug (optional, requires item_type_id)
         category_ids: List of category IDs to assign (optional)
 
     Example:
@@ -139,12 +136,7 @@ class MenuItemCreate(BaseModel):
             "is_signature": true,
             "base_price": 10.99,
             "item_type_id": 3,
-            "category_ids": [1, 2],
-            "attributes": {
-                "bread": {"option_id": 5, "still_ask": true},
-                "protein": {"option_id": 12},
-                "toppings": {"selected_option_ids": [20, 21]}
-            }
+            "category_ids": [1, 2]
         }
     """
     name: str
@@ -158,8 +150,9 @@ class MenuItemCreate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
-    attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None
     category_ids: Optional[List[int]] = None
+    size_category_id: Optional[int] = None
+    size_prices: Optional[List[SizePriceInput]] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -179,7 +172,6 @@ class MenuItemUpdate(BaseModel):
         item_type_id: Change linked ItemType (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        attributes: Update attribute values keyed by slug (optional)
         category_ids: List of category IDs to assign (replaces existing)
 
     Example:
@@ -188,9 +180,6 @@ class MenuItemUpdate(BaseModel):
 
         # Update multiple fields
         {"name": "Super Veggie Delight", "base_price": 12.99}
-
-        # Update attributes
-        {"attributes": {"bread": {"option_id": 5}, "toasted": {"value_boolean": true}}}
 
         # Update categories
         {"category_ids": [1, 2]}
@@ -206,5 +195,6 @@ class MenuItemUpdate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
-    attributes: Optional[Dict[str, MenuItemAttributeValueInput]] = None
     category_ids: Optional[List[int]] = None
+    size_category_id: Optional[int] = None
+    size_prices: Optional[List[SizePriceInput]] = None

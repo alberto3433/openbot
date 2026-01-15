@@ -18,6 +18,59 @@ from pydantic import BaseModel, Field
 import uuid
 
 
+def get_modifier_name(entry: dict) -> str:
+    """Extract the modifier name from a modifier entry dict.
+
+    Handles different key formats used across the codebase:
+    - "slug": canonical format used in unified storage
+    - "type": used in some handler code
+    - "flavor": legacy format for syrups
+
+    Args:
+        entry: Dict with modifier info
+
+    Returns:
+        The modifier name/slug, or empty string if not found
+    """
+    return entry.get("slug") or entry.get("type") or entry.get("flavor") or ""
+
+
+def normalize_modifier_entry(entry: dict, category: str | None = None) -> dict:
+    """Normalize a modifier entry to the canonical format.
+
+    Converts entries with "type" or "flavor" keys to use "slug".
+    Also ensures display_name and quantity are present.
+
+    Args:
+        entry: Dict with modifier info (may use "type", "flavor", or "slug")
+        category: Optional category to add (e.g., "syrup", "sweetener")
+
+    Returns:
+        Normalized dict with "slug", "display_name", "quantity", and optionally "category"
+    """
+    name = get_modifier_name(entry)
+    effective_category = category or entry.get("category")
+
+    # Build display name, adding category suffix for syrups if not already present
+    display_name = entry.get("display_name")
+    if not display_name:
+        display_name = name.replace("_", " ").title()
+        # Add "Syrup" suffix for syrups if not already present
+        if effective_category == "syrup" and not display_name.lower().endswith(" syrup"):
+            display_name = f"{display_name} Syrup"
+
+    result = {
+        "slug": name,
+        "display_name": display_name,
+        "quantity": entry.get("quantity", 1),
+    }
+    if "price" in entry:
+        result["price"] = entry["price"]
+    if effective_category:
+        result["category"] = effective_category
+    return result
+
+
 class TaskStatus(str, Enum):
     """Status of a task in the hierarchy."""
     PENDING = "pending"  # Not started, waiting for prerequisites
@@ -166,8 +219,8 @@ class MenuItemTask(ItemTask):
     side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
     bagel_choice: str | None = None  # Which bagel if side is bagel, or bagel for sandwiches
     bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
-    toasted: bool | None = None  # Whether sandwich/bagel should be toasted
-    spread: str | None = None  # Spread for side bagel (butter, cream cheese, etc.)
+    # NOTE: toasted and spread are now stored in attribute_values via properties
+    # (see toasted and spread properties below)
     spread_price: float | None = None  # Price of spread for itemized display
     requires_side_choice: bool = False  # Whether this item needs side selection
     is_signature: bool = False  # Whether this is a signature/featured menu item
@@ -179,6 +232,21 @@ class MenuItemTask(ItemTask):
 
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
+
+    # -------------------------------------------------------------------------
+    # Generic helper properties
+    # -------------------------------------------------------------------------
+
+    @property
+    def item_name(self) -> str | None:
+        """Alias for menu_item_name (backward-compatible accessor)."""
+        return self.menu_item_name
+
+    @item_name.setter
+    def item_name(self, value: str | None) -> None:
+        """Set item name (updates menu_item_name)."""
+        if value is not None:
+            self.menu_item_name = value
 
     # -------------------------------------------------------------------------
     # Beverage helper properties (for sized_beverage items like coffee)
@@ -343,6 +411,7 @@ class MenuItemTask(ItemTask):
         """Set sweeteners list in unified storage (milk_sweetener_syrup_selections).
 
         Updates the unified storage model. Also clears legacy storage if present.
+        Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
         """
         # Initialize unified storage if needed
         mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
@@ -352,14 +421,13 @@ class MenuItemTask(ItemTask):
         mss_slugs = [s for s in mss_slugs if not self._is_sweetener_slug(s, mss_selections)]
         mss_selections = [e for e in mss_selections if e.get("category") != "sweetener"]
 
-        # Add new sweetener entries
+        # Add new sweetener entries (normalize to canonical format)
         for entry in (value or []):
-            slug = entry.get("slug", "")
+            normalized = normalize_modifier_entry(entry, category="sweetener")
+            slug = normalized["slug"]
             if slug and slug not in mss_slugs:
                 mss_slugs.append(slug)
-                # Ensure category is set
-                entry_with_category = {**entry, "category": "sweetener"}
-                mss_selections.append(entry_with_category)
+                mss_selections.append(normalized)
 
         # Update unified storage
         self.attribute_values["milk_sweetener_syrup"] = mss_slugs
@@ -398,6 +466,7 @@ class MenuItemTask(ItemTask):
         """Set flavor syrups list in unified storage (milk_sweetener_syrup_selections).
 
         Updates the unified storage model. Also clears legacy storage if present.
+        Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
         """
         # Initialize unified storage if needed
         mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
@@ -407,14 +476,13 @@ class MenuItemTask(ItemTask):
         mss_slugs = [s for s in mss_slugs if not self._is_syrup_slug(s, mss_selections)]
         mss_selections = [e for e in mss_selections if e.get("category") != "syrup"]
 
-        # Add new syrup entries
+        # Add new syrup entries (normalize to canonical format)
         for entry in (value or []):
-            slug = entry.get("slug", "")
+            normalized = normalize_modifier_entry(entry, category="syrup")
+            slug = normalized["slug"]
             if slug and slug not in mss_slugs:
                 mss_slugs.append(slug)
-                # Ensure category is set
-                entry_with_category = {**entry, "category": "syrup"}
-                mss_selections.append(entry_with_category)
+                mss_selections.append(normalized)
 
         # Update unified storage
         self.attribute_values["milk_sweetener_syrup"] = mss_slugs
@@ -430,6 +498,105 @@ class MenuItemTask(ItemTask):
             if entry.get("slug") == slug and entry.get("category") == "syrup":
                 return True
         return False
+
+    def add_flavor_syrup(self, name: str, quantity: int = 1, price: float = 0.0) -> None:
+        """Add a flavor syrup to the item with proper normalization.
+
+        This is the preferred way to add syrups - it normalizes the entry
+        and stores it in the unified storage model.
+
+        Args:
+            name: Syrup name (e.g., "vanilla", "caramel")
+            quantity: Number of pumps (default 1)
+            price: Price per pump (default 0.0, will be looked up if not provided)
+        """
+        entry = {"slug": name, "quantity": quantity}
+        if price > 0:
+            entry["price"] = price
+        normalized = normalize_modifier_entry(entry, category="syrup")
+
+        # Get current unified storage
+        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+        # Add if not already present
+        slug = normalized["slug"]
+        if slug and slug not in mss_slugs:
+            mss_slugs.append(slug)
+            mss_selections.append(normalized)
+            self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+            self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+    def add_sweetener(self, name: str, quantity: int = 1, price: float = 0.0) -> None:
+        """Add a sweetener to the item with proper normalization.
+
+        This is the preferred way to add sweeteners - it normalizes the entry
+        and stores it in the unified storage model.
+
+        Args:
+            name: Sweetener name (e.g., "sugar", "honey", "splenda")
+            quantity: Number of packets (default 1)
+            price: Price (default 0.0)
+        """
+        entry = {"slug": name, "quantity": quantity}
+        if price > 0:
+            entry["price"] = price
+        normalized = normalize_modifier_entry(entry, category="sweetener")
+
+        # Get current unified storage
+        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+        # Add if not already present
+        slug = normalized["slug"]
+        if slug and slug not in mss_slugs:
+            mss_slugs.append(slug)
+            mss_selections.append(normalized)
+            self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+            self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+
+    def add_modifier(self, category: str, name: str, quantity: int = 1, price: float = 0.0) -> None:
+        """Add a modifier to the item in a data-driven way.
+
+        This is the generic method for adding any type of modifier. It stores
+        modifiers in a unified format in attribute_values.
+
+        Args:
+            category: Modifier category (e.g., "syrup", "sweetener", "milk", "protein", "topping")
+            name: Modifier name (e.g., "vanilla", "sugar", "oat", "bacon")
+            quantity: Quantity (default 1)
+            price: Price per unit (default 0.0)
+        """
+        # Normalize the entry
+        entry = {"slug": name, "quantity": quantity, "category": category}
+        if price > 0:
+            entry["price"] = price
+
+        # Generate display name with category suffix for syrups
+        display_name = name.replace("_", " ").title()
+        if category == "syrup" and not display_name.lower().endswith(" syrup"):
+            display_name = f"{display_name} Syrup"
+        entry["display_name"] = display_name
+
+        # Beverage modifiers (milk, sweetener, syrup) go to unified milk_sweetener_syrup storage
+        if category in ("milk", "sweetener", "syrup"):
+            mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
+            mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+
+            # Check if already present
+            if name not in mss_slugs:
+                mss_slugs.append(name)
+                mss_selections.append(entry)
+                self.attribute_values["milk_sweetener_syrup"] = mss_slugs
+                self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+        else:
+            # Food modifiers go to {category}_selections storage
+            storage_key = f"{category}_selections"
+            selections = self.attribute_values.get(storage_key, [])
+            existing_slugs = [s.get("slug") for s in selections]
+            if name not in existing_slugs:
+                selections.append(entry)
+                self.attribute_values[storage_key] = selections
 
     @property
     def wants_syrup(self) -> bool:
@@ -479,8 +646,14 @@ class MenuItemTask(ItemTask):
 
     @milk_upcharge.setter
     def milk_upcharge(self, value: float) -> None:
-        """Set milk upcharge in attribute_values."""
+        """Set milk upcharge in attribute_values and update milk entry price."""
         self.attribute_values["milk_upcharge"] = value
+        # Also update the price in the milk entry in milk_sweetener_syrup_selections
+        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+        for entry in mss_selections:
+            if entry.get("category") == "milk":
+                entry["price"] = value
+                break
 
     @property
     def syrup_upcharge(self) -> float:
@@ -625,6 +798,19 @@ class MenuItemTask(ItemTask):
         self.attribute_values["bread_upcharge"] = value
 
     @property
+    def toasted(self) -> bool | None:
+        """Get toasted flag from attribute_values."""
+        return self.attribute_values.get("toasted")
+
+    @toasted.setter
+    def toasted(self, value: bool | None) -> None:
+        """Set toasted flag in attribute_values."""
+        if value is not None:
+            self.attribute_values["toasted"] = value
+        elif "toasted" in self.attribute_values:
+            del self.attribute_values["toasted"]
+
+    @property
     def scooped(self) -> bool | None:
         """Get scooped flag from attribute_values."""
         return self.attribute_values.get("scooped")
@@ -649,6 +835,16 @@ class MenuItemTask(ItemTask):
             self.attribute_values["spread_type"] = value
         elif "spread_type" in self.attribute_values:
             del self.attribute_values["spread_type"]
+
+    @property
+    def spread(self) -> str | None:
+        """Alias for spread_type (backward-compatible accessor)."""
+        return self.spread_type
+
+    @spread.setter
+    def spread(self, value: str | None) -> None:
+        """Set spread type (updates attribute_values["spread_type"])."""
+        self.spread_type = value
 
     @property
     def toppings(self) -> list[str]:

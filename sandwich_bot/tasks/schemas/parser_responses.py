@@ -241,7 +241,7 @@ class ParsedItemEntry(BaseModel):
         if entry.scooped is not None:
             attr_values["scooped"] = entry.scooped
         if entry.spread:
-            attr_values["spread"] = entry.spread
+            attr_values["spread_type"] = entry.spread
         if entry.spread_type:
             attr_values["spread_type"] = entry.spread_type
 
@@ -930,7 +930,7 @@ class OpenInputResponse(BaseModel):
                 if self.new_bagel_scooped is not None:
                     attr_values["scooped"] = self.new_bagel_scooped
                 if self.new_bagel_spread:
-                    attr_values["spread"] = self.new_bagel_spread
+                    attr_values["spread_type"] = self.new_bagel_spread
                 if self.new_bagel_spread_type:
                     attr_values["spread_type"] = self.new_bagel_spread_type
 

@@ -14,6 +14,8 @@ import logging
 import re
 from typing import Any, Callable
 
+from .models import get_modifier_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,14 +64,102 @@ class PricingEngine:
     # Generic Pricing Methods (Data-Driven)
     # =========================================================================
 
-    def lookup_base_price(self, menu_item_name: str) -> float:
+    def lookup_size_price(
+        self,
+        menu_item_name: str,
+        size_name: str | None = None,
+    ) -> tuple[float | None, dict | None]:
+        """Look up price for a menu item with size-based pricing.
+
+        For items with variant-based pricing (e.g., coffee, deli items), this
+        returns the price for a specific size. If size_name is None and the item
+        has only one size, returns that price.
+
+        Args:
+            menu_item_name: Name of the menu item
+            size_name: Optional size name (e.g., "small", "large", "1/4 lb")
+
+        Returns:
+            Tuple of (price, size_data) where size_data contains size info,
+            or (None, None) if item doesn't have size-based pricing
+        """
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return None, None
+
+        size_prices = menu_item.get("size_prices")
+        if not size_prices:
+            return None, None
+
+        # If only one size, return it (no disambiguation needed)
+        if len(size_prices) == 1:
+            sp = size_prices[0]
+            return sp["price"], sp
+
+        # If size_name provided, find matching size
+        if size_name:
+            size_lower = size_name.lower().strip()
+            for sp in size_prices:
+                if sp["size_name"] and sp["size_name"].lower() == size_lower:
+                    return sp["price"], sp
+
+        # No size specified and multiple sizes - return None to trigger disambiguation
+        return None, None
+
+    def get_size_options(self, menu_item_name: str) -> list[dict] | None:
+        """Get all available size options for a menu item.
+
+        Returns a list of size options with price, or None if item doesn't
+        have size-based pricing.
+
+        Args:
+            menu_item_name: Name of the menu item
+
+        Returns:
+            List of dicts with {size_id, size_name, price, display_order},
+            or None if no size-based pricing
+        """
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return None
+
+        return menu_item.get("size_prices")
+
+    def get_size_question(self, menu_item_name: str) -> str | None:
+        """Get the question text to ask for size selection.
+
+        Args:
+            menu_item_name: Name of the menu item
+
+        Returns:
+            Question text (e.g., "What size?") or None if no size-based pricing
+        """
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return None
+
+        return menu_item.get("size_question_text")
+
+    def lookup_base_price(self, menu_item_name: str, size_name: str | None = None) -> float:
         """Look up base price for any menu item by name.
 
         This is the generic way to get base prices - works for bagels, coffee,
         sandwiches, or any other menu item type.
 
+        For items with size-based pricing, pass the size_name to get the correct
+        price. If size_name is None and the item has only one size, that price
+        is returned. If multiple sizes exist and no size_name is provided, falls
+        back to base_price if available.
+
         Args:
             menu_item_name: Name of the menu item (e.g., "Bagel", "Latte", "BLT")
+            size_name: Optional size name for size-based pricing
 
         Returns:
             Base price for the menu item
@@ -80,6 +170,12 @@ class PricingEngine:
         if not menu_item_name:
             raise ValueError("menu_item_name is required for base price lookup")
 
+        # Try size-based pricing first
+        size_price, _ = self.lookup_size_price(menu_item_name, size_name)
+        if size_price is not None:
+            return size_price
+
+        # Fall back to base_price
         menu_item = self._lookup_menu_item(menu_item_name)
         if menu_item and menu_item.get("base_price"):
             return menu_item["base_price"]
@@ -91,7 +187,7 @@ class PricingEngine:
 
         raise ValueError(
             f"No price found for menu item '{menu_item_name}'. "
-            "Ensure the menu item exists in database with a base_price."
+            "Ensure the menu item exists in database with a base_price or size_prices."
         )
 
     def lookup_attribute_option_upcharge(
@@ -577,22 +673,35 @@ class PricingEngine:
                 "menu_item_type is required but not set on item."
             )
 
-        # Get base price from menu item name - fail if not found
-        base_price = self.lookup_base_price(item.menu_item_name)
-
-        total = base_price
-
         # Get attribute values from the item
         attr_values = getattr(item, 'attribute_values', {})
+
+        # Get size value early - needed for both base price lookup and upcharge calc
+        size_value = attr_values.get("size")
+
+        # Check if item has size-based pricing (explicit prices per size)
+        # If so, get base price using size; otherwise use traditional base_price + upcharge
+        uses_size_pricing = False
+        size_price, size_data = self.lookup_size_price(item.menu_item_name, size_value)
+
+        if size_price is not None:
+            # Item uses size-based pricing - price already includes size
+            base_price = size_price
+            uses_size_pricing = True
+        else:
+            # Traditional pricing: base_price from menu item
+            base_price = self.lookup_base_price(item.menu_item_name)
+
+        total = base_price
 
         # =====================================================================
         # 1. Attribute option upcharges (size, bread type, etc.)
         # =====================================================================
 
-        # Size upcharge (for items with size attribute)
-        size_value = attr_values.get("size")
+        # Size upcharge - only apply for items WITHOUT size-based pricing
+        # (items with size-based pricing already have size factored into base_price)
         size_upcharge = 0.0
-        if size_value and size_value.lower() not in ("small", "s"):
+        if not uses_size_pricing and size_value and size_value.lower() not in ("small", "s"):
             size_upcharge = self.lookup_attribute_option_upcharge(
                 item_type, "size", size_value
             )
@@ -655,8 +764,8 @@ class PricingEngine:
         syrup_upcharge = 0.0
         for syrup in syrup_selections:
             if isinstance(syrup, dict):
-                # Support both old format ("flavor") and new unified format ("slug")
-                flavor = syrup.get("slug") or syrup.get("flavor", "")
+                # Use get_modifier_name to handle all key formats ("slug", "type", "flavor")
+                flavor = get_modifier_name(syrup)
                 qty = syrup.get("quantity", 1) or 1
                 single_price = self.lookup_generic_modifier_price(
                     flavor, item_type, "syrup"

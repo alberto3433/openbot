@@ -58,8 +58,9 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, AttributeOption, MenuItem, ItemTypeGlobalAttribute
+from ..models import ItemType, ItemTypeAlias, AttributeOption, MenuItem, ItemTypeGlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
+from ..services.helpers import validate_aliases
 from ..schemas.modifiers import (
     ItemTypeListOut,
     ItemTypeOut,
@@ -107,7 +108,35 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         modifier_category=item_type.modifier_category,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
+        aliases=item_type.aliases,
     )
+
+
+def _set_item_type_aliases(db: Session, item_type: ItemType, aliases_str: str | None) -> None:
+    """
+    Set item type aliases from a comma-separated string.
+    Clears existing aliases and creates new ones from the input string.
+    Validates global uniqueness of aliases before adding.
+
+    Raises:
+        HTTPException: If any alias conflicts with an existing alias
+    """
+    # Clear existing aliases
+    for alias in list(item_type.alias_records):
+        db.delete(alias)
+
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
+
+    # Validate and add new aliases if provided
+    if aliases_str:
+        try:
+            validated_aliases = validate_aliases(db, aliases_str, exclude_table="item_type_aliases")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        for alias in validated_aliases:
+            db.add(ItemTypeAlias(item_type=item_type, alias=alias))
 
 
 # =============================================================================
@@ -156,6 +185,12 @@ def create_item_type(
         modifier_category=payload.modifier_category,
     )
     db.add(item_type)
+    db.flush()  # Get the item ID before adding aliases
+
+    # Add aliases if provided
+    if payload.aliases is not None:
+        _set_item_type_aliases(db, item_type, payload.aliases)
+
     db.commit()
     db.refresh(item_type)
     logger.info("Created item type: %s", item_type.slug)
@@ -193,6 +228,8 @@ def update_item_type(
         item_type.display_name = payload.display_name
     if payload.modifier_category is not None:
         item_type.modifier_category = payload.modifier_category
+    if payload.aliases is not None:
+        _set_item_type_aliases(db, item_type, payload.aliases)
     # Note: is_configurable and skip_config are derived from linked global attributes
     # so we ignore any values provided in the payload
 

@@ -22,9 +22,6 @@ from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers import extract_modifiers_from_input, extract_coffee_modifiers_from_input
 from .handler_config import BaseHandler
 
-if TYPE_CHECKING:
-    from .handler_config import HandlerConfig
-
 logger = logging.getLogger(__name__)
 
 
@@ -40,21 +37,11 @@ class MenuItemConfigHandler(BaseHandler):
 
     # Note: SUPPORTED_ITEM_TYPES is now queried from the database via menu_cache.
     # Item types are configurable if they have linked attributes in the DB.
-
-    # Mapping from DB attribute slugs to legacy storage keys in attribute_values
-    # This allows checking if an attribute is already answered when stored under legacy key
-    LEGACY_ATTR_ALIASES = {
-        "bread": ["bagel_type"],  # DB uses "bread", legacy code uses "bagel_type"
-        "spread_type": ["spread"],  # DB uses "spread_type", legacy code/parser uses "spread"
-        # Note: temperature is now the canonical key, no alias needed
-        # milk_sweetener_syrup is a consolidated attribute but _apply_extracted_modifiers
-        # stores individual fields (sweetener, milk, flavor_syrup) for display purposes
-        "milk_sweetener_syrup": ["sweetener", "milk", "flavor_syrup"],
-    }
-
-    # Attributes that may be stored as direct model fields instead of in attribute_values
-    # When checking if these are answered, we also check the direct field on MenuItemTask
-    DIRECT_FIELD_ATTRS = {"toasted", "scooped", "decaf"}
+    #
+    # NOTE: All legacy attribute aliases have been eliminated:
+    # - Parsers now use canonical keys (bread, spread_type, etc.)
+    # - Properties (toasted, scooped, decaf, spread) now use attribute_values as backing store
+    # - milk_sweetener_syrup uses unified storage with milk_sweetener_syrup_selections
 
     # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_types.modifier_category column
     # and queried via menu_cache.get_modifier_category(item_type_slug).
@@ -80,10 +67,6 @@ class MenuItemConfigHandler(BaseHandler):
             return False
         return item_type_slug in menu_cache.get_configurable_item_types()
 
-    # Legacy fields that should use slug instead of display_name
-    # These fields historically stored lowercase slugs like "plain", "everything"
-    LEGACY_FIELDS_USE_SLUG = {"bagel_type"}
-
     def _set_legacy_field_if_applicable(
         self,
         item: "MenuItemTask",
@@ -91,36 +74,14 @@ class MenuItemConfigHandler(BaseHandler):
         display_value: str | None,
         slug_value: str | None = None,
     ) -> None:
-        """Set legacy direct model fields for backward compatibility.
+        """No-op - legacy field syncing is no longer needed.
 
-        When setting attribute_values entries, also set the corresponding
-        legacy direct field on the model for code that reads from item.spread,
-        item.toasted, etc. instead of item.attribute_values.
-
-        Uses LEGACY_ATTR_ALIASES to determine the legacy field name.
-
-        Args:
-            item: The MenuItemTask being configured
-            attr_slug: The database attribute slug (e.g., "spread_type")
-            display_value: The display value to set (e.g., "Plain Cream Cheese")
-            slug_value: The slug value to set (e.g., "plain_cc") - used for fields
-                        that historically stored slugs instead of display names
+        All properties (bread, spread, toasted, scooped, decaf) now use
+        attribute_values as their backing store, so setting attribute_values
+        automatically makes the properties return the correct values.
         """
-        # Check if this attribute has legacy aliases
-        legacy_aliases = self.LEGACY_ATTR_ALIASES.get(attr_slug, [])
-        for alias in legacy_aliases:
-            # Check if this alias is a direct field on the model
-            if hasattr(item, alias) and not alias.startswith("_"):
-                # Some legacy fields expect slugs, others expect display names
-                if alias in self.LEGACY_FIELDS_USE_SLUG and slug_value is not None:
-                    value = slug_value
-                else:
-                    value = display_value
-                setattr(item, alias, value)
-                logger.debug(
-                    "Set legacy field %s = %s for attr %s",
-                    alias, value, attr_slug
-                )
+        # No-op: Properties now use attribute_values as backing store
+        pass
 
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
@@ -181,29 +142,9 @@ class MenuItemConfigHandler(BaseHandler):
         for attr in mandatory:
             slug = attr["slug"]
             # Check canonical slug in attribute_values
+            # All properties (bread, toasted, etc.) now use attribute_values as backing store
             if slug in item.attribute_values:
                 logger.debug("  %s: FOUND in attribute_values", slug)
-                continue
-            # Check legacy aliases for this attribute
-            legacy_aliases = self.LEGACY_ATTR_ALIASES.get(slug, [])
-            found_via_alias = any(
-                alias in item.attribute_values for alias in legacy_aliases
-            )
-            if found_via_alias:
-                logger.debug("  %s: FOUND via alias %s", slug, legacy_aliases)
-                continue
-            # Check direct model field for certain attributes (e.g., toasted, scooped)
-            if slug in self.DIRECT_FIELD_ATTRS:
-                direct_value = getattr(item, slug, None)
-                if direct_value is not None:
-                    logger.debug("  %s: FOUND in direct field", slug)
-                    continue
-            # Also check legacy aliases as direct model fields (e.g., spread_type -> spread)
-            found_via_direct_alias = any(
-                getattr(item, alias, None) is not None for alias in legacy_aliases
-            )
-            if found_via_direct_alias:
-                logger.debug("  %s: FOUND via direct field alias %s", slug, legacy_aliases)
                 continue
             logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
             unanswered.append(attr)
@@ -218,7 +159,8 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> list[dict]:
         """Get optional attributes that haven't been answered yet.
 
-        Checks both canonical attribute slugs, legacy aliases, and direct model fields.
+        Checks canonical attribute slugs in attribute_values.
+        All properties (bread, toasted, etc.) now use attribute_values as backing store.
         """
         optional = self._get_optional_attributes(item_type_slug)
         unanswered = []
@@ -226,24 +168,6 @@ class MenuItemConfigHandler(BaseHandler):
             slug = attr["slug"]
             # Check canonical slug in attribute_values
             if slug in item.attribute_values:
-                continue
-            # Check legacy aliases for this attribute
-            legacy_aliases = self.LEGACY_ATTR_ALIASES.get(slug, [])
-            found_via_alias = any(
-                alias in item.attribute_values for alias in legacy_aliases
-            )
-            if found_via_alias:
-                continue
-            # Check direct model field for certain attributes
-            if slug in self.DIRECT_FIELD_ATTRS:
-                direct_value = getattr(item, slug, None)
-                if direct_value is not None:
-                    continue
-            # Also check legacy aliases as direct model fields (e.g., spread_type -> spread)
-            found_via_direct_alias = any(
-                getattr(item, alias, None) is not None for alias in legacy_aliases
-            )
-            if found_via_direct_alias:
                 continue
             unanswered.append(attr)
         return unanswered
@@ -1002,10 +926,11 @@ class MenuItemConfigHandler(BaseHandler):
         self, item: MenuItemTask, modifiers: ExtractedModifiers
     ) -> str | None:
         """
-        Apply extracted modifiers to a menu item.
+        Apply extracted modifiers to a menu item in a data-driven way.
 
-        Handles both food-style modifiers (proteins, cheeses, etc.) and
-        beverage-style modifiers (milk, sweetener, syrup) using category-based access.
+        Iterates through all categories in the extracted modifiers and applies
+        them generically using the item's add_modifier() method. Prices are
+        looked up from the pricing engine.
 
         Args:
             item: The menu item to apply modifiers to
@@ -1015,82 +940,35 @@ class MenuItemConfigHandler(BaseHandler):
             Acknowledgment string if modifiers were applied, None otherwise
         """
         added_items = []
+        item_type = item.menu_item_type
 
-        # Apply food-style modifiers (protein, cheese, topping, spread categories)
-        # Proteins: first one to extra_protein if not set, rest to toppings
-        proteins = modifiers.get_names("protein")
-        if proteins:
-            if not item.extra_protein:
-                item.extra_protein = proteins[0]
-                item.toppings.extend(proteins[1:])
-            else:
-                item.toppings.extend(proteins)
-            added_items.extend(proteins)
+        # Get all categories that have modifiers
+        for category in modifiers.get_categories():
+            category_modifiers = modifiers.get_all(category)
 
-        # Cheeses to toppings
-        if modifiers.needs_clarification.get("cheese"):
-            if "cheese" not in item.toppings:
-                item.toppings.append("cheese")
-            item.needs_cheese_clarification = True
-            added_items.append("cheese")
-        else:
-            cheeses = modifiers.get_names("cheese")
-            if cheeses:
-                item.toppings.extend(cheeses)
-                added_items.extend(cheeses)
+            for mod in category_modifiers:
+                # Look up price from pricing engine
+                price = 0.0
+                if self.pricing and item_type:
+                    price = self.pricing.lookup_generic_modifier_price(
+                        mod.name, item_type, category
+                    ) or 0.0
 
-        # Toppings from modifiers to item.toppings
-        toppings = modifiers.get_names("topping")
-        if toppings:
-            item.toppings.extend(toppings)
-            added_items.extend(toppings)
+                # Use generic add_modifier for unified storage
+                item.add_modifier(category, mod.name, mod.quantity, price)
 
-        # Spreads: set if not already set
-        spreads = modifiers.get_names("spread")
-        if spreads and not item.spread:
-            item.spread = spreads[0]
-            added_items.extend(spreads)
+                # Build display name for acknowledgment
+                if category == "syrup":
+                    added_items.append(f"{mod.name} syrup")
+                else:
+                    added_items.append(mod.name)
 
-        # Apply beverage-style modifiers (milk, sweetener, syrup, style categories)
-        milk = modifiers.get_first("milk")
-        if milk and "milk" not in item.attribute_values:
-            item.milk = milk.name
-            item.attribute_values["milk"] = milk.name
-            added_items.append(milk.name)
+        # Handle categories needing clarification (e.g., "cheese" without type)
+        for category, needs_clarification in modifiers.needs_clarification.items():
+            if needs_clarification:
+                item.attribute_values[f"needs_{category}_clarification"] = True
 
-        sweetener = modifiers.get_first("sweetener")
-        if sweetener and "sweetener" not in item.attribute_values:
-            # Store in attribute_values for backwards compatibility
-            item.attribute_values["sweetener"] = sweetener.name
-            if sweetener.quantity > 1:
-                item.attribute_values["sweetener_quantity"] = sweetener.quantity
-            # Also store in sweeteners list for proper data model
-            sweetener_entry = {
-                "type": sweetener.name,
-                "quantity": sweetener.quantity
-            }
-            item.sweeteners.append(sweetener_entry)
-            added_items.append(sweetener.name)
-
-        syrup = modifiers.get_first("syrup")
-        if syrup and "flavor_syrup" not in item.attribute_values:
-            # Store in attribute_values for backwards compatibility
-            item.attribute_values["flavor_syrup"] = syrup.name
-            if syrup.quantity > 1:
-                item.attribute_values["syrup_quantity"] = syrup.quantity
-            # Also store in flavor_syrups list for proper data model
-            syrup_entry = {
-                "type": syrup.name,
-                "quantity": syrup.quantity
-            }
-            item.flavor_syrups.append(syrup_entry)
-            added_items.append(f"{syrup.name} syrup")
-
-        style = modifiers.get_first("style")
-        if style and "cream_level" not in item.attribute_values:
-            item.attribute_values["cream_level"] = style.name
-
-        # Special instructions (applies to both food and beverage)
+        # Special instructions
         if modifiers.has_special_instructions():
             existing = item.special_instructions or ""
             new_instr = modifiers.get_special_instructions_string()
@@ -1575,21 +1453,13 @@ class MenuItemConfigHandler(BaseHandler):
             item.milk = modifiers["milk"]
         if "sweetener" in modifiers:
             # Sweeteners are stored as list of dicts
-            if not item.sweeteners:
-                item.sweeteners = []
-            item.sweeteners.append({
-                "type": modifiers["sweetener"],
-                "quantity": modifiers.get("sweetener_quantity", 1),
-            })
+            # Use add_sweetener() for proper normalization and storage
+            item.add_sweetener(modifiers["sweetener"], modifiers.get("sweetener_quantity", 1))
         if "syrup" in modifiers or "flavor_syrup" in modifiers:
             syrup = modifiers.get("syrup") or modifiers.get("flavor_syrup")
             if syrup:
-                if not item.flavor_syrups:
-                    item.flavor_syrups = []
-                item.flavor_syrups.append({
-                    "flavor": syrup,
-                    "quantity": modifiers.get("syrup_quantity", 1),
-                })
+                # Use add_flavor_syrup() for proper normalization and storage
+                item.add_flavor_syrup(syrup, modifiers.get("syrup_quantity", 1))
         if "size" in modifiers:
             item.size = modifiers["size"]
         if "iced" in modifiers:
@@ -1680,61 +1550,54 @@ class MenuItemConfigHandler(BaseHandler):
     def _handle_coffee_modifiers_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Handle coffee modifiers input - special case for complex modifier parsing.
+        """Handle beverage modifiers input in a data-driven way.
 
         Uses extract_coffee_modifiers_from_input to parse user input like
-        "oat milk with 2 sugars and vanilla" and sets the appropriate fields.
+        "oat milk with 2 sugars and vanilla" and applies modifiers generically
+        with pricing from the database.
         """
         user_lower = user_input.lower().strip()
 
         # Check for "no thanks" / "nothing" / "that's it" to skip modifiers
         skip_patterns = ["no", "nothing", "none", "that's it", "thats it", "i'm good", "im good", "nope"]
         if any(p in user_lower for p in skip_patterns) and len(user_lower) < 20:
-            # Mark coffee as complete and advance
+            # Mark item as complete and advance
             item.mark_complete()
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Use the coffee modifier extractor to parse input
+        # Use the modifier extractor to parse input
         modifiers = extract_coffee_modifiers_from_input(user_input)
+        item_type = item.menu_item_type
 
-        # Apply extracted modifiers to item using proper data structures
+        # Apply extracted modifiers using data-driven approach with pricing
         applied = []
-        milk = modifiers.get_first("milk")
-        if milk:
-            item.milk = milk.name
-            applied.append(milk.name + " milk")
+        for category in modifiers.get_categories():
+            for mod in modifiers.get_all(category):
+                # Look up price from pricing engine
+                price = 0.0
+                if self.pricing and item_type:
+                    price = self.pricing.lookup_generic_modifier_price(
+                        mod.name, item_type, category
+                    ) or 0.0
 
-        sweetener = modifiers.get_first("sweetener")
-        if sweetener:
-            # Use sweeteners list format: [{"type": "sugar", "quantity": 2}]
-            sweetener_entry = {
-                "type": sweetener.name,
-                "quantity": sweetener.quantity
-            }
-            item.sweeteners.append(sweetener_entry)
-            if sweetener.quantity > 1:
-                applied.append(f"{sweetener.quantity} {sweetener.name}")
-            else:
-                applied.append(sweetener.name)
+                # Use generic add_modifier for unified storage
+                item.add_modifier(category, mod.name, mod.quantity, price)
 
-        syrup = modifiers.get_first("syrup")
-        if syrup:
-            # Use flavor_syrups list format: [{"type": "vanilla", "quantity": 1}]
-            syrup_entry = {
-                "type": syrup.name,
-                "quantity": syrup.quantity
-            }
-            item.flavor_syrups.append(syrup_entry)
-            if syrup.quantity > 1:
-                applied.append(f"{syrup.quantity} pumps {syrup.name}")
-            else:
-                applied.append(f"{syrup.name} syrup")
-
-        style = modifiers.get_first("style")
-        if style:
-            item.cream_level = style.name
-            applied.append(style.name + " cream")
+                # Build display string for acknowledgment
+                if mod.quantity > 1:
+                    if category == "syrup":
+                        applied.append(f"{mod.quantity} pumps {mod.name}")
+                    else:
+                        applied.append(f"{mod.quantity} {mod.name}")
+                elif category == "syrup":
+                    applied.append(f"{mod.name} syrup")
+                elif category == "milk":
+                    applied.append(f"{mod.name} milk")
+                elif category == "style":
+                    applied.append(f"{mod.name} cream")
+                else:
+                    applied.append(mod.name)
 
         # If nothing was extracted, ask again
         if not applied:

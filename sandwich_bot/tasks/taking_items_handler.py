@@ -2225,19 +2225,19 @@ class TakingItemsHandler:
                     if isinstance(last_item, MenuItemTask) and last_item.has_attribute("milk"):
                         modifier_summary_parts = []
 
-                        # Add syrups
+                        # Add syrups using add_flavor_syrup() for proper normalization
                         for syrup in item.syrups:
-                            existing_syrups = [s.get("flavor") for s in last_item.flavor_syrups]
+                            existing_syrups = [s.get("slug") or s.get("flavor") for s in last_item.flavor_syrups]
                             if syrup.type not in existing_syrups:
-                                last_item.flavor_syrups.append({"flavor": syrup.type, "quantity": syrup.quantity})
+                                last_item.add_flavor_syrup(syrup.type, syrup.quantity)
                                 qty_str = f"{syrup.quantity} " if syrup.quantity > 1 else ""
                                 modifier_summary_parts.append(f"{qty_str}{syrup.type} syrup")
 
-                        # Add sweeteners
+                        # Add sweeteners using add_sweetener() for proper normalization
                         for sweetener in item.sweeteners:
-                            existing_sweeteners = [s.get("type") for s in last_item.sweeteners]
+                            existing_sweeteners = [s.get("slug") or s.get("type") for s in last_item.sweeteners]
                             if sweetener.type not in existing_sweeteners:
-                                last_item.sweeteners.append({"type": sweetener.type, "quantity": sweetener.quantity})
+                                last_item.add_sweetener(sweetener.type, sweetener.quantity)
                                 qty_str = f"{sweetener.quantity} " if sweetener.quantity > 1 else ""
                                 modifier_summary_parts.append(f"{qty_str}{sweetener.type}")
 
@@ -3588,12 +3588,12 @@ class TakingItemsHandler:
                 for option in options:
                     option_name = option.get("name", "").lower()
                     # Check if the option name is in user input or vice versa
-                    if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
+                    if len(user_lower) >= 3 and (option_name in user_lower or user_lower in option_name):
                         selected_item = option
                         break
                     # Also try matching individual words
                     for word in user_lower.split():
-                        if len(word) > 3 and word in option_name:
+                        if len(word) >= 3 and word in option_name:
                             selected_item = option
                             break
                     if selected_item:

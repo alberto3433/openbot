@@ -467,8 +467,9 @@ class MenuItemConverter(ItemConverter):
             base_price = item.unit_price or 0.0
 
         # For bagels, include bagel-specific fields in item_config for backwards compatibility
-        bagel_type = attribute_values.get("bagel_type")
-        bagel_type_upcharge = attribute_values.get("bagel_type_upcharge", 0.0) or 0.0
+        # Check "bread" first (canonical key), fall back to "bagel_type" for legacy data
+        bagel_type = attribute_values.get("bread") or attribute_values.get("bagel_type")
+        bagel_type_upcharge = attribute_values.get("bread_upcharge") or attribute_values.get("bagel_type_upcharge", 0.0) or 0.0
         spread_type = attribute_values.get("spread_type")
         scooped = attribute_values.get("scooped")
         extra_protein = getattr(item, 'extra_protein', None)
@@ -534,12 +535,14 @@ class BagelConverter(ItemConverter):
             menu_item_name="Bagel",
             menu_item_type="bagel",
             quantity=item_dict.get("quantity", 1),
-            toasted=item_dict.get("toasted"),
-            spread=item_dict.get("spread"),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
 
         # Set bagel-specific fields via property setters (stored in attribute_values)
+        if item_dict.get("toasted") is not None:
+            bagel.toasted = item_dict.get("toasted")
+        if item_dict.get("spread"):
+            bagel.spread = item_dict.get("spread")
         if item_dict.get("bagel_type"):
             bagel.bread = item_dict.get("bagel_type")
         if item_dict.get("bagel_type_upcharge"):
@@ -675,12 +678,14 @@ class SandwichConverter(ItemConverter):
             menu_item_name="Bagel",
             menu_item_type="bagel",
             quantity=item_dict.get("quantity", 1),
-            toasted=item_dict.get("toasted"),
-            spread=item_dict.get("cheese"),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
         )
 
-        # Set bagel-specific fields via property setters
+        # Set bagel-specific fields via property setters (stored in attribute_values)
+        if item_dict.get("toasted") is not None:
+            bagel.toasted = item_dict.get("toasted")
+        if item_dict.get("cheese"):
+            bagel.spread = item_dict.get("cheese")
         bagel.bread = bagel_type
         if item_dict.get("toppings"):
             bagel.toppings = item_dict.get("toppings") or []

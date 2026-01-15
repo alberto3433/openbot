@@ -189,6 +189,11 @@ class MenuDataCache:
         # Maps modifier_type ("food", "beverage") to set of category slugs
         self._ingredient_categories_by_modifier_type: dict[str, set[str]] = {}
 
+        # Ingredient category field configuration (for data-driven modifier field definitions)
+        # Maps category_slug -> {code_field_name, is_multi_select}
+        # Replaces hardcoded INGREDIENT_GROUP_TO_FIELD mapping
+        self._ingredient_category_field_config: dict[str, dict] = {}
+
         # Menu item categories (high-level classifications like "drink", "food")
         # Maps category slug -> list of menu item dicts (id, name, item_type_slug)
         self._menu_items_by_category_slug: dict[str, list[dict]] = {}
@@ -1405,28 +1410,46 @@ class MenuDataCache:
         This allows querying which ingredient categories belong to which modifier type
         (food vs beverage) without hardcoding category names.
 
+        Also loads code_field_name and is_multi_select for data-driven modifier field
+        configuration, replacing the hardcoded INGREDIENT_GROUP_TO_FIELD mapping.
+
         Example:
             get_ingredient_categories_by_modifier_type("food")
             -> {"protein", "topping", "sauce", "cheese", "spread"}
+
+            get_ingredient_category_field_config("topping")
+            -> {"code_field_name": "toppings", "is_multi_select": True}
         """
         from .models import IngredientCategory
 
         categories_by_modifier_type: dict[str, set[str]] = {}
+        category_field_config: dict[str, dict] = {}
 
         # Query all ingredient categories
         categories = db.query(IngredientCategory).all()
 
         for cat in categories:
+            # Load modifier type grouping
             if cat.modifier_type:
                 if cat.modifier_type not in categories_by_modifier_type:
                     categories_by_modifier_type[cat.modifier_type] = set()
                 categories_by_modifier_type[cat.modifier_type].add(cat.slug)
 
+            # Load field configuration (code_field_name, is_multi_select)
+            # If code_field_name is NULL, default to the category slug
+            # If is_multi_select is NULL, default to False
+            category_field_config[cat.slug] = {
+                "code_field_name": cat.code_field_name or cat.slug,
+                "is_multi_select": cat.is_multi_select or False,
+            }
+
         self._ingredient_categories_by_modifier_type = categories_by_modifier_type
+        self._ingredient_category_field_config = category_field_config
 
         logger.debug(
-            "Loaded ingredient category metadata: %s",
-            {k: len(v) for k, v in categories_by_modifier_type.items()}
+            "Loaded ingredient category metadata: %s modifier types, %s field configs",
+            {k: len(v) for k, v in categories_by_modifier_type.items()},
+            len(category_field_config)
         )
 
     def _load_menu_item_categories(self, db: Session) -> None:
@@ -1893,6 +1916,32 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
+
+    def get_ingredient_category_field_config(self, category_slug: str) -> dict | None:
+        """Get field configuration for an ingredient category.
+
+        Returns the code_field_name and is_multi_select for the category,
+        used for data-driven modifier field definitions.
+
+        Args:
+            category_slug: The ingredient category slug (e.g., "topping", "sweetener")
+
+        Returns:
+            Dict with:
+            - code_field_name: Python property name (e.g., "toppings", "flavor_syrups")
+            - is_multi_select: True if category supports multiple selections
+
+            Returns None if category not found.
+
+        Examples:
+            >>> menu_cache.get_ingredient_category_field_config("topping")
+            {"code_field_name": "toppings", "is_multi_select": True}
+
+            >>> menu_cache.get_ingredient_category_field_config("milk")
+            {"code_field_name": "milk", "is_multi_select": False}
+        """
+        self._ensure_loaded()
+        return self._ingredient_category_field_config.get(category_slug)
 
     def get_modifier_categories_for_inquiry(self) -> dict[str, dict]:
         """Get all modifier categories for menu inquiry handling.
@@ -2443,23 +2492,9 @@ class MenuDataCache:
         from .db import SessionLocal
         from .models import ItemType, ItemTypeIngredient, Ingredient
 
-        # Mapping from ingredient_group to field configuration
-        # Maps DB group names to the field names used in code
-        INGREDIENT_GROUP_TO_FIELD = {
-            # Bagel modifiers
-            "spread": {"field_name": "spread", "is_list": False},
-            "spread_type": {"field_name": "spread", "is_list": False},
-            "protein": {"field_name": "extra_protein", "is_list": False},
-            "extra_protein": {"field_name": "extra_protein", "is_list": False},
-            "topping": {"field_name": "toppings", "is_list": True},
-            "toppings": {"field_name": "toppings", "is_list": True},
-            "cheese": {"field_name": "toppings", "is_list": True},  # Cheeses are toppings
-            # Beverage modifiers
-            "milk": {"field_name": "milk", "is_list": False},
-            "sweetener": {"field_name": "sweeteners", "is_list": True},
-            "syrup": {"field_name": "flavor_syrups", "is_list": True},
-            "milk_sweetener_syrup": None,  # Handled specially - split by category
-        }
+        # Field configuration is now data-driven from ingredient_categories table
+        # (code_field_name, is_multi_select columns)
+        # Special case: milk_sweetener_syrup group is split by ingredient category
 
         result = []
         db = SessionLocal()
@@ -2502,10 +2537,11 @@ class MenuDataCache:
 
             # Convert each group to a modifier field
             for group, items in groups.items():
-                field_config = INGREDIENT_GROUP_TO_FIELD.get(group)
+                # Get field config from cached ingredient_categories data (data-driven)
+                field_config = self.get_ingredient_category_field_config(group)
                 if field_config is None:
-                    # Unknown group - skip or log
-                    logger.debug("Unknown ingredient_group '%s' - skipping", group)
+                    # Unknown category - skip or log
+                    logger.debug("Unknown ingredient category '%s' - skipping", group)
                     continue
 
                 # Collect all aliases for this group
@@ -2529,10 +2565,10 @@ class MenuDataCache:
                             aliases.append(alias_lower)
 
                 result.append({
-                    "field_name": field_config["field_name"],
+                    "field_name": field_config["code_field_name"],
                     "display_name": group.replace("_", " "),
                     "aliases": aliases,
-                    "is_list": field_config["is_list"],
+                    "is_list": field_config["is_multi_select"],
                     "ingredient_group": group,
                 })
 

@@ -221,6 +221,7 @@ class ItemTypeOut(BaseModel):
         modifier_category: Type of modifier extraction ("food" or "beverage")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
+        aliases: List of synonyms for matching (e.g., ["coffee", "java"])
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -232,6 +233,7 @@ class ItemTypeOut(BaseModel):
     modifier_category: Optional[str] = None  # "food" or "beverage"
     menu_item_count: int = 0
     global_attribute_count: int = 0
+    aliases: list[str] = []
 
 
 class ItemTypeCreate(BaseModel):
@@ -245,17 +247,20 @@ class ItemTypeCreate(BaseModel):
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
         modifier_category: Type of modifier extraction ("food" or "beverage", optional)
+        aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
             "slug": "specialty_drink",
             "display_name": "Specialty Drink",
-            "modifier_category": "beverage"
+            "modifier_category": "beverage",
+            "aliases": "fancy drink, gourmet beverage"
         }
     """
     slug: str
     display_name: str
     modifier_category: Optional[str] = None  # "food" or "beverage"
+    aliases: Optional[str] = None  # Comma-separated aliases
 
 
 class ItemTypeUpdate(BaseModel):
@@ -271,10 +276,12 @@ class ItemTypeUpdate(BaseModel):
         slug: New slug
         display_name: New display name
         modifier_category: Type of modifier extraction ("food" or "beverage")
+        aliases: Comma-separated synonyms for matching
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
     modifier_category: Optional[str] = None  # "food" or "beverage"
+    aliases: Optional[str] = None  # Comma-separated aliases
 
 
 # =============================================================================

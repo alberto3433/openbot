@@ -39,15 +39,18 @@ def create_bagel_task(
     bagel = MenuItemTask(
         menu_item_name="Bagel",
         menu_item_type="bagel",
-        toasted=toasted,
-        spread=spread,
         quantity=quantity,
         unit_price=unit_price,
     )
-    if bagel_type:
-        bagel.bread = bagel_type
+    # Set properties via setters (stored in attribute_values)
+    if toasted is not None:
+        bagel.toasted = toasted
+    if spread:
+        bagel.spread = spread
     if spread_type:
         bagel.spread_type = spread_type
+    if bagel_type:
+        bagel.bread = bagel_type
     if extras:
         bagel.toppings = extras
     return bagel

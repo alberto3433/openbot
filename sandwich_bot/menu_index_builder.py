@@ -22,13 +22,15 @@ from .models import (
     NeighborhoodZipCode,
     ItemTypeAttribute,
     ItemTypeIngredient,
-    MenuItemAttributeValue,
-    MenuItemAttributeSelection,
     Company,
     # Global attribute normalization tables
     GlobalAttribute,
     GlobalAttributeOption,
     ItemTypeGlobalAttribute,
+    # Size pricing tables
+    MenuItemSizeCategory,
+    MenuItemSize,
+    MenuItemSizePrice,
 )
 # Note: We no longer import has_linked_attributes, has_askable_attributes, should_skip_config
 # These caused N+1 queries. Instead, we pre-load all ItemTypeGlobalAttribute data.
@@ -191,96 +193,61 @@ def _preload_item_type_ingredients(db: Session) -> Dict[tuple, List]:
     return by_type_group
 
 
-def _preload_menu_item_configs(db: Session) -> Dict[int, Dict[str, Any]]:
+def _preload_size_prices(db: Session) -> Dict[int, Dict[str, Any]]:
     """
-    Pre-load all menu item attribute configurations in batched queries.
-
-    This replaces the N+1 query pattern where we queried per menu item.
-    Instead, we load everything in 2 queries and group by menu_item_id.
+    Pre-load all menu item size prices in a single query.
 
     Returns:
-        Dict mapping menu_item_id -> default_config dict
+        Dict mapping menu_item_id -> {
+            "size_category_id": int,
+            "size_category_name": str,
+            "size_category_slug": str,
+            "question_text": str,
+            "prices": [
+                {"size_id": int, "size_name": str, "price": float, "display_order": int},
+                ...
+            ]
+        }
     """
-    from collections import defaultdict
-    from sqlalchemy.orm import joinedload
-
-    # Load ALL attribute values in one query with eager loading
-    all_attr_values = (
-        db.query(MenuItemAttributeValue)
+    # Load all size prices with their related size and category data
+    all_prices = (
+        db.query(MenuItemSizePrice)
         .options(
-            joinedload(MenuItemAttributeValue.attribute),
-            joinedload(MenuItemAttributeValue.option),
+            joinedload(MenuItemSizePrice.size)
+            .joinedload(MenuItemSize.category)
         )
+        .order_by(MenuItemSizePrice.menu_item_id)
         .all()
     )
 
-    # Load ALL multi-select selections in one query with eager loading
-    all_selections = (
-        db.query(MenuItemAttributeSelection)
-        .options(joinedload(MenuItemAttributeSelection.option))
-        .all()
-    )
+    # Group by menu_item_id
+    by_menu_item: Dict[int, Dict[str, Any]] = {}
+    for price in all_prices:
+        item_id = price.menu_item_id
+        size = price.size
+        category = size.category if size else None
 
-    # Group selections by (menu_item_id, attribute_id) for fast lookup
-    selections_by_item_attr: Dict[tuple, List] = defaultdict(list)
-    for sel in all_selections:
-        key = (sel.menu_item_id, sel.attribute_id)
-        selections_by_item_attr[key].append(sel)
+        if item_id not in by_menu_item:
+            by_menu_item[item_id] = {
+                "size_category_id": category.id if category else None,
+                "size_category_name": category.name if category else None,
+                "size_category_slug": category.slug if category else None,
+                "question_text": category.question_text if category else None,
+                "prices": []
+            }
 
-    # Group attribute values by menu_item_id
-    values_by_item: Dict[int, List] = defaultdict(list)
-    for av in all_attr_values:
-        values_by_item[av.menu_item_id].append(av)
+        by_menu_item[item_id]["prices"].append({
+            "size_id": size.id if size else None,
+            "size_name": size.name if size else None,
+            "price": price.price,
+            "display_order": size.display_order if size else 0,
+        })
 
-    # Build config dicts for each menu item
-    configs: Dict[int, Dict[str, Any]] = {}
+    # Sort prices by display_order for each menu item
+    for item_id, data in by_menu_item.items():
+        data["prices"].sort(key=lambda p: p["display_order"])
 
-    for menu_item_id, attr_values in values_by_item.items():
-        config: Dict[str, Any] = {}
-
-        for av in attr_values:
-            attr = av.attribute
-            if not attr:
-                continue
-
-            slug = attr.slug
-
-            if attr.input_type == "boolean":
-                if av.value_boolean is not None:
-                    config[slug] = av.value_boolean
-            elif attr.input_type == "multi_select":
-                # Look up selections from pre-loaded data
-                key = (menu_item_id, attr.id)
-                selections = selections_by_item_attr.get(key, [])
-                if selections:
-                    config[slug] = [sel.option.display_name for sel in selections if sel.option]
-            else:  # single_select or text
-                if av.option:
-                    config[slug] = av.option.display_name
-                elif av.value_text:
-                    config[slug] = av.value_text
-
-        if config:
-            configs[menu_item_id] = config
-
-    return configs
-
-
-def _build_default_config_from_relational(
-    menu_item_id: int,
-    preloaded_configs: Dict[int, Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    """
-    Get default_config for a menu item from pre-loaded data.
-
-    Args:
-        menu_item_id: The menu item ID
-        preloaded_configs: Dict from _preload_menu_item_configs()
-
-    Returns:
-        Dict with attribute values, or None if no values exist.
-    """
-    return preloaded_configs.get(menu_item_id)
+    return by_menu_item
 
 
 def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
@@ -302,9 +269,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         store_id: Optional store ID for store-specific ingredient availability
     """
     # Pre-load all data in batched queries to avoid N+1 query problems
-    preloaded_configs = _preload_menu_item_configs(db)
     preloaded_config_status = _preload_item_type_config_status(db)
     preloaded_ingredients = _preload_all_ingredients(db)
+    preloaded_size_prices = _preload_size_prices(db)
 
     # Load menu items with eager loading for related objects
     items = (
@@ -363,10 +330,9 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     }
 
     for item in items:
-        # Get default_config from relational data (menu_item_attribute_values/selections)
-        # Falls back to extra_metadata for legacy items not yet migrated
-        default_config = _build_default_config_from_relational(item.id, preloaded_configs)
-        if default_config is None and item.extra_metadata:
+        # Get default_config from extra_metadata JSON field
+        default_config = None
+        if item.extra_metadata:
             try:
                 meta = json.loads(item.extra_metadata)
                 default_config = meta.get("default_config")
@@ -394,6 +360,15 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
             "required_match_phrases": item.required_match_phrases,  # Comma-separated phrases for match filtering
         }
+
+        # Add size pricing data if available (for items with variant-based pricing)
+        size_price_data = preloaded_size_prices.get(item.id)
+        if size_price_data:
+            item_json["size_category_id"] = size_price_data["size_category_id"]
+            item_json["size_category_name"] = size_price_data["size_category_name"]
+            item_json["size_category_slug"] = size_price_data["size_category_slug"]
+            item_json["size_question_text"] = size_price_data["question_text"]
+            item_json["size_prices"] = size_price_data["prices"]
 
         # Add to items_by_type grouping for type-specific queries
         if item_type_slug and item_type_slug in index["items_by_type"]:

@@ -34,11 +34,14 @@ def create_bagel_task(
     bagel = MenuItemTask(
         menu_item_name="Bagel",
         menu_item_type="bagel",
-        toasted=toasted,
-        spread=spread,
         quantity=quantity,
         unit_price=unit_price,
     )
+    # Set properties via setters (stored in attribute_values)
+    if toasted is not None:
+        bagel.toasted = toasted
+    if spread:
+        bagel.spread = spread
     if bagel_type:
         bagel.bread = bagel_type
     if bagel_type_upcharge:
@@ -413,11 +416,18 @@ class TestOrderTaskToDict:
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values
-        # Note: "sweeteners" property stores as "sweetener_selections" in attribute_values
+        # Note: "sweeteners" and "milk" are stored in unified storage (milk_sweetener_syrup_selections)
         assert item["attribute_values"]["size"] == "large"
         assert item["attribute_values"]["temperature"] == "iced"  # iced=True stores as temperature="iced"
-        assert item["attribute_values"]["milk"] == "almond"
-        assert item["attribute_values"]["sweetener_selections"] == [{"type": "honey", "quantity": 1}]
+        # Check milk and sweetener in unified storage
+        mss_selections = item["attribute_values"].get("milk_sweetener_syrup_selections", [])
+        milk_entries = [e for e in mss_selections if e.get("category") == "milk"]
+        assert len(milk_entries) == 1
+        assert milk_entries[0]["slug"] == "almond"
+        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
+        assert len(sweetener_entries) == 1
+        assert sweetener_entries[0]["slug"] == "honey"
+        assert sweetener_entries[0]["quantity"] == 1
         # Check modifiers list includes almond milk (with price if upcharge)
         modifier_names = [m["name"].lower() for m in item["modifiers"]]
         assert any("almond" in name for name in modifier_names)
@@ -660,8 +670,12 @@ class TestModifiersConsistency:
 
         # Should contain "medium" in modifiers (size is stored in attribute_values)
         assert any("medium" in name for name in modifier_names)
-        # Sweeteners are stored as sweetener_selections in attribute_values
-        assert item["attribute_values"].get("sweetener_selections") == [{"type": "sugar", "quantity": 1}]
+        # Sweeteners are stored in unified storage (milk_sweetener_syrup_selections)
+        mss_selections = item["attribute_values"].get("milk_sweetener_syrup_selections", [])
+        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
+        assert len(sweetener_entries) == 1
+        assert sweetener_entries[0]["slug"] == "sugar"
+        assert sweetener_entries[0]["quantity"] == 1
 
     def test_coffee_decaf_in_modifiers(self):
         """Test that decaf coffee has 'decaf' in modifiers with price=0."""

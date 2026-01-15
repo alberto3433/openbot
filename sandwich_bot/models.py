@@ -254,87 +254,6 @@ class ItemTypeAttribute(Base):
 
     # Relationships
     item_type = relationship("ItemType", back_populates="type_attributes")
-    menu_item_values = relationship("MenuItemAttributeValue", back_populates="attribute", cascade="all, delete-orphan")
-    menu_item_selections = relationship("MenuItemAttributeSelection", back_populates="attribute", cascade="all, delete-orphan")
-
-
-class MenuItemAttributeValue(Base):
-    """
-    Stores attribute values for a specific menu item.
-
-    This replaces the default_config JSON column on menu_items with a proper
-    relational structure. Each menu item has one row per attribute.
-
-    For example, "The Lexington" (an egg_sandwich) would have rows for:
-    - bread: option_id -> "Bagel", still_ask=TRUE (ask which bagel type)
-    - protein: option_id -> "Egg White", still_ask=FALSE (locked)
-    - cheese: option_id -> "Swiss", still_ask=TRUE (default but changeable)
-    - toasted: value_boolean=NULL, still_ask=TRUE (must ask)
-    """
-    __tablename__ = "menu_item_attribute_values"
-
-    id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    # For single_select: store the selected option
-    option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="SET NULL"), nullable=True)
-
-    # For boolean type
-    value_boolean = Column(Boolean, nullable=True)
-
-    # For text type (rarely needed)
-    value_text = Column(Text, nullable=True)
-
-    # Whether to still ask user even if there's a default value
-    # TRUE = ask (e.g., "which bagel type?", or "confirm cheese?")
-    # FALSE = use value as-is (locked, don't ask)
-    still_ask = Column(Boolean, nullable=False, default=False)
-
-    # Timestamps
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    # Unique constraint: one value per attribute per menu item
-    __table_args__ = (
-        UniqueConstraint("menu_item_id", "attribute_id", name="uq_menu_item_attribute_values"),
-    )
-
-    # Relationships
-    menu_item = relationship("MenuItem", back_populates="attribute_values")
-    attribute = relationship("ItemTypeAttribute", back_populates="menu_item_values")
-    option = relationship("AttributeOption")
-
-
-class MenuItemAttributeSelection(Base):
-    """
-    Join table for multi-select attribute values.
-
-    For menu items with multi-select attributes (like toppings), this stores
-    one row per selected option.
-
-    For example, if "The Lexington" has toppings: ["Spinach", "Tomato"], this
-    table would have two rows linking the menu item to those topping options.
-    """
-    __tablename__ = "menu_item_attribute_selections"
-
-    id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=False)
-    option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="CASCADE"), nullable=False)
-
-    # Timestamps
-    created_at = Column(DateTime, server_default=func.now())
-
-    # Unique constraint: one entry per option per attribute per menu item
-    __table_args__ = (
-        UniqueConstraint("menu_item_id", "attribute_id", "option_id", name="uq_menu_item_attr_selection"),
-    )
-
-    # Relationships
-    menu_item = relationship("MenuItem", back_populates="attribute_selections")
-    attribute = relationship("ItemTypeAttribute", back_populates="menu_item_selections")
-    option = relationship("AttributeOption")
 
 
 class AttributeOptionIngredient(Base):
@@ -615,10 +534,13 @@ class MenuItem(Base):
         cascade="all, delete-orphan",
     )
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
-    attribute_values = relationship("MenuItemAttributeValue", back_populates="menu_item", cascade="all, delete-orphan")
-    attribute_selections = relationship("MenuItemAttributeSelection", back_populates="menu_item", cascade="all, delete-orphan")
     alias_records = relationship("MenuItemAlias", back_populates="menu_item", cascade="all, delete-orphan")
     category_records = relationship("MenuItemCategory", back_populates="menu_item", cascade="all, delete-orphan")
+
+    # Size-based pricing (variant pricing)
+    size_category_id = Column(Integer, ForeignKey("menu_item_size_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    size_category = relationship("MenuItemSizeCategory", back_populates="menu_items")
+    size_prices = relationship("MenuItemSizePrice", back_populates="menu_item", cascade="all, delete-orphan")
 
     @property
     def aliases(self) -> list[str]:
@@ -812,6 +734,9 @@ class IngredientCategory(Base):
     lookups. The modifier_type field indicates whether ingredients in this category
     are used as food modifiers (bagels, sandwiches) or beverage modifiers (coffee).
 
+    The code_field_name and is_multi_select fields enable data-driven modifier
+    field configuration, replacing hardcoded INGREDIENT_GROUP_TO_FIELD mappings.
+
     Examples:
         - protein, topping, sauce, cheese, spread -> modifier_type="food"
         - milk, sweetener, syrup -> modifier_type="beverage"
@@ -824,6 +749,15 @@ class IngredientCategory(Base):
     display_name = Column(String(100), nullable=False)  # "Proteins", "Toppings", etc.
     modifier_type = Column(String(20), nullable=True)  # "food", "beverage", or None
     display_order = Column(Integer, nullable=False, default=0)  # For UI ordering
+
+    # Data-driven modifier field configuration
+    # code_field_name: Python property name on MenuItemTask (e.g., "toppings", "extra_protein")
+    # If NULL, defaults to slug (e.g., "milk" -> "milk")
+    code_field_name = Column(String(50), nullable=True)
+    # is_multi_select: True if this category supports multiple selections (e.g., toppings, sweeteners)
+    # If NULL, defaults to False (single selection)
+    is_multi_select = Column(Boolean, nullable=True, default=False)
+
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -1104,6 +1038,96 @@ class Company(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    size_categories = relationship("MenuItemSizeCategory", back_populates="company", cascade="all, delete-orphan")
+    sizes = relationship("MenuItemSize", back_populates="company", cascade="all, delete-orphan")
+
+
+# --- Menu Item Size Pricing (variant-based pricing) ---
+
+class MenuItemSizeCategory(Base):
+    """
+    Categories for menu item sizes (e.g., 'size', 'weight', 'quantity').
+
+    Each category has a question_text used when asking customers to choose
+    (e.g., "What size?" for size, "How much would you like?" for weight).
+
+    Categories are company-scoped to allow customization per deployment.
+    """
+    __tablename__ = "menu_item_size_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    slug = Column(String(50), nullable=False)  # e.g., "size", "weight", "quantity"
+    name = Column(String(100), nullable=False)  # Display name: "Size", "Weight", "Quantity"
+    question_text = Column(String(200), nullable=True)  # e.g., "What size?", "How much would you like?"
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "slug", name="uix_size_category_company_slug"),
+    )
+
+    # Relationships
+    company = relationship("Company", back_populates="size_categories")
+    sizes = relationship("MenuItemSize", back_populates="category", cascade="all, delete-orphan")
+    menu_items = relationship("MenuItem", back_populates="size_category")
+
+
+class MenuItemSize(Base):
+    """
+    Individual size options within a category (e.g., 'small', 'large', '1/4 lb', 'each').
+
+    Sizes are company-scoped and belong to a category. The display_order
+    controls how sizes are presented to customers.
+    """
+    __tablename__ = "menu_item_sizes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("menu_item_size_categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)  # e.g., "small", "large", "1/4 lb", "each"
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("category_id", "name", name="uix_size_category_name"),
+    )
+
+    # Relationships
+    company = relationship("Company", back_populates="sizes")
+    category = relationship("MenuItemSizeCategory", back_populates="sizes")
+    price_entries = relationship("MenuItemSizePrice", back_populates="size", cascade="all, delete-orphan")
+
+
+class MenuItemSizePrice(Base):
+    """
+    Explicit price for a menu item at a specific size.
+
+    This replaces the base_price + upcharge model for items with size variants.
+    Each menu item must have at least one size_price entry.
+
+    Examples:
+        - Hot Coffee (small): $3.45
+        - Hot Coffee (large): $4.35
+        - Nova Lox (1/4 lb): $9.00
+        - Cookie (each): $2.50
+    """
+    __tablename__ = "menu_item_size_prices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    size_id = Column(Integer, ForeignKey("menu_item_sizes.id", ondelete="CASCADE"), nullable=False, index=True)
+    price = Column(Float, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "size_id", name="uix_menu_item_size_price"),
+    )
+
+    # Relationships
+    menu_item = relationship("MenuItem", back_populates="size_prices")
+    size = relationship("MenuItemSize", back_populates="price_entries")
 
 
 # --- Modifier Qualifiers (company-wide settings for parsing qualifiers like "extra", "light") ---

@@ -586,6 +586,18 @@
         </div>
       </div>
 
+      <!-- Server Controls Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon">🖥️</span>Server Controls</div>
+        <div class="section-body">
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
+            Refresh the server cache after making menu changes. This reloads all menu data including prices, items, and ingredients.
+          </p>
+          <button type="button" class="btn primary" id="refreshServerBtn">Refresh Server</button>
+          <span id="refreshStatus" style="margin-left: 12px; font-size: 13px; color: #666;"></span>
+        </div>
+      </div>
+
       <!-- Save button for Business Settings tab -->
       <div class="section">
         <div class="section-body">
@@ -898,6 +910,50 @@
       }
     }
 
+    // Refresh server cache
+    async function refreshServerCache() {
+      const btn = document.getElementById("refreshServerBtn");
+      const status = document.getElementById("refreshStatus");
+
+      btn.disabled = true;
+      btn.classList.add("saving");
+      btn.textContent = "Refreshing...";
+      status.textContent = "";
+
+      try {
+        const response = await fetch("/admin/menu/cache/refresh", {
+          method: "POST",
+          credentials: "include"
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        btn.classList.remove("saving");
+        btn.classList.add("saved");
+        btn.textContent = "Refreshed!";
+        status.textContent = `Cache refreshed at ${new Date().toLocaleTimeString()}`;
+        status.style.color = "#2e7d32";
+        showToast("Server cache refreshed successfully", "success");
+
+        setTimeout(() => {
+          btn.classList.remove("saved");
+          btn.textContent = "Refresh Server";
+          btn.disabled = false;
+        }, 2000);
+      } catch (error) {
+        console.error("Failed to refresh cache:", error);
+        btn.classList.remove("saving");
+        btn.textContent = "Refresh Server";
+        btn.disabled = false;
+        status.textContent = "Refresh failed";
+        status.style.color = "#c62828";
+        showToast(`Failed to refresh: ${error.message}`, "error");
+      }
+    }
+
     // Event listeners - both save buttons call the same function
     document.getElementById("saveBtnCompany").addEventListener("click", function() {
       saveCompany(this);
@@ -907,6 +963,7 @@
     });
     document.getElementById("resetBtnCompany").addEventListener("click", resetForm);
     document.getElementById("resetBtnSettings").addEventListener("click", resetForm);
+    document.getElementById("refreshServerBtn").addEventListener("click", refreshServerCache);
 
     // Live preview updates
     document.getElementById("companyName").addEventListener("input", updatePreview);

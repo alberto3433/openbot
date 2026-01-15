@@ -230,94 +230,7 @@
       font-size: 12px;
       color: #666;
     }
-    /* Tab Styles */
-    .detail-tabs {
-      display: flex;
-      border-bottom: 1px solid #e0e0e0;
-      margin-bottom: 16px;
-    }
-    .detail-tab {
-      padding: 10px 18px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      background: none;
-      color: #666;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-    }
-    .detail-tab:hover {
-      color: #333;
-      background: #f5f5f5;
-    }
-    .detail-tab.active {
-      color: #1976d2;
-      border-bottom-color: #1976d2;
-    }
-    .tab-panel {
-      display: none;
-    }
-    .tab-panel.active {
-      display: block;
-    }
-    /* Attribute Form Styles */
-    .attr-form-section {
-      margin-bottom: 20px;
-    }
-    .attr-form-row {
-      display: flex;
-      flex-direction: column;
-      margin-bottom: 14px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid #eee;
-    }
-    .attr-form-row:last-child {
-      border-bottom: none;
-    }
-    .attr-form-label {
-      font-weight: 500;
-      font-size: 13px;
-      margin-bottom: 6px;
-      color: #333;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .attr-form-label .required {
-      font-size: 10px;
-      background: #ffebee;
-      color: #c62828;
-      padding: 1px 5px;
-      border-radius: 4px;
-    }
-    .attr-form-label .type-badge {
-      font-size: 10px;
-      background: #e3f2fd;
-      color: #1565c0;
-      padding: 1px 5px;
-      border-radius: 4px;
-    }
-    .attr-form-control {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .attr-form-control select {
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 13px;
-      min-width: 200px;
-    }
-    .attr-form-control input[type="text"] {
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 13px;
-      min-width: 200px;
-    }
+    /* Category chip styles (shared) */
     .attr-checkbox-group {
       display: flex;
       flex-wrap: wrap;
@@ -346,35 +259,6 @@
     }
     .attr-chip input[type="checkbox"] {
       display: none;
-    }
-    .still-ask-toggle {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: #666;
-      margin-left: 12px;
-    }
-    .still-ask-toggle input {
-      width: 14px;
-      height: 14px;
-    }
-    .boolean-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .boolean-toggle input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-    }
-    .no-attrs-message {
-      padding: 20px;
-      text-align: center;
-      color: #888;
-      font-size: 14px;
-      background: #f9f9f9;
-      border-radius: 4px;
     }
     /* Toast notification styles */
     .toast-container {
@@ -434,6 +318,47 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    /* Size pricing styles */
+    .size-price-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .size-price-row label {
+      min-width: 80px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .size-price-row input {
+      width: 100px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+    }
+    #sizePricesContainer {
+      padding: 10px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+    }
+    .single-price-input {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .single-price-input label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .single-price-input input {
+      width: 100px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -481,14 +406,6 @@
       </div>
 
       <div id="detailBody" style="flex: 1; overflow-y: auto;">
-        <!-- Tabs -->
-        <div class="detail-tabs" id="detailTabs">
-          <button class="detail-tab active" data-tab="basic">Basic Info</button>
-          <button class="detail-tab" data-tab="attributes">Attributes</button>
-        </div>
-
-        <!-- Basic Info Tab -->
-        <div class="tab-panel active" id="tabBasicInfo">
         <div class="field-row">
           <div class="field">
             <label for="itemId">ID</label>
@@ -514,8 +431,18 @@
             </select>
           </div>
           <div class="field">
-            <label for="itemPrice">Base price ($)</label>
-            <input id="itemPrice" type="number" step="0.01" />
+            <label for="sizeCategorySelect">Size Category</label>
+            <select id="sizeCategorySelect">
+              <option value="">-- Single Price --</option>
+            </select>
+            <small style="color: #666; font-size: 0.8em;">Select a size category for items with multiple sizes (e.g., small/large)</small>
+          </div>
+        </div>
+
+        <div class="field" id="sizePricesSection">
+          <label>Prices</label>
+          <div id="sizePricesContainer">
+            <!-- Size price inputs will be rendered here -->
           </div>
         </div>
 
@@ -549,14 +476,6 @@
           </div>
           <small style="color: #666; font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
         </div>
-        </div><!-- End Basic Info Tab -->
-
-        <!-- Attributes Tab -->
-        <div class="tab-panel" id="tabAttributes">
-          <div id="attributesContainer">
-            <div class="no-attrs-message">Select a menu item to configure its attributes.</div>
-          </div>
-        </div>
       </div>
 
       <div class="detail-footer">
@@ -578,6 +497,7 @@
     let currentIndex = -1;
     let itemTypes = []; // Store item types for dropdown
     let allCategories = []; // Store categories for multi-select
+    let sizeCategories = []; // Store size categories with their sizes
 
     const menuListEl = document.getElementById("menuList");
     const categoryFilterEl = document.getElementById("categoryFilter");
@@ -631,8 +551,9 @@
     const itemNameEl = document.getElementById("itemName");
     const itemDescriptionEl = document.getElementById("itemDescription");
     const itemCategoryEl = document.getElementById("itemCategory");
-    const itemPriceEl = document.getElementById("itemPrice");
     const itemSignatureEl = document.getElementById("itemSignature");
+    const sizeCategorySelectEl = document.getElementById("sizeCategorySelect");
+    const sizePricesContainerEl = document.getElementById("sizePricesContainer");
 
     // Tag input elements (functions from admin_common.js)
     const aliasesContainerEl = document.getElementById("aliasesContainer");
@@ -642,26 +563,6 @@
 
     setupTagInput(aliasInputEl, aliasesContainerEl);
     setupTagInput(requiredPhraseInputEl, requiredPhrasesContainerEl);
-
-    // Tab elements
-    const detailTabsEl = document.getElementById("detailTabs");
-    const tabBasicInfoEl = document.getElementById("tabBasicInfo");
-    const tabAttributesEl = document.getElementById("tabAttributes");
-    const attributesContainerEl = document.getElementById("attributesContainer");
-    let currentAttributeFormData = null; // Store loaded attribute form data
-
-    // Tab switching
-    detailTabsEl.querySelectorAll(".detail-tab").forEach(tab => {
-      tab.addEventListener("click", () => {
-        const tabName = tab.dataset.tab;
-        // Update active tab
-        detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
-        // Show/hide panels
-        tabBasicInfoEl.classList.toggle("active", tabName === "basic");
-        tabAttributesEl.classList.toggle("active", tabName === "attributes");
-      });
-    });
 
     document.getElementById("newItemBtn").addEventListener("click", () => {
       selectItemByIndex(-1, true);
@@ -731,6 +632,75 @@
         allCategories = [];
       }
     }
+
+    // Load size categories with their sizes
+    async function loadSizeCategories() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/size-categories/with-sizes`, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        sizeCategories = await resp.json();
+
+        // Populate the size category dropdown
+        sizeCategorySelectEl.innerHTML = '<option value="">-- Single Price --</option>';
+        sizeCategories.forEach(cat => {
+          const opt = document.createElement("option");
+          opt.value = cat.id;
+          opt.textContent = `${cat.name} (${cat.sizes.length} sizes)`;
+          opt.dataset.slug = cat.slug;
+          sizeCategorySelectEl.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Error loading size categories:", err);
+        sizeCategories = [];
+      }
+    }
+
+    // Render size price inputs based on selected category
+    function renderSizePrices(sizeCategoryId, existingPrices = []) {
+      sizePricesContainerEl.innerHTML = '';
+
+      if (!sizeCategoryId) {
+        // Show single price input
+        const priceMap = {};
+        existingPrices.forEach(p => priceMap[p.size_id] = p.price);
+        const firstPrice = existingPrices.length > 0 ? existingPrices[0].price : '';
+
+        sizePricesContainerEl.innerHTML = `
+          <div class="single-price-input">
+            <label>Price ($)</label>
+            <input type="number" step="0.01" id="singlePriceInput" value="${firstPrice}" placeholder="0.00" />
+          </div>
+        `;
+        return;
+      }
+
+      // Find the selected category
+      const category = sizeCategories.find(c => c.id === parseInt(sizeCategoryId));
+      if (!category) return;
+
+      // Build a map of existing prices by size_id
+      const priceMap = {};
+      existingPrices.forEach(p => priceMap[p.size_id] = p.price);
+
+      // Render price inputs for each size in the category
+      category.sizes.forEach(size => {
+        const existingPrice = priceMap[size.id] || '';
+        const row = document.createElement("div");
+        row.className = "size-price-row";
+        row.innerHTML = `
+          <label>${size.name}</label>
+          <input type="number" step="0.01" data-size-id="${size.id}" value="${existingPrice}" placeholder="0.00" />
+        `;
+        sizePricesContainerEl.appendChild(row);
+      });
+    }
+
+    // Handle size category change
+    sizeCategorySelectEl.addEventListener("change", () => {
+      const categoryId = sizeCategorySelectEl.value;
+      // When changing category, pass empty prices to start fresh
+      renderSizePrices(categoryId ? parseInt(categoryId) : null, []);
+    });
 
     // Render category chips in the container
     function renderCategoryChips(selectedIds = []) {
@@ -852,7 +822,19 @@
         // Find item type name from itemTypes array
         const itemType = itemTypes.find(it => it.id === item.item_type_id);
         const typeName = itemType ? itemType.display_name : (item.category || "uncategorized");
-        meta.textContent = `${typeName} • $${item.base_price.toFixed(2)}`;
+        // Show price(s) from size_prices
+        let priceDisplay = "";
+        if (item.size_prices && item.size_prices.length > 0) {
+          if (item.size_prices.length === 1) {
+            priceDisplay = `$${item.size_prices[0].price.toFixed(2)}`;
+          } else {
+            const prices = item.size_prices.map(sp => sp.price).sort((a, b) => a - b);
+            priceDisplay = `$${prices[0].toFixed(2)} - $${prices[prices.length - 1].toFixed(2)}`;
+          }
+        } else {
+          priceDisplay = `$${item.base_price.toFixed(2)}`;
+        }
+        meta.textContent = `${typeName} • ${priceDisplay}`;
         main.appendChild(meta);
 
         row.appendChild(main);
@@ -874,7 +856,6 @@
       itemNameEl.value = "";
       itemDescriptionEl.value = "";
       itemCategoryEl.value = "";
-      itemPriceEl.value = "";
       itemSignatureEl.checked = false;
       clearTags(aliasesContainerEl, aliasInputEl);
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
@@ -882,15 +863,9 @@
       // Reset categories to none selected
       renderCategoryChips([]);
 
-      // Clear attributes tab
-      attributesContainerEl.innerHTML = '<div class="no-attrs-message">Create or select a menu item to configure its attributes.</div>';
-      currentAttributeFormData = null;
-
-      // Reset to Basic Info tab
-      detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
-      detailTabsEl.querySelector('[data-tab="basic"]').classList.add("active");
-      tabBasicInfoEl.classList.add("active");
-      tabAttributesEl.classList.remove("active");
+      // Reset size pricing to single price
+      sizeCategorySelectEl.value = "";
+      renderSizePrices(null, []);
     }
 
     function selectItemByIndex(idx, newItem = false) {
@@ -916,7 +891,6 @@
       itemDescriptionEl.value = item.description || "";
       // Set item type dropdown by item_type_id
       itemCategoryEl.value = item.item_type_id || "";
-      itemPriceEl.value = item.base_price != null ? item.base_price : "";
       itemSignatureEl.checked = !!item.is_signature;
       setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
       setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
@@ -924,14 +898,46 @@
       // Render category chips with item's current categories
       renderCategoryChips(item.category_ids || []);
 
-      // Load attributes for the Attributes tab
-      loadAttributeForm(item.id);
+      // Set size category and render prices
+      sizeCategorySelectEl.value = item.size_category_id || "";
+      renderSizePrices(item.size_category_id, item.size_prices || []);
+    }
 
-      // Reset to Basic Info tab when selecting a new item
-      detailTabsEl.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
-      detailTabsEl.querySelector('[data-tab="basic"]').classList.add("active");
-      tabBasicInfoEl.classList.add("active");
-      tabAttributesEl.classList.remove("active");
+    // Collect size prices from the form
+    function collectSizePrices() {
+      const sizeCategoryId = sizeCategorySelectEl.value ? parseInt(sizeCategorySelectEl.value, 10) : null;
+      const sizePrices = [];
+
+      if (!sizeCategoryId) {
+        // Single price mode - find the "each" size from the "quantity" category
+        const singlePriceInput = document.getElementById("singlePriceInput");
+        const price = singlePriceInput ? parseFloat(singlePriceInput.value || "0") : 0;
+
+        // Find the "each" size in the "quantity" category
+        const quantityCategory = sizeCategories.find(c => c.slug === "quantity");
+        if (quantityCategory) {
+          const eachSize = quantityCategory.sizes.find(s => s.name === "each");
+          if (eachSize && price > 0) {
+            sizePrices.push({ size_id: eachSize.id, price: price });
+          }
+        }
+
+        return { sizeCategoryId: quantityCategory?.id || null, sizePrices, basePrice: price };
+      }
+
+      // Multi-size mode - collect all size prices
+      const priceInputs = sizePricesContainerEl.querySelectorAll("input[data-size-id]");
+      let firstPrice = 0;
+      priceInputs.forEach(input => {
+        const sizeId = parseInt(input.dataset.sizeId, 10);
+        const price = parseFloat(input.value || "0");
+        if (price > 0) {
+          sizePrices.push({ size_id: sizeId, price: price });
+          if (firstPrice === 0) firstPrice = price;
+        }
+      });
+
+      return { sizeCategoryId, sizePrices, basePrice: firstPrice };
     }
 
     async function saveCurrentItem() {
@@ -949,16 +955,21 @@
       // Get selected category IDs
       const selectedCategoryIds = getSelectedCategoryIds();
 
+      // Collect size pricing
+      const { sizeCategoryId, sizePrices, basePrice } = collectSizePrices();
+
       const payload = {
         name: itemNameEl.value.trim(),
         description: itemDescriptionEl.value.trim() || null,
         category: categoryName, // Keep category as display name for backwards compatibility
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
-        base_price: parseFloat(itemPriceEl.value || "0"),
+        base_price: basePrice, // Set from first size price for backwards compatibility
         aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
         required_match_phrases: requiredPhraseValues.length > 0 ? requiredPhraseValues.join(",") : null,
-        category_ids: selectedCategoryIds
+        category_ids: selectedCategoryIds,
+        size_category_id: sizeCategoryId,
+        size_prices: sizePrices
       };
 
       if (!payload.name) {
@@ -979,7 +990,19 @@
           body: JSON.stringify(payload),
           credentials: 'include'
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          // Try to get error detail from response body
+          let errorMsg = `HTTP ${resp.status}`;
+          try {
+            const errorData = await resp.json();
+            if (errorData.detail) {
+              errorMsg = errorData.detail;
+            }
+          } catch (e) {
+            // Couldn't parse JSON, use status code
+          }
+          throw new Error(errorMsg);
+        }
         const saved = await resp.json();
         setSaveButtonState(saveBtn, "saved", "Save");
         showToast("Menu item saved successfully!", "success");
@@ -992,8 +1015,8 @@
       } catch (err) {
         console.error("Error saving item:", err);
         setSaveButtonState(saveBtn, "error", "Save");
-        showToast("Error saving item. See console.", "error");
-        setStatus("Error saving item. See console.", true);
+        showToast(err.message || "Error saving item", "error");
+        setStatus(err.message || "Error saving item", true);
       }
     }
 
@@ -1021,229 +1044,9 @@
       }
     }
 
-    // ==================== Attribute Tab Functions ====================
-
-    async function loadAttributeForm(itemId) {
-      if (!itemId) {
-        attributesContainerEl.innerHTML = '<div class="no-attrs-message">Select a menu item to configure its attributes.</div>';
-        currentAttributeFormData = null;
-        return;
-      }
-
-      try {
-        const resp = await fetch(`${API_BASE}/admin/menu/${itemId}/edit-form`, { credentials: 'include' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        currentAttributeFormData = data;
-        renderAttributeForm(data);
-      } catch (err) {
-        console.error("Error loading attribute form:", err);
-        attributesContainerEl.innerHTML = '<div class="no-attrs-message">Error loading attributes. See console.</div>';
-        currentAttributeFormData = null;
-      }
-    }
-
-    function renderAttributeForm(data) {
-      if (!data.fields || data.fields.length === 0) {
-        attributesContainerEl.innerHTML = '<div class="no-attrs-message">This item type has no configurable attributes.</div>';
-        return;
-      }
-
-      let html = '<div class="attr-form-section">';
-
-      for (const field of data.fields) {
-        html += `<div class="attr-form-row" data-attr-id="${field.attribute_id}" data-attr-slug="${field.slug}">`;
-        html += `<div class="attr-form-label">`;
-        html += `<span>${field.display_name}</span>`;
-        if (field.is_required) {
-          html += `<span class="required">Required</span>`;
-        }
-        html += `<span class="type-badge">${field.input_type}</span>`;
-        html += `</div>`;
-        html += `<div class="attr-form-control">`;
-
-        if (field.input_type === 'single_select') {
-          html += renderSingleSelect(field);
-        } else if (field.input_type === 'multi_select') {
-          html += renderMultiSelect(field);
-        } else if (field.input_type === 'boolean') {
-          html += renderBooleanToggle(field);
-        } else if (field.input_type === 'text') {
-          html += renderTextInput(field);
-        }
-
-        // Still ask toggle (for single_select and boolean)
-        if (field.input_type === 'single_select' || field.input_type === 'boolean') {
-          const stillAskChecked = field.still_ask ? 'checked' : '';
-          html += `<label class="still-ask-toggle">`;
-          html += `<input type="checkbox" class="still-ask-checkbox" data-attr-id="${field.attribute_id}" ${stillAskChecked}>`;
-          html += `<span>Still ask customer</span>`;
-          html += `</label>`;
-        }
-
-        html += `</div></div>`;
-      }
-
-      html += '</div>';
-      html += '<div style="margin-top: 16px; display: flex; justify-content: flex-end;">';
-      html += '<button class="btn-primary" id="saveAttributesBtn">Save Attributes</button>';
-      html += '</div>';
-
-      attributesContainerEl.innerHTML = html;
-
-      // Add save button listener
-      document.getElementById("saveAttributesBtn").addEventListener("click", saveAttributes);
-
-      // Add change listeners to update UI feedback
-      attributesContainerEl.querySelectorAll("select, input").forEach(el => {
-        el.addEventListener("change", () => {
-          // Mark form as dirty if needed
-        });
-      });
-
-      // Add chip click listeners for multi-select
-      attributesContainerEl.querySelectorAll(".attr-chip").forEach(chip => {
-        chip.addEventListener("click", () => {
-          const checkbox = chip.querySelector("input[type='checkbox']");
-          checkbox.checked = !checkbox.checked;
-          chip.classList.toggle("selected", checkbox.checked);
-        });
-      });
-    }
-
-    function renderSingleSelect(field) {
-      let html = `<select data-attr-id="${field.attribute_id}" class="attr-select">`;
-      if (field.allow_none) {
-        html += `<option value="">-- None --</option>`;
-      }
-      for (const opt of field.options) {
-        const selected = field.current_option_id === opt.id ? 'selected' : '';
-        const price = opt.price_modifier > 0 ? ` (+$${opt.price_modifier.toFixed(2)})` : '';
-        html += `<option value="${opt.id}" ${selected}>${opt.display_name}${price}</option>`;
-      }
-      html += `</select>`;
-      return html;
-    }
-
-    function renderMultiSelect(field) {
-      let html = '<div class="attr-checkbox-group">';
-      const selectedIds = field.current_option_ids || [];
-      for (const opt of field.options) {
-        const isSelected = selectedIds.includes(opt.id);
-        const selectedClass = isSelected ? 'selected' : '';
-        const checked = isSelected ? 'checked' : '';
-        const price = opt.price_modifier > 0 ? ` (+$${opt.price_modifier.toFixed(2)})` : '';
-        html += `<label class="attr-chip ${selectedClass}">`;
-        html += `<input type="checkbox" value="${opt.id}" data-attr-id="${field.attribute_id}" ${checked}>`;
-        html += `${opt.display_name}${price}`;
-        html += `</label>`;
-      }
-      html += '</div>';
-      return html;
-    }
-
-    function renderBooleanToggle(field) {
-      const checked = field.current_boolean === true ? 'checked' : '';
-      return `<label class="boolean-toggle">
-        <input type="checkbox" data-attr-id="${field.attribute_id}" class="attr-boolean" ${checked}>
-        <span>${field.current_boolean === true ? 'Yes' : 'No'}</span>
-      </label>`;
-    }
-
-    function renderTextInput(field) {
-      const value = field.current_text || '';
-      return `<input type="text" data-attr-id="${field.attribute_id}" class="attr-text" value="${value}" placeholder="Enter value...">`;
-    }
-
-    async function saveAttributes() {
-      const saveAttrBtn = document.getElementById("saveAttributesBtn");
-      const itemId = itemIdEl.value ? parseInt(itemIdEl.value, 10) : null;
-      if (!itemId || !currentAttributeFormData) {
-        setStatus("No item selected.", true);
-        showToast("No item selected.", "error");
-        return;
-      }
-
-      // Build the attributes payload
-      const attributes = {};
-
-      for (const field of currentAttributeFormData.fields) {
-        const attrId = field.attribute_id;
-        const slug = field.slug;
-
-        if (field.input_type === 'single_select') {
-          const selectEl = attributesContainerEl.querySelector(`select[data-attr-id="${attrId}"]`);
-          const stillAskEl = attributesContainerEl.querySelector(`.still-ask-checkbox[data-attr-id="${attrId}"]`);
-          if (selectEl) {
-            const optionId = selectEl.value ? parseInt(selectEl.value, 10) : null;
-            attributes[slug] = {
-              option_id: optionId,
-              still_ask: stillAskEl ? stillAskEl.checked : false
-            };
-          }
-        } else if (field.input_type === 'multi_select') {
-          const checkboxes = attributesContainerEl.querySelectorAll(`input[type="checkbox"][data-attr-id="${attrId}"]:not(.still-ask-checkbox)`);
-          const selectedIds = [];
-          checkboxes.forEach(cb => {
-            if (cb.checked) {
-              selectedIds.push(parseInt(cb.value, 10));
-            }
-          });
-          attributes[slug] = {
-            selected_option_ids: selectedIds
-          };
-        } else if (field.input_type === 'boolean') {
-          const boolEl = attributesContainerEl.querySelector(`input.attr-boolean[data-attr-id="${attrId}"]`);
-          const stillAskEl = attributesContainerEl.querySelector(`.still-ask-checkbox[data-attr-id="${attrId}"]`);
-          if (boolEl) {
-            attributes[slug] = {
-              value_boolean: boolEl.checked,
-              still_ask: stillAskEl ? stillAskEl.checked : false
-            };
-          }
-        } else if (field.input_type === 'text') {
-          const textEl = attributesContainerEl.querySelector(`input.attr-text[data-attr-id="${attrId}"]`);
-          if (textEl) {
-            attributes[slug] = {
-              value_text: textEl.value || null
-            };
-          }
-        }
-      }
-
-      const payload = { attributes };
-
-      setSaveButtonState(saveAttrBtn, "saving");
-      setStatus("Saving attributes...");
-      try {
-        const resp = await fetch(`${API_BASE}/admin/menu/${itemId}/attributes`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          credentials: 'include'
-        });
-        if (!resp.ok) {
-          const errData = await resp.json().catch(() => ({}));
-          throw new Error(errData.detail || `HTTP ${resp.status}`);
-        }
-        setSaveButtonState(saveAttrBtn, "saved", "Save Attributes");
-        showToast("Attributes saved successfully!", "success");
-        setStatus("Attributes saved.");
-        // Reload attribute form to show updated state
-        await loadAttributeForm(itemId);
-      } catch (err) {
-        console.error("Error saving attributes:", err);
-        setSaveButtonState(saveAttrBtn, "error", "Save Attributes");
-        showToast("Error saving attributes: " + err.message, "error");
-        setStatus("Error saving attributes: " + err.message, true);
-      }
-    }
-
-    // ==================== End Attribute Tab Functions ====================
-
-    // Initialize: load item types and categories first, then menu items
+    // Initialize: load item types, categories, and size categories first, then menu items
     async function init() {
-      await Promise.all([loadItemTypes(), loadCategories()]);
+      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories()]);
       await loadMenuItems();
     }
     init();

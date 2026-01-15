@@ -149,20 +149,31 @@ class ItemAdderHandler:
             }
 
             # Check if this needs disambiguation via menu lookup
-            # Generic terms or unknown drink types go through disambiguation
-            is_generic_drink = menu_cache.is_category_reference(drink_name_lower) == "drink"
-            if is_generic_drink or (
-                drink_name_lower and drink_name_lower not in standard_coffee_types
-            ):
+            # Category references (e.g., "coffee" -> "sized_beverage") need disambiguation
+            # because they match multiple menu items (Hot Coffee, Iced Coffee, etc.)
+            # Also handle the case where user says generic "coffee" with no specific type
+            category_ref = menu_cache.is_category_reference(drink_name_lower) if drink_name_lower else None
+            is_generic_drink = category_ref is not None
+            # Trigger disambiguation if:
+            # 1. drink_name is a category reference (e.g., "coffee" -> "sized_beverage")
+            # 2. drink_name is unknown (not in standard coffee types)
+            # 3. drink_name is EMPTY but we have a beverage item_type (user said "coffee" parsed as sized_beverage)
+            needs_disambiguation = (
+                is_generic_drink or
+                (drink_name_lower and drink_name_lower not in standard_coffee_types) or
+                (not drink_name_lower and is_beverage_type)
+            )
+            if needs_disambiguation:
                 # Try lookup with disambiguation
-                # Use drink_type for all drink disambiguation, filter by type for specific drinks
+                # Use category_ref to filter (e.g., "coffee" -> filter by "sized_beverage")
+                # For unknown drinks without category match, default to sized_beverage
                 menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
                     item_name=drink_name or "drink",
                     quantity=quantity,
                     order=order,
                     modifiers=beverage_modifiers,
                     pending_field="drink_type",
-                    item_type_filter="sized_beverage" if not is_generic_drink else None,
+                    item_type_filter=category_ref if is_generic_drink else "sized_beverage",
                 )
 
                 # If disambiguation needed, return that
@@ -753,10 +764,17 @@ class ItemAdderHandler:
         category_slug = menu_cache.is_category_reference(item_lower)
         is_generic_drink = category_slug == "drink"  # Matches "drink", "drinks", "beverage", etc.
         if is_generic_drink:
-            # Generic drink request - show all beverages from category
+            # Generic drink request - show beverages from category
             all_drinks = menu_cache.get_items_by_category("drink")
+            # Filter by item_type if specified (e.g., only show sized_beverage items)
+            if item_type_filter and all_drinks:
+                all_drinks = [
+                    d for d in all_drinks
+                    if d.get("item_type_slug") == item_type_filter or d.get("item_type") == item_type_filter
+                ]
             if all_drinks:
-                logger.info("Generic drink request '%s', showing %d drinks", item_name, len(all_drinks))
+                logger.info("Generic drink request '%s', showing %d drinks (filter: %s)",
+                           item_name, len(all_drinks), item_type_filter)
                 result = self.disambiguation_handler.start_disambiguation(
                     item_name="drink",
                     matching_items=all_drinks,
@@ -786,6 +804,19 @@ class ItemAdderHandler:
                 item for item in matching_items
                 if item.get("item_type") == item_type_filter
             ]
+
+        # If no matches found but we have an item_type_filter, get all items of that type
+        # This handles cases like "coffee" where user wants a beverage but didn't specify which one
+        if not matching_items and item_type_filter:
+            all_drinks = menu_cache.get_items_by_category("drink")
+            if all_drinks:
+                matching_items = [
+                    d for d in all_drinks
+                    if d.get("item_type_slug") == item_type_filter or d.get("item_type") == item_type_filter
+                ]
+                if matching_items:
+                    logger.info("No text matches for '%s', using all %d items of type '%s'",
+                               item_name, len(matching_items), item_type_filter)
 
         # Step 2: Handle results
         if len(matching_items) == 1:

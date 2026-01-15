@@ -169,7 +169,7 @@ def _build_bagel_parsed_item(
     if scooped is not None:
         attr_values["scooped"] = scooped
     if spread is not None:
-        attr_values["spread"] = spread
+        attr_values["spread_type"] = spread
     if spread_type is not None:
         attr_values["spread_type"] = spread_type
 
@@ -3027,13 +3027,43 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             coffee_type = bev
             break
 
+    # If no exact match, check for generic terms that match multiple items
+    # e.g., "coffee" should trigger disambiguation between "Hot Coffee" and "Iced Coffee"
     if not coffee_type:
+        # Check if input is a generic term that matches part of multiple drink names
+        generic_terms = ["coffee", "tea", "latte", "cappuccino", "espresso"]
+        for term in generic_terms:
+            if re.search(rf'\b{re.escape(term)}s?\b', text_lower):
+                # Check if there are multiple items containing this term
+                matching_drinks = [
+                    d for d in get_coffee_types()
+                    if term in d.lower()
+                ]
+                if len(matching_drinks) > 1:
+                    # Multiple matches - return with no specific type to trigger disambiguation
+                    logger.debug("Generic drink term '%s' matches %d items, triggering disambiguation",
+                                term, len(matching_drinks))
+                    coffee_type = None  # No specific type - disambiguation needed
+                    break
+                elif len(matching_drinks) == 1:
+                    # Single match - use it
+                    coffee_type = matching_drinks[0]
+                    break
+
+    if not coffee_type and not any(
+        re.search(rf'\b{re.escape(term)}s?\b', text_lower)
+        for term in ["coffee", "tea", "latte", "cappuccino", "espresso"]
+    ):
         return None
 
     # Resolve alias to canonical menu item name (e.g., "matcha" -> "Seasonal Latte Matcha")
-    canonical_coffee_type = resolve_coffee_alias(coffee_type)
-    logger.debug("Deterministic parse: detected coffee type '%s' -> canonical '%s'", coffee_type, canonical_coffee_type)
-    coffee_type = canonical_coffee_type
+    # Skip if coffee_type is None (generic term case that will trigger disambiguation)
+    if coffee_type:
+        canonical_coffee_type = resolve_coffee_alias(coffee_type)
+        logger.debug("Deterministic parse: detected coffee type '%s' -> canonical '%s'", coffee_type, canonical_coffee_type)
+        coffee_type = canonical_coffee_type
+    else:
+        logger.debug("Deterministic parse: generic beverage term detected, no specific type")
 
     # Extract quantity - allow optional size/temperature words between qty and coffee type
     # e.g., "three medium coffees", "2 large iced lattes", "dozen hot coffees"

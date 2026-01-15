@@ -105,6 +105,8 @@ from .routes import (
     admin_categories_router,
     admin_global_attributes_router,
     admin_item_type_global_attrs_router,
+    admin_size_categories_router,
+    admin_sizes_router,
     public_stores_router,
     public_company_router,
     tts_router,
@@ -341,6 +343,8 @@ api_v1_router.include_router(admin_ingredient_categories_router)
 api_v1_router.include_router(admin_categories_router)
 api_v1_router.include_router(admin_global_attributes_router)
 api_v1_router.include_router(admin_item_type_global_attrs_router)
+api_v1_router.include_router(admin_size_categories_router)
+api_v1_router.include_router(admin_sizes_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
@@ -368,6 +372,8 @@ app.include_router(admin_ingredient_categories_router)
 app.include_router(admin_categories_router)
 app.include_router(admin_global_attributes_router)
 app.include_router(admin_item_type_global_attrs_router)
+app.include_router(admin_size_categories_router)
+app.include_router(admin_sizes_router)
 app.include_router(public_stores_router)
 app.include_router(public_company_router)
 app.include_router(tts_router)

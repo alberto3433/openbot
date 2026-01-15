@@ -216,7 +216,7 @@ class DisambiguationHandler:
             option_name = option.get("name", "").lower()
             # Check if option name is in user input or vice versa
             # Require minimum length to avoid false matches
-            if len(user_lower) > 3 and (option_name in user_lower or user_lower in option_name):
+            if len(user_lower) >= 3 and (option_name in user_lower or user_lower in option_name):
                 logger.info(
                     "DISAMBIGUATION: User selected '%s' by name match",
                     option.get("name")
@@ -225,7 +225,7 @@ class DisambiguationHandler:
 
             # Also try matching individual words
             for word in user_lower.split():
-                if len(word) > 3 and word in option_name:
+                if len(word) >= 3 and word in option_name:
                     logger.info(
                         "DISAMBIGUATION: User selected '%s' by word match '%s'",
                         option.get("name"),

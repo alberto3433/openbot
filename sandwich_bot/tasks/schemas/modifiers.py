@@ -137,6 +137,25 @@ class ExtractedModifiers:
         """Check if any modifiers were extracted."""
         return bool(self._by_category)
 
+    def get_categories(self) -> list[str]:
+        """Get all category slugs that have modifiers.
+
+        Returns:
+            List of category slugs (e.g., ["protein", "syrup", "milk"])
+        """
+        return list(self._by_category.keys())
+
+    def get_all(self, category: str) -> list[QuantifiedModifier]:
+        """Alias for get() - returns all modifiers for a category.
+
+        Args:
+            category: The category slug
+
+        Returns:
+            List of QuantifiedModifier objects
+        """
+        return self.get(category)
+
     def has_category(self, category: str) -> bool:
         """Check if a specific category has modifiers."""
         return bool(self._by_category.get(category))
@@ -204,3 +223,67 @@ class ExtractedModifiers:
     def cream_level(self) -> str | None:
         """Get the cream/style level (backward-compatible accessor)."""
         return self.get_first_name("style")
+
+    # Food-style backward-compatible property accessors
+
+    @property
+    def proteins(self) -> list[str]:
+        """Get all protein names (backward-compatible accessor)."""
+        return self.get_names("protein")
+
+    @proteins.setter
+    def proteins(self, values: list[str]) -> None:
+        """Set proteins (backward-compatible accessor)."""
+        self._by_category["protein"] = [QuantifiedModifier(v, 1) for v in values]
+
+    @property
+    def cheeses(self) -> list[str]:
+        """Get all cheese names (backward-compatible accessor)."""
+        return self.get_names("cheese")
+
+    @cheeses.setter
+    def cheeses(self, values: list[str]) -> None:
+        """Set cheeses (backward-compatible accessor)."""
+        self._by_category["cheese"] = [QuantifiedModifier(v, 1) for v in values]
+
+    @property
+    def toppings(self) -> list[str]:
+        """Get all topping names (backward-compatible accessor)."""
+        return self.get_names("topping")
+
+    @toppings.setter
+    def toppings(self, values: list[str]) -> None:
+        """Set toppings (backward-compatible accessor)."""
+        self._by_category["topping"] = [QuantifiedModifier(v, 1) for v in values]
+
+    @property
+    def spreads(self) -> list[str]:
+        """Get all spread names (backward-compatible accessor)."""
+        return self.get_names("spread")
+
+    @spreads.setter
+    def spreads(self, values: list[str]) -> None:
+        """Set spreads (backward-compatible accessor)."""
+        self._by_category["spread"] = [QuantifiedModifier(v, 1) for v in values]
+
+    # Clarification flags backward-compatible accessors
+
+    @property
+    def needs_cheese_clarification(self) -> bool:
+        """Check if cheese needs clarification (backward-compatible accessor)."""
+        return self.needs_clarification.get("cheese", False)
+
+    @needs_cheese_clarification.setter
+    def needs_cheese_clarification(self, value: bool) -> None:
+        """Set cheese clarification flag (backward-compatible accessor)."""
+        self.needs_clarification["cheese"] = value
+
+    @property
+    def wants_syrup(self) -> bool:
+        """Check if syrup is wanted (backward-compatible accessor)."""
+        return self.needs_clarification.get("syrup", False)
+
+    @wants_syrup.setter
+    def wants_syrup(self, value: bool) -> None:
+        """Set syrup wanted flag (backward-compatible accessor)."""
+        self.needs_clarification["syrup"] = value

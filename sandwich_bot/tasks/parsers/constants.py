@@ -780,15 +780,35 @@ def get_bagel_types() -> set[str]:
     """
     Get bagel types (plain, everything, etc.) from the database.
 
-    Returns data from cache if loaded (includes item names and aliases).
+    Returns bread attribute option names and aliases, including:
+    - Full display names: "plain bagel", "everything bagel"
+    - Short forms: "plain", "everything", "sesame"
+    - Aliases: "raisin bagel" -> "cinnamon raisin bagel"
+
     Falls back to empty set if cache not available.
     """
     cache = _get_menu_cache()
     if cache:
-        # Use generic get_item_names to get bagel menu item names and aliases
-        cached = cache.get_item_names("bagel")
-        if cached:
-            return cached
+        # Get bread attribute options (not menu item names)
+        bread_options = cache.get_global_attribute_options('bread')
+        if bread_options:
+            matchable_words = set()
+            for opt in bread_options:
+                # Add display name (lowercased)
+                display = opt['display_name'].lower()
+                matchable_words.add(display)
+
+                # Add short form (remove ' bagel' suffix if present)
+                if display.endswith(' bagel'):
+                    short_form = display[:-6]  # remove ' bagel'
+                    matchable_words.add(short_form)
+
+                # Add aliases
+                if opt.get('aliases'):
+                    for alias in opt['aliases']:
+                        matchable_words.add(alias.lower())
+
+            return matchable_words
     return set()
 
 
@@ -796,14 +816,16 @@ def get_bagel_types_list() -> list[str]:
     """
     Get ordered list of bagel types for display/pagination.
 
-    Returns data from cache if loaded, otherwise returns empty list.
-    Returns an alphabetically sorted list of bagel type names.
+    Returns an alphabetically sorted list of bread option display names.
+    This is used for showing available bagel types to users.
     """
     cache = _get_menu_cache()
     if cache:
-        # Use generic get_item_names and convert to sorted list
-        bagel_names = cache.get_item_names("bagel")
-        return sorted(bagel_names)
+        # Get bread attribute options and extract display names
+        bread_options = cache.get_global_attribute_options('bread')
+        if bread_options:
+            display_names = [opt['display_name'] for opt in bread_options]
+            return sorted(display_names)
     return []
 
 

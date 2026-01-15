@@ -3,51 +3,47 @@ Admin Modifiers Routes for Sandwich Bot
 ========================================
 
 This module contains admin endpoints for managing the menu configuration
-system: Item Types and Attribute Options. This flexible system allows
-configuring what options are available for different types of menu items.
+system: Item Types. Item types define categories of configurable menu items.
 
 Endpoints:
 ----------
 Item Types:
 - GET /admin/modifiers/item-types: List all item types
+- GET /admin/modifiers/item-types/list: Lightweight list for sidebar
 - POST /admin/modifiers/item-types: Create item type
 - GET /admin/modifiers/item-types/{id}: Get item type details
 - PUT /admin/modifiers/item-types/{id}: Update item type
 - DELETE /admin/modifiers/item-types/{id}: Delete item type
 
-Attribute Options:
-- PUT /admin/modifiers/options/{id}: Update option
-- DELETE /admin/modifiers/options/{id}: Delete option
-
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
 
-Hierarchical Structure:
------------------------
+Structure:
+----------
 1. ItemType (e.g., "Bagel", "Sandwich", "Coffee")
    - Defines a category of configurable items
    - Links to menu items via MenuItem.item_type_id
+   - Links to global attributes via ItemTypeGlobalAttribute
 
-2. ItemTypeAttribute (e.g., "Size", "Bread", "Milk")
-   - Defines a configurable aspect of the item type
-   - Managed via seeding migrations
-
-3. AttributeOption (e.g., "Small", "Medium", "Large")
-   - Individual choices for an attribute
-   - Can have price modifiers
+2. GlobalAttribute / GlobalAttributeOption
+   - Shared attribute definitions (e.g., "Size", "Bread")
+   - Options with price modifiers (e.g., "Small", "Large")
+   - Linked to item types via ItemTypeGlobalAttribute junction table
+   - Managed via separate admin routes (/admin/global-attributes)
 
 Example:
 --------
     ItemType: "Coffee"
-    ├── Attribute: "Size"
-    │   ├── Option: "Small" (+$0)
-    │   ├── Option: "Medium" (+$0.50)
-    │   └── Option: "Large" (+$1.00)
-    └── Attribute: "Milk"
-        ├── Option: "None" (default)
-        ├── Option: "Whole"
-        └── Option: "Oat" (+$0.75)
+    └── Linked GlobalAttributes:
+        ├── "Size" (via ItemTypeGlobalAttribute)
+        │   ├── Option: "Small" (+$0)
+        │   ├── Option: "Medium" (+$0.50)
+        │   └── Option: "Large" (+$1.00)
+        └── "Milk" (via ItemTypeGlobalAttribute)
+            ├── Option: "None" (default)
+            ├── Option: "Whole"
+            └── Option: "Oat" (+$0.75)
 """
 
 import logging
@@ -58,7 +54,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, ItemTypeAlias, AttributeOption, MenuItem, ItemTypeGlobalAttribute
+from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..services.helpers import validate_aliases
 from ..schemas.modifiers import (
@@ -66,8 +62,6 @@ from ..schemas.modifiers import (
     ItemTypeOut,
     ItemTypeCreate,
     ItemTypeUpdate,
-    AttributeOptionOut,
-    AttributeOptionUpdate,
 )
 
 
@@ -131,7 +125,12 @@ def _set_item_type_aliases(db: Session, item_type: ItemType, aliases_str: str | 
     # Validate and add new aliases if provided
     if aliases_str:
         try:
-            validated_aliases = validate_aliases(db, aliases_str, exclude_table="item_type_aliases")
+            # Exclude current item_type's own ID so re-saving same aliases works
+            validated_aliases = validate_aliases(
+                db,
+                aliases_str,
+                exclude_item_type_id=item_type.id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -262,57 +261,5 @@ def delete_item_type(
 
     logger.info("Deleting item type: %s", item_type.slug)
     db.delete(item_type)
-    db.commit()
-    return None
-
-
-# =============================================================================
-# Attribute Option Endpoints
-# =============================================================================
-
-@admin_modifiers_router.put("/options/{option_id}", response_model=AttributeOptionOut)
-def update_option(
-    option_id: int,
-    payload: AttributeOptionUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> AttributeOptionOut:
-    """Update an attribute option."""
-    option = db.query(AttributeOption).filter(AttributeOption.id == option_id).first()
-    if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
-
-    if payload.slug is not None:
-        option.slug = payload.slug
-    if payload.display_name is not None:
-        option.display_name = payload.display_name
-    if payload.price_modifier is not None:
-        option.price_modifier = payload.price_modifier
-    if payload.is_default is not None:
-        option.is_default = payload.is_default
-    if payload.is_available is not None:
-        option.is_available = payload.is_available
-    if payload.display_order is not None:
-        option.display_order = payload.display_order
-
-    db.commit()
-    db.refresh(option)
-    logger.info("Updated option: %s", option.slug)
-    return AttributeOptionOut.model_validate(option)
-
-
-@admin_modifiers_router.delete("/options/{option_id}", status_code=204)
-def delete_option(
-    option_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an attribute option."""
-    option = db.query(AttributeOption).filter(AttributeOption.id == option_id).first()
-    if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
-
-    logger.info("Deleting option: %s", option.slug)
-    db.delete(option)
     db.commit()
     return None

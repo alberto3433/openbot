@@ -559,7 +559,7 @@ class MenuItemTask(ItemTask):
         """Add a modifier to the item in a data-driven way.
 
         This is the generic method for adding any type of modifier. It stores
-        modifiers in a unified format in attribute_values.
+        modifiers in a unified format in attribute_values and updates unit_price.
 
         Args:
             category: Modifier category (e.g., "syrup", "sweetener", "milk", "protein", "topping")
@@ -578,6 +578,9 @@ class MenuItemTask(ItemTask):
             display_name = f"{display_name} Syrup"
         entry["display_name"] = display_name
 
+        # Track if we actually added the modifier (not a duplicate)
+        added = False
+
         # Beverage modifiers (milk, sweetener, syrup) go to unified milk_sweetener_syrup storage
         if category in ("milk", "sweetener", "syrup"):
             mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
@@ -589,6 +592,7 @@ class MenuItemTask(ItemTask):
                 mss_selections.append(entry)
                 self.attribute_values["milk_sweetener_syrup"] = mss_slugs
                 self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+                added = True
         else:
             # Food modifiers go to {category}_selections storage
             storage_key = f"{category}_selections"
@@ -597,6 +601,15 @@ class MenuItemTask(ItemTask):
             if name not in existing_slugs:
                 selections.append(entry)
                 self.attribute_values[storage_key] = selections
+                added = True
+
+        # Update unit_price if modifier has a price and was actually added
+        if added and price > 0:
+            total_price = price * quantity
+            if self.unit_price is not None:
+                self.unit_price += total_price
+            else:
+                self.unit_price = total_price
 
     @property
     def wants_syrup(self) -> bool:

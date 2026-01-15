@@ -5,8 +5,6 @@ from sandwich_bot.models import (
     Ingredient,
     ItemType,
     ItemTypeAttribute,
-    AttributeOption,
-    AttributeOptionIngredient,
 )
 
 
@@ -363,153 +361,14 @@ def seed_item_types():
             ),
         ]
         db.add_all(attr_defs)
-        db.flush()
 
-        # Get attribute definitions for option creation
-        size_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "size"
-        ).first()
-        bread_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "bread"
-        ).first()
-        protein_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "protein"
-        ).first()
-        cheese_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "cheese"
-        ).first()
-        toppings_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "toppings"
-        ).first()
-        sauces_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "sauces"
-        ).first()
-        toasted_def = db.query(ItemTypeAttribute).filter(
-            ItemTypeAttribute.item_type_id == sandwich_type.id,
-            ItemTypeAttribute.slug == "toasted"
-        ).first()
-
-        # Create size options (no ingredient link needed)
-        size_options = [
-            AttributeOption(
-                item_type_attribute_id=size_def.id,
-                slug="6inch",
-                display_name='6"',
-                price_modifier=0.0,
-                is_default=True,
-                display_order=1,
-            ),
-            AttributeOption(
-                item_type_attribute_id=size_def.id,
-                slug="12inch",
-                display_name='12"',
-                price_modifier=4.00,
-                is_default=False,
-                display_order=2,
-            ),
-        ]
-        db.add_all(size_options)
-
-        # Create toasted options (no ingredient link needed)
-        toasted_options = [
-            AttributeOption(
-                item_type_attribute_id=toasted_def.id,
-                slug="yes",
-                display_name="Yes",
-                price_modifier=0.0,
-                is_default=False,
-                display_order=1,
-            ),
-            AttributeOption(
-                item_type_attribute_id=toasted_def.id,
-                slug="no",
-                display_name="No",
-                price_modifier=0.0,
-                is_default=True,
-                display_order=2,
-            ),
-        ]
-        db.add_all(toasted_options)
-
-        # Create options linked to ingredients
-        # Get all ingredients by category
-        breads = db.query(Ingredient).filter(Ingredient.category == "bread").all()
-        proteins = db.query(Ingredient).filter(Ingredient.category == "protein").all()
-        cheeses = db.query(Ingredient).filter(Ingredient.category == "cheese").all()
-        toppings = db.query(Ingredient).filter(Ingredient.category == "topping").all()
-        sauces = db.query(Ingredient).filter(Ingredient.category == "sauce").all()
-
-        # Helper to create option + ingredient link
-        def create_option_with_ingredient(attr_def_id, ingredient, display_order, is_default=False):
-            slug = ingredient.name.lower().replace(" ", "_").replace("&", "and")
-            option = AttributeOption(
-                item_type_attribute_id=attr_def_id,
-                slug=slug,
-                display_name=ingredient.name,
-                price_modifier=ingredient.base_price,
-                is_default=is_default,
-                display_order=display_order,
-            )
-            db.add(option)
-            db.flush()
-            # Link to ingredient
-            link = AttributeOptionIngredient(
-                attribute_option_id=option.id,
-                ingredient_id=ingredient.id,
-                quantity=1.0,
-            )
-            db.add(link)
-            return option
-
-        # Create bread options
-        for i, bread in enumerate(breads):
-            create_option_with_ingredient(bread_def.id, bread, i + 1, is_default=(bread.name == "White"))
-
-        # Create protein options (with "none" option)
-        none_protein = AttributeOption(
-            item_type_attribute_id=protein_def.id,
-            slug="none",
-            display_name="No Protein",
-            price_modifier=0.0,
-            is_default=False,
-            display_order=0,
-        )
-        db.add(none_protein)
-        for i, protein in enumerate(proteins):
-            create_option_with_ingredient(protein_def.id, protein, i + 1, is_default=(protein.name == "Turkey"))
-
-        # Create cheese options (with "none" option)
-        none_cheese = AttributeOption(
-            item_type_attribute_id=cheese_def.id,
-            slug="none",
-            display_name="No Cheese",
-            price_modifier=0.0,
-            is_default=False,
-            display_order=0,
-        )
-        db.add(none_cheese)
-        for i, cheese in enumerate(cheeses):
-            create_option_with_ingredient(cheese_def.id, cheese, i + 1)
-
-        # Create topping options
-        for i, topping in enumerate(toppings):
-            create_option_with_ingredient(toppings_def.id, topping, i + 1)
-
-        # Create sauce options
-        for i, sauce in enumerate(sauces):
-            create_option_with_ingredient(sauces_def.id, sauce, i + 1)
+        # Note: Attribute options are now managed via global_attribute_options table
+        # and linked via item_type_global_attributes. See the global attributes seeding.
 
         db.commit()
         print("Seeded generic item type system successfully.")
         print(f"  - {len(item_types)} item types")
         print(f"  - {len(attr_defs)} attribute definitions")
-        print(f"  - {len(size_options) + len(toasted_options) + len(breads) + len(proteins) + 1 + len(cheeses) + 1 + len(toppings) + len(sauces)} attribute options")
 
     finally:
         db.close()

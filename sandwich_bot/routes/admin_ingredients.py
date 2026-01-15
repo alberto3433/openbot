@@ -110,10 +110,18 @@ def _set_ingredient_aliases(db: Session, ingredient: Ingredient, aliases_str: Op
     for alias in list(ingredient.alias_records):
         db.delete(alias)
 
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
+
     # Validate and add new aliases if provided
     if aliases_str:
         try:
-            validated_aliases = validate_aliases(db, aliases_str, exclude_table="ingredient_aliases")
+            # Exclude current ingredient's own ID so re-saving same aliases works
+            validated_aliases = validate_aliases(
+                db,
+                aliases_str,
+                exclude_ingredient_id=ingredient.id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

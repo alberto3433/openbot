@@ -163,36 +163,6 @@ class ModifierCategoryAlias(Base):
     modifier_category = relationship("ModifierCategory", back_populates="alias_records")
 
 
-class AttributeOption(Base):
-    """
-    An available option for an item type attribute.
-
-    Examples for bread attribute: white, wheat, italian, wrap
-    Examples for toppings attribute: lettuce, tomato, onion, pickle
-    """
-    __tablename__ = "attribute_options"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # FK to consolidated item_type_attributes
-    item_type_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="CASCADE"), nullable=True, index=True)
-
-    slug = Column(String, nullable=False)  # e.g., "white", "wheat", "lettuce"
-    display_name = Column(String, nullable=False)  # e.g., "White Bread", "Wheat Bread", "Lettuce"
-
-    price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
-    iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
-    is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
-    is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
-
-    # Display order (lower = shown first)
-    display_order = Column(Integer, nullable=False, default=0)
-
-    # Relationships
-    item_type_attribute = relationship("ItemTypeAttribute")
-    ingredient_links = relationship("AttributeOptionIngredient", back_populates="attribute_option", cascade="all, delete-orphan")
-
-
 class ItemTypeAttribute(Base):
     """
     Consolidated attribute definition for item types.
@@ -204,7 +174,7 @@ class ItemTypeAttribute(Base):
     Examples for sized_beverage: size, iced, milk, sweetener, syrup
 
     Each attribute can have:
-    - Options (via attribute_options table) for single_select/multi_select types
+    - Options (via global_attribute_options linked through item_type_global_attributes)
     - A question_text for conversational prompts
     - Required/optional status for order completion
     """
@@ -254,33 +224,6 @@ class ItemTypeAttribute(Base):
 
     # Relationships
     item_type = relationship("ItemType", back_populates="type_attributes")
-
-
-class AttributeOptionIngredient(Base):
-    """
-    Links an attribute option to an ingredient for inventory tracking.
-
-    This allows the 86 system to work with generic attributes - when an ingredient
-    runs out, all attribute options using that ingredient become unavailable.
-
-    An option can use multiple ingredients (e.g., a "loaded" topping option).
-    """
-    __tablename__ = "attribute_option_ingredients"
-
-    id = Column(Integer, primary_key=True, index=True)
-    attribute_option_id = Column(Integer, ForeignKey("attribute_options.id", ondelete="CASCADE"), nullable=False, index=True)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    quantity = Column(Float, nullable=False, default=1.0)  # Amount of ingredient used
-
-    # Unique constraint: one link per option per ingredient
-    __table_args__ = (
-        UniqueConstraint("attribute_option_id", "ingredient_id", name="uix_attr_option_ingredient"),
-    )
-
-    # Relationships
-    attribute_option = relationship("AttributeOption", back_populates="ingredient_links")
-    ingredient = relationship("Ingredient", back_populates="attribute_option_links")
 
 
 # =============================================================================
@@ -667,7 +610,6 @@ class Ingredient(Base):
 
     # relationships
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
-    attribute_option_links = relationship("AttributeOptionIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
     # Alias and must_match child tables
     alias_records = relationship("IngredientAlias", back_populates="ingredient", cascade="all, delete-orphan")

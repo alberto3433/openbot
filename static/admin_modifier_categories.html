@@ -794,7 +794,7 @@
       const payload = {
         display_name: document.getElementById("displayName").value.trim(),
         slug: document.getElementById("slug").value.trim().toLowerCase(),
-        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
+        aliases: aliasValues.join(","),
         prompt_suffix: document.getElementById("promptSuffix").value.trim() || null,
         loads_from_ingredients: document.getElementById("loadsFromIngredients").checked,
         ingredient_category: document.getElementById("loadsFromIngredients").checked

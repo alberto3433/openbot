@@ -26,21 +26,6 @@ class MenuLookup:
     menu_cache, eliminating the need for hardcoded keyword mappings.
     """
 
-    # Categories to search when looking up items
-    CATEGORIES_TO_SEARCH = [
-        "signature_sandwiches", "signature_bagels", "signature_omelettes",
-        "sides", "drinks", "desserts", "other",
-        "custom_sandwiches", "custom_bagels",
-    ]
-
-    # Known drink synonyms/brands - map generic terms to brand keywords
-    DRINK_SYNONYMS = {
-        "orange juice": ["tropicana", "fresh squeezed"],
-        "oj": ["orange juice", "tropicana", "fresh squeezed"],
-        "apple juice": ["martinelli"],
-        "lemonade": ["minute maid"],
-    }
-
     def __init__(self, menu_data: dict | None):
         """
         Initialize the menu lookup engine.
@@ -62,20 +47,18 @@ class MenuLookup:
 
     def _get_all_items(self) -> list[dict]:
         """
-        Collect all items from all categories in menu data.
+        Collect all items from all item types in menu data.
 
         Returns:
             List of all menu item dicts.
         """
         all_items = []
 
-        for category in self.CATEGORIES_TO_SEARCH:
-            all_items.extend(self._menu_data.get(category, []))
-
-        # Also include items_by_type
+        # Use items_by_type (data-driven from database)
         items_by_type = self._menu_data.get("items_by_type", {})
         for type_slug, items in items_by_type.items():
-            all_items.extend(items)
+            if isinstance(items, list):
+                all_items.extend(items)
 
         return all_items
 
@@ -263,11 +246,9 @@ class MenuLookup:
 
         item_name_lower = item_name.lower()
 
-        # Build list of search terms (original + singular/plural variants + any synonyms)
+        # Build list of search terms (original + singular/plural variants)
+        # Synonyms are handled via MenuItem.aliases in the database
         search_terms = self._get_search_variants(item_name_lower)
-        for generic_term, synonyms in self.DRINK_SYNONYMS.items():
-            if generic_term in item_name_lower:
-                search_terms.extend(synonyms)
 
         all_items = self._get_all_items()
 
@@ -371,74 +352,6 @@ class MenuLookup:
         """
         return menu_cache.infer_item_type_from_text(item_name)
 
-    def infer_item_category(self, item_name: str) -> str | None:
-        """
-        Infer the likely category of an unknown item based on keywords.
-
-        DEPRECATED: Use infer_item_type() for richer type info.
-
-        This is a backward-compatibility wrapper that returns just the menu_data
-        category key (e.g., "drinks", "sides") for use with get_category_suggestions().
-
-        Args:
-            item_name: The name of the item the user requested
-
-        Returns:
-            Category string like "drinks", "sides", "desserts", or None if not matched.
-        """
-        type_info = self.infer_item_type(item_name)
-        if type_info:
-            # Map item type slugs to legacy menu_data category keys
-            slug = type_info["slug"]
-            slug_to_category = {
-                "beverage": "drinks",
-                "sized_beverage": "drinks",
-                "espresso": "drinks",
-                "side": "sides",
-                "snack": "desserts",
-                "pastry": "desserts",
-            }
-            return slug_to_category.get(slug, slug)
-        return None
-
-    def get_category_suggestions(self, category: str, limit: int = 5) -> str:
-        """
-        Get a formatted string of menu suggestions for a category.
-
-        DEPRECATED: Use get_suggestions_for_item_type() with item_type slugs.
-
-        This is a backward-compatibility wrapper for tests expecting old category names.
-
-        Args:
-            category: Legacy category name like "drinks", "sides", "desserts"
-            limit: Maximum number of suggestions
-
-        Returns:
-            Formatted string of suggestions.
-        """
-        # First check if the legacy category key exists directly in menu_data
-        # (supports tests that create mock menu_data with old structure)
-        if self._menu_data and category in self._menu_data:
-            items = self._menu_data[category]
-            if items:
-                item_names = [item.get("name", "") for item in items[:limit] if item.get("name")]
-                if len(item_names) == 1:
-                    return item_names[0]
-                elif len(item_names) == 2:
-                    return f"{item_names[0]} or {item_names[1]}"
-                elif item_names:
-                    return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
-            return ""
-
-        # Map legacy category names to item type slugs
-        category_to_slug = {
-            "drinks": "beverage",  # Will try to expand via items_by_type
-            "sides": "side",
-            "desserts": "snack",
-        }
-        slug = category_to_slug.get(category, category)
-        return self.get_suggestions_for_item_type(slug, limit)
-
     def get_suggestions_for_item_type(self, item_type_slug: str, limit: int = 5) -> str:
         """
         Get a formatted string of menu suggestions for an item type.
@@ -464,22 +377,6 @@ class MenuLookup:
             if type_info and type_info.get("expands_to"):
                 for sub_slug in type_info["expands_to"]:
                     items.extend(items_by_type.get(sub_slug, []))
-
-        # Fallback to legacy menu_data category keys for backward compatibility
-        # Maps slug -> possible legacy keys to check
-        if not items:
-            slug_to_legacy_keys = {
-                "side": ["sides"],
-                "beverage": ["drinks", "beverages"],
-                "sized_beverage": ["drinks", "coffees"],
-                "snack": ["desserts", "snacks"],
-                "pastry": ["pastries", "bakery"],
-            }
-            legacy_keys = slug_to_legacy_keys.get(item_type_slug, [item_type_slug + "s"])
-            for key in legacy_keys:
-                if key in self._menu_data:
-                    items = self._menu_data[key]
-                    break
 
         if not items:
             return ""

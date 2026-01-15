@@ -1626,11 +1626,25 @@ def _extract_quantity(text: str) -> int | None:
 
 
 def _extract_bagel_type(text: str) -> str | None:
-    """Extract bagel type from text."""
+    """Extract bagel type from text.
+
+    Returns the short form of the bagel type (e.g., "plain" not "plain bagel").
+    This matches longest first to avoid partial matches (e.g., "cinnamon raisin"
+    before just "cinnamon").
+
+    Does not match the generic "bagel" alone - only specific types like
+    "plain bagel", "everything bagel", etc.
+    """
     text_lower = text.lower()
 
     for bagel_type in sorted(get_bagel_types(), key=len, reverse=True):
+        # Skip the generic "bagel" entry - we only want specific types
+        if bagel_type == 'bagel':
+            continue
         if bagel_type in text_lower:
+            # Return short form (strip " bagel" suffix if present)
+            if bagel_type.endswith(' bagel'):
+                return bagel_type[:-6]
             return bagel_type
 
     return None

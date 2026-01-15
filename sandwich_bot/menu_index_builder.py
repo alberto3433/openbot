@@ -17,18 +17,13 @@ from .models import (
     IngredientStoreAvailability,
     MenuItemStoreAvailability,
     ItemType,
-    AttributeOption,
     ModifierCategory,
     NeighborhoodZipCode,
     ItemTypeAttribute,
     ItemTypeIngredient,
     Company,
-    # Global attribute normalization tables
-    GlobalAttribute,
     GlobalAttributeOption,
     ItemTypeGlobalAttribute,
-    # Size pricing tables
-    MenuItemSizeCategory,
     MenuItemSize,
     MenuItemSizePrice,
 )
@@ -123,28 +118,6 @@ def _preload_item_type_attributes(db: Session) -> Dict[int, List]:
         by_type[attr.item_type_id].append(attr)
 
     return by_type
-
-
-def _preload_attribute_options(db: Session) -> Dict[int, List]:
-    """
-    Pre-load all attribute options in a single query.
-
-    Returns:
-        Dict mapping item_type_attribute_id -> List[AttributeOption]
-    """
-    all_options = (
-        db.query(AttributeOption)
-        .filter(AttributeOption.is_available == True)  # noqa: E712
-        .order_by(AttributeOption.item_type_attribute_id, AttributeOption.display_order)
-        .all()
-    )
-
-    by_attr: Dict[int, List] = defaultdict(list)
-    for opt in all_options:
-        if opt.item_type_attribute_id:
-            by_attr[opt.item_type_attribute_id].append(opt)
-
-    return by_attr
 
 
 def _preload_global_attribute_options(db: Session) -> Dict[int, List]:
@@ -255,14 +228,19 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     Build a rich, LLM-friendly menu JSON structure. Example shape:
 
     {
-      "signature_sandwiches": [ ... ],  # or "signature_pizzas" for pizza shops
-      "sides": [ ... ],
-      "drinks": [ ... ],
-      "desserts": [ ... ],
-      "other": [ ... ],
+      "items_by_type": {
+        "bagel": [ ... ],
+        "sized_beverage": [ ... ],
+        "side": [ ... ],
+        "signature_items": [ ... ],  # All items with is_signature=True
+      },
+      "item_type_display_names": {"bagel": "Bagels", ...},
       "bread_types": ["White", "Wheat", "Rye"],
       "cheese_types": ["Cheddar", "Swiss", "Provolone"],
     }
+
+    All menu structure is data-driven from the item_types table.
+    Use ItemType.expands_to to group multiple item types under a virtual type.
 
     Args:
         db: Database session
@@ -283,38 +261,15 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         .all()
     )
 
-    # Determine the primary configurable item type for dynamic category naming
-    # A configurable item type has linked global attributes
+    # Load all item types from database
     all_item_types = db.query(ItemType).all()
-    primary_item_type = None
-    for it in all_item_types:
-        config_status = preloaded_config_status.get(it.id, {})
-        if config_status.get("has_linked_attrs", False):
-            primary_item_type = it
-            break
-    primary_type_slug = primary_item_type.slug if primary_item_type else "sandwich"
 
-    # Build dynamic category names (handle pluralization correctly)
-    def pluralize(word: str) -> str:
-        if word.endswith("ch") or word.endswith("s") or word.endswith("x"):
-            return word + "es"
-        return word + "s"
-
-    signature_key = f"signature_{pluralize(primary_type_slug)}"
-    custom_key = f"custom_{pluralize(primary_type_slug)}"
-
+    # Initialize index with items_by_type as the primary data structure
     index: Dict[str, Any] = {
-        signature_key: [],
-        custom_key: [],  # Build-your-own items
-        "sides": [],
-        "drinks": [],
-        "desserts": [],
-        "other": [],
-        "items_by_type": {},  # Items grouped by item_type slug for type-specific queries
+        "items_by_type": {},  # Items grouped by item_type slug
     }
 
     # Pre-populate items_by_type with all item types from database
-    # (all_item_types was already queried above for primary type detection)
     for it in all_item_types:
         index["items_by_type"][it.slug] = []
 
@@ -378,69 +333,19 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         if item.is_signature:
             index["items_by_type"]["signature_items"].append(item_json)
 
-        cat = (item.category or "").lower()
-        # Data-driven main item detection:
-        # - Check if category matches the primary item type
-        # - Check if category contains the primary type slug (e.g., "Signature Sandwich" contains "sandwich")
-        # - Check if item type matches the primary type
-        # - Check if category contains "signature" (for signature menu items)
-        is_main_item_type = (
-            cat == primary_type_slug
-            or primary_type_slug in cat
-            or "signature" in cat
-            or item_type_slug == primary_type_slug
-        )
-        if is_main_item_type and item.is_signature:
-            index[signature_key].append(item_json)
-        elif is_main_item_type and not item.is_signature:
-            index[custom_key].append(item_json)
-        elif cat == "side":
-            index["sides"].append(item_json)
-        elif cat == "drink":
-            index["drinks"].append(item_json)
-        elif cat == "dessert":
-            index["desserts"].append(item_json)
-        else:
-            index["other"].append(item_json)
 
     # Convenience lists for quick questions like "what breads do you have?"
-    # These use the pre-loaded ingredients (single query instead of 5 separate queries)
+    # Data-driven: loop over all ingredient categories from the database
+    for category, ingredients in preloaded_ingredients.items():
+        # Create {category}_types list (e.g., bread_types, cheese_types)
+        index[f"{category}_types"] = [ing.name for ing in ingredients]
 
-    # Bread types - all ingredients with category 'bread'
-    bread_ingredients = preloaded_ingredients.get("bread", [])
-    index["bread_types"] = [ing.name for ing in bread_ingredients]
+        # Create {category}_prices dict for categories where ingredients have prices
+        # (useful for custom item pricing)
+        prices = {ing.name.lower(): ing.base_price for ing in ingredients if ing.base_price}
+        if prices:
+            index[f"{category}_prices"] = prices
 
-    # Cheese types - all ingredients with category 'cheese'
-    cheese_ingredients = preloaded_ingredients.get("cheese", [])
-    index["cheese_types"] = [ing.name for ing in cheese_ingredients]
-    index["cheese_prices"] = {ing.name.lower(): ing.base_price for ing in cheese_ingredients}
-
-    # Spread flavors - extracted from spread category ingredients
-    # Data-driven: use spread category from database instead of hardcoded "cream cheese"
-    spread_ingredients = preloaded_ingredients.get("spread", [])
-    spread_flavors = []
-    for ing in spread_ingredients:
-        # Use ingredient name directly (e.g., "Plain Cream Cheese", "Scallion Cream Cheese")
-        spread_flavors.append(ing.name)
-    index["spread_flavors"] = spread_flavors
-    # Also keep the legacy key for backward compatibility
-    index["cream_cheese_flavors"] = spread_flavors
-
-    # Sauce types - all ingredients with category 'sauce'
-    sauce_ingredients = preloaded_ingredients.get("sauce", [])
-    index["sauce_types"] = [ing.name for ing in sauce_ingredients]
-
-    # Protein types - all ingredients with category 'protein' (include prices for custom sandwiches)
-    protein_ingredients = preloaded_ingredients.get("protein", [])
-    index["protein_types"] = [ing.name for ing in protein_ingredients]
-    index["protein_prices"] = {ing.name.lower(): ing.base_price for ing in protein_ingredients}
-
-    # Bread prices for custom sandwiches
-    index["bread_prices"] = {ing.name.lower(): ing.base_price for ing in bread_ingredients}
-
-    # Topping types - all ingredients with category 'topping'
-    topping_ingredients = preloaded_ingredients.get("topping", [])
-    index["topping_types"] = [ing.name for ing in topping_ingredients]
 
     # Unavailable ingredients (86'd items) - so LLM knows what's out of stock
     # Check store-specific availability if store_id provided
@@ -496,7 +401,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
 
     # Pre-load attribute and option data for _build_item_types_data
     preloaded_type_attrs = _preload_item_type_attributes(db)
-    preloaded_attr_options = _preload_attribute_options(db)
     preloaded_global_options = _preload_global_attribute_options(db)
     preloaded_type_ingredients = _preload_item_type_ingredients(db)
 
@@ -506,7 +410,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         store_id,
         preloaded_config_status,
         preloaded_type_attrs,
-        preloaded_attr_options,
         preloaded_global_options,
         preloaded_type_ingredients,
     )
@@ -531,7 +434,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
 
     # Build ingredient-to-items mapping for ingredient-based search
     # When user says "something with chicken", this index helps find matching items
-    index["ingredient_to_items"] = _build_ingredient_to_items(index)
+    index["ingredient_to_items"] = _build_ingredient_to_items(index, preloaded_ingredients)
 
     # Build company info for customer service inquiries
     index["company_info"] = _build_company_info(db)
@@ -539,7 +442,10 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     return index
 
 
-def _build_ingredient_to_items(menu_index: Dict[str, Any]) -> Dict[str, list[Dict[str, Any]]]:
+def _build_ingredient_to_items(
+    menu_index: Dict[str, Any],
+    preloaded_ingredients: Dict[str, List[Any]],
+) -> Dict[str, list[Dict[str, Any]]]:
     """
     Build a mapping of ingredients to menu items that contain them by default.
 
@@ -548,40 +454,39 @@ def _build_ingredient_to_items(menu_index: Dict[str, Any]) -> Dict[str, list[Dic
     - Item descriptions (e.g., "Grilled Chicken, Bacon, Tomato...")
     - default_config values (e.g., {"protein": "Chicken Salad"})
 
+    Args:
+        menu_index: The menu index being built
+        preloaded_ingredients: Dict mapping category -> List[Ingredient] from _preload_all_ingredients()
+
     Returns:
         Dict mapping lowercase ingredient names to lists of matching menu items.
         Example: {"chicken": [{"id": 123, "name": "Chicken Salad Sandwich", ...}]}
     """
     import re
 
-    # Common ingredients to index
-    # Focus on proteins and key ingredients customers might search for
-    SEARCHABLE_INGREDIENTS = {
-        # Proteins
-        "chicken", "turkey", "bacon", "ham", "pastrami", "corned beef",
-        "roast beef", "tuna", "salmon", "lox", "nova", "whitefish",
-        "sable", "sturgeon", "egg", "eggs",
-        # Other key ingredients
-        "avocado", "hummus",
-    }
+    # Get searchable ingredients from all categories (data-driven from database)
+    searchable_ingredients: set[str] = set()
+
+    for category, ingredients in preloaded_ingredients.items():
+        for ing in ingredients:
+            ing_name = ing.name.lower()
+            # Add full name
+            searchable_ingredients.add(ing_name)
+            # Also add individual words (e.g., "chicken salad" -> "chicken", "salad")
+            for word in ing_name.split():
+                if len(word) > 2:  # Skip short words like "of", "a"
+                    searchable_ingredients.add(word)
 
     ingredient_to_items: Dict[str, list[Dict[str, Any]]] = {
-        ing: [] for ing in SEARCHABLE_INGREDIENTS
+        ing: [] for ing in searchable_ingredients
     }
 
-    # Collect all menu items from various categories
+    # Collect all menu items from items_by_type (data-driven from database)
     all_items: list[Dict[str, Any]] = []
-    for category in ["signature_sandwiches", "custom_sandwiches", "sides", "drinks", "desserts", "other"]:
-        if category in menu_index:
-            all_items.extend(menu_index[category])
-
-    # Also check items_by_type for comprehensive coverage
     if "items_by_type" in menu_index:
         for type_slug, items in menu_index["items_by_type"].items():
             if isinstance(items, list):
-                for item in items:
-                    if item not in all_items:
-                        all_items.append(item)
+                all_items.extend(items)
 
     for item in all_items:
         item_name = (item.get("name") or "").lower()
@@ -600,7 +505,7 @@ def _build_ingredient_to_items(menu_index: Dict[str, Any]) -> Dict[str, list[Dic
 
         combined_text = f"{item_name} {item_desc} {config_text}"
 
-        for ingredient in SEARCHABLE_INGREDIENTS:
+        for ingredient in searchable_ingredients:
             # Use word boundary to avoid partial matches (e.g., "ham" in "shamrock")
             if re.search(rf'\b{re.escape(ingredient)}\b', combined_text):
                 # Avoid duplicates
@@ -610,17 +515,25 @@ def _build_ingredient_to_items(menu_index: Dict[str, Any]) -> Dict[str, list[Dic
     # Remove empty entries
     ingredient_to_items = {k: v for k, v in ingredient_to_items.items() if v}
 
-    # Add common aliases
-    if "lox" in ingredient_to_items or "salmon" in ingredient_to_items:
-        # Merge lox and salmon results
-        combined = []
-        for item in ingredient_to_items.get("lox", []) + ingredient_to_items.get("salmon", []):
-            if item not in combined:
-                combined.append(item)
-        if combined:
-            ingredient_to_items["lox"] = combined
-            ingredient_to_items["salmon"] = combined
-            ingredient_to_items["nova"] = combined
+    # Merge results for ingredient aliases (data-driven from preloaded data)
+    # If "lox" is an alias for "nova scotia salmon", share results between them
+    # Build alias -> canonical mapping from preloaded ingredients
+    alias_to_canonical: Dict[str, str] = {}
+    for category_ingredients in preloaded_ingredients.values():
+        for ing in category_ingredients:
+            canonical_name = ing.name.lower()
+            # Add aliases from the ingredient's alias records
+            for alias in ing.aliases:
+                alias_to_canonical[alias.lower()] = canonical_name
+
+    # Share results between aliases and canonical names
+    for alias, canonical in alias_to_canonical.items():
+        # If we have results for the canonical name, share with alias
+        if canonical in ingredient_to_items and alias not in ingredient_to_items:
+            ingredient_to_items[alias] = ingredient_to_items[canonical]
+        # If we have results for the alias, share with canonical
+        elif alias in ingredient_to_items and canonical not in ingredient_to_items:
+            ingredient_to_items[canonical] = ingredient_to_items[alias]
 
     return ingredient_to_items
 
@@ -659,7 +572,6 @@ def _build_item_types_data(
     store_id: Optional[str] = None,
     preloaded_config_status: Optional[Dict[int, Dict[str, Any]]] = None,
     preloaded_type_attrs: Optional[Dict[int, List]] = None,
-    preloaded_attr_options: Optional[Dict[int, List]] = None,
     preloaded_global_options: Optional[Dict[int, List]] = None,
     preloaded_type_ingredients: Optional[Dict[tuple, List]] = None,
 ) -> Dict[str, Any]:
@@ -677,7 +589,6 @@ def _build_item_types_data(
         store_id: Optional store ID for availability filtering
         preloaded_config_status: Pre-loaded config status from _preload_item_type_config_status()
         preloaded_type_attrs: Pre-loaded item type attributes from _preload_item_type_attributes()
-        preloaded_attr_options: Pre-loaded attribute options from _preload_attribute_options()
         preloaded_global_options: Pre-loaded global options from _preload_global_attribute_options()
         preloaded_type_ingredients: Pre-loaded type ingredients from _preload_item_type_ingredients()
 
@@ -691,8 +602,6 @@ def _build_item_types_data(
         preloaded_config_status = _preload_item_type_config_status(db)
     if preloaded_type_attrs is None:
         preloaded_type_attrs = _preload_item_type_attributes(db)
-    if preloaded_attr_options is None:
-        preloaded_attr_options = _preload_attribute_options(db)
     if preloaded_global_options is None:
         preloaded_global_options = _preload_global_attribute_options(db)
     if preloaded_type_ingredients is None:
@@ -753,9 +662,9 @@ def _build_item_types_data(
                         ],
                     }
                 else:
-                    # Get options from pre-loaded data
-                    options = preloaded_attr_options.get(ita.id, [])
-
+                    # For ItemTypeAttribute entries that don't load from ingredients
+                    # (e.g., boolean types like "toasted"), options are not applicable.
+                    # Select-type attributes should use GlobalAttribute via ItemTypeGlobalAttribute.
                     attr_data = {
                         "slug": ita.slug,
                         "display_name": ita.display_name,
@@ -764,16 +673,7 @@ def _build_item_types_data(
                         "allow_none": ita.allow_none,
                         "ask_in_conversation": ita.ask_in_conversation,
                         "question_text": ita.question_text,
-                        "options": [
-                            {
-                                "slug": opt.slug,
-                                "display_name": opt.display_name,
-                                "price_modifier": opt.price_modifier,
-                                "iced_price_modifier": getattr(opt, 'iced_price_modifier', 0.0) or 0.0,
-                                "is_default": opt.is_default,
-                            }
-                            for opt in options
-                        ],
+                        "options": [],  # No local options; use global attributes for select types
                     }
 
                 if ita.input_type == "multi_select":
@@ -895,21 +795,6 @@ def _build_by_pound_prices(db: Session) -> Dict[str, float]:
             # Only add if not already present from a per-pound entry
             if base_name_lower not in prices:
                 prices[base_name_lower] = round(price, 2)
-
-    # Add common aliases for fish items
-    aliases = {
-        "nova scotia salmon": ["nova", "lox", "nova scotia salmon (lox)"],
-        "whitefish salad": ["whitefish"],  # Common shorthand
-        "lake sturgeon": ["sturgeon", "smoked sturgeon"],
-        "smoked trout": ["trout"],
-        "plain cream cheese": ["cream cheese"],
-    }
-
-    for base_name, alias_list in aliases.items():
-        if base_name in prices:
-            for alias in alias_list:
-                if alias not in prices:
-                    prices[alias] = prices[base_name]
 
     return prices
 

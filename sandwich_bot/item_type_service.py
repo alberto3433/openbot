@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from .models import (
     ItemType,
     ItemTypeAttribute,
-    AttributeOption,
+    ItemTypeGlobalAttribute,
+    GlobalAttribute,
+    GlobalAttributeOption,
 )
 
 
@@ -30,6 +32,9 @@ def get_type_attributes(
     """
     Get type attributes for an item type.
 
+    Loads attributes from both ItemTypeAttribute (local) and
+    ItemTypeGlobalAttribute (linked global attributes).
+
     Args:
         db: Database session
         item_type_id: The item type ID
@@ -38,15 +43,17 @@ def get_type_attributes(
     Returns:
         List of attribute dicts with optional options
     """
-    attrs = (
+    result = []
+
+    # Load local attributes (from ItemTypeAttribute)
+    local_attrs = (
         db.query(ItemTypeAttribute)
         .filter(ItemTypeAttribute.item_type_id == item_type_id)
         .order_by(ItemTypeAttribute.display_order)
         .all()
     )
 
-    result = []
-    for attr in attrs:
+    for attr in local_attrs:
         attr_dict = {
             "id": attr.id,
             "slug": attr.slug,
@@ -57,12 +64,40 @@ def get_type_attributes(
             "min_selections": attr.min_selections,
             "max_selections": attr.max_selections,
         }
+        # Local attributes don't have options in the new model
+        # (they use loads_from_ingredients or are boolean types)
+        if include_options:
+            attr_dict["options"] = []
+
+        result.append(attr_dict)
+
+    # Load global attributes linked to this item type
+    global_links = (
+        db.query(ItemTypeGlobalAttribute)
+        .join(GlobalAttribute)
+        .filter(ItemTypeGlobalAttribute.item_type_id == item_type_id)
+        .order_by(ItemTypeGlobalAttribute.display_order)
+        .all()
+    )
+
+    for link in global_links:
+        global_attr = link.global_attribute
+        attr_dict = {
+            "id": link.id,
+            "slug": global_attr.slug,
+            "display_name": global_attr.display_name,
+            "input_type": global_attr.input_type,
+            "is_required": link.is_required,
+            "allow_none": link.allow_none,
+            "min_selections": link.min_selections,
+            "max_selections": link.max_selections,
+        }
 
         if include_options:
             options = (
-                db.query(AttributeOption)
-                .filter(AttributeOption.item_type_attribute_id == attr.id)
-                .order_by(AttributeOption.display_order)
+                db.query(GlobalAttributeOption)
+                .filter(GlobalAttributeOption.global_attribute_id == global_attr.id)
+                .order_by(GlobalAttributeOption.display_order)
                 .all()
             )
             attr_dict["options"] = [
@@ -104,29 +139,29 @@ def get_attribute_option_price(
     if not item_type:
         return 0.0
 
-    # Get the type attribute
-    attr = (
-        db.query(ItemTypeAttribute)
+    # Check if this is a global attribute linked to this item type
+    global_link = (
+        db.query(ItemTypeGlobalAttribute)
+        .join(GlobalAttribute)
         .filter(
-            ItemTypeAttribute.item_type_id == item_type.id,
-            ItemTypeAttribute.slug == attribute_slug
+            ItemTypeGlobalAttribute.item_type_id == item_type.id,
+            GlobalAttribute.slug == attribute_slug
         )
         .first()
     )
-    if not attr:
-        return 0.0
 
-    # Get the option by display_name or slug (case-insensitive)
-    option_lower = option_value.lower() if option_value else ""
-    options = (
-        db.query(AttributeOption)
-        .filter(AttributeOption.item_type_attribute_id == attr.id)
-        .all()
-    )
+    if global_link:
+        # Get the option by display_name or slug (case-insensitive)
+        option_lower = option_value.lower() if option_value else ""
+        options = (
+            db.query(GlobalAttributeOption)
+            .filter(GlobalAttributeOption.global_attribute_id == global_link.global_attribute_id)
+            .all()
+        )
 
-    for opt in options:
-        if opt.display_name.lower() == option_lower or opt.slug.lower() == option_lower:
-            return opt.price_modifier
+        for opt in options:
+            if opt.display_name.lower() == option_lower or opt.slug.lower() == option_lower:
+                return opt.price_modifier
 
     return 0.0
 
@@ -242,24 +277,27 @@ def get_available_options_for_attribute(
     if not item_type:
         return []
 
-    attr = (
-        db.query(ItemTypeAttribute)
+    # Check if this is a global attribute linked to this item type
+    global_link = (
+        db.query(ItemTypeGlobalAttribute)
+        .join(GlobalAttribute)
         .filter(
-            ItemTypeAttribute.item_type_id == item_type.id,
-            ItemTypeAttribute.slug == attribute_slug
+            ItemTypeGlobalAttribute.item_type_id == item_type.id,
+            GlobalAttribute.slug == attribute_slug
         )
         .first()
     )
-    if not attr:
+
+    if not global_link:
         return []
 
     options = (
-        db.query(AttributeOption)
+        db.query(GlobalAttributeOption)
         .filter(
-            AttributeOption.item_type_attribute_id == attr.id,
-            AttributeOption.is_available == True
+            GlobalAttributeOption.global_attribute_id == global_link.global_attribute_id,
+            GlobalAttributeOption.is_available == True
         )
-        .order_by(AttributeOption.display_order)
+        .order_by(GlobalAttributeOption.display_order)
         .all()
     )
 

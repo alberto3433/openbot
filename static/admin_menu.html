@@ -965,8 +965,8 @@
         item_type_id: selectedItemTypeId,
         is_signature: itemSignatureEl.checked,
         base_price: basePrice, // Set from first size price for backwards compatibility
-        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
-        required_match_phrases: requiredPhraseValues.length > 0 ? requiredPhraseValues.join(",") : null,
+        aliases: aliasValues.join(","),
+        required_match_phrases: requiredPhraseValues.join(","),
         category_ids: selectedCategoryIds,
         size_category_id: sizeCategoryId,
         size_prices: sizePrices

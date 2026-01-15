@@ -19,6 +19,14 @@
 ### Why This Matters
 Any `.db` files in the project are stale artifacts. The Neon PostgreSQL database is the single source of truth for all data.
 
+### Schema Changes Require Permission
+**ALWAYS ask for permission before:**
+- Adding a new column to any table
+- Adding a new table to the schema
+- Creating an Alembic migration that modifies the schema
+
+Explain what you want to add and why. Wait for approval before proceeding.
+
 ## Project Overview
 
 This is an AI-powered ordering chatbot for a bagel shop (Zucker's Bagels). The system handles natural language order processing, supporting bagels, coffees, sandwiches, and other menu items with full customization.
@@ -228,6 +236,54 @@ UPDATE item_types SET modifier_fallback_types = '["sandwich"]' WHERE slug = 'bag
 
 ### Legacy Code
 Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt. Do not extend them - work toward consolidating into generic handlers.
+
+### Attribute Option Aliases and Disambiguation
+
+Attribute options (bread types, spreads, sizes, etc.) support two key fields for data-driven input matching:
+
+**`aliases`** - Alternative names for matching user input:
+```
+Attribute Option: "Plain Bagel" (slug: "plain")
+  aliases: ["plain", "plain bagel"]
+
+Attribute Option: "Cinnamon Raisin Bagel" (slug: "cinnamon_raisin")
+  aliases: ["cinnamon raisin", "cinnamon raisin bagel", "raisin bagel", "cinnamon bagel"]
+```
+
+When parsing user input:
+1. Search for matches in `display_name` + `aliases` (longest match first)
+2. Return the `slug` (canonical value), NOT the matched text
+3. This is fully data-driven - no code knows about specific bagel types
+
+**`must_match`** - Required patterns for disambiguation:
+```
+Attribute Option: "Diet Coke" (slug: "diet_coke")
+  must_match: ["diet"]
+
+Attribute Option: "Coca-Cola" (slug: "coca_cola")
+  must_match: []  # or null
+```
+
+When a `must_match` pattern is specified, ALL patterns must appear in the input for the option to match. This enables disambiguation without asking the user:
+- "I want a coke" → matches "Coca-Cola" (no must_match requirement)
+- "I want a diet coke" → matches "Diet Coke" (has "diet" in input)
+
+**Pattern for writing matching code:**
+```python
+# WRONG - Domain-specific logic in code:
+if matched_type.endswith(' bagel'):
+    return matched_type[:-6]  # Strip suffix - code knows about bagels!
+
+# CORRECT - Data-driven matching:
+for option in attribute_options:
+    for alias in option['aliases']:
+        if alias in text_lower:
+            return option['slug']  # Return canonical slug, not matched text
+```
+
+**Alias guidelines:**
+- Include both short form ("plain") and long form ("plain bagel")
+- EXCEPT when short form clashes with another category (e.g., "jalapeno" clashes with "Jalapeno Cream Cheese", so "Jalapeno Cheddar Bagel" should NOT have "jalapeno" as an alias)
 
 ### Code Validity Test
 Before committing any order handling code, verify:

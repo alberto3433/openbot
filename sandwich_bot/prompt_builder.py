@@ -14,7 +14,7 @@ import json
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-from .models import Company, ItemType, ItemTypeAttribute, AttributeOption
+from .models import Company, ItemType, ItemTypeAttribute
 from .services.item_type_helpers import has_linked_attributes
 
 
@@ -351,25 +351,15 @@ def build_item_types_prompt_section(db: Session) -> str:
 
         attributes = []
         for ad in attr_defs:
-            options = (
-                db.query(AttributeOption)
-                .filter(
-                    AttributeOption.item_type_attribute_id == ad.id,
-                    AttributeOption.is_available == True
-                )
-                .order_by(AttributeOption.display_order)
-                .all()
-            )
-
+            # Local ItemTypeAttribute entries don't have options anymore.
+            # Options for select-type attributes come from GlobalAttributeOption
+            # via ItemTypeGlobalAttribute links.
             attributes.append({
                 "slug": ad.slug,
                 "display_name": ad.display_name,
                 "input_type": ad.input_type,
                 "is_required": ad.is_required,
-                "options": [
-                    {"display_name": opt.display_name, "slug": opt.slug}
-                    for opt in options
-                ]
+                "options": []  # No local options; use global attributes
             })
 
         is_primary = (item_type == primary_type)

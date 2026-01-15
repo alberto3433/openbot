@@ -4,37 +4,28 @@ from typing import Dict, Any, Optional, List
 
 def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict[str, Any]]:
     """
-    Find a menu item by name across all categories.
+    Find a menu item by name across all item types.
     Returns the full menu item dict including default_config.
     """
     if not menu_index or not item_name:
         return None
 
-    # Search through all category lists
-    categories = [
-        "signature_sandwiches",
-        "custom_sandwiches",
-        "sides",
-        "drinks",
-        "desserts",
-        "other",
-    ]
-
-    for category in categories:
-        items = menu_index.get(category, [])
-        for item in items:
-            if item.get("name", "").lower() == item_name.lower():
-                return item
+    # Search through items_by_type (data-driven from database)
+    items_by_type = menu_index.get("items_by_type", {})
+    for type_slug, items in items_by_type.items():
+        if isinstance(items, list):
+            for item in items:
+                if item.get("name", "").lower() == item_name.lower():
+                    return item
 
     return None
 
 
 def _get_custom_sandwich_base(menu_index: Dict[str, Any]) -> Dict[str, Any]:
     """Get the Custom Sandwich menu item for pricing non-signature sandwiches."""
-    custom_sandwiches = menu_index.get("custom_sandwiches", [])
-    for item in custom_sandwiches:
-        if item.get("name", "").lower() == "custom sandwich":
-            return item
+    item = _find_menu_item(menu_index, "Custom Sandwich")
+    if item:
+        return item
     # Fallback with default price
     return {"name": "Custom Sandwich", "base_price": 5.99}
 

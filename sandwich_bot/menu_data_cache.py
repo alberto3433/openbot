@@ -1784,6 +1784,35 @@ class MenuDataCache:
         # Return a deep copy to prevent mutation
         return [detail.copy() for detail in self._ingredient_details_by_category[category]]
 
+    def get_all_ingredients(self) -> dict[str, dict]:
+        """Get all ingredients across all categories.
+
+        Returns a flat dictionary mapping ingredient names (lowercase) to their details.
+
+        Returns:
+            Dict mapping ingredient name (lowercase) -> {"name": str, "category": str, "slug": str}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> all_ings = menu_cache.get_all_ingredients()
+            >>> all_ings.get("bacon")
+            {"name": "Bacon", "category": "protein", "slug": "bacon"}
+        """
+        self._ensure_loaded()
+        result: dict[str, dict] = {}
+        for category, details in self._ingredient_details_by_category.items():
+            for detail in details:
+                name_lower = detail.get("name", "").lower()
+                if name_lower:
+                    result[name_lower] = {
+                        "name": detail.get("name", ""),
+                        "category": category,
+                        "slug": detail.get("slug", ""),
+                    }
+        return result
+
     def get_ingredients_for_item_type(
         self, item_type_slug: str, category: str | None = None
     ) -> set[str]:
@@ -2169,7 +2198,7 @@ class MenuDataCache:
         """
         from .db import SessionLocal
         from .models import (
-            ItemType, ItemTypeAttribute, AttributeOption,
+            ItemType, ItemTypeAttribute,
             ItemTypeIngredient, Ingredient,
             ItemTypeGlobalAttribute, GlobalAttribute,
         )
@@ -2290,8 +2319,14 @@ class MenuDataCache:
             db.close()
 
     def _load_attribute_options_from_db(self, db, attr, item_type_id: int) -> list[dict]:
-        """Load options for an attribute from ingredients or attribute_options table."""
-        from .models import ItemTypeIngredient, Ingredient, AttributeOption
+        """Load options for an attribute from ingredients.
+
+        Note: Options from the deprecated attribute_options table are no longer loaded.
+        All options should come from either:
+        1. ItemTypeIngredient (when loads_from_ingredients=True)
+        2. GlobalAttributeOption (via item_type_global_attributes)
+        """
+        from .models import ItemTypeIngredient, Ingredient
 
         opts_data = []
 
@@ -2330,20 +2365,10 @@ class MenuDataCache:
                     opt_data["must_match"] = ingredient.must_match
                 opts_data.append(opt_data)
         else:
-            # Load from attribute_options table
-            options = db.query(AttributeOption).filter(
-                AttributeOption.item_type_attribute_id == attr.id,
-                AttributeOption.is_available == True,
-            ).order_by(AttributeOption.display_order).all()
-
-            for opt in options:
-                opt_data = {
-                    "slug": opt.slug,
-                    "display_name": opt.display_name or opt.slug.replace("_", " ").title(),
-                    "price": float(opt.price_modifier or 0),
-                    "is_default": getattr(opt, 'is_default', False),
-                }
-                opts_data.append(opt_data)
+            # For attributes that don't load from ingredients (e.g., boolean types like toasted),
+            # options should come from GlobalAttributeOption via item_type_global_attributes.
+            # This code path returns empty - the caller should use global attributes instead.
+            pass
 
         return opts_data
 
@@ -2572,30 +2597,30 @@ class MenuDataCache:
                     "ingredient_group": group,
                 })
 
-            # For any item type with spread_type attribute, add spread modifiers
-            # Spreads are stored as attribute options, not ingredients
-            # Data-driven: check for spread_type attribute instead of hardcoded item type
-            from .models import ItemTypeAttribute, AttributeOption
+            # For any item type with spread global attribute, add spread modifiers
+            # Spreads are now stored as global attribute options
+            from .models import ItemTypeGlobalAttribute, GlobalAttribute, GlobalAttributeOption
 
-            spread_attr = (
-                db.query(ItemTypeAttribute)
+            spread_link = (
+                db.query(ItemTypeGlobalAttribute)
+                .join(GlobalAttribute)
                 .filter(
-                    ItemTypeAttribute.item_type_id == item_type.id,
-                    ItemTypeAttribute.slug == "spread_type",
+                    ItemTypeGlobalAttribute.item_type_id == item_type.id,
+                    GlobalAttribute.slug == "spread",
                 )
                 .first()
             )
 
-            if spread_attr:
+            if spread_link:
                 # Start with empty aliases - all aliases come from database
                 spread_aliases = []
 
-                # Get spread option names and aliases from database
+                # Get spread option names and aliases from global_attribute_options
                 spread_options = (
-                    db.query(AttributeOption)
+                    db.query(GlobalAttributeOption)
                     .filter(
-                        AttributeOption.item_type_attribute_id == spread_attr.id,
-                        AttributeOption.is_available == True,
+                        GlobalAttributeOption.global_attribute_id == spread_link.global_attribute_id,
+                        GlobalAttributeOption.is_available == True,
                     )
                     .all()
                 )
@@ -2619,7 +2644,7 @@ class MenuDataCache:
                     "display_name": "spread",
                     "aliases": spread_aliases,
                     "is_list": False,
-                    "ingredient_group": "spread_type",
+                    "ingredient_group": "spread",
                 })
 
             logger.debug(
@@ -2864,6 +2889,29 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return word.lower().strip() in self._modifier_aliases
+
+    def get_ingredient_aliases(self) -> dict[str, str]:
+        """
+        Get the mapping of ingredient aliases to canonical names.
+
+        Returns a dictionary mapping lowercase alias strings to their
+        canonical ingredient names.
+
+        Used for merging search results between aliases (e.g., "lox" and "nova scotia salmon").
+
+        Returns:
+            Dict mapping alias (lowercase) -> canonical ingredient name
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> aliases = cache.get_ingredient_aliases()
+            >>> aliases.get("lox")
+            "Nova Scotia Salmon"
+        """
+        self._ensure_loaded()
+        return self._modifier_aliases.copy()
 
     def get_all_modifier_words(self) -> set[str]:
         """

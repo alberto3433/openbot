@@ -75,10 +75,18 @@ def _set_modifier_category_aliases(db: Session, category: ModifierCategory, alia
     for alias in list(category.alias_records):
         db.delete(alias)
 
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
+
     # Validate and add new aliases if provided
     if aliases_str:
         try:
-            validated_aliases = validate_aliases(db, aliases_str, exclude_table="modifier_category_aliases")
+            # Exclude current category's own ID so re-saving same aliases works
+            validated_aliases = validate_aliases(
+                db,
+                aliases_str,
+                exclude_modifier_category_id=category.id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

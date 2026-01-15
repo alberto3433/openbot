@@ -346,8 +346,10 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
 def check_alias_uniqueness(
     db: Session,
     alias: str,
-    exclude_table: str | None = None,
-    exclude_id: int | None = None,
+    exclude_item_type_id: int | None = None,
+    exclude_menu_item_id: int | None = None,
+    exclude_modifier_category_id: int | None = None,
+    exclude_ingredient_id: int | None = None,
 ) -> tuple[bool, str | None]:
     """
     Check if an alias is globally unique across all alias tables.
@@ -358,8 +360,10 @@ def check_alias_uniqueness(
     Args:
         db: Database session
         alias: The alias to check (case-insensitive)
-        exclude_table: Table name to exclude from check (for updates)
-        exclude_id: Record ID to exclude from check (for updates)
+        exclude_item_type_id: ItemType ID to exclude (for updates)
+        exclude_menu_item_id: MenuItem ID to exclude (for updates)
+        exclude_modifier_category_id: ModifierCategory ID to exclude (for updates)
+        exclude_ingredient_id: Ingredient ID to exclude (for updates)
 
     Returns:
         Tuple of (is_unique, conflict_message)
@@ -371,36 +375,44 @@ def check_alias_uniqueness(
         return True, None
 
     # Check ItemTypeAlias
-    if exclude_table != "item_type_aliases":
-        existing = db.query(ItemTypeAlias).filter(
-            func.lower(ItemTypeAlias.alias) == alias_lower
-        ).first()
-        if existing:
-            return False, f"Alias '{alias}' already exists on ItemType '{existing.item_type.slug}'"
+    query = db.query(ItemTypeAlias).filter(
+        func.lower(ItemTypeAlias.alias) == alias_lower
+    )
+    if exclude_item_type_id:
+        query = query.filter(ItemTypeAlias.item_type_id != exclude_item_type_id)
+    existing = query.first()
+    if existing:
+        return False, f"Alias '{alias}' already exists on ItemType '{existing.item_type.slug}'"
 
     # Check MenuItemAlias
-    if exclude_table != "menu_item_aliases":
-        existing = db.query(MenuItemAlias).filter(
-            func.lower(MenuItemAlias.alias) == alias_lower
-        ).first()
-        if existing:
-            return False, f"Alias '{alias}' already exists on MenuItem '{existing.menu_item.name}'"
+    query = db.query(MenuItemAlias).filter(
+        func.lower(MenuItemAlias.alias) == alias_lower
+    )
+    if exclude_menu_item_id:
+        query = query.filter(MenuItemAlias.menu_item_id != exclude_menu_item_id)
+    existing = query.first()
+    if existing:
+        return False, f"Alias '{alias}' already exists on MenuItem '{existing.menu_item.name}'"
 
     # Check ModifierCategoryAlias
-    if exclude_table != "modifier_category_aliases":
-        existing = db.query(ModifierCategoryAlias).filter(
-            func.lower(ModifierCategoryAlias.alias) == alias_lower
-        ).first()
-        if existing:
-            return False, f"Alias '{alias}' already exists on ModifierCategory '{existing.modifier_category.slug}'"
+    query = db.query(ModifierCategoryAlias).filter(
+        func.lower(ModifierCategoryAlias.alias) == alias_lower
+    )
+    if exclude_modifier_category_id:
+        query = query.filter(ModifierCategoryAlias.modifier_category_id != exclude_modifier_category_id)
+    existing = query.first()
+    if existing:
+        return False, f"Alias '{alias}' already exists on ModifierCategory '{existing.modifier_category.slug}'"
 
     # Check IngredientAlias
-    if exclude_table != "ingredient_aliases":
-        existing = db.query(IngredientAlias).filter(
-            func.lower(IngredientAlias.alias) == alias_lower
-        ).first()
-        if existing:
-            return False, f"Alias '{alias}' already exists on Ingredient '{existing.ingredient.name}'"
+    query = db.query(IngredientAlias).filter(
+        func.lower(IngredientAlias.alias) == alias_lower
+    )
+    if exclude_ingredient_id:
+        query = query.filter(IngredientAlias.ingredient_id != exclude_ingredient_id)
+    existing = query.first()
+    if existing:
+        return False, f"Alias '{alias}' already exists on Ingredient '{existing.ingredient.name}'"
 
     return True, None
 
@@ -408,19 +420,25 @@ def check_alias_uniqueness(
 def validate_aliases(
     db: Session,
     aliases_str: str | None,
-    exclude_table: str | None = None,
+    exclude_item_type_id: int | None = None,
+    exclude_menu_item_id: int | None = None,
+    exclude_modifier_category_id: int | None = None,
+    exclude_ingredient_id: int | None = None,
 ) -> list[str]:
     """
     Validate and return list of globally unique aliases.
 
     Parses comma-separated aliases string, validates each is globally unique,
-    and returns the list of valid aliases. Raises HTTPException if any alias
+    and returns the list of valid aliases. Raises ValueError if any alias
     is a duplicate.
 
     Args:
         db: Database session
         aliases_str: Comma-separated aliases string
-        exclude_table: Table name to exclude from uniqueness check
+        exclude_item_type_id: ItemType ID to exclude (for updates)
+        exclude_menu_item_id: MenuItem ID to exclude (for updates)
+        exclude_modifier_category_id: ModifierCategory ID to exclude (for updates)
+        exclude_ingredient_id: Ingredient ID to exclude (for updates)
 
     Returns:
         List of validated aliases
@@ -438,7 +456,14 @@ def validate_aliases(
         if not alias:
             continue
 
-        is_unique, error_msg = check_alias_uniqueness(db, alias, exclude_table)
+        is_unique, error_msg = check_alias_uniqueness(
+            db,
+            alias,
+            exclude_item_type_id=exclude_item_type_id,
+            exclude_menu_item_id=exclude_menu_item_id,
+            exclude_modifier_category_id=exclude_modifier_category_id,
+            exclude_ingredient_id=exclude_ingredient_id,
+        )
         if not is_unique:
             errors.append(error_msg)
         else:

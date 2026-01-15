@@ -107,7 +107,12 @@ def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[st
     # Validate and add new aliases if provided
     if aliases_str:
         try:
-            validated_aliases = validate_aliases(db, aliases_str, exclude_table="menu_item_aliases")
+            # Exclude current menu item's own ID so re-saving same aliases works
+            validated_aliases = validate_aliases(
+                db,
+                aliases_str,
+                exclude_menu_item_id=item.id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

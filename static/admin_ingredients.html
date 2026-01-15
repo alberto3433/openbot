@@ -409,12 +409,32 @@
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       font-size: 14px;
       font-weight: 500;
       animation: slideIn 0.3s ease;
-      max-width: 350px;
+      max-width: 500px;
+    }
+    .toast-content {
+      flex: 1;
+    }
+    .toast-content .toast-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .toast-content .toast-detail {
+      font-weight: 400;
+      font-size: 13px;
+      opacity: 0.95;
+    }
+    .toast-content .duplicate-location {
+      margin-top: 6px;
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
     }
     .toast.success { background: #10b981; color: white; }
     .toast.error { background: #ef4444; color: white; }
@@ -684,16 +704,39 @@
     }
 
     // Toast notification
-    function showToast(message, type = "info") {
+    function showToast(message, type = "info", duration = 3000) {
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
       const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
-      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-content">${message}</span>`;
       toastContainer.appendChild(toast);
       setTimeout(() => {
         toast.style.animation = "slideOut 0.3s ease forwards";
         setTimeout(() => toast.remove(), 300);
-      }, 3000);
+      }, duration);
+    }
+
+    // Parse and format alias duplicate errors for better display
+    function formatAliasError(errorMessage) {
+      // Pattern: "Alias 'x' already exists on EntityType 'y'"
+      const aliasPattern = /Alias '([^']+)' already exists on (\w+) '([^']+)'/g;
+      const matches = [...errorMessage.matchAll(aliasPattern)];
+
+      if (matches.length === 0) {
+        return errorMessage; // Return original if no pattern match
+      }
+
+      const duplicates = matches.map(match => {
+        const [_, alias, entityType, entityName] = match;
+        const entityLabel = entityType
+          .replace(/([A-Z])/g, ' $1')
+          .trim(); // "ItemType" -> "Item Type"
+        return `<div class="duplicate-location">"${escapeHtml(alias)}" is used by ${entityLabel}: <strong>${escapeHtml(entityName)}</strong></div>`;
+      });
+
+      return `<div class="toast-title">Duplicate synonym found</div>
+        <div class="toast-detail">This synonym already exists elsewhere:</div>
+        ${duplicates.join('')}`;
     }
 
     // Button state management
@@ -1008,8 +1051,9 @@
         name: name,
         category: category,
         unit: unit,
-        aliases: aliasValues.length > 0 ? aliasValues.join(",") : null,
-        must_match: mustMatchValues.length > 0 ? mustMatchValues.join(",") : null
+        // Send empty string to clear aliases, not null (null means "don't update")
+        aliases: aliasValues.join(","),
+        must_match: mustMatchValues.join(",")
       };
 
       setSaveButtonState(saveBtn, "saving");
@@ -1048,7 +1092,13 @@
       } catch (error) {
         console.error("Failed to save ingredient:", error);
         setSaveButtonState(saveBtn, "error", "Save");
-        showToast(`Failed to save: ${error.message}`, "error");
+        // Check if this is a duplicate alias error and format it nicely
+        const errorMsg = error.message || "Unknown error";
+        if (errorMsg.includes("already exists on")) {
+          showToast(formatAliasError(errorMsg), "error", 6000);
+        } else {
+          showToast(`Failed to save: ${errorMsg}`, "error");
+        }
       }
     }
 

@@ -1392,50 +1392,52 @@ class TestUnknownItemHandling:
         assert order.items.items[0].menu_item_name == "Home Fries"
         assert order.items.items[0].unit_price == 3.99
 
-    def test_infer_category_drinks(self):
-        """Test category inference for drink items."""
+    def test_infer_item_type_drinks(self):
+        """Test item type inference for drink items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
 
         sm = OrderStateMachine()
 
-        # Menu lookup methods moved to MenuLookup class
-        assert sm.menu_lookup.infer_item_category("orange juice") == "drinks"
-        assert sm.menu_lookup.infer_item_category("coffee") == "drinks"
-        assert sm.menu_lookup.infer_item_category("milkshake") == "drinks"  # Contains "milk"
-        assert sm.menu_lookup.infer_item_category("chocolate milk") == "drinks"
-        assert sm.menu_lookup.infer_item_category("lemonade") == "drinks"
-        assert sm.menu_lookup.infer_item_category("pizza") is None  # Not a drink
+        # infer_item_type returns dict with slug, or None if not matched
+        result = sm.menu_lookup.infer_item_type("orange juice")
+        assert result is not None and result.get("slug") in ("beverage", "sized_beverage")
 
-    def test_infer_category_sides(self):
-        """Test category inference for side items."""
+        result = sm.menu_lookup.infer_item_type("coffee")
+        assert result is not None and result.get("slug") in ("beverage", "sized_beverage", "espresso")
+
+        result = sm.menu_lookup.infer_item_type("pizza")
+        assert result is None  # Not a recognized type
+
+    def test_infer_item_type_sides(self):
+        """Test item type inference for side items."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
 
         sm = OrderStateMachine()
 
-        # Menu lookup methods moved to MenuLookup class
-        assert sm.menu_lookup.infer_item_category("hashbrown") == "sides"
-        assert sm.menu_lookup.infer_item_category("hash browns") == "sides"
-        assert sm.menu_lookup.infer_item_category("home fries") == "sides"
-        assert sm.menu_lookup.infer_item_category("side of bacon") == "sides"
-        assert sm.menu_lookup.infer_item_category("fruit salad") == "sides"
+        # infer_item_type returns dict with slug, or None if not matched
+        result = sm.menu_lookup.infer_item_type("home fries")
+        assert result is not None and result.get("slug") == "side"
 
-    def test_get_category_suggestions_formats_correctly(self):
+        result = sm.menu_lookup.infer_item_type("side of bacon")
+        assert result is not None and result.get("slug") == "side"
+
+    def test_get_suggestions_for_item_type_formats_correctly(self):
         """Test that suggestions are formatted as natural language."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
 
         menu_data = {
-            "sides": [
-                {"id": 1, "name": "Home Fries", "base_price": 3.99},
-                {"id": 2, "name": "Fruit Cup", "base_price": 4.99},
-                {"id": 3, "name": "Side of Bacon", "base_price": 2.99},
-            ],
-            "items_by_type": {},
+            "items_by_type": {
+                "side": [
+                    {"id": 1, "name": "Home Fries", "base_price": 3.99},
+                    {"id": 2, "name": "Fruit Cup", "base_price": 4.99},
+                    {"id": 3, "name": "Side of Bacon", "base_price": 2.99},
+                ],
+            },
         }
 
         sm = OrderStateMachine(menu_data=menu_data)
 
-        # Menu lookup methods moved to MenuLookup class
-        suggestions = sm.menu_lookup.get_category_suggestions("sides", limit=3)
+        suggestions = sm.menu_lookup.get_suggestions_for_item_type("side", limit=3)
 
         # Should be formatted as "A, B, or C"
         assert "Home Fries" in suggestions

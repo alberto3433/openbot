@@ -24,6 +24,9 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 
+if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
+
 logger = logging.getLogger(__name__)
 
 # NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
@@ -41,9 +44,8 @@ class MenuInquiryHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
+        config: "HandlerConfig",
         list_by_pound_category: Callable[[str, OrderTask], StateMachineResult] | None = None,
-        **kwargs,
     ):
         """
         Initialize the menu inquiry handler.
@@ -51,18 +53,12 @@ class MenuInquiryHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             list_by_pound_category: Callback to list items in a by-the-pound category.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self._menu_data = config.menu_data or {}
-            self.pricing = config.pricing
-        else:
-            # Legacy support for direct parameters
-            self._menu_data = kwargs.get("menu_data") or {}
-            self.pricing = kwargs.get("pricing")
+        self._menu_data = config.menu_data or {}
+        self.pricing = config.pricing
 
         # Handler-specific callback
-        self._list_by_pound_category = list_by_pound_category or kwargs.get("list_by_pound_category")
+        self._list_by_pound_category = list_by_pound_category
 
     @property
     def menu_data(self) -> dict:
@@ -71,67 +67,6 @@ class MenuInquiryHandler:
     @menu_data.setter
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
-
-    def _get_sandwich_subtypes_message(self) -> str:
-        """Build a message listing sandwich sub-types from database.
-
-        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
-        based on available item types that contain "sandwich" in their display name.
-        """
-        try:
-            # Get all category keywords and filter for sandwich-related types
-            category_info = menu_cache.get_category_keyword_mapping("sandwich")
-            if category_info and category_info.get("expands_to"):
-                # Get display names for the expanded types
-                subtypes = []
-                for slug in category_info["expands_to"]:
-                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
-                    if subtype_info:
-                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
-                        subtypes.append(display)
-
-                if subtypes:
-                    if len(subtypes) <= 3:
-                        return ", ".join(subtypes)
-                    else:
-                        return ", ".join(subtypes[:4]) + ", and more"
-        except Exception as e:
-            logger.warning("Failed to get sandwich subtypes from database: %s", e)
-
-        # Fallback message
-        return "egg sandwiches, fish sandwiches, cream cheese sandwiches, deli sandwiches, and more"
-
-    def _get_category_subtypes_message(self, category_info: dict) -> str:
-        """Build a message listing sub-types for any virtual category from database.
-
-        Args:
-            category_info: Category info dict with expands_to list of sub-category slugs.
-
-        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
-        based on the category's expanded types.
-        """
-        try:
-            expands_to = category_info.get("expands_to", [])
-            if expands_to:
-                # Get display names for the expanded types
-                subtypes = []
-                for slug in expands_to:
-                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
-                    if subtype_info:
-                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
-                        subtypes.append(display)
-
-                if subtypes:
-                    if len(subtypes) <= 3:
-                        return ", ".join(subtypes)
-                    else:
-                        return ", ".join(subtypes[:4]) + ", and more"
-        except Exception as e:
-            logger.warning("Failed to get category subtypes from database: %s", e)
-
-        # Fallback - use the category's display name
-        display_name = category_info.get("display_name_plural", category_info.get("display_name", "items"))
-        return f"various {display_name}"
 
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.
@@ -160,12 +95,11 @@ class MenuInquiryHandler:
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
 
-        Uses DB-driven approach:
+        Uses DB-driven approach with lookup_type:
         1. Look up category in menu_cache.get_category_keyword_mapping()
-        2. If found with expands_to, collect items from all those slugs
-        3. If found with name_filter, filter items by that substring
-        4. Otherwise, use the slug directly
-        5. Fall back to partial string matching on all drinks
+        2. If lookup_type=="category", query via MenuItemCategory join table
+        3. If lookup_type=="item_type", query by item_type_id
+        4. Fall back to partial string matching on all drinks
 
         Returns:
             Tuple of (items list, category_key for pagination)
@@ -177,53 +111,32 @@ class MenuInquiryHandler:
 
         if category_info:
             slug = category_info["slug"]
-            expands_to = category_info.get("expands_to")
-            name_filter = category_info.get("name_filter")
+            lookup_type = category_info.get("lookup_type", "item_type")
 
-            if expands_to:
-                # Meta-category: collect items from all expanded slugs
-                all_items = []
-                for target_slug in expands_to:
-                    all_items.extend(items_by_type.get(target_slug, []))
-
-                # Apply name_filter if present (e.g., for "tea" category)
-                if name_filter:
-                    filter_term = name_filter.lower()
-                    all_items = [
-                        item for item in all_items
-                        if filter_term in item.get("name", "").lower()
-                    ]
-
-                return all_items, slug
+            if lookup_type == "category":
+                # Query via MenuItemCategory join table
+                items = menu_cache.get_items_by_category(slug)
+                return items, slug
             else:
-                # Direct category: use the slug directly
+                # Query by item_type_id
                 items = items_by_type.get(slug, [])
-
-                # Apply name_filter if present
-                if name_filter:
-                    filter_term = name_filter.lower()
-                    items = [
-                        item for item in items
-                        if filter_term in item.get("name", "").lower()
-                    ]
-
                 return items, slug
 
-        # HYBRID APPROACH: For any other term, try partial string matching on all drinks
-        # This handles "juice", "snapple", "mocha", "chai", "iced", etc.
-        sized_items = items_by_type.get("sized_beverage", [])
-        cold_items = items_by_type.get("beverage", [])
-        all_drinks = sized_items + cold_items
+        # FALLBACK: For unrecognized terms, try partial string matching on ALL menu items
+        # This handles "juice", "snapple", "mocha", "chai", etc. without hardcoding item types
+        all_items = []
+        for item_type_items in items_by_type.values():
+            all_items.extend(item_type_items)
         search_term = menu_query_type.lower()
         filtered = [
-            item for item in all_drinks
+            item for item in all_items
             if search_term in item.get("name", "").lower()
         ]
         if filtered:
             return filtered, menu_query_type
 
-        # No drink matches - fall back to checking other item types (bagels, etc.)
-        return items_by_type.get(menu_query_type, []), menu_query_type
+        # No matches found
+        return [], menu_query_type
 
     def _format_items_list(
         self,
@@ -616,18 +529,6 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle virtual categories (those with expands_to) - too broad, need to ask what kind
-        if not category_info:
-            category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
-        if category_info and category_info.get("expands_to"):
-            # Build sub-types message from database using the expanded types
-            subtypes_message = self._get_category_subtypes_message(category_info)
-            display_name = category_info.get("display_name", menu_query_type)
-            return StateMachineResult(
-                message=f"We have {subtypes_message}. What kind of {display_name} would you like?",
-                order=order,
-            )
-
         # Use helper method to get items for this category
         items, lookup_type = self._get_items_for_category(menu_query_type)
 
@@ -752,14 +653,6 @@ class MenuInquiryHandler:
         # Use data-driven lookup from ItemType aliases for category handling
         category_info = menu_cache.get_category_keyword_mapping(query_lower)
 
-        # Handle virtual categories (those with expands_to) - too broad, need to ask what kind
-        if category_info and category_info.get("expands_to"):
-            subtypes_message = self._get_category_subtypes_message(category_info)
-            display_name = category_info.get("display_name", query_lower)
-            return StateMachineResult(
-                message=f"We have {subtypes_message}. What kind of {display_name} would you like?",
-                order=order,
-            )
         if category_info and self.pricing:
             item_type = category_info.get("slug")
             display_name_plural = category_info.get("display_name_plural", f"{query_lower}s")

@@ -26,10 +26,8 @@ from .schemas import (
     ExtractedModifiers,
     CoffeeOrderDetails,
     # ParsedItem types for multi-item handling
-    ParsedItemEntry,  # New unified type
+    ParsedItemEntry,
     ParsedMenuItemEntry,
-    ParsedBagelEntry,
-    ParsedCoffeeEntry,
     ParsedSideItemEntry,
     ParsedItem,
 )
@@ -42,7 +40,6 @@ from .modifier_operations import (
 )
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
-    get_bagel_types,
     get_bagel_spreads,
     get_coffee_types,
     is_soda_drink,
@@ -83,40 +80,26 @@ ORDINAL_WORDS = {
 # =============================================================================
 # ParsedItem Type Checking Helpers
 # =============================================================================
-# These helpers support both the new unified ParsedItemEntry (item_type field)
-# and the deprecated ParsedBagelEntry/ParsedCoffeeEntry (type field) for
-# backward compatibility during migration.
+# These helpers check item types using data-driven attribute lookups.
 
 def _is_bagel_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a bagel (has bread attribute).
-
-    Works with both:
-    - ParsedItemEntry: item_type checked for bread attribute
-    - ParsedBagelEntry (deprecated): type == "bagel"
-    """
+    """Check if a ParsedItem represents a bagel (has bread attribute)."""
     item_type = getattr(item, 'item_type', None)
-    if item_type:
-        # Data-driven check: item type has bread attribute
-        attrs = menu_cache.get_item_type_attributes(item_type)
-        return "bread" in attrs
-    # Legacy format fallback for ParsedBagelEntry
-    return getattr(item, 'type', None) == "bagel"
+    if not item_type:
+        return False
+    # Data-driven check: item type has bread attribute
+    attrs = menu_cache.get_item_type_attributes(item_type)
+    return "bread" in attrs
 
 
 def _is_coffee_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a coffee/beverage (has size attribute).
-
-    Works with both:
-    - ParsedItemEntry: item_type checked for size attribute
-    - ParsedCoffeeEntry (deprecated): type == "coffee"
-    """
+    """Check if a ParsedItem represents a coffee/beverage (has size attribute)."""
     item_type = getattr(item, 'item_type', None)
-    if item_type:
-        # Data-driven check: item type has size attribute (sized beverages)
-        attrs = menu_cache.get_item_type_attributes(item_type)
-        return "size" in attrs
-    # Legacy format fallback for ParsedCoffeeEntry
-    return getattr(item, 'type', None) == "coffee"
+    if not item_type:
+        return False
+    # Data-driven check: item type has size attribute (sized beverages)
+    attrs = menu_cache.get_item_type_attributes(item_type)
+    return "size" in attrs
 
 
 def _get_beverage_modifier_patterns(category: str) -> set[str]:
@@ -424,20 +407,18 @@ class TakingItemsHandler:
     by_pound_handler: "ByPoundHandler | None"
     checkout_utils_handler: "CheckoutUtilsHandler | None"
     checkout_handler: "CheckoutHandler | None"
-    _spread_types: list[str]
     _returning_customer: dict | None
     _set_repeat_info_callback: Callable[[bool, str | None], None] | None
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
+        config: "HandlerConfig",
         item_adder_handler: "ItemAdderHandler | None" = None,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
         store_info_handler: "StoreInfoHandler | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         checkout_handler: "CheckoutHandler | None" = None,
-        **kwargs,
     ) -> None:
         """
         Initialize the taking items handler.
@@ -450,28 +431,20 @@ class TakingItemsHandler:
             by_pound_handler: Handler for by-pound items.
             checkout_utils_handler: Handler for checkout utilities.
             checkout_handler: Handler for checkout flow including confirmation/repeat orders.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self.pricing = config.pricing
-            self._menu_data = config.menu_data or {}
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self.pricing = kwargs.get("pricing")
-            self._menu_data = {}
+        self.model = config.model
+        self.pricing = config.pricing
+        self._menu_data = config.menu_data or {}
 
         # Handler-specific dependencies
-        self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
-        self.menu_inquiry_handler = menu_inquiry_handler or kwargs.get("menu_inquiry_handler")
-        self.store_info_handler = store_info_handler or kwargs.get("store_info_handler")
-        self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
-        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
-        self.checkout_handler = checkout_handler or kwargs.get("checkout_handler")
+        self.item_adder_handler = item_adder_handler
+        self.menu_inquiry_handler = menu_inquiry_handler
+        self.store_info_handler = store_info_handler
+        self.by_pound_handler = by_pound_handler
+        self.checkout_utils_handler = checkout_utils_handler
+        self.checkout_handler = checkout_handler
 
         # Context set per-request
-        self._spread_types: list[str] = []
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
 
@@ -527,12 +500,10 @@ class TakingItemsHandler:
 
     def set_context(
         self,
-        spread_types: list[str],
         returning_customer: dict | None,
         set_repeat_info_callback: Callable[[bool, str | None], None] | None = None,
     ) -> None:
         """Set per-request context."""
-        self._spread_types = spread_types
         self._returning_customer = returning_customer
         self._set_repeat_info_callback = set_repeat_info_callback
 
@@ -545,8 +516,7 @@ class TakingItemsHandler:
         parsed = parse_open_input(
             user_input,
             model=self.model,
-            spread_types=self._spread_types,
-            modifier_category_keywords=self._modifier_category_keywords,
+                        modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
             ingredient_to_items=self._ingredient_to_items,
         )
@@ -691,8 +661,7 @@ class TakingItemsHandler:
         parsed = parse_open_input(
             user_input,
             model=self.model,
-            spread_types=self._spread_types,
-            modifier_category_keywords=self._modifier_category_keywords,
+                        modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
             ingredient_to_items=self._ingredient_to_items,
         )
@@ -1082,7 +1051,7 @@ class TakingItemsHandler:
                 last_item = active_items[-1]
 
                 # Check if parsed result has any valid new items
-                has_new_items = parsed.parsed_items or parsed.by_pound_items
+                has_new_items = bool(parsed.parsed_items)
 
                 # Special case: If last item is a bagel and the "menu item" is a cream cheese sandwich,
                 # treat this as a spread change, not a menu item replacement.
@@ -1210,58 +1179,36 @@ class TakingItemsHandler:
                                 order=order,
                             )
 
-                        # Check if user is changing the bagel type
-                        # e.g., "replace with everything", "can you make it sesame?"
-                        new_bagel_type = None
-                        for bagel_type in get_bagel_types():
-                            if bagel_type in input_lower:
-                                new_bagel_type = bagel_type
-                                break
-
-                        if new_bagel_type:
-                            old_type = last_item.bread or "plain"
-                            last_item.bread = new_bagel_type
-                            logger.info("Replacement: changed bagel type from '%s' to '%s'", old_type, new_bagel_type)
-
-                            # Recalculate price if needed
-                            self.pricing.recalculate_item_price(last_item)
-
-                            updated_summary = last_item.get_summary()
-                            return StateMachineResult(
-                                message=f"Sure, I've changed that to {updated_summary}. Anything else?",
-                                order=order,
-                            )
+                        # Bagel type change detection removed - now data-driven
 
                 # If no new items parsed and last item has size attribute (beverage), check for size/style/milk changes
                 if not has_new_items and isinstance(last_item, MenuItemTask) and last_item.has_attribute("size") and raw_user_input:
                     input_lower = raw_user_input.lower()
                     made_change = False
 
-                    # Check for size changes
+                    # Check for size changes (data-driven from DB)
                     new_size = None
-                    for size in ["small", "large"]:
-                        if size in input_lower:
-                            new_size = size
+                    size_options = menu_cache.get_global_attribute_options("size")
+                    for opt in size_options:
+                        size_slug = opt.get("slug", "")
+                        if size_slug in input_lower:
+                            new_size = size_slug
                             break
 
                     if new_size and new_size != last_item.size:
-                        old_size = last_item.size or "small"
+                        # Get default size from DB for logging
+                        default_size = next(
+                            (opt["slug"] for opt in size_options if opt.get("is_default")),
+                            size_options[0]["slug"] if size_options else "small"
+                        )
+                        old_size = last_item.size or default_size
                         last_item.size = new_size
                         logger.info("Replacement: changed coffee size from '%s' to '%s'", old_size, new_size)
                         made_change = True
 
-                    # Check for style changes (hot/iced)
-                    new_style = None
-                    if "iced" in input_lower:
-                        new_style = "iced"
-                        last_item.temperature = "iced"
-                    elif "hot" in input_lower:
-                        new_style = "hot"
-                        last_item.temperature = "hot"
-
-                    if new_style:
-                        logger.info("Replacement: changed coffee style to '%s'", new_style)
-                        made_change = True
+                    # Note: temperature (hot/iced) is now part of the menu item name itself
+                    # (e.g., "Iced Latte" vs "Hot Latte"). To change temperature, user
+                    # would need to order a different menu item.
 
                     # Check for decaf changes
                     if "decaf" in input_lower:
@@ -1877,7 +1824,7 @@ class TakingItemsHandler:
             logger.info("Order type set from upfront mention: %s", parsed.order_type)
             order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
             # Check if they also ordered items in the same message
-            has_items = parsed.parsed_items or parsed.by_pound_items
+            has_items = bool(parsed.parsed_items)
             if not has_items:
                 # Just the order type, no items yet - acknowledge and ask what they want
                 return StateMachineResult(
@@ -1936,9 +1883,6 @@ class TakingItemsHandler:
         if parsed.asking_by_pound:
             return self.by_pound_handler.handle_by_pound_inquiry(parsed.by_pound_category, order)
 
-        if parsed.by_pound_items:
-            return self.by_pound_handler.add_by_pound_items(parsed.by_pound_items, order)
-
         if parsed.is_gratitude:
             return StateMachineResult(
                 message="You're welcome! Anything else I can get for you?",
@@ -1996,12 +1940,12 @@ class TakingItemsHandler:
             if item.special_instructions:
                 extracted_mods.special_instructions = [item.special_instructions]
 
-            # Use unified add_item() dispatcher
+            # Use unified add_item() dispatcher (item_type from parsed item, not hardcoded)
             result = self.item_adder_handler.add_item(
-                item_type="bagel",
+                item_type=item_type,
                 order=order,
                 quantity=item.quantity,
-                bagel_type=item.attribute_values.get("bread"),
+                bread=item.attribute_values.get("bread"),
                 toasted=item.attribute_values.get("toasted"),
                 scooped=item.attribute_values.get("scooped"),
                 spread=item.attribute_values.get("spread"),
@@ -2010,14 +1954,15 @@ class TakingItemsHandler:
             )
             order = result.order
 
-            # Build summary
-            bagel_type = item.attribute_values.get("bread")
-            bagel_desc = f"{bagel_type} bagel" if bagel_type else "bagel"
-            summary = bagel_desc
+            # Build summary (data-driven display name from DB)
+            bread_type = item.attribute_values.get("bread")
+            type_display_name = menu_cache.get_item_type_display_name(item_type)
+            item_desc = f"{bread_type} {type_display_name}" if bread_type else type_display_name
+            summary = item_desc
             if item.attribute_values.get("toasted"):
                 summary += " toasted"
             if item.quantity > 1:
-                summary = f"{item.quantity} {bagel_desc}s"
+                summary = f"{item.quantity} {item_desc}s"
                 if item.attribute_values.get("toasted"):
                     summary += " toasted"
             return order, summary
@@ -2028,22 +1973,17 @@ class TakingItemsHandler:
             sweetener = None
             sweetener_quantity = 1
             if item.sweeteners:
-                sweetener = item.sweeteners[0].type
+                sweetener = item.sweeteners[0].slug
                 sweetener_quantity = item.sweeteners[0].quantity
 
             flavor_syrup = None
             syrup_quantity = 1
             if item.syrups:
-                flavor_syrup = item.syrups[0].type
+                flavor_syrup = item.syrups[0].slug
                 syrup_quantity = item.syrups[0].quantity
 
-            # Convert temperature to iced bool
-            iced = None
-            temp = item.attribute_values.get("temperature")
-            if temp == "iced":
-                iced = True
-            elif temp == "hot":
-                iced = False
+            # Note: temperature (iced/hot) is now part of the menu item name itself
+            # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute
 
             # Track item count before to detect if item was actually added
             # (disambiguation returns without adding to order)
@@ -2054,10 +1994,8 @@ class TakingItemsHandler:
                 item_type=item_type,
                 order=order,
                 quantity=item.quantity,
-                coffee_type=item.item_name,
-                drink_type=item.item_name,
+                item_name=item.item_name,
                 size=item.attribute_values.get("size"),
-                iced=iced,
                 milk=item.attribute_values.get("milk"),
                 sweetener=sweetener,
                 sweetener_quantity=sweetener_quantity,
@@ -2076,7 +2014,8 @@ class TakingItemsHandler:
             # Only return summary if item was actually added
             # (disambiguation triggers pending_field without adding item)
             if items_after > items_before:
-                drink_name = item.item_name or "coffee"
+                # Use item_name or derive from item_type display name (data-driven)
+                drink_name = item.item_name or menu_cache.get_item_type_display_name(item_type)
                 summary = drink_name
                 if item.quantity > 1:
                     summary = f"{item.quantity} {drink_name}s"
@@ -2084,6 +2023,30 @@ class TakingItemsHandler:
             else:
                 # Item wasn't added (disambiguation or error) - return empty summary
                 return order, ""
+
+        # Data-driven check: by-pound item types (cheese, fish, spread, etc.)
+        elif item_type in menu_cache.get_by_pound_category_names():
+            # By-pound items are sized items with "1/4 lb" or "1 lb" sizes
+            # The parser converts weight phrases to size + quantity:
+            # - "half pound" -> size="1/4 lb", quantity=2
+            # - "1 lb" -> size="1 lb", quantity=1
+            size = item.attribute_values.get("size", "1/4 lb")
+
+            # Use unified add_item() dispatcher with size parameter
+            result = self.item_adder_handler.add_item(
+                item_type=item_type,
+                order=order,
+                quantity=item.quantity,
+                item_name=item.item_name,
+                size=size,
+            )
+            order = result.order
+
+            # Build summary with size
+            summary = f"{size} {item.item_name}"
+            if item.quantity > 1:
+                summary = f"{item.quantity}x {summary}"
+            return order, summary
 
         else:
             # Generic item type - use add_menu_item
@@ -2141,8 +2104,8 @@ class TakingItemsHandler:
         elif _is_bagel_entry(item):
             # Build ExtractedModifiers from parsed entry fields
             extracted_mods = ExtractedModifiers()
-            # For ParsedItemEntry, all modifiers are combined in item.modifiers
-            # For deprecated ParsedBagelEntry, modifiers are categorized
+            # For ParsedItemEntry, modifiers are combined in item.modifiers
+            # Some parsed entries may have categorized lists (proteins, cheeses, toppings)
             if item.proteins:
                 for p in item.proteins:
                     extracted_mods.add("protein", p)
@@ -2164,12 +2127,13 @@ class TakingItemsHandler:
             if item.special_instructions:
                 extracted_mods.special_instructions = [item.special_instructions]
 
-            # Use unified add_item() dispatcher (routes based on attributes)
+            # Use unified add_item() dispatcher (item_type from parsed item, not hardcoded)
+            item_type = getattr(item, 'item_type', None) or "bagel"  # Fallback for legacy entries
             result = self.item_adder_handler.add_item(
-                item_type="bagel",
+                item_type=item_type,
                 order=order,
                 quantity=item.quantity,
-                bagel_type=item.bread,
+                bread=item.bread,
                 toasted=item.toasted,
                 scooped=item.scooped,
                 spread=item.spread,
@@ -2177,13 +2141,14 @@ class TakingItemsHandler:
                 extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_clarification.get("cheese") else None,
             )
             order = result.order
-            # Build summary - handle None bread
-            bagel_desc = f"{item.bread} bagel" if item.bread else "bagel"
-            summary = bagel_desc
+            # Build summary (data-driven display name from DB)
+            type_display_name = menu_cache.get_item_type_display_name(item_type)
+            item_desc = f"{item.bread} {type_display_name}" if item.bread else type_display_name
+            summary = item_desc
             if item.toasted:
                 summary += " toasted"
             if item.quantity > 1:
-                summary = f"{item.quantity} {bagel_desc}s"
+                summary = f"{item.quantity} {item_desc}s"
                 if item.toasted:
                     summary += " toasted"
             return order, summary
@@ -2215,18 +2180,18 @@ class TakingItemsHandler:
                         # Add syrups using add_flavor_syrup() for proper normalization
                         for syrup in item.syrups:
                             existing_syrups = [s.get("slug") or s.get("flavor") for s in last_item.flavor_syrups]
-                            if syrup.type not in existing_syrups:
-                                last_item.add_flavor_syrup(syrup.type, syrup.quantity)
+                            if syrup.slug not in existing_syrups:
+                                last_item.add_flavor_syrup(syrup.slug, syrup.quantity)
                                 qty_str = f"{syrup.quantity} " if syrup.quantity > 1 else ""
-                                modifier_summary_parts.append(f"{qty_str}{syrup.type} syrup")
+                                modifier_summary_parts.append(f"{qty_str}{syrup.slug} syrup")
 
                         # Add sweeteners using add_sweetener() for proper normalization
                         for sweetener in item.sweeteners:
-                            existing_sweeteners = [s.get("slug") or s.get("type") for s in last_item.sweeteners]
-                            if sweetener.type not in existing_sweeteners:
-                                last_item.add_sweetener(sweetener.type, sweetener.quantity)
+                            existing_sweeteners = [s.get("slug") for s in last_item.sweeteners]
+                            if sweetener.slug not in existing_sweeteners:
+                                last_item.add_sweetener(sweetener.slug, sweetener.quantity)
                                 qty_str = f"{sweetener.quantity} " if sweetener.quantity > 1 else ""
-                                modifier_summary_parts.append(f"{qty_str}{sweetener.type}")
+                                modifier_summary_parts.append(f"{qty_str}{sweetener.slug}")
 
                         # Add milk
                         if item.milk and last_item.milk != item.milk:
@@ -2249,31 +2214,31 @@ class TakingItemsHandler:
 
                         # Add syrups
                         for syrup in item.syrups:
-                            syrup_slug = syrup.type.lower().replace(" ", "_")
+                            syrup_slug = syrup.slug.lower().replace(" ", "_")
                             if syrup_slug not in existing_slugs:
                                 existing_slugs.add(syrup_slug)
                                 existing_selections.append({
                                     "slug": syrup_slug,
-                                    "display_name": syrup.type.title(),
+                                    "display_name": syrup.slug.title(),
                                     "price": 0.65,  # Default syrup price
                                     "quantity": syrup.quantity,
                                 })
                                 qty_str = f"{syrup.quantity} " if syrup.quantity > 1 else ""
-                                modifier_summary_parts.append(f"{qty_str}{syrup.type} syrup")
+                                modifier_summary_parts.append(f"{qty_str}{syrup.slug} syrup")
 
                         # Add sweeteners
                         for sweetener in item.sweeteners:
-                            sweetener_slug = sweetener.type.lower().replace(" ", "_")
+                            sweetener_slug = sweetener.slug.lower().replace(" ", "_")
                             if sweetener_slug not in existing_slugs:
                                 existing_slugs.add(sweetener_slug)
                                 existing_selections.append({
                                     "slug": sweetener_slug,
-                                    "display_name": sweetener.type.title(),
+                                    "display_name": sweetener.slug.title(),
                                     "price": 0.0,  # Sweeteners are free
                                     "quantity": sweetener.quantity,
                                 })
                                 qty_str = f"{sweetener.quantity} " if sweetener.quantity > 1 else ""
-                                modifier_summary_parts.append(f"{qty_str}{sweetener.type}")
+                                modifier_summary_parts.append(f"{qty_str}{sweetener.slug}")
 
                         # Add milk
                         if item.milk:
@@ -2355,25 +2320,25 @@ class TakingItemsHandler:
 
                 # Add sweeteners
                 for sweetener in item.sweeteners:
-                    sweetener_slug = sweetener.type.lower().replace(" ", "_")
+                    sweetener_slug = sweetener.slug.lower().replace(" ", "_")
                     mss_slugs.append(sweetener_slug)
                     mss_selections.append({
                         "slug": sweetener_slug,
-                        "display_name": sweetener.type.title(),
+                        "display_name": sweetener.slug.title(),
                         "price": 0.0,  # Sweeteners are typically free
                         "quantity": sweetener.quantity,
                     })
 
                 # Add syrups
                 for syrup in item.syrups:
-                    syrup_slug = syrup.type.lower().replace(" ", "_")
+                    syrup_slug = syrup.slug.lower().replace(" ", "_")
                     mss_slugs.append(syrup_slug)
                     syrup_price = 0.0
                     if pricing:
                         syrup_price = pricing.lookup_generic_modifier_price(syrup_slug, "sized_beverage", "syrup") or 0.65
                     mss_selections.append({
                         "slug": syrup_slug,
-                        "display_name": syrup.type.title(),
+                        "display_name": syrup.slug.title(),
                         "price": syrup_price,
                         "quantity": syrup.quantity,
                     })
@@ -2411,6 +2376,9 @@ class TakingItemsHandler:
                     if item.special_instructions:
                         espresso_task.special_instructions = item.special_instructions
 
+                    # Infer attributes from item name (data-driven)
+                    if self.item_adder_handler:
+                        self.item_adder_handler._infer_attributes_from_item_name(espresso_task)
                     espresso_task.mark_in_progress()
                     order.items.add_item(espresso_task)
                     if first_item is None:
@@ -2441,11 +2409,11 @@ class TakingItemsHandler:
 
             # Regular coffee/drink - use unified add_item() dispatcher
             # Extract first sweetener if present
-            sweetener = item.sweeteners[0].type if item.sweeteners else None
+            sweetener = item.sweeteners[0].slug if item.sweeteners else None
             sweetener_qty = item.sweeteners[0].quantity if item.sweeteners else 1
 
             # Extract first syrup if present
-            flavor_syrup = item.syrups[0].type if item.syrups else None
+            flavor_syrup = item.syrups[0].slug if item.syrups else None
             syrup_qty = item.syrups[0].quantity if item.syrups else 1
 
             # Track item count before to detect if item was actually added
@@ -2456,9 +2424,8 @@ class TakingItemsHandler:
                 item_type="sized_beverage",
                 order=order,
                 quantity=item.quantity,
-                coffee_type=item.drink_type,
+                item_name=item.drink_type,
                 size=item.size,
-                iced=item.temperature == "iced" if item.temperature else None,
                 milk=item.milk,
                 sweetener=sweetener,
                 sweetener_quantity=sweetener_qty,
@@ -2484,8 +2451,7 @@ class TakingItemsHandler:
                 summary = item.drink_type
                 if item.size:
                     summary = f"{item.size} {summary}"
-                if item.temperature:
-                    summary = f"{item.temperature} {summary}"
+                # Note: temperature is now part of drink_type name (e.g., "Iced Latte")
                 if item.quantity > 1:
                     summary = f"{item.quantity} {summary}s"
                 return order, summary
@@ -2558,29 +2524,26 @@ class TakingItemsHandler:
                 # Find the item that was just added (last item with matching type)
                 last_item = order.items.items[-1] if order.items.items else None
                 if last_item:
-                    # Determine item type for config handler
-                    # Note: ParsedSignatureItemEntry is an alias for ParsedMenuItemEntry with is_signature=True
+                    # Determine item type for config handler (data-driven from parsed entry)
                     if isinstance(parsed_item, ParsedMenuItemEntry):
-                        if parsed_item.is_signature:
-                            item_type = "signature_item"
-                        else:
-                            item_type = "menu_item"
+                        item_type = "signature_item" if parsed_item.is_signature else "menu_item"
                         display_name = parsed_item.menu_item_name
                     elif isinstance(parsed_item, ParsedItemEntry) and parsed_item.item_type == "menu_item":
                         # New unified ParsedItemEntry with menu_item type
-                        if parsed_item.is_signature:
-                            item_type = "signature_item"
-                        else:
-                            item_type = "menu_item"
+                        item_type = "signature_item" if parsed_item.is_signature else "menu_item"
                         display_name = parsed_item.item_name or summary
                     elif _is_bagel_entry(parsed_item):
-                        item_type = "bagel"
-                        display_name = f"{parsed_item.bread} bagel" if parsed_item.bread else "bagel"
+                        # Use actual item_type from parsed entry (data-driven)
+                        item_type = getattr(parsed_item, 'item_type', None) or "bagel"
+                        type_display = menu_cache.get_item_type_display_name(item_type)
+                        display_name = f"{parsed_item.bread} {type_display}" if parsed_item.bread else type_display
                     elif _is_coffee_entry(parsed_item):
-                        item_type = "coffee"
-                        display_name = parsed_item.drink_type
+                        # Use actual item_type from parsed entry (data-driven)
+                        item_type = getattr(parsed_item, 'item_type', None) or "sized_beverage"
+                        display_name = parsed_item.drink_type or menu_cache.get_item_type_display_name(item_type)
                     else:
-                        item_type = "side"
+                        # Use actual item_type or fallback to "side"
+                        item_type = getattr(parsed_item, 'item_type', None) or "side"
                         display_name = summary
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
@@ -2731,13 +2694,14 @@ class TakingItemsHandler:
                         if has_configurable_attrs:
                             individual_items.append((item.id, item.menu_item_name, "menu_item", "menu_item_config"))
                         elif item.has_attribute("size"):
-                            # Items with size attribute (coffee, latte, etc.) use coffee config handler
+                            # Items with size attribute use sized beverage config handler
+                            # Note: temperature is now part of the menu item name (e.g., "Iced Latte")
+                            item_type_slug = item.menu_item_type or "sized_beverage"
+                            display_name = item.menu_item_name or menu_cache.get_item_type_display_name(item_type_slug)
                             if item.size is None:
-                                coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_size"))
-                            elif item.temperature is None:
-                                coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_style"))
+                                coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_size"))
                             elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
-                                coffee_handler_items.append((item.id, item.menu_item_name or "coffee", "coffee", "coffee_modifiers"))
+                                coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_modifiers"))
                         else:
                             bagel_item_info = self._get_bagel_menu_item_info(item.menu_item_name)
                             if bagel_item_info:
@@ -2876,8 +2840,6 @@ class TakingItemsHandler:
                 question = f"Got it! Would you like cream cheese or butter on that?"
         elif first_field == "coffee_size":
             question = f"Got it! What size {first_item_name} would you like? Small or Large?"
-        elif first_field == "coffee_style":
-            question = f"Got it! Would you like the {first_item_name} hot or iced?"
         elif first_field == "coffee_modifiers":
             question = f"Got it, {first_item_name}! Any milk, sweetener, or syrup?"
         elif first_field == "espresso_modifiers":
@@ -3369,10 +3331,10 @@ class TakingItemsHandler:
         selected_name = selected_item.get("name", "drink")
         selected_price = selected_item.get("base_price", 0)
 
-        # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
+        # Retrieve stored modifiers from disambiguation (e.g., "large oat milk latte")
+        # Note: temperature is now part of the menu item name (e.g., "Iced Latte")
         stored_mods = order.pending_item_modifiers or {}
         stored_size = stored_mods.get("size")
-        stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
         stored_milk = stored_mods.get("milk")
         stored_sweetener = stored_mods.get("sweetener")
         stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
@@ -3388,8 +3350,8 @@ class TakingItemsHandler:
         order.clear_pending()
 
         logger.info(
-            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, syrup=%s",
-            selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_syrup
+            "DRINK SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, milk=%s, syrup=%s",
+            selected_name, selected_price, stored_size, stored_milk, stored_syrup
         )
 
         # Check if this drink should skip configuration
@@ -3405,6 +3367,9 @@ class TakingItemsHandler:
                 menu_item_type="sized_beverage",
                 unit_price=selected_price,
             )
+            # Infer attributes from item name (data-driven)
+            if self.item_adder_handler:
+                self.item_adder_handler._infer_attributes_from_item_name(drink)
             drink.mark_complete()
             order.items.add_item(drink)
 
@@ -3443,8 +3408,6 @@ class TakingItemsHandler:
                 # Set beverage properties via attribute_values
                 if stored_size:
                     drink.size = stored_size
-                if stored_temperature is not None:
-                    drink.temperature = stored_temperature
                 if stored_decaf:
                     drink.decaf = stored_decaf
                 if stored_milk:
@@ -3458,12 +3421,16 @@ class TakingItemsHandler:
                 if stored_shots:
                     drink.extra_shots = stored_shots
 
+                # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
+                if self.item_adder_handler:
+                    self.item_adder_handler._infer_attributes_from_item_name(drink)
+
                 # Calculate price with modifiers
                 if self.pricing:
                     self.pricing.recalculate_item_price(drink)
 
-                # Check if fully configured (size and hot/iced specified)
-                if drink.size is not None and drink.temperature is not None:
+                # Check if fully configured (size specified)
+                if drink.size is not None:
                     drink.mark_complete()
                 else:
                     drink.mark_in_progress()
@@ -3593,10 +3560,9 @@ class TakingItemsHandler:
                 selected_name = selected_item.get("name", "drink")
                 selected_price = selected_item.get("base_price", 0)
 
-                # Retrieve stored modifiers from disambiguation (e.g., "large iced oat milk latte")
+                # Retrieve stored modifiers from disambiguation (e.g., "large oat milk latte")
                 stored_mods = order.pending_item_modifiers or {}
                 stored_size = stored_mods.get("size")
-                stored_temperature = stored_mods.get("temperature")  # "iced", "hot", or None
                 stored_milk = stored_mods.get("milk")
                 stored_sweetener = stored_mods.get("sweetener")
                 stored_sweetener_qty = stored_mods.get("sweetener_quantity", 1)
@@ -3609,8 +3575,8 @@ class TakingItemsHandler:
                 stored_quantity = stored_mods.get("quantity", 1)
 
                 logger.info(
-                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, temperature=%s, milk=%s, sweetener=%s(%d), syrup=%s",
-                    selected_name, selected_price, stored_size, stored_temperature, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
+                    "DRINK TYPE SELECTION: User chose '%s' (price: $%.2f), applying stored modifiers: size=%s, milk=%s, sweetener=%s(%d), syrup=%s",
+                    selected_name, selected_price, stored_size, stored_milk, stored_sweetener, stored_sweetener_qty, stored_syrup
                 )
 
                 order.pending_item_options = []
@@ -3629,6 +3595,9 @@ class TakingItemsHandler:
                         menu_item_type="sized_beverage",
                         unit_price=selected_price,
                     )
+                    # Infer attributes from item name (data-driven)
+                    if self.item_adder_handler:
+                        self.item_adder_handler._infer_attributes_from_item_name(drink)
                     drink.mark_complete()
                     order.items.add_item(drink)
 
@@ -3665,8 +3634,6 @@ class TakingItemsHandler:
                     # Set beverage properties via attribute_values
                     if stored_size:
                         drink.size = stored_size
-                    if stored_temperature is not None:
-                        drink.temperature = stored_temperature
                     if stored_milk:
                         drink.milk = stored_milk
                     if sweeteners_list:
@@ -3679,6 +3646,9 @@ class TakingItemsHandler:
                         drink.cream_level = stored_cream
                     if stored_shots:
                         drink.extra_shots = stored_shots
+                    # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
+                    if self.item_adder_handler:
+                        self.item_adder_handler._infer_attributes_from_item_name(drink)
                     drink.mark_in_progress()
                     order.items.add_item(drink)
                     logger.info("DRINK TYPE SELECTION: Added drink '%s' (id=%s), total items=%d",
@@ -3695,8 +3665,6 @@ class TakingItemsHandler:
                         # Set beverage properties via attribute_values
                         if stored_size:
                             extra_drink.size = stored_size
-                        if stored_temperature is not None:
-                            extra_drink.temperature = stored_temperature
                         if stored_milk:
                             extra_drink.milk = stored_milk
                         if sweeteners_list:
@@ -3709,6 +3677,9 @@ class TakingItemsHandler:
                             extra_drink.cream_level = stored_cream
                         if stored_shots:
                             extra_drink.extra_shots = stored_shots
+                        # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
+                        if self.item_adder_handler:
+                            self.item_adder_handler._infer_attributes_from_item_name(extra_drink)
                         extra_drink.mark_in_progress()
                         order.items.add_item(extra_drink)
 
@@ -3739,21 +3710,18 @@ class TakingItemsHandler:
             )
             if coffee_entry:
                 # Extract sweetener/syrup info from the new format
-                sweetener = coffee_entry.sweeteners[0].type if coffee_entry.sweeteners else None
+                sweetener = coffee_entry.sweeteners[0].slug if coffee_entry.sweeteners else None
                 sweetener_quantity = coffee_entry.sweeteners[0].quantity if coffee_entry.sweeteners else 1
-                flavor_syrup = coffee_entry.syrups[0].type if coffee_entry.syrups else None
+                flavor_syrup = coffee_entry.syrups[0].slug if coffee_entry.syrups else None
                 syrup_quantity = coffee_entry.syrups[0].quantity if coffee_entry.syrups else 1
-                # Convert temperature to iced boolean
-                iced = True if coffee_entry.temperature == "iced" else (False if coffee_entry.temperature == "hot" else None)
 
                 # Use unified add_item() dispatcher
                 return self.item_adder_handler.add_item(
                     item_type="sized_beverage",
                     order=order,
                     quantity=coffee_entry.quantity,
-                    coffee_type=coffee_entry.drink_type,
+                    item_name=coffee_entry.drink_type,
                     size=coffee_entry.size,
-                    iced=iced,
                     milk=coffee_entry.milk,
                     sweetener=sweetener,
                     sweetener_quantity=sweetener_quantity,
@@ -3773,7 +3741,7 @@ class TakingItemsHandler:
                     item_type="sized_beverage",
                     order=order,
                     quantity=1,
-                    coffee_type=bev_type,
+                    item_name=bev_type,
                     original_input=user_input,
                 )
 
@@ -3789,7 +3757,7 @@ class TakingItemsHandler:
                     item_type="sized_beverage",
                     order=order,
                     quantity=1,
-                    coffee_type=item_name,
+                    item_name=item_name,
                     original_input=user_input,
                 )
 

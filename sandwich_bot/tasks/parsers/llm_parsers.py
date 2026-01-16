@@ -153,7 +153,6 @@ def parse_open_input(
     user_input: str,
     context: str = "",
     model: str = "gpt-4o-mini",
-    spread_types: set[str] | None = None,
     modifier_category_keywords: dict[str, str] | None = None,
     modifier_item_keywords: dict[str, str] | None = None,
     ingredient_to_items: dict[str, list[dict]] | None = None,
@@ -163,11 +162,12 @@ def parse_open_input(
     Tries deterministic parsing first for speed and consistency.
     Falls back to LLM for complex orders (menu items, multi-config bagels, coffee).
 
+    Spread types are loaded from the database cache via get_spread_types().
+
     Args:
         user_input: The user's input string
         context: Optional context string for LLM fallback
         model: Model to use for LLM fallback
-        spread_types: Optional set of spread type keywords from database
         modifier_category_keywords: Mapping of keywords to category slugs
             (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
         modifier_item_keywords: Mapping of item keywords to item type slugs
@@ -248,7 +248,6 @@ def parse_open_input(
     # Try deterministic parsing for single-item orders
     result = parse_open_input_deterministic(
         user_input,
-        spread_types=spread_types,
         modifier_category_keywords=modifier_category_keywords,
         modifier_item_keywords=modifier_item_keywords,
         ingredient_to_items=ingredient_to_items,
@@ -276,7 +275,7 @@ Determine what they want:
   - Set new_bagel=true
   - Set new_bagel_quantity to the number of bagels (default 1)
   - If ALL bagels are the same, use new_bagel_type, new_bagel_toasted, new_bagel_spread, new_bagel_spread_type
-  - If bagels have DIFFERENT configurations, populate parsed_items list with ParsedBagelEntry objects: {{"type": "bagel", "bagel_type": "...", "toasted": true/false/null, "spread": "...", "spread_type": "..."}}
+  - If bagels have DIFFERENT configurations, populate parsed_items list with ParsedItemEntry objects: {{"item_type": "bagel", "attribute_values": {{"bread": "...", "toasted": true/false/null, "spread_type": "..."}}}}
 - If ordering coffee/drink (IMPORTANT: latte, cappuccino, espresso, americano, macchiato, mocha, drip coffee, cold brew, tea, and similar beverages are ALWAYS coffee orders - use new_coffee fields, NOT new_menu_item):
   - Set new_coffee=true
   - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)

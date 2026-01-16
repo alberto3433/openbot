@@ -19,7 +19,6 @@ from .validators import (
     # Deterministic yes/no parsing
     parse_yes_no_deterministic,
     parse_toasted_deterministic,
-    parse_hot_iced_deterministic,
 )
 
 from .deterministic import (
@@ -38,9 +37,7 @@ from .deterministic import (
     extract_notes_from_input,  # Backwards compatibility alias
     # Internal helpers (needed by state_machine)
     _extract_quantity,
-    _extract_bagel_type,
     _extract_toasted,
-    _build_spread_types_from_menu,
     _extract_spread,
     _extract_side_item,
     _extract_menu_item_from_text,
@@ -76,15 +73,10 @@ from .constants import (
     get_soda_types,
     # Number mapping
     WORD_TO_NUM,
-    # Bagel and spread types (loaded from database via dynamic functions)
-    get_bagel_types,
+    # Spread types (loaded from database via dynamic functions)
     get_spreads,
     get_spread_types,
     get_bagel_spreads,
-    # Modifier classification (computed from bagel/spread types)
-    get_bagel_only_types,
-    get_spread_only_types,
-    get_ambiguous_modifiers,
     # Signature items (loaded from database via dynamic function)
     get_signature_item_aliases,
     # By-the-pound items and categories (loaded from database via dynamic functions)
@@ -132,7 +124,6 @@ __all__ = [
     # Deterministic yes/no parsing
     "parse_yes_no_deterministic",
     "parse_toasted_deterministic",
-    "parse_hot_iced_deterministic",
     # Deterministic parsers - Compiled patterns
     "REPLACE_ITEM_PATTERN",
     "CANCEL_ITEM_PATTERN",
@@ -148,9 +139,7 @@ __all__ = [
     "extract_notes_from_input",  # Backwards compatibility alias
     # Deterministic parsers - Internal helpers
     "_extract_quantity",
-    "_extract_bagel_type",
     "_extract_toasted",
-    "_build_spread_types_from_menu",
     "_extract_spread",
     "_extract_side_item",
     "_extract_menu_item_from_text",
@@ -181,15 +170,10 @@ __all__ = [
     "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",
-    # Constants - Bagel and spread types (loaded from database via dynamic functions)
-    "get_bagel_types",
+    # Constants - Spread types (loaded from database via dynamic functions)
     "get_spreads",
     "get_spread_types",
     "get_bagel_spreads",
-    # Modifier classification (computed from bagel/spread types)
-    "get_bagel_only_types",
-    "get_spread_only_types",
-    "get_ambiguous_modifiers",
     # Constants - Signature items (loaded from database via dynamic function)
     "get_signature_item_aliases",
     # Constants - By-the-pound items and categories (loaded from database via dynamic functions)

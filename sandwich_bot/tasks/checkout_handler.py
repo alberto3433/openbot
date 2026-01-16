@@ -46,8 +46,6 @@ from .handler_config import BaseHandler
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
-    from .order_utils_handler import OrderUtilsHandler
-    from .checkout_utils_handler import CheckoutUtilsHandler
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +61,13 @@ class CheckoutHandler(BaseHandler):
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
+        config: "HandlerConfig",
         order_utils_handler: "OrderUtilsHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         transition_callback: Callable[[OrderTask], None] | None = None,
         handle_taking_items_with_parsed: Callable[
             [OpenInputResponse, OrderTask, ExtractedModifiers, str], StateMachineResult
         ] | None = None,
-        **kwargs,
     ):
         """
         Initialize the checkout handler.
@@ -81,21 +78,19 @@ class CheckoutHandler(BaseHandler):
             checkout_utils_handler: Handler for checkout utilities (order summary).
             transition_callback: Callback function to transition order to next slot.
             handle_taking_items_with_parsed: Callback to handle parsed items during confirmation.
-            **kwargs: Legacy parameter support.
         """
-        super().__init__(config, **kwargs)
+        super().__init__(config)
 
         # Handler-specific dependencies and callbacks
-        self.order_utils_handler = order_utils_handler or kwargs.get("order_utils_handler")
-        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
-        self._transition_to_next_slot = transition_callback or kwargs.get("transition_callback")
-        self._handle_taking_items_with_parsed = handle_taking_items_with_parsed or kwargs.get("handle_taking_items_with_parsed")
+        self.order_utils_handler = order_utils_handler
+        self.checkout_utils_handler = checkout_utils_handler
+        self._transition_to_next_slot = transition_callback
+        self._handle_taking_items_with_parsed = handle_taking_items_with_parsed
 
         # Context set per-request
         self._returning_customer: dict | None = None
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
-        self._spread_types: list[str] = []
 
     @property
     def _modifier_category_keywords(self) -> dict[str, str]:
@@ -114,7 +109,6 @@ class CheckoutHandler(BaseHandler):
         returning_customer: dict | None = None,
         is_repeat_order: bool = False,
         last_order_type: str | None = None,
-        spread_types: list[str] | None = None,
         menu_data: dict | None = None,
     ) -> None:
         """Set per-request context for checkout handling."""
@@ -122,7 +116,6 @@ class CheckoutHandler(BaseHandler):
         self._returning_customer = returning_customer
         self._is_repeat_order = is_repeat_order
         self._last_order_type = last_order_type
-        self._spread_types = spread_types or []
         self._menu_data = menu_data or {}
 
     def handle_delivery(
@@ -609,7 +602,6 @@ class CheckoutHandler(BaseHandler):
         item_parsed = parse_open_input(
             user_input,
             model=self.model,
-            spread_types=self._spread_types,
             modifier_category_keywords=self._modifier_category_keywords,
             modifier_item_keywords=self._modifier_item_keywords,
         )
@@ -750,28 +742,21 @@ class CheckoutHandler(BaseHandler):
         # Copy items from previous order
         items_added = []
         for prev_item in last_order_items:
-            item_type = prev_item.get("item_type", "sandwich")
+            item_type = prev_item.get("item_type")
+            if not item_type:
+                logger.error(
+                    "Previous order item missing required 'item_type' field. "
+                    "Item data: %s",
+                    prev_item
+                )
+                continue
+
             menu_item_name = prev_item.get("menu_item_name")
             quantity = prev_item.get("quantity", 1)
             qty_word = self._quantity_to_words(quantity)
 
-            # Add each item based on type using data-driven checks
-            # Legacy item types ("drink", "coffee") need special handling
-            is_beverage_item = False
-            if item_type:
-                # Check database for modifier category
-                modifier_cat = menu_cache.get_modifier_category(item_type)
-                is_beverage_item = modifier_cat == "beverage"
-                # Also handle legacy item types that aren't in database
-                if not is_beverage_item and item_type in ("drink", "coffee"):
-                    is_beverage_item = True
-
-            if menu_cache.item_type_has_attribute(item_type, "bread") if item_type else False:
-                self._add_repeat_bagel(prev_item, order, quantity, qty_word, items_added)
-            elif is_beverage_item:
-                self._add_repeat_coffee(prev_item, order, quantity, qty_word, items_added)
-            elif menu_item_name:
-                self._add_repeat_menu_item(prev_item, order, quantity, qty_word, items_added)
+            # Add item using generic data-driven method
+            self._add_repeat_item(prev_item, order, quantity, qty_word, items_added)
 
         # Copy customer info if available (name, phone, email)
         if customer.get("name") and not order.customer_info.name:
@@ -801,7 +786,7 @@ class CheckoutHandler(BaseHandler):
                 order=order,
             )
 
-    def _add_repeat_bagel(
+    def _add_repeat_item(
         self,
         prev_item: dict,
         order: OrderTask,
@@ -809,139 +794,65 @@ class CheckoutHandler(BaseHandler):
         qty_word: str,
         items_added: list[str],
     ) -> None:
-        """Add a repeated bagel item to the order."""
-        bagel_type = prev_item.get("bread")
-        toasted = prev_item.get("toasted")
-        spread = prev_item.get("spread")
-        spread_type = prev_item.get("spread_type")
-        price = prev_item.get("price", 0)
+        """Add a repeated item to the order (generic, data-driven).
 
-        # Create bagel using MenuItemTask with menu_item_type="bagel"
-        bagel = MenuItemTask(
-            menu_item_name="Bagel",
-            menu_item_type="bagel",
-            toasted=toasted,
-            spread=spread,
-            unit_price=price,
-        )
-        # Set bagel-specific fields via property setters
-        if bagel_type:
-            bagel.bread = bagel_type
-        if spread_type:
-            bagel.spread_type = spread_type
-        bagel.status = TaskStatus.COMPLETE
-        for _ in range(quantity):
-            order.items.add_item(bagel)
-
-        # Build descriptive name with modifiers
-        desc_parts = [bagel_type or "bagel"]
-        if toasted is True:
-            desc_parts.append("toasted")
-        if spread:
-            desc_parts.append(f"with {spread}")
-        items_added.append(f"{qty_word} {' '.join(desc_parts)}")
-
-    def _add_repeat_coffee(
-        self,
-        prev_item: dict,
-        order: OrderTask,
-        quantity: int,
-        qty_word: str,
-        items_added: list[str],
-    ) -> None:
-        """Add a repeated coffee/drink item to the order."""
+        This method handles all item types by copying attribute_values from
+        the previous order's item_config. It replaces the type-specific methods
+        (_add_repeat_bagel, _add_repeat_coffee, _add_repeat_menu_item) with a
+        single data-driven implementation.
+        """
+        # Get item type and name
+        item_type = prev_item.get("menu_item_type") or prev_item.get("item_type")
         menu_item_name = prev_item.get("menu_item_name")
-        drink_type = prev_item.get("coffee_type") or prev_item.get("drink_type") or menu_item_name
-
-        # Get temperature from style or previous item
-        style = prev_item.get("style")
-        if style in ("iced", "hot"):
-            temperature = style
-        else:
-            # Convert legacy iced boolean to temperature string
-            iced_val = prev_item.get("iced")
-            if iced_val is True:
-                temperature = "iced"
-            elif iced_val is False:
-                temperature = "hot"
-            else:
-                temperature = prev_item.get("temperature")
-
-        size = prev_item.get("size")
-        milk = prev_item.get("milk")
-        sweetener = prev_item.get("sweetener")
-        flavor_syrup = prev_item.get("flavor_syrup")
+        # Derive name from item_type if not provided
+        if not menu_item_name and item_type:
+            menu_item_name = menu_cache.get_item_type_display_name(item_type) or item_type.replace("_", " ").title()
+        menu_item_name = menu_item_name or "Item"
         price = prev_item.get("price", 0)
 
-        # Create MenuItemTask with sized_beverage type
-        coffee = MenuItemTask(
-            menu_item_name=drink_type or "coffee",
-            menu_item_type="sized_beverage",
-            unit_price=price,
-        )
-        if size:
-            coffee.size = size
-        if temperature:
-            coffee.temperature = temperature
-        if milk:
-            coffee.milk = milk
-        if sweetener:
-            # Use property setter which handles unified storage model
-            coffee.sweeteners = [{
-                "slug": sweetener,
-                "display_name": sweetener.replace("_", " ").title(),
-                "quantity": prev_item.get("sweetener_quantity", 1),
-                "category": "sweetener",
-            }]
-        if flavor_syrup:
-            # Use property setter which handles unified storage model
-            coffee.flavor_syrups = [{
-                "slug": flavor_syrup,
-                "display_name": flavor_syrup.replace("_", " ").title(),
-                "quantity": 1,
-                "category": "syrup",
-            }]
-
-        coffee.status = TaskStatus.COMPLETE
-        for _ in range(quantity):
-            order.items.add_item(coffee)
-
-        # Build descriptive name with modifiers
-        desc_parts = []
-        if size:
-            desc_parts.append(size)
-        if temperature == "iced":
-            desc_parts.append("iced")
-        elif temperature == "hot":
-            desc_parts.append("hot")
-        desc_parts.append(drink_type or "coffee")
-        if milk:
-            desc_parts.append(f"with {milk} milk")
-        if flavor_syrup:
-            desc_parts.append(f"with {flavor_syrup}")
-
-        items_added.append(f"{qty_word} {' '.join(desc_parts)}")
-
-    def _add_repeat_menu_item(
-        self,
-        prev_item: dict,
-        order: OrderTask,
-        quantity: int,
-        qty_word: str,
-        items_added: list[str],
-    ) -> None:
-        """Add a repeated generic menu item to the order."""
-        menu_item_name = prev_item.get("menu_item_name")
-        price = prev_item.get("price", 0)
-
+        # Create MenuItemTask
         item = MenuItemTask(
             menu_item_name=menu_item_name,
+            menu_item_type=item_type,
             unit_price=price,
         )
+
+        # Copy attribute_values if present (contains full nested structure)
+        # This preserves all configuration from the original order
+        if "attribute_values" in prev_item and prev_item["attribute_values"]:
+            item.attribute_values = prev_item["attribute_values"].copy()
+        else:
+            # Fallback: copy individual top-level keys that match known attributes
+            # This handles older orders that may not have attribute_values
+            known_attrs = set()
+            if item_type:
+                known_attrs = set(menu_cache.get_item_type_attributes(item_type).keys())
+
+            # Also include common attribute keys that might be in legacy data
+            # These are keys that aren't metadata (quantity, price, etc.)
+            metadata_keys = {
+                "item_type", "menu_item_type", "menu_item_name", "menu_item_id",
+                "quantity", "price", "modifiers", "attribute_values", "base_price",
+                "display_name", "free_details", "customization_offered",
+            }
+
+            for key, value in prev_item.items():
+                if key in metadata_keys:
+                    continue
+                # Copy if it's a known attribute OR if we don't have known attrs
+                # (i.e., item_type not in DB, so accept all keys)
+                if value is not None and (key in known_attrs or not known_attrs):
+                    item.attribute_values[key] = value
+
+        # Mark complete and add to order
         item.status = TaskStatus.COMPLETE
         for _ in range(quantity):
-            order.items.add_item(item)
-        items_added.append(f"{qty_word} {menu_item_name}")
+            new_item = item.model_copy(deep=True)
+            new_item.id = str(uuid.uuid4())[:8]
+            order.items.add_item(new_item)
+
+        # Build description using the item's data-driven get_summary() method
+        items_added.append(f"{qty_word} {item.get_summary()}")
 
     @staticmethod
     def _quantity_to_words(n: int) -> str:

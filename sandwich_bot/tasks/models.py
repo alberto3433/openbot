@@ -10,7 +10,6 @@ The task hierarchy represents the order capture process:
   - PaymentTask
 """
 
-import warnings
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
@@ -24,18 +23,13 @@ def get_modifier_name(entry: dict) -> str:
     Standard format uses "slug" key:
         {"slug": "vanilla", "category": "syrup", "quantity": 1}
 
-    Also accepts legacy formats with "type" or "flavor" keys for backward compatibility:
-        {"type": "sugar", "quantity": 1}
-        {"flavor": "vanilla"}
-
     Args:
         entry: Dict with modifier info
 
     Returns:
         The modifier slug, or empty string if not found
     """
-    # Check standard key first, then legacy keys
-    return entry.get("slug") or entry.get("type") or entry.get("flavor") or ""
+    return entry.get("slug") or ""
 
 
 def normalize_modifier_entry(entry: dict, category: str | None = None) -> dict:
@@ -275,38 +269,6 @@ class MenuItemTask(ItemTask):
             del self.attribute_values["size"]
 
     @property
-    def temperature(self) -> str | None:
-        """Get temperature from attribute_values ("iced" or "hot")."""
-        return self.attribute_values.get("temperature")
-
-    @temperature.setter
-    def temperature(self, value: str | None) -> None:
-        """Set temperature in attribute_values ("iced" or "hot")."""
-        if value is not None:
-            self.attribute_values["temperature"] = value
-        elif "temperature" in self.attribute_values:
-            del self.attribute_values["temperature"]
-
-    @property
-    def iced(self) -> bool | None:
-        """Get iced flag (computed from temperature for backward compatibility)."""
-        temp = self.attribute_values.get("temperature")
-        if temp is None:
-            return None
-        return temp == "iced"
-
-    @iced.setter
-    def iced(self, value: bool | None) -> None:
-        """Set iced flag (converts to temperature for backward compatibility)."""
-        if value is None:
-            if "temperature" in self.attribute_values:
-                del self.attribute_values["temperature"]
-        elif value:
-            self.attribute_values["temperature"] = "iced"
-        else:
-            self.attribute_values["temperature"] = "hot"
-
-    @property
     def decaf(self) -> bool | None:
         """Get decaf flag from attribute_values."""
         return self.attribute_values.get("decaf")
@@ -320,27 +282,54 @@ class MenuItemTask(ItemTask):
             del self.attribute_values["decaf"]
 
     @property
+    def temperature(self) -> str | None:
+        """Get temperature from attribute_values ('hot' or 'iced')."""
+        return self.attribute_values.get("temperature")
+
+    @temperature.setter
+    def temperature(self, value: str | None) -> None:
+        """Set temperature in attribute_values."""
+        if value is not None:
+            self.attribute_values["temperature"] = value
+        elif "temperature" in self.attribute_values:
+            del self.attribute_values["temperature"]
+
+    @property
+    def iced(self) -> bool | None:
+        """Get iced flag from temperature attribute.
+
+        Returns True if temperature is 'iced', False if 'hot', None if unset.
+        """
+        temp = self.attribute_values.get("temperature")
+        if temp is None:
+            return None
+        return temp == "iced"
+
+    @iced.setter
+    def iced(self, value: bool | None) -> None:
+        """Set iced flag by setting temperature attribute."""
+        if value is True:
+            self.attribute_values["temperature"] = "iced"
+        elif value is False:
+            self.attribute_values["temperature"] = "hot"
+        elif "temperature" in self.attribute_values:
+            del self.attribute_values["temperature"]
+
+    @property
     def milk(self) -> str | None:
         """Get milk type from unified storage (milk_sweetener_syrup_selections).
 
-        Returns the slug of the first milk modifier, or falls back to legacy
-        attribute_values["milk"] for backward compatibility.
+        Returns the slug of the first milk modifier.
         """
-        # Check unified storage first
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
         for entry in mss_selections:
             if entry.get("category") == "milk":
                 return entry.get("slug")
-        # Fall back to legacy storage
-        return self.attribute_values.get("milk")
+        return None
 
     @milk.setter
     def milk(self, value: str | None) -> None:
-        """Set milk type in unified storage (milk_sweetener_syrup_selections).
-
-        Updates the unified storage model. Also clears legacy storage if present.
-        """
-        # Initialize unified storage if needed
+        """Set milk type in unified storage (milk_sweetener_syrup_selections)."""
         mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
 
@@ -358,13 +347,8 @@ class MenuItemTask(ItemTask):
                 "category": "milk",
             })
 
-        # Update unified storage
         self.attribute_values["milk_sweetener_syrup"] = mss_slugs
         self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-        # Clear legacy storage
-        if "milk" in self.attribute_values:
-            del self.attribute_values["milk"]
 
     def _is_milk_slug(self, slug: str, selections: list[dict]) -> bool:
         """Check if a slug is a milk entry in the selections list."""
@@ -390,27 +374,17 @@ class MenuItemTask(ItemTask):
     def sweeteners(self) -> list[dict]:
         """Get sweeteners list from unified storage (milk_sweetener_syrup_selections).
 
-        Returns entries with category="sweetener". Falls back to legacy storage
-        for backward compatibility.
+        Returns entries with category="sweetener".
         """
-        # Check unified storage first
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
-        if sweetener_entries:
-            return sweetener_entries
-        # Fall back to legacy storage
-        if "sweetener_selections" not in self.attribute_values:
-            self.attribute_values["sweetener_selections"] = []
-        return self.attribute_values["sweetener_selections"]
+        return [e for e in mss_selections if e.get("category") == "sweetener"]
 
     @sweeteners.setter
     def sweeteners(self, value: list[dict]) -> None:
         """Set sweeteners list in unified storage (milk_sweetener_syrup_selections).
 
-        Updates the unified storage model. Also clears legacy storage if present.
         Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
         """
-        # Initialize unified storage if needed
         mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
 
@@ -426,13 +400,8 @@ class MenuItemTask(ItemTask):
                 mss_slugs.append(slug)
                 mss_selections.append(normalized)
 
-        # Update unified storage
         self.attribute_values["milk_sweetener_syrup"] = mss_slugs
         self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-        # Clear legacy storage
-        if "sweetener_selections" in self.attribute_values:
-            del self.attribute_values["sweetener_selections"]
 
     def _is_sweetener_slug(self, slug: str, selections: list[dict]) -> bool:
         """Check if a slug is a sweetener entry in the selections list."""
@@ -445,27 +414,17 @@ class MenuItemTask(ItemTask):
     def flavor_syrups(self) -> list[dict]:
         """Get flavor syrups list from unified storage (milk_sweetener_syrup_selections).
 
-        Returns entries with category="syrup". Falls back to legacy storage
-        for backward compatibility.
+        Returns entries with category="syrup".
         """
-        # Check unified storage first
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        syrup_entries = [e for e in mss_selections if e.get("category") == "syrup"]
-        if syrup_entries:
-            return syrup_entries
-        # Fall back to legacy storage
-        if "syrup_selections" not in self.attribute_values:
-            self.attribute_values["syrup_selections"] = []
-        return self.attribute_values["syrup_selections"]
+        return [e for e in mss_selections if e.get("category") == "syrup"]
 
     @flavor_syrups.setter
     def flavor_syrups(self, value: list[dict]) -> None:
         """Set flavor syrups list in unified storage (milk_sweetener_syrup_selections).
 
-        Updates the unified storage model. Also clears legacy storage if present.
         Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
         """
-        # Initialize unified storage if needed
         mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
         mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
 
@@ -481,13 +440,8 @@ class MenuItemTask(ItemTask):
                 mss_slugs.append(slug)
                 mss_selections.append(normalized)
 
-        # Update unified storage
         self.attribute_values["milk_sweetener_syrup"] = mss_slugs
         self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-        # Clear legacy storage
-        if "syrup_selections" in self.attribute_values:
-            del self.attribute_values["syrup_selections"]
 
     def _is_syrup_slug(self, slug: str, selections: list[dict]) -> bool:
         """Check if a slug is a syrup entry in the selections list."""
@@ -708,19 +662,6 @@ class MenuItemTask(ItemTask):
         # espresso-based drinks that allow shot customization
         return self.has_attribute("shots")
 
-    @property
-    def is_sized_beverage(self) -> bool:
-        """Check if this is a sized beverage (coffee, latte, etc.).
-
-        DEPRECATED: Use has_attribute('size') instead.
-        """
-        warnings.warn(
-            "is_sized_beverage is deprecated. Use has_attribute('size') instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        return self.has_attribute("size")
-
     # -------------------------------------------------------------------------
     # Generic attribute query method (data-driven)
     # -------------------------------------------------------------------------
@@ -770,19 +711,6 @@ class MenuItemTask(ItemTask):
     # Bagel helper properties (for bagel items)
     # These provide a BagelItemTask-compatible interface using attribute_values
     # -------------------------------------------------------------------------
-
-    @property
-    def is_bagel(self) -> bool:
-        """Check if this is a bagel item.
-
-        DEPRECATED: Use has_attribute('bread') instead.
-        """
-        warnings.warn(
-            "is_bagel is deprecated. Use has_attribute('bread') instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        return self.has_attribute("bread")
 
     @property
     def bread(self) -> str | None:
@@ -985,17 +913,17 @@ class MenuItemTask(ItemTask):
             parts = []
             if self.size:
                 parts.append(self.size)
-            if self.temperature == "iced":
-                parts.append("iced")
-            elif self.temperature == "hot":
-                parts.append("hot")
+            # Note: temperature (iced/hot) is now part of the menu item name itself
+            # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute
             if self.decaf:
                 parts.append("decaf")
             if self.extra_shots == 1:
                 parts.append("double")
             elif self.extra_shots >= 2:
                 parts.append("triple")
-            parts.append(self.menu_item_name or "coffee")
+            # Use menu_item_name, or fall back to item type display name if available
+            item_name = self.menu_item_name or getattr(self, 'menu_item_type', None) or "beverage"
+            parts.append(item_name)
             return " ".join(parts)
 
         return self.menu_item_name

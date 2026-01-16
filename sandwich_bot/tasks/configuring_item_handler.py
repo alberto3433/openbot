@@ -247,39 +247,30 @@ class ConfiguringItemHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
         by_pound_handler: "ByPoundHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
         item_adder_handler: "ItemAdderHandler | None" = None,
         menu_item_handler: "MenuItemConfigHandler | None" = None,
-        **kwargs,
     ) -> None:
         """
         Initialize the configuring item handler.
 
         Args:
-            config: HandlerConfig with shared dependencies (currently unused,
-                    but accepted for consistency with other handlers).
             by_pound_handler: Handler for by-pound items.
             config_helper_handler: Handler for config helpers (side choice, etc.).
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
             item_adder_handler: Handler for adding items.
             menu_item_handler: Handler for menu item configuration (deli sandwiches, espresso, etc.).
-            **kwargs: Legacy parameter support.
         """
-        # This handler primarily composes other handlers, so config is not directly used
-        # but we accept it for consistency with the HandlerConfig pattern
-        _ = config  # Unused but accepted for API consistency
-
-        self.by_pound_handler = by_pound_handler or kwargs.get("by_pound_handler")
-        self.config_helper_handler = config_helper_handler or kwargs.get("config_helper_handler")
-        self.checkout_utils_handler = checkout_utils_handler or kwargs.get("checkout_utils_handler")
-        self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
-        self.item_adder_handler = item_adder_handler or kwargs.get("item_adder_handler")
-        self.menu_item_handler = menu_item_handler or kwargs.get("menu_item_handler")
+        self.by_pound_handler = by_pound_handler
+        self.config_helper_handler = config_helper_handler
+        self.checkout_utils_handler = checkout_utils_handler
+        self.modifier_change_handler = modifier_change_handler
+        self.item_adder_handler = item_adder_handler
+        self.menu_item_handler = menu_item_handler
         # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
         self.taking_items_handler: "TakingItemsHandler | None" = None
 
@@ -507,15 +498,20 @@ class ConfiguringItemHandler:
         selected_name = selected_item.get("name", "item")
         selected_price = selected_item.get("base_price", 0.0)
         selected_id = selected_item.get("id")
+        selected_item_type = selected_item.get("item_type")
 
         order.pending_item_options = []
         order.pending_item_quantity = 1
         order.clear_pending()
 
-        logger.info("ITEM SELECTION: User chose '%s', adding %d item(s)", selected_name, quantity)
+        logger.info("ITEM SELECTION: User chose '%s' (type=%s), adding %d item(s)",
+                    selected_name, selected_item_type, quantity)
 
-        # Check if it's an omelette (requires side choice configuration)
-        is_omelette = "omelette" in selected_name.lower() or "omelet" in selected_name.lower()
+        # Check if item type requires side choice (data-driven from database)
+        requires_side_choice = (
+            menu_cache.item_type_has_side_choice(selected_item_type)
+            if selected_item_type else False
+        )
 
         # Directly create the MenuItemTask(s) - no need to go through add_menu_item
         # since we already have all the item details from pending_item_options
@@ -525,28 +521,37 @@ class ConfiguringItemHandler:
                 menu_item_name=selected_name,
                 menu_item_id=selected_id,
                 unit_price=selected_price,
-                requires_side_choice=is_omelette,
-                menu_item_type="omelette" if is_omelette else None,
+                requires_side_choice=requires_side_choice,
+                menu_item_type=selected_item_type,
             )
-            if is_omelette:
-                item.mark_in_progress()  # Omelettes need side choice configuration
+            # Infer attributes from item name (data-driven)
+            if self.item_adder_handler:
+                self.item_adder_handler._infer_attributes_from_item_name(item)
+            if requires_side_choice:
+                item.mark_in_progress()  # Items with side choice need configuration
             else:
-                item.mark_complete()  # Desserts/simple items don't need configuration
+                item.mark_complete()  # Simple items don't need configuration
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
-        if is_omelette:
+        if requires_side_choice:
+            # Get the side choice attribute question from database
+            side_choice_attr = menu_cache.get_side_choice_attribute(selected_item_type)
+            question = (
+                side_choice_attr.get("question_text") if side_choice_attr
+                else f"Would you like a bagel or fruit salad with your {selected_name}?"
+            )
             # Set state to wait for side choice
             order.phase = OrderPhase.CONFIGURING_ITEM.value
             order.pending_item_id = first_item.id
             order.pending_field = "side_choice"
             return StateMachineResult(
-                message=f"Would you like a bagel or fruit salad with your {selected_name}?",
+                message=question,
                 order=order,
             )
 
-        # Return to taking items phase for non-omelette items
+        # Return to taking items phase for items not requiring side choice
         order.phase = OrderPhase.TAKING_ITEMS.value
         return StateMachineResult(
             message=f"Got it, {quantity} {selected_name}{'s' if quantity > 1 and not selected_name.endswith('s') else ''}. Anything else?",

@@ -100,22 +100,22 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type.
 
     Loads modifier fields from database. Fails fast if database not configured.
+    Uses the item's menu_item_type to determine which modifier fields to load.
 
     Raises:
         MenuDataNotLoadedError: If no modifier fields found in database
     """
     if isinstance(item, MenuItemTask):
-        # Items with bread attribute (bagels) use bagel modifier fields
-        if item.has_attribute("bread"):
-            return _load_modifier_fields_from_db("bagel")
-        # Items with size attribute (beverages) use coffee modifier fields
-        elif item.has_attribute("size"):
-            return _load_modifier_fields_from_db("sized_beverage")
-        # Other menu items use their item type's modifier fields
+        # Primary: use the item's explicit item_type
         item_type = getattr(item, 'menu_item_type', None)
         if item_type:
             return _load_modifier_fields_from_db(item_type)
-        # Fallback to menu_item type for generic items
+        # Secondary: infer item type from attributes (for backwards compatibility)
+        if item.has_attribute("size"):
+            return _load_modifier_fields_from_db("sized_beverage")
+        if item.has_attribute("bread"):
+            return _load_modifier_fields_from_db("bagel")
+        # Generic menu items use menu_item type
         return _load_modifier_fields_from_db("menu_item")
     else:
         return []

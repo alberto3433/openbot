@@ -44,16 +44,8 @@ from .schemas import (
     StateMachineResult,
     BagelOrderDetails,
     CoffeeOrderDetails,
-    ByPoundOrderItem,
     OpenInputResponse,
     ExtractedModifiers,
-    # Re-export for backwards compatibility with tests
-    BagelChoiceResponse,
-    SpreadChoiceResponse,
-    MultiBagelChoiceResponse,
-    MultiSpreadResponse,
-    MultiToastedResponse,
-    ToastedChoiceResponse,
 )
 from .parsers import (
     # Validators
@@ -63,14 +55,12 @@ from .parsers import (
     validate_delivery_zip_code,
     # Deterministic yes/no parsing
     parse_toasted_deterministic,
-    parse_hot_iced_deterministic,
     # Constants - Drink categories
     get_coffee_types,
     is_soda_drink,
     # Constants - Number mapping
     WORD_TO_NUM,
-    # Constants - Bagel and spread types (loaded from database via dynamic functions)
-    get_bagel_types,
+    # Constants - Spread types (loaded from database via dynamic functions)
     get_spreads,
     get_spread_types,
     get_bagel_spreads,
@@ -107,7 +97,6 @@ from .parsers import (
     extract_coffee_modifiers_from_input,
     extract_notes_from_input,
     # Deterministic parsers - Internal helpers
-    _build_spread_types_from_menu,
     parse_open_input_deterministic,
     _parse_multi_item_order,
     _parse_recommendation_inquiry,
@@ -148,12 +137,7 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
     """
     text = user_input.lower().strip()
 
-    # First, check if this looks like a simple answer rather than a new order
-    # "[type] bagel" or just "[type]" are valid answers, not new orders
-    # e.g., "plain bagel", "everything", "sesame bagel"
-    bagel_type_pattern = r'^(' + '|'.join(re.escape(bt) for bt in get_bagel_types()) + r')(?:\s+bagel)?s?(?:\s+please)?$'
-    if re.search(bagel_type_pattern, text):
-        return False
+    # Bagel type pattern check removed - now data-driven
 
     # Pattern: "bagel with X" (ordering a new item with modifiers)
     if re.search(r'\bbagel\s+with\s+\w+', text):
@@ -271,10 +255,6 @@ class OrderStateMachine:
         # Use provided menu_data, fall back to global, then empty dict
         self._menu_data = menu_data if menu_data is not None else (_global_menu_data or {})
         self.model = model
-        # Build spread types from database cheese_types
-        self._spread_types = _build_spread_types_from_menu(
-            self._menu_data.get("cheese_types", [])
-        )
         # Initialize slot orchestration handler early (needed for callbacks)
         self.slot_orchestration_handler = SlotOrchestrationHandler()
         # Initialize menu lookup engine
@@ -354,7 +334,6 @@ class OrderStateMachine:
 
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
-            config=self._handler_config,
             by_pound_handler=self.by_pound_handler,
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
@@ -382,10 +361,6 @@ class OrderStateMachine:
     @menu_data.setter
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
-        # Rebuild spread types when menu_data changes
-        self._spread_types = _build_spread_types_from_menu(
-            self._menu_data.get("cheese_types", [])
-        )
         # Update handler config menu data (used by handlers initialized with config)
         self._handler_config.menu_data = self._menu_data
         # Update menu lookup engine menu data
@@ -439,7 +414,6 @@ class OrderStateMachine:
             returning_customer=returning_customer,
             is_repeat_order=getattr(self, '_is_repeat_order', False),
             last_order_type=getattr(self, '_last_order_type', None),
-            spread_types=self._spread_types,
             menu_data=self._menu_data,
         )
         # Update store info handler with current store info
@@ -457,7 +431,6 @@ class OrderStateMachine:
             self._last_order_type = last_order_type
             self.checkout_utils_handler.set_repeat_order_info(is_repeat, last_order_type)
         self.taking_items_handler.set_context(
-            spread_types=self._spread_types,
             returning_customer=returning_customer,
             set_repeat_info_callback=set_repeat_info,
         )

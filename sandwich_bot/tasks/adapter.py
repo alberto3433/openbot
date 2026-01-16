@@ -5,8 +5,7 @@ This module provides bidirectional conversion between:
 - Dict-based order_state (used by database/API layer)
 - OrderTask (used by state machine)
 
-Item type conversions are delegated to ItemConverter classes via the
-ItemConverterRegistry (see item_converters.py).
+Item type conversions are delegated to the UnifiedItemConverter (see item_converters.py).
 """
 
 import logging
@@ -16,7 +15,7 @@ from .models import (
     TaskStatus,
     OrderTask,
 )
-from .item_converters import ItemConverterRegistry
+from .item_converters import get_converter, get_converter_for_item
 from .pricing import PricingEngine
 from ..services.tax_utils import calculate_order_total
 
@@ -75,9 +74,16 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 
     # Convert items using converters
     for item in order_dict.get("items", []):
-        item_type = item.get("item_type", "sandwich")
-        converter = ItemConverterRegistry.get(item_type)
+        item_type = item.get("item_type")
+        if not item_type:
+            logger.error(
+                "Item missing required 'item_type' field in dict_to_order_task. "
+                "Item data: %s",
+                item
+            )
+            continue
 
+        converter = get_converter(item_type)
         if converter:
             item_task = converter.from_dict(item)
             order.items.add_item(item_task)
@@ -92,13 +98,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
     # Restore flow state (pending fields) from state_machine_state
     sm_state = order_dict.get("state_machine_state", {})
     if sm_state:
-        # Handle pending_item_ids (list) or legacy pending_item_id (single)
-        pending_item_ids = sm_state.get("pending_item_ids", [])
-        if not pending_item_ids:
-            legacy_id = sm_state.get("pending_item_id")
-            if legacy_id:
-                pending_item_ids = [legacy_id]
-        order.pending_item_ids = pending_item_ids
+        order.pending_item_ids = sm_state.get("pending_item_ids", [])
         order.pending_field = sm_state.get("pending_field")
         order.last_bot_message = sm_state.get("last_bot_message")
         order.phase = sm_state.get("phase", "greeting")
@@ -143,7 +143,7 @@ def order_task_to_dict(
     pricing: PricingEngine = None,
 ) -> Dict[str, Any]:
     """
-    Convert an OrderTask back to dict format for compatibility.
+    Convert an OrderTask to dict format for API responses and persistence.
 
     Args:
         order: The OrderTask instance
@@ -151,7 +151,7 @@ def order_task_to_dict(
         pricing: Optional PricingEngine for modifier price lookups
 
     Returns:
-        Dict in the legacy format expected by existing code
+        Dict format used for API responses and database storage
     """
     items = []
 
@@ -162,7 +162,7 @@ def order_task_to_dict(
         if item.status == TaskStatus.SKIPPED:
             continue
 
-        converter = ItemConverterRegistry.get_for_item(item)
+        converter = get_converter_for_item(item)
         if converter:
             item_dict = converter.to_dict(item, pricing)
             items.append(item_dict)
@@ -234,7 +234,7 @@ def order_task_to_dict(
         delivery_fee = totals["delivery_fee"]
         total = totals["total"]
 
-    # Checkout state for compatibility
+    # Checkout state
     order_dict["checkout_state"] = {
         "confirmed": order.checkout.confirmed,
         "order_reviewed": order.checkout.order_reviewed,

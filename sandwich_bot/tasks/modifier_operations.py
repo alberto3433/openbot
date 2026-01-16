@@ -20,6 +20,7 @@ from typing import Any
 from .models import (
     ItemTask,
     MenuItemTask,
+    get_modifier_name,
 )
 from sandwich_bot.exceptions import MenuDataNotLoadedError
 
@@ -231,9 +232,9 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                         if not value:
                             continue
                         for list_item in value:
-                            # Handle dict items (like sweeteners: [{type: "sugar"}])
+                            # Handle dict items (like sweeteners: [{slug: "sugar"}])
                             if isinstance(list_item, dict):
-                                item_value = list_item.get("type") or list_item.get("flavor") or str(list_item)
+                                item_value = get_modifier_name(list_item)
                             else:
                                 item_value = str(list_item)
                             if alias in item_value.lower() or normalized_input in item_value.lower():
@@ -261,7 +262,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
         if field.is_list and isinstance(value, list):
             for list_item in value:
                 if isinstance(list_item, dict):
-                    item_value = list_item.get("type") or list_item.get("flavor") or ""
+                    item_value = get_modifier_name(list_item)
                 else:
                     item_value = str(list_item)
                 if normalized_input in item_value.lower() or item_value.lower() in normalized_input:
@@ -514,7 +515,7 @@ def remove_modifier_from_item(
             removed = None
             for list_item in current_value:
                 if isinstance(list_item, dict):
-                    item_value = list_item.get("type") or list_item.get("flavor") or str(list_item)
+                    item_value = get_modifier_name(list_item)
                 else:
                     item_value = str(list_item)
 
@@ -542,7 +543,7 @@ def remove_modifier_from_item(
             removed_items = []
             for list_item in current_value:
                 if isinstance(list_item, dict):
-                    item_value = list_item.get("type") or list_item.get("flavor") or str(list_item)
+                    item_value = get_modifier_name(list_item)
                 else:
                     item_value = str(list_item)
                 removed_items.append(item_value)

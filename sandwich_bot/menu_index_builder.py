@@ -296,9 +296,11 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
 
         # Get item type info if available
         item_type_slug = None
+        item_type_display_name = None
         item_type_skip_config = False
         if item.item_type:
             item_type_slug = item.item_type.slug
+            item_type_display_name = item.item_type.display_name
             # Use pre-loaded config status instead of N+1 query
             config_status = preloaded_config_status.get(item.item_type.id, {})
             item_type_skip_config = config_status.get("skip_config", True)
@@ -307,7 +309,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "id": item.id,
             "name": item.name,
             "description": item.description,  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
-            "category": item.category,
+            "category": item_type_display_name,  # Derived from item_type.display_name
             "is_signature": bool(item.is_signature),
             "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
             "base_price": float(item.base_price),
@@ -396,7 +398,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         for item_id in unavail_item_ids:
             item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
             if item:
-                unavailable_menu_items.append({"name": item.name, "category": item.category})
+                category = item.item_type.display_name if item.item_type else None
+                unavailable_menu_items.append({"name": item.name, "category": category})
     index["unavailable_menu_items"] = unavailable_menu_items
 
     # Pre-load attribute and option data for _build_item_types_data
@@ -413,10 +416,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         preloaded_global_options,
         preloaded_type_ingredients,
     )
-
-    # Build by-pound prices from menu_items with category "by_the_lb" or "cream_cheese"
-    # These are items like "Nova Scotia Salmon (1 lb)" -> $44.00
-    index["by_pound_prices"] = _build_by_pound_prices(db)
 
     # Build modifier categories for answering questions like "what sweeteners do you have?"
     index["modifier_categories"] = _build_modifier_categories(db)
@@ -732,71 +731,6 @@ def _build_item_types_data(
         }
 
     return result
-
-
-def _build_by_pound_prices(db: Session) -> Dict[str, float]:
-    """
-    Build a dictionary of by-pound prices from menu items.
-
-    Queries menu items with category "by_the_lb" or "cream_cheese" and extracts
-    per-pound prices. Creates aliases for common variations.
-
-    Returns:
-        Dict mapping normalized item names (lowercase) to per-pound prices.
-        Example: {"nova scotia salmon": 44.0, "nova": 44.0, "lox": 44.0}
-    """
-    import re
-
-    prices: Dict[str, float] = {}
-
-    # Query all by-pound items from database
-    by_pound_items = (
-        db.query(MenuItem)
-        .filter(MenuItem.category.in_(["by_the_lb", "cream_cheese"]))
-        .all()
-    )
-
-    # Parse item names and calculate per-pound prices
-    # Items are stored as "Name (1 lb)" or "Name (1/4 lb)"
-    for item in by_pound_items:
-        name = item.name
-        price = float(item.base_price or 0)
-
-        # Extract weight from name: "(1 lb)", "(1/4 lb)", "(Whole)"
-        weight_match = re.search(r'\(([\d/]+)\s*lb\)', name, re.IGNORECASE)
-        whole_match = re.search(r'\(Whole\)', name, re.IGNORECASE)
-
-        if weight_match:
-            weight_str = weight_match.group(1)
-            # Calculate weight as float
-            if '/' in weight_str:
-                num, denom = weight_str.split('/')
-                weight = float(num) / float(denom)
-            else:
-                weight = float(weight_str)
-
-            # Calculate per-pound price
-            per_pound = price / weight if weight > 0 else price
-
-            # Extract base name (without weight)
-            base_name = re.sub(r'\s*\([\d/]+\s*lb\)', '', name, flags=re.IGNORECASE).strip()
-            base_name_lower = base_name.lower()
-
-            # Only store if this is better precision (1 lb over 1/4 lb)
-            # or if we don't have this item yet
-            if base_name_lower not in prices or weight >= 1:
-                prices[base_name_lower] = round(per_pound, 2)
-
-        elif whole_match:
-            # Items like "Whitefish (Whole)" - store as-is without calculating per-pound
-            base_name = re.sub(r'\s*\(Whole\)', '', name, flags=re.IGNORECASE).strip()
-            base_name_lower = base_name.lower()
-            # For whole items, we store the whole price (used differently)
-            # Only add if not already present from a per-pound entry
-            if base_name_lower not in prices:
-                prices[base_name_lower] = round(price, 2)
-
-    return prices
 
 
 def _build_modifier_categories(db: Session) -> Dict[str, Any]:

@@ -240,7 +240,7 @@ class MenuItemStoreAvailabilityOut(BaseModel):
     Attributes:
         id: Database primary key
         name: Menu item display name
-        category: Menu category
+        category: Item type display name (derived from item_type)
         base_price: Item base price
         is_available: Availability at the queried store
     """
@@ -248,7 +248,7 @@ class MenuItemStoreAvailabilityOut(BaseModel):
 
     id: int
     name: str
-    category: str
+    category: Optional[str] = None  # Derived from item_type.display_name
     base_price: float
     is_available: bool
 

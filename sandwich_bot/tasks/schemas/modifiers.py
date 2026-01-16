@@ -20,7 +20,7 @@ class QuantifiedModifier:
         QuantifiedModifier("sugar", 2)  # 2 sugars
         QuantifiedModifier("vanilla", 3)  # 3 vanilla syrups
     """
-    name: str
+    slug: str
     quantity: int = 1
 
 
@@ -79,7 +79,7 @@ class ExtractedModifiers:
             name: The modifier name (e.g., "bacon", "sugar", "oat")
             quantity: Optional quantity (default 1)
         """
-        self._by_category[category].append(QuantifiedModifier(name, quantity))
+        self._by_category[category].append(QuantifiedModifier(slug=name, quantity=quantity))
 
     def get(self, category: str) -> list[QuantifiedModifier]:
         """Get all modifiers for a category.
@@ -103,7 +103,7 @@ class ExtractedModifiers:
         Returns:
             List of modifier names
         """
-        return [m.name for m in self._by_category.get(category, [])]
+        return [m.slug for m in self._by_category.get(category, [])]
 
     def get_first(self, category: str) -> QuantifiedModifier | None:
         """Get the first modifier for a category.
@@ -131,7 +131,7 @@ class ExtractedModifiers:
             First modifier name or None if category is empty
         """
         first = self.get_first(category)
-        return first.name if first else None
+        return first.slug if first else None
 
     def has_modifiers(self) -> bool:
         """Check if any modifiers were extracted."""
@@ -179,7 +179,7 @@ class ExtractedModifiers:
         for category in sorted(self._by_category.keys()):
             items = self._by_category[category]
             items_str = ", ".join(
-                f"{m.name}x{m.quantity}" if m.quantity > 1 else m.name
+                f"{m.slug}x{m.quantity}" if m.quantity > 1 else m.slug
                 for m in items
             )
             parts.append(f"{category}=[{items_str}]")
@@ -234,7 +234,7 @@ class ExtractedModifiers:
     @proteins.setter
     def proteins(self, values: list[str]) -> None:
         """Set proteins (backward-compatible accessor)."""
-        self._by_category["protein"] = [QuantifiedModifier(v, 1) for v in values]
+        self._by_category["protein"] = [QuantifiedModifier(slug=v, quantity=1) for v in values]
 
     @property
     def cheeses(self) -> list[str]:
@@ -244,7 +244,7 @@ class ExtractedModifiers:
     @cheeses.setter
     def cheeses(self, values: list[str]) -> None:
         """Set cheeses (backward-compatible accessor)."""
-        self._by_category["cheese"] = [QuantifiedModifier(v, 1) for v in values]
+        self._by_category["cheese"] = [QuantifiedModifier(slug=v, quantity=1) for v in values]
 
     @property
     def toppings(self) -> list[str]:
@@ -254,7 +254,7 @@ class ExtractedModifiers:
     @toppings.setter
     def toppings(self, values: list[str]) -> None:
         """Set toppings (backward-compatible accessor)."""
-        self._by_category["topping"] = [QuantifiedModifier(v, 1) for v in values]
+        self._by_category["topping"] = [QuantifiedModifier(slug=v, quantity=1) for v in values]
 
     @property
     def spreads(self) -> list[str]:
@@ -264,7 +264,7 @@ class ExtractedModifiers:
     @spreads.setter
     def spreads(self, values: list[str]) -> None:
         """Set spreads (backward-compatible accessor)."""
-        self._by_category["spread"] = [QuantifiedModifier(v, 1) for v in values]
+        self._by_category["spread"] = [QuantifiedModifier(slug=v, quantity=1) for v in values]
 
     # Clarification flags backward-compatible accessors
 

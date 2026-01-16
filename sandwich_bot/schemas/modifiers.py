@@ -186,6 +186,33 @@ class AttributeOptionUpdate(BaseModel):
 # Item Type Schemas
 # =============================================================================
 
+# =============================================================================
+# Item Type Category Schemas
+# =============================================================================
+
+class ItemTypeCategoryOut(BaseModel):
+    """
+    Response model for an item type category.
+
+    Categories group item types by modifier extraction rules
+    (e.g., "food" vs "beverage").
+
+    Attributes:
+        id: Database primary key
+        slug: URL-safe identifier (e.g., "food", "beverage")
+        display_name: Human-readable name (e.g., "Food", "Beverage")
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+
+
+# =============================================================================
+# Item Type Schemas
+# =============================================================================
+
 class ItemTypeListOut(BaseModel):
     """
     Lightweight response model for item type list (sidebar).
@@ -218,7 +245,8 @@ class ItemTypeOut(BaseModel):
         display_name: Human-readable name (e.g., "Bagel")
         is_configurable: Whether items need configuration
         skip_config: Skip configuration dialog
-        modifier_category: Type of modifier extraction ("food" or "beverage")
+        item_type_category_id: FK to item_type_categories table
+        item_type_category_name: Display name of the category (e.g., "Food")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
         aliases: List of synonyms for matching (e.g., ["coffee", "java"])
@@ -230,7 +258,8 @@ class ItemTypeOut(BaseModel):
     display_name: str
     is_configurable: bool
     skip_config: bool = False
-    modifier_category: Optional[str] = None  # "food" or "beverage"
+    item_type_category_id: Optional[int] = None
+    item_type_category_name: Optional[str] = None
     menu_item_count: int = 0
     global_attribute_count: int = 0
     aliases: list[str] = []
@@ -246,20 +275,20 @@ class ItemTypeCreate(BaseModel):
     Attributes:
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
-        modifier_category: Type of modifier extraction ("food" or "beverage", optional)
+        item_type_category_id: FK to item_type_categories table (optional)
         aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
             "slug": "specialty_drink",
             "display_name": "Specialty Drink",
-            "modifier_category": "beverage",
+            "item_type_category_id": 2,
             "aliases": "fancy drink, gourmet beverage"
         }
     """
     slug: str
     display_name: str
-    modifier_category: Optional[str] = None  # "food" or "beverage"
+    item_type_category_id: Optional[int] = None
     aliases: Optional[str] = None  # Comma-separated aliases
 
 
@@ -275,12 +304,12 @@ class ItemTypeUpdate(BaseModel):
     Attributes:
         slug: New slug
         display_name: New display name
-        modifier_category: Type of modifier extraction ("food" or "beverage")
+        item_type_category_id: FK to item_type_categories table
         aliases: Comma-separated synonyms for matching
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
-    modifier_category: Optional[str] = None  # "food" or "beverage"
+    item_type_category_id: Optional[int] = None
     aliases: Optional[str] = None  # Comma-separated aliases
 
 

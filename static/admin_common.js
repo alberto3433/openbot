@@ -94,3 +94,52 @@ function setupTagInput(inputEl, container) {
     }
   });
 }
+
+/**
+ * Setup refresh cache button/link handler
+ * Call this after DOMContentLoaded or include element with id="refreshCacheBtn"
+ * Requires: authFetch function and showToast function to be defined
+ * @param {string} buttonId - ID of the refresh element (default: "refreshCacheBtn")
+ */
+function setupRefreshCacheButton(buttonId = "refreshCacheBtn") {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return;
+
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const originalText = btn.textContent;
+    btn.style.pointerEvents = "none";
+    btn.textContent = "Refreshing...";
+
+    try {
+      // Use authFetch if available, otherwise fall back to fetch
+      const fetchFn = typeof authFetch === "function" ? authFetch : fetch;
+      const response = await fetchFn("/admin/menu/cache/refresh", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+
+      // Use showToast if available
+      if (typeof showToast === "function") {
+        showToast("Cache refreshed successfully", "success");
+      } else {
+        alert("Cache refreshed successfully");
+      }
+      console.log("Cache refresh result:", result);
+    } catch (err) {
+      console.error("Error refreshing cache:", err);
+      if (typeof showToast === "function") {
+        showToast("Failed to refresh cache", "error");
+      } else {
+        alert("Failed to refresh cache: " + err.message);
+      }
+    } finally {
+      btn.style.pointerEvents = "";
+      btn.textContent = originalText;
+    }
+  });
+}
+
+// Auto-initialize refresh cache button if present
+document.addEventListener("DOMContentLoaded", () => {
+  setupRefreshCacheButton();
+});

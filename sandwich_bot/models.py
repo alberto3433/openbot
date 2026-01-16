@@ -25,6 +25,24 @@ Base = declarative_base()
 
 # --- Generic Item Type System ---
 
+class ItemTypeCategory(Base):
+    """
+    Defines a category for item types (e.g., "food" vs "beverage").
+
+    This determines which modifier extraction rules apply to items of this type.
+    Food items use food modifiers (proteins, cheeses, toppings).
+    Beverage items use beverage modifiers (milk, sweetener, syrup).
+    """
+    __tablename__ = "item_type_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(50), unique=True, nullable=False, index=True)  # "food", "beverage"
+    display_name = Column(String(100), nullable=False)  # "Food", "Beverage"
+
+    # Relationships
+    item_types = relationship("ItemType", back_populates="item_type_category")
+
+
 class ItemType(Base):
     """
     Defines a type of menu item (sandwich, pizza, taco, drink, etc.).
@@ -47,8 +65,9 @@ class ItemType(Base):
     name_filter = Column(String, nullable=True)  # Substring filter for item names (e.g., "tea" to filter sized_beverage)
     is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
 
-    # Modifier extraction category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
-    modifier_category = Column(String(20), nullable=True)
+    # Item type category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
+    item_type_category_id = Column(Integer, ForeignKey("item_type_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    item_type_category = relationship("ItemTypeCategory", back_populates="item_types")
 
     # By-pound items: sold by weight (cheese, cold cuts, fish, salads, spreads)
     # These have quantity-based pricing and no configuration attributes
@@ -259,6 +278,11 @@ class GlobalAttribute(Base):
     # Description for admin UI
     description = Column(Text, nullable=True)  # e.g., "Cream cheese and other spread options"
 
+    # Property name mapping for Python model access
+    # When different from slug (e.g., slug="milk_sweetener_syrup" but property_name="milk")
+    # If null, uses slug as property name
+    property_name = Column(String(50), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -266,6 +290,30 @@ class GlobalAttribute(Base):
     # Relationships
     options = relationship("GlobalAttributeOption", back_populates="attribute", cascade="all, delete-orphan", order_by="GlobalAttributeOption.display_order")
     item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute", cascade="all, delete-orphan")
+    alias_records = relationship("GlobalAttributeAlias", back_populates="global_attribute", cascade="all, delete-orphan")
+
+    @property
+    def aliases(self) -> str:
+        """Return comma-separated list of aliases for display."""
+        return ", ".join(a.alias for a in self.alias_records)
+
+
+class GlobalAttributeAlias(Base):
+    """
+    Alias for a global attribute.
+
+    Allows users to refer to attributes by alternative names.
+    For example, "cream cheese" as an alias for "spread_type".
+    Aliases are globally unique across all global attributes.
+    """
+    __tablename__ = "global_attribute_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
+    created_at = Column(DateTime, server_default=func.now())
+
+    global_attribute = relationship("GlobalAttribute", back_populates="alias_records")
 
 
 class GlobalAttributeOption(Base):
@@ -431,9 +479,10 @@ class MenuItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
-    category = Column(String, nullable=False, index=True)  # 'sandwich', 'side', 'drink', 'dessert', etc.
+    # Note: category column removed - use category_records relationship (MenuItemCategory join table)
+    # or item_type.display_name for display purposes
     is_signature = Column(Boolean, default=False, nullable=False)
-    base_price = Column(Float, nullable=False)
+    # Note: base_price column removed - use menu_item_size_prices instead
     available_qty = Column(Integer, default=0, nullable=False)
 
     extra_metadata = Column(Text, nullable=True)
@@ -505,6 +554,18 @@ class MenuItem(Base):
         """Get pipe-separated aliases string for backward compatibility."""
         aliases = self.aliases
         return '|'.join(aliases) if aliases else None
+
+    @property
+    def base_price(self) -> float:
+        """Computed base price from size_prices (minimum price).
+
+        This property provides backward compatibility after removing the
+        base_price column. Returns the minimum price from size_prices or 0.0
+        if no prices are defined.
+        """
+        if self.size_prices:
+            return min(sp.price for sp in self.size_prices)
+        return 0.0
 
 
 class MenuItemAlias(Base):
@@ -1131,6 +1192,6 @@ def log_menu_item_insert(mapper, connection, target):
 
     stack = "".join(traceback.format_stack()[:-1])  # Exclude this function
     _menu_item_insert_logger.warning(
-        f"MenuItem INSERT: name='{target.name}', category='{target.category}'\n"
+        f"MenuItem INSERT: name='{target.name}', item_type_id={target.item_type_id}\n"
         f"Stack trace:\n{stack}"
     )

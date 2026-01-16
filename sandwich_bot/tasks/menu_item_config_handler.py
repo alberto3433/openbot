@@ -43,7 +43,7 @@ class MenuItemConfigHandler(BaseHandler):
     # - Properties (toasted, scooped, decaf, spread) now use attribute_values as backing store
     # - milk_sweetener_syrup uses unified storage with milk_sweetener_syrup_selections
 
-    # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_types.modifier_category column
+    # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_type_categories table
     # and queried via menu_cache.get_modifier_category(item_type_slug).
     # Values: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
 
@@ -951,17 +951,17 @@ class MenuItemConfigHandler(BaseHandler):
                 price = 0.0
                 if self.pricing and item_type:
                     price = self.pricing.lookup_generic_modifier_price(
-                        mod.name, item_type, category
+                        mod.slug, item_type, category
                     ) or 0.0
 
                 # Use generic add_modifier for unified storage
-                item.add_modifier(category, mod.name, mod.quantity, price)
+                item.add_modifier(category, mod.slug, mod.quantity, price)
 
                 # Build display name for acknowledgment
                 if category == "syrup":
-                    added_items.append(f"{mod.name} syrup")
+                    added_items.append(f"{mod.slug} syrup")
                 else:
-                    added_items.append(mod.name)
+                    added_items.append(mod.slug)
 
         # Handle categories needing clarification (e.g., "cheese" without type)
         for category, needs_clarification in modifiers.needs_clarification.items():

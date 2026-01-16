@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Modifier Qualifiers</title>
+  <title>Response Patterns</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/admin_common.css">
   <style>
     body {
       margin: 0;
@@ -29,6 +28,53 @@
     }
     .app-header a:hover {
       color: #fff;
+    }
+    .nav-group {
+      display: inline-block;
+      position: relative;
+    }
+    .nav-group-label {
+      color: #bbdefb;
+      font-size: 14px;
+      margin-left: 16px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .nav-group-label:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      min-width: 200px;
+      z-index: 1000;
+      padding: 8px 0;
+    }
+    .nav-group:hover .nav-dropdown {
+      display: block;
+    }
+    .nav-dropdown a {
+      display: block;
+      color: #333;
+      padding: 8px 16px;
+      margin: 0;
+      font-size: 13px;
+    }
+    .nav-dropdown a:hover {
+      background: #f5f5f5;
+      color: #1976d2;
+    }
+    .nav-dropdown a.active {
+      background: #e3f2fd;
+      color: #1976d2;
+      font-weight: 500;
     }
     .container {
       max-width: 1000px;
@@ -123,7 +169,7 @@
     tr:hover {
       background: #f9f9f9;
     }
-    .category-badge {
+    .type-badge {
       display: inline-block;
       padding: 3px 8px;
       border-radius: 12px;
@@ -131,11 +177,10 @@
       font-weight: 500;
       text-transform: uppercase;
     }
-    .category-amount { background: #e3f2fd; color: #1565c0; }
-    .category-position { background: #fff3e0; color: #e65100; }
-    .category-preparation { background: #f3e5f5; color: #7b1fa2; }
-    .status-active { color: #2e7d32; }
-    .status-inactive { color: #9e9e9e; }
+    .type-affirmative { background: #e8f5e9; color: #2e7d32; }
+    .type-negative { background: #ffebee; color: #c62828; }
+    .type-cancel { background: #fff3e0; color: #e65100; }
+    .type-done { background: #e3f2fd; color: #1565c0; }
     .loading {
       text-align: center;
       padding: 40px;
@@ -233,15 +278,6 @@
       color: #888;
       margin-top: 4px;
     }
-    .checkbox-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .checkbox-group input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-    }
     .search-box {
       padding: 10px 12px;
       border: 1px solid #ccc;
@@ -259,11 +295,11 @@
       align-items: center;
       margin-bottom: 16px;
     }
-    .category-filter {
+    .type-filter {
       display: flex;
       gap: 8px;
     }
-    .category-filter button {
+    .type-filter button {
       padding: 6px 12px;
       border: 1px solid #e0e0e0;
       background: #fff;
@@ -271,14 +307,58 @@
       font-size: 12px;
       cursor: pointer;
     }
-    .category-filter button:hover {
+    .type-filter button:hover {
       background: #f5f5f5;
     }
-    .category-filter button.active {
+    .type-filter button.active {
       background: #1976d2;
       color: #fff;
       border-color: #1976d2;
     }
+    /* Stats cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 800px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .stat-card .type-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .stat-card .count {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .stat-card .examples {
+      font-size: 11px;
+      color: #888;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stat-affirmative { border-left: 4px solid #2e7d32; }
+    .stat-affirmative .type-label { color: #2e7d32; }
+    .stat-negative { border-left: 4px solid #c62828; }
+    .stat-negative .type-label { color: #c62828; }
+    .stat-cancel { border-left: 4px solid #e65100; }
+    .stat-cancel .type-label { color: #e65100; }
+    .stat-done { border-left: 4px solid #1565c0; }
+    .stat-done .type-label { color: #1565c0; }
 
     /* Toast notification styles */
     .toast-container {
@@ -347,7 +427,7 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Modifier Qualifiers</div>
+    <div>Response Patterns</div>
     <div>
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_menu.html">Menu</a>
@@ -362,9 +442,9 @@
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
           <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
-          <a href="/static/admin_modifier_qualifiers.html" class="active">Qualifiers</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
-          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+          <a href="/static/admin_response_patterns.html" class="active">Response Patterns</a>
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
@@ -376,37 +456,60 @@
   <div class="container">
     <div id="statusBar" class="status-bar" style="display: none;"></div>
 
+    <!-- Stats Cards -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card stat-affirmative">
+        <div class="type-label">Affirmative</div>
+        <div class="count" id="countAffirmative">-</div>
+        <div class="examples" id="examplesAffirmative">Loading...</div>
+      </div>
+      <div class="stat-card stat-negative">
+        <div class="type-label">Negative</div>
+        <div class="count" id="countNegative">-</div>
+        <div class="examples" id="examplesNegative">Loading...</div>
+      </div>
+      <div class="stat-card stat-cancel">
+        <div class="type-label">Cancel</div>
+        <div class="count" id="countCancel">-</div>
+        <div class="examples" id="examplesCancel">Loading...</div>
+      </div>
+      <div class="stat-card stat-done">
+        <div class="type-label">Done</div>
+        <div class="count" id="countDone">-</div>
+        <div class="examples" id="examplesDone">Loading...</div>
+      </div>
+    </div>
+
     <div class="section">
       <div class="section-header">
-        <span>Modifier Qualifiers</span>
-        <button class="btn primary" onclick="openCreateModal()">+ Add Qualifier</button>
+        <span>Response Patterns</span>
+        <button class="btn primary" onclick="openCreateModal()">+ Add Pattern</button>
       </div>
       <div class="section-body">
         <div class="toolbar">
-          <input type="text" id="searchBox" class="search-box" placeholder="Search patterns..." oninput="filterQualifiers()" />
-          <div class="category-filter">
-            <button class="active" data-category="all" onclick="filterByCategory('all', this)">All</button>
-            <button data-category="amount" onclick="filterByCategory('amount', this)">Amount</button>
-            <button data-category="position" onclick="filterByCategory('position', this)">Position</button>
-            <button data-category="preparation" onclick="filterByCategory('preparation', this)">Preparation</button>
+          <input type="text" id="searchBox" class="search-box" placeholder="Search patterns..." oninput="filterPatterns()" />
+          <div class="type-filter">
+            <button class="active" data-type="all" onclick="filterByType('all', this)">All</button>
+            <button data-type="affirmative" onclick="filterByType('affirmative', this)">Affirmative</button>
+            <button data-type="negative" onclick="filterByType('negative', this)">Negative</button>
+            <button data-type="cancel" onclick="filterByType('cancel', this)">Cancel</button>
+            <button data-type="done" onclick="filterByType('done', this)">Done</button>
           </div>
         </div>
 
-        <div id="loadingState" class="loading">Loading qualifiers...</div>
+        <div id="loadingState" class="loading">Loading patterns...</div>
         <div id="emptyState" class="empty-state" style="display: none;">
-          No qualifiers found. Click "Add Qualifier" to create one.
+          No patterns found. Click "Add Pattern" to create one.
         </div>
-        <table id="qualifiersTable" style="display: none;">
+        <table id="patternsTable" style="display: none;">
           <thead>
             <tr>
               <th>Pattern</th>
-              <th>Normalized Form</th>
-              <th>Category</th>
-              <th>Status</th>
+              <th>Type</th>
               <th style="width: 120px;">Actions</th>
             </tr>
           </thead>
-          <tbody id="qualifiersBody">
+          <tbody id="patternsBody">
           </tbody>
         </table>
       </div>
@@ -414,69 +517,59 @@
 
     <!-- Help Section -->
     <div class="section">
-      <div class="section-header">How Qualifiers Work</div>
+      <div class="section-header">How Response Patterns Work</div>
       <div class="section-body" style="font-size: 13px; color: #666;">
-        <p><strong>Pattern:</strong> The phrase to match in user input (e.g., "extra", "a little bit of"). Matched as whole words, case-insensitive.</p>
-        <p><strong>Normalized Form:</strong> What displays in parentheses after the modifier (e.g., "Mayo (extra)").</p>
-        <p><strong>Categories:</strong></p>
+        <p><strong>Pattern:</strong> The phrase to match in user input (e.g., "yes", "no thanks"). Matched case-insensitively.</p>
+        <p><strong>Types:</strong></p>
         <ul>
-          <li><strong>Amount:</strong> Quantity modifiers like "extra", "light", "double". These can conflict with each other.</li>
-          <li><strong>Position:</strong> Location modifiers like "on the side". Don't conflict with amount.</li>
-          <li><strong>Preparation:</strong> How to prepare, like "crispy", "well done". Don't conflict with amount.</li>
+          <li><strong>Affirmative:</strong> Yes responses (yes, yeah, sure, ok, yep, absolutely, etc.)</li>
+          <li><strong>Negative:</strong> No responses (no, nope, nah, no thanks, etc.)</li>
+          <li><strong>Cancel:</strong> Cancel intent (cancel, never mind, forget it, start over, etc.)</li>
+          <li><strong>Done:</strong> Order complete intent (that's all, that's it, nothing else, I'm good, etc.)</li>
         </ul>
-        <p>When conflicting qualifiers from the same category are detected (e.g., "light extra mayo"), the system asks the user for clarification.</p>
+        <p>These patterns help the bot recognize user intent when answering yes/no questions or indicating they're done ordering.</p>
       </div>
     </div>
   </div>
 
   <!-- Create/Edit Modal -->
-  <div id="qualifierModal" class="modal-overlay">
+  <div id="patternModal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <span id="modalTitle">Add Qualifier</span>
+        <span id="modalTitle">Add Pattern</span>
         <button class="close-btn" onclick="closeModal()">&times;</button>
       </div>
       <div class="modal-body">
-        <form id="qualifierForm">
-          <input type="hidden" id="qualifierId" />
+        <form id="patternForm">
+          <input type="hidden" id="patternId" />
           <div class="form-group">
             <label for="patternInput">Pattern *</label>
-            <input type="text" id="patternInput" required placeholder="e.g., extra, a little bit of" />
-            <div class="hint">The phrase to match in user input (whole words, case-insensitive)</div>
+            <input type="text" id="patternInput" required placeholder="e.g., yes please, no thanks" />
+            <div class="hint">The phrase to match in user input (case-insensitive)</div>
           </div>
           <div class="form-group">
-            <label for="normalizedInput">Normalized Form *</label>
-            <input type="text" id="normalizedInput" required placeholder="e.g., extra, light" />
-            <div class="hint">What displays in parentheses: "Mayo (extra)"</div>
-          </div>
-          <div class="form-group">
-            <label for="categoryInput">Category *</label>
-            <select id="categoryInput" required>
-              <option value="amount">Amount (extra, light, double)</option>
-              <option value="position">Position (on the side)</option>
-              <option value="preparation">Preparation (crispy, well done)</option>
+            <label for="patternTypeInput">Type *</label>
+            <select id="patternTypeInput" required>
+              <option value="affirmative">Affirmative (yes, yeah, sure)</option>
+              <option value="negative">Negative (no, nope, no thanks)</option>
+              <option value="cancel">Cancel (cancel, never mind)</option>
+              <option value="done">Done (that's all, I'm good)</option>
             </select>
-            <div class="hint">Amount qualifiers can conflict with each other</div>
-          </div>
-          <div class="form-group">
-            <div class="checkbox-group">
-              <input type="checkbox" id="isActiveInput" checked />
-              <label for="isActiveInput">Active</label>
-            </div>
+            <div class="hint">What kind of user response this pattern represents</div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deleteQualifier()">Delete</button>
+        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deletePattern()">Delete</button>
         <button class="btn" onclick="closeModal()">Cancel</button>
-        <button class="btn primary" onclick="saveQualifier()">Save</button>
+        <button class="btn primary" onclick="savePattern()">Save</button>
       </div>
     </div>
   </div>
 
   <script>
-    const API_BASE = "/admin/modifier-qualifiers";
-    let qualifiers = [];
+    const API_BASE = "/admin/response-patterns";
+    let patterns = [];
     let currentFilter = "all";
 
     // Toast container reference
@@ -534,25 +627,45 @@
       }
     }
 
-    // Load qualifiers from API
-    async function loadQualifiers() {
+    // Load stats from API
+    async function loadStats() {
+      try {
+        const response = await fetch(`${API_BASE}/stats`, { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const stats = await response.json();
+
+        stats.forEach(stat => {
+          const countEl = document.getElementById(`count${capitalize(stat.pattern_type)}`);
+          const examplesEl = document.getElementById(`examples${capitalize(stat.pattern_type)}`);
+          if (countEl) countEl.textContent = stat.count;
+          if (examplesEl) {
+            examplesEl.textContent = stat.patterns.slice(0, 5).join(", ") || "No patterns";
+          }
+        });
+      } catch (error) {
+        console.error("Failed to load stats:", error);
+      }
+    }
+
+    // Load patterns from API
+    async function loadPatterns() {
       try {
         const response = await fetch(API_BASE, { credentials: 'include' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        qualifiers = data.qualifiers;
-        renderQualifiers();
+        patterns = await response.json();
+        renderPatterns();
+        loadStats();
       } catch (error) {
-        console.error("Failed to load qualifiers:", error);
-        showStatus("Failed to load qualifiers", "error");
+        console.error("Failed to load patterns:", error);
+        showStatus("Failed to load patterns", "error");
         document.getElementById("loadingState").textContent = "Failed to load. Please refresh.";
       }
     }
 
-    // Render qualifiers table
-    function renderQualifiers() {
-      const tbody = document.getElementById("qualifiersBody");
-      const table = document.getElementById("qualifiersTable");
+    // Render patterns table
+    function renderPatterns() {
+      const tbody = document.getElementById("patternsBody");
+      const table = document.getElementById("patternsTable");
       const loading = document.getElementById("loadingState");
       const empty = document.getElementById("emptyState");
 
@@ -560,15 +673,14 @@
 
       // Apply filters
       const searchTerm = document.getElementById("searchBox").value.toLowerCase();
-      let filtered = qualifiers;
+      let filtered = patterns;
 
       if (currentFilter !== "all") {
-        filtered = filtered.filter(q => q.category === currentFilter);
+        filtered = filtered.filter(p => p.pattern_type === currentFilter);
       }
       if (searchTerm) {
-        filtered = filtered.filter(q =>
-          q.pattern.toLowerCase().includes(searchTerm) ||
-          q.normalized_form.toLowerCase().includes(searchTerm)
+        filtered = filtered.filter(p =>
+          p.pattern.toLowerCase().includes(searchTerm)
         );
       }
 
@@ -581,81 +693,71 @@
       empty.style.display = "none";
       table.style.display = "table";
 
-      tbody.innerHTML = filtered.map(q => `
+      tbody.innerHTML = filtered.map(p => `
         <tr>
-          <td><code>${escapeHtml(q.pattern)}</code></td>
-          <td>${escapeHtml(q.normalized_form)}</td>
-          <td><span class="category-badge category-${q.category}">${q.category}</span></td>
-          <td class="${q.is_active ? 'status-active' : 'status-inactive'}">
-            ${q.is_active ? 'Active' : 'Inactive'}
-          </td>
+          <td><code>${escapeHtml(p.pattern)}</code></td>
+          <td><span class="type-badge type-${p.pattern_type}">${p.pattern_type}</span></td>
           <td>
-            <button class="btn small" onclick="openEditModal(${q.id})">Edit</button>
+            <button class="btn small" onclick="openEditModal(${p.id})">Edit</button>
           </td>
         </tr>
       `).join("");
     }
 
-    // Filter by category
-    function filterByCategory(category, btn) {
-      currentFilter = category;
-      document.querySelectorAll(".category-filter button").forEach(b => b.classList.remove("active"));
+    // Filter by type
+    function filterByType(type, btn) {
+      currentFilter = type;
+      document.querySelectorAll(".type-filter button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      renderQualifiers();
+      renderPatterns();
     }
 
     // Filter by search
-    function filterQualifiers() {
-      renderQualifiers();
+    function filterPatterns() {
+      renderPatterns();
     }
 
     // Open create modal
     function openCreateModal() {
-      document.getElementById("modalTitle").textContent = "Add Qualifier";
-      document.getElementById("qualifierId").value = "";
+      document.getElementById("modalTitle").textContent = "Add Pattern";
+      document.getElementById("patternId").value = "";
       document.getElementById("patternInput").value = "";
-      document.getElementById("normalizedInput").value = "";
-      document.getElementById("categoryInput").value = "amount";
-      document.getElementById("isActiveInput").checked = true;
+      document.getElementById("patternTypeInput").value = "affirmative";
       document.getElementById("deleteBtn").style.display = "none";
-      document.getElementById("qualifierModal").classList.add("active");
+      document.getElementById("patternModal").classList.add("active");
     }
 
     // Open edit modal
     function openEditModal(id) {
-      const qualifier = qualifiers.find(q => q.id === id);
-      if (!qualifier) return;
+      const pattern = patterns.find(p => p.id === id);
+      if (!pattern) return;
 
-      document.getElementById("modalTitle").textContent = "Edit Qualifier";
-      document.getElementById("qualifierId").value = qualifier.id;
-      document.getElementById("patternInput").value = qualifier.pattern;
-      document.getElementById("normalizedInput").value = qualifier.normalized_form;
-      document.getElementById("categoryInput").value = qualifier.category;
-      document.getElementById("isActiveInput").checked = qualifier.is_active;
+      document.getElementById("modalTitle").textContent = "Edit Pattern";
+      document.getElementById("patternId").value = pattern.id;
+      document.getElementById("patternInput").value = pattern.pattern;
+      document.getElementById("patternTypeInput").value = pattern.pattern_type;
       document.getElementById("deleteBtn").style.display = "block";
-      document.getElementById("qualifierModal").classList.add("active");
+      document.getElementById("patternModal").classList.add("active");
     }
 
     // Close modal
     function closeModal() {
-      document.getElementById("qualifierModal").classList.remove("active");
+      document.getElementById("patternModal").classList.remove("active");
     }
 
-    // Save qualifier
-    async function saveQualifier() {
-      const saveBtn = document.querySelector('#qualifierModal .modal-footer .btn.primary');
-      const id = document.getElementById("qualifierId").value;
+    // Save pattern
+    async function savePattern() {
+      const saveBtn = document.querySelector('#patternModal .modal-footer .btn.primary');
+      const id = document.getElementById("patternId").value;
       const pattern = document.getElementById("patternInput").value.trim();
-      const normalized_form = document.getElementById("normalizedInput").value.trim();
-      const category = document.getElementById("categoryInput").value;
-      const is_active = document.getElementById("isActiveInput").checked;
+      const pattern_type = document.getElementById("patternTypeInput").value;
 
-      if (!pattern || !normalized_form) {
-        showToast("Pattern and Normalized Form are required", "error");
+      if (!pattern) {
+        showToast("Pattern is required", "error");
         return;
       }
 
-      const payload = { pattern, normalized_form, category, is_active };
+      const payload = { pattern, pattern_type };
 
       setSaveButtonState(saveBtn, "saving");
       try {
@@ -684,9 +786,9 @@
         }
 
         setSaveButtonState(saveBtn, "saved", "Save");
-        showToast(`Qualifier "${pattern}" saved successfully!`, "success");
+        showToast(`Pattern "${pattern}" saved successfully!`, "success");
         closeModal();
-        loadQualifiers();
+        loadPatterns();
       } catch (error) {
         console.error("Failed to save:", error);
         setSaveButtonState(saveBtn, "error", "Save");
@@ -694,12 +796,12 @@
       }
     }
 
-    // Delete qualifier
-    async function deleteQualifier() {
-      const id = document.getElementById("qualifierId").value;
+    // Delete pattern
+    async function deletePattern() {
+      const id = document.getElementById("patternId").value;
       if (!id) return;
 
-      if (!confirm("Are you sure you want to delete this qualifier?")) return;
+      if (!confirm("Are you sure you want to delete this pattern?")) return;
 
       try {
         const response = await fetch(`${API_BASE}/${id}`, {
@@ -711,24 +813,28 @@
           throw new Error(`HTTP ${response.status}`);
         }
 
-        showStatus("Qualifier deleted", "success");
+        showToast("Pattern deleted", "success");
         closeModal();
-        loadQualifiers();
+        loadPatterns();
       } catch (error) {
         console.error("Failed to delete:", error);
-        showStatus(`Failed to delete: ${error.message}`, "error");
+        showToast(`Failed to delete: ${error.message}`, "error");
       }
     }
 
-    // Escape HTML
+    // Helper functions
     function escapeHtml(text) {
       const div = document.createElement("div");
       div.textContent = text;
       return div.innerHTML;
     }
 
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
     // Close modal on outside click
-    document.getElementById("qualifierModal").addEventListener("click", function(e) {
+    document.getElementById("patternModal").addEventListener("click", function(e) {
       if (e.target === this) closeModal();
     });
 
@@ -738,7 +844,7 @@
     });
 
     // Initial load
-    loadQualifiers();
+    loadPatterns();
   </script>
 </body>
 </html>

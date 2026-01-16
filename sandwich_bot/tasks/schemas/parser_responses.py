@@ -22,10 +22,10 @@ class QuantifiedModifier(BaseModel):
     Used for sweeteners, syrups, and other quantifiable beverage additions.
 
     Examples:
-        QuantifiedModifier(type="sugar", quantity=2)  # 2 sugars
-        QuantifiedModifier(type="vanilla", quantity=1)  # 1 vanilla syrup
+        QuantifiedModifier(slug="sugar", quantity=2)  # 2 sugars
+        QuantifiedModifier(slug="vanilla", quantity=1)  # 1 vanilla syrup
     """
-    type: str
+    slug: str
     quantity: int = 1
 
 
@@ -105,7 +105,7 @@ class ParsedItemEntry(BaseModel):
             item_type="sized_beverage",
             item_name="Latte",
             attribute_values={"size": "large", "temperature": "iced", "milk": "oat"},
-            syrups=[QuantifiedModifier(type="vanilla", quantity=1)],
+            syrups=[QuantifiedModifier(slug="vanilla", quantity=1)],
         )
     """
     type: Literal["item"] = "item"
@@ -279,8 +279,8 @@ class ParsedItemEntry(BaseModel):
             attr_values["extra_shots"] = entry.extra_shots
 
         # Convert sweeteners and syrups
-        sweeteners = [QuantifiedModifier(type=s.type, quantity=s.quantity) for s in entry.sweeteners]
-        syrups = [QuantifiedModifier(type=s.type, quantity=s.quantity) for s in entry.syrups]
+        sweeteners = [QuantifiedModifier(slug=s.slug, quantity=s.quantity) for s in entry.sweeteners]
+        syrups = [QuantifiedModifier(slug=s.slug, quantity=s.quantity) for s in entry.syrups]
 
         return cls(
             item_type="sized_beverage",
@@ -930,7 +930,7 @@ class OpenInputResponse(BaseModel):
                 if self.new_bagel_scooped is not None:
                     attr_values["scooped"] = self.new_bagel_scooped
                 if self.new_bagel_spread:
-                    attr_values["spread_type"] = self.new_bagel_spread
+                    attr_values["spread"] = self.new_bagel_spread
                 if self.new_bagel_spread_type:
                     attr_values["spread_type"] = self.new_bagel_spread_type
 
@@ -1074,11 +1074,11 @@ class OpenInputResponse(BaseModel):
             self.new_coffee_milk = first_coffee.milk
             # Handle sweeteners
             if first_coffee.sweeteners:
-                self.new_coffee_sweetener = first_coffee.sweeteners[0].type
+                self.new_coffee_sweetener = first_coffee.sweeteners[0].slug
                 self.new_coffee_sweetener_quantity = first_coffee.sweeteners[0].quantity
             # Handle syrups
             if first_coffee.syrups:
-                self.new_coffee_flavor_syrup = first_coffee.syrups[0].type
+                self.new_coffee_flavor_syrup = first_coffee.syrups[0].slug
                 self.new_coffee_syrup_quantity = first_coffee.syrups[0].quantity
             if first_coffee.special_instructions:
                 self.new_coffee_special_instructions = first_coffee.special_instructions

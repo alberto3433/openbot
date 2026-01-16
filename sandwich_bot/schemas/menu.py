@@ -76,7 +76,7 @@ class MenuItemOut(BaseModel):
     Attributes:
         id: Database primary key
         name: Display name (e.g., "Turkey Club")
-        category: Grouping category (e.g., "sandwiches", "drinks")
+        category: DEPRECATED - Derived from item_type.display_name for backward compatibility
         is_signature: Whether this is a pre-configured signature item
         base_price: Starting price in dollars
         available_qty: Legacy inventory count (use 86 system instead)
@@ -91,7 +91,7 @@ class MenuItemOut(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    category: str
+    category: Optional[str] = None  # DEPRECATED - derived from item_type.display_name
     is_signature: bool
     base_price: float
     available_qty: int
@@ -115,35 +115,35 @@ class MenuItemCreate(BaseModel):
     """
     Request model for creating a new menu item.
 
-    All fields except name, category, and base_price have sensible defaults.
+    Required fields: name, base_price (or size_prices)
+    Recommended: item_type_id (for configuration), category_ids (for categorization)
 
     Attributes:
-        name: Display name (required, must be unique within category)
-        category: Grouping category (required)
+        name: Display name (required, must be unique)
+        category: DEPRECATED - Ignored, use item_type_id and category_ids instead
         is_signature: Whether this is a signature item (default: False)
-        base_price: Starting price in dollars (required)
+        base_price: Starting price in dollars (required if no size_prices)
         available_qty: Legacy inventory count (default: 0)
         metadata: Additional item data (default: empty dict)
-        item_type_id: Link to ItemType for configuration (optional)
+        item_type_id: Link to ItemType for configuration (recommended)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        category_ids: List of category IDs to assign (optional)
+        category_ids: List of category IDs to assign (e.g., [1, 2] for drink & food)
 
     Example:
         {
             "name": "Veggie Delight",
-            "category": "sandwiches",
+            "item_type_id": 3,
             "is_signature": true,
             "base_price": 10.99,
-            "item_type_id": 3,
             "category_ids": [1, 2]
         }
     """
     name: str
     description: Optional[str] = None
-    category: str
+    category: Optional[str] = None  # DEPRECATED - ignored, use item_type_id and category_ids
     is_signature: bool = False
-    base_price: float
+    base_price: Optional[float] = None
     available_qty: int = 0
     metadata: Dict[str, Any] = {}
     item_type_id: Optional[int] = None
@@ -164,7 +164,7 @@ class MenuItemUpdate(BaseModel):
 
     Attributes:
         name: New display name (optional)
-        category: New category (optional)
+        category: DEPRECATED - Ignored, use item_type_id and category_ids instead
         is_signature: Update signature status (optional)
         base_price: New base price (optional)
         available_qty: Update inventory count (optional)
@@ -186,7 +186,7 @@ class MenuItemUpdate(BaseModel):
     """
     name: Optional[str] = None
     description: Optional[str] = None
-    category: Optional[str] = None
+    category: Optional[str] = None  # DEPRECATED - ignored
     is_signature: Optional[bool] = None
     base_price: Optional[float] = None
     available_qty: Optional[int] = None

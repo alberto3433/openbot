@@ -16,11 +16,9 @@ from .models import (
     TaskStatus,
     ItemTask,
     MenuItemTask,
+    get_modifier_name,
 )
 from sandwich_bot.menu_data_cache import menu_cache
-
-if TYPE_CHECKING:
-    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +143,8 @@ class ItemConverter(ABC):
                 processed_selections.add(f"{attr_slug}_selections")
                 # Multi-select: create a modifier for each selection
                 for sel in selections:
-                    # Check for slug, flavor (for syrups), or type (for sweeteners)
-                    sel_slug = sel.get("slug", "") or sel.get("flavor", "") or sel.get("type", "")
+                    # Use get_modifier_name for backward compatibility with legacy formats
+                    sel_slug = get_modifier_name(sel)
                     sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
                     sel_price = sel.get("price", 0) or 0.0
                     sel_quantity = sel.get("quantity", 1) or 1
@@ -237,8 +235,8 @@ class ItemConverter(ABC):
 
             # Process this orphan selections list
             for sel in attr_value:
-                # Check for slug, flavor (for syrups), or type (for sweeteners)
-                sel_slug = sel.get("slug", "") or sel.get("flavor", "") or sel.get("type", "")
+                # Use get_modifier_name for backward compatibility with legacy formats
+                sel_slug = get_modifier_name(sel)
                 sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
                 sel_price = sel.get("price", 0) or 0.0
                 sel_quantity = sel.get("quantity", 1) or 1
@@ -283,14 +281,6 @@ class MenuItemConverter(ItemConverter):
         return "menu_item"
 
     def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
-        # Extract spread_price from modifiers if present
-        spread_price = None
-        item_modifiers = item_dict.get("modifiers") or []
-        for mod in item_modifiers:
-            if isinstance(mod, dict) and mod.get("name") == item_dict.get("spread"):
-                spread_price = mod.get("price")
-                break
-
         item_config = item_dict.get("item_config") or {}
 
         # Determine menu_item_type - map legacy "drink" to "sized_beverage"
@@ -299,17 +289,50 @@ class MenuItemConverter(ItemConverter):
         if not menu_item_type and item_type in ("drink", "coffee", "sized_beverage", "espresso"):
             menu_item_type = "sized_beverage"
 
-        # Build attribute_values from various sources
-        attribute_values = item_dict.get("attribute_values") or item_config.get("attribute_values") or {}
+        # Build attribute_values from various sources (data-driven)
+        attribute_values = dict(item_dict.get("attribute_values") or item_config.get("attribute_values") or {})
 
-        # Restore beverage properties from item_config (legacy format)
-        # Data-driven check: item type has size attribute
+        # Get DB-defined attributes for this item type
         item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
+
+        # Data-driven: restore any top-level fields that match DB-defined attributes
+        for attr_slug in item_attrs.keys():
+            if attr_slug not in attribute_values:
+                # Check top-level dict
+                if attr_slug in item_dict and item_dict[attr_slug] is not None:
+                    attribute_values[attr_slug] = item_dict[attr_slug]
+                # Check item_config
+                elif attr_slug in item_config and item_config[attr_slug] is not None:
+                    attribute_values[attr_slug] = item_config[attr_slug]
+            # Also check for {attr_slug}_price and {attr_slug}_upcharge companion fields
+            for suffix in ("_price", "_upcharge"):
+                price_key = f"{attr_slug}{suffix}"
+                if price_key not in attribute_values:
+                    if price_key in item_dict and item_dict[price_key] is not None:
+                        attribute_values[price_key] = item_dict[price_key]
+                    elif price_key in item_config and item_config[price_key] is not None:
+                        attribute_values[price_key] = item_config[price_key]
+
+        # Data-driven: restore legacy fields that may not be in item_attrs
+        # These are stored in attribute_values via property accessors
+        legacy_fields = [
+            "side_choice", "bagel_choice", "bagel_choice_upcharge",
+            "toasted", "spread", "spread_type", "spread_price",
+            "requires_side_choice", "scooped", "extra_protein", "toppings",
+        ]
+        for field in legacy_fields:
+            if field not in attribute_values:
+                if field in item_dict and item_dict[field] is not None:
+                    attribute_values[field] = item_dict[field]
+                elif field in item_config and item_config[field] is not None:
+                    attribute_values[field] = item_config[field]
+
+        # Handle legacy beverage fields from item_config
         if "size" in item_attrs and item_config:
-            # Restore size
+            # Restore size from item_config
             if item_config.get("size") and "size" not in attribute_values:
                 attribute_values["size"] = item_config["size"]
-            # Restore temperature/style
+            # Restore temperature from "style" (legacy key)
             if item_config.get("style") and "temperature" not in attribute_values:
                 attribute_values["temperature"] = item_config["style"]
             # Restore decaf
@@ -322,9 +345,14 @@ class MenuItemConverter(ItemConverter):
             if item_config.get("sweeteners") and "sweetener_selections" not in attribute_values:
                 attribute_values["sweetener_selections"] = item_config["sweeteners"]
 
-        # Also check top-level dict for size (common in legacy format)
-        if item_dict.get("size") and "size" not in attribute_values:
-            attribute_values["size"] = item_dict["size"]
+        # Extract spread_price from modifiers if not already set
+        if "spread_price" not in attribute_values:
+            item_modifiers = item_dict.get("modifiers") or []
+            spread_val = attribute_values.get("spread") or attribute_values.get("spread_type")
+            for mod in item_modifiers:
+                if isinstance(mod, dict) and mod.get("name") == spread_val:
+                    attribute_values["spread_price"] = mod.get("price")
+                    break
 
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
@@ -332,12 +360,6 @@ class MenuItemConverter(ItemConverter):
             menu_item_type=menu_item_type,
             modifications=item_dict.get("modifications") or [],
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
-            side_choice=item_dict.get("side_choice"),
-            bagel_choice=item_dict.get("bagel_choice"),
-            toasted=item_dict.get("toasted"),
-            spread=item_dict.get("spread"),
-            spread_price=spread_price,
-            requires_side_choice=item_dict.get("requires_side_choice", False),
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
             attribute_values=attribute_values,
@@ -351,20 +373,24 @@ class MenuItemConverter(ItemConverter):
         item: ItemTask,
         pricing: "PricingEngine | None" = None,
     ) -> Dict[str, Any]:
-        side_choice = getattr(item, 'side_choice', None)
-        bagel_choice = getattr(item, 'bagel_choice', None)
-        toasted = getattr(item, 'toasted', None)
-        spread = getattr(item, 'spread', None)
         menu_item_name = item.menu_item_name
         menu_item_type = getattr(item, 'menu_item_type', None)
         removed_ingredients = getattr(item, 'removed_ingredients', []) or []
 
-        # Get DB-driven attribute values early (needed for display_name)
+        # Get DB-driven attribute values (source of truth for all customizations)
         attribute_values = getattr(item, 'attribute_values', {}) or {}
 
+        # Read values via property accessors (which read from attribute_values)
+        side_choice = getattr(item, 'side_choice', None)
+        bagel_choice = getattr(item, 'bagel_choice', None)
+        toasted = getattr(item, 'toasted', None)
+        spread = getattr(item, 'spread', None)
+        spread_type = getattr(item, 'spread_type', None)
+        spread_price = getattr(item, 'spread_price', None)
+        extra_protein = getattr(item, 'extra_protein', None)
+        toppings_list = getattr(item, 'toppings', []) or []
+
         # Build display name with bagel choice and side choice
-        # For beverages (espresso, coffee), use the base menu item name
-        # All attributes (shots, decaf, milk, etc.) become modifier line items
         display_name = menu_item_name
 
         # Handle DB-driven bread attribute for deli_sandwich, etc.
@@ -375,7 +401,7 @@ class MenuItemConverter(ItemConverter):
         elif side_choice:
             # Data-driven side choice display: check for {side_choice}_choice field
             choice_field = f"{side_choice}_choice"
-            specific_choice = getattr(item, choice_field, None)
+            specific_choice = attribute_values.get(choice_field)
             if specific_choice:
                 display_name = f"{display_name} with {specific_choice} {side_choice}"
             else:
@@ -383,11 +409,10 @@ class MenuItemConverter(ItemConverter):
                 display_name = f"{display_name} with {side_display}"
 
         # Build side config for items with configurable sides
-        # Uses data-driven approach: check for {side_choice}_choice field
         side_config = None
         if side_choice:
             choice_field = f"{side_choice}_choice"
-            specific_choice = getattr(item, choice_field, None)
+            specific_choice = attribute_values.get(choice_field)
             if specific_choice:
                 side_parts = [specific_choice, side_choice]
                 if toasted is True:
@@ -403,6 +428,7 @@ class MenuItemConverter(ItemConverter):
 
         # Build modifiers list with prices
         modifiers = []
+
         # Add toasted modifier if side choice type has "toasted" attribute
         if toasted is True and side_choice:
             side_attrs = menu_cache.get_item_type_attributes(side_choice)
@@ -410,12 +436,21 @@ class MenuItemConverter(ItemConverter):
                 modifiers.append({"name": "Toasted", "price": 0})
 
         # Add spread to modifiers if set
-        spread_price = getattr(item, 'spread_price', None)
-        spread_type = getattr(item, 'spread_type', None) or attribute_values.get("spread_type")
         if spread and spread.lower() != "none":
             # Look up spread price from pricing engine if not already set
-            if spread_price is None and pricing and hasattr(pricing, 'lookup_spread_price') and menu_item_type:
-                spread_price = pricing.lookup_spread_price(spread, spread_type, menu_item_type) or 0
+            if spread_price is None and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
+                # Try compound spread name first (e.g., "scallion_cream_cheese")
+                if spread_type:
+                    compound_slug = f"{spread_type}_{spread}".replace(" ", "_").lower()
+                    spread_price = pricing.lookup_modifier_price(compound_slug, menu_item_type)
+                # Fall back to base spread name
+                if not spread_price:
+                    spread_price = pricing.lookup_modifier_price(spread, menu_item_type)
+                # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
+                if not spread_price:
+                    plain_slug = f"plain_{spread.lower().replace(' ', '_')}"
+                    spread_price = pricing.lookup_modifier_price(plain_slug, menu_item_type)
+                spread_price = spread_price or 0
             spread_name = spread
             if spread_type and spread_type != "plain":
                 spread_name = f"{spread_type} {spread}"
@@ -426,26 +461,22 @@ class MenuItemConverter(ItemConverter):
             modifiers.append({"name": mod, "price": 0})
 
         # Add extra_protein and toppings (with prices from pricing engine)
-        extra_protein = getattr(item, 'extra_protein', None)
-        toppings = getattr(item, 'toppings', []) or []
         if extra_protein and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
             protein_price = pricing.lookup_modifier_price(extra_protein, menu_item_type) or 0
             modifiers.append({"name": extra_protein, "price": protein_price})
-        for extra in toppings:
+        for extra in toppings_list:
             if pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
                 extra_price = pricing.lookup_modifier_price(extra, menu_item_type) or 0
                 modifiers.append({"name": extra, "price": extra_price})
 
         # Convert DB-driven attribute_values to modifiers for cart display
-        # Use the shared generic processing method
-        # Pass include_free=True so all customizations appear in cart (with price=0)
         self._process_attribute_values_to_modifiers(
             attribute_values=attribute_values,
             modifiers=modifiers,
-            free_details=[],  # Not used when include_free=True
+            free_details=[],
             pricing=pricing,
             skip_slugs={"bread"},  # bread is in display_name
-            include_free_in_modifiers=True,  # Add free items to modifiers with price=0
+            include_free_in_modifiers=True,
             item_type=menu_item_type,
         )
 
@@ -454,7 +485,6 @@ class MenuItemConverter(ItemConverter):
         # Get base_price from pricing engine if available, or from item
         base_price = getattr(item, 'base_price', None)
         if base_price is None and pricing:
-            # For items with bread attribute (bagels), look up base price from pricing engine
             item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
             if "bread" in item_attrs:
                 try:
@@ -466,20 +496,17 @@ class MenuItemConverter(ItemConverter):
         if base_price is None:
             base_price = item.unit_price or 0.0
 
-        # For bagels, include bagel-specific fields in item_config for backwards compatibility
-        # Check "bread" first (canonical key), fall back to "bagel_type" for legacy data
+        # Get bagel-specific values for backward compatibility
         bagel_type = attribute_values.get("bread") or attribute_values.get("bagel_type")
         bagel_type_upcharge = attribute_values.get("bread_upcharge") or attribute_values.get("bagel_type_upcharge", 0.0) or 0.0
-        spread_type = attribute_values.get("spread_type")
         scooped = attribute_values.get("scooped")
-        extra_protein = getattr(item, 'extra_protein', None)
-        toppings_list = getattr(item, 'toppings', []) or []
 
         result = self._build_common_dict_fields(item)
+
         # Use the actual menu_item_type for backwards compatibility
-        # (bagels should output item_type="bagel", not "menu_item")
         if menu_item_type:
             result["item_type"] = menu_item_type
+
         result.update({
             "menu_item_name": menu_item_name,
             "display_name": display_name,
@@ -489,36 +516,49 @@ class MenuItemConverter(ItemConverter):
             "modifiers": modifiers,
             "free_details": [],
             "base_price": base_price,
-            "side_choice": side_choice,
-            "bagel_choice": bagel_choice,
-            "toasted": toasted if toasted is not None else attribute_values.get("toasted"),
-            "spread": spread,
-            # Bagel-specific fields at top level for backwards compatibility
-            "bagel_type": bagel_type,
-            "toppings": toppings_list,
-            "side_config": side_config,  # Generic side configuration (replaces side_bagel_config)
-            "requires_side_choice": getattr(item, 'requires_side_choice', False),
             "removed_ingredients": removed_ingredients,
-            # DB-driven attribute values
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
-            # item_config with both generic and bagel-specific fields for backwards compatibility
-            "item_config": {
-                "menu_item_type": menu_item_type,
-                "modifiers": modifiers,
-                "attribute_values": attribute_values,
-                "base_price": base_price,
-                # Bagel-specific fields (for backwards compatibility)
-                "bagel_type": bagel_type,
-                "bagel_type_upcharge": bagel_type_upcharge,
-                "spread": spread,
-                "spread_type": spread_type,
-                "toasted": toasted if toasted is not None else attribute_values.get("toasted"),
-                "scooped": scooped,
-                "extra_protein": extra_protein,
-                "toppings": toppings_list,
-            },
         })
+
+        # Data-driven: output DB-defined attributes at top level
+        if menu_item_type:
+            item_attrs = menu_cache.get_item_type_attributes(menu_item_type)
+            for attr_slug in item_attrs.keys():
+                if attr_slug in attribute_values and attr_slug not in result:
+                    result[attr_slug] = attribute_values[attr_slug]
+
+        # Output legacy fields at top level for backward compatibility
+        legacy_output_fields = [
+            "side_choice", "bagel_choice", "toasted", "spread", "spread_type",
+            "bagel_type", "toppings", "requires_side_choice", "scooped", "extra_protein",
+        ]
+        for field in legacy_output_fields:
+            if field not in result:
+                val = attribute_values.get(field)
+                if val is not None:
+                    result[field] = val
+
+        # Add side_config if present
+        if side_config:
+            result["side_config"] = side_config
+
+        # Build item_config for backward compatibility
+        result["item_config"] = {
+            "menu_item_type": menu_item_type,
+            "modifiers": modifiers,
+            "attribute_values": attribute_values,
+            "base_price": base_price,
+            "bagel_type": bagel_type,
+            "bagel_type_upcharge": bagel_type_upcharge,
+            "spread": spread,
+            "spread_type": spread_type,
+            "toasted": toasted,
+            "scooped": scooped,
+            "extra_protein": extra_protein,
+            "toppings": toppings_list,
+        }
+
         return result
 
 
@@ -621,7 +661,16 @@ class BagelConverter(ItemConverter):
                     "Pricing engine required for spread price. "
                     "Ensure pricing parameter is passed to order_task_to_dict."
                 )
-            spread_price = pricing.lookup_spread_price(spread, spread_type, self.item_type)
+            # Look up spread price - try compound, base, then plain-prefixed
+            spread_price = 0.0
+            if spread_type:
+                compound_slug = f"{spread_type}_{spread}".replace(" ", "_").lower()
+                spread_price = pricing.lookup_modifier_price(compound_slug, self.item_type)
+            if spread_price == 0.0:
+                spread_price = pricing.lookup_modifier_price(spread, self.item_type)
+            if spread_price == 0.0:
+                plain_slug = f"plain_{spread.lower().replace(' ', '_')}"
+                spread_price = pricing.lookup_modifier_price(plain_slug, self.item_type)
             modifiers.append({"name": spread_name, "price": spread_price})
 
         if pricing:

@@ -21,32 +21,34 @@ import uuid
 def get_modifier_name(entry: dict) -> str:
     """Extract the modifier name from a modifier entry dict.
 
-    Handles different key formats used across the codebase:
-    - "slug": canonical format used in unified storage
-    - "type": used in some handler code
-    - "flavor": legacy format for syrups
+    Standard format uses "slug" key:
+        {"slug": "vanilla", "category": "syrup", "quantity": 1}
+
+    Also accepts legacy formats with "type" or "flavor" keys for backward compatibility:
+        {"type": "sugar", "quantity": 1}
+        {"flavor": "vanilla"}
 
     Args:
         entry: Dict with modifier info
 
     Returns:
-        The modifier name/slug, or empty string if not found
+        The modifier slug, or empty string if not found
     """
+    # Check standard key first, then legacy keys
     return entry.get("slug") or entry.get("type") or entry.get("flavor") or ""
 
 
 def normalize_modifier_entry(entry: dict, category: str | None = None) -> dict:
-    """Normalize a modifier entry to the canonical format.
+    """Ensure a modifier entry has all standard fields.
 
-    Converts entries with "type" or "flavor" keys to use "slug".
-    Also ensures display_name and quantity are present.
+    Adds display_name (derived from slug if missing) and ensures quantity is present.
 
     Args:
-        entry: Dict with modifier info (may use "type", "flavor", or "slug")
+        entry: Dict with modifier info (must have "slug" key)
         category: Optional category to add (e.g., "syrup", "sweetener")
 
     Returns:
-        Normalized dict with "slug", "display_name", "quantity", and optionally "category"
+        Dict with "slug", "display_name", "quantity", and optionally "category"
     """
     name = get_modifier_name(entry)
     effective_category = category or entry.get("category")
@@ -215,14 +217,9 @@ class MenuItemTask(ItemTask):
     modifications: list[str] = Field(default_factory=list)  # User modifications
     removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed
 
-    # Customization fields for configurable items (e.g., omelettes, sandwiches)
-    side_choice: str | None = None  # "bagel" or "fruit_salad" for omelettes
-    bagel_choice: str | None = None  # Which bagel if side is bagel, or bagel for sandwiches
-    bagel_choice_upcharge: float = 0.0  # Upcharge for specialty bagel choice (e.g., gluten free +$0.80)
-    # NOTE: toasted and spread are now stored in attribute_values via properties
-    # (see toasted and spread properties below)
-    spread_price: float | None = None  # Price of spread for itemized display
-    requires_side_choice: bool = False  # Whether this item needs side selection
+    # NOTE: Customization fields (side_choice, bagel_choice, toasted, spread, etc.)
+    # are now stored in attribute_values via property accessors for data-driven architecture.
+    # See property definitions below.
     is_signature: bool = False  # Whether this is a signature/featured menu item
 
     # Dynamic attribute values from DB-driven configuration
@@ -896,6 +893,73 @@ class MenuItemTask(ItemTask):
     def needs_cheese_clarification(self, value: bool) -> None:
         """Set needs_cheese_clarification flag in attribute_values."""
         self.attribute_values["needs_cheese_clarification"] = value
+
+    # -------------------------------------------------------------------------
+    # Side choice properties (for items with configurable sides like omelettes)
+    # These are stored in attribute_values for data-driven architecture
+    # -------------------------------------------------------------------------
+
+    @property
+    def side_choice(self) -> str | None:
+        """Get side choice from attribute_values (e.g., 'bagel' or 'fruit_salad')."""
+        return self.attribute_values.get("side_choice")
+
+    @side_choice.setter
+    def side_choice(self, value: str | None) -> None:
+        """Set side choice in attribute_values."""
+        if value is not None:
+            self.attribute_values["side_choice"] = value
+        elif "side_choice" in self.attribute_values:
+            del self.attribute_values["side_choice"]
+
+    @property
+    def bagel_choice(self) -> str | None:
+        """Get bagel choice from attribute_values (which bagel type for side)."""
+        return self.attribute_values.get("bagel_choice")
+
+    @bagel_choice.setter
+    def bagel_choice(self, value: str | None) -> None:
+        """Set bagel choice in attribute_values."""
+        if value is not None:
+            self.attribute_values["bagel_choice"] = value
+        elif "bagel_choice" in self.attribute_values:
+            del self.attribute_values["bagel_choice"]
+
+    @property
+    def bagel_choice_upcharge(self) -> float:
+        """Get bagel choice upcharge from attribute_values."""
+        return self.attribute_values.get("bagel_choice_upcharge", 0.0)
+
+    @bagel_choice_upcharge.setter
+    def bagel_choice_upcharge(self, value: float) -> None:
+        """Set bagel choice upcharge in attribute_values."""
+        self.attribute_values["bagel_choice_upcharge"] = value
+
+    @property
+    def spread_price(self) -> float | None:
+        """Get spread price from attribute_values."""
+        return self.attribute_values.get("spread_price")
+
+    @spread_price.setter
+    def spread_price(self, value: float | None) -> None:
+        """Set spread price in attribute_values."""
+        if value is not None:
+            self.attribute_values["spread_price"] = value
+        elif "spread_price" in self.attribute_values:
+            del self.attribute_values["spread_price"]
+
+    @property
+    def requires_side_choice(self) -> bool:
+        """Get requires_side_choice flag from attribute_values."""
+        return self.attribute_values.get("requires_side_choice", False)
+
+    @requires_side_choice.setter
+    def requires_side_choice(self, value: bool) -> None:
+        """Set requires_side_choice flag in attribute_values."""
+        if value:
+            self.attribute_values["requires_side_choice"] = value
+        elif "requires_side_choice" in self.attribute_values:
+            del self.attribute_values["requires_side_choice"]
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""

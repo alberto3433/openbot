@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Item Type Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/admin_common.css">
   <style>
     body {
       margin: 0;
@@ -214,7 +215,8 @@
       color: #333;
       margin-bottom: 6px;
     }
-    .field input[type="text"] {
+    .field input[type="text"],
+    .field select {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid #ccc;
@@ -223,7 +225,8 @@
       font-family: inherit;
       box-sizing: border-box;
     }
-    .field input:focus {
+    .field input:focus,
+    .field select:focus {
       outline: none;
       border-color: #1976d2;
       box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
@@ -667,10 +670,20 @@
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
-      <a href="/static/admin_global_attributes.html">Global Attrs</a>
       <a href="/static/admin_item_types.html"><strong>Item Types</strong></a>
-      <a href="/static/admin_modifier_categories.html">Categories</a>
-      <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+      <a href="/static/admin_categories.html">Item Cats</a>
+      <span class="nav-group">
+        <span class="nav-group-label">Config &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_global_attributes.html">Global Attributes</a>
+          <a href="/static/admin_size_categories.html">Size Categories</a>
+          <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+          <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+          <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
+        </div>
+      </span>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
@@ -725,6 +738,14 @@
             <label for="aliases">Synonyms</label>
             <input type="text" id="aliases" placeholder="e.g., coffee, java, brew" />
             <div class="hint">Comma-separated synonyms for matching this item type. Must be globally unique.</div>
+          </div>
+
+          <div class="field">
+            <label for="itemTypeCategory">Category</label>
+            <select id="itemTypeCategory">
+              <option value="">-- None --</option>
+            </select>
+            <div class="hint">Determines modifier extraction rules (food items get proteins/cheeses, beverages get milk/sweetener).</div>
           </div>
 
           <div class="config-note">
@@ -897,6 +918,7 @@
     const API_BASE = "/admin/modifiers/item-types";
     const GLOBAL_ATTRS_API = "/admin/global-attributes";
     const ITEM_TYPE_GLOBAL_ATTRS_API = "/admin/item-types";
+    const CATEGORIES_API = "/admin/modifiers/item-type-categories";
 
     // Auth credentials storage
     let authCredentials = null;
@@ -909,6 +931,7 @@
     let linkedAttributes = [];
     let allGlobalAttributes = [];
     let editingLinkId = null;
+    let allCategories = [];
 
     // DOM elements
     const toastContainer = document.getElementById("toastContainer");
@@ -1062,6 +1085,26 @@
       }
     }
 
+    // Load item type categories for dropdown
+    async function loadCategories() {
+      try {
+        const response = await authFetch(CATEGORIES_API);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        allCategories = await response.json();
+        populateCategoryDropdown();
+      } catch (error) {
+        console.error("Failed to load categories:", error);
+        allCategories = [];
+      }
+    }
+
+    // Populate category dropdown
+    function populateCategoryDropdown() {
+      const select = document.getElementById("itemTypeCategory");
+      select.innerHTML = '<option value="">-- None --</option>' +
+        allCategories.map(c => `<option value="${c.id}">${escapeHtml(c.display_name)}</option>`).join("");
+    }
+
     // Populate global attribute dropdown
     function populateGlobalAttrDropdown() {
       const select = document.getElementById("globalAttrSelect");
@@ -1188,6 +1231,7 @@
       document.getElementById("slug").value = "";
       document.getElementById("slug").dataset.manuallyEdited = "";
       document.getElementById("aliases").value = "";
+      document.getElementById("itemTypeCategory").value = "";
       document.getElementById("itemStats").style.display = "none";
       linkedAttributes = [];
       renderAttributes();
@@ -1218,7 +1262,7 @@
       document.getElementById("displayName").value = itemType.display_name;
       document.getElementById("slug").value = itemType.slug;
 
-      // Fetch full details (includes counts, aliases) and show stats
+      // Fetch full details (includes counts, aliases, category) and show stats
       try {
         const response = await authFetch(`${API_BASE}/${itemType.id}`);
         if (response.ok) {
@@ -1226,12 +1270,15 @@
           showItemStats(fullDetails);
           // Populate aliases from full details
           document.getElementById("aliases").value = (fullDetails.aliases || []).join(", ");
+          // Set category dropdown
+          document.getElementById("itemTypeCategory").value = fullDetails.item_type_category_id || "";
         }
       } catch (error) {
         console.error("Failed to load full item type details:", error);
         // Hide stats on error
         document.getElementById("itemStats").style.display = "none";
         document.getElementById("aliases").value = "";
+        document.getElementById("itemTypeCategory").value = "";
       }
 
       // Load attributes
@@ -1266,6 +1313,8 @@
       const displayName = document.getElementById("displayName").value.trim();
       const slug = document.getElementById("slug").value.trim().toLowerCase();
       const aliases = document.getElementById("aliases").value.trim();
+      const categoryValue = document.getElementById("itemTypeCategory").value;
+      const categoryId = categoryValue ? parseInt(categoryValue) : null;
 
       if (!displayName || !slug) {
         showToast("Please fill in all required fields", "error");
@@ -1280,7 +1329,8 @@
       const payload = {
         display_name: displayName,
         slug: slug,
-        aliases: aliases  // Empty string clears aliases, null means don't update
+        aliases: aliases,  // Empty string clears aliases, null means don't update
+        item_type_category_id: categoryId
       };
 
       setSaveButtonState(saveBtn, "saving");
@@ -1600,6 +1650,8 @@
 
     // Initial load
     loadItemTypes();
+    loadCategories();
   </script>
+  <script src="/static/admin_common.js"></script>
 </body>
 </html>

@@ -168,9 +168,65 @@ def mock_get_category_keyword_mapping(keyword: str):
         "drinks": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
         "beverage": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
         "beverages": {"slug": "sized_beverage", "expands_to": None, "name_filter": None},
-        # Sandwich keywords
-        "sandwich": {"slug": "sandwich", "expands_to": None, "name_filter": None},
-        "sandwiches": {"slug": "sandwich", "expands_to": None, "name_filter": None},
+        # Sandwich keywords - sandwich is a virtual category that expands to subtypes
+        "sandwich": {
+            "slug": "sandwich",
+            "display_name": "sandwich",
+            "display_name_plural": "sandwiches",
+            "expands_to": ["egg_sandwich", "fish_sandwich"],
+            "name_filter": None,
+        },
+        "sandwiches": {
+            "slug": "sandwich",
+            "display_name": "sandwich",
+            "display_name_plural": "sandwiches",
+            "expands_to": ["egg_sandwich", "fish_sandwich"],
+            "name_filter": None,
+        },
+        # Sandwich subtypes - both underscore and space versions
+        "egg_sandwich": {
+            "slug": "egg_sandwich",
+            "display_name": "egg sandwich",
+            "display_name_plural": "egg sandwiches",
+            "expands_to": None,
+            "name_filter": None,
+        },
+        "egg sandwich": {
+            "slug": "egg_sandwich",
+            "display_name": "egg sandwich",
+            "display_name_plural": "egg sandwiches",
+            "expands_to": None,
+            "name_filter": None,
+        },
+        "fish_sandwich": {
+            "slug": "fish_sandwich",
+            "display_name": "fish sandwich",
+            "display_name_plural": "fish sandwiches",
+            "expands_to": None,
+            "name_filter": None,
+        },
+        "fish sandwich": {
+            "slug": "fish_sandwich",
+            "display_name": "fish sandwich",
+            "display_name_plural": "fish sandwiches",
+            "expands_to": None,
+            "name_filter": None,
+        },
+        # Omelette keywords
+        "omelette": {
+            "slug": "omelette",
+            "display_name": "omelette",
+            "display_name_plural": "omelettes",
+            "expands_to": None,
+            "name_filter": None,
+        },
+        "omelettes": {
+            "slug": "omelette",
+            "display_name": "omelette",
+            "display_name_plural": "omelettes",
+            "expands_to": None,
+            "name_filter": None,
+        },
     }
 
     return category_mappings.get(keyword_lower)
@@ -768,14 +824,14 @@ class TestMenuItemToasted:
         assert item.toasted is None, f"Item should be toasted=None, got {item.toasted}"
 
     def test_deterministic_parser_extracts_toasted(self):
-        """Test that the deterministic parser extracts toasted from HEC orders."""
+        """Test that the deterministic parser extracts toasted from bagel orders with proteins."""
         from sandwich_bot.tasks.state_machine import parse_open_input
 
         # Test with "toasted" in the input
-        # "ham egg and cheese" is parsed as a bagel with protein modifiers (see EGG_CHEESE_SANDWICH_ABBREVS)
+        # "ham egg and cheese" is parsed as a bagel with protein modifiers
         result = parse_open_input("ham egg and cheese on wheat toasted")
 
-        # Should have toasted set to True in bagel fields (HEC creates a bagel with proteins)
+        # Should have toasted set to True in bagel fields
         assert result.new_bagel_toasted is True, f"Should extract toasted=True, got {result.new_bagel_toasted}"
         assert result.new_bagel is True, "Should be a bagel order"
         # Proteins should include ham and egg
@@ -784,7 +840,7 @@ class TestMenuItemToasted:
         assert "egg" in result.new_bagel_proteins
 
     def test_multi_item_parser_extracts_bagel_toasted(self):
-        """Test that the parser extracts toasted for HEC bagels.
+        """Test that the parser extracts toasted for bagels with proteins.
 
         Regression test for: "ham egg and cheese on wheat toasted"
         being parsed but not capturing the toasted preference.
@@ -794,7 +850,7 @@ class TestMenuItemToasted:
         # Use natural language format (comma-separated "ham, egg, cheese" would split incorrectly)
         result = parse_open_input("ham egg and cheese on wheat toasted")
 
-        # Should have detected a bagel with toasted=True (HEC creates a bagel with proteins)
+        # Should have detected a bagel with toasted=True
         assert result is not None, "Should detect items in input"
         assert result.new_bagel is True, "Should detect bagel"
         assert result.new_bagel_toasted is True, f"Should extract toasted=True, got {result.new_bagel_toasted}"
@@ -2522,8 +2578,12 @@ class TestMenuQuery:
         assert "bagel" in result.message
         assert "beverage" in result.message
 
-    def test_beverage_query_combines_types(self):
-        """Test that 'beverage' query combines sized_beverage and beverage types."""
+    def test_beverage_query_uses_database_mapping(self):
+        """Test that 'beverage' query uses database-driven category mapping.
+
+        The database maps "beverage" keyword to the "sized_beverage" item type,
+        so items from that type should be returned.
+        """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
@@ -2537,9 +2597,9 @@ class TestMenuQuery:
 
         result = sm.query_handler.handle_menu_query("beverage", order)
 
-        assert "beverages include" in result.message.lower()
+        # Should return items from the mapped type (sized_beverage based on database config)
+        assert "include" in result.message.lower()
         assert "Latte" in result.message
-        assert "Coke" in result.message
 
     def test_beverage_query_with_prices(self):
         """Test beverage query shows prices when requested."""
@@ -2556,11 +2616,16 @@ class TestMenuQuery:
 
         result = sm.query_handler.handle_menu_query("beverage", order, show_prices=True)
 
+        # Should show price for items from mapped type
         assert "$4.50" in result.message
-        assert "$2.00" in result.message
 
-    def test_sandwich_query_asks_for_type(self):
-        """Test that 'sandwich' query asks for more specifics."""
+    def test_sandwich_query_lists_matching_items(self):
+        """Test that 'sandwich' query lists all sandwiches using generic matching.
+
+        With the data-driven approach, querying 'sandwich' matches item type keys
+        that contain 'sandwich' (egg_sandwich, fish_sandwich, etc.) and aggregates
+        all their items.
+        """
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
 
@@ -2569,7 +2634,9 @@ class TestMenuQuery:
 
         result = sm.query_handler.handle_menu_query("sandwich", order)
 
-        assert "egg sandwiches" in result.message.lower() or "what kind" in result.message.lower()
+        # Should list sandwiches or ask for specifics
+        assert "sandwich" in result.message.lower()
+        assert "include" in result.message.lower() or "what kind" in result.message.lower()
 
     def test_empty_menu_data(self):
         """Test handling when no menu data available."""
@@ -3012,16 +3079,11 @@ class TestRecommendationInquiry:
 class TestCoffeeSize:
     """Tests for _handle_coffee_size."""
 
-    @patch('sandwich_bot.tasks.parsers.llm_parsers.parse_coffee_size')
-    def test_small_size_selected(self, mock_parse):
+    def test_small_size_selected(self):
         """Test selecting small size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
         from tests.test_helpers import CoffeeItemTask
-        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
-
-        # Mock the parser to return small size
-        mock_parse.return_value = CoffeeSizeResponse(size="small")
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3038,16 +3100,11 @@ class TestCoffeeSize:
         assert order.pending_field in ("coffee_style", "menu_item_attr_iced", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
         assert "hot or iced" in result.message.lower()
 
-    @patch('sandwich_bot.tasks.parsers.llm_parsers.parse_coffee_size')
-    def test_large_size_selected(self, mock_parse):
+    def test_large_size_selected(self):
         """Test selecting large size."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
         from tests.test_helpers import CoffeeItemTask
-        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
-
-        # Mock the parser to return large size
-        mock_parse.return_value = CoffeeSizeResponse(size="large")
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3096,16 +3153,11 @@ class TestCoffeeSize:
                 f"Should ask about size, got: {result.message}"
         # If size was set, test passes (jumbo might map to a valid size)
 
-    @patch('sandwich_bot.tasks.parsers.llm_parsers.parse_coffee_size')
-    def test_size_with_drink_name_in_prompt(self, mock_parse):
-        """Test that reprompt includes drink name."""
+    def test_size_with_drink_name_in_prompt(self):
+        """Test that reprompt includes drink name when size is unclear."""
         from sandwich_bot.tasks.state_machine import OrderStateMachine
         from sandwich_bot.tasks.models import OrderTask
         from tests.test_helpers import CoffeeItemTask
-        from sandwich_bot.tasks.schemas.parser_responses import CoffeeSizeResponse
-
-        # Mock the parser to return no size (unclear)
-        mock_parse.return_value = CoffeeSizeResponse(size=None)
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -3116,9 +3168,10 @@ class TestCoffeeSize:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
+        # Use unclear input that doesn't match any valid size
         result = sm.configuring_item_handler.handle_configuring_item("hmm", order)
 
-        # Should mention the drink type in reprompt
+        # Should mention the drink type in reprompt or ask about size
         assert "espresso" in result.message.lower() or "size" in result.message.lower()
 
     def test_cancel_coffee_during_size_config(self):

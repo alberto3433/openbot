@@ -177,6 +177,10 @@ All food-domain behavior must be **data-driven**, not hardcoded. The codebase sh
 3. No hardcoded item/modifier lists - query the database
 4. **No conditionals that check for specific item type slugs** - this includes ANY string literal like `"bagel"`, `"coffee"`, `"sized_beverage"`, `"espresso"`, `"sandwich"`, etc.
 5. No cross-type fallback mechanisms (see below)
+6. **Food-domain additions require data-driven approach or approval:**
+   - Before adding ANY code that references specific food items, sizes, temperatures, or other domain-specific values (e.g., `"small"`, `"iced"`, `"cream cheese"`), first attempt to make it data-driven via database configuration
+   - If a data-driven solution is not feasible, **ask for approval before proceeding** - explain what you want to add and why it can't be data-driven
+   - This includes: default parameter values, string comparisons, list comprehensions, and any other code patterns that embed food-domain knowledge
 
 ### What "No Hardcoded Slugs" Means
 

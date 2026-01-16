@@ -134,6 +134,18 @@ class MenuDataCache:
         # Global attribute options cache (for shots, size, temperature, etc.)
         self._global_attribute_options: dict[str, list[dict]] = {}  # attr_slug -> list of options
 
+        # Modifier category to attribute slugs index (data-driven lookup)
+        # Maps modifier_category slug -> set of attribute slugs that contain options with that category
+        # E.g., "milk" -> {"milk_sweetener_syrup"}, "syrup" -> {"milk_sweetener_syrup"}
+        self._modifier_category_to_attrs: dict[str, set[str]] = {}
+
+        # Global attribute aliases (e.g., "cream cheese" -> "spread_type")
+        self._global_attribute_aliases: dict[str, str] = {}  # alias -> attr_slug
+
+        # Global attribute property names (mapping DB slug to Python property name)
+        # E.g., "milk_sweetener_syrup" -> "milk" (when property_name differs from slug)
+        self._global_attribute_property_names: dict[str, str] = {}  # attr_slug -> property_name
+
         # Item type attributes cache (lazy-loaded per item type)
         # This is the single source of truth for attribute configs
         self._item_type_attributes: dict[str, dict] = {}  # item_type_slug -> {attr_slug -> attr_config}
@@ -193,6 +205,10 @@ class MenuDataCache:
         # Maps category_slug -> {code_field_name, is_multi_select}
         # Replaces hardcoded INGREDIENT_GROUP_TO_FIELD mapping
         self._ingredient_category_field_config: dict[str, dict] = {}
+
+        # Ingredient category display order (for ordered extraction in parsing)
+        # Maps category_slug -> display_order (int)
+        self._ingredient_category_order: dict[str, int] = {}
 
         # Menu item categories (high-level classifications like "drink", "food")
         # Maps category slug -> list of menu item dicts (id, name, item_type_slug)
@@ -265,6 +281,7 @@ class MenuDataCache:
                 self._load_response_patterns(db)
                 self._load_modifier_qualifiers(db)
                 self._load_global_attribute_options(db)
+                self._load_global_attribute_aliases(db)
                 self._load_item_type_metadata(db)
                 self._load_menu_index(db)
 
@@ -599,17 +616,19 @@ class MenuDataCache:
         The mapping is used for resolving side item input like "sausage" ->
         "Side of Sausage", "latke" -> "Side of Breakfast Latke", etc.
         """
-        from .models import MenuItem
+        from .models import MenuItem, Category, MenuItemCategory
 
         side_items: set[str] = set()
         alias_to_canonical: dict[str, str] = {}
 
-        # Query side items (category = 'side')
+        # Query side items (category slug = 'side') via many-to-many relationship
         # Use joinedload to avoid N+1 queries when accessing aliases
         items = (
             db.query(MenuItem)
             .options(joinedload(MenuItem.alias_records))
-            .filter(MenuItem.category == "side")
+            .join(MenuItemCategory, MenuItemCategory.menu_item_id == MenuItem.id)
+            .join(Category, Category.id == MenuItemCategory.category_id)
+            .filter(Category.slug == "side")
             .all()
         )
 
@@ -732,7 +751,7 @@ class MenuDataCache:
         - non_modifier_keywords hardcoded sets in taking_items_handler.py
 
         Loads:
-        - modifier_category: "food" or "beverage" from item_types.modifier_category
+        - modifier_category: "food" or "beverage" from item_type_categories.slug (via FK)
         - item_keywords: all menu item names (lowercase) + item type slugs for disambiguation
         - configurable_item_types: item types that have attributes defined
         """
@@ -742,16 +761,23 @@ class MenuDataCache:
         item_keywords: set[str] = set()
         configurable_types: set[str] = set()
 
-        # Load all item types with their modifier_category
-        # Use joinedload to avoid N+1 queries when accessing aliases
+        # Load all item types with their category
+        # Use joinedload to avoid N+1 queries when accessing aliases and category
         item_types = (
             db.query(ItemType)
-            .options(joinedload(ItemType.alias_records))
+            .options(
+                joinedload(ItemType.alias_records),
+                joinedload(ItemType.item_type_category),
+            )
             .all()
         )
         for item_type in item_types:
             slug = item_type.slug
-            modifier_categories[slug] = item_type.modifier_category
+            # Get category from FK relationship
+            if item_type.item_type_category:
+                modifier_categories[slug] = item_type.item_type_category.slug
+            else:
+                modifier_categories[slug] = None
 
             # Add item type slug as a keyword
             item_keywords.add(slug.lower())
@@ -1022,6 +1048,7 @@ class MenuDataCache:
                         .joinedload(Ingredient.alias_records),
                         joinedload(GlobalAttributeOption.ingredient)
                         .joinedload(Ingredient.must_match_records),
+                        joinedload(GlobalAttributeOption.modifier_category),
                     )
                     .filter(GlobalAttributeOption.global_attribute_id == attr.id)
                     .order_by(GlobalAttributeOption.display_order)
@@ -1035,13 +1062,34 @@ class MenuDataCache:
 
             self._global_attribute_options = global_attribute_options
 
+            # Build property_name mapping for attributes where it differs from slug
+            property_names: dict[str, str] = {}
+            for attr in attributes:
+                if attr.property_name:
+                    property_names[attr.slug] = attr.property_name
+            self._global_attribute_property_names = property_names
+
+            # Build modifier_category -> attribute_slugs index
+            modifier_category_to_attrs: dict[str, set[str]] = {}
+            for attr_slug, options in global_attribute_options.items():
+                for opt in options:
+                    mod_cat = opt.get("modifier_category")
+                    if mod_cat:
+                        if mod_cat not in modifier_category_to_attrs:
+                            modifier_category_to_attrs[mod_cat] = set()
+                        modifier_category_to_attrs[mod_cat].add(attr_slug)
+            self._modifier_category_to_attrs = modifier_category_to_attrs
+
             logger.debug(
-                "Loaded global attribute options for %d attributes",
+                "Loaded global attribute options for %d attributes, %d modifier categories",
                 len(global_attribute_options),
+                len(modifier_category_to_attrs),
             )
         except Exception as e:
             logger.warning("Could not load global attribute options: %s", e)
             self._global_attribute_options = {}
+            self._global_attribute_property_names = {}
+            self._modifier_category_to_attrs = {}
 
     def _build_global_option_dict(self, opt) -> dict:
         """Build option dict, reading aliases/must_match ONLY from linked Ingredient.
@@ -1060,6 +1108,11 @@ class MenuDataCache:
             aliases = None
             must_match = None
 
+        # Get modifier category slug if linked
+        modifier_category_slug = None
+        if opt.modifier_category:
+            modifier_category_slug = opt.modifier_category.slug
+
         return {
             "slug": opt.slug,
             "display_name": opt.display_name,
@@ -1069,7 +1122,45 @@ class MenuDataCache:
             "is_available": opt.is_available,
             "aliases": aliases,
             "must_match": must_match,
+            "modifier_category": modifier_category_slug,
         }
+
+    def _load_global_attribute_aliases(self, db: Session) -> None:
+        """Load global attribute aliases from the database.
+
+        Maps alternative names for global attributes to their canonical slugs.
+        For example, "cream cheese" -> "spread_type".
+
+        This enables users to refer to attributes by common alternative names
+        without hardcoding these mappings in the codebase.
+        """
+        from .models import GlobalAttribute, GlobalAttributeAlias
+
+        global_attribute_aliases: dict[str, str] = {}
+
+        try:
+            # Query all aliases with their associated global attributes
+            aliases = (
+                db.query(GlobalAttributeAlias)
+                .join(GlobalAttribute)
+                .all()
+            )
+
+            for alias_record in aliases:
+                # Map the alias (lowercase for case-insensitive lookup) to the attribute slug
+                alias_lower = alias_record.alias.lower()
+                attr_slug = alias_record.global_attribute.slug
+                global_attribute_aliases[alias_lower] = attr_slug
+
+            self._global_attribute_aliases = global_attribute_aliases
+
+            logger.debug(
+                "Loaded %d global attribute aliases",
+                len(global_attribute_aliases),
+            )
+        except Exception as e:
+            logger.warning("Could not load global attribute aliases: %s", e)
+            self._global_attribute_aliases = {}
 
     def _load_menu_index(self, db: Session) -> None:
         """Load and cache the menu index.
@@ -1415,7 +1506,7 @@ class MenuDataCache:
 
         Example:
             get_ingredient_categories_by_modifier_type("food")
-            -> {"protein", "topping", "sauce", "cheese", "spread"}
+            -> {"protein", "topping", "cheese", "spread"}
 
             get_ingredient_category_field_config("topping")
             -> {"code_field_name": "toppings", "is_multi_select": True}
@@ -1424,6 +1515,7 @@ class MenuDataCache:
 
         categories_by_modifier_type: dict[str, set[str]] = {}
         category_field_config: dict[str, dict] = {}
+        category_order: dict[str, int] = {}
 
         # Query all ingredient categories
         categories = db.query(IngredientCategory).all()
@@ -1443,13 +1535,18 @@ class MenuDataCache:
                 "is_multi_select": cat.is_multi_select or False,
             }
 
+            # Load display order for extraction ordering
+            category_order[cat.slug] = cat.display_order or 999
+
         self._ingredient_categories_by_modifier_type = categories_by_modifier_type
         self._ingredient_category_field_config = category_field_config
+        self._ingredient_category_order = category_order
 
         logger.debug(
-            "Loaded ingredient category metadata: %s modifier types, %s field configs",
+            "Loaded ingredient category metadata: %s modifier types, %s field configs, %s orders",
             {k: len(v) for k, v in categories_by_modifier_type.items()},
-            len(category_field_config)
+            len(category_field_config),
+            len(category_order)
         )
 
     def _load_menu_item_categories(self, db: Session) -> None:
@@ -1462,7 +1559,7 @@ class MenuDataCache:
         - _available_categories: slug -> display_name mapping
         - _menu_items_by_category_slug: slug -> list of item dicts
         """
-        from .models import Category, MenuItemCategory, MenuItem, ItemType
+        from .models import Category, MenuItemCategory, MenuItem, ItemType, MenuItemSizePrice
 
         available_categories: dict[str, str] = {}
         menu_items_by_category: dict[str, list[dict]] = {}
@@ -1474,14 +1571,26 @@ class MenuDataCache:
             menu_items_by_category[cat.slug] = []
 
         # Load menu items by category
+        # Subquery to get minimum price from size_prices for each menu_item
+        from sqlalchemy import func
+        price_subq = (
+            db.query(
+                MenuItemSizePrice.menu_item_id,
+                func.min(MenuItemSizePrice.price).label("min_price")
+            )
+            .group_by(MenuItemSizePrice.menu_item_id)
+            .subquery()
+        )
+
         category_assignments = (
             db.query(MenuItemCategory)
             .join(MenuItem, MenuItemCategory.menu_item_id == MenuItem.id)
             .join(Category, MenuItemCategory.category_id == Category.id)
+            .outerjoin(price_subq, MenuItem.id == price_subq.c.menu_item_id)
             .add_columns(
                 MenuItem.id.label("menu_item_id"),
                 MenuItem.name.label("menu_item_name"),
-                MenuItem.base_price.label("base_price"),
+                func.coalesce(price_subq.c.min_price, 0.0).label("base_price"),
                 MenuItem.item_type_id.label("item_type_id"),
                 Category.slug.label("category_slug"),
             )
@@ -1883,7 +1992,7 @@ class MenuDataCache:
 
         Examples:
             >>> menu_cache.get_all_ingredient_categories()
-            {"protein", "cheese", "topping", "spread", "sauce", ...}
+            {"protein", "cheese", "topping", "spread", ...}
         """
         self._ensure_loaded()
         return set(self._ingredients_by_category.keys())
@@ -1919,6 +2028,100 @@ class MenuDataCache:
                 return category
         return None
 
+    def find_all_categories_for_ingredient(self, ingredient_name: str) -> list[str]:
+        """Find ALL ingredient categories that contain a given value.
+
+        Unlike get_ingredient_category() which returns the first match,
+        this returns all categories where the ingredient exists. Used for
+        detecting ambiguous modifiers (e.g., "blueberry" could be bread or spread).
+
+        Matching strategy (in order):
+        1. Exact match: "oat milk" in {"oat milk", "whole milk", ...}
+        2. Suffix-stripped match: "oat" from "oat milk" in {"oat", ...}
+        3. Contains match: if any ingredient in category is contained in input
+           (e.g., "oat" in "oat milk" -> matches milk category)
+
+        Args:
+            ingredient_name: The ingredient name or alias to look up (case-insensitive)
+
+        Returns:
+            List of category slugs containing this ingredient. Empty if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.find_all_categories_for_ingredient("blueberry")
+            ["bread", "spread"]  # Ambiguous - exists in both
+            >>> menu_cache.find_all_categories_for_ingredient("bacon")
+            ["protein"]  # Unambiguous
+            >>> menu_cache.find_all_categories_for_ingredient("oat milk")
+            ["milk"]  # Matches "oat" in milk category
+        """
+        self._ensure_loaded()
+        name_lower = ingredient_name.lower().strip()
+        matching_categories = []
+
+        # Common suffixes that can be stripped for matching
+        strippable_suffixes = [" milk", " cream cheese", " spread", " bagel"]
+
+        for category, ingredients in self._ingredients_by_category.items():
+            # 1. Exact match
+            if name_lower in ingredients:
+                matching_categories.append(category)
+                continue
+
+            # 2. Try stripping common suffixes
+            for suffix in strippable_suffixes:
+                if name_lower.endswith(suffix):
+                    stripped = name_lower[:-len(suffix)].strip()
+                    if stripped and stripped in ingredients:
+                        matching_categories.append(category)
+                        break
+            else:
+                # 3. Check if any ingredient in this category is contained in the input
+                # This handles cases like "oat milk" matching "oat" in the milk category
+                for ingredient in ingredients:
+                    # Only match if ingredient is a significant word (3+ chars)
+                    # and appears as a word boundary in the input
+                    if len(ingredient) >= 3 and ingredient in name_lower:
+                        # Verify it's at a word boundary (not partial match)
+                        import re
+                        if re.search(r'\b' + re.escape(ingredient) + r'\b', name_lower):
+                            matching_categories.append(category)
+                            break
+
+        return matching_categories
+
+    def get_category_attribute_slug(self, category_slug: str) -> str:
+        """Get the attribute slug (code_field_name) for an ingredient category.
+
+        Maps ingredient category to the Python attribute name used in MenuItemTask.
+        Uses code_field_name from ingredient_categories table, defaulting to
+        the category slug if not set.
+
+        Args:
+            category_slug: The ingredient category (e.g., "spread", "protein", "milk")
+
+        Returns:
+            The attribute slug (e.g., "spread_type", "extra_protein", "milk")
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_category_attribute_slug("protein")
+            "extra_protein"
+            >>> menu_cache.get_category_attribute_slug("spread")
+            "spread"  # Defaults to slug if no code_field_name set
+        """
+        self._ensure_loaded()
+        config = self._ingredient_category_field_config.get(category_slug)
+        if config:
+            return config.get("code_field_name", category_slug)
+        # Fallback to category slug if not in config
+        return category_slug
+
     def get_ingredient_categories_by_modifier_type(self, modifier_type: str) -> set[str]:
         """Get all ingredient category slugs for a given modifier type.
 
@@ -1938,13 +2141,38 @@ class MenuDataCache:
 
         Examples:
             >>> menu_cache.get_ingredient_categories_by_modifier_type("food")
-            {"protein", "topping", "sauce", "cheese", "spread"}
+            {"protein", "topping", "cheese", "spread"}
 
             >>> menu_cache.get_ingredient_categories_by_modifier_type("beverage")
             {"milk", "sweetener", "syrup"}
         """
         self._ensure_loaded()
         return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
+
+    def get_ordered_ingredient_categories(self, modifier_type: str) -> list[str]:
+        """Get ingredient category slugs for a modifier type, ordered by display_order.
+
+        This is used for data-driven parsing where extraction order matters
+        (e.g., spreads should be extracted before proteins to avoid ambiguity).
+
+        Args:
+            modifier_type: The modifier type ("food" or "beverage")
+
+        Returns:
+            List of ingredient category slugs, sorted by display_order.
+            Returns empty list if modifier_type is not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ordered_ingredient_categories("food")
+            ["spread", "protein", "cheese", "topping"]  # ordered by display_order
+        """
+        self._ensure_loaded()
+        categories = self._ingredient_categories_by_modifier_type.get(modifier_type, set())
+        # Sort by display_order (stored in _ingredient_category_order)
+        return sorted(categories, key=lambda c: self._ingredient_category_order.get(c, 999))
 
     def get_ingredient_category_field_config(self, category_slug: str) -> dict | None:
         """Get field configuration for an ingredient category.
@@ -2134,6 +2362,110 @@ class MenuDataCache:
                 f"Check that global_attribute_options table has options for this attribute."
             )
         return options
+
+    def get_global_attribute_slug_by_alias(self, alias: str) -> str | None:
+        """Look up a global attribute slug by its alias.
+
+        Args:
+            alias: The alias to look up (e.g., "cream cheese")
+
+        Returns:
+            The attribute slug (e.g., "spread_type") if alias exists, None otherwise.
+
+        Example:
+            >>> cache.get_global_attribute_slug_by_alias("cream cheese")
+            "spread_type"
+            >>> cache.get_global_attribute_slug_by_alias("unknown")
+            None
+        """
+        self._ensure_loaded()
+        return self._global_attribute_aliases.get(alias.lower())
+
+    def get_all_global_attribute_aliases(self) -> dict[str, str]:
+        """Get all global attribute aliases.
+
+        Returns:
+            Dict mapping alias (lowercase) to attribute slug.
+
+        Example:
+            >>> cache.get_all_global_attribute_aliases()
+            {"cream cheese": "spread_type", ...}
+        """
+        self._ensure_loaded()
+        return self._global_attribute_aliases.copy()
+
+    def get_property_name_for_attribute(self, attr_slug: str) -> str:
+        """Get the Python property name for an attribute slug.
+
+        Some attributes have a different property name than their database slug.
+        For example, "milk_sweetener_syrup" -> "milk".
+
+        This method does NOT require the cache to be loaded - it gracefully
+        falls back to returning the slug itself if the cache isn't loaded.
+        This is safe because property name mapping is a code-level concern,
+        and the calling code should have fallback logic anyway.
+
+        Args:
+            attr_slug: The attribute slug (e.g., "milk_sweetener_syrup")
+
+        Returns:
+            The property name to use in Python code.
+            Returns the slug itself if no custom property_name is defined
+            or if the cache is not loaded.
+
+        Example:
+            >>> cache.get_property_name_for_attribute("milk_sweetener_syrup")
+            "milk"
+            >>> cache.get_property_name_for_attribute("size")
+            "size"
+        """
+        # Don't require cache to be loaded - property name mapping is optional
+        # and the caller should handle the fallback case
+        if not self._is_loaded:
+            return attr_slug
+        return self._global_attribute_property_names.get(attr_slug, attr_slug)
+
+    def get_attributes_for_modifier_category(self, modifier_category: str) -> set[str]:
+        """Get attribute slugs that contain options with the given modifier category.
+
+        This enables data-driven lookup of which attributes to search when
+        looking for a specific type of modifier (e.g., milk, syrup, sweetener).
+
+        Args:
+            modifier_category: The modifier category slug (e.g., "milk", "syrup", "sweetener")
+
+        Returns:
+            Set of attribute slugs that contain options with this modifier category.
+            Empty set if no attributes contain options for this category.
+
+        Example:
+            >>> cache.get_attributes_for_modifier_category("milk")
+            {"milk_sweetener_syrup"}
+            >>> cache.get_attributes_for_modifier_category("syrup")
+            {"milk_sweetener_syrup"}
+        """
+        self._ensure_loaded()
+        return self._modifier_category_to_attrs.get(modifier_category, set()).copy()
+
+    def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
+        """Check if an attribute contains options with the given modifier category.
+
+        Args:
+            attr_slug: The attribute slug to check
+            modifier_category: The modifier category to look for (e.g., "milk", "syrup")
+
+        Returns:
+            True if the attribute has options with this modifier category.
+
+        Example:
+            >>> cache.attribute_contains_modifier_category("milk_sweetener_syrup", "milk")
+            True
+            >>> cache.attribute_contains_modifier_category("size", "milk")
+            False
+        """
+        self._ensure_loaded()
+        attrs_with_category = self._modifier_category_to_attrs.get(modifier_category, set())
+        return attr_slug in attrs_with_category
 
     def get_item_type_attributes(self, item_type_slug: str) -> dict:
         """Get attributes for an item type (lazy-loaded, single source of truth).

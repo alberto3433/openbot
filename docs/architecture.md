@@ -110,6 +110,31 @@ Each task has a status:
 - **complete**: All required fields filled
 - **skipped**: Explicitly skipped or cancelled by user
 
+### Standard Modifier Entry Format
+
+All modifier entries (sweeteners, syrups, toppings, etc.) must use this canonical dictionary format:
+
+```python
+{
+    "slug": "vanilla",           # Always "slug" for the identifier (required)
+    "category": "syrup",         # Explicit category metadata (required)
+    "quantity": 1,               # How many (default: 1)
+    "price": 0.75,               # Price if applicable (optional)
+    "display_name": "Vanilla Syrup"  # Human-readable name (optional)
+}
+```
+
+**Rules:**
+1. **Always use `slug`** for the identifier key
+2. **Always include `category`** - don't infer it from the key name or context
+3. **`quantity` defaults to 1** if not specified
+4. **`display_name` is optional** - can be derived from slug if not provided
+
+**Why this matters:**
+- Single key (`slug`) keeps the code simple - no fallback chains needed
+- Explicit `category` makes the data self-describing and generic
+- Works for any domain (bagel shop, sushi restaurant, etc.)
+
 ---
 
 ## Database Schema

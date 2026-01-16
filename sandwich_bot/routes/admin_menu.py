@@ -236,11 +236,14 @@ def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
                 price=float(sp.price),
             ))
 
+    # Derive category from item_type for backward compatibility
+    category = item.item_type.display_name if item.item_type else None
+
     return MenuItemOut(
         id=item.id,
         name=item.name,
         description=item.description,
-        category=item.category,
+        category=category,
         is_signature=item.is_signature,
         base_price=float(item.base_price),
         available_qty=item.available_qty,
@@ -288,9 +291,8 @@ def create_menu_item(
     item = MenuItem(
         name=payload.name,
         description=payload.description,
-        category=payload.category,
+        # Note: category column removed - use category_ids for categorization
         is_signature=payload.is_signature,
-        base_price=payload.base_price,
         available_qty=payload.available_qty,
         extra_metadata=json.dumps(payload.metadata or {}),
         item_type_id=payload.item_type_id,
@@ -307,15 +309,19 @@ def create_menu_item(
     # Add category assignments
     _set_menu_item_categories(db, item, payload.category_ids)
 
-    # Add size prices
-    _set_menu_item_size_prices(db, item, None, payload.size_prices)
+    # Add size prices - if no size_prices provided, create default from base_price
+    size_prices_to_set = payload.size_prices
+    if not size_prices_to_set and payload.base_price is not None:
+        # Create a default "each" size price from the base_price
+        # size_id=6 is the "each" size in the Quantity category
+        size_prices_to_set = [{"size_id": 6, "price": payload.base_price}]
+        if not payload.size_category_id:
+            item.size_category_id = 3  # Quantity category
+    _set_menu_item_size_prices(db, item, None, size_prices_to_set)
 
     db.commit()
     db.refresh(item)
     logger.info("Created menu item: %s (id=%d)", item.name, item.id)
-
-    # Refresh menu cache so pricing engine uses new data
-    menu_cache.load_from_db(db, fail_on_error=False, force=True)
 
     return serialize_menu_item(item, db)
 
@@ -356,12 +362,21 @@ def update_menu_item(
         item.name = payload.name
     if payload.description is not None:
         item.description = payload.description
-    if payload.category is not None:
-        item.category = payload.category
+    # Note: payload.category is ignored - use category_ids for categorization
     if payload.is_signature is not None:
         item.is_signature = payload.is_signature
-    if payload.base_price is not None:
-        item.base_price = payload.base_price
+    # Note: base_price is now computed from size_prices, not stored directly
+    # If base_price is provided without size_prices, create/update the default size price
+    if payload.base_price is not None and not payload.size_prices:
+        from sandwich_bot.models import MenuItemSizePrice
+        # Find existing "each" price or create one
+        each_price = next((sp for sp in item.size_prices if sp.size_id == 6), None)
+        if each_price:
+            each_price.price = payload.base_price
+        else:
+            db.add(MenuItemSizePrice(menu_item_id=item.id, size_id=6, price=payload.base_price))
+            if not item.size_category_id:
+                item.size_category_id = 3  # Quantity category
     if payload.available_qty is not None:
         item.available_qty = payload.available_qty
     if payload.metadata is not None:
@@ -384,9 +399,6 @@ def update_menu_item(
     db.refresh(item)
     logger.info("Updated menu item: %s (id=%d)", item.name, item.id)
 
-    # Refresh menu cache so pricing engine uses new data
-    menu_cache.load_from_db(db, fail_on_error=False, force=True)
-
     return serialize_menu_item(item, db)
 
 
@@ -404,9 +416,6 @@ def delete_menu_item(
     logger.info("Deleting menu item: %s (id=%d)", item.name, item.id)
     db.delete(item)
     db.commit()
-
-    # Refresh menu cache so pricing engine uses updated data
-    menu_cache.load_from_db(db, fail_on_error=False, force=True)
 
     return None
 

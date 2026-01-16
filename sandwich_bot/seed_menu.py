@@ -397,28 +397,14 @@ def link_menu_items_to_item_types():
             "dessert": dessert_type,
         }
 
-        # Update all menu items
-        menu_items = db.query(MenuItem).all()
-        updated = 0
-        for item in menu_items:
-            if item.item_type_id is None:
-                item_type = category_to_type.get(item.category)
-                if item_type:
-                    item.item_type_id = item_type.id
-
-                    # Migrate extra_metadata to default_config for sandwiches
-                    if item_type.slug == "sandwich" and item.extra_metadata:
-                        try:
-                            metadata = json.loads(item.extra_metadata)
-                            if "default_config" in metadata:
-                                item.default_config = metadata["default_config"]
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-
-                    updated += 1
-
-        db.commit()
-        print(f"Linked {updated} menu items to item types.")
+        # Update all menu items (legacy migration - category column has been removed)
+        # This code is kept for reference but is no longer functional
+        # All menu items should already have item_type_id set
+        menu_items = db.query(MenuItem).filter(MenuItem.item_type_id.is_(None)).all()
+        if menu_items:
+            print(f"Warning: {len(menu_items)} menu items have no item_type_id assigned")
+        else:
+            print("All menu items have item_type_id assigned.")
 
     finally:
         db.close()

@@ -247,6 +247,44 @@ class ByPoundHandler(BaseHandler):
             order=order,
         )
 
+    def _get_per_pound_price(self, item_name: str) -> float:
+        """Get the per-pound price for a by-the-pound item.
+
+        Uses the unified size pricing (menu_item_size_prices) to look up
+        the "1 lb" price, or calculates from "1/4 lb" if 1 lb not available.
+
+        Args:
+            item_name: Name of the item (e.g., "Whitefish Salad", "Nova Scotia Salmon")
+
+        Returns:
+            Price per pound
+
+        Raises:
+            ValueError: If price cannot be determined for the item
+        """
+        if not self.pricing:
+            raise ValueError("Pricing engine not available")
+
+        # Try to get "1 lb" price directly
+        one_lb_price, _ = self.pricing.lookup_size_price(item_name, "1 lb")
+        if one_lb_price is not None:
+            return one_lb_price
+
+        # Fall back to "1/4 lb" price × 4
+        quarter_lb_price, _ = self.pricing.lookup_size_price(item_name, "1/4 lb")
+        if quarter_lb_price is not None:
+            return quarter_lb_price * 4
+
+        # Try without size to see if it's a single-price item
+        single_price, size_data = self.pricing.lookup_size_price(item_name, None)
+        if single_price is not None:
+            return single_price
+
+        raise ValueError(
+            f"No size price found for by-pound item '{item_name}'. "
+            "Ensure item has prices in menu_item_size_prices table."
+        )
+
     def add_by_pound_items(
         self,
         by_pound_items: list[ByPoundOrderItem],
@@ -261,7 +299,7 @@ class ByPoundHandler(BaseHandler):
             # Calculate price based on quantity and per-pound price
             if self.pricing:
                 pounds = self.pricing.parse_quantity_to_pounds(item.quantity)
-                per_pound_price = self.pricing.lookup_by_pound_price(item.item_name)
+                per_pound_price = self._get_per_pound_price(item.item_name)
                 total_price = round(pounds * per_pound_price, 2)
             else:
                 total_price = 0.0

@@ -28,10 +28,6 @@ from ..schemas import (
 from .constants import (
     WORD_TO_NUM,
     get_signature_item_aliases,
-    # Bagel modifiers (loaded from database via dynamic functions)
-    get_proteins,
-    get_cheeses,
-    get_toppings,
     # Dynamic spread functions (loaded from database)
     get_spreads,
     get_spread_types,
@@ -169,7 +165,7 @@ def _build_bagel_parsed_item(
     if scooped is not None:
         attr_values["scooped"] = scooped
     if spread is not None:
-        attr_values["spread_type"] = spread
+        attr_values["spread"] = spread
     if spread_type is not None:
         attr_values["spread_type"] = spread_type
 
@@ -518,34 +514,6 @@ DUPLICATE_ALL_PATTERN = re.compile(
     r"[\s!.,?]*$",
     re.IGNORECASE
 )
-
-# Egg + cheese sandwich abbreviations (SEC, HEC, etc.)
-# These create bagels with protein modifiers, not speed menu items
-# Format: (pattern, proteins_list)
-EGG_CHEESE_SANDWICH_ABBREVS = {
-    # Sausage egg and cheese
-    "sec": ["sausage", "egg"],
-    "s.e.c.": ["sausage", "egg"],
-    "s.e.c": ["sausage", "egg"],
-    "sausage egg and cheese": ["sausage", "egg"],
-    "sausage egg cheese": ["sausage", "egg"],
-    "sausage and egg and cheese": ["sausage", "egg"],
-    "sausage eggs and cheese": ["sausage", "egg"],
-    # Ham egg and cheese
-    "hec": ["ham", "egg"],
-    "h.e.c.": ["ham", "egg"],
-    "h.e.c": ["ham", "egg"],
-    "ham egg and cheese": ["ham", "egg"],
-    "ham egg cheese": ["ham", "egg"],
-    "ham and egg and cheese": ["ham", "egg"],
-    "ham eggs and cheese": ["ham", "egg"],
-    # Turkey egg and cheese
-    "tec": ["turkey", "egg"],
-    "t.e.c.": ["turkey", "egg"],
-    "t.e.c": ["turkey", "egg"],
-    "turkey egg and cheese": ["turkey", "egg"],
-    "turkey egg cheese": ["turkey", "egg"],
-}
 
 # Tax question pattern
 TAX_QUESTION_PATTERN = re.compile(
@@ -901,11 +869,15 @@ def extract_modifiers_from_input(user_input: str) -> ExtractedModifiers:
 
                 start = pos + 1
 
-    # Extract in order of specificity
-    find_and_add(get_bagel_spreads(), "spread")
-    find_and_add(get_proteins(), "protein")
-    find_and_add(get_cheeses(), "cheese")
-    find_and_add(get_toppings(), "topping")
+    # Extract food modifiers in order of specificity (from DB display_order)
+    # Uses data-driven category ordering instead of hardcoded function calls
+    for category in menu_cache.get_ordered_ingredient_categories("food"):
+        # Try item-type-specific ingredients first, fall back to global
+        ingredients = menu_cache.get_ingredients_for_item_type("bagel", category)
+        if not ingredients:
+            ingredients = menu_cache.get_ingredients(category)
+        if ingredients:
+            find_and_add(ingredients, category)
 
     # Special case: detect generic "cheese" even if not in database cheeses list
     # This handles "add cheese" where user wants sliced cheese but didn't specify type
@@ -1282,23 +1254,18 @@ def _extract_modifiers_generic(
     found_modifiers = []
 
     # Get modifier category for this item type (food or beverage)
-    modifier_category = menu_cache.get_modifier_category(item_type)
+    modifier_type = menu_cache.get_modifier_category(item_type)
 
-    if modifier_category == "food":
-        # Food modifiers: proteins, cheeses, toppings, spreads
-        for protein in get_proteins():
-            if protein.lower() in text_lower:
-                found_modifiers.append(protein.lower())
+    if modifier_type == "food":
+        # Food modifiers: extracted in database-defined order (proteins, cheeses, toppings, spreads)
+        for category in menu_cache.get_ordered_ingredient_categories("food"):
+            # Get ingredients for this category
+            ingredients = menu_cache.get_ingredients(category)
+            for ingredient in ingredients:
+                if ingredient.lower() in text_lower:
+                    found_modifiers.append(ingredient.lower())
 
-        for cheese in get_cheeses():
-            if cheese.lower() in text_lower:
-                found_modifiers.append(cheese.lower())
-
-        for topping in get_toppings():
-            if topping.lower() in text_lower:
-                found_modifiers.append(topping.lower())
-
-    elif modifier_category == "beverage":
+    elif modifier_type == "beverage":
         # Beverage modifiers are handled differently (syrups, sweeteners, milk)
         # These have quantities so they're extracted separately
         pass
@@ -1575,9 +1542,9 @@ def _parse_item_generic(
         from sandwich_bot.tasks.parsers.deterministic import extract_coffee_modifiers_from_input
         coffee_mods = extract_coffee_modifiers_from_input(text)
         if coffee_mods.sweetener:
-            sweeteners.append(QuantifiedModifier(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
+            sweeteners.append(QuantifiedModifier(slug=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
         if coffee_mods.flavor_syrup:
-            syrups.append(QuantifiedModifier(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
+            syrups.append(QuantifiedModifier(slug=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
         # Extract milk if not already in attributes
         if "milk" not in attribute_values and coffee_mods.milk:
             attribute_values["milk"] = coffee_mods.milk
@@ -2077,15 +2044,19 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     text_lower = text.lower().strip()
 
     # Skip patterns that look like breakfast sandwiches ("add bacon egg and cheese")
-    # These should be handled by _parse_egg_cheese_sandwich_abbrev instead
+    # These are matched as menu items via database synonyms
     if re.search(r"\begg\s+(?:and|&|n)\s+cheese\b", text_lower):
         return None
 
-    # Get known modifiers (proteins, cheeses, toppings - NOT spreads, handled separately)
-    known_proteins = get_proteins()
-    known_cheeses = get_cheeses()
-    known_toppings = get_toppings()
-    all_modifiers = known_proteins | known_cheeses | known_toppings
+    # Get known modifiers (food modifiers - NOT spreads, which are handled separately)
+    # Use database-driven categories instead of hardcoded function calls
+    all_modifiers: set[str] = set()
+    for category in menu_cache.get_ordered_ingredient_categories("food"):
+        # Skip spreads - they're handled separately with spread_type extraction
+        if category == "spread":
+            continue
+        ingredients = menu_cache.get_ingredients(category)
+        all_modifiers.update(ingredients)
 
     # === Pattern Group 1: "add/put/extra/more MODIFIER to the TARGET" ===
     # Captures: modifier(s) and target item
@@ -2764,95 +2735,6 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
 # Speed Menu Bagel Parsing
 # =============================================================================
 
-def _parse_egg_cheese_sandwich_abbrev(text: str) -> OpenInputResponse | None:
-    """
-    Parse egg+cheese sandwich abbreviations like SEC, HEC.
-
-    These create bagel orders with protein modifiers and cheese clarification needed.
-    Bagel type and toasted status are left as None so the system will ask.
-    """
-    text_lower = text.lower()
-
-    # Check for matches (longest first to handle "sausage egg and cheese" before "sec")
-    matched_abbrev = None
-    matched_proteins = None
-
-    for abbrev in sorted(EGG_CHEESE_SANDWICH_ABBREVS.keys(), key=len, reverse=True):
-        if abbrev in text_lower:
-            matched_abbrev = abbrev
-            matched_proteins = EGG_CHEESE_SANDWICH_ABBREVS[abbrev]
-            break
-
-    if not matched_abbrev:
-        return None
-
-    logger.info("EGG CHEESE ABBREV: found '%s' -> proteins=%s in text '%s'",
-                matched_abbrev, matched_proteins, text[:50])
-
-    # Extract quantity
-    quantity = 1
-    qty_pattern = re.compile(
-        r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+" + re.escape(matched_abbrev),
-        re.IGNORECASE
-    )
-    qty_match = qty_pattern.search(text_lower)
-    if qty_match:
-        qty_str = qty_match.group(1).lower()
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        elif qty_str in ("a", "an"):
-            quantity = 1
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
-
-    # Check for bagel type if specified (e.g., "SEC on an everything bagel")
-    bagel_type = None
-    bagel_pattern = re.compile(
-        r"\b(?:on|with)\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\s+bagels?",
-        re.IGNORECASE
-    )
-    bagel_match = bagel_pattern.search(text)
-    if bagel_match:
-        potential_type = bagel_match.group(1).lower().strip()
-        if potential_type in get_bagel_types():
-            bagel_type = potential_type
-
-    # Also check for "on BAGEL_TYPE" without explicit "bagel" word
-    # e.g., "ham egg and cheese on wheat toasted" where "wheat" is a bagel type
-    if not bagel_type:
-        on_type_pattern = re.compile(
-            r"\bon\s+(?:(?:a|an)\s+)?(\w+(?:\s+\w+)?)\b",
-            re.IGNORECASE
-        )
-        on_match = on_type_pattern.search(text)
-        if on_match:
-            potential_type = on_match.group(1).lower().strip()
-            # Remove trailing "toasted" or "not toasted" if present
-            potential_type = re.sub(r"\s*(not\s+)?toasted$", "", potential_type).strip()
-            if potential_type in get_bagel_types():
-                bagel_type = potential_type
-
-    # Check for toasted if specified
-    toasted = _extract_toasted(text)
-    scooped = _extract_scooped(text)
-
-    # Build parsed_items for unified handler (Phase 8 dual-write)
-    parsed_items = [
-        _build_bagel_parsed_item(
-            bagel_type=bagel_type,
-            quantity=1,
-            toasted=toasted,
-            scooped=scooped,
-            proteins=matched_proteins,
-            needs_cheese_clarification=True,
-        )
-        for _ in range(quantity)
-    ]
-
-    # Phase 4: Only use parsed_items (deprecated fields removed)
-    return OpenInputResponse(parsed_items=parsed_items)
-
-
 def _parse_signature_item_deterministic(text: str) -> OpenInputResponse | None:
     """Parse signature item orders like 'The Classic BEC on a wheat bagel'."""
     text_lower = text.lower()
@@ -3161,11 +3043,11 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
     # Build sweeteners list from coffee_mods
     sweeteners = []
     if coffee_mods.sweetener:
-        sweeteners.append(QuantifiedModifier(type=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
+        sweeteners.append(QuantifiedModifier(slug=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
     # Build syrups list from coffee_mods
     syrups = []
     if coffee_mods.flavor_syrup:
-        syrups.append(QuantifiedModifier(type=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
+        syrups.append(QuantifiedModifier(slug=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
 
     parsed_items = [
         _build_coffee_parsed_item(
@@ -4701,13 +4583,6 @@ def parse_open_input_deterministic(
     signature_item_result = _parse_signature_item_deterministic(text)
     if signature_item_result:
         return signature_item_result
-
-    # Check for egg+cheese sandwich abbreviations (SEC, HEC, BEC, "ham egg and cheese", etc.)
-    # This MUST run BEFORE menu item lookup to prevent "ham egg and cheese" from matching
-    # "Ham (1 lb)" as a deli item instead of being parsed as a breakfast sandwich
-    egg_cheese_result = _parse_egg_cheese_sandwich_abbrev(text)
-    if egg_cheese_result:
-        return egg_cheese_result
 
     # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
     make_it_n_match = MAKE_IT_N_PATTERN.match(text)

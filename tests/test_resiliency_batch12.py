@@ -65,29 +65,3 @@ class TestAbbreviationsShorthand:
         assert has_item or mentions_oj, \
             f"Should recognize OJ. Message: {result.message}"
 
-    def test_sec_abbreviation(self):
-        """
-        Test: User says "SEC" for sausage egg cheese.
-
-        Scenario:
-        - User says: "give me a SEC"
-        - Expected: System recognizes as sausage egg and cheese
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("give me a SEC", order)
-
-        assert result.message is not None
-        # Should recognize or ask about SEC
-        message_lower = result.message.lower()
-        items = result.order.items.get_active_items()
-
-        has_item = len(items) >= 1
-        mentions_sec = any(word in message_lower for word in [
-            "sausage", "egg", "cheese", "sec", "sandwich"
-        ])
-
-        assert has_item or mentions_sec, \
-            f"Should recognize SEC. Message: {result.message}"

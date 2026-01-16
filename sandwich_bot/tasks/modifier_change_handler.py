@@ -13,36 +13,106 @@ than hardcoded food-specific categories.
 
 import logging
 from dataclasses import dataclass
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from .models import MenuItemTask
 from .parsers.constants import (
     CHANGE_REQUEST_PATTERNS,
     normalize_bagel_type,
     normalize_spread,
-    normalize_coffee_size,
 )
 from sandwich_bot.menu_data_cache import menu_cache
-
-if TYPE_CHECKING:
-    from .handler_config import HandlerConfig
-    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
 
-# Attribute slugs used for modifier changes (from database)
-# These are standard attribute slugs, not hardcoded food names
-ATTR_BREAD = "bread"  # Bagel type (plain, everything, etc.)
-ATTR_SPREAD_TYPE = "spread_type"  # Cream cheese type (scallion, etc.)
-ATTR_TOASTED = "toasted"  # Boolean toasted attribute
-ATTR_CHEESE = "cheese"  # Cheese selection
-ATTR_SIZE = "size"  # Beverage size
-ATTR_MILK = "milk_sweetener_syrup"  # Milk/sweetener for beverages
-ATTR_TEMPERATURE = "temperature"  # Hot/iced
-ATTR_DECAF = "decaf"  # Decaf boolean
-ATTR_UNKNOWN = "unknown"  # Unknown attribute
+# Normalizer registry: maps attribute slugs to normalization functions
+# These functions clean up user input to canonical form
+# (e.g., "sesame bagel" -> "sesame", "oat milk" -> "oat")
+def _normalize_bread(value: str) -> str:
+    """Normalize bread/bagel type value."""
+    result = normalize_bagel_type(value)
+    if result:
+        return result
+    # Fallback: strip common suffixes
+    if value.endswith(" bagel"):
+        return value[:-6].strip()
+    return value
+
+
+def _normalize_spread_type(value: str) -> str:
+    """Normalize spread type value.
+
+    Extracts just the spread type/flavor (e.g., "veggie" from "veggie cream cheese").
+    If the input contains a type prefix before "cream cheese", extract that prefix.
+    """
+    value_lower = value.lower().strip()
+
+    # First try to extract type prefix from the original value
+    # This handles cases like "veggie cream cheese" -> "veggie"
+    for suffix in [" cream cheese", " spread"]:
+        if value_lower.endswith(suffix):
+            prefix = value_lower[:-len(suffix)].strip()
+            if prefix:
+                return prefix
+            # If no prefix (just "cream cheese"), return as-is
+            return value_lower[:-len(suffix)].strip() if suffix == " spread" else "cream cheese"
+
+    # If it's just "cream cheese" with no prefix, return as-is
+    if value_lower in ("cream cheese", "plain cream cheese"):
+        return "cream cheese"
+
+    # For other cases, try normalize_spread to validate it's a known spread
+    result = normalize_spread(value)
+    if result:
+        # If normalize_spread returned a compound phrase, strip the suffix
+        for suffix in [" cream cheese", " spread"]:
+            if result.endswith(suffix):
+                prefix = result[:-len(suffix)].strip()
+                if prefix:
+                    return prefix
+        return result
+
+    return value_lower
+
+
+def _normalize_size(value: str) -> str:
+    """Normalize size value."""
+    return value
+
+
+def _normalize_milk(value: str) -> str | None:
+    """Normalize milk value, returning None for 'no milk'."""
+    for suffix in [" milk"]:
+        if value.endswith(suffix):
+            value = value[:-len(suffix)].strip()
+            break
+    if value in ("no", "black", "none"):
+        return None
+    return value
+
+
+def _normalize_decaf(value: str) -> bool:
+    """Normalize decaf value to boolean."""
+    return value in ("decaf", "a decaf")
+
+
+def _normalize_temperature(value: str) -> str:
+    """Normalize temperature value."""
+    return value  # Already normalized (iced/hot)
+
+
+# Registry of normalizers by attribute slug
+# Note: Some item types use "spread" and others use "spread_type" - handle both
+ATTR_NORMALIZERS: dict[str, Callable[[str], str | bool | None]] = {
+    "bread": _normalize_bread,
+    "spread": _normalize_spread_type,
+    "spread_type": _normalize_spread_type,
+    "size": _normalize_size,
+    "milk_sweetener_syrup": _normalize_milk,
+    "temperature": _normalize_temperature,
+    "decaf": _normalize_decaf,
+}
 
 
 @dataclass
@@ -94,35 +164,20 @@ class ModifierChangeHandler:
             self.pricing = kwargs.get("pricing")
 
         # Cache data-driven lookups
-        self._spread_phrases: set[str] | None = None
         self._target_attr_map: dict[str, str] | None = None
-
-    def _get_spread_phrases(self) -> set[str]:
-        """Get compound spread phrases from the database.
-
-        Returns phrases like "scallion cream cheese" that indicate a spread type.
-        Filters spreads for phrases containing "cream cheese" or "spread".
-        """
-        if self._spread_phrases is None:
-            try:
-                all_spreads = menu_cache.get_ingredients_for_item_type("bagel", "spread")
-                self._spread_phrases = {
-                    s for s in all_spreads
-                    if "cream cheese" in s or " spread" in s
-                }
-            except Exception:
-                # Fallback to empty set if cache not loaded
-                self._spread_phrases = set()
-        return self._spread_phrases
 
     def _get_target_attr_map(self) -> dict[str, str]:
         """Get mapping from target words to attribute slugs.
 
-        Maps user words like "bagel", "spread" to attribute slugs.
-        Built dynamically from menu_cache data.
+        Built dynamically from:
+        1. Attribute display names from the database
+        2. Attribute slugs (with underscores replaced by spaces)
+        3. Global attribute aliases from the database
+
+        No hardcoded mappings - all data comes from the database.
         """
         if self._target_attr_map is None:
-            # Build mapping from attribute display names and common terms
+            # Build mapping from attribute display names and slugs
             self._target_attr_map = {}
 
             # Get all item type slugs and their attributes
@@ -135,23 +190,20 @@ class ModifierChangeHandler:
                             display_name = attr_info.get("display_name", "").lower()
                             if display_name:
                                 self._target_attr_map[display_name] = attr_slug
-                            # Also map slug itself
+                            # Also map slug itself (replace underscores with spaces)
                             self._target_attr_map[attr_slug.replace("_", " ")] = attr_slug
                     except Exception:
                         continue
             except Exception:
                 pass
 
-            # Add common aliases that map to standard attribute slugs
-            self._target_attr_map.update({
-                "bagel": ATTR_BREAD,
-                "bagel type": ATTR_BREAD,
-                "spread": ATTR_SPREAD_TYPE,
-                "cream cheese": ATTR_SPREAD_TYPE,
-                "cheese": ATTR_CHEESE,
-                "size": ATTR_SIZE,
-                "milk": ATTR_MILK,
-            })
+            # Add global attribute aliases from the database
+            # (e.g., "cream cheese" -> "spread_type")
+            try:
+                db_aliases = menu_cache.get_all_global_attribute_aliases()
+                self._target_attr_map.update(db_aliases)
+            except Exception:
+                pass
 
         return self._target_attr_map
 
@@ -202,7 +254,9 @@ class ModifierChangeHandler:
         Analyze a modifier value to determine possible attribute slugs.
 
         Uses data-driven lookups from menu_cache to determine which
-        attribute(s) a modifier value could apply to.
+        attribute(s) a modifier value could apply to. This is fully generic -
+        it queries all ingredient categories to find matches rather than
+        checking hardcoded category names.
 
         Args:
             new_value: The new value being requested
@@ -220,75 +274,38 @@ class ModifierChangeHandler:
             if target_lower in target_attr_map:
                 return False, [target_attr_map[target_lower]]
 
-        # Check compound spread phrases from database (highest priority)
-        # Only match if the phrase is contained in the value, not vice versa
-        spread_phrases = self._get_spread_phrases()
-        for phrase in spread_phrases:
-            if phrase in new_value_lower:
-                return False, [ATTR_SPREAD_TYPE]
-
-        # Check if "cream cheese" is in the value (indicates spread type)
-        if "cream cheese" in new_value_lower:
-            return False, [ATTR_SPREAD_TYPE]
-
-        # Check for known attribute options using menu_cache
+        # Check for known attribute options using menu_cache (handles size, temperature, etc.)
         is_attr_option, attr_slug = menu_cache.is_known_attribute_option(new_value_lower)
         if is_attr_option and attr_slug:
             return False, [attr_slug]
 
-        # Check for unambiguous or ambiguous bread/spread types
+        # Find ALL ingredient categories this value matches (data-driven)
         try:
-            bagel_types = menu_cache.get_item_names("bagel")
-            spread_types = menu_cache.get_ingredients("spread")
+            matching_categories = menu_cache.find_all_categories_for_ingredient(new_value_lower)
 
-            # Compute disambiguation sets
-            bagel_only = bagel_types - spread_types
-            spread_only = spread_types - bagel_types
-            ambiguous = bagel_types & spread_types
-
-            # Check for unambiguous bread-only types
-            if new_value_lower in bagel_only:
-                return False, [ATTR_BREAD]
-
-            # Check for unambiguous spread-only types
-            if new_value_lower in spread_only:
-                return False, [ATTR_SPREAD_TYPE]
-
-            # Check for ambiguous modifiers
-            if new_value_lower in ambiguous:
-                # This could be either bread or spread_type - needs clarification
-                return True, [ATTR_BREAD, ATTR_SPREAD_TYPE]
-
-            # Check if it's a known bagel/bread type (should be covered above, but safety check)
-            if new_value_lower in bagel_types:
-                return False, [ATTR_BREAD]
-
-            # Check if it's a known spread type
-            if new_value_lower in spread_types:
-                return False, [ATTR_SPREAD_TYPE]
-        except Exception:
-            pass
-
-        # Check for milk options - build patterns from database
-        try:
-            milk_patterns: list[str] = []
-            db_milks = menu_cache.get_ingredients("milk")
-            for milk_name in db_milks:
-                milk_lower = milk_name.lower()
-                milk_patterns.append(milk_lower)
-                # Add short form (strip " milk" suffix)
-                if milk_lower.endswith(" milk"):
-                    milk_patterns.append(milk_lower[:-5])
-            # Add special "no milk" patterns
-            milk_patterns.extend(["no milk", "black"])
-            for milk in milk_patterns:
-                if milk in new_value_lower:
-                    return False, [ATTR_MILK]
+            if len(matching_categories) == 1:
+                # Unambiguous - maps to exactly one category
+                attr_slug = menu_cache.get_category_attribute_slug(matching_categories[0])
+                return False, [attr_slug]
+            elif len(matching_categories) > 1:
+                # Ambiguous - maps to multiple categories, needs clarification
+                attr_slugs = [
+                    menu_cache.get_category_attribute_slug(cat)
+                    for cat in matching_categories
+                ]
+                # Dedupe while preserving order
+                seen = set()
+                unique_slugs = []
+                for slug in attr_slugs:
+                    if slug not in seen:
+                        seen.add(slug)
+                        unique_slugs.append(slug)
+                return True, unique_slugs
         except Exception:
             pass
 
         # Unknown modifier
-        return False, [ATTR_UNKNOWN]
+        return False, ["unknown"]
 
     def generate_clarification_message(
         self, change_request: ChangeRequest
@@ -307,9 +324,9 @@ class ModifierChangeHandler:
         # Build options based on possible attribute slugs
         options = []
         for attr_slug in change_request.possible_attributes:
-            if attr_slug == ATTR_BREAD:
+            if attr_slug == "bread":
                 options.append(f"a {new_value} bagel")
-            elif attr_slug == ATTR_SPREAD_TYPE:
+            elif attr_slug == "spread_type":
                 options.append(f"{new_value} cream cheese")
 
         if len(options) == 2:
@@ -347,6 +364,10 @@ class ModifierChangeHandler:
         """
         Apply a modifier change to an item.
 
+        This method uses a data-driven approach where attribute handling is
+        determined by the ATTR_NORMALIZERS registry and item capabilities
+        queried from the database.
+
         Args:
             order: The order to modify
             item_id: The ID of the item to modify (None for last item)
@@ -375,208 +396,123 @@ class ModifierChangeHandler:
                     message="I couldn't find that item to change.",
                 )
 
-        # Apply the change based on attribute slug
         new_value_lower = new_value.lower().strip()
 
-        if attr_slug == ATTR_BREAD:
-            # Normalize the bread/bagel type - extracts valid type from messy input
-            # e.g., "make that a sesame bagel" -> "sesame"
-            bread_type = normalize_bagel_type(new_value_lower)
-            if not bread_type:
-                # Fallback: try simple suffix stripping
-                bread_type = new_value_lower
-                if bread_type.endswith(" bagel"):
-                    bread_type = bread_type[:-6].strip()
-
-            old_value = getattr(item, 'bread', None) or getattr(item, 'bagel_choice', None)
-
-            # Try to set bread or bagel_choice depending on item type
-            if hasattr(item, 'bread'):
-                item.bread = bread_type
-            elif hasattr(item, 'bagel_choice'):
-                item.bagel_choice = bread_type
-            else:
-                return ChangeResult(
-                    success=False,
-                    message="This item doesn't have a bread type to change.",
-                )
-
-            if old_value:
-                message = f"Got it, I've changed the bagel from {old_value} to {bread_type}."
-            else:
-                message = f"Got it, {bread_type} bagel."
-
-            return ChangeResult(
-                success=True,
-                message=message,
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_SPREAD_TYPE:
-            # Normalize the spread - extracts valid spread from messy input
-            # e.g., "actually scallion cream cheese" -> "scallion cream cheese"
-            normalized = normalize_spread(new_value_lower)
-            if normalized:
-                spread_type = normalized
-                # Extract just the type part if it's a compound
-                # (e.g., "scallion" from "scallion cream cheese")
-                for suffix in [" cream cheese", " spread"]:
-                    if spread_type.endswith(suffix):
-                        spread_type = spread_type[:-len(suffix)].strip()
-                        break
-            else:
-                # Fallback: try simple suffix stripping
-                spread_type = new_value_lower
-                for suffix in [" cream cheese", " spread"]:
-                    if spread_type.endswith(suffix):
-                        spread_type = spread_type[:-len(suffix)].strip()
-                        break
-
-            old_value = getattr(item, 'spread_type', None)
-
-            if hasattr(item, 'spread_type'):
-                item.spread_type = spread_type
-                # Also ensure spread is set to cream cheese if changing spread type
-                if hasattr(item, 'spread') and item.spread is None:
-                    item.spread = "cream cheese"
-            else:
-                return ChangeResult(
-                    success=False,
-                    message="This item doesn't have a spread to change.",
-                )
-
-            if old_value:
-                message = f"Got it, I've changed the spread from {old_value} to {spread_type} cream cheese."
-            else:
-                message = f"Got it, {spread_type} cream cheese."
-
-            return ChangeResult(
-                success=True,
-                message=message,
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_CHEESE:
-            old_value = getattr(item, 'cheese', None)
-
-            if hasattr(item, 'cheese'):
-                item.cheese = new_value_lower
-            else:
-                return ChangeResult(
-                    success=False,
-                    message="This item doesn't have a cheese to change.",
-                )
-
-            if old_value:
-                message = f"Got it, I've changed the cheese from {old_value} to {new_value_lower}."
-            else:
-                message = f"Got it, {new_value_lower} cheese."
-
-            return ChangeResult(
-                success=True,
-                message=message,
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_SIZE:
-            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
-                return ChangeResult(
-                    success=False,
-                    message="I can only change the size on items that have sizes.",
-                )
-
-            # Normalize the size - extracts valid size from messy input
-            # e.g., "make that a large instead" -> "large"
-            size = normalize_coffee_size(new_value_lower) or new_value_lower
-            old_value = item.size
-            item.size = size
-            logger.info("Changed size from '%s' to '%s'", old_value, size)
-
-            # Recalculate price with new size
-            if self.pricing:
-                self.pricing.recalculate_item_price(item)
-
-            summary = item.get_summary()
-            return ChangeResult(
-                success=True,
-                message=f"Sure, I've changed that to {summary}. Anything else?",
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_MILK:
-            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
-                return ChangeResult(
-                    success=False,
-                    message="I can only change the milk on beverage items.",
-                )
-
-            # Normalize milk value
-            milk_value = new_value_lower
-            for suffix in [" milk"]:
-                if milk_value.endswith(suffix):
-                    milk_value = milk_value[:-len(suffix)].strip()
-                    break
-            if milk_value in ("no", "black", "none"):
-                milk_value = None
-
-            old_value = item.milk
-            item.milk = milk_value
-            logger.info("Changed milk from '%s' to '%s'", old_value, milk_value)
-
-            # Recalculate price with new milk (may have upcharge)
-            if self.pricing:
-                self.pricing.recalculate_item_price(item)
-
-            summary = item.get_summary()
-            return ChangeResult(
-                success=True,
-                message=f"Sure, I've changed that to {summary}. Anything else?",
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_TEMPERATURE:
-            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
-                return ChangeResult(
-                    success=False,
-                    message="I can only change hot/iced on beverage items.",
-                )
-
-            old_style = item.temperature or "hot"
-            item.temperature = new_value_lower  # "iced" or "hot"
-            new_style = item.temperature
-            logger.info("Changed temperature from '%s' to '%s'", old_style, new_style)
-
-            summary = item.get_summary()
-            return ChangeResult(
-                success=True,
-                message=f"Sure, I've changed that to {summary}. Anything else?",
-                applied_attribute=attr_slug,
-            )
-
-        elif attr_slug == ATTR_DECAF:
-            if not (isinstance(item, MenuItemTask) and item.has_attribute("size")):
-                return ChangeResult(
-                    success=False,
-                    message="I can only change decaf on beverage items.",
-                )
-
-            # "regular" means not decaf, "decaf" or "a decaf" means decaf
-            old_decaf = item.decaf
-            item.decaf = new_value_lower in ("decaf", "a decaf")
-            logger.info("Changed decaf from '%s' to '%s'", old_decaf, item.decaf)
-
-            summary = item.get_summary()
-            return ChangeResult(
-                success=True,
-                message=f"Sure, I've changed that to {summary}. Anything else?",
-                applied_attribute=attr_slug,
-            )
-
-        else:
+        # Check if item has this attribute
+        if isinstance(item, MenuItemTask) and not item.has_attribute(attr_slug):
+            # Get attribute display name for better error message
+            display_name = self._get_attr_display_name(attr_slug)
             return ChangeResult(
                 success=False,
-                message=f"I'm not sure how to change '{new_value}'. Could you please clarify?",
+                message=f"This item doesn't have a {display_name} to change.",
             )
+
+        # Apply normalizer if one exists for this attribute
+        normalized_value = new_value_lower
+        if attr_slug in ATTR_NORMALIZERS:
+            normalized_value = ATTR_NORMALIZERS[attr_slug](new_value_lower)
+
+        # Get old value and set new value
+        old_value = self._get_attr_value(item, attr_slug)
+        success = self._set_attr_value(item, attr_slug, normalized_value)
+
+        if not success:
+            display_name = self._get_attr_display_name(attr_slug)
+            return ChangeResult(
+                success=False,
+                message=f"This item doesn't have a {display_name} to change.",
+            )
+
+        logger.info("Changed %s from '%s' to '%s'", attr_slug, old_value, normalized_value)
+
+        # Recalculate price - any attribute change could affect pricing
+        # (size, bread type, temperature, spread type, milk, etc.)
+        if self.pricing:
+            self.pricing.recalculate_item_price(item)
+
+        # Build response message
+        message = self._build_change_message(item, attr_slug, old_value, normalized_value)
+
+        return ChangeResult(
+            success=True,
+            message=message,
+            applied_attribute=attr_slug,
+        )
+
+    def _get_attr_display_name(self, attr_slug: str) -> str:
+        """Get human-readable display name for an attribute."""
+        # Try to get from database first
+        try:
+            for item_type_slug in menu_cache.get_all_item_type_slugs():
+                attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                if attr_slug in attrs:
+                    return attrs[attr_slug].get("display_name", attr_slug)
+        except Exception:
+            pass
+        # Fallback: convert slug to readable form
+        return attr_slug.replace("_", " ")
+
+    def _get_attr_value(self, item, attr_slug: str):
+        """Get current value of an attribute from an item."""
+        if isinstance(item, MenuItemTask):
+            # Try property accessor first (handles special cases)
+            if hasattr(item, attr_slug):
+                return getattr(item, attr_slug)
+            # Fall back to attribute_values dict
+            return item.attribute_values.get(attr_slug)
+        # For other item types, try direct attribute access
+        return getattr(item, attr_slug, None)
+
+    def _set_attr_value(self, item, attr_slug: str, value) -> bool:
+        """Set value of an attribute on an item. Returns True if successful."""
+        if isinstance(item, MenuItemTask):
+            # Get property name from database (handles cases like "milk_sweetener_syrup" -> "milk")
+            property_name = menu_cache.get_property_name_for_attribute(attr_slug)
+            # Try property setter first (handles special cases like milk unified storage)
+            if hasattr(item, property_name):
+                try:
+                    setattr(item, property_name, value)
+                    return True
+                except AttributeError:
+                    pass
+            # Also try the original attr_slug if different
+            if property_name != attr_slug and hasattr(item, attr_slug):
+                try:
+                    setattr(item, attr_slug, value)
+                    return True
+                except AttributeError:
+                    pass
+            # Fall back to attribute_values dict
+            item.attribute_values[attr_slug] = value
+            return True
+        # For other item types, try direct attribute setting
+        if hasattr(item, attr_slug):
+            setattr(item, attr_slug, value)
+            return True
+        return False
+
+    def _build_change_message(
+        self, item, attr_slug: str, old_value, new_value
+    ) -> str:
+        """Build a response message for a change."""
+        display_name = self._get_attr_display_name(attr_slug)
+
+        # Use item summary for beverage attributes
+        if isinstance(item, MenuItemTask) and item.has_attribute("size"):
+            summary = item.get_summary()
+            return f"Sure, I've changed that to {summary}. Anything else?"
+
+        # Format value for display
+        display_value = new_value
+        if isinstance(new_value, bool):
+            display_value = "yes" if new_value else "no"
+        elif new_value is None:
+            display_value = "none"
+
+        if old_value:
+            return f"Got it, I've changed the {display_name} from {old_value} to {display_value}."
+        else:
+            return f"Got it, {display_value} {display_name}."
 
     def resolve_clarification(
         self, pending_clarification: dict, user_response: str
@@ -596,19 +532,19 @@ class ModifierChangeHandler:
 
         # Check for explicit attribute indicators in response
         if "bagel" in user_response_lower:
-            return ATTR_BREAD, None
+            return "bread", None
 
         if "cream cheese" in user_response_lower or "spread" in user_response_lower:
-            return ATTR_SPREAD_TYPE, None
+            return "spread_type", None
 
         # Check for affirmative responses to specific options
         # If they said "blueberry bagel" for the first option
         if f"{new_value} bagel" in user_response_lower:
-            return ATTR_BREAD, None
+            return "bread", None
 
         # If they said "blueberry cream cheese" for the second option
         if f"{new_value} cream cheese" in user_response_lower:
-            return ATTR_SPREAD_TYPE, None
+            return "spread_type", None
 
         # Check for ordinal responses ("the first one", "the second one")
         possible_attributes = pending_clarification.get("possible_attributes", [])

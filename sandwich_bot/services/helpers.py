@@ -331,10 +331,13 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     else:
         meta = {}
 
+    # Derive category from item_type for backward compatibility
+    category = item.item_type.display_name if item.item_type else None
+
     return MenuItemOut(
         id=item.id,
         name=item.name,
-        category=item.category,
+        category=category,
         is_signature=item.is_signature,
         base_price=item.base_price,
         available_qty=item.available_qty,

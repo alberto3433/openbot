@@ -319,7 +319,8 @@ def list_menu_items_availability(
     store_id: Optional[str] = Query(None, description="Store ID"),
 ) -> List[MenuItemStoreAvailabilityOut]:
     """List all menu items with store-specific availability."""
-    items = db.query(MenuItem).order_by(MenuItem.category, MenuItem.name).all()
+    from sqlalchemy.orm import joinedload
+    items = db.query(MenuItem).options(joinedload(MenuItem.item_type)).order_by(MenuItem.name).all()
 
     result = []
     for item in items:
@@ -332,10 +333,12 @@ def list_menu_items_availability(
             if store_avail:
                 is_available = store_avail.is_available
 
+        # Derive category from item_type
+        category = item.item_type.display_name if item.item_type else None
         result.append(MenuItemStoreAvailabilityOut(
             id=item.id,
             name=item.name,
-            category=item.category,
+            category=category,
             base_price=float(item.base_price),
             is_available=is_available,
         ))
@@ -349,22 +352,25 @@ def list_unavailable_menu_items(
     store_id: Optional[str] = Query(None, description="Store ID"),
 ) -> List[MenuItemStoreAvailabilityOut]:
     """List all 86'd menu items for a store."""
+    from sqlalchemy.orm import joinedload
     if store_id:
         store_unavail = db.query(MenuItemStoreAvailability).filter(
             MenuItemStoreAvailability.store_id == store_id,
             MenuItemStoreAvailability.is_available == False
         ).all()
         item_ids = [sa.menu_item_id for sa in store_unavail]
-        items = db.query(MenuItem).filter(
+        items = db.query(MenuItem).options(
+            joinedload(MenuItem.item_type)
+        ).filter(
             MenuItem.id.in_(item_ids)
-        ).order_by(MenuItem.category, MenuItem.name).all()
+        ).order_by(MenuItem.name).all()
     else:
         items = []
 
     return [MenuItemStoreAvailabilityOut(
         id=item.id,
         name=item.name,
-        category=item.category,
+        category=item.item_type.display_name if item.item_type else None,
         base_price=float(item.base_price),
         is_available=False,
     ) for item in items]
@@ -405,10 +411,12 @@ def update_menu_item_availability(
     logger.info("Updated menu item %d availability: %s (store: %s)",
                 item_id, payload.is_available, payload.store_id or "global")
 
+    # Derive category from item_type
+    category = item.item_type.display_name if item.item_type else None
     return MenuItemStoreAvailabilityOut(
         id=item.id,
         name=item.name,
-        category=item.category,
+        category=category,
         base_price=float(item.base_price),
         is_available=is_available,
     )

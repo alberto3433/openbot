@@ -123,41 +123,34 @@ def find_default_ingredient_match(
 
 
 def _get_ingredient_aliases(ingredient_name: str) -> list[str]:
-    """Get common aliases for an ingredient name."""
-    name_lower = ingredient_name.lower()
-    aliases = []
+    """Get aliases for an ingredient name from the database.
 
-    # Bacon aliases
-    if 'bacon' in name_lower:
-        aliases.extend(['bacon'])
-    if 'applewood' in name_lower:
-        aliases.extend(['applewood', 'applewood bacon'])
+    Looks up the ingredient in the menu cache and returns all aliases
+    that map to this ingredient's canonical name.
 
-    # Cheese aliases
-    if 'cheddar' in name_lower:
-        aliases.extend(['cheddar', 'cheese'])
-    if 'american' in name_lower:
-        aliases.extend(['american', 'american cheese', 'cheese'])
-    if 'swiss' in name_lower:
-        aliases.extend(['swiss', 'swiss cheese', 'cheese'])
-    if 'muenster' in name_lower:
-        aliases.extend(['muenster', 'cheese'])
+    Args:
+        ingredient_name: The canonical ingredient name (e.g., "American Cheese")
 
-    # Protein aliases
-    if 'ham' in name_lower:
-        aliases.extend(['ham'])
-    if 'turkey' in name_lower:
-        aliases.extend(['turkey'])
-    if 'sausage' in name_lower:
-        aliases.extend(['sausage'])
-    if 'egg' in name_lower and 'salad' not in name_lower:
-        aliases.extend(['egg', 'eggs'])
+    Returns:
+        List of lowercase aliases (e.g., ["american", "american cheese"])
+    """
+    from sandwich_bot.menu_data_cache import menu_cache
 
-    # Salmon/fish aliases
-    if 'salmon' in name_lower or 'nova' in name_lower or 'lox' in name_lower:
-        aliases.extend(['salmon', 'nova', 'lox', 'nova scotia salmon'])
+    try:
+        # Get all aliases (alias -> canonical_name mapping)
+        all_aliases = menu_cache.get_ingredient_aliases()
 
-    return aliases
+        # Find all aliases that map to this ingredient name
+        name_lower = ingredient_name.lower()
+        aliases = []
+        for alias, canonical in all_aliases.items():
+            if canonical.lower() == name_lower:
+                aliases.append(alias)
+
+        return aliases
+    except Exception:
+        # If cache not loaded, return empty list (fail gracefully for this utility)
+        return []
 
 
 # Cache menu item default ingredients for performance

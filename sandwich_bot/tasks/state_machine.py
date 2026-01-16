@@ -73,10 +73,6 @@ from .parsers import (
     get_bagel_types,
     get_spreads,
     get_spread_types,
-    # Constants - Bagel modifiers (loaded from database via dynamic functions)
-    get_proteins,
-    get_cheeses,
-    get_toppings,
     get_bagel_spreads,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,
@@ -124,13 +120,6 @@ from .parsers import (
     # LLM parsers
     parse_side_choice,
     parse_bagel_choice,
-    parse_multi_bagel_choice,
-    parse_multi_toasted,
-    parse_multi_spread,
-    parse_spread_choice,
-    parse_toasted_choice,
-    parse_coffee_size,
-    parse_coffee_style,
     parse_by_pound_category,
     parse_open_input,
     parse_confirmation,

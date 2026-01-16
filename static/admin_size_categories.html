@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Size Categories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .nav-group {
+      display: inline-block;
+      position: relative;
+    }
+    .nav-group-label {
+      color: #bbdefb;
+      font-size: 14px;
+      margin-left: 16px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .nav-group-label:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      min-width: 180px;
+      z-index: 1000;
+      padding: 8px 0;
+    }
+    .nav-group:hover .nav-dropdown {
+      display: block;
+    }
+    .nav-dropdown a {
+      display: block;
+      color: #333;
+      padding: 8px 16px;
+      margin: 0;
+      font-size: 13px;
+    }
+    .nav-dropdown a:hover {
+      background: #f5f5f5;
+      color: #1976d2;
+    }
+    .nav-dropdown a.active {
+      background: #e3f2fd;
+      color: #1976d2;
+      font-weight: 500;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .page-description {
+      background: #e3f2fd;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #1565c0;
+    }
+    .master-detail {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .master-detail {
+        grid-template-columns: 1fr;
+      }
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header .count {
+      background: #e0e0e0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .item-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .item-row:last-child {
+      border-bottom: none;
+    }
+    .item-row:hover {
+      background: #f5f5f5;
+    }
+    .item-row.selected {
+      background: #e3f2fd;
+      border-left: 3px solid #1976d2;
+    }
+    .item-info {
+      flex: 1;
+    }
+    .item-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: #333;
+    }
+    .item-slug {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+    }
+    .item-meta {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .badge.count {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+    .add-btn {
+      padding: 8px 16px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .add-btn:hover {
+      background: #43a047;
+    }
+    /* Detail panel */
+    .detail-panel {
+      min-height: 400px;
+    }
+    .detail-header {
+      padding: 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .detail-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .detail-subtitle {
+      font-size: 13px;
+      color: #666;
+      font-family: monospace;
+    }
+    .detail-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .detail-body {
+      padding: 20px;
+    }
+    .detail-section {
+      margin-bottom: 24px;
+    }
+    .detail-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .info-item {
+      background: #f9f9f9;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    .info-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    /* Sizes list */
+    .sizes-list {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+    .size-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .size-row:last-child {
+      border-bottom: none;
+    }
+    .size-row:hover {
+      background: #fafafa;
+    }
+    .size-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+    .size-order {
+      font-size: 11px;
+      color: #888;
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      min-width: 24px;
+      text-align: center;
+    }
+    .size-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .size-menu-items {
+      font-size: 12px;
+      color: #2e7d32;
+      background: #e8f5e9;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .size-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-sm:hover {
+      background: #f5f5f5;
+    }
+    .btn-sm.danger {
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .btn-sm.danger:hover {
+      background: #ffebee;
+    }
+    .empty-sizes {
+      padding: 30px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+    }
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #c62828;
+      color: #fff;
+      border-color: #c62828;
+    }
+    .btn.danger:hover {
+      background: #b71c1c;
+    }
+    /* Toast notifications */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    /* Button state styles */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Size Categories</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <a href="/static/admin_modifiers.html">Modifiers</a>
+      <a href="/static/admin_item_types.html">Item Types</a>
+      <a href="/static/admin_categories.html">Item Cats</a>
+      <span class="nav-group">
+        <span class="nav-group-label">Config &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_global_attributes.html">Global Attributes</a>
+          <a href="/static/admin_size_categories.html" class="active">Size Categories</a>
+          <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+          <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+        </div>
+      </span>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="page-description">
+      Size categories define pricing dimensions for menu items. For example, "Size" (small/medium/large),
+      "Weight" (1/4 lb, 1/2 lb), or "Quantity" (each, dozen). Each category has a question text for asking
+      customers to choose, and contains multiple size options.
+    </div>
+
+    <div class="master-detail">
+      <!-- Master list (left) -->
+      <div class="section">
+        <div class="section-header">
+          <span>Categories <span class="count" id="categoryCount">0</span></span>
+          <button class="add-btn" id="addCategoryBtn">+ Add</button>
+        </div>
+        <ul class="item-list" id="categoryList">
+          <li class="empty-state">Loading...</li>
+        </ul>
+      </div>
+
+      <!-- Detail panel (right) -->
+      <div class="section detail-panel" id="detailPanel">
+        <div class="empty-state" id="noSelection">
+          Select a category from the list to view details
+        </div>
+        <div id="detailContent" style="display: none;">
+          <div class="detail-header">
+            <h1 class="detail-title" id="detailTitle">--</h1>
+            <div class="detail-subtitle" id="detailSlug">--</div>
+            <div class="detail-actions">
+              <button class="btn" id="editCategoryBtn">Edit</button>
+              <button class="btn danger" id="deleteCategoryBtn">Delete</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div class="detail-section">
+              <div class="detail-section-title">Info</div>
+              <div class="info-grid">
+                <div class="info-item">
+                  <div class="info-label">Sizes</div>
+                  <div class="info-value" id="detailSizeCount">--</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">Created</div>
+                  <div class="info-value" id="detailCreated">--</div>
+                </div>
+              </div>
+              <div class="info-item" style="margin-top: 12px;" id="questionRow">
+                <div class="info-label">Question Text</div>
+                <div class="info-value" id="detailQuestion">--</div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-section-title">
+                <span>Sizes</span>
+                <button class="add-btn" id="addSizeBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Size</button>
+              </div>
+              <div class="sizes-list" id="sizesList">
+                <div class="empty-sizes">No sizes defined</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Category Modal -->
+  <div class="modal-overlay" id="categoryModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="categoryModalTitle">Add Size Category</h2>
+        <button class="modal-close" id="categoryModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="categoryForm">
+          <input type="hidden" id="categoryId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="categoryName">Name *</label>
+              <input type="text" id="categoryName" required placeholder="e.g., Size" />
+            </div>
+            <div class="form-group">
+              <label for="categorySlug">Slug *</label>
+              <input type="text" id="categorySlug" required placeholder="e.g., size" pattern="[a-z0-9_]+" />
+              <div class="hint">Unique identifier (lowercase, underscores)</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="categoryQuestion">Question Text</label>
+            <input type="text" id="categoryQuestion" placeholder="e.g., What size would you like?" />
+            <div class="hint">Asked when customer needs to choose a size</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="categoryCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="categorySaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Size Modal -->
+  <div class="modal-overlay" id="sizeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="sizeModalTitle">Add Size</h2>
+        <button class="modal-close" id="sizeModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="sizeForm">
+          <input type="hidden" id="sizeId" />
+          <div class="form-group">
+            <label for="sizeName">Name *</label>
+            <input type="text" id="sizeName" required placeholder="e.g., Large" />
+          </div>
+          <div class="form-group">
+            <label for="sizeOrder">Display Order</label>
+            <input type="number" id="sizeOrder" value="0" min="0" />
+            <div class="hint">Lower numbers appear first</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="sizeCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="sizeDeleteBtn" style="display: none;">Delete</button>
+        <button type="button" class="btn primary" id="sizeSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Category Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Category</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteCategoryName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">You must delete all sizes in this category first.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CATEGORIES_API = "/admin/size-categories";
+    const SIZES_API = "/admin/sizes";
+    let authCredentials = null;
+
+    // State
+    let categories = [];
+    let selectedCategoryId = null;
+    let selectedCategoryData = null;
+    let editingSizeId = null;
+
+    // Auth fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+      }
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+        authCredentials = btoa(username + ':' + password);
+        response = await fetch(url, {
+          ...options,
+          headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
+        });
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+      return response;
+    }
+
+    // Toast notification
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span>${icons[type] || icons.info}</span><span>${message}</span>`;
+      document.getElementById("toastContainer").appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      return div.innerHTML;
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return "--";
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    // Load all categories with sizes
+    async function loadCategories() {
+      try {
+        const response = await authFetch(`${CATEGORIES_API}/with-sizes`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        categories = await response.json();
+        renderCategoryList();
+        if (selectedCategoryId) {
+          const cat = categories.find(c => c.id === selectedCategoryId);
+          if (cat) {
+            selectedCategoryData = cat;
+            renderDetail(cat);
+          } else {
+            clearDetail();
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load categories:", error);
+        showToast("Failed to load categories", "error");
+      }
+    }
+
+    // Render category list
+    function renderCategoryList() {
+      const list = document.getElementById("categoryList");
+      document.getElementById("categoryCount").textContent = categories.length;
+
+      if (categories.length === 0) {
+        list.innerHTML = '<li class="empty-state">No size categories yet. Click "+ Add" to create one.</li>';
+        return;
+      }
+
+      list.innerHTML = categories.map(cat => `
+        <li class="item-row ${cat.id === selectedCategoryId ? 'selected' : ''}" data-id="${cat.id}">
+          <div class="item-info">
+            <div class="item-name">${escapeHtml(cat.name)}</div>
+            <div class="item-slug">${escapeHtml(cat.slug)}</div>
+            <div class="item-meta">
+              <span class="badge count">${cat.sizes ? cat.sizes.length : 0} sizes</span>
+            </div>
+          </div>
+        </li>
+      `).join("");
+
+      // Click handlers
+      document.querySelectorAll("#categoryList .item-row").forEach(row => {
+        row.addEventListener("click", () => selectCategory(parseInt(row.dataset.id)));
+      });
+    }
+
+    // Select a category
+    function selectCategory(categoryId) {
+      selectedCategoryId = categoryId;
+      document.querySelectorAll("#categoryList .item-row").forEach(row => {
+        row.classList.toggle("selected", parseInt(row.dataset.id) === categoryId);
+      });
+
+      const cat = categories.find(c => c.id === categoryId);
+      if (cat) {
+        selectedCategoryData = cat;
+        renderDetail(cat);
+      }
+    }
+
+    // Render detail panel
+    function renderDetail(cat) {
+      document.getElementById("noSelection").style.display = "none";
+      document.getElementById("detailContent").style.display = "block";
+
+      document.getElementById("detailTitle").textContent = cat.name;
+      document.getElementById("detailSlug").textContent = cat.slug;
+      document.getElementById("detailSizeCount").textContent = cat.sizes ? cat.sizes.length : 0;
+      document.getElementById("detailCreated").textContent = formatDate(cat.created_at);
+
+      if (cat.question_text) {
+        document.getElementById("questionRow").style.display = "block";
+        document.getElementById("detailQuestion").textContent = cat.question_text;
+      } else {
+        document.getElementById("questionRow").style.display = "none";
+      }
+
+      // Render sizes
+      const sizesList = document.getElementById("sizesList");
+      if (!cat.sizes || cat.sizes.length === 0) {
+        sizesList.innerHTML = '<div class="empty-sizes">No sizes defined. Click "+ Add Size" to create one.</div>';
+      } else {
+        sizesList.innerHTML = cat.sizes.map(size => `
+          <div class="size-row" data-id="${size.id}">
+            <div class="size-info">
+              <span class="size-order">${size.display_order}</span>
+              <span class="size-name">${escapeHtml(size.name)}</span>
+              ${size.menu_item_count > 0 ? `<span class="size-menu-items">${size.menu_item_count} items</span>` : ''}
+            </div>
+            <div class="size-actions">
+              <button class="btn-sm edit-size-btn" data-id="${size.id}">Edit</button>
+              <button class="btn-sm danger delete-size-btn" data-id="${size.id}">Delete</button>
+            </div>
+          </div>
+        `).join("");
+
+        // Size button handlers
+        document.querySelectorAll(".edit-size-btn").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const size = cat.sizes.find(s => s.id === parseInt(btn.dataset.id));
+            if (size) openSizeModal(size);
+          });
+        });
+        document.querySelectorAll(".delete-size-btn").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteSize(parseInt(btn.dataset.id));
+          });
+        });
+      }
+    }
+
+    function clearDetail() {
+      selectedCategoryId = null;
+      selectedCategoryData = null;
+      document.getElementById("noSelection").style.display = "block";
+      document.getElementById("detailContent").style.display = "none";
+    }
+
+    // ==================
+    // Category Modal
+    // ==================
+
+    function openCategoryModal(cat = null) {
+      const modal = document.getElementById("categoryModal");
+      const form = document.getElementById("categoryForm");
+      form.reset();
+
+      if (cat) {
+        document.getElementById("categoryModalTitle").textContent = "Edit Size Category";
+        document.getElementById("categoryId").value = cat.id;
+        document.getElementById("categoryName").value = cat.name;
+        document.getElementById("categorySlug").value = cat.slug;
+        document.getElementById("categoryQuestion").value = cat.question_text || "";
+      } else {
+        document.getElementById("categoryModalTitle").textContent = "Add Size Category";
+        document.getElementById("categoryId").value = "";
+      }
+
+      modal.classList.add("active");
+    }
+
+    function closeCategoryModal() {
+      document.getElementById("categoryModal").classList.remove("active");
+    }
+
+    async function saveCategory() {
+      const id = document.getElementById("categoryId").value;
+      const name = document.getElementById("categoryName").value.trim();
+      const slug = document.getElementById("categorySlug").value.trim().toLowerCase();
+      const questionText = document.getElementById("categoryQuestion").value.trim();
+
+      if (!name || !slug) {
+        showToast("Name and slug are required", "error");
+        return;
+      }
+
+      if (!/^[a-z0-9_]+$/.test(slug)) {
+        showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const payload = { name, slug, question_text: questionText || null };
+      const saveBtn = document.getElementById("categorySaveBtn");
+      saveBtn.classList.add("saving");
+      saveBtn.disabled = true;
+
+      try {
+        let response;
+        if (id) {
+          response = await authFetch(`${CATEGORIES_API}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(CATEGORIES_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        const saved = await response.json();
+        showToast(`Category "${name}" saved`, "success");
+        closeCategoryModal();
+        await loadCategories();
+        selectCategory(saved.id);
+      } catch (error) {
+        showToast(`Failed to save: ${error.message}`, "error");
+      } finally {
+        saveBtn.classList.remove("saving");
+        saveBtn.disabled = false;
+      }
+    }
+
+    // ==================
+    // Delete Category
+    // ==================
+
+    function openDeleteModal() {
+      if (!selectedCategoryId || !selectedCategoryData) return;
+
+      document.getElementById("deleteCategoryName").textContent = selectedCategoryData.name;
+      document.getElementById("deleteModal").classList.add("active");
+    }
+
+    function closeDeleteModal() {
+      document.getElementById("deleteModal").classList.remove("active");
+    }
+
+    async function confirmDelete() {
+      if (!selectedCategoryId) return;
+
+      try {
+        const response = await authFetch(`${CATEGORIES_API}/${selectedCategoryId}`, { method: "DELETE" });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Category deleted", "success");
+        closeDeleteModal();
+        clearDetail();
+        await loadCategories();
+      } catch (error) {
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // ==================
+    // Size Modal
+    // ==================
+
+    function openSizeModal(size = null) {
+      const modal = document.getElementById("sizeModal");
+      const form = document.getElementById("sizeForm");
+      form.reset();
+      editingSizeId = null;
+
+      if (size) {
+        document.getElementById("sizeModalTitle").textContent = "Edit Size";
+        document.getElementById("sizeId").value = size.id;
+        document.getElementById("sizeName").value = size.name;
+        document.getElementById("sizeOrder").value = size.display_order || 0;
+        document.getElementById("sizeDeleteBtn").style.display = "inline-block";
+        editingSizeId = size.id;
+      } else {
+        document.getElementById("sizeModalTitle").textContent = "Add Size";
+        document.getElementById("sizeId").value = "";
+        document.getElementById("sizeDeleteBtn").style.display = "none";
+        // Default order to next available
+        const maxOrder = selectedCategoryData?.sizes?.reduce((max, s) => Math.max(max, s.display_order || 0), -1) ?? -1;
+        document.getElementById("sizeOrder").value = maxOrder + 1;
+      }
+
+      modal.classList.add("active");
+    }
+
+    function closeSizeModal() {
+      document.getElementById("sizeModal").classList.remove("active");
+      editingSizeId = null;
+    }
+
+    async function saveSize() {
+      if (!selectedCategoryId) return;
+
+      const id = document.getElementById("sizeId").value;
+      const name = document.getElementById("sizeName").value.trim();
+      const displayOrder = parseInt(document.getElementById("sizeOrder").value) || 0;
+
+      if (!name) {
+        showToast("Name is required", "error");
+        return;
+      }
+
+      const payload = {
+        name,
+        display_order: displayOrder,
+        category_id: selectedCategoryId
+      };
+
+      const saveBtn = document.getElementById("sizeSaveBtn");
+      saveBtn.classList.add("saving");
+      saveBtn.disabled = true;
+
+      try {
+        let response;
+        if (id) {
+          response = await authFetch(`${SIZES_API}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          response = await authFetch(SIZES_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast(`Size "${name}" saved`, "success");
+        closeSizeModal();
+        await loadCategories();
+      } catch (error) {
+        showToast(`Failed to save: ${error.message}`, "error");
+      } finally {
+        saveBtn.classList.remove("saving");
+        saveBtn.disabled = false;
+      }
+    }
+
+    async function deleteSize(sizeId) {
+      if (!sizeId) return;
+      if (!confirm("Delete this size?")) return;
+
+      try {
+        const response = await authFetch(`${SIZES_API}/${sizeId}`, { method: "DELETE" });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Size deleted", "success");
+        closeSizeModal();
+        await loadCategories();
+      } catch (error) {
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // ==================
+    // Event Listeners
+    // ==================
+
+    document.getElementById("addCategoryBtn").addEventListener("click", () => openCategoryModal());
+    document.getElementById("categoryModalClose").addEventListener("click", closeCategoryModal);
+    document.getElementById("categoryCancelBtn").addEventListener("click", closeCategoryModal);
+    document.getElementById("categorySaveBtn").addEventListener("click", saveCategory);
+
+    document.getElementById("editCategoryBtn").addEventListener("click", () => {
+      if (selectedCategoryData) openCategoryModal(selectedCategoryData);
+    });
+    document.getElementById("deleteCategoryBtn").addEventListener("click", openDeleteModal);
+    document.getElementById("deleteModalClose").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteConfirmBtn").addEventListener("click", confirmDelete);
+
+    document.getElementById("addSizeBtn").addEventListener("click", () => openSizeModal());
+    document.getElementById("sizeModalClose").addEventListener("click", closeSizeModal);
+    document.getElementById("sizeCancelBtn").addEventListener("click", closeSizeModal);
+    document.getElementById("sizeSaveBtn").addEventListener("click", saveSize);
+    document.getElementById("sizeDeleteBtn").addEventListener("click", () => {
+      if (editingSizeId) deleteSize(editingSizeId);
+    });
+
+    // Close modals on overlay click
+    document.getElementById("categoryModal").addEventListener("click", (e) => {
+      if (e.target.id === "categoryModal") closeCategoryModal();
+    });
+    document.getElementById("sizeModal").addEventListener("click", (e) => {
+      if (e.target.id === "sizeModal") closeSizeModal();
+    });
+    document.getElementById("deleteModal").addEventListener("click", (e) => {
+      if (e.target.id === "deleteModal") closeDeleteModal();
+    });
+
+    // Escape key closes modals
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeCategoryModal();
+        closeSizeModal();
+        closeDeleteModal();
+      }
+    });
+
+    // Auto-generate slug from name
+    document.getElementById("categoryName").addEventListener("input", (e) => {
+      const slugField = document.getElementById("categorySlug");
+      if (!document.getElementById("categoryId").value && !slugField.dataset.edited) {
+        slugField.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      }
+    });
+    document.getElementById("categorySlug").addEventListener("input", (e) => {
+      e.target.dataset.edited = "true";
+    });
+
+    // Initial load
+    loadCategories();
+  </script>
+</body>
+</html>

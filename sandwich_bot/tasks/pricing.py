@@ -351,12 +351,6 @@ class PricingEngine:
         modifier_lower = modifier_name.lower().strip()
         normalized = modifier_lower.replace(" ", "_").replace("-", "_")
 
-        # Remove common suffixes for matching
-        if normalized.endswith("_milk"):
-            normalized = normalized[:-5]
-        if normalized.endswith("_syrup"):
-            normalized = normalized[:-6]
-
         if not self._menu_data:
             raise ValueError(
                 f"Cannot look up modifier price for '{modifier_name}'. "
@@ -392,8 +386,10 @@ class PricingEngine:
 
             # If modifier_type specified, only check matching attributes
             if modifier_type and modifier_type not in attr_slug and attr_slug != modifier_type:
-                # Also check consolidated attribute "milk_sweetener_syrup"
-                if attr_slug != "milk_sweetener_syrup" or modifier_type not in ("milk", "syrup", "sweetener"):
+                # Also check attributes that contain options with this modifier category
+                # (e.g., milk_sweetener_syrup contains milk, syrup, and sweetener options)
+                from sandwich_bot.menu_data_cache import menu_cache
+                if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type):
                     continue
 
             options = attr.get("options", [])
@@ -422,7 +418,7 @@ class PricingEngine:
         return 0.0
 
     # =========================================================================
-    # By-the-Pound Pricing
+    # Quantity Parsing (for by-the-pound items)
     # =========================================================================
 
     def parse_quantity_to_pounds(self, quantity_str: str) -> float:
@@ -460,45 +456,6 @@ class PricingEngine:
         # Default to 1 pound
         return 1.0
 
-    def lookup_by_pound_price(self, item_name: str) -> float:
-        """Look up the per-pound price for a by-the-pound item.
-
-        Args:
-            item_name: Name of the item (e.g., "Muenster", "Nova", "Tuna Salad")
-
-        Returns:
-            Price per pound
-
-        Raises:
-            ValueError: If price not found for the item
-        """
-        item_lower = item_name.lower().strip()
-
-        # Get by-pound prices from menu_data
-        by_pound_prices = self._menu_data.get("by_pound_prices", {}) if self._menu_data else {}
-
-        if not by_pound_prices:
-            raise ValueError(
-                f"No by_pound_prices in menu_data. Cannot look up price for '{item_name}'. "
-                "Ensure menu is populated with by-the-pound items."
-            )
-
-        # Direct lookup
-        if item_lower in by_pound_prices:
-            return by_pound_prices[item_lower]
-
-        # Try partial matching for items like "Nova" -> "nova scotia salmon"
-        for price_key, price in by_pound_prices.items():
-            if item_lower in price_key or price_key in item_lower:
-                return price
-
-        # Not found - raise error
-        available_items = list(by_pound_prices.keys())[:10]  # Show first 10 for debugging
-        raise ValueError(
-            f"No price found for by-pound item: '{item_name}'. "
-            f"Available items include: {available_items}"
-        )
-
     # =========================================================================
     # Modifier Pricing (Used by generic pricing)
     # =========================================================================
@@ -523,11 +480,12 @@ class PricingEngine:
         """
         modifier_lower = modifier_name.lower().strip()
 
-        # Normalize common variations
-        normalized = modifier_lower.replace("-", "_").replace(" ", "_")
-        # Handle lox/nova variations (common aliases)
-        if modifier_lower in ("lox", "nova"):
-            normalized = "nova_scotia_salmon"
+        # First, normalize using database-driven alias lookup (e.g., "lox" -> "Nova Scotia Salmon")
+        from sandwich_bot.menu_data_cache import menu_cache
+        canonical_name = menu_cache.normalize_modifier(modifier_lower)
+
+        # Convert to slug format for matching: lowercase + spaces/dashes to underscores
+        normalized = canonical_name.lower().replace("-", "_").replace(" ", "_")
 
         if not self._menu_data:
             raise ValueError(
@@ -580,66 +538,6 @@ class PricingEngine:
             modifier_name, item_type
         )
         return 0.0
-
-    def lookup_spread_price(
-        self,
-        spread: str,
-        spread_type: str | None = None,
-        item_type: str = "bagel",
-    ) -> float:
-        """
-        Look up upcharge price for adding a spread to an item.
-
-        NOTE: This returns the UPCHARGE for adding spread, not the per-pound
-        retail price. Spread upcharges are stored in the database under the "spread"
-        attribute definition (e.g., cream_cheese has price_modifier=1.50).
-
-        Args:
-            spread: Base spread name (e.g., "cream cheese")
-            spread_type: Spread flavor/variant (e.g., "tofu", "scallion")
-            item_type: Item type to look up spread price for (default "bagel")
-
-        Returns:
-            Upcharge price for the spread (e.g., $1.50 for cream cheese, $1.75 for scallion)
-        """
-        # Build full spread name for specialty spreads (e.g., "scallion cream cheese")
-        # Check if spread_type is a specialty variant by looking it up in the database
-        # Common non-specialty terms (plain, regular) indicate the base spread
-        if spread_type:
-            spread_type_lower = spread_type.lower()
-            # Try to look up the specialty spread first
-            full_spread_name = f"{spread_type_lower}_{spread}".replace(" ", "_").lower()
-            specialty_price = self.lookup_modifier_price(full_spread_name, item_type)
-            if specialty_price > 0:
-                logger.debug(
-                    "Found specialty spread upcharge: %s = $%.2f",
-                    full_spread_name, specialty_price
-                )
-                return specialty_price
-            # If specialty not found, fall through to base spread lookup
-
-        # Look up the base spread price from the database
-        # (e.g., "cream cheese" -> $1.50, "butter" -> $0.50)
-        spread_price = self.lookup_modifier_price(spread, item_type)
-        if spread_price > 0:
-            logger.debug(
-                "Using spread upcharge: %s = $%.2f",
-                spread, spread_price
-            )
-            return spread_price
-
-        # Try normalized form with "plain_" prefix (database canonical name pattern)
-        spread_normalized = spread.lower().replace(" ", "_")
-        plain_spread_name = f"plain_{spread_normalized}"
-        spread_price = self.lookup_modifier_price(plain_spread_name, item_type)
-        if spread_price > 0:
-            logger.debug(
-                "Using plain spread upcharge: %s = $%.2f",
-                plain_spread_name, spread_price
-            )
-            return spread_price
-
-        return spread_price
 
     # =========================================================================
     # Unified Price Recalculation (Generic, Data-Driven)
@@ -812,12 +710,22 @@ class PricingEngine:
                 )
                 total += extra_price
 
-        # Spread upcharge
+        # Spread upcharge - try compound name, then base, then plain-prefixed
         spread = getattr(item, 'spread', None)
         spread_type = getattr(item, 'spread_type', None)
         spread_upcharge = 0.0
         if spread and spread.lower() != "none":
-            spread_upcharge = self.lookup_spread_price(spread, spread_type, item_type)
+            # Try compound spread name first (e.g., "scallion_cream_cheese")
+            if spread_type:
+                compound_slug = f"{spread_type}_{spread}".replace(" ", "_").lower()
+                spread_upcharge = self.lookup_modifier_price(compound_slug, item_type)
+            # Fall back to base spread name
+            if spread_upcharge == 0.0:
+                spread_upcharge = self.lookup_modifier_price(spread, item_type)
+            # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
+            if spread_upcharge == 0.0:
+                plain_slug = f"plain_{spread.lower().replace(' ', '_')}"
+                spread_upcharge = self.lookup_modifier_price(plain_slug, item_type)
             total += spread_upcharge
 
         if hasattr(item, 'spread_price'):
@@ -995,9 +903,21 @@ class PricingEngine:
 
         total = base_price
 
-        # Add spread upcharge if spread is set
+        # Add spread upcharge if spread is set - try compound, base, then plain-prefixed
         if item.spread:
-            spread_price = self.lookup_spread_price(item.spread)
+            spread_type = getattr(item, 'spread_type', None)
+            spread_price = 0.0
+            # Try compound spread name first (e.g., "scallion_cream_cheese")
+            if spread_type:
+                compound_slug = f"{spread_type}_{item.spread}".replace(" ", "_").lower()
+                spread_price = self.lookup_modifier_price(compound_slug, "bagel")
+            # Fall back to base spread name
+            if spread_price == 0.0:
+                spread_price = self.lookup_modifier_price(item.spread, "bagel")
+            # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
+            if spread_price == 0.0:
+                plain_slug = f"plain_{item.spread.lower().replace(' ', '_')}"
+                spread_price = self.lookup_modifier_price(plain_slug, "bagel")
             item.spread_price = spread_price if spread_price > 0 else None
             total += spread_price
         else:

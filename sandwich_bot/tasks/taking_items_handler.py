@@ -44,9 +44,6 @@ from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_bagel_types,
     get_bagel_spreads,
-    get_proteins,
-    get_cheeses,
-    get_toppings,
     get_coffee_types,
     is_soda_drink,
     resolve_soda_alias,
@@ -961,12 +958,11 @@ class TakingItemsHandler:
                 if isinstance(target_item, MenuItemTask):
                     # For MenuItemTask, add modifiers to attribute_values
                     if parsed.modify_add_modifiers:
-                        # Determine which attribute to add to based on modifier type
-                        known_condiments = {"mayo", "mustard", "russian dressing", "olive oil", "hot sauce",
-                                           "ketchup", "honey mustard", "chipotle mayo", "sriracha"}
-                        known_proteins = {p.lower() for p in get_proteins()}
-                        known_cheeses = {c.lower() for c in get_cheeses()}
-                        known_toppings = {t.lower() for t in get_toppings()}
+                        # Build modifier→category lookup (data-driven from database)
+                        modifier_to_category: dict[str, str] = {}
+                        for category in menu_cache.get_ordered_ingredient_categories("food"):
+                            for ingredient in menu_cache.get_ingredients(category):
+                                modifier_to_category[ingredient.lower()] = category
 
                         for modifier in parsed.modify_add_modifiers:
                             # Handle qualified modifiers: "mayo (extra)" -> base="mayo", full="mayo_(extra)"
@@ -975,15 +971,10 @@ class TakingItemsHandler:
                             base_modifier = modifier_lower.split(" (")[0].strip()  # "mayo (extra)" -> "mayo"
                             modifier_slug = modifier_lower.replace(" ", "_")  # Keep full "mayo_(extra)"
 
-                            # Determine which attribute this modifier belongs to (using base name)
-                            if base_modifier in known_condiments:
-                                attr_key = "condiments"
-                            elif base_modifier in known_proteins:
-                                attr_key = "extra_protein"
-                            elif base_modifier in known_cheeses:
-                                attr_key = "extra_cheese"
-                            elif base_modifier in known_toppings:
-                                attr_key = "toppings"
+                            # Determine which attribute this modifier belongs to (data-driven)
+                            category = modifier_to_category.get(base_modifier)
+                            if category:
+                                attr_key = menu_cache.get_category_attribute_slug(category)
                             else:
                                 # Default to condiments for unknown modifiers
                                 attr_key = "condiments"
@@ -1023,9 +1014,11 @@ class TakingItemsHandler:
 
                 # Apply add-modifier modifications ("add bacon", "extra cheese", etc.)
                 if parsed.modify_add_modifiers:
-                    known_proteins = get_proteins()
-                    known_cheeses = get_cheeses()
-                    known_toppings = get_toppings()
+                    # Build modifier→category lookup (data-driven from database)
+                    modifier_to_category: dict[str, str] = {}
+                    for category in menu_cache.get_ordered_ingredient_categories("food"):
+                        for ingredient in menu_cache.get_ingredients(category):
+                            modifier_to_category[ingredient.lower()] = category
 
                     for modifier in parsed.modify_add_modifiers:
                         # Handle qualified modifiers: "bacon (extra)" -> base="bacon"
@@ -1033,25 +1026,19 @@ class TakingItemsHandler:
                         modifier_lower = modifier.lower()
                         base_modifier = modifier_lower.split(" (")[0].strip()  # "bacon (extra)" -> "bacon"
 
-                        # Check if the base modifier is a protein
-                        if base_modifier in {p.lower() for p in known_proteins}:
-                            # If no extra_protein set, use that field
+                        # Determine modifier category (data-driven)
+                        category = modifier_to_category.get(base_modifier)
+
+                        # Special handling for protein: single field with overflow to toppings
+                        if category == "protein":
                             if not target_item.extra_protein:
                                 target_item.extra_protein = modifier  # Store full qualified modifier
                             else:
                                 # Already have a protein, add to toppings
                                 if modifier not in target_item.toppings:
                                     target_item.toppings.append(modifier)
-                        # Check if the base modifier is a cheese
-                        elif base_modifier in {c.lower() for c in known_cheeses}:
-                            if modifier not in target_item.toppings:
-                                target_item.toppings.append(modifier)
-                        # Check if the base modifier is a topping
-                        elif base_modifier in {t.lower() for t in known_toppings}:
-                            if modifier not in target_item.toppings:
-                                target_item.toppings.append(modifier)
                         else:
-                            # Unknown modifier type, add to toppings anyway
+                            # All other modifiers (cheese, topping, unknown) go to toppings
                             if modifier not in target_item.toppings:
                                 target_item.toppings.append(modifier)
                         logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bread)
@@ -3427,19 +3414,21 @@ class TakingItemsHandler:
             )
         else:
             # Needs configuration - apply stored modifiers from original order
-            # Build sweeteners list from stored modifier
+            # Build sweeteners list from stored modifier (standard format)
             sweeteners_list = []
             if stored_sweetener:
                 sweeteners_list.append({
-                    "type": stored_sweetener,
+                    "slug": stored_sweetener,
+                    "category": "sweetener",
                     "quantity": stored_sweetener_qty or 1,
                 })
 
-            # Build flavor syrups list from stored modifier
+            # Build flavor syrups list from stored modifier (standard format)
             syrups_list = []
             if stored_syrup:
                 syrups_list.append({
-                    "flavor": stored_syrup,
+                    "slug": stored_syrup,
+                    "category": "syrup",
                     "quantity": stored_syrup_qty or 1,
                 })
 
@@ -3649,19 +3638,21 @@ class TakingItemsHandler:
                     )
                 else:
                     # Needs configuration - apply stored modifiers from original order
-                    # Build sweeteners list from stored modifier
+                    # Build sweeteners list from stored modifier (standard format)
                     sweeteners_list = []
                     if stored_sweetener:
                         sweeteners_list.append({
-                            "type": stored_sweetener,
+                            "slug": stored_sweetener,
+                            "category": "sweetener",
                             "quantity": stored_sweetener_qty or 1,
                         })
 
-                    # Build flavor syrups list from stored modifier
+                    # Build flavor syrups list from stored modifier (standard format)
                     syrups_list = []
                     if stored_syrup:
                         syrups_list.append({
-                            "flavor": stored_syrup,
+                            "slug": stored_syrup,
+                            "category": "syrup",
                             "quantity": stored_syrup_qty or 1,
                         })
 

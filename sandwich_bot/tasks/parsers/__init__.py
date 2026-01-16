@@ -59,13 +59,6 @@ from .llm_parsers import (
     get_instructor_client,
     parse_side_choice,
     parse_bagel_choice,
-    parse_multi_bagel_choice,
-    parse_multi_toasted,
-    parse_multi_spread,
-    parse_spread_choice,
-    parse_toasted_choice,
-    parse_coffee_size,
-    parse_coffee_style,
     parse_by_pound_category,
     parse_open_input,
     parse_delivery_choice,
@@ -98,10 +91,8 @@ from .constants import (
     get_by_pound_items,
     find_by_pound_item,
     get_by_pound_category_names,
-    # Bagel modifiers (loaded from database via dynamic functions)
-    get_proteins,
-    get_cheeses,
-    get_toppings,
+    # Note: get_proteins(), get_cheeses(), get_toppings() were removed
+    # - use menu_cache.get_ingredients("protein"), etc. instead
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Regex patterns - basic
     QUALIFIER_PATTERNS,
@@ -176,13 +167,6 @@ __all__ = [
     "get_instructor_client",
     "parse_side_choice",
     "parse_bagel_choice",
-    "parse_multi_bagel_choice",
-    "parse_multi_toasted",
-    "parse_multi_spread",
-    "parse_spread_choice",
-    "parse_toasted_choice",
-    "parse_coffee_size",
-    "parse_coffee_style",
     "parse_by_pound_category",
     "parse_open_input",
     "parse_delivery_choice",
@@ -212,10 +196,8 @@ __all__ = [
     "get_by_pound_items",
     "find_by_pound_item",
     "get_by_pound_category_names",
-    # Constants - Bagel modifiers (loaded from database via dynamic functions)
-    "get_proteins",
-    "get_cheeses",
-    "get_toppings",
+    # Note: get_proteins(), get_cheeses(), get_toppings() were removed
+    # - use menu_cache.get_ingredients("protein"), etc. instead
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",

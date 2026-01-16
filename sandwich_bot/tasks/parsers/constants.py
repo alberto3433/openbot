@@ -148,8 +148,8 @@ def extract_quantity(user_input: str, pattern: str) -> int:
 # Use get_by_pound_category_names() to get the slug -> display_name mapping.
 
 # Note: BY_POUND_PRICES has been moved to the database.
-# Prices are now loaded via menu_index_builder._build_by_pound_prices()
-# and accessed via PricingEngine.lookup_by_pound_price()
+# Prices are stored in menu_item_size_prices table with sizes like "1 lb", "1/4 lb".
+# Use PricingEngine.lookup_size_price(item_name, "1 lb") to get by-pound prices.
 
 # =============================================================================
 # Bagel Modifiers
@@ -163,8 +163,8 @@ def extract_quantity(user_input: str, pattern: str) -> int:
 # Example categories in ingredients table:
 # - category='protein': bacon, ham, turkey, etc. with aliases (nova -> nova scotia salmon)
 # - category='cheese': american cheese, swiss cheese, etc. with aliases
-# - category='topping': tomato, onion, lettuce, etc. with aliases
-# - category='sauce': mayo, mustard, hot sauce, etc. (also included in toppings)
+# - category='topping': tomato, onion, lettuce, mayo, mustard, etc. with aliases
+#   (Note: sauces like mayo/mustard are now unified in the 'topping' category)
 
 # NOTE: BAGEL_SPREADS has been moved to the database.
 # Use get_bagel_spreads() to access spread patterns for matching.
@@ -276,6 +276,8 @@ CHANGE_REQUEST_PATTERNS = [
     (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "can you change the bagel to X"
     (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "make it with X" / "can you make it with X instead"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "actually X instead" / "actually make it X"
     # Negative lookahead excludes cancellation keywords so "actually cancel that" is NOT a change request
     (re.compile(r"actually\s+(?!cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
@@ -664,16 +666,47 @@ def _get_menu_cache():
 
 def get_spread_types() -> set[str]:
     """
-    Get cream cheese variety types (scallion, honey walnut, etc.).
+    Get cream cheese variety/flavor types (scallion, vegetable, strawberry, etc.).
+
+    These are the FLAVOR MODIFIERS that can be applied to cream cheese.
+    Extracted from compound spread names like "Scallion Cream Cheese".
 
     Returns data from cache. Raises RuntimeError if cache not loaded.
     """
     cache = _get_menu_cache()
     if cache:
-        # Use generic get_ingredients - spread types are ingredients with category="spread"
-        cached = cache.get_ingredients("spread")
-        if cached:
-            return cached
+        # Get CC varieties from global attribute options for "spread"
+        # These have display_name like "Scallion Cream Cheese"
+        try:
+            spread_options = cache.get_global_attribute_options("spread")
+            flavors = set()
+            for opt in spread_options:
+                display_name = opt.get("display_name", "").lower()
+                # Extract flavor from compound CC names (e.g., "scallion cream cheese" -> "scallion")
+                if display_name.endswith(" cream cheese"):
+                    flavor = display_name.replace(" cream cheese", "").strip()
+                    if flavor and flavor != "plain":  # Skip "plain" as it's the default
+                        flavors.add(flavor)
+                # Also handle tofu variants (e.g., "scallion tofu" -> "scallion")
+                elif display_name.endswith(" tofu"):
+                    flavor = display_name.replace(" tofu", "").strip()
+                    if flavor and flavor != "plain":
+                        flavors.add(flavor)
+            return flavors
+        except Exception:
+            pass  # Fall back to ingredients if global options not available
+
+        # Fallback: try extracting from spread ingredients
+        all_spreads = cache.get_ingredients("spread")
+        if all_spreads:
+            flavors = set()
+            for spread in all_spreads:
+                spread_lower = spread.lower()
+                if spread_lower.endswith(" cream cheese") and spread_lower != "cream cheese":
+                    flavor = spread_lower.replace(" cream cheese", "").strip()
+                    if flavor and flavor != "plain":
+                        flavors.add(flavor)
+            return flavors
     raise RuntimeError(
         "Spread types not available. Ensure menu_data_cache is loaded with spread data from the database."
     )
@@ -683,14 +716,26 @@ def get_spreads() -> set[str]:
     """
     Get base spread types (cream cheese, butter, etc.).
 
+    These are the BASE spreads that can stand alone, NOT compound names
+    like "Scallion Cream Cheese".
+
     Returns data from cache. Raises RuntimeError if cache not loaded.
     """
     cache = _get_menu_cache()
     if cache:
-        # Use generic get_ingredients function
-        cached = cache.get_ingredients("spread")
-        if cached:
-            return cached
+        # Get all spread ingredients
+        all_spreads = cache.get_ingredients("spread")
+        if all_spreads:
+            # Return only base spreads (not compound CC names)
+            # Base spreads are: cream cheese, butter, peanut butter, hummus, etc.
+            base_spreads = set()
+            for spread in all_spreads:
+                spread_lower = spread.lower()
+                # Compound CC names end with " cream cheese" but aren't just "cream cheese"
+                if spread_lower.endswith(" cream cheese") and spread_lower != "cream cheese":
+                    continue  # Skip compound names like "scallion cream cheese"
+                base_spreads.add(spread_lower)
+            return base_spreads
     raise RuntimeError(
         "Spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
     )
@@ -853,11 +898,11 @@ def get_proteins() -> set[str]:
 
 def get_toppings() -> set[str]:
     """
-    Get topping types (tomato, onion, etc.) from the database.
+    Get topping types (tomato, onion, mayo, mustard, etc.) from the database.
 
     Returns data from cache which includes both ingredient names and
-    their aliases. Also includes sauces (mayo, mustard, etc.) which
-    function as toppings on bagels.
+    their aliases. Includes both solid toppings (tomato, onion) and
+    sauces (mayo, mustard) which are now unified in the 'topping' category.
 
     Raises:
         RuntimeError: If menu cache is not loaded. There is no fallback -
@@ -865,10 +910,8 @@ def get_toppings() -> set[str]:
     """
     cache = _get_menu_cache()
     if cache:
-        # Use generic get_ingredients function - toppings + sauces
-        toppings = cache.get_ingredients("topping")
-        sauces = cache.get_ingredients("sauce")
-        cached = toppings | sauces
+        # Use generic get_ingredients function
+        cached = cache.get_ingredients("topping")
         if cached:
             return cached
     raise RuntimeError(
@@ -1368,40 +1411,5 @@ def normalize_toasted(value: str) -> bool | None:
     for pattern in positive_patterns:
         if re.search(pattern, value_lower):
             return True
-
-    return None
-
-
-def normalize_coffee_size(value: str) -> str | None:
-    """
-    Extract a valid coffee size from a potentially messy input string.
-
-    Handles cases like:
-    - "make that a large instead" -> "large"
-    - "actually small" -> "small"
-
-    Args:
-        value: Raw input string that may contain a size
-
-    Returns:
-        Normalized size if found, None otherwise
-    """
-    if not value:
-        return None
-
-    value_lower = value.lower().strip()
-
-    # Valid sizes
-    sizes = {"small", "medium", "large"}
-
-    # Quick check
-    if value_lower in sizes:
-        return value_lower
-
-    # Search for size within string
-    for size in sizes:
-        pattern = r'\b' + re.escape(size) + r'\b'
-        if re.search(pattern, value_lower):
-            return size
 
     return None

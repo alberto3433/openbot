@@ -5,8 +5,6 @@ These tests validate the most important order flows work correctly,
 especially multi-item orders and edge cases that have caused bugs.
 """
 
-from unittest.mock import MagicMock, patch
-
 from sandwich_bot.tasks.state_machine import OrderStateMachine
 from sandwich_bot.tasks.models import OrderTask
 from tests.test_helpers import BagelItemTask, CoffeeItemTask
@@ -76,14 +74,6 @@ def create_full_menu_data():
         "categories": ["custom_bagels", "drinks", "desserts", "signature_sandwiches"],
         "store_id": "test_store",
     }
-
-
-def mock_spread_parser(spread_value=None, no_spread=False):
-    """Create a mock for parse_spread_choice."""
-    mock_response = MagicMock()
-    mock_response.spread = spread_value
-    mock_response.no_spread = no_spread
-    return mock_response
 
 
 class TestCriticalOrderScenarios:
@@ -196,13 +186,11 @@ class TestCriticalOrderScenarios:
         assert "cream cheese" in result.message.lower() or "butter" in result.message.lower() or "spread" in result.message.lower(), \
             "Should ask about spread"
 
-        # Answer spread (mock the LLM parser)
-        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
-            mock_spread.return_value = mock_spread_parser(no_spread=True)
-            result = sm.process("no thanks", order)
-            order = result.order
-            print(f"User: no thanks")
-            print(f"Bot: {result.message}")
+        # Answer spread
+        result = sm.process("no thanks", order)
+        order = result.order
+        print(f"User: no thanks")
+        print(f"Bot: {result.message}")
 
         # Skip customization checkpoint if present
         if "more changes" in result.message.lower() or "customize" in result.message.lower():
@@ -257,12 +245,10 @@ class TestCriticalOrderScenarios:
         print(f"User: yes toasted")
         print(f"Bot: {result.message}")
 
-        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
-            mock_spread.return_value = mock_spread_parser(spread_value="cream cheese")
-            result = sm.process("cream cheese", order)
-            order = result.order
-            print(f"User: cream cheese")
-            print(f"Bot: {result.message}")
+        result = sm.process("cream cheese", order)
+        order = result.order
+        print(f"User: cream cheese")
+        print(f"Bot: {result.message}")
 
         # Check that we have both items
         active_items = order.items.get_active_items()
@@ -312,33 +298,30 @@ class TestCriticalOrderScenarios:
         msg_lower = result.message.lower()
 
         # Complete any remaining configuration
-        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
-            mock_spread.return_value = mock_spread_parser(no_spread=True)
+        # Keep answering until we get "anything else"
+        max_iterations = 5
+        for i in range(max_iterations):
+            if "anything else" in result.message.lower() or "else" in result.message.lower():
+                break
 
-            # Keep answering until we get "anything else"
-            max_iterations = 5
-            for i in range(max_iterations):
-                if "anything else" in result.message.lower() or "else" in result.message.lower():
-                    break
+            if "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower:
+                result = sm.process("no spread", order)
+            elif "toast" in msg_lower:
+                result = sm.process("yes", order)
+            elif "bagel" in msg_lower and "kind" in msg_lower:
+                result = sm.process("everything", order)
+            elif "size" in msg_lower:
+                result = sm.process("large", order)
+            elif "hot" in msg_lower or "iced" in msg_lower:
+                result = sm.process("hot", order)
+            elif "1." in result.message:  # disambiguation
+                result = sm.process("1", order)
+            else:
+                result = sm.process("no thanks", order)
 
-                if "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower:
-                    result = sm.process("no spread", order)
-                elif "toast" in msg_lower:
-                    result = sm.process("yes", order)
-                elif "bagel" in msg_lower and "kind" in msg_lower:
-                    result = sm.process("everything", order)
-                elif "size" in msg_lower:
-                    result = sm.process("large", order)
-                elif "hot" in msg_lower or "iced" in msg_lower:
-                    result = sm.process("hot", order)
-                elif "1." in result.message:  # disambiguation
-                    result = sm.process("1", order)
-                else:
-                    result = sm.process("no thanks", order)
-
-                order = result.order
-                print(f"Bot: {result.message}")
-                msg_lower = result.message.lower()
+            order = result.order
+            print(f"Bot: {result.message}")
+            msg_lower = result.message.lower()
 
         # Verify both items in cart
         active_items = order.items.get_active_items()
@@ -501,12 +484,10 @@ class TestCriticalOrderScenarios:
         assert "cream cheese" in result.message.lower() or "butter" in result.message.lower() or "spread" in result.message.lower()
 
         # Try to modify toasted preference
-        with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
-            mock_spread.return_value = mock_spread_parser(spread_value="cream cheese")
-            result = sm.process("cream cheese but actually not toasted", order)
-            order = result.order
-            print(f"User: cream cheese but actually not toasted")
-            print(f"Bot: {result.message}")
+        result = sm.process("cream cheese but actually not toasted", order)
+        order = result.order
+        print(f"User: cream cheese but actually not toasted")
+        print(f"Bot: {result.message}")
 
         # Check the bagel config
         active_items = order.items.get_active_items()
@@ -632,12 +613,10 @@ class TestCriticalOrderScenarios:
 
         # May still ask about spread if not considered answered
         if "cream cheese" in result.message.lower() or "butter" in result.message.lower():
-            with patch('sandwich_bot.tasks.parsers.llm_parsers.parse_spread_choice') as mock_spread:
-                mock_spread.return_value = mock_spread_parser(no_spread=True)
-                result = sm.process("no spread", order)
-                order = result.order
-                print(f"User: no spread")
-                print(f"Bot: {result.message}")
+            result = sm.process("no spread", order)
+            order = result.order
+            print(f"User: no spread")
+            print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
         bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]

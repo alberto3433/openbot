@@ -22,9 +22,9 @@ from .parsers.constants import (
 )
 
 # All category behavior is now data-driven via database:
-# - ItemType.expands_to: aggregates multiple categories (e.g., dessert -> [pastry, snack])
+# - Category table + MenuItemCategory join: groups items by category (e.g., "sandwich", "drink")
 # - ItemType.is_by_pound: controls display format for by-pound items
-# - ItemType aliases: maps user terms to category slugs
+# - ItemType aliases: maps user terms to item type slugs
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -91,33 +91,6 @@ class QueryHandler:
     # =========================================================================
     # Helper Methods for Data-Driven Messages
     # =========================================================================
-
-    def _get_subtypes_for_category(self, category_slug: str) -> str | None:
-        """Build a message listing sub-types for a category from database.
-
-        Returns a formatted string like "egg sandwiches, fish sandwiches, and more"
-        based on the expands_to configuration, or None if category has no subtypes.
-        """
-        try:
-            category_info = menu_cache.get_category_keyword_mapping(category_slug)
-            if category_info and category_info.get("expands_to"):
-                # Get display names for the expanded types
-                subtypes = []
-                for slug in category_info["expands_to"]:
-                    subtype_info = menu_cache.get_category_keyword_mapping(slug)
-                    if subtype_info:
-                        display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
-                        subtypes.append(display)
-
-                if subtypes:
-                    if len(subtypes) <= 3:
-                        return ", ".join(subtypes)
-                    else:
-                        return ", ".join(subtypes[:4]) + ", and more"
-        except Exception as e:
-            logger.warning("Failed to get subtypes for %s from database: %s", category_slug, e)
-
-        return None
 
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.
@@ -348,8 +321,10 @@ class QueryHandler:
         """Handle inquiry about menu items by type.
 
         Uses a single generic flow for all categories:
-        1. Try to find category match via database aliases
-        2. If found, get items (automatically aggregating via expands_to)
+        1. Try to find category match via database (ItemType or Category)
+        2. If found, get items based on lookup_type:
+           - "item_type": query by item_type_id (from items_by_type)
+           - "category": query via MenuItemCategory (from menu_cache.get_items_by_category)
         3. If not found, fall back to partial string matching across all items
         """
         items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
@@ -374,44 +349,28 @@ class QueryHandler:
             # Get display name from database
             display_name = category_info.get("display_name_plural") or category_info.get("display_name", menu_query_type)
             slug = category_info.get("slug")
-            expands_to = category_info.get("expands_to")
-            is_by_pound = category_info.get("is_by_pound", False)
+            lookup_type = category_info.get("lookup_type", "item_type")
 
-            # Collect items - automatically aggregate if expands_to exists
+            # Get items based on lookup_type
             items = []
-            if expands_to:
-                for type_slug in expands_to:
-                    items.extend(items_by_type.get(type_slug, []))
-                # Also include items from the slug itself
-                if slug and slug in items_by_type:
-                    items.extend(items_by_type.get(slug, []))
-                # Also include items from the original query term (handles mock data with matching keys)
-                query_key = menu_query_type.lower()
-                if query_key in items_by_type and query_key != slug:
-                    items.extend(items_by_type.get(query_key, []))
+            if lookup_type == "category":
+                # Query via MenuItemCategory join table
+                items = menu_cache.get_items_by_category(slug)
             else:
+                # Query by item_type_id (from items_by_type)
                 items = items_by_type.get(slug, [])
-
-            # If virtual category with subtypes, ask for specifics instead of listing many items
-            # This provides a better UX when there are many sub-categories
-            if expands_to:
-                subtypes_message = self._get_category_subtypes_message(category_info)
-                if subtypes_message and (not items or len(items) > 20):
-                    return StateMachineResult(
-                        message=f"We have {subtypes_message}. What kind of {display_name} would you like?",
-                        order=order,
-                    )
+                # Also check original query term for mock data compatibility
+                if not items:
+                    query_key = menu_query_type.lower()
+                    if query_key in items_by_type:
+                        items = items_by_type.get(query_key, [])
 
             if items:
                 items_str = self._format_items_with_prices(items[:15], show_prices, slug)
                 if len(items) > 15:
                     items_str += f", and {len(items) - 15} more"
 
-                # Add note about by-pound if applicable
-                if is_by_pound:
-                    message = f"Our {display_name} include: {items_str}. Would you like any of these?"
-                else:
-                    message = f"Our {display_name} include: {items_str}. Would you like any of these?"
+                message = f"Our {display_name} include: {items_str}. Would you like any of these?"
                 return StateMachineResult(message=message, order=order)
 
         # 2. Fallback: Check if query matches keys in items_by_type
@@ -506,26 +465,6 @@ class QueryHandler:
         else:
             return word + "s"
 
-    def _get_category_subtypes_message(self, category_info: dict) -> str:
-        """Build a message listing subtypes for a virtual category."""
-        expands_to = category_info.get("expands_to", [])
-        if not expands_to:
-            return category_info.get("display_name", "various options")
-
-        subtypes = []
-        for slug in expands_to:
-            subtype_info = menu_cache.get_category_keyword_mapping(slug)
-            if subtype_info:
-                display = subtype_info.get("display_name_plural") or subtype_info.get("display_name", slug)
-                subtypes.append(display)
-            else:
-                subtypes.append(slug.replace("_", " "))
-
-        if len(subtypes) <= 3:
-            return ", ".join(subtypes)
-        else:
-            return ", ".join(subtypes[:4]) + ", and more"
-
     def handle_soda_clarification(self, order: "OrderTask") -> StateMachineResult:
         """Handle when user orders a generic 'soda' without specifying type.
 
@@ -574,37 +513,42 @@ class QueryHandler:
         query_lower = item_query.lower().strip()
         query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
 
-        # Use data-driven lookup from ItemType aliases for category price inquiries
+        # Use data-driven lookup from ItemType/Category for category price inquiries
         category_info = menu_cache.get_category_keyword_mapping(query_lower)
         if category_info:
-            # If category has expands_to (like "sandwich" -> sub-types), ask what kind
-            expands_to = category_info.get("expands_to")
-            if expands_to:
-                display_name = category_info.get("display_name", query_lower)
-                subtypes = self._get_subtypes_for_category(category_info.get("slug", query_lower))
-                if subtypes:
-                    return StateMachineResult(
-                        message=f"We have {subtypes}. What kind of {display_name} would you like?",
-                        order=order,
-                    )
-                # Even if we can't get specific subtypes, ask what kind for expandable categories
-                return StateMachineResult(
-                    message=f"We have several types of {display_name}. What kind would you like?",
-                    order=order,
-                )
-
-        if category_info and self._pricing:
-            item_type = category_info.get("slug")
+            slug = category_info.get("slug")
+            lookup_type = category_info.get("lookup_type", "item_type")
             display_name_plural = category_info.get("display_name_plural", f"{query_lower}s")
-            try:
-                min_price = self._pricing.get_min_price_for_category(item_type)
-                if min_price > 0:
+
+            # Get items based on lookup_type to find minimum price
+            items = []
+            if lookup_type == "category":
+                items = menu_cache.get_items_by_category(slug)
+            else:
+                items = items_by_type.get(slug, [])
+
+            if items:
+                # Find minimum price from items
+                prices = [item.get("price") or item.get("base_price") or 0 for item in items]
+                prices = [p for p in prices if p > 0]
+                if prices:
+                    min_price = min(prices)
                     return StateMachineResult(
                         message=f"Our {display_name_plural} start at ${min_price:.2f}. Would you like one?",
                         order=order,
                     )
-            except (ValueError, KeyError) as e:
-                logger.debug("Could not get min price for category %s: %s", item_type, e)
+
+            # Try pricing engine as fallback
+            if self._pricing:
+                try:
+                    min_price = self._pricing.get_min_price_for_category(slug)
+                    if min_price > 0:
+                        return StateMachineResult(
+                            message=f"Our {display_name_plural} start at ${min_price:.2f}. Would you like one?",
+                            order=order,
+                        )
+                except (ValueError, KeyError) as e:
+                    logger.debug("Could not get min price for category %s: %s", slug, e)
 
         # Search all menu items for a match
         best_match = None
@@ -634,31 +578,49 @@ class QueryHandler:
             if best_match_score == 100:
                 break
 
-        # Check bagels specifically
-        bagel_items = items_by_type.get("bagel", [])
-        is_bagel_query = "bagel" in query_lower
-        if is_bagel_query and not best_match:
-            for bagel in bagel_items:
-                bagel_name = bagel.get("name", "").lower()
-                if query_lower in bagel_name or bagel_name in query_lower:
-                    best_match = bagel
-                    best_match_score = 75
+        # Check for items with bread attribute (data-driven, not just bagels)
+        # Find item types that have "bread" attribute
+        bread_item_types = [
+            it_slug for it_slug in items_by_type.keys()
+            if "bread" in menu_cache.get_item_type_attributes(it_slug)
+        ]
+        # Check if query mentions any bread-based item type
+        is_bread_query = any(it_slug in query_lower for it_slug in bread_item_types)
+        if is_bread_query and not best_match:
+            for bread_type in bread_item_types:
+                bread_items = items_by_type.get(bread_type, [])
+                for item in bread_items:
+                    item_name = item.get("name", "").lower()
+                    if query_lower in item_name or item_name in query_lower:
+                        best_match = item
+                        best_match_score = 75
+                        break
+                if best_match:
                     break
-
-            if not best_match and bagel_items:
-                best_match = bagel_items[0]
-                best_match_score = 50
+            # Fall back to first item if no specific match
+            if not best_match:
+                for bread_type in bread_item_types:
+                    bread_items = items_by_type.get(bread_type, [])
+                    if bread_items:
+                        best_match = bread_items[0]
+                        best_match_score = 50
+                        break
 
         if best_match and best_match_score >= 50:
             name = best_match.get("name", "Unknown")
-            if is_bagel_query or "bagel" in name.lower():
-                bagel_type = name.lower().replace(" bagel", "").strip()
+            item_type = best_match.get("item_type")
+            # Check if item has bread attribute (data-driven) for special pricing
+            item_attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+            if "bread" in item_attrs:
+                # Extract bread type from item name (e.g., "Everything Bagel" -> "everything")
+                type_display = menu_cache.get_item_type_display_name(item_type) if item_type else ""
+                bread_type = name.lower().replace(type_display.lower(), "").strip()
                 try:
-                    base_price = self._pricing.lookup_base_price("Bagel")
-                    upcharge = self._pricing.lookup_attribute_option_upcharge("bagel", "bread", bagel_type)
+                    base_price = self._pricing.lookup_base_price(name)
+                    upcharge = self._pricing.lookup_attribute_option_upcharge(item_type, "bread", bread_type)
                     price = base_price + upcharge
                 except ValueError:
-                    price = 0
+                    price = best_match.get("price") or best_match.get("base_price") or 0
             else:
                 price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(
@@ -680,204 +642,11 @@ class QueryHandler:
         category: str | None,
         order: "OrderTask",
     ) -> StateMachineResult:
-        """Handle recommendation questions."""
-        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
-
-        if category == "bagel":
-            return self._recommend_bagels(order)
-        elif category == "sandwich":
-            return self._recommend_sandwiches(items_by_type, order)
-        elif category == "coffee":
-            return self._recommend_coffee(items_by_type, order)
-        elif category == "breakfast":
-            return self._recommend_breakfast(items_by_type, order)
-        elif category == "lunch":
-            return self._recommend_lunch(items_by_type, order)
-        else:
-            return self._recommend_general(items_by_type, order)
-
-    def _recommend_bagels(self, order: "OrderTask") -> StateMachineResult:
-        """Recommend popular bagel options."""
-        # Try to get bagel types from database
-        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
-        bagels = items_by_type.get("bagel", [])
-
-        if bagels and len(bagels) >= 3:
-            # Get bagel names and pick a few to recommend
-            bagel_names = [b.get("name", "").replace(" Bagel", "").replace(" bagel", "") for b in bagels[:5]]
-            bagel_names = [n for n in bagel_names if n]  # Filter empty
-            if len(bagel_names) >= 2:
-                popular = ", ".join(bagel_names[:2])
-                others = ", ".join(bagel_names[2:4]) if len(bagel_names) > 2 else ""
-                if others:
-                    message = (
-                        f"Our most popular bagels are {popular}! "
-                        f"We also have {others} if you're feeling adventurous. "
-                        "Would you like to try one?"
-                    )
-                else:
-                    message = f"Our most popular bagels are {popular}! Would you like to try one?"
-                return StateMachineResult(message=message, order=order)
-
-        # Fallback message when database items not available
-        message = "We have a great selection of bagels! Would you like to try one?"
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_sandwiches(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
-        """Recommend popular sandwich options."""
-        signature = items_by_type.get("signature_items", [])
-        egg_sandwiches = items_by_type.get("egg_sandwich", [])
-
-        recommendations = []
-        for item in signature[:2]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if len(recommendations) < 3 and egg_sandwiches:
-            name = egg_sandwiches[0].get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if recommendations:
-            if len(recommendations) == 1:
-                message = f"I'd recommend {recommendations[0]} - it's one of our favorites! Would you like to try it?"
-            else:
-                items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
-                message = f"Some of our most popular are {items_str}. Would you like to try one?"
-        else:
-            message = "Our egg sandwiches are really popular! Would you like to hear about them?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_coffee(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
-        """Recommend popular coffee options."""
-        # Try to get beverage names from database
-        sized_beverages = items_by_type.get("sized_beverage", [])
-        cold_beverages = items_by_type.get("beverage", [])
-
-        coffee_names = []
-        for item in sized_beverages[:5]:
-            name = item.get("name", "")
-            if name:
-                coffee_names.append(name)
-
-        if len(coffee_names) >= 2:
-            popular = coffee_names[0]
-            also_have = coffee_names[1]
-            message = (
-                f"Our {popular} is really popular - you can get it hot or iced! "
-                f"We also have great {also_have} if you want something different. "
-                "Would you like a coffee?"
-            )
-        elif coffee_names:
-            message = f"Our {coffee_names[0]} is really popular! Would you like one?"
-        else:
-            # Fallback message when database items not available
-            message = "We have a great selection of coffee drinks! Would you like one?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_breakfast(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
-        """Recommend breakfast options."""
-        signature_items = items_by_type.get("signature_item", [])
-        omelettes = items_by_type.get("omelette", [])
-        bagels = items_by_type.get("bagel", [])
-
-        recommendations = []
-        for item in signature_items[:1]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        # Try to recommend a bagel from the database
-        if bagels:
-            bagel_name = bagels[0].get("name", "").replace(" Bagel", "").replace(" bagel", "")
-            if bagel_name:
-                recommendations.append(f"a {bagel_name} bagel")
-
-        if omelettes:
-            name = omelettes[0].get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if len(recommendations) >= 2:
-            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
-            message = f"For breakfast, I'd suggest {items_str}. What sounds good?"
-        else:
-            # Fallback message when database items not available
-            message = "For breakfast, we have great bagels and signature items! What sounds good?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_lunch(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
-        """Recommend lunch options."""
-        signature = items_by_type.get("signature_items", [])
-        salad = items_by_type.get("salad_sandwich", [])
-
-        recommendations = []
-        for item in signature[:2]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        for item in salad[:1]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if recommendations:
-            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}" if len(recommendations) > 1 else recommendations[0]
-            message = f"For lunch, I'd recommend {items_str}. What sounds good?"
-        else:
-            # Get sandwich subtypes from database for fallback message
-            sandwich_types = self._get_sandwich_subtypes_message()
-            message = f"For lunch, our sandwiches are great! We have {sandwich_types}. What sounds good?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_general(self, items_by_type: dict, order: "OrderTask") -> StateMachineResult:
-        """General recommendation when no specific category is asked."""
-        signature_items = items_by_type.get("signature_item", [])
-        bagels = items_by_type.get("bagel", [])
-        beverages = items_by_type.get("sized_beverage", [])
-
-        signature_item_name = signature_items[0].get("name", "") if signature_items else None
-        bagel_name = bagels[0].get("name", "").replace(" Bagel", "").replace(" bagel", "") if bagels else None
-        beverage_name = beverages[0].get("name", "") if beverages else None
-
-        if signature_item_name:
-            # Build recommendation with available items from database
-            also_have = []
-            if bagel_name:
-                also_have.append(f"our {bagel_name} bagels")
-            if beverage_name:
-                also_have.append(f"our {beverage_name}s")
-
-            if also_have:
-                also_str = " and ".join(also_have)
-                message = (
-                    f"Our {signature_item_name} is really popular! "
-                    f"We're also known for {also_str}. "
-                    "What are you in the mood for?"
-                )
-            else:
-                message = f"Our {signature_item_name} is really popular! What are you in the mood for?"
-        else:
-            # Fallback using database items if available
-            if bagel_name and beverage_name:
-                message = (
-                    f"Our {bagel_name} bagels are a customer favorite! "
-                    f"We also have great {beverage_name}s. "
-                    "What are you in the mood for?"
-                )
-            elif bagel_name:
-                message = f"Our {bagel_name} bagels are a customer favorite! What are you in the mood for?"
-            else:
-                # Generic fallback when no database items available
-                message = "We have a great selection of bagels and sandwiches! What are you in the mood for?"
-
-        return StateMachineResult(message=message, order=order)
+        """Handle recommendation questions with a generic response."""
+        return StateMachineResult(
+            message="We have a great selection! What are you in the mood for?",
+            order=order,
+        )
 
     # =========================================================================
     # Item Description Handlers
@@ -1148,11 +917,11 @@ class QueryHandler:
         category_info = menu_cache.get_category_keyword_mapping(category)
         if category_info:
             display_name = category_info.get("display_name_plural") or category_info.get("display_name", category)
-            expands_to = category_info.get("expands_to")
+            lookup_type = category_info.get("lookup_type", "item_type")
             slug = category_info.get("slug")
         else:
             display_name = category
-            expands_to = None
+            lookup_type = "item_type"
             slug = category
 
         items = []
@@ -1161,14 +930,14 @@ class QueryHandler:
             items = self._menu_data.get(category, [])
 
             if not items:
-                items_by_type = self._menu_data.get("items_by_type", {})
-                # Use expands_to from database if available
-                if expands_to:
-                    for type_slug in expands_to:
-                        items.extend(items_by_type.get(type_slug, []))
+                # Use lookup_type to determine query method
+                if lookup_type == "category":
+                    # Query via MenuItemCategory join table
+                    items = menu_cache.get_items_by_category(slug)
                 else:
-                    # Fall back to direct slug lookup
-                    items.extend(items_by_type.get(slug, []))
+                    # Query by item_type_id
+                    items_by_type = self._menu_data.get("items_by_type", {})
+                    items = items_by_type.get(slug, [])
 
         if not items:
             return StateMachineResult(

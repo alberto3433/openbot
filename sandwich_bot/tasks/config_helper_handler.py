@@ -80,9 +80,8 @@ class ConfigHelperHandler:
 
     def __init__(
         self,
-        config: HandlerConfig | None = None,
+        config: HandlerConfig,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
-        **kwargs,
     ):
         """
         Initialize the config helper handler.
@@ -90,20 +89,13 @@ class ConfigHelperHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             modifier_change_handler: Handler for modifier changes.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self.model = config.model
-            self._get_next_question = config.get_next_question
-            self.pricing = config.pricing
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self._get_next_question = kwargs.get("get_next_question")
-            self.pricing = kwargs.get("pricing")
+        self.model = config.model
+        self._get_next_question = config.get_next_question
+        self.pricing = config.pricing
 
         # Handler-specific dependency
-        self.modifier_change_handler = modifier_change_handler or kwargs.get("modifier_change_handler")
+        self.modifier_change_handler = modifier_change_handler
 
     def check_cancellation_during_config(
         self,
@@ -598,14 +590,37 @@ class ConfigHelperHandler:
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle side choice for omelette - uses constrained parser."""
+        """Handle side choice - uses constrained parser with data-driven options."""
         # Import here to avoid circular dependency
         from .state_machine import _check_redirect_to_pending_item
 
-        # "bagel" and "fruit salad" are valid answers, not new order attempts
+        # Load side choice options from database (data-driven)
+        item_type = item.menu_item_type
+        side_attr = menu_cache.get_side_choice_attribute(item_type) if item_type else None
+        question_text = f"Would you like a side with your {item.menu_item_name}?"
+
+        # Build valid_answers from database options
+        valid_answers: set[str] = set()
+        if side_attr:
+            attr_slug = side_attr.get("slug")
+            question_text = side_attr.get("question_text") or question_text
+            # Load options for the side_choice attribute
+            try:
+                options = menu_cache.get_global_attribute_options(attr_slug)
+                for opt in options:
+                    # Add option slug and display_name as valid answers
+                    valid_answers.add(opt.get("slug", "").lower())
+                    valid_answers.add(opt.get("display_name", "").lower())
+                    # Add any aliases
+                    for alias in opt.get("aliases", []):
+                        valid_answers.add(alias.lower())
+            except Exception:
+                # If options not found, fall back to empty set (won't filter anything)
+                pass
+
         redirect = _check_redirect_to_pending_item(
-            user_input, item, order, "Would you like a bagel or fruit salad with it?",
-            valid_answers={"bagel", "fruit", "fruit salad"}
+            user_input, item, order, question_text,
+            valid_answers=valid_answers if valid_answers else None
         )
         if redirect:
             return redirect
@@ -624,7 +639,7 @@ class ConfigHelperHandler:
 
         if parsed.choice == "unclear":
             return StateMachineResult(
-                message=f"Would you like a bagel or fruit salad with your {item.menu_item_name}?",
+                message=f"{question_text.replace(' with it?', '')} with your {item.menu_item_name}?",
                 order=order,
             )
 
@@ -714,7 +729,6 @@ class ConfigHelperHandler:
         Returns:
             StateMachineResult with next question or completion message
         """
-        from .state_machine import BagelChoiceResponse
         from .parsers.llm_parsers import parse_bagel_choice
 
         # Parse the bagel choice

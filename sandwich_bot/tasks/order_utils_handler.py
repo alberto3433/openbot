@@ -18,6 +18,10 @@ from .models import (
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
 
+if TYPE_CHECKING:
+    from .handler_config import HandlerConfig
+    from ..services.message_builder import MessageBuilder
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,9 +34,8 @@ class OrderUtilsHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
+        config: "HandlerConfig",
         build_order_summary: Callable[[OrderTask], str] | None = None,
-        **kwargs,
     ):
         """
         Initialize the order utils handler.
@@ -40,18 +43,12 @@ class OrderUtilsHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             build_order_summary: Callback to build order summary string.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self._message_builder = config.message_builder
-            self._store_info = config.store_info or {}
-        else:
-            # Legacy support for direct parameters
-            self._message_builder = kwargs.get("message_builder")
-            self._store_info = {}
+        self._message_builder = config.message_builder
+        self._store_info = config.store_info or {}
 
         # Handler-specific callback
-        self._build_order_summary = build_order_summary or kwargs.get("build_order_summary")
+        self._build_order_summary = build_order_summary
 
     def set_store_info(self, store_info: dict | None) -> None:
         """Set the store info for tax calculations (legacy method)."""
@@ -148,15 +145,15 @@ class OrderUtilsHandler:
         for _ in range(to_add):
             # Create a copy of the item
             if isinstance(template_item, MenuItemTask) and template_item.has_attribute("bread"):
-                # Create bagel using MenuItemTask with menu_item_type="bagel" (has bread attribute)
+                # Create item copy using template's actual item type (data-driven)
                 new_item = MenuItemTask(
-                    menu_item_name="Bagel",
-                    menu_item_type="bagel",
+                    menu_item_name=template_item.menu_item_name,
+                    menu_item_type=template_item.menu_item_type,
                     toasted=template_item.toasted,
                     spread=template_item.spread,
                     unit_price=template_item.unit_price,
                 )
-                # Copy bagel-specific fields via property setters
+                # Copy bread-based item fields via property setters
                 if template_item.bread:
                     new_item.bread = template_item.bread
                 if template_item.spread_type:
@@ -167,7 +164,7 @@ class OrderUtilsHandler:
                     new_item.toppings = list(template_item.toppings)
                 new_item.mark_complete()
                 order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of bagel")
+                logger.info("QUANTITY_CHANGE: Added copy of %s", template_item.menu_item_type or "item")
             elif isinstance(template_item, MenuItemTask):
                 new_item = MenuItemTask(
                     menu_item_name=template_item.menu_item_name,

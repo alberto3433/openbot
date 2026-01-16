@@ -250,16 +250,14 @@ class PricingEngine:
     ) -> float:
         """Look up a conditional price modifier from another attribute's options.
 
-        This handles cases like iced drinks where the upcharge depends on size:
-        - When temperature="iced", look up "iced_price_modifier" from size options
-
+        This handles cases where a price upcharge depends on another attribute value.
         The pattern is: {condition_value}_price_modifier on the source attribute options.
 
         Args:
             item_type: Item type slug (e.g., "sized_beverage")
             source_attr: Attribute to look up the modifier from (e.g., "size")
             source_value: Selected value of source attribute (e.g., "large")
-            modifier_column: Column name for the conditional modifier (e.g., "iced_price_modifier")
+            modifier_column: Column name for the conditional modifier
 
         Returns:
             Conditional upcharge or 0.0 if not found
@@ -277,14 +275,12 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Backwards compatibility: if item_types is not in menu_data, return 0
-        # (legacy test fixtures don't have item_types structure)
-        if "item_types" not in self._menu_data:
-            logger.debug(
-                "No item_types in menu_data. Returning $0.00 for conditional upcharge '%s.%s'.",
-                source_attr, modifier_column
+        if not item_types:
+            raise ValueError(
+                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
+                "menu_data must contain 'item_types' structure. "
+                "Ensure menu is loaded with full item type configuration."
             )
-            return 0.0
 
         type_data = item_types.get(item_type)
 
@@ -359,14 +355,12 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Backwards compatibility: if item_types is not in menu_data, return 0
-        # (legacy test fixtures don't have item_types structure)
-        if "item_types" not in self._menu_data:
-            logger.debug(
-                "No item_types in menu_data. Returning $0.00 for modifier '%s'.",
-                modifier_name
+        if not item_types:
+            raise ValueError(
+                f"Cannot look up modifier price for '{modifier_name}'. "
+                "menu_data must contain 'item_types' structure. "
+                "Ensure menu is loaded with full item type configuration."
             )
-            return 0.0
 
         type_data = item_types.get(item_type)
 
@@ -495,14 +489,12 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Backwards compatibility: if item_types is not in menu_data, return 0
-        # (legacy test fixtures don't have item_types structure)
-        if "item_types" not in self._menu_data:
-            logger.debug(
-                "No item_types in menu_data. Returning $0.00 for modifier '%s'.",
-                modifier_name
+        if not item_types:
+            raise ValueError(
+                f"Cannot look up modifier price for '{modifier_name}'. "
+                "menu_data must contain 'item_types' structure. "
+                "Ensure menu is loaded with full item type configuration."
             )
-            return 0.0
 
         type_data = item_types.get(item_type)
 
@@ -622,27 +614,10 @@ class PricingEngine:
             item.bread_upcharge = bread_upcharge
 
         # =====================================================================
-        # 2. Conditional upcharges (iced depends on size)
+        # 2. Modifier upcharges (milk, syrup, protein, spread, extras)
         # =====================================================================
-
-        # Iced upcharge - varies by size, stored as iced_price_modifier on size options
-        temperature_value = attr_values.get("temperature")
-        iced_upcharge = 0.0
-        if temperature_value == "iced" and size_value:
-            iced_upcharge = self.lookup_conditional_upcharge(
-                item_type,
-                "size",
-                size_value,
-                "iced_price_modifier"
-            )
-            total += iced_upcharge
-
-        if hasattr(item, 'iced_upcharge'):
-            item.iced_upcharge = iced_upcharge
-
-        # =====================================================================
-        # 3. Modifier upcharges (milk, syrup, protein, spread, extras)
-        # =====================================================================
+        # Note: Temperature (hot/iced) is now part of the menu item name itself
+        # (e.g., "Iced Latte" vs "Hot Latte"), not a modifier with upcharge.
 
         # Milk upcharge - use item.milk property (handles unified storage)
         milk_value = item.milk if hasattr(item, 'milk') else attr_values.get("milk")
@@ -749,64 +724,6 @@ class PricingEngine:
     # Display Name Helpers
     # =========================================================================
 
-    def lookup_temperature_display_name(
-        self,
-        temperature: str | bool,
-        item_type: str,
-    ) -> str:
-        """
-        Look up the display name for temperature (hot/iced) from the database.
-
-        Args:
-            temperature: "iced", "hot", True (for iced), or False (for hot)
-            item_type: Item type to look up temperature options for
-
-        Returns:
-            The display name from the database (e.g., "Iced", "Hot"),
-            or the slug if not found.
-
-        Raises:
-            ValueError: If menu_data is not loaded or item_type doesn't exist
-        """
-        # Support both string and legacy boolean format
-        if isinstance(temperature, bool):
-            target_slug = "iced" if temperature else "hot"
-        else:
-            target_slug = temperature  # Already "iced" or "hot"
-
-        if not self._menu_data:
-            raise ValueError(
-                f"Cannot look up temperature display name for '{target_slug}'. "
-                "menu_data is required. Ensure menu is loaded."
-            )
-
-        item_types = self._menu_data.get("item_types", {})
-
-        # Backwards compatibility: if item_types is not in menu_data, return slug as-is
-        # (legacy test fixtures don't have item_types structure)
-        if "item_types" not in self._menu_data:
-            return target_slug
-
-        type_data = item_types.get(item_type)
-
-        if not type_data:
-            raise ValueError(
-                f"Item type '{item_type}' not found in menu_data. "
-                f"Cannot look up temperature display name. "
-                f"Available item types: {list(item_types.keys())}"
-            )
-
-        for attr in type_data.get("attributes", []):
-            if attr.get("slug") == "temperature":
-                for opt in attr.get("options", []):
-                    if opt.get("slug") == target_slug:
-                        display_name = opt.get("display_name")
-                        if display_name:
-                            return display_name
-
-        # Not found - return the slug as fallback (this is display, not pricing)
-        return target_slug
-
     def lookup_size_display_name(self, size_slug: str, item_type: str) -> str:
         """
         Look up the display name for a size from the database.
@@ -835,10 +752,12 @@ class PricingEngine:
 
         item_types = self._menu_data.get("item_types", {})
 
-        # Backwards compatibility: if item_types is not in menu_data, return slug as-is
-        # (legacy test fixtures don't have item_types structure)
-        if "item_types" not in self._menu_data:
-            return size_slug
+        if not item_types:
+            raise ValueError(
+                f"Cannot look up size display name for '{size_slug}'. "
+                "menu_data must contain 'item_types' structure. "
+                "Ensure menu is loaded with full item type configuration."
+            )
 
         type_data = item_types.get(item_type)
 
@@ -893,31 +812,45 @@ class PricingEngine:
                     if menu_item_data:
                         break
 
-        base_price = menu_item_data.get("base_price", 0.0) if menu_item_data else 0.0
+        if not menu_item_data:
+            raise ValueError(
+                f"Cannot recalculate price for menu item '{getattr(item, 'menu_item_name', 'unknown')}'. "
+                f"Menu item with id={getattr(item, 'menu_item_id', None)} not found in menu index. "
+                "Ensure menu is loaded and item exists in database."
+            )
 
-        # Fallback: if we don't have menu data, calculate base from current price minus spread
-        if base_price == 0 and item.unit_price:
-            base_price = item.unit_price
-            if item.spread_price:
-                base_price -= item.spread_price
+        base_price = menu_item_data.get("base_price", 0.0)
+
+        if base_price == 0:
+            raise ValueError(
+                f"Cannot recalculate price for menu item '{getattr(item, 'menu_item_name', 'unknown')}'. "
+                f"base_price is missing or zero. "
+                "Ensure menu item has a valid base_price in the database."
+            )
 
         total = base_price
 
+        # Determine item type for modifier price lookups (data-driven from DB)
+        item_type_slug = (
+            getattr(item, 'menu_item_type', None) or
+            menu_item_data.get("item_type")
+        )
+
         # Add spread upcharge if spread is set - try compound, base, then plain-prefixed
-        if item.spread:
+        if item.spread and item_type_slug:
             spread_type = getattr(item, 'spread_type', None)
             spread_price = 0.0
             # Try compound spread name first (e.g., "scallion_cream_cheese")
             if spread_type:
                 compound_slug = f"{spread_type}_{item.spread}".replace(" ", "_").lower()
-                spread_price = self.lookup_modifier_price(compound_slug, "bagel")
+                spread_price = self.lookup_modifier_price(compound_slug, item_type_slug)
             # Fall back to base spread name
             if spread_price == 0.0:
-                spread_price = self.lookup_modifier_price(item.spread, "bagel")
+                spread_price = self.lookup_modifier_price(item.spread, item_type_slug)
             # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
             if spread_price == 0.0:
                 plain_slug = f"plain_{item.spread.lower().replace(' ', '_')}"
-                spread_price = self.lookup_modifier_price(plain_slug, "bagel")
+                spread_price = self.lookup_modifier_price(plain_slug, item_type_slug)
             item.spread_price = spread_price if spread_price > 0 else None
             total += spread_price
         else:
@@ -961,14 +894,12 @@ class PricingEngine:
 
         items_by_type = self._menu_data.get("items_by_type", {})
 
-        # Backwards compatibility: if items_by_type is not in menu_data, return 0
-        # (legacy test fixtures don't have items_by_type structure)
-        if "items_by_type" not in self._menu_data:
-            logger.debug(
-                "No items_by_type in menu_data. Returning $0.00 for min price of '%s'.",
-                item_type
+        if not items_by_type:
+            raise ValueError(
+                f"Cannot get min price for category '{item_type}'. "
+                "menu_data must contain 'items_by_type' structure. "
+                "Ensure menu is loaded with full item configuration."
             )
-            return 0.0
 
         # Get items for this category
         items = items_by_type.get(item_type, [])

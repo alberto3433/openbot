@@ -2127,8 +2127,9 @@ class TakingItemsHandler:
             if item.special_instructions:
                 extracted_mods.special_instructions = [item.special_instructions]
 
-            # Use unified add_item() dispatcher (item_type from parsed item, not hardcoded)
-            item_type = getattr(item, 'item_type', None) or "bagel"  # Fallback for legacy entries
+            # Use unified add_item() dispatcher (item_type from parsed item)
+            # Note: _is_bagel_entry already verified item_type exists
+            item_type = item.item_type
             result = self.item_adder_handler.add_item(
                 item_type=item_type,
                 order=order,
@@ -2533,17 +2534,17 @@ class TakingItemsHandler:
                         item_type = "signature_item" if parsed_item.is_signature else "menu_item"
                         display_name = parsed_item.item_name or summary
                     elif _is_bagel_entry(parsed_item):
-                        # Use actual item_type from parsed entry (data-driven)
-                        item_type = getattr(parsed_item, 'item_type', None) or "bagel"
+                        # _is_bagel_entry already verified item_type exists
+                        item_type = parsed_item.item_type
                         type_display = menu_cache.get_item_type_display_name(item_type)
                         display_name = f"{parsed_item.bread} {type_display}" if parsed_item.bread else type_display
                     elif _is_coffee_entry(parsed_item):
-                        # Use actual item_type from parsed entry (data-driven)
-                        item_type = getattr(parsed_item, 'item_type', None) or "sized_beverage"
+                        # _is_coffee_entry already verified item_type exists
+                        item_type = parsed_item.item_type
                         display_name = parsed_item.drink_type or menu_cache.get_item_type_display_name(item_type)
                     else:
-                        # Use actual item_type or fallback to "side"
-                        item_type = getattr(parsed_item, 'item_type', None) or "side"
+                        # For other entries, use actual item_type (required in ParsedItemEntry)
+                        item_type = getattr(parsed_item, 'item_type', None) or "unknown"
                         display_name = summary
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")

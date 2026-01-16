@@ -110,11 +110,14 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
         item_type = getattr(item, 'menu_item_type', None)
         if item_type:
             return _load_modifier_fields_from_db(item_type)
-        # Secondary: infer item type from attributes (for backwards compatibility)
-        if item.has_attribute("size"):
-            return _load_modifier_fields_from_db("sized_beverage")
-        if item.has_attribute("bread"):
-            return _load_modifier_fields_from_db("bagel")
+        # Secondary: infer item type from attributes (data-driven lookup)
+        # Check attributes the item has and find matching item type from DB
+        for attr_slug in ("size", "bread"):
+            if item.has_attribute(attr_slug):
+                from sandwich_bot.menu_data_cache import menu_cache
+                inferred_type = menu_cache.find_item_type_with_attribute(attr_slug)
+                if inferred_type:
+                    return _load_modifier_fields_from_db(inferred_type)
         # Generic menu items use menu_item type
         return _load_modifier_fields_from_db("menu_item")
     else:

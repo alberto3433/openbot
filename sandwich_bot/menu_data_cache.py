@@ -113,8 +113,8 @@ class MenuDataCache:
         self._abbreviations: dict[str, str] = {}  # abbreviation -> canonical name (lowercase)
 
         # Category keyword mappings (replaces MENU_CATEGORY_KEYWORDS constant)
-        # Maps user keywords (bagels, desserts, etc.) to category info
-        self._category_keywords: dict[str, dict] = {}  # keyword -> {slug, expands_to, name_filter}
+        # Maps user keywords (bagels, sandwiches, etc.) to category info
+        self._category_keywords: dict[str, dict] = {}  # keyword -> {slug, lookup_type, display_name, ...}
 
         # By-the-pound items
         self._by_pound_items: dict[str, list[str]] = {}  # category -> list of item names
@@ -165,6 +165,10 @@ class MenuDataCache:
 
         # Configurable item types (those with attributes defined)
         self._configurable_item_types: set[str] = set()
+
+        # Item type side choice configuration
+        # Maps item_type_slug -> {"has_side_choice": bool, "side_choice_attribute_id": int|None}
+        self._item_type_side_choice: dict[str, dict] = {}
 
         # Keyword indices for partial matching
         self._menu_item_keyword_index: dict[str, list[str]] = {}
@@ -657,89 +661,99 @@ class MenuDataCache:
         )
 
     def _load_category_keywords(self, db: Session) -> None:
-        """Load category keyword mappings from item_types table.
+        """Load category keyword mappings from item_types and categories tables.
 
-        Builds a mapping from user keywords (bagels, desserts, coffees, etc.)
-        to category info (slug, expands_to, name_filter).
+        Builds a mapping from user keywords (bagels, sandwiches, drinks, etc.)
+        to category info for menu queries.
 
-        This replaces the hardcoded MENU_CATEGORY_KEYWORDS constant in constants.py.
-
-        For virtual/meta categories (dessert, beverage_all, etc.), the expands_to
-        field contains a list of slugs to query. For regular categories,
-        expands_to is None and the slug itself is used.
+        Two types of lookups are supported:
+        1. ItemType lookups (lookup_type="item_type"): Query MenuItems by item_type_id
+           Example: "bagel" -> items with item_type.slug = "bagel"
+        2. Category lookups (lookup_type="category"): Query MenuItems via MenuItemCategory
+           Example: "sandwich" -> items with category.slug = "sandwich"
 
         Raises:
             RuntimeError: If no category keywords found in database.
         """
-        import json
-        from .models import ItemType
+        from .models import ItemType, Category
 
         category_keywords: dict[str, dict] = {}
 
-        # Query all item_types (aliases are loaded via relationship)
-        # Use joinedload to avoid N+1 queries when accessing aliases
+        # 1. Load ItemTypes (for item type-based lookups like "bagel", "sized_beverage")
         item_types = (
             db.query(ItemType)
             .options(joinedload(ItemType.alias_records))
             .all()
         )
 
-        item_types_with_aliases = 0
+        item_types_count = 0
         for item_type in item_types:
             slug = item_type.slug
-
-            # Parse expands_to JSON if present
-            expands_to = None
-            if hasattr(item_type, 'expands_to') and item_type.expands_to:
-                if isinstance(item_type.expands_to, str):
-                    try:
-                        expands_to = json.loads(item_type.expands_to)
-                    except json.JSONDecodeError:
-                        logger.warning("Invalid expands_to JSON for item_type %s", slug)
-                else:
-                    expands_to = item_type.expands_to
-
-            # Get name_filter if present
-            name_filter = getattr(item_type, 'name_filter', None)
-
-            # Get display names for price inquiry responses
             display_name = item_type.display_name
             display_name_plural = item_type.display_name_plural or f"{display_name}s"
 
-            # Create category info dict
             category_info = {
                 "slug": slug,
-                "expands_to": expands_to,
-                "name_filter": name_filter,
                 "display_name": display_name,
                 "display_name_plural": display_name_plural,
+                "lookup_type": "item_type",  # Query by item_type_id
             }
 
             # Add slug itself as a key
             category_keywords[slug] = category_info
+            item_types_count += 1
 
-            # Add all aliases as keys (now a list from child table)
-            if item_type.aliases:
-                item_types_with_aliases += 1
-                for alias in item_type.aliases:
-                    alias = alias.strip().lower()
-                    if alias:
-                        category_keywords[alias] = category_info
+            # Add all aliases as keys
+            for alias in item_type.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    category_keywords[alias] = category_info
+
+        # 2. Load Categories (for category-based lookups like "sandwich", "drink", "food")
+        categories = db.query(Category).all()
+
+        categories_count = 0
+        for category in categories:
+            slug = category.slug
+            display_name = category.name
+            # Simple pluralization for categories
+            display_name_plural = f"{display_name}s" if not display_name.endswith('s') else display_name
+
+            category_info = {
+                "slug": slug,
+                "category_id": category.id,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+                "lookup_type": "category",  # Query via MenuItemCategory join
+            }
+
+            # Add slug as a key (may override item_type if same name - category takes precedence)
+            category_keywords[slug] = category_info
+            categories_count += 1
+
+            # Also add singular/plural variations
+            name_lower = display_name.lower()
+            if name_lower != slug:
+                category_keywords[name_lower] = category_info
+            # Add plural form if different
+            plural_lower = display_name_plural.lower()
+            if plural_lower != slug and plural_lower != name_lower:
+                category_keywords[plural_lower] = category_info
 
         # Fail if database has no category keywords configured
         if not category_keywords:
             raise RuntimeError(
                 "No category keywords found in database. Run migrations to populate "
-                "item_types.aliases column. Expected categories: bagel, omelette, "
-                "dessert, coffee, etc."
+                "item_types and categories tables."
             )
 
         self._category_keywords = category_keywords
 
         logger.debug(
-            "Loaded %d category keywords from %d item_types",
+            "Loaded %d category keywords from %d item_types and %d categories",
             len(category_keywords),
-            item_types_with_aliases,
+            item_types_count,
+            categories_count,
         )
 
     def _load_item_type_metadata(self, db: Session) -> None:
@@ -760,6 +774,7 @@ class MenuDataCache:
         modifier_categories: dict[str, str | None] = {}
         item_keywords: set[str] = set()
         configurable_types: set[str] = set()
+        side_choice_config: dict[str, dict] = {}
 
         # Load all item types with their category
         # Use joinedload to avoid N+1 queries when accessing aliases and category
@@ -768,6 +783,7 @@ class MenuDataCache:
             .options(
                 joinedload(ItemType.alias_records),
                 joinedload(ItemType.item_type_category),
+                joinedload(ItemType.side_choice_attribute),
             )
             .all()
         )
@@ -778,6 +794,21 @@ class MenuDataCache:
                 modifier_categories[slug] = item_type.item_type_category.slug
             else:
                 modifier_categories[slug] = None
+
+            # Load side choice configuration
+            side_choice_config[slug] = {
+                "has_side_choice": item_type.has_side_choice,
+                "side_choice_attribute_id": item_type.side_choice_attribute_id,
+                "side_choice_attribute": None,
+            }
+            # Include attribute details if has_side_choice is True
+            if item_type.has_side_choice and item_type.side_choice_attribute:
+                attr = item_type.side_choice_attribute
+                side_choice_config[slug]["side_choice_attribute"] = {
+                    "slug": attr.slug,
+                    "question_text": attr.question_text,
+                    "display_name": attr.display_name,
+                }
 
             # Add item type slug as a keyword
             item_keywords.add(slug.lower())
@@ -824,12 +855,14 @@ class MenuDataCache:
         self._item_type_modifier_categories = modifier_categories
         self._item_keywords = item_keywords
         self._configurable_item_types = configurable_types
+        self._item_type_side_choice = side_choice_config
 
         logger.debug(
-            "Loaded item type metadata: %d modifier_categories, %d item_keywords, %d configurable_types",
+            "Loaded item type metadata: %d modifier_categories, %d item_keywords, %d configurable_types, %d side_choice_configs",
             len(modifier_categories),
             len(item_keywords),
             len(configurable_types),
+            len(side_choice_config),
         )
 
     def _load_abbreviations(self, db: Session) -> None:
@@ -902,9 +935,10 @@ class MenuDataCache:
         item_type_fields: dict[str, list[dict]] = {}
 
         # Query all attributes with their item type from the NEW table
+        # Explicit join condition needed due to multiple FKs between tables
         attributes = (
             db.query(ItemTypeAttribute)
-            .join(ItemType)
+            .join(ItemType, ItemTypeAttribute.item_type_id == ItemType.id)
             .order_by(ItemType.slug, ItemTypeAttribute.display_order)
             .all()
         )
@@ -1701,7 +1735,7 @@ class MenuDataCache:
         """Get all MenuItem names and aliases for a given ItemType.
 
         This is the generic replacement for domain-specific functions like
-        get_coffee_types(), get_soda_types(), get_bagel_types().
+        get_coffee_types(), get_soda_types().
 
         Args:
             item_type_slug: The ItemType slug (e.g., "sized_beverage", "bagel", "beverage")
@@ -2333,6 +2367,57 @@ class MenuDataCache:
             )
         return self._configurable_item_types.copy()
 
+    def item_type_has_side_choice(self, item_type_slug: str) -> bool:
+        """Check if an item type has a side choice requirement.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+
+        Returns:
+            True if the item type requires a side choice, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Example:
+            >>> cache.item_type_has_side_choice("omelette")
+            True
+            >>> cache.item_type_has_side_choice("bagel")
+            False
+        """
+        self._ensure_loaded()
+        config = self._item_type_side_choice.get(item_type_slug)
+        if config is None:
+            return False
+        return config.get("has_side_choice", False)
+
+    def get_side_choice_attribute(self, item_type_slug: str) -> dict | None:
+        """Get the side choice attribute configuration for an item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+
+        Returns:
+            Dict with attribute details if has_side_choice is True, None otherwise.
+            Dict structure: {"slug": str, "question_text": str, "display_name": str}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Example:
+            >>> cache.get_side_choice_attribute("omelette")
+            {"slug": "side_choice", "question_text": "Would you like a bagel or fruit salad with it?", ...}
+            >>> cache.get_side_choice_attribute("bagel")
+            None
+        """
+        self._ensure_loaded()
+        config = self._item_type_side_choice.get(item_type_slug)
+        if config is None:
+            return None
+        if not config.get("has_side_choice", False):
+            return None
+        return config.get("side_choice_attribute")
+
     def get_global_attribute_options(self, attr_slug: str) -> list[dict]:
         """Get options for a global attribute by slug.
 
@@ -2521,6 +2606,34 @@ class MenuDataCache:
         """
         attrs = self.get_item_type_attributes(item_type_slug)
         return attribute_slug in attrs
+
+    def find_item_type_with_attribute(self, attribute_slug: str) -> str | None:
+        """Find an item type that has a specific attribute (data-driven lookup).
+
+        This is used when we need to infer an item type from its attributes,
+        for example when an item doesn't have menu_item_type set but has certain
+        attributes populated.
+
+        Args:
+            attribute_slug: The attribute slug to search for (e.g., "size", "bread")
+
+        Returns:
+            The item type slug if found, None otherwise.
+
+        Example:
+            >>> # Find which item type has "size" attribute
+            >>> item_type = menu_cache.find_item_type_with_attribute("size")
+            >>> # Returns "sized_beverage" or similar
+        """
+        if not self._is_loaded:
+            raise MenuDataNotLoadedError(
+                "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup."
+            )
+        # Search all configurable item types
+        for item_type_slug in self._configurable_item_types:
+            if self.item_type_has_attribute(item_type_slug, attribute_slug):
+                return item_type_slug
+        return None
 
     def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
         """Load item type attributes from database.
@@ -3677,19 +3790,22 @@ class MenuDataCache:
         Returns:
             Dict with category info if found:
             {
-                "slug": str,          # The item_type slug (e.g., "dessert", "bagel")
-                "expands_to": list | None,  # List of slugs to query (for meta-categories)
-                "name_filter": str | None,  # Substring filter for item names (e.g., "tea")
+                "slug": str,           # The category slug (e.g., "dessert", "bagel")
+                "display_name": str,   # Singular display name
+                "display_name_plural": str,  # Plural display name
+                "lookup_type": str,    # "item_type" or "category"
             }
             Returns None if keyword not found.
 
+            lookup_type determines how to query items:
+            - "item_type": Query MenuItems by item_type_id
+            - "category": Query MenuItems via MenuItemCategory join table
+
         Examples:
             >>> cache.get_category_keyword_mapping("bagels")
-            {"slug": "bagel", "expands_to": None, "name_filter": None}
-            >>> cache.get_category_keyword_mapping("desserts")
-            {"slug": "dessert", "expands_to": ["pastry", "snack"], "name_filter": None}
-            >>> cache.get_category_keyword_mapping("teas")
-            {"slug": "tea", "expands_to": ["sized_beverage"], "name_filter": "tea"}
+            {"slug": "bagel", "lookup_type": "item_type", ...}
+            >>> cache.get_category_keyword_mapping("sandwiches")
+            {"slug": "sandwich", "lookup_type": "category", ...}
             >>> cache.get_category_keyword_mapping("unknown")
             None
         """
@@ -3892,10 +4008,10 @@ class MenuDataCache:
         Returns:
             Dict with item type info if a keyword is found:
             {
-                "slug": str,                    # The item_type slug
+                "slug": str,                    # The item_type or category slug
                 "display_name": str,            # Singular display name
                 "display_name_plural": str,     # Plural display name for suggestions
-                "expands_to": list | None,      # List of slugs to query (for meta-categories)
+                "lookup_type": str,             # "item_type" or "category"
             }
             Returns None if no keyword matches.
 

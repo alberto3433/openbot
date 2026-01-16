@@ -2307,10 +2307,10 @@ class TakingItemsHandler:
                 if item.milk:
                     milk_slug = item.milk.lower().replace(" ", "_")
                     mss_slugs.append(milk_slug)
-                    # Look up price from pricing engine
+                    # Look up price from pricing engine (data-driven: use item type from DB)
                     milk_price = 0.0
-                    if pricing:
-                        milk_price = pricing.lookup_generic_modifier_price(milk_slug, "sized_beverage", "milk") or 0.0
+                    if pricing and drink_item_type:
+                        milk_price = pricing.lookup_generic_modifier_price(milk_slug, drink_item_type, "milk") or 0.0
                     mss_selections.append({
                         "slug": milk_slug,
                         "display_name": item.milk.title(),
@@ -2334,9 +2334,10 @@ class TakingItemsHandler:
                 for syrup in item.syrups:
                     syrup_slug = syrup.slug.lower().replace(" ", "_")
                     mss_slugs.append(syrup_slug)
+                    # Look up price from pricing engine (data-driven: use item type from DB)
                     syrup_price = 0.0
-                    if pricing:
-                        syrup_price = pricing.lookup_generic_modifier_price(syrup_slug, "sized_beverage", "syrup") or 0.65
+                    if pricing and drink_item_type:
+                        syrup_price = pricing.lookup_generic_modifier_price(syrup_slug, drink_item_type, "syrup") or 0.65
                     mss_selections.append({
                         "slug": syrup_slug,
                         "display_name": syrup.slug.title(),
@@ -2421,8 +2422,9 @@ class TakingItemsHandler:
             # (disambiguation returns without adding to order)
             items_before = len(order.items.items)
 
+            # Use item_type from parsed item (data-driven, verified by _is_coffee_entry)
             result = self.item_adder_handler.add_item(
-                item_type="sized_beverage",
+                item_type=item.item_type,
                 order=order,
                 quantity=item.quantity,
                 item_name=item.drink_type,
@@ -2561,11 +2563,12 @@ class TakingItemsHandler:
                 all_drinks = order.pending_item_options
                 logger.info("Using %d pre-filtered drink options", len(all_drinks))
             else:
-                # Get full drink menu for generic "drink" request
+                # Get full drink menu for generic "drink" request (data-driven: all beverage item types)
                 items_by_type = self.item_adder_handler.menu_lookup.menu_data.get("items_by_type", {})
-                sized_items = items_by_type.get("sized_beverage", [])
-                cold_items = items_by_type.get("beverage", [])
-                all_drinks = sized_items + cold_items
+                all_drinks = []
+                for item_type_slug, items in items_by_type.items():
+                    if menu_cache.get_modifier_category(item_type_slug) == "beverage":
+                        all_drinks.extend(items)
 
             if all_drinks:
                 # Show first batch of drinks with pagination
@@ -2697,7 +2700,8 @@ class TakingItemsHandler:
                         elif item.has_attribute("size"):
                             # Items with size attribute use sized beverage config handler
                             # Note: temperature is now part of the menu item name (e.g., "Iced Latte")
-                            item_type_slug = item.menu_item_type or "sized_beverage"
+                            # Data-driven fallback: find item type with "size" attribute if not set
+                            item_type_slug = item.menu_item_type or menu_cache.find_item_type_with_attribute("size") or "menu_item"
                             display_name = item.menu_item_name or menu_cache.get_item_type_display_name(item_type_slug)
                             if item.size is None:
                                 coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_size"))
@@ -3331,6 +3335,7 @@ class TakingItemsHandler:
         # Found the selection - retrieve stored modifiers BEFORE clearing pending state
         selected_name = selected_item.get("name", "drink")
         selected_price = selected_item.get("base_price", 0)
+        selected_item_type = selected_item.get("item_type")  # Data-driven item type from DB
 
         # Retrieve stored modifiers from disambiguation (e.g., "large oat milk latte")
         # Note: temperature is now part of the menu item name (e.g., "Iced Latte")
@@ -3365,7 +3370,7 @@ class TakingItemsHandler:
             # Add directly as complete (no size/iced questions)
             drink = MenuItemTask(
                 menu_item_name=selected_name,
-                menu_item_type="sized_beverage",
+                menu_item_type=selected_item_type,
                 unit_price=selected_price,
             )
             # Infer attributes from item name (data-driven)
@@ -3402,7 +3407,7 @@ class TakingItemsHandler:
             for _ in range(stored_quantity):
                 drink = MenuItemTask(
                     menu_item_name=selected_name,
-                    menu_item_type="sized_beverage",
+                    menu_item_type=selected_item_type,
                     unit_price=selected_price,
                     special_instructions=stored_instructions,
                 )
@@ -3477,12 +3482,13 @@ class TakingItemsHandler:
             pagination = order.get_menu_pagination()
             if pagination and pagination.get("category") == "drink":
                 offset = pagination.get("offset", 0)
-                # Get drink items again
+                # Get drink items again (data-driven: all beverage item types)
                 menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
                 items_by_type = menu_lookup.menu_data.get("items_by_type", {}) if menu_lookup else {}
-                sized_items = items_by_type.get("sized_beverage", [])
-                cold_items = items_by_type.get("beverage", [])
-                all_drinks = sized_items + cold_items
+                all_drinks = []
+                for item_type_slug, items in items_by_type.items():
+                    if menu_cache.get_modifier_category(item_type_slug) == "beverage":
+                        all_drinks.extend(items)
 
                 if offset < len(all_drinks):
                     batch = all_drinks[offset:offset + DEFAULT_PAGINATION_SIZE]
@@ -3560,6 +3566,7 @@ class TakingItemsHandler:
                 # Found the selection - retrieve stored modifiers before clearing pending state
                 selected_name = selected_item.get("name", "drink")
                 selected_price = selected_item.get("base_price", 0)
+                selected_item_type = selected_item.get("item_type")  # Data-driven item type from DB
 
                 # Retrieve stored modifiers from disambiguation (e.g., "large oat milk latte")
                 stored_mods = order.pending_item_modifiers or {}
@@ -3593,7 +3600,7 @@ class TakingItemsHandler:
                     # Add directly as complete (no size/iced questions)
                     drink = MenuItemTask(
                         menu_item_name=selected_name,
-                        menu_item_type="sized_beverage",
+                        menu_item_type=selected_item_type,
                         unit_price=selected_price,
                     )
                     # Infer attributes from item name (data-driven)
@@ -3628,7 +3635,7 @@ class TakingItemsHandler:
 
                     drink = MenuItemTask(
                         menu_item_name=selected_name,
-                        menu_item_type="sized_beverage",
+                        menu_item_type=selected_item_type,
                         unit_price=selected_price,
                         special_instructions=stored_instructions,
                     )
@@ -3659,7 +3666,7 @@ class TakingItemsHandler:
                     for _ in range(stored_quantity - 1):
                         extra_drink = MenuItemTask(
                             menu_item_name=selected_name,
-                            menu_item_type="sized_beverage",
+                            menu_item_type=selected_item_type,
                             unit_price=selected_price,
                             special_instructions=stored_instructions,
                         )
@@ -3716,9 +3723,9 @@ class TakingItemsHandler:
                 flavor_syrup = coffee_entry.syrups[0].slug if coffee_entry.syrups else None
                 syrup_quantity = coffee_entry.syrups[0].quantity if coffee_entry.syrups else 1
 
-                # Use unified add_item() dispatcher
+                # Use unified add_item() dispatcher (data-driven: item_type from parsed item)
                 return self.item_adder_handler.add_item(
-                    item_type="sized_beverage",
+                    item_type=coffee_entry.item_type,
                     order=order,
                     quantity=coffee_entry.quantity,
                     item_name=coffee_entry.drink_type,
@@ -3735,11 +3742,17 @@ class TakingItemsHandler:
                 )
 
         # Try direct matching with known drink types
+        menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
         for bev_type in get_coffee_types():
             if bev_type in user_lower:
+                # Look up item type from menu (data-driven)
+                bev_item_type = None
+                if menu_lookup:
+                    bev_item = menu_lookup.lookup_menu_item(bev_type)
+                    bev_item_type = bev_item.get("item_type") if bev_item else None
                 # Use unified add_item() dispatcher
                 return self.item_adder_handler.add_item(
-                    item_type="sized_beverage",
+                    item_type=bev_item_type,
                     order=order,
                     quantity=1,
                     item_name=bev_type,
@@ -3751,11 +3764,13 @@ class TakingItemsHandler:
         if menu_lookup:
             matching_items = menu_lookup.lookup_menu_items(user_input)
             if matching_items:
-                # Use the first match
-                item_name = matching_items[0].get("name", user_input)
+                # Use the first match (data-driven: get item_type from DB)
+                matched_item = matching_items[0]
+                item_name = matched_item.get("name", user_input)
+                matched_item_type = matched_item.get("item_type")
                 # Use unified add_item() dispatcher
                 return self.item_adder_handler.add_item(
-                    item_type="sized_beverage",
+                    item_type=matched_item_type,
                     order=order,
                     quantity=1,
                     item_name=item_name,

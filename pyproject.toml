@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sandwich-bot"
+name = "orderbot"
 version = "0.1.6"
 description = "Multi-tenant restaurant ordering chatbot"
 readme = "README.md"
@@ -27,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sandwich_bot*"]
+include = ["orderbot*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

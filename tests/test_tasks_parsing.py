@@ -11,7 +11,7 @@ import pytest
 import os
 from unittest.mock import MagicMock
 
-from sandwich_bot.tasks.parsing import (
+from orderbot.tasks.parsing import (
     ParsedMenuItem,
     ItemModification,
     ParsedInput,
@@ -422,7 +422,7 @@ class TestParseUserMessageIntegration:
 # Deterministic Parser Tests (no LLM required)
 # =============================================================================
 
-from sandwich_bot.tasks.parsers import (
+from orderbot.tasks.parsers import (
     parse_open_input_deterministic,
     _extract_quantity,
     _extract_toasted,
@@ -1022,8 +1022,8 @@ class TestCancellationPatternDetection:
         This prevents 'actually cancel that' from being routed to the
         modifier_change_handler instead of the cancellation handler.
         """
-        from sandwich_bot.tasks.modifier_change_handler import ModifierChangeHandler
-        from sandwich_bot.tasks.handler_config import HandlerConfig
+        from orderbot.tasks.modifier_change_handler import ModifierChangeHandler
+        from orderbot.tasks.handler_config import HandlerConfig
         config = HandlerConfig()
         handler = ModifierChangeHandler(config=config)
         result = handler.detect_change_request(text)
@@ -1161,42 +1161,42 @@ class TestOrdinalExtractionFromCancelItem:
 
     def test_extract_ordinal_first_bagel(self):
         """Test extracting ordinal from 'first bagel'."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("first bagel")
         assert ordinal == 1
         assert item_type == "bagel"
 
     def test_extract_ordinal_second_coffee(self):
         """Test extracting ordinal from 'second coffee'."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("second coffee")
         assert ordinal == 2
         assert item_type == "coffee"
 
     def test_extract_ordinal_3rd_item(self):
         """Test extracting ordinal from '3rd item'."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("3rd item")
         assert ordinal == 3
         assert item_type == "item"
 
     def test_extract_ordinal_bagel_2(self):
         """Test extracting ordinal from 'bagel 2' (reversed format)."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("bagel 2")
         assert ordinal == 2
         assert item_type == "bagel"
 
     def test_extract_ordinal_coffee_hash_3(self):
         """Test extracting ordinal from 'coffee #3' (hash format)."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("coffee #3")
         assert ordinal == 3
         assert item_type == "coffee"
 
     def test_no_ordinal_plain_bagel(self):
         """Test that plain item descriptions return no ordinal."""
-        from sandwich_bot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("plain bagel")
         assert ordinal is None
         assert item_type == "plain bagel"
@@ -1207,7 +1207,7 @@ class TestFindNthItemOfType:
 
     def test_find_first_bagel(self):
         """Test finding the first bagel in a list."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -1224,7 +1224,7 @@ class TestFindNthItemOfType:
 
     def test_find_second_bagel(self):
         """Test finding the second bagel in a list."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -1241,7 +1241,7 @@ class TestFindNthItemOfType:
 
     def test_find_nth_item_generic(self):
         """Test finding the Nth item regardless of type using 'item' keyword."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
         from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -1259,7 +1259,7 @@ class TestFindNthItemOfType:
 
     def test_find_nth_item_out_of_range(self):
         """Test that out-of-range ordinal returns None."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
         from tests.test_helpers import BagelItemTask
 
         items = [
@@ -1273,8 +1273,8 @@ class TestFindNthItemOfType:
 
     def test_find_item_by_menu_item_name(self):
         """Test finding item by menu_item_name field."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
-        from sandwich_bot.tasks.models import MenuItemTask
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.models import MenuItemTask
 
         # MenuItemTask has menu_item_name field
         item = MenuItemTask(menu_item_name="Coca-Cola")
@@ -1289,7 +1289,7 @@ class TestFindNthItemOfType:
 
     def test_find_item_by_summary(self):
         """Test finding item by get_summary() content."""
-        from sandwich_bot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
         from tests.test_helpers import CoffeeItemTask
 
         # CoffeeItemTask helper creates MenuItemTask with drink_type stored in menu_item_name
@@ -1438,80 +1438,80 @@ class TestNotesExtraction:
 
     def test_light_on_the_cream_cheese(self):
         """Test 'light on the cream cheese' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("plain bagel with light on the cream cheese")
         assert "light cream cheese" in notes
 
     def test_light_cream_cheese_short_form(self):
         """Test 'light cream cheese' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("bagel with light cream cheese")
         assert "light cream cheese" in notes
 
     def test_extra_bacon(self):
         """Test 'extra bacon' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("egg and cheese bagel with extra bacon")
         assert "extra bacon" in notes
 
     def test_lots_of_cream_cheese(self):
         """Test 'lots of cream cheese' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("bagel with lots of cream cheese")
         assert "extra cream cheese" in notes
 
     def test_splash_of_milk(self):
         """Test 'a splash of milk' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("coffee with a splash of milk")
         assert "a splash of milk" in notes
 
     def test_go_easy_on_the_mayo(self):
         """Test 'go easy on the mayo' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("sandwich with go easy on the mayo")
         assert "light mayo" in notes
 
     def test_little_bit_of_sugar(self):
         """Test 'a little sugar' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("coffee with a little sugar")
         assert "a little sugar" in notes
 
     def test_no_onions(self):
         """Test 'no onions' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("bagel with no onions")
         assert "no onions" in notes
 
     def test_hold_the_tomato(self):
         """Test 'hold the tomato' extracts correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("sandwich hold the tomato")
         assert "no tomato" in notes
 
     def test_multiple_notes(self):
         """Test multiple qualifier phrases extract correctly."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("bagel with light cream cheese and extra bacon")
         assert "light cream cheese" in notes
         assert "extra bacon" in notes
 
     def test_no_notes_for_regular_order(self):
         """Test that regular orders without qualifiers have no notes."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("plain bagel with cream cheese")
         assert len(notes) == 0
 
     def test_heavy_on_the_cheese(self):
         """Test 'heavy on the cheese' extracts as extra."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         notes = extract_notes_from_input("bagel heavy on the cheese")
         assert "extra cheese" in notes
 
     def test_multi_item_notes_separated_coffee_only(self):
         """Test that coffee notes filter only includes coffee-related notes."""
-        from sandwich_bot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_notes_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         notes = extract_notes_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         # Should extract both notes separately
@@ -1520,7 +1520,7 @@ class TestNotesExtraction:
 
     def test_multi_item_modifiers_bagel_only(self):
         """Test that extract_modifiers_from_input filters to bagel-related special instructions only."""
-        from sandwich_bot.tasks.state_machine import extract_modifiers_from_input
+        from orderbot.tasks.state_machine import extract_modifiers_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         modifiers = extract_modifiers_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         # Bagel modifiers should only include bagel-related instructions (cream cheese), not coffee-related (splash of milk)
@@ -1530,7 +1530,7 @@ class TestNotesExtraction:
 
     def test_multi_item_coffee_with_milk_and_special_instructions(self):
         """Test that multi-item parser extracts milk and special instructions for coffee."""
-        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         result = _parse_multi_item_order("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         assert result is not None
@@ -1545,7 +1545,7 @@ class TestNotesExtraction:
 
     def test_coffee_with_sugar_on_the_side(self):
         """Test that 'sugar on the side' adds sugar as sweetener AND to special_instructions."""
-        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic("large coffee iced sugar on the side")
         assert result is not None
         coffee = get_coffee_item(result)
@@ -1558,7 +1558,7 @@ class TestNotesExtraction:
 
     def test_coffee_with_cream_on_the_side(self):
         """Test that 'cream on the side' adds cream as milk AND to special_instructions."""
-        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic("large coffee cream on the side")
         assert result is not None
         coffee = get_coffee_item(result)
@@ -1571,7 +1571,7 @@ class TestNotesExtraction:
 
     def test_coffee_with_milk_on_the_side(self):
         """Test that 'milk on the side' adds milk AND to special_instructions."""
-        from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic("coffee milk on the side")
         assert result is not None
         coffee = get_coffee_item(result)
@@ -1588,115 +1588,115 @@ class TestNotesExtraction:
 
     def test_special_instruction_room_for_cream(self):
         """Test 'room for cream' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("coffee room for cream")
         assert any("room" in i.lower() for i in instructions)
 
     def test_special_instruction_not_too_hot(self):
         """Test 'not too hot' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("latte not too hot")
         assert any("not too hot" in i.lower() for i in instructions)
 
     def test_special_instruction_lukewarm(self):
         """Test 'lukewarm' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("coffee lukewarm please")
         assert any("lukewarm" in i.lower() for i in instructions)
 
     def test_special_instruction_upside_down(self):
         """Test 'upside down' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("caramel macchiato upside down")
         assert any("upside down" in i.lower() for i in instructions)
 
     def test_special_instruction_well_stirred(self):
         """Test 'well stirred' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("iced coffee well stirred")
         assert any("well stirred" in i.lower() for i in instructions)
 
     def test_special_instruction_mixed(self):
         """Test 'mixed' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("latte mixed")
         assert any("mixed" in i.lower() for i in instructions)
 
     def test_special_instruction_lightly_toasted(self):
         """Test 'lightly toasted' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("plain bagel lightly toasted")
         assert any("lightly toasted" in i.lower() for i in instructions)
 
     def test_special_instruction_well_done(self):
         """Test 'well done' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("everything bagel well done")
         assert any("well done" in i.lower() for i in instructions)
 
     def test_special_instruction_cut_in_half(self):
         """Test 'cut in half' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("bagel with cream cheese cut in half")
         assert any("cut in half" in i.lower() for i in instructions)
 
     def test_special_instruction_sliced(self):
         """Test 'sliced' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("plain bagel sliced")
         assert any("sliced" in i.lower() for i in instructions)
 
     def test_special_instruction_open_faced(self):
         """Test 'open faced' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("egg sandwich open faced")
         assert any("open faced" in i.lower() for i in instructions)
 
     def test_special_instruction_spread_thin(self):
         """Test 'spread thin' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("bagel with cream cheese spread thin")
         assert any("spread thin" in i.lower() for i in instructions)
 
     def test_special_instruction_on_one_side(self):
         """Test 'on one side' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("cream cheese only on one side")
         assert any("on one side" in i.lower() for i in instructions)
 
     def test_special_instruction_on_both_halves(self):
         """Test 'on both halves' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("butter on both halves")
         assert any("on both halves" in i.lower() for i in instructions)
 
     def test_special_instruction_melted(self):
         """Test 'melted' is captured as special instruction."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("bagel with cheese melted")
         assert any("melted" in i.lower() for i in instructions)
 
     def test_special_instruction_extra_ice(self):
         """Test 'extra ice' is captured as special instruction (existing qualifier pattern)."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("iced coffee extra ice")
         assert any("extra ice" in i.lower() for i in instructions)
 
     def test_special_instruction_light_ice(self):
         """Test 'light ice' is captured as special instruction (existing qualifier pattern)."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("iced coffee light ice")
         assert any("light ice" in i.lower() for i in instructions)
 
     def test_special_instruction_no_ice(self):
         """Test 'no ice' is captured as special instruction (existing qualifier pattern)."""
-        from sandwich_bot.tasks.parsers.deterministic import extract_special_instructions_from_input
+        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
         instructions = extract_special_instructions_from_input("iced coffee no ice")
         assert any("no ice" in i.lower() for i in instructions)
 
     def test_multi_item_bagel_and_signature_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
-        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order
         # Multi-item order: "one bagel and one classic BEC"
         result = _parse_multi_item_order("one bagel and one classic BEC")
         assert result is not None
@@ -1709,7 +1709,7 @@ class TestNotesExtraction:
 
     def test_multi_item_signature_item_and_coffee(self):
         """Test multi-item order with speed menu item and coffee."""
-        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order
         result = _parse_multi_item_order("the lexington and a latte")
         assert result is not None
         sig_item = get_signature_item(result)
@@ -1720,7 +1720,7 @@ class TestNotesExtraction:
 
     def test_multi_item_two_signature_items(self):
         """Test multi-item order with two speed menu items (takes the last one)."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_signature_item_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_signature_item_deterministic
         # Note: Multi-item parser only tracks one speed menu item at a time
         # Each item individually should be recognized as a speed menu item
         leo = _parse_signature_item_deterministic("the leo")
@@ -1732,7 +1732,7 @@ class TestNotesExtraction:
 
     def test_multi_item_coffee_and_bagel_with_butter(self):
         """Test that 'a sesame bagel with butter' captures the sesame bagel type."""
-        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order
         result = _parse_multi_item_order("a coffee with a little bit of milk and a sesame bagel with butter")
         assert result is not None
         # Coffee should be captured
@@ -1746,7 +1746,7 @@ class TestNotesExtraction:
 
     def test_bagel_with_cream_cheese_is_build_your_own(self):
         """Test that 'an everything bagel with cream cheese' is parsed as build-your-own bagel, not menu item."""
-        from sandwich_bot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order
         result = _parse_multi_item_order("an everything bagel with cream cheese and a coffee")
         assert result is not None
         assert has_coffee(result)
@@ -1801,7 +1801,7 @@ class TestRecommendationInquiryParsing:
     ])
     def test_recommendation_patterns_detected(self, text, expected_category):
         """Test that recommendation questions are detected with correct category."""
-        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
@@ -1831,13 +1831,13 @@ class TestRecommendationInquiryParsing:
     ])
     def test_non_recommendation_not_detected(self, text):
         """Test that order intents are NOT detected as recommendations."""
-        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is None, f"Incorrectly detected recommendation in: {text}"
 
     def test_recommendation_should_not_add_to_cart(self):
         """Test that recommendation response has no items to add."""
-        from sandwich_bot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry("what kind of bagel do you recommend?")
         assert result is not None
         assert result.asks_recommendation is True
@@ -1865,7 +1865,7 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_item_description_patterns_detected(self, text, expected_item):
         """Test that item description questions are correctly detected."""
-        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.state_machine import _parse_item_description_inquiry
         result = _parse_item_description_inquiry(text)
         assert result is not None, f"Failed to detect item description inquiry in: {text}"
         assert result.asks_item_description is True
@@ -1886,13 +1886,13 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_non_description_inquiry_not_detected(self, text):
         """Test that order intents are NOT detected as item description inquiries."""
-        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.state_machine import _parse_item_description_inquiry
         result = _parse_item_description_inquiry(text)
         assert result is None, f"Incorrectly detected item description inquiry in: {text}"
 
     def test_item_description_should_not_add_to_cart(self):
         """Test that item description response has no items to add."""
-        from sandwich_bot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.state_machine import _parse_item_description_inquiry
         result = _parse_item_description_inquiry("what's on the health nut?")
         assert result is not None
         assert result.asks_item_description is True
@@ -1926,7 +1926,7 @@ class TestSpeedMenuBagelParsing:
     ])
     def test_signature_item_detected(self, text, expected_name):
         """Test that speed menu items are correctly detected."""
-        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        from orderbot.tasks.state_machine import _parse_signature_item_deterministic
         result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to detect speed menu item in: {text}"
         sig_item = get_signature_item(result)
@@ -1952,7 +1952,7 @@ class TestSpeedMenuBagelParsing:
     ])
     def test_signature_item_with_bagel_choice(self, text, expected_bagel):
         """Test that speed menu items with bagel choice are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        from orderbot.tasks.state_machine import _parse_signature_item_deterministic
         result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
         sig_item = get_signature_item(result)
@@ -1967,7 +1967,7 @@ class TestSpeedMenuBagelParsing:
     ])
     def test_signature_item_with_toasted(self, text, expected_toasted):
         """Test that speed menu items with toasted preference are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        from orderbot.tasks.state_machine import _parse_signature_item_deterministic
         result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
         sig_item = get_signature_item(result)
@@ -1982,7 +1982,7 @@ class TestSpeedMenuBagelParsing:
     ])
     def test_signature_item_with_quantity(self, text, expected_qty):
         """Test that speed menu items with quantity are correctly parsed."""
-        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        from orderbot.tasks.state_machine import _parse_signature_item_deterministic
         result = _parse_signature_item_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
         # Parser creates N separate items for quantity N (each with quantity=1)
@@ -1991,7 +1991,7 @@ class TestSpeedMenuBagelParsing:
 
     def test_signature_item_with_all_options(self):
         """Test parsing speed menu with bagel choice, toasted, and quantity."""
-        from sandwich_bot.tasks.state_machine import _parse_signature_item_deterministic
+        from orderbot.tasks.state_machine import _parse_signature_item_deterministic
         result = _parse_signature_item_deterministic("2 classic becs on wheat bagels toasted")
         assert result is not None
         # Parser creates 2 separate items for quantity 2
@@ -2039,7 +2039,7 @@ class TestSplitQuantityBagelParsing:
 
     def test_two_bagels_one_lox_one_cream_cheese(self):
         """Test parsing 'two plain bagels one with scallion cream cheese one with lox'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("two plain bagels one with scallion cream cheese one with lox")
         assert result is not None
@@ -2055,7 +2055,7 @@ class TestSplitQuantityBagelParsing:
 
     def test_two_bagels_toasted_variants(self):
         """Test parsing 'two everything bagels one toasted one not toasted'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("two everything bagels one toasted one not toasted")
         assert result is not None
@@ -2068,7 +2068,7 @@ class TestSplitQuantityBagelParsing:
 
     def test_three_bagels_different_spreads(self):
         """Test parsing 'three bagels one with butter one plain one with cream cheese'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("three bagels one with butter one plain one with cream cheese")
         assert result is not None
@@ -2080,7 +2080,7 @@ class TestSplitQuantityBagelParsing:
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("2 bagels one with lox one with cream cheese")
         assert result is not None
@@ -2089,14 +2089,14 @@ class TestSplitQuantityBagelParsing:
 
     def test_no_split_single_bagel(self):
         """Test that single bagel orders are not matched by split-quantity parser."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("one plain bagel with cream cheese")
         assert result is None  # Should not match - no split pattern
 
     def test_no_split_same_config(self):
         """Test that bagels with same config are not matched by split-quantity parser."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("two plain bagels with cream cheese")
         assert result is None  # Should not match - no split pattern
@@ -2107,7 +2107,7 @@ class TestSplitQuantityBagelParsing:
         This tests spread alias normalization (cc -> cream cheese) and combined
         attribute extraction (spread + toasted together).
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels(
             "2 plain bagels, one with cc toasted, one with lox not toasted"
@@ -2130,7 +2130,7 @@ class TestSplitQuantityBagelParsing:
         This tests per-item bagel type detection where each item
         specifies a different bagel type.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("2 bagels, one plain, one everything")
         assert result is not None
@@ -2147,7 +2147,7 @@ class TestSplitQuantityBagelParsing:
         This tests uneven split handling where distribution quantities
         (one, two) don't match equal division.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("3 bagels, one toasted, two not toasted")
         assert result is not None
@@ -2165,7 +2165,7 @@ class TestSplitQuantityBagelParsing:
         This tests ordinal patterns (first/second) for specifying
         different configurations.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels(
             "2 bagels, first one with butter, second one with cream cheese"
@@ -2180,7 +2180,7 @@ class TestSplitQuantityBagelParsing:
 
     def test_spread_alias_pb(self):
         """Test parsing with peanut butter alias 'pb'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
 
         result = _parse_split_quantity_bagels("2 bagels, one with pb, one with cc")
         assert result is not None
@@ -2195,7 +2195,7 @@ class TestSplitQuantityDrinksParsing:
 
     def test_two_coffees_one_milk_one_black(self):
         """Test parsing 'two coffees one with milk one black'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("two coffees one with milk one black")
         assert result is not None
@@ -2211,7 +2211,7 @@ class TestSplitQuantityDrinksParsing:
     @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_two_lattes_one_iced_one_hot(self):
         """Test parsing 'two lattes one iced one hot'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("two lattes one iced one hot")
         assert result is not None
@@ -2222,7 +2222,7 @@ class TestSplitQuantityDrinksParsing:
 
     def test_two_teas_one_with_oat_milk_one_plain(self):
         """Test parsing 'two teas one with oat milk one plain'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("two teas one with oat milk one plain")
         assert result is not None
@@ -2235,7 +2235,7 @@ class TestSplitQuantityDrinksParsing:
 
     def test_three_coffees_different_temps(self):
         """Test parsing 'three coffees one iced one hot one decaf'."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("three coffees one iced one hot one decaf")
         assert result is not None
@@ -2247,7 +2247,7 @@ class TestSplitQuantityDrinksParsing:
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("2 coffees one with almond milk one black")
         assert result is not None
@@ -2258,14 +2258,14 @@ class TestSplitQuantityDrinksParsing:
 
     def test_no_split_single_coffee(self):
         """Test that single coffee orders are not matched by split-quantity parser."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("one large coffee with milk")
         assert result is None  # Should not match - no split pattern
 
     def test_no_split_same_config(self):
         """Test that coffees with same config are not matched by split-quantity parser."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("two coffees with milk")
         assert result is None  # Should not match - no split pattern
@@ -2273,7 +2273,7 @@ class TestSplitQuantityDrinksParsing:
     @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_large_iced_lattes_split(self):
         """Test parsing 'two large lattes one iced one hot' preserves size."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("two large lattes one iced one hot")
         assert result is not None
@@ -2292,7 +2292,7 @@ class TestSplitQuantityDrinksParsing:
         This tests uneven split handling where distribution quantities
         don't match equal division.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("3 coffees, one iced, two hot")
         assert result is not None
@@ -2310,7 +2310,7 @@ class TestSplitQuantityDrinksParsing:
 
         This tests the basic hot/iced split pattern.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
 
         result = _parse_split_quantity_drinks("2 coffees, one hot, one iced")
         assert result is not None
@@ -2331,7 +2331,7 @@ class TestParsedItemsMultiItem:
         This was the original bug: 'the leo on wheat toasted and an everything bagel with butter'
         would only add the bagel, skipping The Leo.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
 
         result = _parse_multi_item_order("the leo on wheat toasted and an everything bagel with butter")
         assert result is not None, "Failed to parse multi-item order"
@@ -2355,7 +2355,7 @@ class TestParsedItemsMultiItem:
 
     def test_bagel_and_coffee_both_in_parsed_items(self):
         """Test that bagel + coffee both appear in parsed_items."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
 
         result = _parse_multi_item_order("a plain bagel toasted and a large iced latte")
         assert result is not None
@@ -2371,7 +2371,7 @@ class TestParsedItemsMultiItem:
         This tests the specific scenario where "latte" could be matched as a menu item
         instead of a coffee if parsing order is wrong.
         """
-        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
 
         # The exact problematic scenario
         result = _parse_multi_item_order(
@@ -2396,7 +2396,7 @@ class TestParsedItemsMultiItem:
 
     def test_two_menu_items_both_in_parsed_items(self):
         """Test that two menu items both appear in parsed_items."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
 
         result = _parse_multi_item_order("the lexington and a butter sandwich")
         assert result is not None
@@ -2412,7 +2412,7 @@ class TestParsedItemsMultiItem:
 
     def test_signature_item_and_coffee_both_in_parsed_items(self):
         """Test that speed menu bagel + coffee both appear in parsed_items."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_multi_item_order
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
 
         result = _parse_multi_item_order("the classic bec and a coffee")
         assert result is not None
@@ -2477,7 +2477,7 @@ class TestDuplicatePatterns:
     ])
     def test_duplicate_all_patterns(self, text):
         """Test that 'all items' / 'everything' patterns are recognized."""
-        from sandwich_bot.tasks.parsers.deterministic import DUPLICATE_ALL_PATTERN
+        from orderbot.tasks.parsers.deterministic import DUPLICATE_ALL_PATTERN
         assert DUPLICATE_ALL_PATTERN.match(text) is not None, f"Expected match for: {text}"
 
     def test_another_bagel_not_duplicate_last(self):

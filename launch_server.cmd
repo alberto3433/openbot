@@ -1,1 +1,1 @@
-uvicorn sandwich_bot.main:app --reload
+uvicorn orderbot.main:app --reload

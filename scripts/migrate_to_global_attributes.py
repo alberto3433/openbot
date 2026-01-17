@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import (
+from orderbot.db import SessionLocal
+from orderbot.models import (
     ItemTypeAttribute,
     AttributeOption,
     ItemType,

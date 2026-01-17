@@ -5,8 +5,8 @@ These tests validate the most important order flows work correctly,
 especially multi-item orders and edge cases that have caused bugs.
 """
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask
+from orderbot.tasks.state_machine import OrderStateMachine
+from orderbot.tasks.models import OrderTask
 from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 

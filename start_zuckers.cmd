@@ -1,1 +1,1 @@
-python -m uvicorn sandwich_bot.main:app --port 8006
+python -m uvicorn orderbot.main:app --port 8006

@@ -17,13 +17,13 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_returns_set(self):
         """get_soda_types should return a set."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         result = get_soda_types()
         assert isinstance(result, set)
 
     def test_get_soda_types_includes_item_names(self):
         """get_soda_types should include beverage item names from database."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         soda_types = get_soda_types()
         # These are actual item names from the database (lowercase)
         assert "coca-cola" in soda_types
@@ -32,7 +32,7 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_includes_aliases(self):
         """get_soda_types should include aliases from database."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         soda_types = get_soda_types()
         # These are aliases, not the actual item names
         assert "coke" in soda_types  # alias for Coca-Cola
@@ -42,7 +42,7 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_excludes_nonexistent_items(self):
         """get_soda_types should not include items not in the database."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         soda_types = get_soda_types()
         # These are not in the Zucker's menu
         assert "pepsi" not in soda_types
@@ -107,7 +107,7 @@ class TestParseSodaDeterministic:
 
     def test_parse_soda_with_alias(self):
         """_parse_soda_deterministic should recognize soda aliases."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("I want a coke")
         assert result is not None
@@ -118,7 +118,7 @@ class TestParseSodaDeterministic:
 
     def test_parse_soda_with_oj_alias(self):
         """_parse_soda_deterministic should recognize 'oj' alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("can I get an oj")
         assert result is not None
@@ -127,7 +127,7 @@ class TestParseSodaDeterministic:
 
     def test_parse_soda_with_seltzer_alias(self):
         """_parse_soda_deterministic should recognize 'seltzer' alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("I'll have a seltzer")
         assert result is not None
@@ -136,14 +136,14 @@ class TestParseSodaDeterministic:
 
     def test_parse_soda_with_nonexistent_item(self):
         """_parse_soda_deterministic should return None for non-existent sodas."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         result = _parse_soda_deterministic("I want a pepsi")
         # Pepsi is not in the database, so it shouldn't match
         assert result is None
 
     def test_parse_soda_with_generic_term(self):
         """_parse_soda_deterministic should request clarification for generic terms."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         result = _parse_soda_deterministic("can I get a soda")
         assert result is not None
         assert result.needs_soda_clarification is True
@@ -154,7 +154,7 @@ class TestSodaAliasesIntegration:
 
     def test_dr_browns_aliases(self):
         """Dr. Brown's sodas should be recognized by various spellings."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         soda_types = get_soda_types()
         # Original name (lowercase)
         assert "dr. brown's cel-ray" in soda_types
@@ -165,7 +165,7 @@ class TestSodaAliasesIntegration:
 
     def test_water_aliases(self):
         """Water should be recognized by various terms."""
-        from sandwich_bot.tasks.parsers.constants import get_soda_types
+        from orderbot.tasks.parsers.constants import get_soda_types
         soda_types = get_soda_types()
         assert "bottled water" in soda_types
         assert "water" in soda_types

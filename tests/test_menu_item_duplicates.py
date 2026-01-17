@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, MenuItem
+from orderbot.models import Base, MenuItem
 
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL

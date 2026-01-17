@@ -9,7 +9,7 @@ class TestModelConfiguration:
 
     def test_default_model_is_valid(self):
         """Test that DEFAULT_MODEL is set to a valid OpenAI model."""
-        from sandwich_bot.sammy import llm_client
+        from orderbot.sammy import llm_client
 
         valid_models = [
             "gpt-4o",
@@ -26,15 +26,15 @@ class TestModelConfiguration:
 
     def test_default_model_not_invalid_gpt41(self):
         """Test that we're not using the invalid 'gpt-4.1' model name."""
-        from sandwich_bot.sammy import llm_client
+        from orderbot.sammy import llm_client
 
         assert llm_client.DEFAULT_MODEL != "gpt-4.1", (
             "DEFAULT_MODEL should not be 'gpt-4.1' - this model doesn't exist!"
         )
 
-    def test_call_sandwich_bot_uses_default_model(self):
-        """Test that call_sandwich_bot uses DEFAULT_MODEL when no model specified."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_uses_default_model(self):
+        """Test that call_orderbot uses DEFAULT_MODEL when no model specified."""
+        from orderbot.sammy import llm_client
 
         # Mock the OpenAI client
         mock_completion = MagicMock()
@@ -43,7 +43,7 @@ class TestModelConfiguration:
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion) as mock_create:
-            llm_client.call_sandwich_bot(
+            llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},
@@ -55,9 +55,9 @@ class TestModelConfiguration:
             call_kwargs = mock_create.call_args[1]
             assert call_kwargs["model"] == llm_client.DEFAULT_MODEL
 
-    def test_call_sandwich_bot_allows_model_override(self):
-        """Test that call_sandwich_bot allows overriding the model."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_allows_model_override(self):
+        """Test that call_orderbot allows overriding the model."""
+        from orderbot.sammy import llm_client
 
         mock_completion = MagicMock()
         mock_completion.choices = [
@@ -65,7 +65,7 @@ class TestModelConfiguration:
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion) as mock_create:
-            llm_client.call_sandwich_bot(
+            llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},
@@ -100,9 +100,9 @@ class TestModelEnvironmentConfiguration:
 class TestLLMResponseParsing:
     """Test LLM response parsing."""
 
-    def test_call_sandwich_bot_returns_parsed_json(self):
-        """Test that call_sandwich_bot returns parsed JSON from LLM response."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_returns_parsed_json(self):
+        """Test that call_orderbot returns parsed JSON from LLM response."""
+        from orderbot.sammy import llm_client
 
         expected_response = {
             "reply": "Hello! How can I help you today?",
@@ -119,7 +119,7 @@ class TestLLMResponseParsing:
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
-            result = llm_client.call_sandwich_bot(
+            result = llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},
@@ -130,9 +130,9 @@ class TestLLMResponseParsing:
             assert result["intent"] == expected_response["intent"]
             assert "slots" in result
 
-    def test_call_sandwich_bot_handles_malformed_json(self):
-        """Test that call_sandwich_bot returns fallback response when LLM returns invalid JSON."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_handles_malformed_json(self):
+        """Test that call_orderbot returns fallback response when LLM returns invalid JSON."""
+        from orderbot.sammy import llm_client
 
         mock_completion = MagicMock()
         # Return malformed JSON (missing closing brace)
@@ -141,7 +141,7 @@ class TestLLMResponseParsing:
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
-            result = llm_client.call_sandwich_bot(
+            result = llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},
@@ -153,9 +153,9 @@ class TestLLMResponseParsing:
             assert result["actions"][0]["intent"] == "unknown"
             assert "trouble understanding" in result["reply"].lower()
 
-    def test_call_sandwich_bot_handles_empty_response(self):
-        """Test that call_sandwich_bot handles empty LLM response."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_handles_empty_response(self):
+        """Test that call_orderbot handles empty LLM response."""
+        from orderbot.sammy import llm_client
 
         mock_completion = MagicMock()
         mock_completion.choices = [
@@ -163,7 +163,7 @@ class TestLLMResponseParsing:
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
-            result = llm_client.call_sandwich_bot(
+            result = llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},
@@ -175,18 +175,18 @@ class TestLLMResponseParsing:
             assert result["actions"][0]["intent"] == "unknown"
             assert "slots" in result["actions"][0]
 
-    def test_call_sandwich_bot_handles_non_json_response(self):
-        """Test that call_sandwich_bot handles plain text LLM response."""
-        from sandwich_bot.sammy import llm_client
+    def test_call_orderbot_handles_non_json_response(self):
+        """Test that call_orderbot handles plain text LLM response."""
+        from orderbot.sammy import llm_client
 
         mock_completion = MagicMock()
         # Return plain text instead of JSON
         mock_completion.choices = [
-            MagicMock(message=MagicMock(content='Hello! I am Sammy the sandwich bot.'))
+            MagicMock(message=MagicMock(content='Hello! I am Sammy the orderbot.'))
         ]
 
         with patch.object(llm_client.client.chat.completions, 'create', return_value=mock_completion):
-            result = llm_client.call_sandwich_bot(
+            result = llm_client.call_orderbot(
                 conversation_history=[],
                 current_order_state={"status": "pending", "items": []},
                 menu_json={"signature_sandwiches": []},

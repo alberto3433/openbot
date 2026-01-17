@@ -8,12 +8,12 @@ without involving the full state machine.
 from unittest.mock import patch
 import pytest
 
-from sandwich_bot.tasks.models import (
+from orderbot.tasks.models import (
     OrderTask,
     MenuItemTask,
     TaskStatus,
 )
-from sandwich_bot.tasks.slot_orchestrator import (
+from orderbot.tasks.slot_orchestrator import (
     SlotOrchestrator,
     SlotCategory,
     SlotDefinition,
@@ -445,7 +445,7 @@ class TestSlotOrchestratorProgress:
 def mock_menu_cache():
     """Fixture to mock menu_cache.get_item_type_attributes."""
     with patch(
-        "sandwich_bot.tasks.slot_orchestrator.menu_cache.get_item_type_attributes",
+        "orderbot.tasks.slot_orchestrator.menu_cache.get_item_type_attributes",
         side_effect=mock_get_item_type_attributes,
     ):
         yield

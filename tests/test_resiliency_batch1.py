@@ -5,8 +5,8 @@ Tests the system's ability to handle replacement and modification requests
 where the user wants to change something about an item already in their order.
 """
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, TaskStatus
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+from orderbot.tasks.models import OrderTask, TaskStatus
 from tests.test_helpers import BagelItemTask, CoffeeItemTask
 
 
@@ -158,7 +158,7 @@ class TestReplacementModificationScenarios:
         Note: DB only has "small" and "large" sizes (no "medium").
         Phase 6 migration routes beverages through MenuItemConfigHandler.
         """
-        from sandwich_bot.tasks.adapter import order_task_to_dict
+        from orderbot.tasks.adapter import order_task_to_dict
 
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -389,7 +389,7 @@ class TestReplacementModificationScenarios:
         Omelettes come with a choice of bagel or fruit salad.
         Should NOT ask about toasted (omelettes aren't toasted).
         """
-        from sandwich_bot.tasks.models import MenuItemTask
+        from orderbot.tasks.models import MenuItemTask
 
         # Create menu data with an omelette and coffee
         menu_data = {

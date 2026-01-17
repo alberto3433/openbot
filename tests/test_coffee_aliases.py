@@ -17,13 +17,13 @@ class TestGetCoffeeTypes:
 
     def test_get_coffee_types_returns_set(self):
         """get_coffee_types should return a set."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         result = get_coffee_types()
         assert isinstance(result, set)
 
     def test_get_coffee_types_includes_item_names(self):
         """get_coffee_types should include sized_beverage item names from database."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         # These are actual item names from the database (lowercase)
         # Note: Database has "Hot Latte", "Iced Latte", not standalone "Latte"
@@ -35,7 +35,7 @@ class TestGetCoffeeTypes:
 
     def test_get_coffee_types_includes_aliases(self):
         """get_coffee_types should include aliases from database."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         # These are aliases, not the actual item names
         assert "chai" in coffee_types  # alias for Chai Tea
@@ -45,14 +45,14 @@ class TestGetCoffeeTypes:
 
     def test_get_coffee_types_includes_matcha_latte(self):
         """get_coffee_types should include the new Seasonal Matcha Latte."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "seasonal matcha latte" in coffee_types
         assert "matcha latte" in coffee_types  # alias
 
     def test_get_coffee_types_excludes_soda_drinks(self):
         """get_coffee_types should not include soda/bottled drinks."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         # These are beverages (item_type='beverage'), not sized_beverage
         assert "coca-cola" not in coffee_types
@@ -65,7 +65,7 @@ class TestCoffeeOrderPattern:
 
     def test_coffee_order_pattern_matches_latte(self):
         """Coffee order pattern should match latte orders."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
+        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
         pattern = _get_coffee_order_pattern()
         # Note: Database has "Hot Latte"/"Iced Latte", not standalone "Latte"
         # Pattern should match these full names
@@ -75,21 +75,21 @@ class TestCoffeeOrderPattern:
 
     def test_coffee_order_pattern_matches_chai(self):
         """Coffee order pattern should match chai alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
+        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
         pattern = _get_coffee_order_pattern()
         assert pattern.search("I want a chai")
         assert pattern.search("can I get a chai")
 
     def test_coffee_order_pattern_matches_matcha(self):
         """Coffee order pattern should match matcha alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
+        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
         pattern = _get_coffee_order_pattern()
         assert pattern.search("I want a matcha")
         assert pattern.search("can I get a matcha latte")
 
     def test_coffee_order_pattern_matches_with_size(self):
         """Coffee order pattern should match orders with size."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
+        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
         pattern = _get_coffee_order_pattern()
         # Note: Database has "Hot Latte"/"Hot Coffee"/"Hot Cappuccino", not standalone names
         assert pattern.search("I want a large hot latte")
@@ -98,7 +98,7 @@ class TestCoffeeOrderPattern:
 
     def test_coffee_order_pattern_matches_with_iced(self):
         """Coffee order pattern should match iced orders."""
-        from sandwich_bot.tasks.parsers.deterministic import _get_coffee_order_pattern
+        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
         pattern = _get_coffee_order_pattern()
         assert pattern.search("I want an iced latte")
         assert pattern.search("can I get an iced coffee")
@@ -110,7 +110,7 @@ class TestParseCoffeeDeterministic:
 
     def test_parse_coffee_with_alias(self):
         """_parse_coffee_deterministic should recognize coffee aliases."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
         from tests.test_helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("I want a chai")
         assert result is not None
@@ -118,7 +118,7 @@ class TestParseCoffeeDeterministic:
 
     def test_parse_coffee_with_matcha_alias(self):
         """_parse_coffee_deterministic should recognize 'matcha' alias."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
         from tests.test_helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("can I get a matcha")
         assert result is not None
@@ -126,7 +126,7 @@ class TestParseCoffeeDeterministic:
 
     def test_parse_coffee_with_drip_alias(self):
         """_parse_coffee_deterministic should recognize 'drip' alias for coffee."""
-        from sandwich_bot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
         from tests.test_helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("I want a drip coffee")
         assert result is not None
@@ -138,7 +138,7 @@ class TestCoffeeAliasesIntegration:
 
     def test_tea_variations_recognized(self):
         """Various tea drinks should be recognized."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         # Full names
         assert "hot tea" in coffee_types
@@ -151,7 +151,7 @@ class TestCoffeeAliasesIntegration:
 
     def test_espresso_variations_recognized(self):
         """Espresso drinks should be recognized."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "espresso" in coffee_types
         # Note: "double espresso" and "triple espresso" are now modifiers,
@@ -159,7 +159,7 @@ class TestCoffeeAliasesIntegration:
 
     def test_hot_chocolate_aliases(self):
         """Hot chocolate should be recognized by various terms."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "hot chocolate" in coffee_types
         assert "hot cocoa" in coffee_types
@@ -167,7 +167,7 @@ class TestCoffeeAliasesIntegration:
 
     def test_cold_brew_recognized(self):
         """Cold brew should be recognized."""
-        from sandwich_bot.tasks.parsers.constants import get_coffee_types
+        from orderbot.tasks.parsers.constants import get_coffee_types
         coffee_types = get_coffee_types()
         assert "cold brew" in coffee_types
 
@@ -177,7 +177,7 @@ class TestEspressoParsingIntegration:
 
     def test_espresso_parses_as_coffee_not_menu_item(self):
         """Espresso should be parsed as coffee, not as a menu item."""
-        from sandwich_bot.tasks.parsers import parse_open_input
+        from orderbot.tasks.parsers import parse_open_input
         from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("espresso")
         assert has_coffee(result), "Espresso should be detected as coffee"
@@ -188,7 +188,7 @@ class TestEspressoParsingIntegration:
 
     def test_double_espresso_parses_as_coffee(self):
         """Double espresso should be parsed as coffee with extra shots."""
-        from sandwich_bot.tasks.parsers import parse_open_input
+        from orderbot.tasks.parsers import parse_open_input
         from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("double espresso")
         assert has_coffee(result), "Double espresso should be detected as coffee"
@@ -199,7 +199,7 @@ class TestEspressoParsingIntegration:
 
     def test_triple_espresso_parses_as_coffee(self):
         """Triple espresso should be parsed as coffee with extra shots."""
-        from sandwich_bot.tasks.parsers import parse_open_input
+        from orderbot.tasks.parsers import parse_open_input
         from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("triple espresso")
         assert has_coffee(result), "Triple espresso should be detected as coffee"
@@ -210,7 +210,7 @@ class TestEspressoParsingIntegration:
 
     def test_espresso_with_milk_parses_correctly(self):
         """Espresso with milk modifier should parse correctly."""
-        from sandwich_bot.tasks.parsers import parse_open_input
+        from orderbot.tasks.parsers import parse_open_input
         from tests.test_helpers import has_coffee, get_coffee_item
         result = parse_open_input("espresso with oat milk")
         assert has_coffee(result), "Espresso with milk should be detected as coffee"

@@ -95,7 +95,7 @@ def run_tenant(
     # For now, run the existing app with environment-based configuration
     # The app will read TENANT_SLUG and DATABASE_URL from environment
     uvicorn.run(
-        "sandwich_bot.main:app",
+        "orderbot.main:app",
         host=host,
         port=tenant_port,
         reload=reload,

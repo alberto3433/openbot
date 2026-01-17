@@ -22,7 +22,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY sandwich_bot/ ./sandwich_bot/
+COPY orderbot/ ./orderbot/
 COPY static/ ./static/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
@@ -39,4 +39,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')" || exit 1
 
 # Run the application
-CMD ["python", "-m", "uvicorn", "sandwich_bot.main:app", "--host", "0.0.0.0", "--port", "8006"]
+CMD ["python", "-m", "uvicorn", "orderbot.main:app", "--host", "0.0.0.0", "--port", "8006"]

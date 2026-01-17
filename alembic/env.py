@@ -11,7 +11,7 @@ from alembic import context
 load_dotenv()
 
 # Import the models to get the metadata for autogenerate support
-from sandwich_bot.models import Base
+from orderbot.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

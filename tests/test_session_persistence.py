@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, ChatSession
-from sandwich_bot.services.session import (
+from orderbot.models import Base, ChatSession
+from orderbot.services.session import (
     get_or_create_session,
     save_session,
     SESSION_CACHE,
@@ -157,7 +157,7 @@ class TestSessionPersistenceIntegration:
 
     def test_chat_start_creates_database_session(self, client):
         """Test that /chat/start creates a session in the database."""
-        import sandwich_bot.db as db_mod
+        import orderbot.db as db_mod
 
         resp = client.post("/chat/start")
         assert resp.status_code == 200
@@ -199,8 +199,8 @@ class TestSessionCacheTTL:
     def test_expired_sessions_are_cleaned_up(self, client, monkeypatch):
         """Test that expired sessions are removed from cache."""
         import time
-        import sandwich_bot.db as db_mod
-        import sandwich_bot.services.session as session_mod
+        import orderbot.db as db_mod
+        import orderbot.services.session as session_mod
 
         # Set a very short TTL for testing
         monkeypatch.setattr(session_mod, "SESSION_TTL_SECONDS", 1)

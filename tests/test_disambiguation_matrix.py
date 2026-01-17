@@ -32,10 +32,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from sqlalchemy import create_engine, text
-from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
-from sandwich_bot.tasks.menu_lookup import MenuLookup
-from sandwich_bot.tasks.item_adder_handler import ItemAdderHandler
-from sandwich_bot.tasks.models import OrderTask
+from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+from orderbot.tasks.menu_lookup import MenuLookup
+from orderbot.tasks.item_adder_handler import ItemAdderHandler
+from orderbot.tasks.models import OrderTask
 
 
 # ============================================================================

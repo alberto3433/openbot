@@ -9,8 +9,8 @@ import pytest
 import logging
 from unittest.mock import patch, MagicMock
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask, MenuItemTask, TaskStatus
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+from orderbot.tasks.models import OrderTask, MenuItemTask, TaskStatus
 
 
 def create_bagel_task(
@@ -65,7 +65,7 @@ class TestSlotComparisonLogging:
         handler = LogCapture()
         handler.setLevel(logging.DEBUG)
 
-        logger = logging.getLogger("sandwich_bot.slots")
+        logger = logging.getLogger("orderbot.slots")
         original_level = logger.level
         logger.setLevel(logging.DEBUG)
         logger.addHandler(handler)
@@ -80,7 +80,7 @@ class TestSlotComparisonLogging:
         order = OrderTask()
 
         # Process a greeting
-        with patch("sandwich_bot.tasks.state_machine.parse_open_input") as mock_parse:
+        with patch("orderbot.tasks.state_machine.parse_open_input") as mock_parse:
             mock_parse.return_value = MagicMock(
                 is_greeting=True,
                 unclear=False,
@@ -119,7 +119,7 @@ class TestSlotPhaseAlignment:
 
     def test_greeting_phase_aligns(self):
         """Greeting phase should map to taking_items."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
         orch = SlotOrchestrator(order)
@@ -130,7 +130,7 @@ class TestSlotPhaseAlignment:
 
     def test_checkout_delivery_aligns(self):
         """Checkout delivery phase should align with orchestrator."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
@@ -143,7 +143,7 @@ class TestSlotPhaseAlignment:
 
     def test_checkout_name_aligns(self):
         """Checkout name phase should align with orchestrator."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
@@ -157,7 +157,7 @@ class TestSlotPhaseAlignment:
 
     def test_checkout_confirm_aligns(self):
         """Checkout confirm phase should align with orchestrator."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
@@ -172,7 +172,7 @@ class TestSlotPhaseAlignment:
 
     def test_complete_order_aligns(self):
         """Complete order should have complete phase."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
@@ -202,7 +202,7 @@ class TestEndToEndFlowWithSlots:
 
     def test_simple_pickup_flow_slots(self, state_machine):
         """Verify slots are correctly filled through a simple pickup flow."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
 
@@ -228,7 +228,7 @@ class TestEndToEndFlowWithSlots:
 
     def test_delivery_flow_includes_address_slot(self, state_machine):
         """Verify delivery flow requires address slot."""
-        from sandwich_bot.tasks.slot_orchestrator import SlotOrchestrator, SlotCategory
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator, SlotCategory
 
         order = OrderTask()
 

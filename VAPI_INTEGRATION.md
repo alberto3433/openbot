@@ -1,6 +1,6 @@
 # Vapi.ai Voice Integration
 
-This document describes the architecture and setup for integrating Vapi.ai with the Sandwich Bot, enabling customers to place orders via phone calls.
+This document describes the architecture and setup for integrating Vapi.ai with the Orderbot, enabling customers to place orders via phone calls.
 
 ## Overview
 
@@ -49,7 +49,7 @@ Our integration uses Vapi's **Custom LLM** feature, which sends transcribed spee
 │  │  2. Extract phone number from call.customer.number               │   │
 │  │  3. Map phone → session (create if new caller)                   │   │
 │  │  4. Extract user message from messages array                     │   │
-│  │  5. Call existing bot logic (call_sandwich_bot)                  │   │
+│  │  5. Call existing bot logic (call_orderbot)                  │   │
 │  │  6. Apply order state changes                                    │   │
 │  │  7. Return OpenAI-format response (streaming SSE)                │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
@@ -111,7 +111,7 @@ Vapi POSTs to /voice/vapi/chat/completions
 1. Extracts phone number: `+19083077148`
 2. Looks up or creates session for this phone
 3. Gets latest user message: `"I'd like a turkey club"`
-4. Calls `call_sandwich_bot()` with conversation history
+4. Calls `call_orderbot()` with conversation history
 5. Applies resulting actions to order state
 6. Returns streaming response
 
@@ -381,8 +381,8 @@ The system looks up past orders by phone number. Ensure:
 
 | File | Purpose |
 |------|---------|
-| `sandwich_bot/voice_vapi.py` | Vapi integration adapter |
-| `sandwich_bot/main.py` | Includes vapi_router |
+| `orderbot/voice_vapi.py` | Vapi integration adapter |
+| `orderbot/main.py` | Includes vapi_router |
 | `VAPI_INTEGRATION.md` | This documentation |
 
 ## What's NOT Changed

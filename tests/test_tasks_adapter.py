@@ -5,16 +5,16 @@ Tests state conversion between dict-based order state and OrderTask.
 """
 
 
-from sandwich_bot.tasks.adapter import (
+from orderbot.tasks.adapter import (
     dict_to_order_task,
     order_task_to_dict,
 )
-from sandwich_bot.tasks.models import (
+from orderbot.tasks.models import (
     TaskStatus,
     OrderTask,
     MenuItemTask,
 )
-from sandwich_bot.tasks.pricing import PricingEngine
+from orderbot.tasks.pricing import PricingEngine
 
 
 # =============================================================================
@@ -717,7 +717,7 @@ class TestModifiersConsistency:
 
     def test_menu_item_modifiers_in_item_config(self):
         """Test that menu item (omelette) modifiers are in item_config."""
-        from sandwich_bot.tasks.models import MenuItemTask
+        from orderbot.tasks.models import MenuItemTask
 
         order = OrderTask()
         item = MenuItemTask(

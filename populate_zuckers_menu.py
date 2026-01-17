@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from sqlalchemy.orm import Session
-from sandwich_bot.db import SessionLocal, engine
-from sandwich_bot.models import (
+from orderbot.db import SessionLocal, engine
+from orderbot.models import (
     Base, MenuItem, ItemType, Ingredient, Company, Store,
     AttributeDefinition, AttributeOption,
     ItemTypeAttribute, MenuItemAttributeValue, MenuItemAttributeSelection

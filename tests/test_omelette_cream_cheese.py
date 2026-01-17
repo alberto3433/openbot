@@ -8,10 +8,10 @@ import pytest
 
 def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     """Test that cream cheese spread on omelette side bagel is captured with correct price."""
-    from sandwich_bot.tasks.state_machine import OrderStateMachine
-    from sandwich_bot.tasks.models import OrderTask, MenuItemTask
-    from sandwich_bot.tasks.schemas import OrderPhase
-    from sandwich_bot.menu_data_cache import menu_cache
+    from orderbot.tasks.state_machine import OrderStateMachine
+    from orderbot.tasks.models import OrderTask, MenuItemTask
+    from orderbot.tasks.schemas import OrderPhase
+    from orderbot.menu_data_cache import menu_cache
 
     # Get menu data from cache
     menu_data = menu_cache.get_menu_index()

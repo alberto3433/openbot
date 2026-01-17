@@ -5,7 +5,7 @@ Domain-specific helper functions for testing menu-related functionality.
 These functions encode knowledge about specific menu items and categories.
 
 IMPORTANT: These helpers are ONLY for tests. They must NOT be imported
-by any code in sandwich_bot/ - production code must be data-driven.
+by any code in orderbot/ - production code must be data-driven.
 """
 
 
@@ -29,7 +29,7 @@ def test_is_soda_drink(drink_type: str | None) -> bool:
     drink_lower = drink_type.lower().strip()
 
     # Import here to avoid circular imports and keep this test-only
-    from sandwich_bot.tasks.parsers.constants import get_coffee_types, get_soda_types
+    from orderbot.tasks.parsers.constants import get_coffee_types, get_soda_types
 
     # Sized beverages (coffee, latte, tea, etc.) are NEVER sodas - they need configuration
     # This prevents "Coffee" from matching "Bottled Coffee" in soda types

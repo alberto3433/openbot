@@ -5,7 +5,7 @@ Run with: pytest tests/test_tasks_models.py -v
 """
 
 import pytest
-from sandwich_bot.tasks.models import (
+from orderbot.tasks.models import (
     TaskStatus,
     FieldConfig,
     BaseTask,
@@ -14,7 +14,7 @@ from sandwich_bot.tasks.models import (
     ItemsTask,
     OrderTask,
 )
-from sandwich_bot.tasks.field_config import (
+from orderbot.tasks.field_config import (
     MenuFieldConfig,
     get_field_config,
     get_default_value,
@@ -605,7 +605,7 @@ class TestMenuFieldConfig:
 
     def test_get_fields_for_unknown_item_type_raises(self):
         """Test that unknown item type raises MenuDataNotLoadedError."""
-        from sandwich_bot.exceptions import MenuDataNotLoadedError
+        from orderbot.exceptions import MenuDataNotLoadedError
         config = MenuFieldConfig()
 
         with pytest.raises(MenuDataNotLoadedError):

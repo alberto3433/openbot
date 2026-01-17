@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sandwich_bot.models import (
+from orderbot.models import (
     Base, MenuItem, ItemType, AttributeDefinition, AttributeOption,
     Ingredient, AttributeOptionIngredient
 )

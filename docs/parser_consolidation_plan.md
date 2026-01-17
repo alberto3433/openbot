@@ -67,7 +67,7 @@ Handler reads parsed_items (same code path for 1 or N items)
 
 ### 1.1 Update `_parse_coffee_deterministic()`
 
-**File:** `sandwich_bot/tasks/parsers/deterministic.py`
+**File:** `orderbot/tasks/parsers/deterministic.py`
 
 ```python
 # BEFORE (line ~2500)
@@ -129,7 +129,7 @@ python -m pytest tests/test_tasks_parsing.py -v
 
 # Verify parsed_items is populated
 python -c "
-from sandwich_bot.tasks.parsers.deterministic import parse_open_input_deterministic
+from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
 result = parse_open_input_deterministic('large iced latte')
 assert result.parsed_items, 'parsed_items should be populated'
 print(f'Success: {len(result.parsed_items)} items')
@@ -144,7 +144,7 @@ print(f'Success: {len(result.parsed_items)} items')
 
 ### 2.1 Update `TakingItemsHandler._handle_taking_items_with_parsed()`
 
-**File:** `sandwich_bot/tasks/taking_items_handler.py`
+**File:** `orderbot/tasks/taking_items_handler.py`
 
 ```python
 # BEFORE (multiple branches)

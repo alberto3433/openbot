@@ -24,7 +24,7 @@ load_dotenv()
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, MenuItem
+from orderbot.models import Base, MenuItem
 
 
 def get_database_url():

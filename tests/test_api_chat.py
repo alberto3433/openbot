@@ -70,8 +70,8 @@ def test_chat_message_rejects_too_long_message(client):
 
 def test_rate_limit_returns_429_when_exceeded(client, monkeypatch):
     """Test that rate limiting returns 429 when limit is exceeded."""
-    from sandwich_bot.main import limiter
-    import sandwich_bot.config as config_mod
+    from orderbot.main import limiter
+    import orderbot.config as config_mod
 
     # Set a very restrictive rate limit for testing
     monkeypatch.setattr(config_mod, "RATE_LIMIT_CHAT", "2 per minute")
@@ -101,7 +101,7 @@ def test_rate_limit_returns_429_when_exceeded(client, monkeypatch):
 
 def test_rate_limit_can_be_disabled(client):
     """Test that rate limiting can be disabled via environment variable."""
-    from sandwich_bot.main import limiter
+    from orderbot.main import limiter
 
     # Disable rate limiting
     limiter.enabled = False

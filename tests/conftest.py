@@ -27,10 +27,10 @@ def _app_client_session():
         pytest.skip("TEST_DATABASE_URL or DATABASE_URL environment variable required")
 
     # Lazy imports to avoid requiring DATABASE_URL for non-db tests
-    import sandwich_bot.db as db
-    import sandwich_bot.config as config_mod
-    from sandwich_bot.models import Base, MenuItem
-    from sandwich_bot.main import app
+    import orderbot.db as db
+    import orderbot.config as config_mod
+    from orderbot.models import Base, MenuItem
+    from orderbot.main import app
 
     # Store original values
     original_config_username = config_mod.ADMIN_USERNAME
@@ -142,7 +142,7 @@ def client(_app_client_session):
     Clears session cache before/after each test for isolation.
     The server is NOT restarted between tests - only the cache is cleared.
     """
-    from sandwich_bot.services.session import SESSION_CACHE
+    from orderbot.services.session import SESSION_CACHE
 
     # Clear session cache before test
     SESSION_CACHE.clear()
@@ -173,9 +173,9 @@ def menu_cache_loaded():
     if not TEST_DATABASE_URL:
         pytest.skip("DATABASE_URL environment variable required - spread/bagel types are loaded from database")
 
-    from sandwich_bot.menu_data_cache import menu_cache
-    from sandwich_bot.menu_index_builder import build_menu_index
-    from sandwich_bot.tasks.state_machine import set_global_menu_data
+    from orderbot.menu_data_cache import menu_cache
+    from orderbot.menu_index_builder import build_menu_index
+    from orderbot.tasks.state_machine import set_global_menu_data
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -15,7 +15,7 @@ load_dotenv()
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sandwich_bot.models import MenuItem, ItemType, Ingredient, Recipe, RecipeIngredient
+from orderbot.models import MenuItem, ItemType, Ingredient, Recipe, RecipeIngredient
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

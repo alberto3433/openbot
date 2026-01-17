@@ -12,9 +12,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, MenuItem, Order, OrderItem
-from sandwich_bot.schemas.menu import MenuItemOut
-from sandwich_bot.schemas.orders import (
+from orderbot.models import Base, MenuItem, Order, OrderItem
+from orderbot.schemas.menu import MenuItemOut
+from orderbot.schemas.orders import (
     OrderSummaryOut,
     OrderItemOut,
     OrderDetailOut,
@@ -97,7 +97,7 @@ class TestPydanticV2ModelValidate:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             # We use the serialize function since MenuItemOut has custom metadata handling
-            from sandwich_bot.services.helpers import serialize_menu_item
+            from orderbot.services.helpers import serialize_menu_item
             result = serialize_menu_item(menu_item)
 
             # Check no Pydantic deprecation warnings
@@ -203,8 +203,8 @@ class TestNoDeprecationWarnings:
 
             # Re-import to trigger any warnings
             from importlib import reload
-            import sandwich_bot.main
-            reload(sandwich_bot.main)
+            import orderbot.main
+            reload(orderbot.main)
 
             # Filter for orm_mode warnings
             orm_mode_warnings = [

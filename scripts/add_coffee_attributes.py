@@ -17,8 +17,8 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import ItemType, ItemTypeAttribute, AttributeOption
+from orderbot.db import SessionLocal
+from orderbot.models import ItemType, ItemTypeAttribute, AttributeOption
 
 
 def main():

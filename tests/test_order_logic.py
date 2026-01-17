@@ -1,4 +1,4 @@
-from sandwich_bot.order_logic import apply_intent_to_order_state
+from orderbot.order_logic import apply_intent_to_order_state
 
 
 # Helper to create properly structured menu_index

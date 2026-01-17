@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from sqlalchemy.orm import Session
-from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import (
+from orderbot.db import SessionLocal
+from orderbot.models import (
     ItemType, AttributeDefinition, AttributeOption
 )
 

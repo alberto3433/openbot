@@ -5,8 +5,8 @@ Tests the system's ability to handle questions about the menu,
 prices, and store information.
 """
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+from orderbot.tasks.models import OrderTask
 
 
 class TestMenuInquiries:

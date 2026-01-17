@@ -9,7 +9,7 @@ item_types table. These values are now derived from linked global attributes:
 - is_configurable = True if item type has ANY linked global attributes
 - skip_config = True if item type has NO attributes with ask_in_conversation=True
 
-Use sandwich_bot.services.item_type_helpers for these derived values.
+Use orderbot.services.item_type_helpers for these derived values.
 """
 from typing import Sequence, Union
 

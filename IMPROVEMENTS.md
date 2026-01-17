@@ -1,4 +1,4 @@
-# OpenBot (Sandwich Bot) - Improvement List
+# OpenBot (Orderbot) - Improvement List
 
 This document outlines potential improvements and enhancements for the OpenBot codebase.
 
@@ -33,7 +33,7 @@ This document outlines potential improvements and enhancements for the OpenBot c
 
 ### 3. Error Handling Improvements
 
-- ~~**LLM Failures** (`main.py:302-307`)~~: **DONE** - Added try/catch around `call_sandwich_bot()` with graceful error handling.
+- ~~**LLM Failures** (`main.py:302-307`)~~: **DONE** - Added try/catch around `call_orderbot()` with graceful error handling.
 
 - ~~**JSON Parse Errors** (`llm_client.py:199`)~~: **DONE** - Added fallback handling for malformed JSON responses from LLM.
 

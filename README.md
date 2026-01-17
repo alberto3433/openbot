@@ -6,7 +6,7 @@ using FastAPI, PostgreSQL (Neon), SQLAlchemy, and OpenAI.
 ## 📦 Directory Structure
 
 ```
-sandwich_bot/
+orderbot/
 │
 ├── llm_client.py
 ├── order_logic.py

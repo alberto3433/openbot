@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from sandwich_bot.db import SessionLocal
-from sandwich_bot.models import ItemType, ItemTypeAttribute, AttributeOption
+from orderbot.db import SessionLocal
+from orderbot.models import ItemType, ItemTypeAttribute, AttributeOption
 
 
 def main():

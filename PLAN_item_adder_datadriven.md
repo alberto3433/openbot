@@ -301,12 +301,12 @@ def _extract_pre_filled_attributes(self, item_type: str, kwargs: dict) -> dict:
 | File | Phases |
 |------|--------|
 | alembic migration (new) | 1 |
-| sandwich_bot/menu_data_cache.py | 1 |
-| sandwich_bot/tasks/item_adder_handler.py | 2, 3, 4, 5, 6, 7, 8 |
-| sandwich_bot/tasks/handler_config.py | 6 |
-| sandwich_bot/tasks/state_machine.py | 6 |
-| sandwich_bot/tasks/checkout_utils_handler.py | 6 |
-| sandwich_bot/tasks/taking_items_handler.py | 6 |
+| orderbot/menu_data_cache.py | 1 |
+| orderbot/tasks/item_adder_handler.py | 2, 3, 4, 5, 6, 7, 8 |
+| orderbot/tasks/handler_config.py | 6 |
+| orderbot/tasks/state_machine.py | 6 |
+| orderbot/tasks/checkout_utils_handler.py | 6 |
+| orderbot/tasks/taking_items_handler.py | 6 |
 
 ---
 

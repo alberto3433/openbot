@@ -3,8 +3,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sandwich_bot.models import Base, MenuItem, Order, OrderItem
-from sandwich_bot.services.order import persist_confirmed_order
+from orderbot.models import Base, MenuItem, Order, OrderItem
+from orderbot.services.order import persist_confirmed_order
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")

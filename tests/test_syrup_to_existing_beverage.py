@@ -1,8 +1,8 @@
 """Test that syrup-only input adds to existing espresso instead of creating new coffee."""
 import pytest
-from sandwich_bot.tasks.state_machine import OrderStateMachine
-from sandwich_bot.tasks.models import OrderTask, MenuItemTask
-from sandwich_bot.tasks.schemas.phases import OrderPhase
+from orderbot.tasks.state_machine import OrderStateMachine
+from orderbot.tasks.models import OrderTask, MenuItemTask
+from orderbot.tasks.schemas.phases import OrderPhase
 
 
 class TestSyrupToExistingBeverage:

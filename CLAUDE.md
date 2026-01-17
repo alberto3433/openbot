@@ -1,4 +1,4 @@
-# CLAUDE.md - Sandwich Bot Project Guide
+# CLAUDE.md - Orderbot Project Guide
 
 ## ⛔ DATABASE - CRITICAL
 
@@ -55,8 +55,8 @@ python -m pytest -k "bagel" -v
 python -m pytest tests/test_tasks_parsing.py::TestClass::test_name -v -s --tb=long
 
 # Start dev server (with optional verbose logging)
-uvicorn sandwich_bot.main:app --reload --port 8000
-LOG_LEVEL=DEBUG uvicorn sandwich_bot.main:app --reload
+uvicorn orderbot.main:app --reload --port 8000
+LOG_LEVEL=DEBUG uvicorn orderbot.main:app --reload
 
 # Database migrations
 alembic upgrade head
@@ -69,7 +69,7 @@ psql $DATABASE_URL -c "SELECT session_id, order_state FROM chat_sessions LIMIT 5
 ## Project Structure
 
 ```
-sandwich_bot/
+orderbot/
 ├── tasks/                    # Core order processing logic
 │   ├── state_machine.py      # Main order flow controller
 │   ├── models.py             # Pydantic task models (OrderTask, MenuItemTask)
@@ -159,7 +159,7 @@ Before committing order handling code:
 
 ### Domain-Specific Helpers: Tests Only
 
-Functions encoding knowledge of specific foods (`is_soda_drink()`, `get_coffee_types()`, etc.) are **ONLY allowed in `tests/` directory**—never in `sandwich_bot/`.
+Functions encoding knowledge of specific foods (`is_soda_drink()`, `get_coffee_types()`, etc.) are **ONLY allowed in `tests/` directory**—never in `orderbot/`.
 
 ### Legacy Code
 Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt—do not extend them.

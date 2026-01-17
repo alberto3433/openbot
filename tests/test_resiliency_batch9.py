@@ -4,8 +4,8 @@ Resiliency Test Batch 9: Affirmative/Negative Responses
 Tests the system's ability to handle yes/no and confirmation responses.
 """
 
-from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
-from sandwich_bot.tasks.models import OrderTask
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+from orderbot.tasks.models import OrderTask
 from tests.test_helpers import BagelItemTask
 
 

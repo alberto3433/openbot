@@ -5,7 +5,7 @@ Provides factory functions for creating MenuItemTask instances configured
 as bagels or coffee items (replacing the removed BagelItemTask and CoffeeItemTask classes).
 """
 
-from sandwich_bot.tasks.models import MenuItemTask, TaskStatus
+from orderbot.tasks.models import MenuItemTask, TaskStatus
 
 
 def create_bagel_task(

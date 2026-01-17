@@ -6,7 +6,7 @@ Tests the system's ability to handle specific preparation requests.
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask
-from tests.test_helpers import BagelItemTask
+from tests.helpers import BagelItemTask
 
 
 class TestPreparationPreferences:

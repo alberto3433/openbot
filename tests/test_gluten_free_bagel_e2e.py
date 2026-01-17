@@ -7,7 +7,7 @@ verifying the gluten free upcharge is properly applied and displayed.
 
 from orderbot.tasks.state_machine import OrderStateMachine
 from orderbot.tasks.models import OrderTask, MenuItemTask
-from tests.test_helpers import BagelItemTask
+from tests.helpers import BagelItemTask
 from orderbot.tasks.adapter import order_task_to_dict
 from orderbot.tasks.pricing import PricingEngine
 

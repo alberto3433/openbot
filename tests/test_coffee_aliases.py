@@ -111,7 +111,7 @@ class TestParseCoffeeDeterministic:
     def test_parse_coffee_with_alias(self):
         """_parse_coffee_deterministic should recognize coffee aliases."""
         from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
-        from tests.test_helpers import has_coffee, has_menu_item
+        from tests.helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("I want a chai")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
@@ -119,7 +119,7 @@ class TestParseCoffeeDeterministic:
     def test_parse_coffee_with_matcha_alias(self):
         """_parse_coffee_deterministic should recognize 'matcha' alias."""
         from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
-        from tests.test_helpers import has_coffee, has_menu_item
+        from tests.helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("can I get a matcha")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
@@ -127,7 +127,7 @@ class TestParseCoffeeDeterministic:
     def test_parse_coffee_with_drip_alias(self):
         """_parse_coffee_deterministic should recognize 'drip' alias for coffee."""
         from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
-        from tests.test_helpers import has_coffee, has_menu_item
+        from tests.helpers import has_coffee, has_menu_item
         result = _parse_coffee_deterministic("I want a drip coffee")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
@@ -178,7 +178,7 @@ class TestEspressoParsingIntegration:
     def test_espresso_parses_as_coffee_not_menu_item(self):
         """Espresso should be parsed as coffee, not as a menu item."""
         from orderbot.tasks.parsers import parse_open_input
-        from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
+        from tests.helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("espresso")
         assert has_coffee(result), "Espresso should be detected as coffee"
         coffee = get_coffee_item(result)
@@ -189,7 +189,7 @@ class TestEspressoParsingIntegration:
     def test_double_espresso_parses_as_coffee(self):
         """Double espresso should be parsed as coffee with extra shots."""
         from orderbot.tasks.parsers import parse_open_input
-        from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
+        from tests.helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("double espresso")
         assert has_coffee(result), "Double espresso should be detected as coffee"
         coffee = get_coffee_item(result)
@@ -200,7 +200,7 @@ class TestEspressoParsingIntegration:
     def test_triple_espresso_parses_as_coffee(self):
         """Triple espresso should be parsed as coffee with extra shots."""
         from orderbot.tasks.parsers import parse_open_input
-        from tests.test_helpers import has_coffee, get_coffee_item, has_menu_item
+        from tests.helpers import has_coffee, get_coffee_item, has_menu_item
         result = parse_open_input("triple espresso")
         assert has_coffee(result), "Triple espresso should be detected as coffee"
         coffee = get_coffee_item(result)
@@ -211,7 +211,7 @@ class TestEspressoParsingIntegration:
     def test_espresso_with_milk_parses_correctly(self):
         """Espresso with milk modifier should parse correctly."""
         from orderbot.tasks.parsers import parse_open_input
-        from tests.test_helpers import has_coffee, get_coffee_item
+        from tests.helpers import has_coffee, get_coffee_item
         result = parse_open_input("espresso with oat milk")
         assert has_coffee(result), "Espresso with milk should be detected as coffee"
         coffee = get_coffee_item(result)

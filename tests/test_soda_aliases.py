@@ -108,7 +108,7 @@ class TestParseSodaDeterministic:
     def test_parse_soda_with_alias(self):
         """_parse_soda_deterministic should recognize soda aliases."""
         from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        from tests.test_helpers import get_menu_item
+        from tests.helpers import get_menu_item
         result = _parse_soda_deterministic("I want a coke")
         assert result is not None
         menu_item = get_menu_item(result)
@@ -119,7 +119,7 @@ class TestParseSodaDeterministic:
     def test_parse_soda_with_oj_alias(self):
         """_parse_soda_deterministic should recognize 'oj' alias."""
         from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        from tests.test_helpers import get_menu_item
+        from tests.helpers import get_menu_item
         result = _parse_soda_deterministic("can I get an oj")
         assert result is not None
         menu_item = get_menu_item(result)
@@ -128,7 +128,7 @@ class TestParseSodaDeterministic:
     def test_parse_soda_with_seltzer_alias(self):
         """_parse_soda_deterministic should recognize 'seltzer' alias."""
         from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        from tests.test_helpers import get_menu_item
+        from tests.helpers import get_menu_item
         result = _parse_soda_deterministic("I'll have a seltzer")
         assert result is not None
         menu_item = get_menu_item(result)

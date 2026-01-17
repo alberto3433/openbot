@@ -6,7 +6,7 @@ Tests the system's ability to handle removal and cancellation requests.
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask, TaskStatus
-from tests.test_helpers import BagelItemTask, CoffeeItemTask
+from tests.helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestCancellationRemoval:

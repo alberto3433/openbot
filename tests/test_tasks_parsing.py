@@ -20,7 +20,7 @@ from orderbot.tasks.parsing import (
 )
 
 # Import parsed_items helpers for testing the generic parsed_items API
-from tests.test_helpers import (
+from tests.helpers import (
     get_parsed_item,
     get_parsed_items,
     has_parsed_item,
@@ -1208,7 +1208,7 @@ class TestFindNthItemOfType:
     def test_find_first_bagel(self):
         """Test finding the first bagel in a list."""
         from orderbot.tasks.taking_items_handler import find_nth_item_of_type
-        from tests.test_helpers import BagelItemTask, CoffeeItemTask
+        from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bread="plain"),
@@ -1225,7 +1225,7 @@ class TestFindNthItemOfType:
     def test_find_second_bagel(self):
         """Test finding the second bagel in a list."""
         from orderbot.tasks.taking_items_handler import find_nth_item_of_type
-        from tests.test_helpers import BagelItemTask, CoffeeItemTask
+        from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bread="plain"),
@@ -1242,7 +1242,7 @@ class TestFindNthItemOfType:
     def test_find_nth_item_generic(self):
         """Test finding the Nth item regardless of type using 'item' keyword."""
         from orderbot.tasks.taking_items_handler import find_nth_item_of_type
-        from tests.test_helpers import BagelItemTask, CoffeeItemTask
+        from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
             BagelItemTask(bread="plain"),
@@ -1260,7 +1260,7 @@ class TestFindNthItemOfType:
     def test_find_nth_item_out_of_range(self):
         """Test that out-of-range ordinal returns None."""
         from orderbot.tasks.taking_items_handler import find_nth_item_of_type
-        from tests.test_helpers import BagelItemTask
+        from tests.helpers import BagelItemTask
 
         items = [
             BagelItemTask(bread="plain"),
@@ -1290,7 +1290,7 @@ class TestFindNthItemOfType:
     def test_find_item_by_summary(self):
         """Test finding item by get_summary() content."""
         from orderbot.tasks.taking_items_handler import find_nth_item_of_type
-        from tests.test_helpers import CoffeeItemTask
+        from tests.helpers import CoffeeItemTask
 
         # CoffeeItemTask helper creates MenuItemTask with drink_type stored in menu_item_name
         item = CoffeeItemTask(drink_type="latte", size="large")

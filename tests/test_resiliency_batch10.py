@@ -6,7 +6,7 @@ Tests the system's ability to handle thank you, sorry, and social responses.
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask
-from tests.test_helpers import BagelItemTask
+from tests.helpers import BagelItemTask
 
 
 class TestGratitudeSocialResponses:

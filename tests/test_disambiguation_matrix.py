@@ -140,7 +140,7 @@ class TestGenericCategoryTerms:
     ])
     def test_generic_term_parser_output(self, user_input, min_expected_matches):
         """Parser should return the generic term as menu_item (not resolve to specific item)."""
-        from tests.test_helpers import get_menu_item, has_side_item
+        from tests.helpers import get_menu_item, has_side_item
         result = get_parser_result(user_input)
 
         # Should return as menu_item, not side_item
@@ -215,7 +215,7 @@ class TestSpecificItemsWithGenericSuffix:
     ])
     def test_specific_item_parser_output(self, user_input, expected_match_count, should_disambiguate):
         """Parser should return the specific item name as menu_item."""
-        from tests.test_helpers import get_menu_item, has_side_item
+        from tests.helpers import get_menu_item, has_side_item
         result = get_parser_result(user_input)
 
         # Should return as menu_item
@@ -306,7 +306,7 @@ class TestSideItems:
     ])
     def test_side_item_parser_output(self, user_input, expected_canonical):
         """Side items should be returned as side in parsed_items by parser."""
-        from tests.test_helpers import get_side_item
+        from tests.helpers import get_side_item
         result = get_parser_result(user_input)
 
         # Should return as side_item
@@ -332,7 +332,7 @@ class TestBeverages:
     ])
     def test_coffee_triggers_coffee_flow(self, user_input):
         """Coffee-related items should trigger coffee flow."""
-        from tests.test_helpers import has_coffee
+        from tests.helpers import has_coffee
         result = get_parser_result(user_input)
 
         assert has_coffee(result), \
@@ -345,7 +345,7 @@ class TestBeverages:
     ])
     def test_soda_triggers_clarification(self, user_input):
         """Soda items should trigger soda clarification."""
-        from tests.test_helpers import has_menu_item
+        from tests.helpers import has_menu_item
         result = get_parser_result(user_input)
 
         # Either triggers soda clarification or returns as menu item for disambiguation
@@ -395,7 +395,7 @@ class TestFullFlowIntegration:
 
     def test_chips_full_flow(self, item_handler, fresh_order):
         """Test 'chips' goes through full disambiguation flow."""
-        from tests.test_helpers import get_menu_item
+        from tests.helpers import get_menu_item
         # Step 1: Parser
         parser_result = get_parser_result("chips")
         menu_item = get_menu_item(parser_result)
@@ -414,7 +414,7 @@ class TestFullFlowIntegration:
 
     def test_bagel_chips_full_flow(self, item_handler, fresh_order):
         """Test 'bagel chips' shows all bagel chip variants."""
-        from tests.test_helpers import get_menu_item
+        from tests.helpers import get_menu_item
         # Step 1: Parser
         parser_result = get_parser_result("bagel chips")
         menu_item = get_menu_item(parser_result)

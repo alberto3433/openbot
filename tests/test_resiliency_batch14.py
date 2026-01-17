@@ -8,7 +8,7 @@ import pytest
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask
-from tests.test_helpers import BagelItemTask, CoffeeItemTask
+from tests.helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestPronounContextReferences:

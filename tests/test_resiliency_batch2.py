@@ -7,7 +7,7 @@ could match multiple items and needs clarification or disambiguation.
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask, MenuItemTask
-from tests.test_helpers import BagelItemTask, CoffeeItemTask
+from tests.helpers import BagelItemTask, CoffeeItemTask
 
 
 def create_menu_data():

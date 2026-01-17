@@ -7,7 +7,7 @@ where the user wants to change something about an item already in their order.
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask, TaskStatus
-from tests.test_helpers import BagelItemTask, CoffeeItemTask
+from tests.helpers import BagelItemTask, CoffeeItemTask
 
 
 class TestReplacementModificationScenarios:

@@ -299,6 +299,133 @@ Before committing any order handling code, verify:
 
 If any answer is "no", refactor to be data-driven.
 
+### ⛔ FORBIDDEN CODE PATTERNS
+
+**These patterns are NEVER allowed in new code. If you find yourself writing any of these, STOP and find the data-driven alternative.**
+
+#### Forbidden: Checking for specific attributes by name
+```python
+# FORBIDDEN - hardcodes which attributes matter
+if item.has_attribute("bread"):
+    # bagel-specific logic
+if item.has_attribute("size"):
+    # beverage-specific logic
+if attr_values.get("toasted") is None:
+    # assumes toasted is a required field
+```
+
+#### Forbidden: Building descriptions based on attribute names
+```python
+# FORBIDDEN - hardcodes attribute names for display
+if item.has_attribute("bread"):
+    extra_protein = attr_values.get("extra_protein")
+    toppings = attr_values.get("toppings")
+    return "bagel"
+```
+
+#### Forbidden: Checking specific attribute values
+```python
+# FORBIDDEN - hardcodes attribute value checks
+if attr_values.get("bread") is None or attr_values.get("toasted") is None:
+    # item is incomplete
+```
+
+#### Forbidden: Field name mappings that encode domain knowledge
+```python
+# FORBIDDEN - maps field names that only make sense for specific items
+field_to_attr = {
+    "bread_choice": "bread",
+    "bagel_choice": "bread",  # knows bagels have bread
+    "coffee_size": "size",    # knows coffee has size
+}
+```
+
+### ✅ CORRECT DATA-DRIVEN PATTERNS
+
+#### Correct: Query database for required/missing attributes
+```python
+# CORRECT - database defines what's required
+required_attrs = menu_cache.get_required_attributes(item.menu_item_type)
+missing = [attr for attr in required_attrs if attr not in item.attribute_values]
+if missing:
+    # item is incomplete - ask about first missing attribute
+    next_attr = missing[0]
+    question = menu_cache.get_question_for_field(item.menu_item_type, next_attr)
+```
+
+#### Correct: Get display info from database
+```python
+# CORRECT - database defines how to display items
+display_config = menu_cache.get_display_config(item.menu_item_type)
+summary_parts = []
+for attr in display_config["summary_attributes"]:
+    value = item.attribute_values.get(attr)
+    if value:
+        summary_parts.append(value)
+```
+
+#### Correct: Use database for field mappings
+```python
+# CORRECT - database defines field relationships
+canonical_field = menu_cache.get_canonical_field_name(pending_field)
+# or: pending_field format is already "item_type:attribute" from DB
+```
+
+### Pre-Implementation Checklist
+
+**Before writing ANY code that handles item configuration, STOP and answer these questions:**
+
+1. **Am I checking for a specific attribute name?** (e.g., `has_attribute("bread")`)
+   - If yes: Query the database for "which attributes does this item type have?"
+
+2. **Am I checking if a specific field is None/missing?** (e.g., `item.toasted is None`)
+   - If yes: Query the database for "which required attributes are unfilled?"
+
+3. **Am I building a description using hardcoded field names?**
+   - If yes: Query the database for "how should this item type be displayed?"
+
+4. **Am I mapping field names to canonical names in code?**
+   - If yes: Store the mapping in the database, or use a consistent field naming convention
+
+5. **Can I describe what this code does WITHOUT mentioning bagels, coffee, size, bread, toasted, etc.?**
+   - If no: The code is domain-specific and needs to be refactored
+
+**If you cannot answer "no" to questions 1-4 and "yes" to question 5, do NOT proceed. Ask for guidance on the data-driven approach.**
+
+### Domain-Specific Helpers: Tests Only
+
+**Domain-specific helper functions are ONLY allowed in the `tests/` directory.**
+
+Functions that encode knowledge of specific food items, item types, or menu domains:
+- `is_soda_drink()` - knows which drinks are sodas
+- `get_coffee_types()` - knows what coffee items exist
+- `is_bagel()` - knows bagel item type slug
+- `get_spread_types()` - knows spread categories
+
+**Where these are allowed:**
+- ✅ `tests/` directory - for test setup, assertions, and test helpers
+- ⛔ `sandwich_bot/` directory - NEVER in production code
+
+**Why this matters:**
+Test code often needs domain-specific helpers to verify behavior ("did this bagel get toasted?"). That's fine - tests are allowed to know about the domain. But production code must remain 100% data-driven so it works for any menu configuration.
+
+**Example:**
+```python
+# tests/conftest.py - ALLOWED
+def is_soda_drink(item_name: str) -> bool:
+    """Test helper to check if item is a soda."""
+    return item_name.lower() in {"coca-cola", "diet coke", "sprite"}
+
+# sandwich_bot/parsers/constants.py - FORBIDDEN
+def is_soda_drink(item_name: str) -> bool:
+    # This encodes domain knowledge in production code!
+    return item_name.lower() in {"coca-cola", "diet coke", "sprite"}
+```
+
+**If you need domain-specific behavior in production code:**
+1. Store the classification in the database (e.g., `item_types.category = "soda"`)
+2. Query the database at runtime: `menu_cache.get_item_category(item_name) == "soda"`
+
 ## Database Queries: Fail Fast on Missing Data
 
 ### Principle

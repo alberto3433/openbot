@@ -221,6 +221,10 @@ class MenuItemTask(ItemTask):
     # e.g., {"bread": "plain", "add_egg": "scrambled_egg", "scooped": True}
     attribute_values: dict[str, Any] = Field(default_factory=dict)
 
+    # Unified modifier storage - all modifiers regardless of category
+    # Each entry: {"slug": "vanilla", "category": "syrup", "quantity": 1, "price": 0.75, "display_name": "Vanilla Syrup"}
+    modifiers: list[dict] = Field(default_factory=list)
+
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
@@ -317,45 +321,28 @@ class MenuItemTask(ItemTask):
 
     @property
     def milk(self) -> str | None:
-        """Get milk type from unified storage (milk_sweetener_syrup_selections).
+        """Get milk type from modifiers.
 
         Returns the slug of the first milk modifier.
         """
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        for entry in mss_selections:
-            if entry.get("category") == "milk":
-                return entry.get("slug")
+        for m in self.modifiers:
+            if m.get("category") == "milk":
+                return m.get("slug")
         return None
 
     @milk.setter
     def milk(self, value: str | None) -> None:
-        """Set milk type in unified storage (milk_sweetener_syrup_selections)."""
-        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-
+        """Set milk type in modifiers."""
         # Remove existing milk entries
-        mss_slugs = [s for s in mss_slugs if not self._is_milk_slug(s, mss_selections)]
-        mss_selections = [e for e in mss_selections if e.get("category") != "milk"]
+        self.modifiers = [m for m in self.modifiers if m.get("category") != "milk"]
 
         if value is not None:
-            # Add new milk entry
-            mss_slugs.append(value)
-            mss_selections.append({
+            self.modifiers.append({
                 "slug": value,
                 "display_name": value.replace("_", " ").title(),
                 "quantity": 1,
                 "category": "milk",
             })
-
-        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-    def _is_milk_slug(self, slug: str, selections: list[dict]) -> bool:
-        """Check if a slug is a milk entry in the selections list."""
-        for entry in selections:
-            if entry.get("slug") == slug and entry.get("category") == "milk":
-                return True
-        return False
 
     @property
     def cream_level(self) -> str | None:
@@ -372,195 +359,117 @@ class MenuItemTask(ItemTask):
 
     @property
     def sweeteners(self) -> list[dict]:
-        """Get sweeteners list from unified storage (milk_sweetener_syrup_selections).
+        """Get sweeteners list from modifiers.
 
         Returns entries with category="sweetener".
         """
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        return [e for e in mss_selections if e.get("category") == "sweetener"]
+        return [m for m in self.modifiers if m.get("category") == "sweetener"]
 
     @sweeteners.setter
     def sweeteners(self, value: list[dict]) -> None:
-        """Set sweeteners list in unified storage (milk_sweetener_syrup_selections).
-
-        Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
-        """
-        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-
+        """Set sweeteners list in modifiers."""
         # Remove existing sweetener entries
-        mss_slugs = [s for s in mss_slugs if not self._is_sweetener_slug(s, mss_selections)]
-        mss_selections = [e for e in mss_selections if e.get("category") != "sweetener"]
+        self.modifiers = [m for m in self.modifiers if m.get("category") != "sweetener"]
 
         # Add new sweetener entries (normalize to canonical format)
         for entry in (value or []):
             normalized = normalize_modifier_entry(entry, category="sweetener")
             slug = normalized["slug"]
-            if slug and slug not in mss_slugs:
-                mss_slugs.append(slug)
-                mss_selections.append(normalized)
-
-        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-    def _is_sweetener_slug(self, slug: str, selections: list[dict]) -> bool:
-        """Check if a slug is a sweetener entry in the selections list."""
-        for entry in selections:
-            if entry.get("slug") == slug and entry.get("category") == "sweetener":
-                return True
-        return False
+            # Check for duplicates
+            if slug and not any(m.get("slug") == slug and m.get("category") == "sweetener" for m in self.modifiers):
+                self.modifiers.append(normalized)
 
     @property
     def flavor_syrups(self) -> list[dict]:
-        """Get flavor syrups list from unified storage (milk_sweetener_syrup_selections).
+        """Get flavor syrups list from modifiers.
 
         Returns entries with category="syrup".
         """
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        return [e for e in mss_selections if e.get("category") == "syrup"]
+        return [m for m in self.modifiers if m.get("category") == "syrup"]
 
     @flavor_syrups.setter
     def flavor_syrups(self, value: list[dict]) -> None:
-        """Set flavor syrups list in unified storage (milk_sweetener_syrup_selections).
-
-        Accepts entries with "slug", "type", or "flavor" keys (normalizes to "slug").
-        """
-        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-
+        """Set flavor syrups list in modifiers."""
         # Remove existing syrup entries
-        mss_slugs = [s for s in mss_slugs if not self._is_syrup_slug(s, mss_selections)]
-        mss_selections = [e for e in mss_selections if e.get("category") != "syrup"]
+        self.modifiers = [m for m in self.modifiers if m.get("category") != "syrup"]
 
         # Add new syrup entries (normalize to canonical format)
         for entry in (value or []):
             normalized = normalize_modifier_entry(entry, category="syrup")
             slug = normalized["slug"]
-            if slug and slug not in mss_slugs:
-                mss_slugs.append(slug)
-                mss_selections.append(normalized)
+            # Check for duplicates
+            if slug and not any(m.get("slug") == slug and m.get("category") == "syrup" for m in self.modifiers):
+                self.modifiers.append(normalized)
 
-        self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-        self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+    def add_modifier(
+        self,
+        category: str,
+        slug: str,
+        quantity: int = 1,
+        price: float = 0.0,
+        display_name: str | None = None,
+    ) -> None:
+        """Add a modifier to the item.
 
-    def _is_syrup_slug(self, slug: str, selections: list[dict]) -> bool:
-        """Check if a slug is a syrup entry in the selections list."""
-        for entry in selections:
-            if entry.get("slug") == slug and entry.get("category") == "syrup":
-                return True
-        return False
-
-    def add_flavor_syrup(self, name: str, quantity: int = 1, price: float = 0.0) -> None:
-        """Add a flavor syrup to the item with proper normalization.
-
-        This is the preferred way to add syrups - it normalizes the entry
-        and stores it in the unified storage model.
-
-        Args:
-            name: Syrup name (e.g., "vanilla", "caramel")
-            quantity: Number of pumps (default 1)
-            price: Price per pump (default 0.0, will be looked up if not provided)
-        """
-        entry = {"slug": name, "quantity": quantity}
-        if price > 0:
-            entry["price"] = price
-        normalized = normalize_modifier_entry(entry, category="syrup")
-
-        # Get current unified storage
-        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-
-        # Add if not already present
-        slug = normalized["slug"]
-        if slug and slug not in mss_slugs:
-            mss_slugs.append(slug)
-            mss_selections.append(normalized)
-            self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-            self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-    def add_sweetener(self, name: str, quantity: int = 1, price: float = 0.0) -> None:
-        """Add a sweetener to the item with proper normalization.
-
-        This is the preferred way to add sweeteners - it normalizes the entry
-        and stores it in the unified storage model.
-
-        Args:
-            name: Sweetener name (e.g., "sugar", "honey", "splenda")
-            quantity: Number of packets (default 1)
-            price: Price (default 0.0)
-        """
-        entry = {"slug": name, "quantity": quantity}
-        if price > 0:
-            entry["price"] = price
-        normalized = normalize_modifier_entry(entry, category="sweetener")
-
-        # Get current unified storage
-        mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-
-        # Add if not already present
-        slug = normalized["slug"]
-        if slug and slug not in mss_slugs:
-            mss_slugs.append(slug)
-            mss_selections.append(normalized)
-            self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-            self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-
-    def add_modifier(self, category: str, name: str, quantity: int = 1, price: float = 0.0) -> None:
-        """Add a modifier to the item in a data-driven way.
-
-        This is the generic method for adding any type of modifier. It stores
-        modifiers in a unified format in attribute_values and updates unit_price.
+        All modifiers are stored in a unified list regardless of category.
 
         Args:
             category: Modifier category (e.g., "syrup", "sweetener", "milk", "protein", "topping")
-            name: Modifier name (e.g., "vanilla", "sugar", "oat", "bacon")
+            slug: Modifier slug (e.g., "vanilla", "sugar", "oat", "bacon")
             quantity: Quantity (default 1)
             price: Price per unit (default 0.0)
+            display_name: Display name (if not provided, derived from slug)
         """
-        # Normalize the entry
-        entry = {"slug": name, "quantity": quantity, "category": category}
+        # Check if already present
+        if any(m.get("slug") == slug and m.get("category") == category for m in self.modifiers):
+            return
+
+        # Build entry
+        entry = {
+            "slug": slug,
+            "category": category,
+            "quantity": quantity,
+            "display_name": display_name or slug.replace("_", " ").title(),
+        }
         if price > 0:
             entry["price"] = price
 
-        # Generate display name with category suffix for syrups
-        display_name = name.replace("_", " ").title()
-        if category == "syrup" and not display_name.lower().endswith(" syrup"):
-            display_name = f"{display_name} Syrup"
-        entry["display_name"] = display_name
+        self.modifiers.append(entry)
 
-        # Track if we actually added the modifier (not a duplicate)
-        added = False
+        # Update unit_price if modifier has a price
+        if price > 0:
+            self.unit_price = (self.unit_price or 0.0) + (price * quantity)
 
-        # Beverage modifiers (milk, sweetener, syrup) go to unified milk_sweetener_syrup storage
-        if category in ("milk", "sweetener", "syrup"):
-            mss_slugs = self.attribute_values.get("milk_sweetener_syrup", [])
-            mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
+    def get_modifiers_by_category(self, category: str) -> list[dict]:
+        """Get all modifiers of a specific category.
 
-            # Check if already present
-            if name not in mss_slugs:
-                mss_slugs.append(name)
-                mss_selections.append(entry)
-                self.attribute_values["milk_sweetener_syrup"] = mss_slugs
-                self.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
-                added = True
-        else:
-            # Food modifiers go to {category}_selections storage
-            storage_key = f"{category}_selections"
-            selections = self.attribute_values.get(storage_key, [])
-            existing_slugs = [s.get("slug") for s in selections]
-            if name not in existing_slugs:
-                selections.append(entry)
-                self.attribute_values[storage_key] = selections
-                added = True
+        Args:
+            category: The category to filter by (e.g., "milk", "syrup", "protein")
 
-        # Update unit_price if modifier has a price and was actually added
-        if added and price > 0:
-            total_price = price * quantity
-            if self.unit_price is not None:
-                self.unit_price += total_price
-            else:
-                self.unit_price = total_price
+        Returns:
+            List of modifier dicts matching the category
+        """
+        return [m for m in self.modifiers if m.get("category") == category]
+
+    def remove_modifier(self, slug: str, category: str | None = None) -> bool:
+        """Remove a modifier by slug.
+
+        Args:
+            slug: The modifier slug to remove
+            category: Optional category to match (if None, removes first match)
+
+        Returns:
+            True if a modifier was removed, False otherwise
+        """
+        for i, m in enumerate(self.modifiers):
+            if m.get("slug") == slug:
+                if category is None or m.get("category") == category:
+                    removed = self.modifiers.pop(i)
+                    # Subtract price from unit_price
+                    if removed.get("price", 0) > 0:
+                        self.unit_price -= removed["price"] * removed.get("quantity", 1)
+                    return True
+        return False
 
     @property
     def wants_syrup(self) -> bool:
@@ -612,9 +521,8 @@ class MenuItemTask(ItemTask):
     def milk_upcharge(self, value: float) -> None:
         """Set milk upcharge in attribute_values and update milk entry price."""
         self.attribute_values["milk_upcharge"] = value
-        # Also update the price in the milk entry in milk_sweetener_syrup_selections
-        mss_selections = self.attribute_values.get("milk_sweetener_syrup_selections", [])
-        for entry in mss_selections:
+        # Also update the price in the milk entry in modifiers
+        for entry in self.modifiers:
             if entry.get("category") == "milk":
                 entry["price"] = value
                 break
@@ -889,21 +797,64 @@ class MenuItemTask(ItemTask):
         elif "requires_side_choice" in self.attribute_values:
             del self.attribute_values["requires_side_choice"]
 
+    def _get_attribute_display_name(self, attr_slug: str, value_slug: str | None = None) -> str | None:
+        """Get display name for an attribute value from stored selections.
+
+        Looks up the display_name from {attr_slug}_selections which stores
+        database-provided display names alongside slugs.
+
+        Args:
+            attr_slug: The attribute slug (e.g., "bread", "shots", "size")
+            value_slug: Optional value slug to find in multi-select lists.
+                        If None, returns the first selection's display name.
+
+        Returns:
+            The display name if found, None otherwise.
+        """
+        selections = self.attribute_values.get(f"{attr_slug}_selections", [])
+        if not selections or not isinstance(selections, list):
+            return None
+
+        if value_slug:
+            # Find specific value in selections list
+            for sel in selections:
+                if isinstance(sel, dict) and sel.get("slug") == value_slug:
+                    return sel.get("display_name")
+            return None
+
+        # Return first selection's display name
+        if len(selections) > 0 and isinstance(selections[0], dict):
+            return selections[0].get("display_name")
+        return None
+
+    def _get_all_attribute_display_names(self, attr_slug: str) -> list[str]:
+        """Get all display names for a multi-select attribute.
+
+        Returns:
+            List of display names from {attr_slug}_selections.
+        """
+        selections = self.attribute_values.get(f"{attr_slug}_selections", [])
+        if not selections or not isinstance(selections, list):
+            return []
+        return [
+            sel.get("display_name") for sel in selections
+            if isinstance(sel, dict) and sel.get("display_name")
+        ]
+
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
         # Handle espresso-style items (have shots attribute but no size)
         if self.has_attribute("shots") and not self.has_attribute("size"):
-            shots_slug = self.attribute_values.get("shots", "single_shot")
             decaf = self.attribute_values.get("decaf", False)
 
-            shots_display_map = {
-                "single_shot": "",
-                "double_shot_espresso": "Double ",
-                "triple_shot_espresso": "Triple ",
-                "quad_shot": "Quad ",
-            }
-            shots_prefix = shots_display_map.get(shots_slug, "")
-            display_name = f"{shots_prefix}{self.menu_item_name or 'Espresso'}"
+            # Get shots display name from database (stored in shots_selections)
+            shots_display = self._get_attribute_display_name("shots")
+            if shots_display and shots_display.lower() != "single":
+                # Use database display name as prefix (e.g., "Double", "Triple")
+                display_name = f"{shots_display} {self.menu_item_name or 'Espresso'}"
+            else:
+                display_name = self.menu_item_name or "Espresso"
+
             if decaf:
                 display_name = f"Decaf {display_name}"
             return display_name
@@ -911,10 +862,13 @@ class MenuItemTask(ItemTask):
         # Handle sized beverage display (items with size attribute)
         if self.has_attribute("size"):
             parts = []
-            if self.size:
+            # Get size display name from database (stored in size_selections)
+            size_display = self._get_attribute_display_name("size")
+            if size_display:
+                parts.append(size_display)
+            elif self.size:
                 parts.append(self.size)
-            # Note: temperature (iced/hot) is now part of the menu item name itself
-            # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute
+
             if self.decaf:
                 parts.append("decaf")
             if self.extra_shots == 1:
@@ -943,8 +897,8 @@ class MenuItemTask(ItemTask):
             # Handle bread selection
             bread = self.attribute_values.get("bread")
             if bread:
-                # Convert slug to display name (e.g., "plain_bagel" -> "Plain Bagel")
-                bread_display = bread.replace("_", " ").title()
+                # Get display name from database (stored in bread_selections)
+                bread_display = self._get_attribute_display_name("bread") or bread
                 parts.append(f"on {bread_display}")
 
             # Handle toasted - check both attribute_values and direct property
@@ -969,19 +923,25 @@ class MenuItemTask(ItemTask):
                 if self.has_attribute("shots") and not self.has_attribute("size") and key in ("shots", "decaf"):
                     continue  # Already handled in get_display_name()
                 if value is True:
-                    extra_customizations.append(key.replace("_", " ").title())
+                    # Boolean attribute - use attribute display name from database
+                    display_name = self._get_attribute_display_name(key) or key
+                    extra_customizations.append(display_name)
                 elif value and value is not False:
                     # Handle list values (multi-select attributes like extra proteins)
                     if isinstance(value, list):
-                        for item in value:
-                            if isinstance(item, str):
-                                display_value = item.replace("_", " ").title()
-                                extra_customizations.append(display_value)
-                            # Skip dict items (they're selection metadata)
+                        # Get display names from {key}_selections
+                        display_names = self._get_all_attribute_display_names(key)
+                        if display_names:
+                            extra_customizations.extend(display_names)
+                        else:
+                            # Fallback: use raw values if no selections stored
+                            for item in value:
+                                if isinstance(item, str):
+                                    extra_customizations.append(item)
                     else:
-                        # Convert slug to display name
-                        display_value = str(value).replace("_", " ").title()
-                        extra_customizations.append(display_value)
+                        # Single-select: get display name from database
+                        display_name = self._get_attribute_display_name(key, str(value))
+                        extra_customizations.append(display_name or str(value))
             if extra_customizations:
                 parts.append(f"with {', '.join(extra_customizations)}")
 
@@ -991,15 +951,19 @@ class MenuItemTask(ItemTask):
             choice_field = f"{self.side_choice}_choice"
             specific_choice = getattr(self, choice_field, None)
             if specific_choice:
-                side_parts = [specific_choice, self.side_choice]
+                # Get display names from database
+                choice_display = self._get_attribute_display_name(choice_field, specific_choice) or specific_choice
+                side_display = self._get_attribute_display_name("side_choice", self.side_choice) or self.side_choice
+                side_parts = [choice_display, side_display]
                 if self.toasted:
                     side_parts.append("toasted")
                 if self.spread:
-                    side_parts.append(f"with {self.spread}")
+                    spread_display = self._get_attribute_display_name("spread_type", self.spread) or self.spread
+                    side_parts.append(f"with {spread_display}")
                 parts.append(f"with {' '.join(side_parts)}")
             else:
-                # Side has no sub-selection
-                side_display = self.side_choice.replace("_", " ")
+                # Side has no sub-selection - get display name from database
+                side_display = self._get_attribute_display_name("side_choice", self.side_choice) or self.side_choice
                 parts.append(f"with {side_display}")
 
         if self.modifications:
@@ -1270,9 +1234,9 @@ class OrderTask(BaseTask):
     # Works for any item type (coffee, bagels, etc.), not just beverages
     pending_item_modifiers: dict = Field(default_factory=dict)
 
-    # Unknown drink request - stores the drink name user asked for that doesn't exist
+    # Unknown item request - stores the item name user asked for that doesn't exist
     # Used to show "Sorry, we don't have X" message
-    unknown_drink_request: str | None = Field(default=None)
+    unknown_item_request: str | None = Field(default=None)
 
     # Generic menu item options for disambiguation (cookies, muffins, etc.)
     # Used when user says "cookies" and there are multiple cookie types
@@ -1280,11 +1244,6 @@ class OrderTask(BaseTask):
 
     # Quantity stored during item disambiguation
     pending_item_quantity: int = Field(default=1)
-
-    # Spread type options for disambiguation (e.g., "walnut" matches multiple types)
-    # Used when user says "walnut cream cheese" and there are honey walnut, maple raisin walnut
-    # Each entry is a spread type string like "honey walnut"
-    pending_spread_options: list[str] = Field(default_factory=list)
 
     # Pending modifier change clarification
     # Used when user says "change it to blueberry" and we need to clarify bagel vs spread

@@ -15,9 +15,8 @@ from .models import (
     MenuItemTask,
     TaskStatus,
 )
-from .schemas import OrderPhase, StateMachineResult, BagelOrderDetails, ExtractedModifiers
+from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers
 from .handler_config import HandlerConfig
-from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_coffee_types
 from .disambiguation_handler import DisambiguationHandler
 from ..menu_data_cache import menu_cache
 
@@ -156,8 +155,8 @@ class ItemAdderHandler:
         Unified item adder using data-driven configuration.
 
         All item types flow through _create_configurable_item() which handles
-        DB-driven configuration. Beverages that need disambiguation also use
-        the generic flow via _lookup_menu_item_with_disambiguation().
+        DB-driven configuration. Items that need disambiguation (matching multiple
+        menu items) use _lookup_menu_item_with_disambiguation().
 
         Args:
             item_type: The item type slug (e.g., "bagel", "sized_beverage", "deli_sandwich")
@@ -165,120 +164,66 @@ class ItemAdderHandler:
             quantity: Number of items to add (default 1)
             **kwargs: Item-specific parameters:
                 - item_name: Menu item name (e.g., "Iced Latte", "Turkey Club")
-                - bread, toasted, scooped, spread, spread_type (for bread items)
-                - size, milk, sweetener, etc. (for beverages)
+                - Any attribute values to pre-fill (bread, toasted, size, milk, etc.)
                 - modifications, bagel_choice (for menu items with bagel choice)
                 - extracted_modifiers (for any item with modifiers)
 
         Returns:
             StateMachineResult with next question or confirmation
         """
-        from .schemas import ExtractedModifiers
-
         quantity = max(1, quantity)
 
         # Get item name from kwargs - use standardized "item_name" parameter
         item_name = kwargs.get("item_name") or item_type
 
-        # Handle beverages that may need disambiguation
-        is_beverage_type = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
-        if is_beverage_type:
-            drink_name = item_name or ""
-            drink_name_lower = drink_name.lower().strip()
-            standard_coffee_types = get_coffee_types()
+        # Check if this needs disambiguation (any item type, not just beverages)
+        # Disambiguation is needed when:
+        # 1. Item name is a category reference (e.g., "coffee" matches multiple items)
+        # 2. Item name is empty but we have an item_type (generic request)
+        item_name_lower = (item_name or "").lower().strip()
+        category_ref = menu_cache.is_category_reference(item_name_lower) if item_name_lower else None
+        is_category_reference = category_ref is not None
+        is_empty_name = not item_name_lower
 
-            # Build modifiers dict for storage during disambiguation
-            # Note: temperature (hot/iced) is now part of the menu item name itself
-            beverage_modifiers = {
-                "size": kwargs.get("size"),
-                "milk": kwargs.get("milk"),
-                "sweetener": kwargs.get("sweetener"),
-                "sweetener_quantity": kwargs.get("sweetener_quantity", 1),
-                "flavor_syrup": kwargs.get("flavor_syrup"),
-                "syrup_quantity": kwargs.get("syrup_quantity", 1),
-                "decaf": kwargs.get("decaf"),
-                "cream_level": kwargs.get("cream_level"),
-                "extra_shots": kwargs.get("extra_shots", 0),
-                "special_instructions": kwargs.get("special_instructions"),
-                "quantity": quantity,
-            }
+        # Generic modifier storage for disambiguation (stores ALL non-None kwargs)
+        # This preserves modifiers like size, milk, sweetener during disambiguation
+        item_modifiers = {k: v for k, v in kwargs.items() if v is not None}
+        item_modifiers["quantity"] = quantity
 
-            # Check if this needs disambiguation via menu lookup
-            # Category references (e.g., "coffee" -> "sized_beverage") need disambiguation
-            # because they match multiple menu items (Hot Coffee, Iced Coffee, etc.)
-            # Also handle the case where user says generic "coffee" with no specific type
-            category_ref = menu_cache.is_category_reference(drink_name_lower) if drink_name_lower else None
-            is_generic_drink = category_ref is not None
-            # Trigger disambiguation if:
-            # 1. drink_name is a category reference (e.g., "coffee" -> "sized_beverage")
-            # 2. drink_name is unknown (not in standard coffee types)
-            # 3. drink_name is EMPTY but we have a beverage item_type (user said "coffee" parsed as sized_beverage)
-            needs_disambiguation = (
-                is_generic_drink or
-                (drink_name_lower and drink_name_lower not in standard_coffee_types) or
-                (not drink_name_lower and is_beverage_type)
+        # Trigger disambiguation for category references or empty names with item_type
+        if is_category_reference or is_empty_name:
+            menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
+                item_name=item_name_lower or "item",
+                quantity=quantity,
+                order=order,
+                modifiers=item_modifiers,
+                pending_field="item_selection",
+                item_type_filter=category_ref if is_category_reference else item_type,
             )
-            if needs_disambiguation:
-                # Try lookup with disambiguation
-                # Use category_ref to filter (e.g., "coffee" -> filter by "sized_beverage")
-                # For unknown drinks without category match, use the passed item_type
-                menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
-                    item_name=drink_name or "drink",
-                    quantity=quantity,
-                    order=order,
-                    modifiers=beverage_modifiers,
-                    pending_field="drink_type",
-                    item_type_filter=category_ref if is_generic_drink else item_type,
-                )
 
-                # If disambiguation needed, return that
-                if disambiguation_result:
-                    return disambiguation_result
+            if disambiguation_result:
+                return disambiguation_result
 
-                # If menu item found, use canonical name for later flow
-                if menu_item:
-                    canonical_name = menu_item.get("name", drink_name)
-                    item_name = canonical_name
-                    item_type = menu_item.get("item_type") or item_type
-                    # Update kwargs so _build_menu_item_dict uses canonical name
-                    kwargs["item_name"] = canonical_name
-                elif drink_name_lower and not is_generic_drink:
-                    # Unknown drink - mark for error handling
-                    order.pending_field = "drink_type"
-                    order.unknown_drink_request = drink_name
-                    order.phase = OrderPhase.CONFIGURING_ITEM.value
-                    return StateMachineResult(message="", order=order)
+            if menu_item:
+                canonical_name = menu_item.get("name", item_name)
+                item_name = canonical_name
+                item_type = menu_item.get("item_type") or item_type
+                kwargs["item_name"] = canonical_name
+            elif item_name_lower and not is_category_reference:
+                # Unknown item - mark for error handling
+                order.pending_field = "item_selection"
+                order.unknown_item_request = item_name
+                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                return StateMachineResult(message="", order=order)
 
-        # Build menu_item dict
+        # Build menu_item dict (unified lookup for all item types)
         menu_item = self._build_menu_item_dict(item_type, item_name, kwargs)
 
-        # Build pre_filled_attributes from kwargs
+        # Build pre_filled_attributes from kwargs (data-driven, queries DB for item type attributes)
         pre_filled_attributes = self._extract_pre_filled_attributes(item_type, kwargs)
 
-        # Build extracted modifiers for beverages
+        # Get extracted_modifiers from kwargs if provided
         extracted_modifiers = kwargs.get("extracted_modifiers")
-        is_beverage = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
-        if is_beverage and not extracted_modifiers:
-            # Create coffee modifiers from kwargs if not already provided
-            sweetener = kwargs.get("sweetener")
-            sweetener_quantity = kwargs.get("sweetener_quantity", 1)
-            flavor_syrup = kwargs.get("flavor_syrup")
-            syrup_quantity = kwargs.get("syrup_quantity", 1)
-            milk = kwargs.get("milk")
-            cream_level = kwargs.get("cream_level")
-            special_instructions = kwargs.get("special_instructions")
-            if any([sweetener, flavor_syrup, milk, cream_level, special_instructions]):
-                extracted_modifiers = ExtractedModifiers()
-                if sweetener:
-                    extracted_modifiers.add("sweetener", sweetener, sweetener_quantity)
-                if flavor_syrup:
-                    extracted_modifiers.add("syrup", flavor_syrup, syrup_quantity)
-                if milk:
-                    extracted_modifiers.add("milk", milk)
-                if cream_level:
-                    extracted_modifiers.add("style", cream_level)
-                if special_instructions:
-                    extracted_modifiers.special_instructions = [special_instructions]
 
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
@@ -296,19 +241,6 @@ class ItemAdderHandler:
             extracted_modifiers=extracted_modifiers,
         )
 
-        # Apply beverage-specific properties not in standard attributes
-        if item_type and menu_cache.get_modifier_category(item_type) == "beverage":
-            drink_name = kwargs.get("item_name")
-            for item in order.items.items:
-                if (getattr(item, 'menu_item_name', None) == drink_name and
-                        item.status.value == "in_progress"):
-                    if kwargs.get("cream_level"):
-                        item.cream_level = kwargs.get("cream_level")
-                    if kwargs.get("wants_syrup"):
-                        item.wants_syrup = True
-                    if kwargs.get("syrup_quantity", 1) > 1:
-                        item.pending_syrup_quantity = kwargs.get("syrup_quantity")
-
         return result
 
     def _build_menu_item_dict(
@@ -319,6 +251,8 @@ class ItemAdderHandler:
     ) -> dict:
         """Build menu_item dict for _create_configurable_item().
 
+        Uses unified price lookup for all item types - no category-specific branching.
+
         Args:
             item_type: The item type slug
             item_name: The item name (e.g., "Bagel", "Latte", "Turkey Club")
@@ -327,47 +261,54 @@ class ItemAdderHandler:
         Returns:
             Dict with name, item_type, base_price, id, is_signature
         """
-        # Determine canonical name and price
-        is_bread_item = item_type and menu_cache.item_type_has_attribute(item_type, "bread")
-        is_beverage_item = item_type and menu_cache.get_modifier_category(item_type) == "beverage"
-        if is_bread_item:
-            # Use DB display name instead of hardcoded "Bagel"
-            canonical_name = menu_cache.get_item_type_display_name(item_type) or item_name
-            base_price = self.pricing.lookup_base_price(canonical_name) if self.pricing else 0.0
-            menu_item_id = None
-        elif is_beverage_item:
-            canonical_name = kwargs.get("item_name") or item_name
-            # Look up price from menu or pricing engine
-            menu_data = self.menu_lookup.lookup_menu_item(canonical_name) if self.menu_lookup else None
-            if menu_data and menu_data.get("base_price"):
-                base_price = menu_data.get("base_price", 0)
-                menu_item_id = menu_data.get("id")
-            elif self.pricing:
-                try:
-                    base_price = self.pricing.lookup_base_price(canonical_name)
-                except ValueError:
-                    base_price = 0
-                menu_item_id = None
-            else:
-                base_price = 0
-                menu_item_id = None
-        else:
-            # Generic menu item - look up from menu
-            canonical_name = item_name
-            menu_data = self.menu_lookup.lookup_menu_item(item_name) if self.menu_lookup else None
-            if menu_data:
-                canonical_name = menu_data.get("name", item_name)
-                base_price = menu_data.get("base_price", 0)
-                menu_item_id = menu_data.get("id")
-            else:
-                base_price = 0
-                menu_item_id = None
+        # Use item_name from kwargs if provided (may have been canonicalized)
+        lookup_name = kwargs.get("item_name") or item_name
 
+        # Step 1: Try menu lookup (works for all menu-backed items)
+        menu_data = self.menu_lookup.lookup_menu_item(lookup_name) if self.menu_lookup else None
+        if menu_data:
+            return {
+                "name": menu_data.get("name", lookup_name),
+                "item_type": menu_data.get("item_type") or item_type,
+                "base_price": menu_data.get("base_price", 0),
+                "id": menu_data.get("id"),
+                "is_signature": menu_data.get("is_signature", False),
+            }
+
+        # Step 2: Check if this is a configurable item type (e.g., bagel, which has "bread" attribute)
+        # These use the item type display name and pricing engine instead of menu lookup
+        is_configurable_type = item_type and menu_cache.item_type_has_attribute(item_type, "bread")
+        if is_configurable_type:
+            canonical_name = menu_cache.get_item_type_display_name(item_type) or lookup_name
+            base_price = self.pricing.lookup_base_price(canonical_name) if self.pricing else 0.0
+            return {
+                "name": canonical_name,
+                "item_type": item_type,
+                "base_price": base_price,
+                "id": None,
+                "is_signature": False,
+            }
+
+        # Step 3: Try pricing engine as fallback
+        if self.pricing:
+            try:
+                base_price = self.pricing.lookup_base_price(lookup_name)
+                return {
+                    "name": lookup_name,
+                    "item_type": item_type,
+                    "base_price": base_price,
+                    "id": None,
+                    "is_signature": False,
+                }
+            except ValueError:
+                pass
+
+        # Step 4: Return with zero price (item will need configuration or is unknown)
         return {
-            "name": canonical_name,
+            "name": lookup_name,
             "item_type": item_type,
-            "base_price": base_price,
-            "id": menu_item_id,
+            "base_price": 0,
+            "id": None,
             "is_signature": False,
         }
 
@@ -556,12 +497,11 @@ class ItemAdderHandler:
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
                 is_signature=is_signature,  # Signature item flag from menu data
             )
-            # Set toasted and bagel_choice via property setters (stored in attribute_values)
-            # These are properties, not fields, so must be set after construction
+            # Set toasted and bagel_choice directly in attribute_values
             if toasted is not None:
-                item.toasted = toasted
+                item.attribute_values["toasted"] = toasted
             if bagel_choice is not None:
-                item.bagel_choice = bagel_choice
+                item.attribute_values["bagel_choice"] = bagel_choice
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             self._infer_attributes_from_item_name(item)
             item.mark_in_progress()
@@ -746,11 +686,6 @@ class ItemAdderHandler:
                 for attr_name, attr_value in pre_filled_attributes.items():
                     if attr_value is not None:
                         item.attribute_values[attr_name] = attr_value
-                        # Sync to direct model fields for backwards compatibility
-                        if attr_name == "toasted" and hasattr(item, "toasted"):
-                            item.toasted = attr_value
-                        elif attr_name in ("spread", "spread_type") and hasattr(item, "spread"):
-                            item.spread = attr_value
 
             # Apply extracted modifiers if provided
             if extracted_modifiers and self.menu_item_handler:

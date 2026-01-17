@@ -252,6 +252,15 @@ class UnifiedItemConverter:
                 if attr_val == mod_name and f"{attr_slug}_price" not in attribute_values:
                     attribute_values[f"{attr_slug}_price"] = mod["price"]
 
+        # Restore modifiers from item_config or attribute_values
+        stored_modifiers = []
+        # Check for modifiers in item_config (serialized unified modifiers)
+        if item_config.get("item_modifiers"):
+            stored_modifiers = item_config["item_modifiers"]
+        # Also check attribute_values for legacy milk_sweetener_syrup_selections
+        elif attribute_values.get("milk_sweetener_syrup_selections"):
+            stored_modifiers = attribute_values.get("milk_sweetener_syrup_selections", [])
+
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
             menu_item_id=item_dict.get("menu_item_id"),
@@ -261,6 +270,7 @@ class UnifiedItemConverter:
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
             attribute_values=attribute_values,
+            modifiers=stored_modifiers,
             customization_offered=item_dict.get("customization_offered", False),
         )
         self._restore_common_fields(menu_item, item_dict)
@@ -360,7 +370,24 @@ class UnifiedItemConverter:
                 extra_price = pricing.lookup_modifier_price(extra, menu_item_type) or 0
                 modifiers.append({"name": extra, "price": extra_price})
 
+        # Process modifiers from the unified modifiers field
+        item_modifiers = getattr(item, 'modifiers', []) or []
+        for mod in item_modifiers:
+            mod_slug = mod.get("slug", "")
+            mod_display = mod.get("display_name") or mod_slug.replace("_", " ").title()
+            mod_price = mod.get("price", 0) or 0.0
+            mod_quantity = mod.get("quantity", 1) or 1
+
+            # Handle quantity display
+            if mod_quantity > 1:
+                mod_display = f"{mod_quantity} {mod_display}"
+                mod_price = mod_price * mod_quantity
+
+            if mod_display:
+                modifiers.append({"name": mod_display, "price": mod_price})
+
         # Convert DB-driven attribute_values to modifiers for cart display
+        # (for attributes not in the unified modifiers field)
         self._process_attribute_values_to_modifiers(
             attribute_values=attribute_values,
             modifiers=modifiers,
@@ -427,6 +454,7 @@ class UnifiedItemConverter:
         item_config = {
             "menu_item_type": menu_item_type,
             "modifiers": modifiers,
+            "item_modifiers": item_modifiers,  # Unified modifiers for persistence
             "attribute_values": attribute_values,
             "base_price": base_price,
             **{k: v for k, v in attribute_values.items() if v is not None},

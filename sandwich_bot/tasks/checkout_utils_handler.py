@@ -13,6 +13,7 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
+from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -34,8 +35,6 @@ class CheckoutUtilsHandler:
         config: "HandlerConfig",
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_menu_item: Callable[[OrderTask], StateMachineResult] | None = None,
     ):
         """
         Initialize the checkout utils handler.
@@ -43,17 +42,14 @@ class CheckoutUtilsHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             transition_to_next_slot: Callback to transition to the next slot.
-            configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
-            configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
-            configure_next_incomplete_menu_item: Callback to configure next incomplete menu item.
+            configure_next_incomplete_coffee: Legacy callback (unused, kept for compatibility).
         """
         self._message_builder = config.message_builder
 
         # Handler-specific callbacks
         self._transition_to_next_slot = transition_to_next_slot
-        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
-        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
-        self._configure_next_incomplete_menu_item = configure_next_incomplete_menu_item
+        # Unified callback for item configuration (set after initialization)
+        self._configure_next_incomplete_item: Callable[[OrderTask], StateMachineResult] | None = None
 
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -63,6 +59,55 @@ class CheckoutUtilsHandler:
         self._is_repeat_order = is_repeat
         self._last_order_type = last_order_type
 
+    def _get_question_for_attribute(
+        self,
+        pending_field: str,
+        item_name: str,
+        item_type_slug: str | None,
+    ) -> str:
+        """
+        Get abbreviated question for an attribute using database lookup.
+
+        Parses the pending_field to extract the attribute name, then looks up
+        the question text from the database. Falls back to generic question.
+
+        Args:
+            pending_field: The pending field in format "item_type:attribute" or just "attribute"
+            item_name: Display name of the item for the question
+            item_type_slug: The item type slug for database lookup
+
+        Returns:
+            Formatted question string like "And the {item_name} - would you like it toasted?"
+        """
+        # Extract attribute from pending_field
+        # Format should be "item_type:attribute" (set by handlers) or just "attribute"
+        if ":" in pending_field:
+            _, attr_name = pending_field.split(":", 1)
+        else:
+            attr_name = pending_field
+
+        # Try to get question from database if we have an item type
+        db_question = None
+        if item_type_slug:
+            db_question = menu_cache.get_question_for_field(item_type_slug, attr_name)
+
+        # Build abbreviated question
+        if db_question:
+            # Format as abbreviated: "And the {item} - {question}"
+            q_lower = db_question.lower()
+            if q_lower.startswith("would you like"):
+                # "Would you like it toasted?" -> "And the X - would you like it toasted?"
+                return f"And the {item_name} - {db_question[0].lower()}{db_question[1:]}"
+            elif q_lower.startswith("what"):
+                # "What size?" -> "And what size for the X?"
+                return f"And {db_question[0].lower()}{db_question[1:].rstrip('?')} for the {item_name}?"
+            else:
+                # Generic format
+                return f"And the {item_name} - {db_question}"
+
+        # Fallback to generic question if not in database
+        return f"And the {item_name}?"
+
     def get_next_question(
         self,
         order: OrderTask,
@@ -71,45 +116,13 @@ class CheckoutUtilsHandler:
         # Check for incomplete items that need configuration
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
-                # Handle bagels that need configuration (items with bread attribute)
-                if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
-                    if item.bread is None or item.toasted is None:
-                        logger.info("Found incomplete bagel, starting configuration")
-                        if self._configure_next_incomplete_bagel:
-                            return self._configure_next_incomplete_bagel(order)
-                # Handle coffee that needs configuration (items with size attribute)
-                elif isinstance(item, MenuItemTask) and item.has_attribute("size"):
-                    logger.info("Found incomplete coffee, starting configuration")
-                    if self._configure_next_incomplete_coffee:
-                        return self._configure_next_incomplete_coffee(order)
-                # Handle menu items with sides that need toasted question
-                # Uses data-driven approach: check if side_choice type has "toasted" attribute
-                elif isinstance(item, MenuItemTask):
-                    side_choice = getattr(item, 'side_choice', None)
-                    if side_choice and item.toasted is None:
-                        # Check if this side type has a "toasted" attribute
-                        side_attrs = menu_cache.get_item_type_attributes(side_choice)
-                        if "toasted" in side_attrs:
-                            logger.info("Found menu item with %s side needing toasted question", side_choice)
-                            order.pending_item_id = item.id
-                            order.pending_field = f"{side_choice}:toasted"
-                            order.phase = OrderPhase.CONFIGURING_ITEM.value
-                            # Get the specific choice (e.g., bagel_choice for side_choice="bagel")
-                            choice_field = f"{side_choice}_choice"
-                            specific_choice = getattr(item, choice_field, None) or side_choice
-                            return StateMachineResult(
-                                message=f"Would you like the {specific_choice} {side_choice} toasted?",
-                                order=order,
-                            )
-                        else:
-                            # Side type doesn't have toasted attribute - log and continue
-                            logger.info(f"Menu item in progress but side doesn't need toasted: {item.menu_item_name}")
-                    else:
-                        # Menu item doesn't need side config - log and continue
-                        logger.info(f"Menu item in progress but no side config needed: {item.menu_item_name}")
-                else:
-                    # Other in-progress items - log warning
-                    logger.warning(f"Found in-progress item without handler: {item}")
+                # Use unified callback for all incomplete items (data-driven)
+                if isinstance(item, MenuItemTask) and self._configure_next_incomplete_item:
+                    logger.info("Found incomplete item, using unified handler")
+                    return self._configure_next_incomplete_item(order)
+                # No unified callback - log warning
+                logger.warning("Found in-progress item but no unified handler configured: %s",
+                              item.menu_item_name if isinstance(item, MenuItemTask) else item)
 
         # Check if there are items queued for configuration
         # Loop until we find an incomplete item or queue is empty (defensive safeguard)
@@ -159,46 +172,26 @@ class CheckoutUtilsHandler:
                 continue  # Pop next item from queue
 
             # If we have item_name and pending_field from multi-item processing,
-            # use abbreviated question format: "And the [ItemName]?"
+            # use abbreviated question format via database lookup
             if item_name and pending_field:
                 order.pending_item_id = item_id
                 order.pending_field = pending_field
                 order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-                # Build abbreviated question based on the pending field
-                if pending_field in ("toasted", "signature_item_toasted", "menu_item_bagel_toasted"):
-                    question = f"And the {item_name} - would you like it toasted?"
-                elif pending_field in ("bagel_choice", "bagel_type", "signature_item_bagel_type"):
-                    question = f"And what type of bagel for the {item_name}?"
-                elif pending_field == "signature_item_cheese_choice":
-                    question = f"And what type of cheese for the {item_name}?"
-                elif pending_field == "coffee_size":
-                    question = f"And what size for the {item_name}? Small or Large?"
-                elif pending_field in ("spread", "menu_item_spread"):
-                    question = f"Would you like cream cheese or butter on the {item_name}?"
-                elif pending_field == "menu_item_config":
-                    # Menu items with DB-driven config - ask about bread type first
-                    question = f"And what type of bread for the {item_name}?"
-                else:
-                    question = f"And the {item_name}?"
+                # Get item type for database lookup
+                item_type_slug = None
+                if target_item and isinstance(target_item, MenuItemTask):
+                    item_type_slug = target_item.menu_item_type
+
+                # Build question using database lookup
+                question = self._get_question_for_attribute(pending_field, item_name, item_type_slug)
 
                 return StateMachineResult(message=question, order=order)
 
-            # Fall back to full config handlers for legacy queued items without names
-            # Use data-driven attribute checks instead of item_type strings
+            # Fall back to unified config handler for queued items without names
             if target_item and isinstance(target_item, MenuItemTask):
-                if target_item.has_attribute("bread"):
-                    # Bagel configuration (items with bread attribute)
-                    if self._configure_next_incomplete_bagel:
-                        return self._configure_next_incomplete_bagel(order)
-                elif target_item.has_attribute("size"):
-                    # Sized beverage configuration (items with size attribute)
-                    if self._configure_next_incomplete_coffee:
-                        return self._configure_next_incomplete_coffee(order)
-                else:
-                    # Generic menu item configuration (espresso, sandwiches, etc.)
-                    if self._configure_next_incomplete_menu_item:
-                        return self._configure_next_incomplete_menu_item(order)
+                if self._configure_next_incomplete_item:
+                    return self._configure_next_incomplete_item(order)
 
             # If we get here, item wasn't handled - log and continue to next
             logger.warning("Queued config item not handled: id=%s, type=%s",
@@ -233,16 +226,11 @@ class CheckoutUtilsHandler:
         if items:
             # Count consecutive identical items at the end of the list
             last_item = items[-1]
-            # Use formal summary for counting identical items
-            last_formal_summary = last_item.get_summary()
-            # Use natural spoken summary for items with size attribute (beverages), formal summary for others
-            if isinstance(last_item, MenuItemTask) and last_item.has_attribute("size") and hasattr(last_item, "get_spoken_summary"):
-                last_summary = last_item.get_spoken_summary()
-            else:
-                last_summary = last_formal_summary
+            # Use get_summary() for all item types (data-driven)
+            last_summary = last_item.get_summary()
             count = 0
             for item in reversed(items):
-                if item.get_summary() == last_formal_summary:
+                if item.get_summary() == last_summary:
                     count += 1
                 else:
                     break

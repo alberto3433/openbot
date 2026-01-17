@@ -245,7 +245,7 @@ class TestDictToOrderTask:
         """Test converting a bagel item."""
         order_dict = {
             "items": [{
-                "item_type": "sandwich",
+                "item_type": "bagel",
                 "menu_item_name": "everything bagel",
                 "toasted": True,
                 "cheese": "cream cheese",
@@ -260,10 +260,11 @@ class TestDictToOrderTask:
         assert len(order.items.items) == 1
         assert order.items.get_item_count() == 2  # quantity is 2
         item = order.items.items[0]
-        assert isinstance(item, MenuItemTask) and item.has_attribute("bread")
-        assert item.bread == "everything bagel"
+        assert isinstance(item, MenuItemTask)
+        assert item.menu_item_type == "bagel"
+        assert item.menu_item_name == "everything bagel"
         assert item.toasted is True
-        assert item.spread == "cream cheese"
+        assert item.attribute_values.get("cheese") == "cream cheese"
         assert item.toppings == ["lox", "capers"]
         assert item.quantity == 2
         assert item.unit_price == 5.99
@@ -307,17 +308,19 @@ class TestDictToOrderTask:
         """Test converting multiple items."""
         order_dict = {
             "items": [
-                {"item_type": "sandwich", "menu_item_name": "plain bagel", "toasted": False},
+                {"item_type": "bagel", "menu_item_name": "plain bagel", "toasted": False},
                 {"item_type": "sized_beverage", "menu_item_name": "coffee", "size": "medium"},
             ]
         }
         order = dict_to_order_task(order_dict)
 
         assert order.items.get_item_count() == 2
-        assert isinstance(order.items.items[0], MenuItemTask) and order.items.items[0].has_attribute("bread")
-        # Coffee items are now MenuItemTask with has_attribute('size')=True
+        # Bagel item
+        assert isinstance(order.items.items[0], MenuItemTask)
+        assert order.items.items[0].menu_item_type == "bagel"
+        # Coffee item
         assert isinstance(order.items.items[1], MenuItemTask)
-        assert order.items.items[1].has_attribute("size") is True
+        assert order.items.items[1].menu_item_type == "sized_beverage"
 
     def test_confirmed_order(self):
         """Test converting confirmed order."""
@@ -395,10 +398,10 @@ class TestOrderTaskToDict:
         assert len(result["items"]) == 1
         item = result["items"][0]
         assert item["item_type"] == "bagel"  # Bagels now keep their type
-        assert item["bread"] == "sesame"  # Canonical field name is 'bread'
-        assert item["toasted"] is True
-        assert item["spread"] == "butter"
-        assert item["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
+        assert item["attribute_values"]["bread"] == "sesame"  # Check in attribute_values
+        assert item["attribute_values"]["toasted"] is True
+        assert item["attribute_values"]["spread_type"] == "butter"  # spread property stores as spread_type
+        assert item["attribute_values"]["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
         assert item["quantity"] == 1
         assert item["unit_price"] == 4.99
 
@@ -423,15 +426,14 @@ class TestOrderTaskToDict:
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values
-        # Note: "sweeteners" and "milk" are stored in unified storage (milk_sweetener_syrup_selections)
         assert item["attribute_values"]["size"] == "large"
         assert item["attribute_values"]["temperature"] == "iced"  # iced=True stores as temperature="iced"
-        # Check milk and sweetener in unified storage
-        mss_selections = item["attribute_values"].get("milk_sweetener_syrup_selections", [])
-        milk_entries = [e for e in mss_selections if e.get("category") == "milk"]
+        # Check milk and sweetener in unified item_modifiers storage
+        item_modifiers = item["item_config"].get("item_modifiers", [])
+        milk_entries = [e for e in item_modifiers if e.get("category") == "milk"]
         assert len(milk_entries) == 1
         assert milk_entries[0]["slug"] == "almond"
-        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
+        sweetener_entries = [e for e in item_modifiers if e.get("category") == "sweetener"]
         assert len(sweetener_entries) == 1
         assert sweetener_entries[0]["slug"] == "honey"
         assert sweetener_entries[0]["quantity"] == 1
@@ -677,9 +679,9 @@ class TestModifiersConsistency:
 
         # Should contain "medium" in modifiers (size is stored in attribute_values)
         assert any("medium" in name for name in modifier_names)
-        # Sweeteners are stored in unified storage (milk_sweetener_syrup_selections)
-        mss_selections = item["attribute_values"].get("milk_sweetener_syrup_selections", [])
-        sweetener_entries = [e for e in mss_selections if e.get("category") == "sweetener"]
+        # Sweeteners are stored in unified item_modifiers storage
+        item_modifiers = item["item_config"].get("item_modifiers", [])
+        sweetener_entries = [e for e in item_modifiers if e.get("category") == "sweetener"]
         assert len(sweetener_entries) == 1
         assert sweetener_entries[0]["slug"] == "sugar"
         assert sweetener_entries[0]["quantity"] == 1

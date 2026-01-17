@@ -2683,6 +2683,9 @@ class MenuDataCache:
                         opt_data["aliases"] = opt["aliases"]
                     if opt.get("must_match"):
                         opt_data["must_match"] = opt["must_match"]
+                    # Include modifier_category for combined attributes (milk_sweetener_syrup)
+                    if opt.get("modifier_category"):
+                        opt_data["category"] = opt["modifier_category"]
                     opts_data.append(opt_data)
 
                 # Use link's question_text if provided, else generate

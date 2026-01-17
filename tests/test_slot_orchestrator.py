@@ -62,6 +62,23 @@ MOCK_COFFEE_ATTRIBUTES = {
         "question_text": "Hot or iced?",
         "display_order": 2,
     },
+    "milk_sweetener_syrup": {
+        "slug": "milk_sweetener_syrup",
+        "display_name": "Milk, Sweetener, or Syrup",
+        "is_required": False,
+        "ask_in_conversation": True,
+        "question_text": "Any milk, sweetener, or syrup?",
+        "display_order": 3,
+        "allow_none": True,
+        "is_global_attribute": True,
+        "input_type": "multi_select",
+        "options": [
+            {"slug": "whole_milk", "display_name": "Whole Milk", "price": 0, "category": "milk"},
+            {"slug": "oat_milk", "display_name": "Oat Milk", "price": 0.75, "category": "milk"},
+            {"slug": "sugar", "display_name": "Sugar", "price": 0, "category": "sweetener"},
+            {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "price": 0.75, "category": "syrup"},
+        ],
+    },
 }
 
 MOCK_OMELETTE_ATTRIBUTES = {
@@ -481,8 +498,12 @@ class TestItemSlotOrchestrator:
     def test_coffee_complete_with_size(self, mock_menu_cache):
         """Coffee is complete when size is specified (temperature is in name)."""
         # Note: Temperature (iced/hot) is now part of the menu item name itself
-        # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
+        # (e.g., "Iced Latte" vs "Hot Latte"), but the mock still requires it as an attribute.
         coffee = create_coffee_task(drink_type="Iced Latte", size="medium")
+        # Set temperature explicitly (in real flow this would be parsed from "Iced" in name)
+        coffee.attribute_values["temperature"] = "iced"
+        # Set milk_sweetener_syrup as answered (even with no selection)
+        coffee.attribute_values["milk_sweetener_syrup"] = None
         orch = ItemSlotOrchestrator(coffee)
 
         assert orch.is_complete()
@@ -491,8 +512,9 @@ class TestItemSlotOrchestrator:
         item = MenuItemTask(
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
-            requires_side_choice=True,
         )
+        # Set via property (not constructor which ignores extra fields)
+        item.requires_side_choice = True
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -503,9 +525,10 @@ class TestItemSlotOrchestrator:
         item = MenuItemTask(
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
-            requires_side_choice=True,
-            side_choice="bagel",
         )
+        # Set via properties (not constructor which ignores extra fields)
+        item.requires_side_choice = True
+        item.side_choice = "bagel"
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -516,10 +539,13 @@ class TestItemSlotOrchestrator:
         item = MenuItemTask(
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
-            requires_side_choice=True,
-            side_choice="fruit_salad",
-            bagel_choice="none",  # Need to fill this for completeness
         )
+        # Set via properties (not constructor which ignores extra fields)
+        item.requires_side_choice = True
+        item.side_choice = "fruit_salad"
+        # Set bagel_choice in attribute_values (even though fruit salad doesn't need it,
+        # the mock marks it as required so we need to fill it)
+        item.attribute_values["bagel_choice"] = "none"
         orch = ItemSlotOrchestrator(item)
 
         assert orch.is_complete()

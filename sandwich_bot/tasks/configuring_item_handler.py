@@ -352,7 +352,8 @@ class ConfiguringItemHandler:
 
         # Handle bread_choice for menu items with bread-based sides (e.g., omelettes, salads)
         # Data-driven: check if side_choice references an item type that has bread attribute
-        if order.pending_field == "bagel_choice" and isinstance(item, MenuItemTask):
+        # bread_choice is canonical; bagel_choice is legacy
+        if order.pending_field in ("bread_choice", "bagel_choice") and isinstance(item, MenuItemTask):
             side_choice = getattr(item, 'side_choice', None)
             if side_choice:
                 # Check if the side choice item type has a bread attribute (data-driven)

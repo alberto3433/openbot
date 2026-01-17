@@ -46,11 +46,10 @@ class TestSyrupToExistingBeverage:
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
-        # Check that vanilla syrup was added with quantity 2
-        # Data-driven espresso stores syrups in attribute_values["milk_sweetener_syrup_selections"]
-        modifier_selections = item.attribute_values.get("milk_sweetener_syrup_selections", [])
-        vanilla_mods = [m for m in modifier_selections if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in modifiers: {modifier_selections}"
+        # Check that vanilla syrup was added with quantity 2 (unified modifiers list)
+        syrup_mods = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
+        vanilla_mods = [m for m in syrup_mods if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in modifiers: {item.modifiers}"
 
         vanilla_mod = vanilla_mods[0]
         assert vanilla_mod.get("quantity") == 2, f"Expected quantity 2, got {vanilla_mod.get('quantity')}"
@@ -72,8 +71,8 @@ class TestSyrupToExistingBeverage:
             menu_item_name="coffee",
             menu_item_type="sized_beverage",
         )
-        coffee.size = "medium"
-        coffee.iced = False
+        coffee.attribute_values["size"] = "medium"
+        coffee.attribute_values["iced"] = False
         coffee.mark_complete()
         order.items.add_item(coffee)
 
@@ -92,9 +91,11 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
         assert item.has_attribute('size'), "Expected is_sized_beverage to be True"
 
-        # Check that vanilla syrup was added
-        syrup_flavors = [s.get("flavor") for s in item.flavor_syrups]
-        assert "vanilla" in syrup_flavors, f"Vanilla syrup not found in syrups: {item.flavor_syrups}"
+        # Check that vanilla syrup was added (unified modifiers list)
+        syrup_modifiers = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
+        syrup_slugs = [m.get("slug") for m in syrup_modifiers]
+        # Slug is "vanilla_syrup" from database, check for substring match
+        assert any("vanilla" in slug for slug in syrup_slugs), f"Vanilla syrup not found in modifiers: {item.modifiers}"
 
     def test_add_sweetener_to_espresso(self):
         """
@@ -127,11 +128,10 @@ class TestSyrupToExistingBeverage:
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
-        # Check that sweetener was added
-        # Data-driven espresso stores sweeteners in attribute_values["milk_sweetener_syrup_selections"]
-        modifier_selections = item.attribute_values.get("milk_sweetener_syrup_selections", [])
-        sweetener_slugs = [m.get("slug") for m in modifier_selections]
-        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in modifiers: {modifier_selections}"
+        # Check that sweetener was added (unified modifiers list)
+        sweetener_mods = [m for m in (item.modifiers or []) if m.get("category") == "sweetener"]
+        sweetener_slugs = [m.get("slug") for m in sweetener_mods]
+        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in modifiers: {item.modifiers}"
 
     def test_two_vanilla_syrups_word_quantity_in_config(self):
         """
@@ -144,7 +144,7 @@ class TestSyrupToExistingBeverage:
         - Expected: 2 vanilla syrups added to espresso (quantity=2)
 
         Note: Espresso is now created as MenuItemTask with menu_item_type="espresso"
-        to use the data-driven configuration flow. Syrups are stored in
+        to use the data-driven configuration flow. Syrups during config are stored in
         attribute_values["milk_sweetener_syrup_selections"] with quantity.
         """
         order = OrderTask()
@@ -176,10 +176,11 @@ class TestSyrupToExistingBeverage:
         espresso = result.order.items.items[0]
         assert isinstance(espresso, MenuItemTask)
 
-        # For data-driven espresso, syrups are stored in attribute_values["milk_sweetener_syrup_selections"]
-        modifier_selections = espresso.attribute_values.get("milk_sweetener_syrup_selections", [])
-        vanilla_mods = [m for m in modifier_selections if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) == 1, f"Expected 1 vanilla modifier, got: {modifier_selections}"
+        # Config flow stores modifiers in attribute_values["milk_sweetener_syrup_selections"]
+        # (will be unified to item.modifiers in future phases)
+        selections = espresso.attribute_values.get("milk_sweetener_syrup_selections", [])
+        vanilla_sels = [s for s in selections if "vanilla" in s.get("slug", "").lower()]
+        assert len(vanilla_sels) == 1, f"Expected 1 vanilla selection, got: {selections}"
 
-        vanilla_mod = vanilla_mods[0]
-        assert vanilla_mod.get("quantity") == 2, f"Expected quantity 2, got {vanilla_mod.get('quantity')}"
+        vanilla_sel = vanilla_sels[0]
+        assert vanilla_sel.get("quantity") == 2, f"Expected quantity 2, got {vanilla_sel.get('quantity')}"

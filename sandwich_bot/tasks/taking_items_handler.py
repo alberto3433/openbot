@@ -90,6 +90,11 @@ def _item_has_size_attribute(item: "ParsedItem") -> bool:
     return menu_cache.item_type_has_attribute(item_type, "size")
 
 
+def _get_bread_value(item: "ParsedItem") -> str | None:
+    """Get the bread value from a ParsedItem (data-driven)."""
+    return getattr(item, 'bread', None)
+
+
 def _get_dynamic_help_text() -> str:
     """Generate help text dynamically from database item types.
 
@@ -248,8 +253,8 @@ def _add_beverage_modifier_to_item(
 ) -> bool:
     """Add a beverage modifier to an item using the unified storage model.
 
-    Uses milk_sweetener_syrup_selections for all beverage modifiers.
-    This is the single unified storage model for milk, sweeteners, and syrups.
+    Uses the unified 'modifiers' list on MenuItemTask for all modifiers.
+    Format: {"slug": ..., "category": ..., "quantity": ..., "display_name": ...}
 
     Args:
         item: The MenuItemTask to modify
@@ -261,28 +266,26 @@ def _add_beverage_modifier_to_item(
     Returns:
         True if modifier was added, False if already present
     """
-    # Get current selections (unified storage)
-    mss_slugs = item.attribute_values.get("milk_sweetener_syrup", [])
-    mss_selections = item.attribute_values.get("milk_sweetener_syrup_selections", [])
+    # Get current modifiers (unified storage)
+    current_modifiers = item.modifiers or []
 
-    # Check if already present
-    if slug in mss_slugs:
+    # Check if already present (by slug)
+    existing_slugs = [m.get("slug") for m in current_modifiers]
+    if slug in existing_slugs:
         return False
 
-    # Add the modifier
-    mss_slugs.append(slug)
-    selection_entry = {
+    # Build the modifier entry
+    modifier_entry = {
         "slug": slug,
         "display_name": display_name,
         "quantity": quantity,
     }
     if category:
-        selection_entry["category"] = category
-    mss_selections.append(selection_entry)
+        modifier_entry["category"] = category
 
-    # Update item
-    item.attribute_values["milk_sweetener_syrup"] = mss_slugs
-    item.attribute_values["milk_sweetener_syrup_selections"] = mss_selections
+    # Add to unified modifiers list
+    current_modifiers.append(modifier_entry)
+    item.modifiers = current_modifiers
 
     logger.info(
         "Added %s modifier: %s (qty=%d) to %s",
@@ -659,21 +662,30 @@ class TakingItemsHandler:
         # Check if this is a pure modifier input (e.g., "2 vanilla syrups", "vanilla syrup")
         # that should be added to an existing beverage
         is_pure_modifier_input = False
+        logger.info("EARLY_MOD_DETECT: has_beverage_modifier=%s, active_items=%d", has_beverage_modifier, len(active_items))
         if has_beverage_modifier and active_items:
             last_item = active_items[-1]
             # Check if item is a beverage (has milk attribute or beverage modifier category)
+            has_milk_attr = last_item.has_attribute("milk") if isinstance(last_item, MenuItemTask) else False
+            mod_category = menu_cache.get_modifier_category(last_item.menu_item_type) if isinstance(last_item, MenuItemTask) else None
             is_beverage = (
                 isinstance(last_item, MenuItemTask) and
-                (last_item.has_attribute("milk") or
-                 menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
+                (has_milk_attr or mod_category == "beverage")
             )
+            logger.info("EARLY_MOD_DETECT: has_milk_attr=%s, mod_category=%s, is_beverage=%s", has_milk_attr, mod_category, is_beverage)
             if is_beverage:
                 # Check if input is ONLY a modifier (no other item keywords)
                 # Use item keywords from database (menu item names + item type slugs)
+                # Exclude beverage modifier patterns from the check since "vanilla" is both
+                # a modifier pattern AND might be an item keyword (e.g., "Vanilla Latte")
                 item_keywords = menu_cache.get_item_keywords()
-                has_other_item = any(kw in input_lower for kw in item_keywords)
+                # Filter out words that are also beverage modifiers
+                non_modifier_keywords = {kw for kw in item_keywords if kw not in beverage_modifiers}
+                has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
+                logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
                 if not has_other_item:
                     is_pure_modifier_input = True
+                    logger.info("EARLY_MOD_DETECT: Setting is_pure_modifier_input=True")
 
         # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
         if (is_add_modifier_request or is_pure_modifier_input) and has_beverage_modifier and active_items:
@@ -826,8 +838,11 @@ class TakingItemsHandler:
                 if is_beverage:
                     # Check if input is ONLY a modifier (no other item keywords)
                     # Use item keywords from database (menu item names + item type slugs)
+                    # Exclude beverage modifier patterns from the check since "vanilla" is both
+                    # a modifier pattern AND might be an item keyword (e.g., "Vanilla Latte")
                     item_keywords = menu_cache.get_item_keywords()
-                    has_other_item = any(kw in input_lower for kw in item_keywords)
+                    non_modifier_keywords = {kw for kw in item_keywords if kw not in beverage_modifiers}
+                    has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
                     if not has_other_item:
                         is_pure_modifier_input = True
 
@@ -870,7 +885,7 @@ class TakingItemsHandler:
 
                     # First, look for an item without a spread
                     for item in reversed(items_accepting_spread):
-                        if item.spread is None:
+                        if item.attribute_values.get("spread") is None:
                             target_item = item
                             break
 
@@ -881,10 +896,10 @@ class TakingItemsHandler:
                     if target_item:
                         # Normalize the spread name
                         normalized_spread = menu_cache.normalize_modifier(detected_spread)
-                        old_spread = target_item.spread
+                        old_spread = target_item.attribute_values.get("spread")
 
                         # Set the spread on the item
-                        target_item.spread = normalized_spread
+                        target_item.attribute_values["spread"] = normalized_spread
 
                         # Recalculate price
                         self.pricing.recalculate_item_price(target_item)
@@ -936,7 +951,7 @@ class TakingItemsHandler:
             if target_desc:
                 # Explicit target - find matching item by bread/bagel type
                 for item in items_with_bread:
-                    item_bagel_type = (item.bread or "").lower()
+                    item_bagel_type = (item.attribute_values.get("bread") or "").lower()
                     # Match if the target description contains the bagel type
                     # e.g., "cinnamon raisin" matches a cinnamon raisin bagel
                     if item_bagel_type and item_bagel_type in target_desc:
@@ -1015,9 +1030,9 @@ class TakingItemsHandler:
                 # Bagel handling (original logic)
                 # Apply the spread modification
                 if parsed.modify_new_spread:
-                    target_item.spread = parsed.modify_new_spread
+                    target_item.attribute_values["spread"] = parsed.modify_new_spread
                 if parsed.modify_new_spread_type:
-                    target_item.spread_type = parsed.modify_new_spread_type
+                    target_item.attribute_values["spread_type"] = parsed.modify_new_spread_type
 
                 # Apply add-modifier modifications ("add bacon", "extra cheese", etc.)
                 if parsed.modify_add_modifiers:
@@ -1037,18 +1052,25 @@ class TakingItemsHandler:
                         category = modifier_to_category.get(base_modifier)
 
                         # Special handling for protein: single field with overflow to toppings
+                        target_attrs = target_item.attribute_values
+                        existing_protein = target_attrs.get("extra_protein")
+                        existing_toppings = target_attrs.get("toppings") or []
                         if category == "protein":
-                            if not target_item.extra_protein:
-                                target_item.extra_protein = modifier  # Store full qualified modifier
+                            if not existing_protein:
+                                target_attrs["extra_protein"] = modifier  # Store full qualified modifier
                             else:
                                 # Already have a protein, add to toppings
-                                if modifier not in target_item.toppings:
-                                    target_item.toppings.append(modifier)
+                                if modifier not in existing_toppings:
+                                    if not target_attrs.get("toppings"):
+                                        target_attrs["toppings"] = []
+                                    target_attrs["toppings"].append(modifier)
                         else:
                             # All other modifiers (cheese, topping, unknown) go to toppings
-                            if modifier not in target_item.toppings:
-                                target_item.toppings.append(modifier)
-                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_item.bread)
+                            if modifier not in existing_toppings:
+                                if not target_attrs.get("toppings"):
+                                    target_attrs["toppings"] = []
+                                target_attrs["toppings"].append(modifier)
+                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_attrs.get("bread"))
 
                 # Recalculate price
                 self.pricing.recalculate_item_price(target_item)
@@ -1056,7 +1078,7 @@ class TakingItemsHandler:
                 updated_summary = target_item.get_summary()
                 logger.info(
                     "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s, add_modifiers=%s",
-                    target_item.bread, parsed.modify_new_spread, parsed.modify_new_spread_type,
+                    target_item.attribute_values.get("bread"), parsed.modify_new_spread, parsed.modify_new_spread_type,
                     parsed.modify_add_modifiers
                 )
                 return StateMachineResult(
@@ -1110,8 +1132,9 @@ class TakingItemsHandler:
                     # Extract the spread name from the menu item name
                     # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
                     spread_name = cream_cheese_name.lower().replace(" sandwich", "")
-                    old_spread = last_item.spread or "none"
-                    last_item.spread = spread_name
+                    last_attr = last_item.attribute_values
+                    old_spread = last_attr.get("spread") or "none"
+                    last_attr["spread"] = spread_name
                     logger.info("Replacement: interpreted '%s' as spread change from '%s' to '%s'",
                                cream_cheese_menu_item.menu_item_name, old_spread, spread_name)
 
@@ -1129,14 +1152,16 @@ class TakingItemsHandler:
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
                 bagel_entry = next(
                     (item for item in parsed.parsed_items
-                     if _item_has_bread_attribute(item) and item.bread),
+                     if _item_has_bread_attribute(item) and _get_bread_value(item)),
                     None
                 )
                 if has_new_items and bagel_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
-                    old_type = last_item.bread or "plain"
-                    last_item.bread = bagel_entry.bread
+                    bagel_entry_bread = _get_bread_value(bagel_entry)
+                    last_attr = last_item.attribute_values
+                    old_type = last_attr.get("bread") or "plain"
+                    last_attr["bread"] = bagel_entry_bread
                     logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
-                               old_type, bagel_entry.bread)
+                               old_type, bagel_entry_bread)
 
                     # Recalculate price if needed
                     self.pricing.recalculate_item_price(last_item)
@@ -1159,26 +1184,27 @@ class TakingItemsHandler:
                     if has_modifiers:
                         # Apply modifiers to existing bagel instead of replacing
                         logger.info("Replacement: applying modifiers to existing bagel: %s", modifiers)
+                        last_attr = last_item.attribute_values
 
                         # Update protein - replace existing
                         if proteins:
-                            last_item.extra_protein = proteins[0]
+                            last_attr["extra_protein"] = proteins[0]
                             # Additional proteins go to toppings (replace existing toppings)
-                            last_item.toppings = list(proteins[1:])
+                            last_attr["toppings"] = list(proteins[1:])
                         else:
                             # Clear protein if not in new modifiers
-                            last_item.extra_protein = None
-                            last_item.toppings = []
+                            last_attr["extra_protein"] = None
+                            last_attr["toppings"] = []
 
                         # Add cheeses and toppings to item.toppings
-                        last_item.toppings.extend(cheeses)
-                        last_item.toppings.extend(toppings)
+                        last_attr["toppings"].extend(cheeses)
+                        last_attr["toppings"].extend(toppings)
 
                         # Update spread if specified
                         if spreads:
-                            last_item.spread = spreads[0]
+                            last_attr["spread"] = spreads[0]
                         else:
-                            last_item.spread = "none"
+                            last_attr["spread"] = "none"
 
                         # Recalculate price with new modifiers
                         self.pricing.recalculate_item_price(last_item)
@@ -1204,8 +1230,9 @@ class TakingItemsHandler:
                                 break
 
                         if new_spread:
-                            old_spread = last_item.spread or "none"
-                            last_item.spread = new_spread
+                            last_attr = last_item.attribute_values
+                            old_spread = last_attr.get("spread") or "none"
+                            last_attr["spread"] = new_spread
                             logger.info("Replacement: changed spread from '%s' to '%s'", old_spread, new_spread)
 
                             # Recalculate price if needed
@@ -1233,14 +1260,15 @@ class TakingItemsHandler:
                             new_size = size_slug
                             break
 
-                    if new_size and new_size != last_item.size:
+                    last_attr = last_item.attribute_values
+                    if new_size and new_size != last_attr.get("size"):
                         # Get default size from DB for logging
                         default_size = next(
                             (opt["slug"] for opt in size_options if opt.get("is_default")),
                             size_options[0]["slug"] if size_options else "small"
                         )
-                        old_size = last_item.size or default_size
-                        last_item.size = new_size
+                        old_size = last_attr.get("size") or default_size
+                        last_attr["size"] = new_size
                         logger.info("Replacement: changed coffee size from '%s' to '%s'", old_size, new_size)
                         made_change = True
 
@@ -1250,13 +1278,13 @@ class TakingItemsHandler:
 
                     # Check for decaf changes
                     if "decaf" in input_lower:
-                        if not last_item.decaf:
-                            last_item.decaf = True
+                        if not last_attr.get("decaf"):
+                            last_attr["decaf"] = True
                             logger.info("Replacement: changed coffee to decaf")
                             made_change = True
-                    elif "regular" in input_lower and last_item.decaf:
+                    elif "regular" in input_lower and last_attr.get("decaf"):
                         # "make it regular" means not decaf
-                        last_item.decaf = None
+                        last_attr["decaf"] = None
                         logger.info("Replacement: changed coffee to regular (not decaf)")
                         made_change = True
 
@@ -2208,26 +2236,40 @@ class TakingItemsHandler:
                     # Add to sized_beverage MenuItemTask (has milk attribute)
                     if isinstance(last_item, MenuItemTask) and last_item.has_attribute("milk"):
                         modifier_summary_parts = []
+                        last_attr = last_item.attribute_values
+                        last_modifiers = last_item.modifiers or []
 
-                        # Add syrups using add_flavor_syrup() for proper normalization
+                        # Add syrups to unified modifiers list
                         for syrup in item.syrups:
-                            existing_syrups = [s.get("slug") or s.get("flavor") for s in last_item.flavor_syrups]
+                            existing_syrups = [m.get("slug") for m in last_modifiers if m.get("category") == "syrup"]
                             if syrup.slug not in existing_syrups:
-                                last_item.add_flavor_syrup(syrup.slug, syrup.quantity)
+                                last_modifiers.append({
+                                    "slug": syrup.slug,
+                                    "category": "syrup",
+                                    "quantity": syrup.quantity,
+                                    "display_name": syrup.slug.replace("_", " ").title(),
+                                })
                                 qty_str = f"{syrup.quantity} " if syrup.quantity > 1 else ""
                                 modifier_summary_parts.append(f"{qty_str}{syrup.slug} syrup")
+                        last_item.modifiers = last_modifiers
 
-                        # Add sweeteners using add_sweetener() for proper normalization
+                        # Add sweeteners to unified modifiers list
                         for sweetener in item.sweeteners:
-                            existing_sweeteners = [s.get("slug") for s in last_item.sweeteners]
+                            existing_sweeteners = [m.get("slug") for m in last_modifiers if m.get("category") == "sweetener"]
                             if sweetener.slug not in existing_sweeteners:
-                                last_item.add_sweetener(sweetener.slug, sweetener.quantity)
+                                last_modifiers.append({
+                                    "slug": sweetener.slug,
+                                    "category": "sweetener",
+                                    "quantity": sweetener.quantity,
+                                    "display_name": sweetener.slug.replace("_", " ").title(),
+                                })
                                 qty_str = f"{sweetener.quantity} " if sweetener.quantity > 1 else ""
                                 modifier_summary_parts.append(f"{qty_str}{sweetener.slug}")
+                        last_item.modifiers = last_modifiers
 
                         # Add milk
-                        if item.milk and last_item.milk != item.milk:
-                            last_item.milk = item.milk
+                        if item.milk and last_attr.get("milk") != item.milk:
+                            last_attr["milk"] = item.milk
                             modifier_summary_parts.append(f"{item.milk} milk")
 
                         if modifier_summary_parts:
@@ -2610,9 +2652,9 @@ class TakingItemsHandler:
 
                 # Check if this is for an unknown drink request (user asked for something we don't have)
                 unknown_prefix = ""
-                if order.unknown_drink_request:
-                    unknown_prefix = f"Sorry, we don't have {order.unknown_drink_request}. "
-                    order.unknown_drink_request = None  # Clear after using
+                if order.unknown_item_request:
+                    unknown_prefix = f"Sorry, we don't have {order.unknown_item_request}. "
+                    order.unknown_item_request = None  # Clear after using
 
                 if remaining > 0:
                     # Format with "and more"
@@ -2697,22 +2739,24 @@ class TakingItemsHandler:
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
                 if isinstance(item, MenuItemTask):
+                    item_attr = item.attribute_values
                     # Items that need side choice first (e.g., omelettes with bagel or fruit salad)
                     # These don't share a handler loop - each must be queued individually
-                    if item.requires_side_choice and item.side_choice is None:
+                    if item.requires_side_choice and item_attr.get("side_choice") is None:
                         individual_items.append((item.id, item.menu_item_name, "menu_item", "side_choice"))
                     # If item has a configurable side choice, check if it needs further config
                     # Uses data-driven approach: check for {side_choice}_choice field dynamically
-                    elif item.side_choice:
-                        choice_field = f"{item.side_choice}_choice"
-                        specific_choice = getattr(item, choice_field, None)
+                    elif item_attr.get("side_choice"):
+                        side_choice = item_attr.get("side_choice")
+                        choice_field = f"{side_choice}_choice"
+                        specific_choice = item_attr.get(choice_field)
                         # Check if side type has "toasted" attribute using data lookup
-                        side_attrs = menu_cache.get_item_type_attributes(item.side_choice)
-                        if hasattr(item, choice_field) and not specific_choice:
+                        side_attrs = menu_cache.get_item_type_attributes(side_choice)
+                        if not specific_choice:
                             bread_config_items.append((item.id, item.menu_item_name, "menu_item", choice_field))
-                        elif "toasted" in side_attrs and item.toasted is None:
+                        elif "toasted" in side_attrs and item_attr.get("toasted") is None:
                             bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
-                        elif "spread" in side_attrs and item.spread is None:
+                        elif "spread" in side_attrs and item_attr.get("spread") is None:
                             bread_config_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
                     # Check if this menu item contains a bagel (e.g., Classic BEC)
                     elif not item.requires_side_choice:
@@ -2737,28 +2781,29 @@ class TakingItemsHandler:
                                 )
                             item_type_slug = item.menu_item_type
                             display_name = item.menu_item_name or menu_cache.get_item_type_display_name(item_type_slug)
-                            if item.size is None:
+                            item_modifiers = item.modifiers or []
+                            if item_attr.get("size") is None:
                                 size_config_items.append((item.id, display_name, item_type_slug, "size_config"))
-                            elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
+                            elif item_attr.get("milk") is None and not [m for m in item_modifiers if m.get("category") == "sweetener"] and not [m for m in item_modifiers if m.get("category") == "syrup"]:
                                 size_config_items.append((item.id, display_name, item_type_slug, "beverage_modifiers"))
                         else:
                             bagel_item_info = self._get_menu_item_bread_info(item.menu_item_name)
                             if bagel_item_info:
                                 # This is a bagel-containing menu item
                                 # Apply default bagel type if available and not already set
-                                if bagel_item_info.get("default_bagel_type") and not item.bagel_choice:
-                                    item.bagel_choice = bagel_item_info["default_bagel_type"]
+                                if bagel_item_info.get("default_bagel_type") and not item_attr.get("bagel_choice"):
+                                    item_attr["bagel_choice"] = bagel_item_info["default_bagel_type"]
                                     logger.info("Applied default bagel type '%s' to %s",
-                                               item.bagel_choice, item.menu_item_name)
-                                # If no default and bagel_choice not set, ask for bagel type
-                                if not item.bagel_choice:
-                                    bread_config_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                                               item_attr.get("bagel_choice"), item.menu_item_name)
+                                # If no default and bagel_choice not set, ask for bread type
+                                if not item_attr.get("bagel_choice"):
+                                    bread_config_items.append((item.id, item.menu_item_name, "menu_item", "bread_choice"))
                                 # Then ask for toasted if not set
-                                elif item.toasted is None:
+                                elif item_attr.get("toasted") is None:
                                     bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                             # Non-bagel menu items (spread/salad sandwiches) need toasted question
                             # These are also handled by bagel config handler
-                            elif item.toasted is None:
+                            elif item_attr.get("toasted") is None:
                                 bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 # Note: Legacy BagelItemTask branch removed - all bagels are now MenuItemTask
 
@@ -2836,15 +2881,20 @@ class TakingItemsHandler:
         elif first_field == "toasted":
             # Check if this is an item with a configurable side choice
             menu_item = next((i for i in order.items.items if i.id == first_item_id), None)
-            if isinstance(menu_item, MenuItemTask) and menu_item.side_choice:
-                # Item with configurable side - ask about side being toasted
-                choice_field = f"{menu_item.side_choice}_choice"
-                specific_choice = getattr(menu_item, choice_field, None)
-                if specific_choice:
-                    side_desc = f"{specific_choice} {menu_item.side_choice}"
+            if isinstance(menu_item, MenuItemTask):
+                menu_item_attr = menu_item.attribute_values
+                side_choice = menu_item_attr.get("side_choice")
+                if side_choice:
+                    # Item with configurable side - ask about side being toasted
+                    choice_field = f"{side_choice}_choice"
+                    specific_choice = menu_item_attr.get(choice_field)
+                    if specific_choice:
+                        side_desc = f"{specific_choice} {side_choice}"
+                    else:
+                        side_desc = side_choice.replace("_", " ")
+                    question = f"Got it, {side_desc}! Would you like that toasted?"
                 else:
-                    side_desc = menu_item.side_choice.replace("_", " ")
-                question = f"Got it, {side_desc}! Would you like that toasted?"
+                    question = f"Got it! Would you like the {first_item_name} toasted?"
             else:
                 question = f"Got it! Would you like the {first_item_name} toasted?"
         elif first_field.endswith("_choice"):
@@ -2861,20 +2911,25 @@ class TakingItemsHandler:
         elif first_field == "spread":
             # Find the item to check if it's toasted
             item = next((i for i in order.items.items if i.id == first_item_id), None)
-            if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
-                # Item with bread attribute
-                toasted_desc = " toasted" if item.toasted else ""
-                question = f"Got it, {first_item_name}{toasted_desc}! Would you like cream cheese or butter on that?"
-            elif isinstance(item, MenuItemTask) and item.side_choice:
-                # Item with configurable side
-                choice_field = f"{item.side_choice}_choice"
-                specific_choice = getattr(item, choice_field, None)
-                if specific_choice:
-                    side_desc = f"{specific_choice} {item.side_choice}"
+            if isinstance(item, MenuItemTask):
+                item_attr = item.attribute_values
+                if item.has_attribute("bread"):
+                    # Item with bread attribute
+                    toasted_desc = " toasted" if item_attr.get("toasted") else ""
+                    question = f"Got it, {first_item_name}{toasted_desc}! Would you like cream cheese or butter on that?"
+                elif item_attr.get("side_choice"):
+                    # Item with configurable side
+                    side_choice = item_attr.get("side_choice")
+                    choice_field = f"{side_choice}_choice"
+                    specific_choice = item_attr.get(choice_field)
+                    if specific_choice:
+                        side_desc = f"{specific_choice} {side_choice}"
+                    else:
+                        side_desc = side_choice.replace("_", " ")
+                    toasted_desc = " toasted" if item_attr.get("toasted") else ""
+                    question = f"Got it, {side_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
                 else:
-                    side_desc = item.side_choice.replace("_", " ")
-                toasted_desc = " toasted" if item.toasted else ""
-                question = f"Got it, {side_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
+                    question = f"Got it! Would you like cream cheese or butter on that?"
             else:
                 question = f"Got it! Would you like cream cheese or butter on that?"
         elif first_field == "size_config":
@@ -2890,7 +2945,7 @@ class TakingItemsHandler:
             item = next((i for i in order.items.items if i.id == first_item_id), None)
             if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
                 # Item with bread attribute
-                toasted_desc = " toasted" if item.toasted else ""
+                toasted_desc = " toasted" if item.attribute_values.get("toasted") else ""
                 question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like?{cheese_text}"
             else:
                 question = f"Got it, {first_item_name}! What kind of cheese would you like?{cheese_text}"
@@ -3453,20 +3508,25 @@ class TakingItemsHandler:
                     special_instructions=stored_instructions,
                 )
                 # Set beverage properties via attribute_values
+                drink_attr = drink.attribute_values
+                drink_modifiers = drink.modifiers or []
                 if stored_size:
-                    drink.size = stored_size
+                    drink_attr["size"] = stored_size
                 if stored_decaf:
-                    drink.decaf = stored_decaf
+                    drink_attr["decaf"] = stored_decaf
                 if stored_milk:
-                    drink.milk = stored_milk
+                    drink_attr["milk"] = stored_milk
                 if stored_cream:
-                    drink.cream_level = stored_cream
+                    drink_attr["cream_level"] = stored_cream
                 if sweeteners_list:
-                    drink.sweeteners = sweeteners_list.copy()
+                    for sw in sweeteners_list:
+                        drink_modifiers.append(sw.copy())
                 if syrups_list:
-                    drink.flavor_syrups = syrups_list.copy()
+                    for sy in syrups_list:
+                        drink_modifiers.append(sy.copy())
                 if stored_shots:
-                    drink.extra_shots = stored_shots
+                    drink_attr["extra_shots"] = stored_shots
+                drink.modifiers = drink_modifiers
 
                 # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
                 if self.item_adder_handler:
@@ -3477,7 +3537,7 @@ class TakingItemsHandler:
                     self.pricing.recalculate_item_price(drink)
 
                 # Check if fully configured (size specified)
-                if drink.size is not None:
+                if drink_attr.get("size") is not None:
                     drink.mark_complete()
                 else:
                     drink.mark_in_progress()
@@ -3683,20 +3743,23 @@ class TakingItemsHandler:
                         special_instructions=stored_instructions,
                     )
                     # Set beverage properties via attribute_values
+                    drink_attr = drink.attribute_values
+                    drink_modifiers = drink.modifiers or []
                     if stored_size:
-                        drink.size = stored_size
+                        drink_attr["size"] = stored_size
                     if stored_milk:
-                        drink.milk = stored_milk
+                        drink_attr["milk"] = stored_milk
                     if sweeteners_list:
-                        drink.sweeteners = sweeteners_list
+                        drink_modifiers.extend(sweeteners_list)
                     if syrups_list:
-                        drink.flavor_syrups = syrups_list
+                        drink_modifiers.extend(syrups_list)
                     if stored_decaf:
-                        drink.decaf = stored_decaf
+                        drink_attr["decaf"] = stored_decaf
                     if stored_cream:
-                        drink.cream_level = stored_cream
+                        drink_attr["cream_level"] = stored_cream
                     if stored_shots:
-                        drink.extra_shots = stored_shots
+                        drink_attr["extra_shots"] = stored_shots
+                    drink.modifiers = drink_modifiers
                     # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
                     if self.item_adder_handler:
                         self.item_adder_handler._infer_attributes_from_item_name(drink)
@@ -3714,20 +3777,23 @@ class TakingItemsHandler:
                             special_instructions=stored_instructions,
                         )
                         # Set beverage properties via attribute_values
+                        extra_attr = extra_drink.attribute_values
+                        extra_modifiers = extra_drink.modifiers or []
                         if stored_size:
-                            extra_drink.size = stored_size
+                            extra_attr["size"] = stored_size
                         if stored_milk:
-                            extra_drink.milk = stored_milk
+                            extra_attr["milk"] = stored_milk
                         if sweeteners_list:
-                            extra_drink.sweeteners = sweeteners_list.copy()
+                            extra_modifiers.extend([s.copy() for s in sweeteners_list])
                         if syrups_list:
-                            extra_drink.flavor_syrups = syrups_list.copy()
+                            extra_modifiers.extend([s.copy() for s in syrups_list])
                         if stored_decaf:
-                            extra_drink.decaf = stored_decaf
+                            extra_attr["decaf"] = stored_decaf
                         if stored_cream:
-                            extra_drink.cream_level = stored_cream
+                            extra_attr["cream_level"] = stored_cream
                         if stored_shots:
-                            extra_drink.extra_shots = stored_shots
+                            extra_attr["extra_shots"] = stored_shots
+                        extra_drink.modifiers = extra_modifiers
                         # Infer attributes from item name (e.g., "Hot Coffee" -> temperature=hot)
                         if self.item_adder_handler:
                             self.item_adder_handler._infer_attributes_from_item_name(extra_drink)

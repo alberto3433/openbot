@@ -143,44 +143,28 @@ class OrderUtilsHandler:
         # Add copies of the first matching item
         template_item = matching_items[0]
         for _ in range(to_add):
-            # Create a copy of the item
-            if isinstance(template_item, MenuItemTask) and template_item.has_attribute("bread"):
-                # Create item copy using template's actual item type (data-driven)
-                new_item = MenuItemTask(
-                    menu_item_name=template_item.menu_item_name,
-                    menu_item_type=template_item.menu_item_type,
-                    toasted=template_item.toasted,
-                    spread=template_item.spread,
-                    unit_price=template_item.unit_price,
-                )
-                # Copy bread-based item fields via property setters
-                if template_item.bread:
-                    new_item.bread = template_item.bread
-                if template_item.spread_type:
-                    new_item.spread_type = template_item.spread_type
-                if template_item.extra_protein:
-                    new_item.extra_protein = template_item.extra_protein
-                if template_item.toppings:
-                    new_item.toppings = list(template_item.toppings)
-                new_item.mark_complete()
-                order.items.add_item(new_item)
-                logger.info("QUANTITY_CHANGE: Added copy of %s", template_item.menu_item_type or "item")
-            elif isinstance(template_item, MenuItemTask):
+            # Create a copy of the item - all attributes stored in attribute_values
+            if isinstance(template_item, MenuItemTask):
+                # Deep copy attribute_values for nested dicts/lists
+                copied_attrs = {}
+                for k, v in (template_item.attribute_values or {}).items():
+                    if isinstance(v, list):
+                        copied_attrs[k] = list(v)
+                    elif isinstance(v, dict):
+                        copied_attrs[k] = dict(v)
+                    else:
+                        copied_attrs[k] = v
+
                 new_item = MenuItemTask(
                     menu_item_name=template_item.menu_item_name,
                     menu_item_id=template_item.menu_item_id,
                     menu_item_type=template_item.menu_item_type,
                     unit_price=template_item.unit_price,
-                    toasted=template_item.toasted,
-                    bagel_choice=template_item.bagel_choice,
-                    side_choice=template_item.side_choice,
-                    spread=template_item.spread,
-                    spread_price=template_item.spread_price,
                     modifications=list(template_item.modifications) if template_item.modifications else [],
                     removed_ingredients=list(template_item.removed_ingredients) if template_item.removed_ingredients else [],
                     special_instructions=template_item.special_instructions,
-                    # Copy attribute_values (deep copy for nested dicts/lists)
-                    attribute_values={k: (list(v) if isinstance(v, list) else v) for k, v in template_item.attribute_values.items()} if template_item.attribute_values else {},
+                    attribute_values=copied_attrs,
+                    modifiers=list(template_item.modifiers) if template_item.modifiers else [],
                     customization_offered=template_item.customization_offered,
                 )
                 new_item.mark_complete()

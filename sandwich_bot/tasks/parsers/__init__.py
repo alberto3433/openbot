@@ -33,6 +33,7 @@ from .deterministic import (
     # Modifier extraction
     extract_modifiers_from_input,
     extract_coffee_modifiers_from_input,
+    extract_attribute_values,  # Generic data-driven extractor
     extract_special_instructions_from_input,
     extract_notes_from_input,  # Backwards compatibility alias
     # Internal helpers (needed by state_machine)
@@ -134,6 +135,7 @@ __all__ = [
     # Deterministic parsers - Modifier extraction
     "extract_modifiers_from_input",
     "extract_coffee_modifiers_from_input",
+    "extract_attribute_values",  # Generic data-driven extractor
     "extract_special_instructions_from_input",
     "extract_notes_from_input",  # Backwards compatibility alias
     # Deterministic parsers - Internal helpers

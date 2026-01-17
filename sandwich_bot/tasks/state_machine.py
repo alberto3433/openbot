@@ -161,19 +161,12 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
 
 
 def _get_pending_item_description(item: "ItemTask") -> str:
-    """Get a short description of the pending item for redirect messages."""
+    """Get a short description of the pending item for redirect messages.
+
+    Uses the item's display name - no domain-specific logic.
+    """
     if isinstance(item, MenuItemTask):
-        # Items with bread attribute (bagels) - describe based on what's been specified
-        if item.has_attribute("bread"):
-            parts = []
-            if item.extra_protein:
-                parts.append(item.extra_protein)
-            if item.toppings:
-                parts.extend(item.toppings[:2])  # Limit to avoid long descriptions
-            if parts:
-                return " ".join(parts) + " bagel"
-            return "bagel"
-        # For espresso, sized_beverage, and other menu items, use the menu_item_name
+        # Use menu_item_name for all item types (data-driven)
         return item.menu_item_name or "item"
     return "item"
 
@@ -285,8 +278,6 @@ class OrderStateMachine:
         )
         # Update handler config with get_next_question callback (now that checkout_utils_handler exists)
         self._handler_config.get_next_question = self.checkout_utils_handler.get_next_question
-        # Set the bagel callback on checkout_utils_handler
-        self.checkout_utils_handler._configure_next_incomplete_bagel = self._configure_next_incomplete_bagel
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
         # Initialize menu inquiry handler
@@ -321,8 +312,8 @@ class OrderStateMachine:
         )
         # Set menu_item_handler on item_adder_handler (created earlier)
         self.item_adder_handler.menu_item_handler = self.menu_item_handler
-        # Set menu_item callback on checkout_utils_handler (for espresso and other MenuItemTask config)
-        self.checkout_utils_handler._configure_next_incomplete_menu_item = self._configure_next_incomplete_menu_item
+        # Set unified callback for item configuration (data-driven approach)
+        self.checkout_utils_handler._configure_next_incomplete_item = self._configure_next_incomplete_item
 
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
@@ -608,6 +599,36 @@ class OrderStateMachine:
     def _configure_next_incomplete_coffee(self, order: OrderTask) -> StateMachineResult:
         """Configure the next incomplete coffee/beverage item using menu_item_handler."""
         return self.menu_item_handler.configure_next_incomplete_item(order, "sized_beverage")
+
+    def _configure_next_incomplete_item(self, order: OrderTask, item: "MenuItemTask | None" = None) -> StateMachineResult:
+        """
+        Unified callback to configure any incomplete item using data-driven logic.
+
+        Uses item type attributes from database to determine configuration flow,
+        rather than hardcoded item type checks.
+
+        Args:
+            order: The current order task
+            item: Optional specific item to configure. If None, finds first incomplete item.
+
+        Returns:
+            StateMachineResult with next question or confirmation
+        """
+        from .models import MenuItemTask
+
+        # Find the target item if not provided
+        if item is None:
+            for i in order.items.items:
+                if isinstance(i, MenuItemTask) and i.status == TaskStatus.IN_PROGRESS:
+                    item = i
+                    break
+
+        if item is None or not isinstance(item, MenuItemTask):
+            # No incomplete item found - return to checkout flow
+            return self.checkout_utils_handler.get_next_question(order)
+
+        # Use menu_item_handler for all item types - it handles data-driven configuration
+        return self.menu_item_handler.get_first_question(item, order)
 
     def _handle_greeting(
         self,

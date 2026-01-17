@@ -619,8 +619,10 @@ class PricingEngine:
         # Note: Temperature (hot/iced) is now part of the menu item name itself
         # (e.g., "Iced Latte" vs "Hot Latte"), not a modifier with upcharge.
 
-        # Milk upcharge - use item.milk property (handles unified storage)
-        milk_value = item.milk if hasattr(item, 'milk') else attr_values.get("milk")
+        # Milk upcharge - get from unified modifiers list
+        modifiers = getattr(item, 'modifiers', []) or []
+        milk_entries = [m for m in modifiers if m.get("category") == "milk"]
+        milk_value = milk_entries[0].get("slug") if milk_entries else attr_values.get("milk")
         milk_upcharge = 0.0
         if milk_value:
             milk_upcharge = self.lookup_generic_modifier_price(
@@ -628,12 +630,11 @@ class PricingEngine:
             )
             total += milk_upcharge
 
-        if hasattr(item, 'milk_upcharge'):
-            item.milk_upcharge = milk_upcharge
+        attr_values["milk_upcharge"] = milk_upcharge
 
         # Syrup upcharge (sum of all syrups * quantities)
-        # Use item.flavor_syrups property (handles unified storage with category filtering)
-        syrup_selections = item.flavor_syrups if hasattr(item, 'flavor_syrups') else attr_values.get("syrup_selections", [])
+        # Get from unified modifiers list (category="syrup")
+        syrup_selections = [m for m in modifiers if m.get("category") == "syrup"] or attr_values.get("syrup_selections", [])
         syrup_upcharge = 0.0
         for syrup in syrup_selections:
             if isinstance(syrup, dict):
@@ -648,8 +649,7 @@ class PricingEngine:
                 syrup["price"] = entry_upcharge  # Store for adapter display
         total += syrup_upcharge
 
-        if hasattr(item, 'syrup_upcharge'):
-            item.syrup_upcharge = syrup_upcharge
+        attr_values["syrup_upcharge"] = syrup_upcharge
 
         # Extra shots upcharge (for espresso drinks)
         extra_shots = attr_values.get("extra_shots", 0)
@@ -665,11 +665,10 @@ class PricingEngine:
                 )
             total += extra_shots_upcharge
 
-        if hasattr(item, 'extra_shots_upcharge'):
-            item.extra_shots_upcharge = extra_shots_upcharge
+        attr_values["extra_shots_upcharge"] = extra_shots_upcharge
 
         # Protein upcharge
-        protein = getattr(item, 'extra_protein', None)
+        protein = attr_values.get("extra_protein")
         if protein:
             protein_price = self.lookup_generic_modifier_price(
                 protein, item_type
@@ -677,7 +676,7 @@ class PricingEngine:
             total += protein_price
 
         # Toppings upcharge (toppings, cheese, etc.)
-        toppings = getattr(item, 'toppings', None)
+        toppings = attr_values.get("toppings")
         if toppings:
             for extra in toppings:
                 extra_price = self.lookup_generic_modifier_price(
@@ -686,8 +685,8 @@ class PricingEngine:
                 total += extra_price
 
         # Spread upcharge - try compound name, then base, then plain-prefixed
-        spread = getattr(item, 'spread', None)
-        spread_type = getattr(item, 'spread_type', None)
+        spread = attr_values.get("spread") or attr_values.get("spread_type")
+        spread_type = attr_values.get("spread_type")
         spread_upcharge = 0.0
         if spread and spread.lower() != "none":
             # Try compound spread name first (e.g., "scallion_cream_cheese")
@@ -703,8 +702,7 @@ class PricingEngine:
                 spread_upcharge = self.lookup_modifier_price(plain_slug, item_type)
             total += spread_upcharge
 
-        if hasattr(item, 'spread_price'):
-            item.spread_price = spread_upcharge if spread_upcharge > 0 else None
+        attr_values["spread_price"] = spread_upcharge if spread_upcharge > 0 else None
 
         # =====================================================================
         # 4. Update item price

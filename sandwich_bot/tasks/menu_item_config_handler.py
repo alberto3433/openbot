@@ -19,7 +19,7 @@ from sandwich_bot.menu_data_cache import menu_cache, singularize
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
-from .parsers import extract_modifiers_from_input, extract_coffee_modifiers_from_input
+from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -893,31 +893,53 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Extract modifiers from user input based on item type.
 
-        Uses the appropriate extraction function for the item type:
-        - Food items: extract_modifiers_from_input() -> ExtractedModifiers (protein, cheese, topping, spread)
-        - Beverage items: extract_coffee_modifiers_from_input() -> ExtractedModifiers (milk, sweetener, syrup, style)
+        Uses the generic data-driven extract_attribute_values() function which
+        queries the database for what attributes the item type accepts and
+        extracts matching values from the input.
 
         Args:
             user_input: Raw user input string
             item_type: The item type slug (e.g., "deli_sandwich", "espresso")
 
         Returns:
-            ExtractedModifiers with category-based storage, or None if no extraction
-            is configured for this item type
+            ExtractedModifiers with category-based storage, or None if no modifiers found
         """
-        # Get modifier category from database via menu_cache
-        extraction_type = menu_cache.get_modifier_category(item_type)
+        # Use generic data-driven extraction
+        attr_values = extract_attribute_values(user_input, item_type)
 
-        if extraction_type == "food":
-            modifiers = extract_modifiers_from_input(user_input)
-            if modifiers.has_modifiers() or modifiers.has_special_instructions():
-                logger.debug("Extracted food modifiers from input: %s", modifiers)
-                return modifiers
-        elif extraction_type == "beverage":
-            modifiers = extract_coffee_modifiers_from_input(user_input)
-            if modifiers.has_modifiers() or modifiers.has_special_instructions():
-                logger.debug("Extracted beverage modifiers from input: %s", modifiers)
-                return modifiers
+        if not attr_values:
+            return None
+
+        # Convert flat dict to ExtractedModifiers for backward compatibility
+        modifiers = ExtractedModifiers()
+
+        for attr_slug, value in attr_values.items():
+            if attr_slug == "special_instructions":
+                # Special instructions are a list of strings
+                if isinstance(value, list):
+                    modifiers.special_instructions = value
+                continue
+
+            if isinstance(value, list):
+                # Multi-select attribute: list of {slug, quantity, display_name, ...}
+                for item in value:
+                    if isinstance(item, dict):
+                        slug = item.get("slug", "")
+                        quantity = item.get("quantity", 1)
+                        category = item.get("category") or attr_slug
+                        if slug:
+                            modifiers.add(category, slug, quantity)
+            elif isinstance(value, bool):
+                # Boolean attribute - store as single-value category
+                if value:
+                    modifiers.add(attr_slug, "yes", 1)
+            elif isinstance(value, str):
+                # Single-select attribute: just the slug
+                modifiers.add(attr_slug, value, 1)
+
+        if modifiers.has_modifiers() or modifiers.has_special_instructions():
+            logger.debug("Extracted modifiers from input: %s", modifiers)
+            return modifiers
 
         return None
 
@@ -1499,15 +1521,7 @@ class MenuItemConfigHandler(BaseHandler):
             if is_multi_select:
                 # Multi-select: use add_modifier with quantity
                 quantity = modifiers.get(f"{key}{quantity_suffix}", 1)
-
-                # Use dedicated add methods if available (for proper normalization)
-                if normalized_key == "sweetener" and hasattr(item, "add_sweetener"):
-                    item.add_sweetener(value, quantity)
-                elif normalized_key == "syrup" and hasattr(item, "add_flavor_syrup"):
-                    item.add_flavor_syrup(value, quantity)
-                else:
-                    # Generic multi-select: use add_modifier
-                    item.add_modifier(normalized_key, value, quantity, 0.0)
+                item.add_modifier(normalized_key, value, quantity, 0.0)
             else:
                 # Single-select or boolean: use property setter if available
                 if hasattr(item, normalized_key):
@@ -1527,7 +1541,7 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle beverage modifiers input in a data-driven way.
 
-        Uses extract_coffee_modifiers_from_input to parse user input like
+        Uses the generic extract_attribute_values() function to parse user input like
         "oat milk with 2 sugars and vanilla" and applies modifiers generically
         with pricing from the database.
         """
@@ -1541,9 +1555,15 @@ class MenuItemConfigHandler(BaseHandler):
             order.clear_pending()
             return self._get_next_question(order)
 
-        # Use the modifier extractor to parse input
-        modifiers = extract_coffee_modifiers_from_input(user_input)
+        # Use the generic modifier extractor (data-driven, queries DB for item type attributes)
         item_type = item.menu_item_type
+        modifiers = self._extract_modifiers_from_input(user_input, item_type)
+
+        if not modifiers or not modifiers.has_modifiers():
+            return StateMachineResult(
+                message="Sorry, I didn't catch that. What kind of milk, sweetener, or syrup would you like? You can ask 'what options?' to see choices.",
+                order=order,
+            )
 
         # Apply extracted modifiers using data-driven approach with pricing
         applied = []
@@ -1559,27 +1579,12 @@ class MenuItemConfigHandler(BaseHandler):
                 # Use generic add_modifier for unified storage
                 item.add_modifier(category, mod.slug, mod.quantity, price)
 
-                # Build display string for acknowledgment
+                # Build display name - use display_name from modifier if available
+                display_name = getattr(mod, 'display_name', None) or mod.slug
                 if mod.quantity > 1:
-                    if category == "syrup":
-                        applied.append(f"{mod.quantity} pumps {mod.slug}")
-                    else:
-                        applied.append(f"{mod.quantity} {mod.slug}")
-                elif category == "syrup":
-                    applied.append(f"{mod.slug} syrup")
-                elif category == "milk":
-                    applied.append(f"{mod.slug} milk")
-                elif category == "style":
-                    applied.append(f"{mod.slug} cream")
+                    applied.append(f"{mod.quantity} {display_name}")
                 else:
-                    applied.append(mod.slug)
-
-        # If nothing was extracted, ask again
-        if not applied:
-            return StateMachineResult(
-                message="Sorry, I didn't catch that. What kind of milk, sweetener, or syrup would you like? You can ask 'what options?' to see choices.",
-                order=order,
-            )
+                    applied.append(display_name)
 
         # Mark item as complete since we got modifier info
         item.mark_complete()

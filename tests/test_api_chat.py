@@ -1,5 +1,5 @@
 def test_chat_start_returns_session_and_order_state(client):
-    resp = client.post("/chat/start")
+    resp = client.post("/api/v1/chat/start")
     assert resp.status_code == 200
     data = resp.json()
     assert "session_id" in data
@@ -10,7 +10,7 @@ def test_chat_start_returns_session_and_order_state(client):
 
 def test_request_id_in_response_header(client):
     """Test that X-Request-ID header is returned in responses."""
-    resp = client.post("/chat/start")
+    resp = client.post("/api/v1/chat/start")
     assert resp.status_code == 200
     assert "X-Request-ID" in resp.headers
     # Request ID should be a UUID-like string (36 chars with hyphens)
@@ -22,18 +22,9 @@ def test_request_id_in_response_header(client):
 def test_request_id_can_be_provided_by_client(client):
     """Test that client-provided X-Request-ID is used."""
     custom_id = "test-request-id-12345"
-    resp = client.post("/chat/start", headers={"X-Request-ID": custom_id})
+    resp = client.post("/api/v1/chat/start", headers={"X-Request-ID": custom_id})
     assert resp.status_code == 200
     assert resp.headers["X-Request-ID"] == custom_id
-
-
-def test_api_v1_endpoints_work(client):
-    """Test that /api/v1/ prefixed endpoints work."""
-    # Test /api/v1/chat/start
-    resp = client.post("/api/v1/chat/start")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "session_id" in data
 
 
 def test_health_endpoint_not_versioned(client):
@@ -47,11 +38,11 @@ def test_health_endpoint_not_versioned(client):
 
 def test_chat_message_rejects_empty_message(client):
     """Test that empty messages are rejected with validation error."""
-    start_resp = client.post("/chat/start")
+    start_resp = client.post("/api/v1/chat/start")
     session_id = start_resp.json()["session_id"]
 
     resp = client.post(
-        "/chat/message",
+        "/api/v1/chat/message",
         json={"session_id": session_id, "message": ""},
     )
 
@@ -63,14 +54,14 @@ def test_chat_message_rejects_too_long_message(client):
     # Note: MAX_MESSAGE_LENGTH is defined at module load time in the Pydantic model,
     # so we can't easily change it. Instead, we test with a message longer than the
     # default 2000 char limit.
-    start_resp = client.post("/chat/start")
+    start_resp = client.post("/api/v1/chat/start")
     session_id = start_resp.json()["session_id"]
 
     # Create a message longer than default 2000 chars
     long_message = "a" * 2500
 
     resp = client.post(
-        "/chat/message",
+        "/api/v1/chat/message",
         json={"session_id": session_id, "message": long_message},
     )
 
@@ -93,14 +84,14 @@ def test_rate_limit_returns_429_when_exceeded(client, monkeypatch):
 
     try:
         # First two requests should succeed
-        resp1 = client.post("/chat/start")
+        resp1 = client.post("/api/v1/chat/start")
         assert resp1.status_code == 200
 
-        resp2 = client.post("/chat/start")
+        resp2 = client.post("/api/v1/chat/start")
         assert resp2.status_code == 200
 
         # Third request should be rate limited
-        resp3 = client.post("/chat/start")
+        resp3 = client.post("/api/v1/chat/start")
         assert resp3.status_code == 429
     finally:
         # Cleanup - disable rate limiting for other tests
@@ -117,7 +108,7 @@ def test_rate_limit_can_be_disabled(client):
 
     # Multiple requests should all succeed
     for _ in range(5):
-        resp = client.post("/chat/start")
+        resp = client.post("/api/v1/chat/start")
         assert resp.status_code == 200
 
 
@@ -127,7 +118,7 @@ def test_chat_start_with_caller_id(client):
 
     # Use a unique phone number to ensure no prior orders exist
     unique_phone = f"555-{uuid.uuid4().hex[:3]}-{uuid.uuid4().hex[:4]}"
-    resp = client.post(f"/chat/start?caller_id={unique_phone}")
+    resp = client.post(f"/api/v1/chat/start?caller_id={unique_phone}")
     assert resp.status_code == 200
     data = resp.json()
     assert "session_id" in data

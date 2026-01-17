@@ -84,11 +84,9 @@ class DisambiguationHandler:
             The matching item dict if cart match found, None otherwise
         """
         for cart_item in order.items.items:
-            # Get cart item name - different item types store it differently
+            # Get cart item name - all items use menu_item_name
             cart_name = None
-            if hasattr(cart_item, 'drink_type') and cart_item.drink_type:
-                cart_name = cart_item.drink_type.lower()
-            elif hasattr(cart_item, 'menu_item_name') and cart_item.menu_item_name:
+            if hasattr(cart_item, 'menu_item_name') and cart_item.menu_item_name:
                 cart_name = cart_item.menu_item_name.lower()
             elif hasattr(cart_item, 'get_display_name'):
                 cart_name = cart_item.get_display_name().lower()

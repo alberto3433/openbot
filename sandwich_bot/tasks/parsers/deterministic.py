@@ -28,7 +28,6 @@ from .constants import (
     # Dynamic spread functions (loaded from database)
     get_spreads,
     get_spread_types,
-    get_bagel_spreads,
     QUALIFIER_PATTERNS,
     STANDALONE_INSTRUCTION_PATTERNS,
     GREETING_PATTERNS,
@@ -51,7 +50,6 @@ from .constants import (
     MODIFIER_INQUIRY_PATTERNS,
     MORE_MENU_ITEMS_PATTERNS,
     CUSTOMER_SERVICE_PATTERNS,
-    get_by_pound_items,
     find_by_pound_item,
 )
 
@@ -1135,6 +1133,217 @@ extract_notes_from_input = extract_special_instructions_from_input
 
 
 # =============================================================================
+# Generic Attribute Value Extraction (Data-Driven)
+# =============================================================================
+
+def extract_attribute_values(
+    user_input: str,
+    item_type: str,
+) -> dict[str, any]:
+    """
+    Extract attribute values from user input for a specific item type.
+
+    This is the generic, data-driven replacement for extract_modifiers_from_input()
+    and extract_coffee_modifiers_from_input(). It queries the database for what
+    attributes the item type has and matches input against those options.
+
+    The same function works for any item type - coffee, bagel, steak, etc.
+    What gets extracted depends entirely on what the database says the item type accepts.
+
+    Args:
+        user_input: The raw user input string
+        item_type: The item type slug (e.g., "sized_beverage", "bagel", "steak")
+
+    Returns:
+        Dict mapping attribute slugs to extracted values:
+        - For single_select: {attr_slug: option_slug}
+        - For multi_select: {attr_slug: [{slug, quantity, display_name}, ...]}
+        - For boolean: {attr_slug: True/False}
+
+    Examples:
+        >>> extract_attribute_values("large iced with oat milk", "sized_beverage")
+        {"size": "large", "temperature": "iced", "milk": "oat"}
+
+        >>> extract_attribute_values("medium rare with a side salad", "steak")
+        {"doneness": "medium_rare", "side": "side_salad"}
+
+        >>> extract_attribute_values("toasted with cream cheese", "bagel")
+        {"toasted": True, "spread": [{"slug": "cream_cheese", "quantity": 1, ...}]}
+    """
+    result: dict[str, any] = {}
+    input_lower = user_input.lower()
+
+    # Get all attributes for this item type from database
+    attributes = menu_cache.get_item_type_attributes(item_type)
+    if not attributes:
+        logger.debug("No attributes found for item type '%s'", item_type)
+        return result
+
+    # Track matched spans to avoid overlapping matches
+    matched_spans: list[tuple[int, int]] = []
+
+    def is_word_boundary(text: str, start: int, end: int) -> bool:
+        """Check if the match is at word boundaries."""
+        before_ok = start == 0 or not text[start - 1].isalnum()
+        after_ok = end >= len(text) or not text[end].isalnum()
+        return before_ok and after_ok
+
+    def spans_overlap(start: int, end: int) -> bool:
+        """Check if position overlaps with any matched span."""
+        return any(not (end <= s or start >= e) for s, e in matched_spans)
+
+    def extract_quantity_before(pos: int) -> int:
+        """Extract quantity prefix before a match position."""
+        before_text = input_lower[:pos].strip()
+        if not before_text:
+            return 1
+
+        qty_pattern = re.compile(
+            r'(\d+|one|two|three|four|five|six|double|triple|extra)\s*$',
+            re.IGNORECASE
+        )
+        qty_match = qty_pattern.search(before_text)
+        if qty_match:
+            qty_str = qty_match.group(1).lower()
+            if qty_str.isdigit():
+                return int(qty_str)
+            elif qty_str == "double":
+                return 2
+            elif qty_str == "triple":
+                return 3
+            elif qty_str == "extra":
+                return 2
+            else:
+                return WORD_TO_NUM.get(qty_str, 1)
+        return 1
+
+    def check_must_match(option: dict, text: str) -> bool:
+        """Check if all must_match patterns are present in text."""
+        must_match = option.get("must_match", [])
+        if not must_match:
+            return True  # No must_match requirement
+        return all(pattern.lower() in text for pattern in must_match)
+
+    def find_option_match(
+        options: list[dict], text: str, is_multi_select: bool
+    ) -> list[dict]:
+        """Find all matching options in text, longest match first."""
+        matches = []
+
+        # Build list of (pattern, option, pattern_length) tuples
+        # Sorted by pattern length descending for longest-match-first
+        all_patterns: list[tuple[str, dict, int]] = []
+        for opt in options:
+            # Add display_name as a pattern
+            display_name = opt.get("display_name", "").lower()
+            if display_name:
+                all_patterns.append((display_name, opt, len(display_name)))
+
+            # Add slug as a pattern (convert underscores to spaces)
+            slug = opt.get("slug", "")
+            if slug:
+                slug_as_words = slug.replace("_", " ").lower()
+                all_patterns.append((slug_as_words, opt, len(slug_as_words)))
+                # Also try slug as-is (with underscores)
+                all_patterns.append((slug.lower(), opt, len(slug)))
+
+            # Add aliases as patterns
+            for alias in opt.get("aliases", []):
+                alias_lower = alias.lower()
+                all_patterns.append((alias_lower, opt, len(alias_lower)))
+
+        # Sort by pattern length descending
+        all_patterns.sort(key=lambda x: x[2], reverse=True)
+
+        # Track which options we've already matched (by slug)
+        matched_slugs: set[str] = set()
+
+        for pattern, opt, _ in all_patterns:
+            slug = opt.get("slug", "")
+            if slug in matched_slugs:
+                continue  # Already matched this option
+
+            # Find all occurrences of pattern in text
+            start = 0
+            while True:
+                pos = text.find(pattern, start)
+                if pos == -1:
+                    break
+
+                end = pos + len(pattern)
+
+                if is_word_boundary(text, pos, end) and not spans_overlap(pos, end):
+                    # Check must_match patterns
+                    if check_must_match(opt, text):
+                        matched_spans.append((pos, end))
+                        matched_slugs.add(slug)
+
+                        quantity = extract_quantity_before(pos)
+                        matches.append({
+                            "slug": slug,
+                            "display_name": opt.get("display_name", slug),
+                            "quantity": quantity,
+                            "price": opt.get("price", 0),
+                            "category": opt.get("category"),
+                        })
+                        logger.debug(
+                            "Extracted attribute value: '%s' -> '%s' (qty=%d)",
+                            pattern, slug, quantity
+                        )
+
+                        if not is_multi_select:
+                            return matches  # Single select - stop after first match
+                        break  # Move to next option
+
+                start = pos + 1
+
+        return matches
+
+    # Process each attribute
+    for attr_slug, attr_config in attributes.items():
+        options = attr_config.get("options", [])
+        input_type = attr_config.get("input_type", "single_select")
+        is_multi_select = input_type == "multi_select"
+
+        if input_type == "boolean":
+            # Handle boolean attributes (e.g., "toasted", "decaf")
+            # Check for positive patterns
+            display_name = attr_config.get("display_name", attr_slug).lower()
+            if re.search(rf'\b{re.escape(display_name)}\b', input_lower):
+                result[attr_slug] = True
+                logger.debug("Extracted boolean attribute: %s = True", attr_slug)
+            # Check for "not X" or "no X" patterns
+            elif re.search(rf'\b(not?|no)\s+{re.escape(display_name)}\b', input_lower):
+                result[attr_slug] = False
+                logger.debug("Extracted boolean attribute: %s = False", attr_slug)
+            continue
+
+        if not options:
+            continue  # Skip attributes without options
+
+        matches = find_option_match(options, input_lower, is_multi_select)
+
+        if matches:
+            if is_multi_select:
+                # Store list of matched values with quantities
+                result[attr_slug] = matches
+            else:
+                # Store single value (just the slug)
+                result[attr_slug] = matches[0]["slug"]
+
+    # Extract special instructions (applicable to all item types)
+    instructions = extract_special_instructions_from_input(user_input)
+    if instructions:
+        result["special_instructions"] = instructions
+
+    logger.debug(
+        "Extracted attribute values for %s: %s",
+        item_type, result
+    )
+    return result
+
+
+# =============================================================================
 # Helper Extraction Functions
 # =============================================================================
 
@@ -1582,23 +1791,139 @@ def _parse_item_generic(
     # Extract modifiers (proteins, spreads, toppings, etc.)
     modifiers = _extract_modifiers_generic(text_lower, item_type)
 
-    # For beverages, also extract sweeteners and syrups using existing helpers
+    # Extract sweeteners, syrups, milk using generic data-driven extraction
+    # This works for ANY item type that has these attributes defined in the database
     sweeteners = []
     syrups = []
-    modifier_category = menu_cache.get_modifier_category(item_type) if item_type else None
-    if modifier_category == "beverage":
-        from sandwich_bot.tasks.parsers.deterministic import extract_coffee_modifiers_from_input
-        coffee_mods = extract_coffee_modifiers_from_input(text)
-        if coffee_mods.sweetener:
-            sweeteners.append(QuantifiedModifier(slug=coffee_mods.sweetener, quantity=coffee_mods.sweetener_quantity))
-        if coffee_mods.flavor_syrup:
-            syrups.append(QuantifiedModifier(slug=coffee_mods.flavor_syrup, quantity=coffee_mods.syrup_quantity))
-        # Extract milk if not already in attributes
-        if "milk" not in attribute_values and coffee_mods.milk:
-            attribute_values["milk"] = coffee_mods.milk
-        # Extract cream level if present
-        if coffee_mods.cream_level:
-            attribute_values["cream_level"] = coffee_mods.cream_level
+    if item_type:
+        attrs = menu_cache.get_item_type_attributes(item_type)
+        generic_extracted = extract_attribute_values(text, item_type)
+
+        # Helper to filter extracted values by type using slug/display_name patterns
+        # This handles combined attributes (like milk_sweetener_syrup) where options
+        # may not have category set consistently
+        def is_milk_option(opt: dict) -> bool:
+            """Check if option is a milk type based on slug/display_name."""
+            slug = opt.get("slug", "").lower()
+            display = opt.get("display_name", "").lower()
+            # Check for milk patterns (but not "syrup" to avoid false positives)
+            return ("milk" in slug or "milk" in display or
+                    slug == "half_n_half" or "half n half" in display.lower() or
+                    "half and half" in display.lower())
+
+        def is_syrup_option(opt: dict) -> bool:
+            """Check if option is a syrup type based on slug/display_name."""
+            slug = opt.get("slug", "").lower()
+            display = opt.get("display_name", "").lower()
+            return "syrup" in slug or "syrup" in display
+
+        def is_sweetener_option(opt: dict) -> bool:
+            """Check if option is a sweetener type based on slug/display_name/category."""
+            slug = opt.get("slug", "").lower()
+            category = opt.get("category", "")
+            if category == "sweeteners":
+                return True
+            # Common sweetener slugs
+            sweetener_slugs = {"sugar", "splenda", "equal", "sweet_n_low",
+                              "sugar_in_the_raw", "stevia", "honey"}
+            return slug in sweetener_slugs
+
+        def extract_from_combined_attr(attr_slug: str, filter_fn) -> list[dict]:
+            """Extract values from a combined attribute, filtering by type."""
+            values = generic_extracted.get(attr_slug)
+            if not values:
+                return []
+            if isinstance(values, list):
+                return [v for v in values if isinstance(v, dict) and filter_fn(v)]
+            if isinstance(values, str):
+                # Single value - check if it matches the filter
+                options = attrs.get(attr_slug, {}).get("options", [])
+                for opt in options:
+                    if opt.get("slug") == values and filter_fn(opt):
+                        return [{"slug": values, "quantity": 1, "display_name": opt.get("display_name", values)}]
+            return []
+
+        # Check for combined milk_sweetener_syrup attribute
+        combined_attr = "milk_sweetener_syrup"
+        has_combined = combined_attr in attrs
+
+        # Extract sweeteners
+        if has_combined:
+            sweetener_items = extract_from_combined_attr(combined_attr, is_sweetener_option)
+        else:
+            sweetener_attr_slug = menu_cache.resolve_field_to_slug(item_type, "sweetener")
+            if sweetener_attr_slug in attrs:
+                values = generic_extracted.get(sweetener_attr_slug)
+                sweetener_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
+            else:
+                sweetener_items = []
+
+        for item in sweetener_items:
+            if isinstance(item, dict):
+                sweeteners.append(QuantifiedModifier(
+                    slug=item.get("slug", ""),
+                    quantity=item.get("quantity", 1)
+                ))
+
+        # Extract syrups
+        if has_combined:
+            syrup_items = extract_from_combined_attr(combined_attr, is_syrup_option)
+        else:
+            syrup_attr_slug = menu_cache.resolve_field_to_slug(item_type, "syrup")
+            if syrup_attr_slug not in attrs:
+                syrup_attr_slug = menu_cache.resolve_field_to_slug(item_type, "flavor_syrup")
+            if syrup_attr_slug in attrs:
+                values = generic_extracted.get(syrup_attr_slug)
+                syrup_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
+            else:
+                syrup_items = []
+
+        for item in syrup_items:
+            if isinstance(item, dict):
+                syrups.append(QuantifiedModifier(
+                    slug=item.get("slug", ""),
+                    quantity=item.get("quantity", 1)
+                ))
+
+        # Extract milk
+        if "milk" not in attribute_values:
+            if has_combined:
+                milk_items = extract_from_combined_attr(combined_attr, is_milk_option)
+            else:
+                milk_attr_slug = menu_cache.resolve_field_to_slug(item_type, "milk")
+                if milk_attr_slug in attrs:
+                    values = generic_extracted.get(milk_attr_slug)
+                    milk_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
+                else:
+                    milk_items = []
+
+            if milk_items:
+                # Store just the slug without "_milk" suffix for backwards compatibility
+                milk_slug = milk_items[0].get("slug", "")
+                # Normalize: remove "_milk" suffix if present (e.g., "oat_milk" -> "oat")
+                if milk_slug.endswith("_milk") and milk_slug != "whole_milk":
+                    milk_slug = milk_slug[:-5]
+                attribute_values["milk"] = milk_slug
+            elif has_combined:
+                # No specific milk type extracted, but check for generic "milk" patterns
+                # e.g., "with milk", "splash of milk" should default to whole milk
+                milk_patterns = [
+                    r'\bwith\s+(?:a\s+)?(?:splash\s+of\s+)?milk\b',
+                    r'\bwith\s+milk\b',
+                    r'\bsplash\s+of\s+milk\b',
+                    r'\bmilk\s+(?:on\s+the\s+side|please)\b',
+                    r'\badd\s+(?:some\s+)?milk\b',
+                ]
+                for pattern in milk_patterns:
+                    if re.search(pattern, text_lower):
+                        attribute_values["milk"] = "whole"
+                        break
+
+        # Extract cream_level if item type has that attribute
+        if "cream_level" in attrs and "cream_level" not in attribute_values:
+            cream_value = generic_extracted.get("cream_level")
+            if cream_value:
+                attribute_values["cream_level"] = cream_value
 
     # Check if this is a signature/speed menu item
     is_signature = False
@@ -3447,22 +3772,6 @@ def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
                 asks_delivery_zone=True,
                 delivery_zone_query=location_query,
             )
-
-    return None
-
-
-def _parse_customer_service_inquiry(text: str) -> OpenInputResponse | None:
-    """Parse customer service escalation requests.
-
-    Detects when user wants to speak to a manager, report an issue,
-    request a refund, or escalate a complaint.
-    """
-    text_lower = text.lower().strip()
-
-    for pattern in CUSTOMER_SERVICE_PATTERNS:
-        if pattern.search(text_lower):
-            logger.info("CUSTOMER SERVICE INQUIRY: '%s'", text[:50])
-            return OpenInputResponse(wants_customer_service=True)
 
     return None
 

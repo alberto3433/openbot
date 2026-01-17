@@ -154,26 +154,30 @@ class ConfigHelperHandler:
             removed_modifier_name = cancel_desc
 
             # Check extra_protein
-            if current_item.extra_protein and cancel_desc in current_item.extra_protein.lower():
-                current_item.extra_protein = None
+            attr_values = current_item.attribute_values
+            extra_protein = attr_values.get("extra_protein")
+            if extra_protein and cancel_desc in extra_protein.lower():
+                attr_values["extra_protein"] = None
                 modifier_removed = True
                 logger.info("Modifier removal during config: removed protein '%s' from bagel", cancel_desc)
 
             # Check toppings list
-            if current_item.toppings:
+            toppings = attr_values.get("toppings") or []
+            if toppings:
                 new_toppings = []
-                for topping in current_item.toppings:
+                for topping in toppings:
                     if cancel_desc not in topping.lower():
                         new_toppings.append(topping)
                     else:
                         modifier_removed = True
                         logger.info("Modifier removal during config: removed topping '%s' from bagel", topping)
-                current_item.toppings = new_toppings
+                attr_values["toppings"] = new_toppings
 
             # Check spread
-            if current_item.spread and cancel_desc in current_item.spread.lower():
-                current_item.spread = None
-                current_item.spread_type = None
+            spread = attr_values.get("spread") or attr_values.get("spread_type")
+            if spread and cancel_desc in spread.lower():
+                attr_values["spread"] = None
+                attr_values["spread_type"] = None
                 modifier_removed = True
                 logger.info("Modifier removal during config: removed spread '%s' from bagel", cancel_desc)
 
@@ -644,7 +648,8 @@ class ConfigHelperHandler:
             )
 
         # Apply the choice
-        item.side_choice = parsed.choice
+        attr_values = item.attribute_values
+        attr_values["side_choice"] = parsed.choice
 
         # Data-driven: check if choice is a bread-based side (has bread attribute)
         choice_attrs = menu_cache.get_item_type_attributes(parsed.choice) if parsed.choice else {}
@@ -654,16 +659,16 @@ class ConfigHelperHandler:
             if parsed.bread:
                 # User specified bagel type upfront (e.g., "plain bagel")
                 # Set bagel_choice but don't mark complete - still need toasted/spread questions
-                item.bagel_choice = parsed.bread
+                attr_values["bagel_choice"] = parsed.bread
 
                 # Also apply toasted if specified (e.g., "plain bagel toasted")
                 if parsed.toasted is not None:
-                    item.toasted = parsed.toasted
+                    attr_values["toasted"] = parsed.toasted
 
                 # Also apply spread if specified (e.g., "with cream cheese")
                 # Note: spread price will be calculated by bagel_config_handler when spread is set
                 if parsed.spread:
-                    item.spread = parsed.spread
+                    attr_values["spread_type"] = parsed.spread
 
                 order.clear_pending()
                 # Continue to ask remaining questions via configure_next_incomplete_bagel
@@ -671,15 +676,15 @@ class ConfigHelperHandler:
                 if self._get_next_question:
                     return self._get_next_question(order)
                 # Fallback: ask about toasted if not specified, otherwise spread
-                if item.toasted is None:
+                if attr_values.get("toasted") is None:
                     order.pending_field = "bagel:toasted"
                     return StateMachineResult(
                         message=f"Ok, {parsed.bread} bagel. Would you like that toasted?",
                         order=order,
                     )
-                elif item.spread is None:
+                elif attr_values.get("spread_type") is None:
                     order.pending_field = "bagel:spread_type"
-                    toasted_desc = " toasted" if item.toasted else ""
+                    toasted_desc = " toasted" if attr_values.get("toasted") else ""
                     return StateMachineResult(
                         message=f"Ok, {parsed.bread} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
                         order=order,
@@ -736,7 +741,7 @@ class ConfigHelperHandler:
 
         if parsed.bread:
             # Set the bagel choice on the menu item
-            item.bagel_choice = parsed.bread
+            item.attribute_values["bagel_choice"] = parsed.bread
             logger.info(
                 "Set bagel_choice='%s' on menu item '%s'",
                 parsed.bread, item.menu_item_name

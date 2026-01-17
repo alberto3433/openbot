@@ -149,14 +149,14 @@ def _get_ingredient_options_text(category: str) -> str:
         return ""
 
 
-def _get_beverage_modifier_patterns(category: str) -> set[str]:
-    """Get all matching patterns for a beverage modifier category.
+def _get_modifier_patterns(category: str) -> set[str]:
+    """Get all matching patterns for an ingredient category.
 
-    This is the generic replacement for _get_syrup_options(), _get_sweetener_options(), etc.
     Returns a flat set of all patterns that can match this category for input detection.
+    Works for any ingredient category (milk, syrup, sweetener, spread, protein, etc.).
 
     Args:
-        category: The ingredient category (e.g., "syrup", "milk", "sweetener")
+        category: The ingredient category (e.g., "syrup", "milk", "sweetener", "spread")
 
     Returns:
         Set of lowercase patterns for matching user input.
@@ -171,17 +171,17 @@ def _get_beverage_modifier_patterns(category: str) -> set[str]:
     return patterns
 
 
-def _match_beverage_modifier(
+def _match_modifier(
     input_lower: str, category: str
 ) -> dict | None:
-    """Match user input against a beverage modifier category and return details.
+    """Match user input against an ingredient category and return details.
 
-    This is the generic replacement for the various _get_*_options functions.
-    Uses database slugs and display names instead of manually constructing them.
+    Uses database slugs and display names for any ingredient category.
+    Works for milk, syrup, sweetener, spread, protein, cheese, etc.
 
     Args:
         input_lower: Lowercase user input to match against
-        category: The ingredient category (e.g., "syrup", "milk", "sweetener")
+        category: The ingredient category (e.g., "syrup", "milk", "sweetener", "spread")
 
     Returns:
         Dict with {slug, name, pattern} if matched, None otherwise.
@@ -204,20 +204,33 @@ def _match_beverage_modifier(
     return None
 
 
-def _get_all_beverage_modifier_patterns() -> set[str]:
-    """Get all beverage modifier patterns for input detection.
+def _get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
+    """Get all modifier patterns for an item type (data-driven).
 
-    Returns combined patterns for syrup, milk, and sweetener categories.
-    Used to detect if user input contains any beverage modifier.
+    Returns combined patterns for all ingredient categories that the item type accepts.
+    Used to detect if user input contains any modifier for this item type.
+
+    Args:
+        item_type_slug: The item type slug (e.g., "sized_beverage", "bagel").
+                       If None, returns empty set.
 
     Returns:
-        Set of all beverage modifier patterns (lowercase).
+        Set of all modifier patterns (lowercase) for this item type.
+
+    Example:
+        >>> _get_all_modifier_patterns_for_item("sized_beverage")
+        {"oat", "almond", "vanilla", "sugar", ...}  # All milk/syrup/sweetener patterns
     """
+    if not item_type_slug:
+        return set()
+
     patterns = set()
-    for category in ["syrup", "milk", "sweetener"]:
-        patterns.update(_get_beverage_modifier_patterns(category))
-    # Add generic category keywords
-    patterns.update({"syrup", "sweetener", "milk"})
+    # Get scannable categories from database (data-driven)
+    categories = menu_cache.get_scannable_modifier_categories(item_type_slug)
+    for category in categories:
+        patterns.update(_get_modifier_patterns(category))
+        # Add the category name itself as a pattern
+        patterns.add(category)
     return patterns
 
 
@@ -244,24 +257,25 @@ def _extract_quantity_from_input(input_lower: str, pattern: str) -> int:
     return 1
 
 
-def _add_beverage_modifier_to_item(
+def _add_modifier_to_item(
     item: "MenuItemTask",
     slug: str,
     display_name: str,
     quantity: int = 1,
     category: str | None = None,
 ) -> bool:
-    """Add a beverage modifier to an item using the unified storage model.
+    """Add a modifier to an item using the unified storage model.
 
     Uses the unified 'modifiers' list on MenuItemTask for all modifiers.
     Format: {"slug": ..., "category": ..., "quantity": ..., "display_name": ...}
+    Works for any item type and modifier category.
 
     Args:
         item: The MenuItemTask to modify
-        slug: Database slug for the modifier (e.g., "oat_milk")
-        display_name: Display name for the modifier (e.g., "Oat Milk")
-        quantity: Quantity (default 1, used for sweeteners/syrups)
-        category: Optional category for logging ("milk", "sweetener", "syrup")
+        slug: Database slug for the modifier (e.g., "oat_milk", "bacon")
+        display_name: Display name for the modifier (e.g., "Oat Milk", "Bacon")
+        quantity: Quantity (default 1, used for countable modifiers)
+        category: Optional category (e.g., "milk", "sweetener", "protein")
 
     Returns:
         True if modifier was added, False if already present
@@ -289,22 +303,25 @@ def _add_beverage_modifier_to_item(
 
     logger.info(
         "Added %s modifier: %s (qty=%d) to %s",
-        category or "beverage",
+        category or "unknown",
         slug,
         quantity,
-        item.item_name or item.menu_item_type
+        item.menu_item_name or item.menu_item_type
     )
     return True
 
 
-def _add_beverage_modifiers_from_input(
+def _add_modifiers_from_input(
     item: "MenuItemTask",
     input_lower: str,
 ) -> bool:
-    """Add all matching beverage modifiers from user input to an item.
+    """Add all matching modifiers from user input to an item (data-driven).
 
-    Scans input for milk, sweetener, and syrup modifiers and adds them
-    using the unified storage model (milk_sweetener_syrup_selections).
+    Scans input for modifiers based on the item type's accepted modifier categories
+    (queried from database) and adds them using the unified storage model.
+
+    Works for any item type - beverages get milk/syrup/sweetener scanned,
+    other item types get their configured modifier categories scanned.
 
     Args:
         item: The MenuItemTask to modify
@@ -315,15 +332,22 @@ def _add_beverage_modifiers_from_input(
     """
     made_change = False
 
-    # Check each beverage modifier category
-    for category in ["syrup", "milk", "sweetener"]:
-        match = _match_beverage_modifier(input_lower, category)
+    # Get scannable categories from database (data-driven)
+    item_type = item.menu_item_type
+    if not item_type:
+        return False
+
+    categories = menu_cache.get_scannable_modifier_categories(item_type)
+
+    # Check each modifier category for this item type
+    for category in categories:
+        match = _match_modifier(input_lower, category)
         if match:
             # Extract quantity from input
             quantity = _extract_quantity_from_input(input_lower, match["pattern"])
 
             # Add to item using unified storage
-            if _add_beverage_modifier_to_item(
+            if _add_modifier_to_item(
                 item,
                 slug=match["slug"],
                 display_name=match["name"],
@@ -654,50 +678,55 @@ class TakingItemsHandler:
             re.search(pattern, input_lower) for pattern in add_modifier_patterns
         )
 
-        # Beverage modifiers that should trigger modification instead of new item
-        # Built from database using generic helper
-        beverage_modifiers = _get_all_beverage_modifier_patterns()
-        has_beverage_modifier = any(mod in input_lower for mod in beverage_modifiers)
-
-        # Check if this is a pure modifier input (e.g., "2 vanilla syrups", "vanilla syrup")
-        # that should be added to an existing beverage
+        # Check if this is a pure modifier input for the last item (data-driven)
+        # Get modifier patterns based on the last item's type
         is_pure_modifier_input = False
-        logger.info("EARLY_MOD_DETECT: has_beverage_modifier=%s, active_items=%d", has_beverage_modifier, len(active_items))
-        if has_beverage_modifier and active_items:
+        has_item_modifier = False
+        item_modifier_patterns: set[str] = set()
+
+        if active_items:
             last_item = active_items[-1]
-            # Check if item is a beverage (has milk attribute or beverage modifier category)
-            has_milk_attr = last_item.has_attribute("milk") if isinstance(last_item, MenuItemTask) else False
-            mod_category = menu_cache.get_modifier_category(last_item.menu_item_type) if isinstance(last_item, MenuItemTask) else None
-            is_beverage = (
+            if isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
+                # Get modifier patterns for this specific item type (data-driven)
+                item_modifier_patterns = _get_all_modifier_patterns_for_item(last_item.menu_item_type)
+                has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
+
+        logger.info("EARLY_MOD_DETECT: has_item_modifier=%s, active_items=%d", has_item_modifier, len(active_items))
+
+        if has_item_modifier and active_items:
+            last_item = active_items[-1]
+            # Check if item accepts input modifiers (data-driven)
+            accepts_modifiers = (
                 isinstance(last_item, MenuItemTask) and
-                (has_milk_attr or mod_category == "beverage")
+                last_item.menu_item_type and
+                menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
-            logger.info("EARLY_MOD_DETECT: has_milk_attr=%s, mod_category=%s, is_beverage=%s", has_milk_attr, mod_category, is_beverage)
-            if is_beverage:
+            logger.info("EARLY_MOD_DETECT: accepts_modifiers=%s", accepts_modifiers)
+            if accepts_modifiers:
                 # Check if input is ONLY a modifier (no other item keywords)
                 # Use item keywords from database (menu item names + item type slugs)
-                # Exclude beverage modifier patterns from the check since "vanilla" is both
+                # Exclude modifier patterns from the check since "vanilla" is both
                 # a modifier pattern AND might be an item keyword (e.g., "Vanilla Latte")
                 item_keywords = menu_cache.get_item_keywords()
-                # Filter out words that are also beverage modifiers
-                non_modifier_keywords = {kw for kw in item_keywords if kw not in beverage_modifiers}
+                # Filter out words that are also modifiers for this item type
+                non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
                 has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
                 logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
                 if not has_other_item:
                     is_pure_modifier_input = True
                     logger.info("EARLY_MOD_DETECT: Setting is_pure_modifier_input=True")
 
-        # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
-        if (is_add_modifier_request or is_pure_modifier_input) and has_beverage_modifier and active_items:
+        # If it's an "add modifier" pattern OR pure modifier input, modify the last item
+        if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
             last_item = active_items[-1]
-            # Unified beverage modifier handling using milk_sweetener_syrup_selections
-            is_beverage = (
+            # Check if item accepts input modifiers (data-driven)
+            accepts_modifiers = (
                 isinstance(last_item, MenuItemTask) and
-                (last_item.has_attribute("milk") or
-                 menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
+                last_item.menu_item_type and
+                menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
-            if is_beverage:
-                made_change = _add_beverage_modifiers_from_input(last_item, input_lower)
+            if accepts_modifiers:
+                made_change = _add_modifiers_from_input(last_item, input_lower)
 
                 if made_change:
                     self.pricing.recalculate_item_price(last_item)
@@ -819,44 +848,49 @@ class TakingItemsHandler:
                 re.search(pattern, input_lower) for pattern in add_modifier_patterns
             )
 
-            # Beverage modifiers that should trigger modification instead of new item
-            # Built from database using generic helper
-            beverage_modifiers = _get_all_beverage_modifier_patterns()
-            has_beverage_modifier = any(mod in input_lower for mod in beverage_modifiers)
-
-            # Check if this is a pure modifier input (e.g., "2 vanilla syrups", "vanilla syrup")
-            # that should be added to an existing beverage
+            # Check if this is a pure modifier input for the last item (data-driven)
+            # Get modifier patterns based on the last item's type
             is_pure_modifier_input = False
-            if has_beverage_modifier and active_items:
+            has_item_modifier = False
+            item_modifier_patterns: set[str] = set()
+
+            if active_items:
                 last_item_check = active_items[-1]
-                # Check if item is a beverage (has milk attribute or beverage modifier category)
-                is_beverage = (
+                if isinstance(last_item_check, MenuItemTask) and last_item_check.menu_item_type:
+                    # Get modifier patterns for this specific item type (data-driven)
+                    item_modifier_patterns = _get_all_modifier_patterns_for_item(last_item_check.menu_item_type)
+                    has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
+
+            if has_item_modifier and active_items:
+                last_item_check = active_items[-1]
+                # Check if item accepts input modifiers (data-driven)
+                accepts_modifiers = (
                     isinstance(last_item_check, MenuItemTask) and
-                    (last_item_check.has_attribute("milk") or
-                     menu_cache.get_modifier_category(last_item_check.menu_item_type) == "beverage")
+                    last_item_check.menu_item_type and
+                    menu_cache.item_accepts_input_modifiers(last_item_check.menu_item_type)
                 )
-                if is_beverage:
+                if accepts_modifiers:
                     # Check if input is ONLY a modifier (no other item keywords)
                     # Use item keywords from database (menu item names + item type slugs)
-                    # Exclude beverage modifier patterns from the check since "vanilla" is both
+                    # Exclude modifier patterns from the check since "vanilla" is both
                     # a modifier pattern AND might be an item keyword (e.g., "Vanilla Latte")
                     item_keywords = menu_cache.get_item_keywords()
-                    non_modifier_keywords = {kw for kw in item_keywords if kw not in beverage_modifiers}
+                    non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
                     has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
                     if not has_other_item:
                         is_pure_modifier_input = True
 
-            # If it's an "add modifier" pattern OR pure modifier input, and the last item is a beverage, modify it
-            if (is_add_modifier_request or is_pure_modifier_input) and has_beverage_modifier and active_items:
+            # If it's an "add modifier" pattern OR pure modifier input, modify the last item
+            if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
                 last_item = active_items[-1]
-                # Unified beverage modifier handling using milk_sweetener_syrup_selections
-                is_beverage = (
+                # Check if item accepts input modifiers (data-driven)
+                accepts_modifiers = (
                     isinstance(last_item, MenuItemTask) and
-                    (last_item.has_attribute("milk") or
-                     menu_cache.get_modifier_category(last_item.menu_item_type) == "beverage")
+                    last_item.menu_item_type and
+                    menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
                 )
-                if is_beverage:
-                    made_change = _add_beverage_modifiers_from_input(last_item, input_lower)
+                if accepts_modifiers:
+                    made_change = _add_modifiers_from_input(last_item, input_lower)
 
                     if made_change:
                         self.pricing.recalculate_item_price(last_item)
@@ -1289,7 +1323,7 @@ class TakingItemsHandler:
                         made_change = True
 
                     # Check for milk changes using generic matcher
-                    milk_match = _match_beverage_modifier(input_lower, "milk")
+                    milk_match = _match_modifier(input_lower, "milk")
                     # Also check for "no milk" / "black" patterns
                     if "no milk" in input_lower or "black" in input_lower:
                         milk_match = {"slug": "none", "name": "None", "pattern": "no milk"}
@@ -1297,7 +1331,7 @@ class TakingItemsHandler:
                     if milk_match:
                         new_milk_slug = milk_match["slug"]
                         # Use unified storage model
-                        if _add_beverage_modifier_to_item(
+                        if _add_modifier_to_item(
                             last_item, new_milk_slug, milk_match["name"],
                             quantity=1, category="milk"
                         ):
@@ -1321,10 +1355,10 @@ class TakingItemsHandler:
                             made_change = True
 
                     # Check for flavor syrup changes using generic matcher
-                    syrup_match = _match_beverage_modifier(input_lower, "syrup")
+                    syrup_match = _match_modifier(input_lower, "syrup")
                     if syrup_match:
                         quantity = _extract_quantity_from_input(input_lower, syrup_match["pattern"])
-                        if _add_beverage_modifier_to_item(
+                        if _add_modifier_to_item(
                             last_item, syrup_match["slug"], syrup_match["name"],
                             quantity=quantity, category="syrup"
                         ):

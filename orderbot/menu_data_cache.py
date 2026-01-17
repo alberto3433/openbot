@@ -2833,6 +2833,54 @@ class MenuDataCache:
         field_map = self.get_field_to_slug_map(item_type_slug)
         return field_map.get(field_name, field_name)
 
+    def get_scannable_modifier_categories(self, item_type_slug: str) -> list[str]:
+        """Get ingredient categories that should be scanned for modifiers in user input.
+
+        This is the data-driven replacement for hardcoded lists like ["syrup", "milk", "sweetener"].
+        Returns the ingredient categories that map to attributes for this item type.
+
+        For example:
+            - sized_beverage → ["milk", "syrup", "sweetener"]
+            - bagel → ["spread"] (if spread loads from ingredients)
+            - deli_sandwich → ["condiment", "sauce"] (if configured)
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+
+        Returns:
+            List of ingredient category slugs that should be scanned for this item type.
+            Empty list if item type has no ingredient-based attributes.
+
+        Example:
+            >>> menu_cache.get_scannable_modifier_categories("sized_beverage")
+            ["milk", "syrup", "sweetener"]
+            >>> menu_cache.get_scannable_modifier_categories("bagel")
+            []  # bagel doesn't have ingredient-category-based modifiers
+        """
+        field_map = self.get_field_to_slug_map(item_type_slug)
+        # The keys of field_map are the ingredient categories
+        return list(field_map.keys())
+
+    def item_accepts_input_modifiers(self, item_type_slug: str) -> bool:
+        """Check if an item type accepts modifiers that can be extracted from user input.
+
+        This is the data-driven replacement for checking `modifier_category == "beverage"`.
+        Returns True if the item type has any ingredient-category-based attributes.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            True if the item type has scannable modifier categories, False otherwise.
+
+        Example:
+            >>> menu_cache.item_accepts_input_modifiers("sized_beverage")
+            True
+            >>> menu_cache.item_accepts_input_modifiers("bagel")
+            False
+        """
+        return bool(self.get_scannable_modifier_categories(item_type_slug))
+
     def get_field_config(self, item_type_slug: str, field_slug: str) -> dict | None:
         """Get field configuration for a specific attribute from database.
 

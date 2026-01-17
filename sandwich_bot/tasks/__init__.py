@@ -32,8 +32,6 @@ from .field_config import (
 )
 
 from .parsing import (
-    ParsedBagelItem,
-    ParsedCoffeeItem,
     ItemModification,
     ParsedInput,
     parse_user_message,
@@ -65,8 +63,6 @@ __all__ = [
     "get_field_config",
     "get_default_value",
     # Parsing
-    "ParsedBagelItem",
-    "ParsedCoffeeItem",
     "ItemModification",
     "ParsedInput",
     "parse_user_message",

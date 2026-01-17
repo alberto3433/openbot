@@ -16,82 +16,6 @@ import os
 # Parsed Schemas
 # =============================================================================
 
-class ParsedBagelItem(BaseModel):
-    """A parsed bagel item from user input."""
-
-    item_type: Literal["bagel"] = "bagel"
-    bread: str | None = Field(
-        default=None,
-        description="Type of bagel: plain, everything, sesame, poppy, onion, cinnamon raisin, etc."
-    )
-    quantity: int = Field(
-        default=1,
-        description="Number of bagels"
-    )
-    toasted: bool | None = Field(
-        default=None,
-        description="Whether the bagel should be toasted. None if not mentioned."
-    )
-    spread: str | None = Field(
-        default=None,
-        description="Spread type: cream cheese, butter, etc."
-    )
-    spread_type: str | None = Field(
-        default=None,
-        description="Specific spread variety: plain, scallion, veggie, lox, etc."
-    )
-    toppings: list[str] = Field(
-        default_factory=list,
-        description="Additional toppings: lox, bacon, tomato, onion, capers, etc."
-    )
-    extra_protein: str | None = Field(
-        default=None,
-        description="Extra protein if this is a sandwich: egg, bacon, sausage, etc."
-    )
-
-
-class ParsedCoffeeItem(BaseModel):
-    """A parsed coffee/drink item from user input."""
-
-    item_type: Literal["coffee"] = "coffee"
-    drink_type: str | None = Field(
-        default=None,
-        description="Type of drink: drip coffee, latte, cappuccino, espresso, tea, etc."
-    )
-    quantity: int = Field(
-        default=1,
-        description="Number of drinks"
-    )
-    size: str | None = Field(
-        default=None,
-        description="Size: small, medium, large"
-    )
-    iced: bool | None = Field(
-        default=None,
-        description="Whether the drink should be iced. None if not mentioned."
-    )
-    milk: str | None = Field(
-        default=None,
-        description="Milk type: whole, skim, oat, almond, etc."
-    )
-    sweetener: str | None = Field(
-        default=None,
-        description="Sweetener type: sugar, splenda, stevia, honey, etc. Do NOT include syrups here."
-    )
-    sweetener_quantity: int = Field(
-        default=1,
-        description="Number of sweetener packets (e.g., '2 splendas' -> 2)"
-    )
-    flavor_syrup: str | None = Field(
-        default=None,
-        description="Flavor syrup: vanilla, caramel, hazelnut, mocha, pumpkin spice, etc."
-    )
-    extra_shots: int = Field(
-        default=0,
-        description="Number of extra espresso shots"
-    )
-
-
 class ParsedMenuItem(BaseModel):
     """A parsed menu item ordered by name from user input."""
 
@@ -137,14 +61,6 @@ class ParsedInput(BaseModel):
     """
 
     # New items mentioned in the message
-    new_bagels: list[ParsedBagelItem] = Field(
-        default_factory=list,
-        description="New bagel items mentioned by the user"
-    )
-    new_coffees: list[ParsedCoffeeItem] = Field(
-        default_factory=list,
-        description="New coffee/drink items mentioned by the user"
-    )
     new_menu_items: list[ParsedMenuItem] = Field(
         default_factory=list,
         description="Menu items ordered by name (e.g., 'The Chipotle Egg Omelette', 'The Leo', 'Nova Scotia Salmon on Bagel')"
@@ -290,10 +206,8 @@ IMPORTANT RULES:
 6. Identify intents like checkout, cancellation, adding more
 
 CRITICAL - WHEN TO CREATE ITEMS:
-- If user says "I want a bagel" or "I'd like to order a bagel" -> CREATE a new_bagels entry with bagel_type=null
-- If user says "I want a coffee" or "give me a coffee" -> CREATE a new_coffees entry with drink_type=null
-- If user orders a specific menu item by name (e.g., "I'll have the Chipotle Egg Omelette", "can I get the Leo?", "give me the Classic BEC") -> CREATE a new_menu_items entry with item_name
-- DO NOT set needs_clarification=true just because the user didn't specify bagel type or drink type
+- If user orders any item by name (e.g., "I'll have the Chipotle Egg Omelette", "can I get the Leo?", "give me the Classic BEC", "I want a bagel", "give me a coffee") -> CREATE a new_menu_items entry with item_name
+- DO NOT set needs_clarification=true just because the user didn't specify all details
 - The system has defaults for unspecified fields - your job is just to capture what was said
 - Only set needs_clarification=true for genuinely unclear messages (gibberish, contradictory requests)
 
@@ -351,14 +265,14 @@ When parsing answers to questions, map common responses:
 
 MODIFICATIONS VS NEW ITEMS - CRITICAL:
 When user wants to CHANGE an existing item, use modifications[] ONLY, do NOT create new items:
-- "make it a large" -> modifications: [{field: "size", new_value: "large"}], new_coffees: []
-- "change it to iced" -> modifications: [{field: "iced", new_value: true}], new_coffees: []
-- "actually make that toasted" -> modifications: [{field: "toasted", new_value: true}], new_bagels: []
-- "make it a large coffee" -> modifications to size, NOT a new coffee
+- "make it a large" -> modifications: [{field: "size", new_value: "large"}]
+- "change it to iced" -> modifications: [{field: "iced", new_value: true}]
+- "actually make that toasted" -> modifications: [{field: "toasted", new_value: true}]
+- "make it a large coffee" -> modifications to size, NOT a new item
 - "change the size to small" -> modifications to size, NOT a new item
 Key phrases that indicate MODIFICATION (never create new items for these):
 - "make it", "change it", "actually", "instead", "switch to", "can you make that"
-- ONLY use modifications[], set new_bagels: [] and new_coffees: []
+- ONLY use modifications[], do NOT add to new_menu_items
 
 SPLIT ITEM ANSWERS - For multi-quantity items with different values:
 When current item has quantity > 1 and user specifies DIFFERENT values for each:
@@ -378,14 +292,14 @@ ZIP CODE AND ADDRESS FIELDS:
 CRITICAL - ANSWERS VS NEW ITEMS:
 When there is a pending question, short responses like "yes", "no", "cream cheese",
 "toasted", "hot", "iced", "pickup", "delivery" are ANSWERS to that question - NOT new orders.
-- If pending question is "Would you like that toasted?" and user says "yes" -> answers: {"toasted": true}, DO NOT create new_bagels
-- If pending question is "cream cheese or butter?" and user says "cream cheese" -> answers: {"spread": "cream cheese"}, DO NOT create new_bagels
-- If pending question is "Hot or iced?" and user says "iced" -> answers: {"iced": true}, DO NOT create new_coffees
-- If pending question is "pickup or delivery?" and user says "pickup" -> order_type: "pickup", DO NOT create new_bagels or new_coffees
-- If pending question asks for name and user says "John" -> customer_name: "John", DO NOT create new items
-- If pending question asks for zip code and user says "10001" -> answers: {"zip_code": "10001"}, DO NOT create new items
-- If pending question asks for address and user provides one -> delivery_address: "the address", DO NOT create new items
-- ONLY create new_bagels or new_coffees when user explicitly asks for a NEW item (e.g., "I want another bagel", "add a coffee", "can I also get...")
+- If pending question is "Would you like that toasted?" and user says "yes" -> answers: {"toasted": true}, DO NOT create new_menu_items
+- If pending question is "cream cheese or butter?" and user says "cream cheese" -> answers: {"spread": "cream cheese"}, DO NOT create new_menu_items
+- If pending question is "Hot or iced?" and user says "iced" -> answers: {"iced": true}, DO NOT create new_menu_items
+- If pending question is "pickup or delivery?" and user says "pickup" -> order_type: "pickup", DO NOT create new_menu_items
+- If pending question asks for name and user says "John" -> customer_name: "John", DO NOT create new_menu_items
+- If pending question asks for zip code and user says "10001" -> answers: {"zip_code": "10001"}, DO NOT create new_menu_items
+- If pending question asks for address and user provides one -> delivery_address: "the address", DO NOT create new_menu_items
+- ONLY create new_menu_items when user explicitly asks for a NEW item (e.g., "I want another bagel", "add a coffee", "can I also get...")
 
 OMELETTE SIDE CHOICE AND BAGEL CHOICE - CRITICAL:
 When a user ORDERS an omelette (e.g., "can I get the chipotle egg omelette?"):
@@ -395,12 +309,12 @@ When a user ORDERS an omelette (e.g., "can I get the chipotle egg omelette?"):
 
 ONLY set side_choice/bagel_choice when the user is ANSWERING a pending question:
 - If pending question asks "Would you like a bagel or fruit salad with your [omelette]?" and user says:
-  - "bagel" -> answers: {"side_choice": "bagel"}, DO NOT create new_bagels
-  - "fruit salad" -> answers: {"side_choice": "fruit_salad"}, DO NOT create new_bagels
+  - "bagel" -> answers: {"side_choice": "bagel"}, DO NOT create new_menu_items
+  - "fruit salad" -> answers: {"side_choice": "fruit_salad"}, DO NOT create new_menu_items
 - If pending question asks "What kind of bagel would you like?" (after choosing bagel as side):
-  - "pumpernickel" -> answers: {"bagel_choice": "pumpernickel"}, DO NOT create new_bagels
-  - "everything bagel" -> answers: {"bagel_choice": "everything"}, DO NOT create new_bagels
-  - "plain" -> answers: {"bagel_choice": "plain"}, DO NOT create new_bagels
+  - "pumpernickel" -> answers: {"bagel_choice": "pumpernickel"}, DO NOT create new_menu_items
+  - "everything bagel" -> answers: {"bagel_choice": "everything"}, DO NOT create new_menu_items
+  - "plain" -> answers: {"bagel_choice": "plain"}, DO NOT create new_menu_items
 - These are answers about the SIDE for the omelette, NOT separate bagel orders!
 - Key pattern: If pending question is about side/bagel choice, it's for the omelette's side.
 - User saying "give me the pumpernickel bagel" after being asked about bagel choice = answers: {"bagel_choice": "pumpernickel"}

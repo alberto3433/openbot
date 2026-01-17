@@ -2135,24 +2135,21 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
         all_modifiers
     )
 
-    # If no known modifiers found, check if the text is a category name
-    # This handles "more cheese" where "cheese" is a category, not a specific ingredient
+    # Also check for category names (e.g., "cheese" in "add bacon and cheese")
+    # This handles cases where "cheese" is a category name, not a specific ingredient
+    all_food_categories = menu_cache.get_ordered_ingredient_categories("food")
+    modifier_words = modifier_text.lower().split()
+    for word in modifier_words:
+        word_clean = word.strip(",;").strip()
+        if word_clean in all_food_categories:
+            # Found a category name - add it to modifiers if not already there
+            category_title = word_clean.title()
+            if category_title not in modifiers_found:
+                modifiers_found.append(category_title)
+                logger.debug("ADD MODIFIER: added category '%s' to modifiers", category_title)
+
+    # If no known modifiers found (including categories), this isn't a modify request
     if not modifiers_found:
-        # Check if modifier_text is an ingredient category
-        all_food_categories = menu_cache.get_ordered_ingredient_categories("food")
-        modifier_text_clean = modifier_text.lower().strip()
-        if modifier_text_clean in all_food_categories:
-            # User said "more <category>" - return with empty modifiers
-            # but modify_existing_item=True so state machine can handle it
-            logger.info(
-                "ADD MODIFIER (category): '%s' -> category=%s",
-                text[:50], modifier_text_clean
-            )
-            return OpenInputResponse(
-                modify_existing_item=True,
-                modify_target_description=target_item,
-                modify_add_modifiers=[modifier_text_clean.title()],  # e.g., "Cheese"
-            )
         return None
 
     # Clean up target_item if present (remove trailing "please", "thanks", etc.)

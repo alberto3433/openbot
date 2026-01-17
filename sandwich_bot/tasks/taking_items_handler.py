@@ -39,16 +39,7 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
-from .parsers.constants import (
-    DEFAULT_PAGINATION_SIZE,
-    get_bagel_spreads,
-    get_coffee_types,
-    is_soda_drink,
-    resolve_soda_alias,
-    resolve_coffee_alias,
-    resolve_side_alias,
-    resolve_menu_item_alias,
-)
+from .parsers.constants import DEFAULT_PAGINATION_SIZE
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -78,28 +69,79 @@ ORDINAL_WORDS = {
 
 
 # =============================================================================
-# ParsedItem Type Checking Helpers
+# ParsedItem Type Checking Helpers (Data-Driven)
 # =============================================================================
-# These helpers check item types using data-driven attribute lookups.
+# These helpers check item type capabilities using database-driven attribute lookups.
+# They do NOT check for specific item type slugs - they check what attributes an item has.
 
-def _is_bagel_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a bagel (has bread attribute)."""
+def _item_has_bread_attribute(item: "ParsedItem") -> bool:
+    """Check if a ParsedItem's item_type has a bread attribute (data-driven)."""
     item_type = getattr(item, 'item_type', None)
     if not item_type:
         return False
-    # Data-driven check: item type has bread attribute
-    attrs = menu_cache.get_item_type_attributes(item_type)
-    return "bread" in attrs
+    return menu_cache.item_type_has_attribute(item_type, "bread")
 
 
-def _is_coffee_entry(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem represents a coffee/beverage (has size attribute)."""
+def _item_has_size_attribute(item: "ParsedItem") -> bool:
+    """Check if a ParsedItem's item_type has a size attribute (data-driven)."""
     item_type = getattr(item, 'item_type', None)
     if not item_type:
         return False
-    # Data-driven check: item type has size attribute (sized beverages)
-    attrs = menu_cache.get_item_type_attributes(item_type)
-    return "size" in attrs
+    return menu_cache.item_type_has_attribute(item_type, "size")
+
+
+def _get_dynamic_help_text() -> str:
+    """Generate help text dynamically from database item types.
+
+    Returns a help message listing available item categories from the database
+    instead of hardcoding specific items like 'bagels, coffee, sandwiches'.
+    """
+    try:
+        item_types = menu_cache.get_all_item_type_slugs()
+        # Get plural display names for user-friendly output
+        display_names = []
+        for slug in sorted(item_types):
+            name = menu_cache.get_item_type_display_name(slug, plural=True)
+            if name and name != slug:  # Only include if we have a proper display name
+                display_names.append(name)
+
+        if display_names:
+            # Take first few for a concise message
+            if len(display_names) > 3:
+                items_text = ", ".join(display_names[:3]) + ", and more"
+            else:
+                items_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}" if len(display_names) > 1 else display_names[0]
+            return f"I can help you order {items_text} from our menu. Just tell me what you'd like!"
+        else:
+            return "I can help you order from our menu. Just tell me what you'd like!"
+    except Exception:
+        # Fallback if cache not loaded
+        return "I can help you order from our menu. Just tell me what you'd like!"
+
+
+def _get_ingredient_options_text(category: str) -> str:
+    """Get a formatted list of available ingredients for a category.
+
+    Args:
+        category: The ingredient category (e.g., "cheese", "spread")
+
+    Returns:
+        Formatted string like "American, cheddar, Swiss, and muenster"
+    """
+    try:
+        ingredients = menu_cache.get_ingredients(category)
+        if not ingredients:
+            return ""
+        # Sort and capitalize for display
+        sorted_ingredients = sorted(ingredients)[:6]  # Limit to 6 for readability
+        if len(sorted_ingredients) == 1:
+            return sorted_ingredients[0]
+        elif len(sorted_ingredients) == 2:
+            return f"{sorted_ingredients[0]} and {sorted_ingredients[1]}"
+        else:
+            return ", ".join(sorted_ingredients[:-1]) + f", and {sorted_ingredients[-1]}"
+    except Exception:
+        return ""
 
 
 def _get_beverage_modifier_patterns(category: str) -> set[str]:
@@ -349,10 +391,9 @@ def find_nth_item_of_type(
             return (items[n - 1], n - 1)
         return None
 
-    # Resolve synonyms to canonical names
+    # Resolve synonyms to canonical names using unified resolver (data-driven)
     keyword_lower = item_type_keyword.lower()
-    canonical_soda = resolve_soda_alias(keyword_lower)
-    canonical_coffee = resolve_coffee_alias(keyword_lower)
+    canonical_name, _ = menu_cache.resolve_alias(keyword_lower)
 
     matching_items = []
     for idx, item in enumerate(items):
@@ -369,11 +410,8 @@ def find_nth_item_of_type(
             keyword_lower == item_type or
             (item_type and item_type in keyword_lower)):
             matches = True
-        # Check canonical soda name match (e.g., "coke" -> "Coca-Cola")
-        elif canonical_soda != keyword_lower and canonical_soda.lower() in item_name_lower:
-            matches = True
-        # Check canonical coffee name match
-        elif canonical_coffee != keyword_lower and canonical_coffee.lower() in item_name_lower:
+        # Check canonical name match (e.g., "coke" -> "Coca-Cola")
+        elif canonical_name and canonical_name.lower() in item_name_lower:
             matches = True
         # Check if menu_item_name contains keyword
         elif keyword_lower in item_name_lower:
@@ -470,15 +508,18 @@ class TakingItemsHandler:
         """Get ingredient-to-items mapping for ingredient-based menu search."""
         return self._menu_data.get("ingredient_to_items", {})
 
-    def _get_bagel_menu_item_info(self, menu_item_name: str) -> dict | None:
+    def _get_menu_item_bread_info(self, menu_item_name: str) -> dict | None:
         """
-        Check if a menu item contains a bagel and get its configuration info.
+        Check if a menu item contains a bread component and get its configuration info.
+
+        This is used for items that have a configurable bread choice (e.g., sandwiches
+        that come on a bread item which needs to be selected).
 
         Args:
             menu_item_name: The name of the menu item to check.
 
         Returns:
-            Dict with {id, name, default_bagel_type} if item contains bagel,
+            Dict with {id, name, default_bread_type} if item contains configurable bread,
             None otherwise.
         """
         if not menu_item_name:
@@ -810,12 +851,13 @@ class TakingItemsHandler:
                             order=order,
                         )
 
-            # Handle "add [spread]" for bagels - e.g., "add scallion cream cheese"
-            # This should modify an existing bagel, not add a new "Scallion Cream Cheese Sandwich"
+            # Handle "add [spread]" for items that accept spreads - e.g., "add scallion cream cheese"
+            # This should modify an existing item, not add a new "Scallion Cream Cheese Sandwich"
             if is_add_modifier_request and active_items:
                 # Check if input contains a spread pattern (longer matches first)
+                # Data-driven: get spreads from database ingredient category
                 detected_spread = None
-                for spread in sorted(get_bagel_spreads(), key=len, reverse=True):
+                for spread in sorted(menu_cache.get_ingredients("spread"), key=len, reverse=True):
                     if spread in input_lower:
                         detected_spread = spread
                         break
@@ -1087,7 +1129,7 @@ class TakingItemsHandler:
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
                 bagel_entry = next(
                     (item for item in parsed.parsed_items
-                     if _is_bagel_entry(item) and item.bread),
+                     if _item_has_bread_attribute(item) and item.bread),
                     None
                 )
                 if has_new_items and bagel_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
@@ -1148,14 +1190,14 @@ class TakingItemsHandler:
                             order=order,
                         )
                     else:
-                        # Check if user is changing the spread or bagel type
-                        # e.g., "make it blueberry cream cheese", "replace with everything"
+                        # Check if user is changing the spread
+                        # e.g., "make it blueberry cream cheese"
                         input_lower = raw_user_input.lower()
 
-                        # Check for spread changes FIRST (longer matches before shorter)
-                        # e.g., "blueberry cream cheese" should match before "blueberry" (bagel type)
+                        # Check for spread changes (longer matches before shorter)
+                        # Data-driven: get spreads from database ingredient category
                         new_spread = None
-                        for spread in sorted(get_bagel_spreads(), key=len, reverse=True):
+                        for spread in sorted(menu_cache.get_ingredients("spread"), key=len, reverse=True):
                             if spread in input_lower:
                                 # Normalize the spread name
                                 new_spread = menu_cache.normalize_modifier(spread)
@@ -1529,15 +1571,9 @@ class TakingItemsHandler:
                 if category_mapping:
                     mapped_item_type = category_mapping.get("slug")
 
-                # Resolve aliases to canonical names (e.g., "coke" -> "Coca-Cola")
-                # Try all alias resolution functions in order
-                canonical_name = singular_desc
-                for resolve_fn in [resolve_soda_alias, resolve_coffee_alias, resolve_side_alias, resolve_menu_item_alias]:
-                    resolved = resolve_fn(singular_desc)
-                    if resolved and resolved != singular_desc:
-                        canonical_name = resolved
-                        break
-                canonical_name_lower = canonical_name.lower() if canonical_name != singular_desc else None
+                # Resolve aliases to canonical names using unified resolver (data-driven)
+                resolved_name, _ = menu_cache.resolve_alias(singular_desc)
+                canonical_name_lower = resolved_name.lower() if resolved_name else None
 
                 # Find matching items (fallback for non-ordinal cancellations)
                 items_to_remove = []
@@ -1883,8 +1919,10 @@ class TakingItemsHandler:
             )
 
         if parsed.is_help_request:
+            # Generate help text dynamically from database item types
+            help_text = _get_dynamic_help_text()
             return StateMachineResult(
-                message="I can help you order bagels, coffee, sandwiches, and more from our menu. Just tell me what you'd like! For example, you can say 'plain bagel with cream cheese' or 'large iced latte'.",
+                message=help_text,
                 order=order,
             )
 
@@ -2094,7 +2132,7 @@ class TakingItemsHandler:
 
             return order, summary
 
-        elif _is_bagel_entry(item):
+        elif _item_has_bread_attribute(item):
             # Build ExtractedModifiers from parsed entry fields
             extracted_mods = ExtractedModifiers()
             # For ParsedItemEntry, modifiers are combined in item.modifiers
@@ -2121,7 +2159,7 @@ class TakingItemsHandler:
                 extracted_mods.special_instructions = [item.special_instructions]
 
             # Use unified add_item() dispatcher (item_type from parsed item)
-            # Note: _is_bagel_entry already verified item_type exists
+            # Note: _item_has_bread_attribute already verified item_type exists
             item_type = item.item_type
             result = self.item_adder_handler.add_item(
                 item_type=item_type,
@@ -2147,7 +2185,7 @@ class TakingItemsHandler:
                     summary += " toasted"
             return order, summary
 
-        elif _is_coffee_entry(item):
+        elif _item_has_size_attribute(item):
             # Check if this is a modifier-only input (e.g., "2 vanilla syrups") that should
             # be added to the last beverage instead of creating a new coffee
             drink_type_lower = (item.drink_type or "").lower()
@@ -2415,7 +2453,7 @@ class TakingItemsHandler:
             # (disambiguation returns without adding to order)
             items_before = len(order.items.items)
 
-            # Use item_type from parsed item (data-driven, verified by _is_coffee_entry)
+            # Use item_type from parsed item (data-driven, verified by _item_has_size_attribute)
             result = self.item_adder_handler.add_item(
                 item_type=item.item_type,
                 order=order,
@@ -2528,13 +2566,13 @@ class TakingItemsHandler:
                         # New unified ParsedItemEntry with menu_item type
                         item_type = "signature_item" if parsed_item.is_signature else "menu_item"
                         display_name = parsed_item.item_name or summary
-                    elif _is_bagel_entry(parsed_item):
-                        # _is_bagel_entry already verified item_type exists
+                    elif _item_has_bread_attribute(parsed_item):
+                        # _item_has_bread_attribute already verified item_type exists
                         item_type = parsed_item.item_type
                         type_display = menu_cache.get_item_type_display_name(item_type)
                         display_name = f"{parsed_item.bread} {type_display}" if parsed_item.bread else type_display
-                    elif _is_coffee_entry(parsed_item):
-                        # _is_coffee_entry already verified item_type exists
+                    elif _item_has_size_attribute(parsed_item):
+                        # _item_has_size_attribute already verified item_type exists
                         item_type = parsed_item.item_type
                         display_name = parsed_item.drink_type or menu_cache.get_item_type_display_name(item_type)
                     else:
@@ -2643,18 +2681,17 @@ class TakingItemsHandler:
         if not summaries:
             return None
 
-        # Find all items that need configuration (toasted question, bagel type, etc.)
-        # Group by handler type since handlers like configure_next_incomplete_bagel and
-        # configure_next_incomplete_coffee have internal loops that find ALL items of their type.
+        # Find all items that need configuration (toasted question, bread type, size, etc.)
+        # Group by attribute type since handlers have internal loops that find ALL items of their type.
         # We only need to queue ONE item per handler group - the handler will find the rest.
         #
-        # Handler groups:
-        # - "bagel_handler": MenuItemTask with bagel config (bagels, sandwiches, omelette sides)
-        # - "coffee_handler": MenuItemTask with size/milk attributes (coffee, latte, etc.)
-        # - Individual items: MenuItemTask needing side_choice (no internal loop)
+        # Handler groups (based on item capabilities, not item types):
+        # - "bread_config": Items with bread/toasted/spread attributes (data-driven)
+        # - "size_config": Items with size attribute (data-driven)
+        # - Individual items: Items needing side_choice or custom config (no internal loop)
 
-        bagel_handler_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
-        coffee_handler_items: list[tuple[str, str, str, str]] = []
+        bread_config_items: list[tuple[str, str, str, str]] = []  # (item_id, name, type, field)
+        size_config_items: list[tuple[str, str, str, str]] = []
         individual_items: list[tuple[str, str, str, str]] = []  # Items that don't share a handler loop
 
         for item in order.items.items:
@@ -2672,11 +2709,11 @@ class TakingItemsHandler:
                         # Check if side type has "toasted" attribute using data lookup
                         side_attrs = menu_cache.get_item_type_attributes(item.side_choice)
                         if hasattr(item, choice_field) and not specific_choice:
-                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", choice_field))
+                            bread_config_items.append((item.id, item.menu_item_name, "menu_item", choice_field))
                         elif "toasted" in side_attrs and item.toasted is None:
-                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                            bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                         elif "spread" in side_attrs and item.spread is None:
-                            bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
+                            bread_config_items.append((item.id, item.menu_item_name, "menu_item", "spread"))
                     # Check if this menu item contains a bagel (e.g., Classic BEC)
                     elif not item.requires_side_choice:
                         # DB-driven items use MenuItemConfigHandler
@@ -2701,11 +2738,11 @@ class TakingItemsHandler:
                             item_type_slug = item.menu_item_type
                             display_name = item.menu_item_name or menu_cache.get_item_type_display_name(item_type_slug)
                             if item.size is None:
-                                coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_size"))
+                                size_config_items.append((item.id, display_name, item_type_slug, "size_config"))
                             elif item.milk is None and not item.sweeteners and not item.flavor_syrups:
-                                coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_modifiers"))
+                                size_config_items.append((item.id, display_name, item_type_slug, "beverage_modifiers"))
                         else:
-                            bagel_item_info = self._get_bagel_menu_item_info(item.menu_item_name)
+                            bagel_item_info = self._get_menu_item_bread_info(item.menu_item_name)
                             if bagel_item_info:
                                 # This is a bagel-containing menu item
                                 # Apply default bagel type if available and not already set
@@ -2715,35 +2752,35 @@ class TakingItemsHandler:
                                                item.bagel_choice, item.menu_item_name)
                                 # If no default and bagel_choice not set, ask for bagel type
                                 if not item.bagel_choice:
-                                    bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
+                                    bread_config_items.append((item.id, item.menu_item_name, "menu_item", "bagel_choice"))
                                 # Then ask for toasted if not set
                                 elif item.toasted is None:
-                                    bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                                    bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                             # Non-bagel menu items (spread/salad sandwiches) need toasted question
                             # These are also handled by bagel config handler
                             elif item.toasted is None:
-                                bagel_handler_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
+                                bread_config_items.append((item.id, item.menu_item_name, "menu_item", "toasted"))
                 # Note: Legacy BagelItemTask branch removed - all bagels are now MenuItemTask
 
         # Build final list: only FIRST item from each handler group + all individual items
         # Handlers with internal loops will find subsequent items of their type automatically
         items_needing_config: list[tuple[str, str, str, str]] = []
 
-        # Add first bagel-handler item (if any) - configure_next_incomplete_bagel will find the rest
-        if bagel_handler_items:
-            items_needing_config.append(bagel_handler_items[0])
-            if len(bagel_handler_items) > 1:
-                logger.info("Bagel handler will process %d items via internal loop (not queued): %s",
-                           len(bagel_handler_items) - 1,
-                           [(n, f) for _, n, _, f in bagel_handler_items[1:]])
+        # Add first bread-config item (if any) - handler will find the rest via internal loop
+        if bread_config_items:
+            items_needing_config.append(bread_config_items[0])
+            if len(bread_config_items) > 1:
+                logger.info("Bread config handler will process %d items via internal loop (not queued): %s",
+                           len(bread_config_items) - 1,
+                           [(n, f) for _, n, _, f in bread_config_items[1:]])
 
-        # Add first coffee-handler item (if any) - configure_next_incomplete_coffee will find the rest
-        if coffee_handler_items:
-            items_needing_config.append(coffee_handler_items[0])
-            if len(coffee_handler_items) > 1:
-                logger.info("Coffee handler will process %d items via internal loop (not queued): %s",
-                           len(coffee_handler_items) - 1,
-                           [(n, f) for _, n, _, f in coffee_handler_items[1:]])
+        # Add first size-config item (if any) - handler will find the rest via internal loop
+        if size_config_items:
+            items_needing_config.append(size_config_items[0])
+            if len(size_config_items) > 1:
+                logger.info("Size config handler will process %d items via internal loop (not queued): %s",
+                           len(size_config_items) - 1,
+                           [(n, f) for _, n, _, f in size_config_items[1:]])
 
         # Add all individual items (no internal loops for these)
         # Note: Espresso items use MenuItemTask and are included in individual_items via menu_item_config
@@ -2840,23 +2877,28 @@ class TakingItemsHandler:
                 question = f"Got it, {side_desc}{toasted_desc}! Would you like butter or cream cheese on that?"
             else:
                 question = f"Got it! Would you like cream cheese or butter on that?"
-        elif first_field == "coffee_size":
+        elif first_field == "size_config":
+            # Generic size question for any sized item (data-driven)
             question = f"Got it! What size {first_item_name} would you like? Small or Large?"
-        elif first_field == "coffee_modifiers":
-            question = f"Got it, {first_item_name}! Any milk, sweetener, or syrup?"
-        elif first_field == "espresso_modifiers":
+        elif first_field in ("beverage_modifiers", "espresso_modifiers"):
+            # Generic modifier question for any beverage (data-driven)
             question = f"Got it, {first_item_name}! Any milk, sweetener, or syrup?"
         elif first_field == "cheese_choice":
-            # Regular bagel with generic "cheese" - ask for type
+            # Regular item with generic "cheese" - ask for type (data-driven options)
+            cheese_options = _get_ingredient_options_text("cheese")
+            cheese_text = f" We have {cheese_options}." if cheese_options else ""
             item = next((i for i in order.items.items if i.id == first_item_id), None)
             if isinstance(item, MenuItemTask) and item.has_attribute("bread"):
-                # Bagel or other item with bread attribute
+                # Item with bread attribute
                 toasted_desc = " toasted" if item.toasted else ""
-                question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
+                question = f"Got it, {first_item_name}{toasted_desc}! What kind of cheese would you like?{cheese_text}"
             else:
-                question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
+                question = f"Got it, {first_item_name}! What kind of cheese would you like?{cheese_text}"
         elif first_field == "signature_item_cheese_choice":
-            question = f"Got it, {first_item_name}! What kind of cheese would you like? We have American, cheddar, Swiss, and muenster."
+            # Signature item cheese choice (data-driven options)
+            cheese_options = _get_ingredient_options_text("cheese")
+            cheese_text = f" We have {cheese_options}." if cheese_options else ""
+            question = f"Got it, {first_item_name}! What kind of cheese would you like?{cheese_text}"
         elif first_field == "signature_item_bagel_type":
             question = f"Got it, {first_item_name}! What type of bagel would you like?"
         elif first_field == "signature_item_toasted":
@@ -2912,9 +2954,9 @@ class TakingItemsHandler:
             return self._duplicate_all_items(order, active_items)
 
         # Try to match user's response to one of the item options
-        # First, normalize common aliases (e.g., "coke" -> "Coca-Cola")
-        from .parsers.constants import resolve_soda_alias
-        normalized_text = resolve_soda_alias(text).lower()
+        # First, normalize common aliases using unified resolver (data-driven)
+        resolved_name, _ = menu_cache.resolve_alias(text)
+        normalized_text = (resolved_name or text).lower()
 
         matched_item = None
         best_match_score = 0
@@ -3357,13 +3399,15 @@ class TakingItemsHandler:
             selected_name, selected_price, stored_size, stored_milk, stored_syrup
         )
 
-        # Check if this drink should skip configuration
-        is_configurable_coffee = any(
-            bev in selected_name.lower() for bev in get_coffee_types()
+        # Check if this drink should skip configuration (data-driven)
+        # An item type needs configuration if it has attributes with ask_in_conversation=True
+        needs_config = (
+            selected_item_type
+            and menu_cache.item_type_needs_configuration(selected_item_type)
+            and not selected_item.get("skip_config", False)
         )
-        should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
 
-        if should_skip_config or not is_configurable_coffee:
+        if not needs_config:
             # Add directly as complete (no size/iced questions)
             drink = MenuItemTask(
                 menu_item_name=selected_name,
@@ -3587,13 +3631,15 @@ class TakingItemsHandler:
                 order.pending_item_options = []
                 order.clear_pending()
 
-                # Check if this drink should skip configuration
-                is_configurable_coffee = any(
-                    bev in selected_name.lower() for bev in get_coffee_types()
+                # Check if this drink should skip configuration (data-driven)
+                # An item type needs configuration if it has attributes with ask_in_conversation=True
+                needs_config = (
+                    selected_item_type
+                    and menu_cache.item_type_needs_configuration(selected_item_type)
+                    and not selected_item.get("skip_config", False)
                 )
-                should_skip_config = selected_item.get("skip_config", False) or is_soda_drink(selected_name)
 
-                if should_skip_config or not is_configurable_coffee:
+                if not needs_config:
                     # Add directly as complete (no size/iced questions)
                     drink = MenuItemTask(
                         menu_item_name=selected_name,
@@ -3710,7 +3756,7 @@ class TakingItemsHandler:
         # Check if they specified a coffee/drink via parsed_items
         if parsed and parsed.parsed_items:
             coffee_entry = next(
-                (item for item in parsed.parsed_items if _is_coffee_entry(item)),
+                (item for item in parsed.parsed_items if _item_has_size_attribute(item)),
                 None
             )
             if coffee_entry:
@@ -3738,25 +3784,7 @@ class TakingItemsHandler:
                     original_input=user_input,
                 )
 
-        # Try direct matching with known drink types
-        menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
-        for bev_type in get_coffee_types():
-            if bev_type in user_lower:
-                # Look up item type from menu (data-driven)
-                bev_item_type = None
-                if menu_lookup:
-                    bev_item = menu_lookup.lookup_menu_item(bev_type)
-                    bev_item_type = bev_item.get("item_type") if bev_item else None
-                # Use unified add_item() dispatcher
-                return self.item_adder_handler.add_item(
-                    item_type=bev_item_type,
-                    order=order,
-                    quantity=1,
-                    item_name=bev_type,
-                    original_input=user_input,
-                )
-
-        # Try to look up in menu
+        # Try to look up in menu (data-driven - no hardcoded beverage types)
         menu_lookup = self.item_adder_handler.menu_lookup if self.item_adder_handler else None
         if menu_lookup:
             matching_items = menu_lookup.lookup_menu_items(user_input)

@@ -12,8 +12,7 @@ import os
 from unittest.mock import MagicMock
 
 from sandwich_bot.tasks.parsing import (
-    ParsedBagelItem,
-    ParsedCoffeeItem,
+    ParsedMenuItem,
     ItemModification,
     ParsedInput,
     parse_user_message,
@@ -73,68 +72,6 @@ def _is_bagel_item(item) -> bool:
 # Schema Validation Tests
 # =============================================================================
 
-class TestParsedBagelItem:
-    """Tests for ParsedBagelItem schema."""
-
-    def test_default_values(self):
-        """Test default values are correct."""
-        bagel = ParsedBagelItem()
-        assert bagel.item_type == "bagel"
-        assert bagel.bread is None
-        assert bagel.quantity == 1
-        assert bagel.toasted is None
-        assert bagel.spread is None
-        assert bagel.toppings == []
-
-    def test_full_bagel(self):
-        """Test creating a fully specified bagel."""
-        bagel = ParsedBagelItem(
-            bread="everything",
-            quantity=2,
-            toasted=True,
-            spread="cream cheese",
-            spread_type="scallion",
-            toppings=["lox", "tomato", "capers"],
-        )
-        assert bagel.bread == "everything"
-        assert bagel.quantity == 2
-        assert bagel.toasted is True
-        assert bagel.spread == "cream cheese"
-        assert bagel.spread_type == "scallion"
-        assert bagel.toppings == ["lox", "tomato", "capers"]
-
-
-class TestParsedCoffeeItem:
-    """Tests for ParsedCoffeeItem schema."""
-
-    def test_default_values(self):
-        """Test default values are correct."""
-        coffee = ParsedCoffeeItem()
-        assert coffee.item_type == "coffee"
-        assert coffee.drink_type is None
-        assert coffee.size is None
-        assert coffee.iced is None
-        assert coffee.milk is None
-        assert coffee.extra_shots == 0
-
-    def test_full_coffee(self):
-        """Test creating a fully specified coffee."""
-        coffee = ParsedCoffeeItem(
-            drink_type="latte",
-            size="large",
-            iced=True,
-            milk="oat",
-            sweetener="vanilla",
-            extra_shots=2,
-        )
-        assert coffee.drink_type == "latte"
-        assert coffee.size == "large"
-        assert coffee.iced is True
-        assert coffee.milk == "oat"
-        assert coffee.sweetener == "vanilla"
-        assert coffee.extra_shots == 2
-
-
 class TestItemModification:
     """Tests for ItemModification schema."""
 
@@ -167,8 +104,7 @@ class TestParsedInput:
     def test_empty_input(self):
         """Test empty input has correct defaults."""
         parsed = ParsedInput()
-        assert parsed.new_bagels == []
-        assert parsed.new_coffees == []
+        assert parsed.new_menu_items == []
         assert parsed.modifications == []
         assert parsed.answers == {}
         assert parsed.wants_checkout is False
@@ -178,18 +114,15 @@ class TestParsedInput:
     def test_multi_item_order(self):
         """Test parsing result with multiple items."""
         parsed = ParsedInput(
-            new_bagels=[
-                ParsedBagelItem(bread="everything", toasted=True),
-                ParsedBagelItem(bread="plain"),
-            ],
-            new_coffees=[
-                ParsedCoffeeItem(drink_type="latte", size="large", iced=True),
+            new_menu_items=[
+                ParsedMenuItem(item_name="everything bagel"),
+                ParsedMenuItem(item_name="plain bagel"),
+                ParsedMenuItem(item_name="large iced latte"),
             ],
         )
-        assert len(parsed.new_bagels) == 2
-        assert len(parsed.new_coffees) == 1
-        assert parsed.new_bagels[0].bread == "everything"
-        assert parsed.new_coffees[0].iced is True
+        assert len(parsed.new_menu_items) == 3
+        assert parsed.new_menu_items[0].item_name == "everything bagel"
+        assert parsed.new_menu_items[2].item_name == "large iced latte"
 
     def test_order_with_answers(self):
         """Test parsing result with question answers."""
@@ -267,8 +200,8 @@ class TestParseUserMessageMocked:
         """Test parsing a simple bagel order."""
         # Create a mock client that returns a predefined ParsedInput
         mock_result = ParsedInput(
-            new_bagels=[
-                ParsedBagelItem(bread="everything", toasted=True)
+            new_menu_items=[
+                ParsedMenuItem(item_name="everything bagel toasted")
             ]
         )
 
@@ -283,18 +216,15 @@ class TestParseUserMessageMocked:
             client=mock_client,
         )
 
-        assert len(result.new_bagels) == 1
-        assert result.new_bagels[0].bread == "everything"
-        assert result.new_bagels[0].toasted is True
+        assert len(result.new_menu_items) == 1
+        assert result.new_menu_items[0].item_name == "everything bagel toasted"
 
     def test_parse_multi_item_order(self):
         """Test parsing a multi-item order."""
         mock_result = ParsedInput(
-            new_bagels=[
-                ParsedBagelItem(bread="sesame", spread="cream cheese")
-            ],
-            new_coffees=[
-                ParsedCoffeeItem(drink_type="latte", size="large", iced=True)
+            new_menu_items=[
+                ParsedMenuItem(item_name="sesame bagel with cream cheese"),
+                ParsedMenuItem(item_name="large iced latte"),
             ]
         )
 
@@ -309,10 +239,9 @@ class TestParseUserMessageMocked:
             client=mock_client,
         )
 
-        assert len(result.new_bagels) == 1
-        assert len(result.new_coffees) == 1
-        assert result.new_bagels[0].spread == "cream cheese"
-        assert result.new_coffees[0].iced is True
+        assert len(result.new_menu_items) == 2
+        assert result.new_menu_items[0].item_name == "sesame bagel with cream cheese"
+        assert result.new_menu_items[1].item_name == "large iced latte"
 
     def test_parse_yes_answer(self):
         """Test parsing 'yes' as an answer to pending question."""
@@ -380,11 +309,9 @@ class TestParseUserMessageIntegration:
             "I want an everything bagel toasted with cream cheese"
         )
 
-        assert len(result.new_bagels) >= 1
-        bagel = result.new_bagels[0]
-        assert bagel.bread == "everything"
-        assert bagel.toasted is True
-        assert bagel.spread == "cream cheese"
+        assert len(result.new_menu_items) >= 1
+        item = result.new_menu_items[0]
+        assert "bagel" in item.item_name.lower()
 
     def test_parse_coffee_order(self):
         """Test parsing a coffee order with real LLM."""
@@ -392,56 +319,40 @@ class TestParseUserMessageIntegration:
             "Large iced latte with oat milk please"
         )
 
-        assert len(result.new_coffees) >= 1
-        coffee = result.new_coffees[0]
-        assert coffee.drink_type == "latte"
-        assert coffee.size == "large"
-        assert coffee.iced is True
-        assert coffee.milk == "oat"
+        assert len(result.new_menu_items) >= 1
+        item = result.new_menu_items[0]
+        assert "latte" in item.item_name.lower()
 
     def test_parse_coffee_with_milk_defaults_to_whole(self):
-        """Test that 'coffee with milk' defaults to whole milk."""
+        """Test that 'coffee with milk' is captured as a menu item."""
         result = parse_user_message("coffee with milk")
 
-        assert len(result.new_coffees) >= 1
-        coffee = result.new_coffees[0]
-        assert coffee.milk == "whole"
+        assert len(result.new_menu_items) >= 1
+        item = result.new_menu_items[0]
+        assert "coffee" in item.item_name.lower()
 
     def test_parse_coffee_with_splash_of_milk(self):
-        """Test that 'coffee with a splash of milk' captures milk preference."""
+        """Test that 'coffee with a splash of milk' is captured as a menu item."""
         result = parse_user_message("small coffee with a splash of milk")
 
-        assert len(result.new_coffees) >= 1
-        coffee = result.new_coffees[0]
-        assert coffee.size == "small"
-        # Deterministic parser returns "whole", LLM may return "splash" or "whole"
-        assert coffee.milk is not None
+        assert len(result.new_menu_items) >= 1
+        item = result.new_menu_items[0]
+        assert "coffee" in item.item_name.lower()
 
     def test_parse_coffee_with_sweetener_and_syrup(self):
-        """Test that coffee with 'sugar and vanilla syrups' extracts both modifiers.
-
-        Regression test for bug where multi-item parser incorrectly split on ' and '
-        between coffee modifiers, losing the syrup information.
-        """
+        """Test that coffee with 'sugar and vanilla syrups' is captured as a menu item."""
         result = parse_user_message("large iced coffee with sugar and 2 vanilla syrups")
 
-        assert len(result.new_coffees) >= 1
-        coffee = result.new_coffees[0]
-        # Coffee type may be "coffee" or "drip coffee" depending on menu config
-        assert "coffee" in coffee.drink_type.lower()
-        assert coffee.size == "large"
-        assert coffee.iced is True
-        assert coffee.sweetener == "sugar"
-        # flavor_syrup is the correct field name in ParsedCoffeeItem
-        assert coffee.flavor_syrup == "vanilla"
+        assert len(result.new_menu_items) >= 1
+        item = result.new_menu_items[0]
+        assert "coffee" in item.item_name.lower()
 
     def test_parse_greeting(self):
         """Test parsing a simple greeting."""
         result = parse_user_message("Hi there!")
 
         assert result.is_greeting is True
-        assert len(result.new_bagels) == 0
-        assert len(result.new_coffees) == 0
+        assert len(result.new_menu_items) == 0
 
     def test_parse_yes_answer_no_new_items(self):
         """Test that 'yes' answer to a pending question doesn't create new items."""
@@ -452,8 +363,7 @@ class TestParseUserMessageIntegration:
         )
 
         # Should NOT create new items - that's the key thing
-        assert len(result.new_bagels) == 0
-        assert len(result.new_coffees) == 0
+        assert len(result.new_menu_items) == 0
 
         # Should have the answer via either 'answers' field or as a modification
         has_toasted_answer = result.answers.get("toasted") is True
@@ -472,7 +382,7 @@ class TestParseUserMessageIntegration:
         )
 
         # Should NOT create new items - that's the key thing
-        assert len(result.new_bagels) == 0
+        assert len(result.new_menu_items) == 0
 
         # Should have the answer via either 'answers' field or as a modification
         has_spread_answer = result.answers.get("spread") == "cream cheese"

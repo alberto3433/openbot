@@ -3686,6 +3686,109 @@ class MenuDataCache:
         name_lower = name.lower().strip()
         return self._menu_item_alias_to_canonical.get(name_lower)
 
+    def resolve_alias(self, term: str) -> tuple[str | None, str | None]:
+        """
+        Unified alias resolution across all sources (data-driven).
+
+        This is the single entry point for alias resolution, replacing domain-specific
+        functions like resolve_soda_alias(), resolve_coffee_alias(), resolve_side_alias(),
+        and resolve_menu_item_alias().
+
+        Search order:
+        1. Menu item aliases (signatures, sandwiches, etc.)
+        2. Side item aliases (sides, add-ons)
+        3. Item aliases by type (beverages, etc.)
+        4. Ingredient/modifier aliases
+
+        Args:
+            term: User input like "coke", "bec", "lox", "chips"
+
+        Returns:
+            Tuple of (canonical_name, source_type) where:
+            - canonical_name: The resolved name, or None if not found
+            - source_type: One of "menu_item", "side", "item", "modifier", or None
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.resolve_alias("coke")
+            ("Coca-Cola", "item")
+            >>> cache.resolve_alias("bec")
+            ("Bacon Egg & Cheese", "menu_item")
+            >>> cache.resolve_alias("lox")
+            ("Nova Scotia Salmon", "modifier")
+            >>> cache.resolve_alias("chips")
+            ("Bag of Chips", "side")
+            >>> cache.resolve_alias("unknown")
+            (None, None)
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+
+        # 1. Try menu item aliases first (signatures, sandwiches, omelettes, etc.)
+        result = self._menu_item_alias_to_canonical.get(term_lower)
+        if result:
+            return (result, "menu_item")
+
+        # 2. Try side item aliases
+        result = self._side_alias_to_canonical.get(term_lower)
+        if result:
+            return (result, "side")
+
+        # 3. Try item aliases across all item types (beverages, etc.)
+        # This searches _item_alias_to_canonical_by_type which is organized by item type
+        for item_type_slug, type_aliases in self._item_alias_to_canonical_by_type.items():
+            if term_lower in type_aliases:
+                return (type_aliases[term_lower], "item")
+
+        # 4. Try ingredient/modifier aliases
+        result = self._modifier_aliases.get(term_lower)
+        if result:
+            return (result, "modifier")
+
+        return (None, None)
+
+    def item_type_needs_configuration(self, item_type_slug: str) -> bool:
+        """
+        Check if an item type has attributes that need to be asked in conversation.
+
+        This is the data-driven replacement for domain-specific functions like
+        is_soda_drink() which hardcoded knowledge about which item types need
+        configuration.
+
+        An item type needs configuration if it has at least one attribute with
+        ask_in_conversation=True in the item_type_attributes table.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "beverage", "bagel")
+
+        Returns:
+            True if the item type has configurable attributes, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.item_type_needs_configuration("sized_beverage")
+            True  # Has size, milk, etc. attributes to ask
+            >>> cache.item_type_needs_configuration("beverage")
+            False  # Bottled drinks have no configuration
+            >>> cache.item_type_needs_configuration("bagel")
+            True  # Has toasted, spread attributes to ask
+        """
+        self._ensure_loaded()
+
+        # Get attributes for this item type
+        attrs = self._item_type_attributes.get(item_type_slug, [])
+
+        # Check if any attribute has ask_in_conversation=True
+        for attr in attrs:
+            if attr.get("ask", False):
+                return True
+
+        return False
+
     def get_abbreviations(self) -> dict[str, str]:
         """
         Get the abbreviation-to-canonical mapping.

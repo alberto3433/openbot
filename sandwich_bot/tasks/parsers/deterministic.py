@@ -4852,11 +4852,6 @@ def parse_open_input_deterministic(
     if store_info_result:
         return store_info_result
 
-    # Check for customer service escalation requests
-    customer_service_result = _parse_customer_service_inquiry(text)
-    if customer_service_result:
-        return customer_service_result
-
     # Check for item description inquiries
     item_desc_result = _parse_item_description_inquiry(text)
     if item_desc_result:

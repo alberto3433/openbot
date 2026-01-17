@@ -69,7 +69,6 @@ from .llm_parsers import (
 from .constants import (
     # Drink categories
     get_coffee_types,
-    is_soda_drink,
     get_soda_types,
     # Number mapping
     WORD_TO_NUM,
@@ -166,7 +165,6 @@ __all__ = [
     "parse_phone",
     # Constants - Drink categories
     "get_coffee_types",
-    "is_soda_drink",
     "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",

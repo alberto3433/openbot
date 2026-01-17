@@ -52,54 +52,54 @@ class TestGetSodaTypes:
 
 
 class TestIsSodaDrink:
-    """Tests for is_soda_drink() function."""
+    """Tests for test_is_soda_drink() helper function."""
 
     def test_is_soda_drink_with_exact_match(self):
-        """is_soda_drink should return True for exact item name match."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink("Coca-Cola") is True
-        assert is_soda_drink("Sprite") is True
-        assert is_soda_drink("Diet Coke") is True
+        """test_is_soda_drink should return True for exact item name match."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink("Coca-Cola") is True
+        assert test_is_soda_drink("Sprite") is True
+        assert test_is_soda_drink("Diet Coke") is True
 
     def test_is_soda_drink_with_alias(self):
-        """is_soda_drink should return True for alias match."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink("coke") is True
-        assert is_soda_drink("oj") is True
-        assert is_soda_drink("seltzer") is True
+        """test_is_soda_drink should return True for alias match."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink("coke") is True
+        assert test_is_soda_drink("oj") is True
+        assert test_is_soda_drink("seltzer") is True
 
     def test_is_soda_drink_case_insensitive(self):
-        """is_soda_drink should be case insensitive."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink("COKE") is True
-        assert is_soda_drink("Coke") is True
-        assert is_soda_drink("OJ") is True
-        assert is_soda_drink("Oj") is True
+        """test_is_soda_drink should be case insensitive."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink("COKE") is True
+        assert test_is_soda_drink("Coke") is True
+        assert test_is_soda_drink("OJ") is True
+        assert test_is_soda_drink("Oj") is True
 
     def test_is_soda_drink_with_nonexistent_item(self):
-        """is_soda_drink should return False for items not in database."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink("pepsi") is False
-        assert is_soda_drink("mountain dew") is False
-        assert is_soda_drink("monster energy") is False  # Not on menu
+        """test_is_soda_drink should return False for items not in database."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink("pepsi") is False
+        assert test_is_soda_drink("mountain dew") is False
+        assert test_is_soda_drink("monster energy") is False  # Not on menu
 
     def test_is_soda_drink_with_none(self):
-        """is_soda_drink should return False for None input."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink(None) is False
+        """test_is_soda_drink should return False for None input."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink(None) is False
 
     def test_is_soda_drink_with_empty_string(self):
-        """is_soda_drink should return False for empty string."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
-        assert is_soda_drink("") is False
+        """test_is_soda_drink should return False for empty string."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
+        assert test_is_soda_drink("") is False
 
     def test_is_soda_drink_with_coffee_beverage(self):
-        """is_soda_drink should return False for coffee beverages."""
-        from sandwich_bot.tasks.parsers.constants import is_soda_drink
+        """test_is_soda_drink should return False for coffee beverages."""
+        from tests.helpers.menu_helpers import test_is_soda_drink
         # Coffee beverages are sized_beverage, not beverage
-        assert is_soda_drink("latte") is False
-        assert is_soda_drink("cappuccino") is False
-        assert is_soda_drink("espresso") is False
+        assert test_is_soda_drink("latte") is False
+        assert test_is_soda_drink("cappuccino") is False
+        assert test_is_soda_drink("espresso") is False
 
 
 class TestParseSodaDeterministic:

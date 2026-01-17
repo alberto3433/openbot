@@ -26,31 +26,9 @@ DEFAULT_PAGINATION_SIZE = 5
 # - Soda/bottled beverages: item_type='beverage' (use get_soda_types())
 # - Coffee/tea beverages: item_type='sized_beverage' (use get_coffee_types())
 # Both support aliases via the 'aliases' column on menu_items.
-
-def is_soda_drink(drink_type: str | None) -> bool:
-    """Check if a drink type is a soda/cold beverage that doesn't need configuration.
-
-    Uses database-loaded soda types (via get_soda_types()) which includes
-    both item names and their aliases from the menu_items.aliases column.
-
-    Sized beverages (coffee, latte, etc.) are explicitly excluded even if
-    they appear in soda types due to bottled versions (e.g., "Bottled Coffee").
-    """
-    if not drink_type:
-        return False
-    drink_lower = drink_type.lower().strip()
-
-    # Sized beverages (coffee, latte, tea, etc.) are NEVER sodas - they need configuration
-    # This prevents "Coffee" from matching "Bottled Coffee" in soda types
-    coffee_types = get_coffee_types()
-    if drink_lower in coffee_types:
-        return False
-
-    # Check exact match only - database includes aliases so substring matching is unnecessary
-    # and causes false positives (e.g., "coffee" matching "bottled coffee")
-    soda_types = get_soda_types()
-    return drink_lower in soda_types
-
+#
+# NOTE: is_soda_drink() was moved to tests/helpers/menu_helpers.py as test_is_soda_drink()
+# because it encodes domain-specific knowledge and was only used in tests.
 
 # =============================================================================
 # Word to Number Mapping
@@ -692,73 +670,8 @@ def get_bagel_spreads() -> set[str]:
     )
 
 
-def get_proteins() -> set[str]:
-    """
-    Get protein types (bacon, ham, etc.) from the database.
-
-    Returns data from cache which includes both ingredient names and
-    their aliases (e.g., "nova" and "lox" both map to Nova Scotia Salmon).
-
-    Raises:
-        RuntimeError: If menu cache is not loaded. There is no fallback -
-            code should fail if database isn't properly set up.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_ingredients function
-        cached = cache.get_ingredients("protein")
-        if cached:
-            return cached
-    raise RuntimeError(
-        "Proteins not available. Ensure menu_data_cache is loaded with protein data from the database."
-    )
-
-
-def get_toppings() -> set[str]:
-    """
-    Get topping types (tomato, onion, mayo, mustard, etc.) from the database.
-
-    Returns data from cache which includes both ingredient names and
-    their aliases. Includes both solid toppings (tomato, onion) and
-    sauces (mayo, mustard) which are now unified in the 'topping' category.
-
-    Raises:
-        RuntimeError: If menu cache is not loaded. There is no fallback -
-            code should fail if database isn't properly set up.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_ingredients function
-        cached = cache.get_ingredients("topping")
-        if cached:
-            return cached
-    raise RuntimeError(
-        "Toppings not available. Ensure menu_data_cache is loaded with topping data from the database."
-    )
-
-
-def get_cheeses() -> set[str]:
-    """
-    Get sliced cheese types (american, swiss, etc.) from the database.
-
-    Returns data from cache which includes both ingredient names and
-    their aliases. Only returns actual sliced cheeses, not cream cheese
-    spreads which are in the "spread" category.
-
-    Raises:
-        RuntimeError: If menu cache is not loaded. There is no fallback -
-            code should fail if database isn't properly set up.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_ingredients function
-        cached = cache.get_ingredients("cheese")
-        if cached:
-            return cached
-    raise RuntimeError(
-        "Cheeses not available. Ensure menu_data_cache is loaded with cheese data from the database."
-    )
-
+# Note: get_proteins(), get_toppings(), get_cheeses() were removed - they were dead code.
+# Use menu_cache.get_ingredients("protein"), etc. instead if needed.
 
 # Note: _FALLBACK_BAGEL_TYPES and _FALLBACK_COFFEE_TYPES were removed.
 # Bagel and coffee types are now loaded from the database.

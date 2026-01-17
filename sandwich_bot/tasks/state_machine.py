@@ -56,7 +56,6 @@ from .parsers import (
     parse_toasted_deterministic,
     # Constants - Drink categories
     get_coffee_types,
-    is_soda_drink,
     # Constants - Number mapping
     WORD_TO_NUM,
     # Constants - Spread types (loaded from database via dynamic functions)

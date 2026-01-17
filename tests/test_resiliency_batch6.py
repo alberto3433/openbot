@@ -40,7 +40,7 @@ class TestCancellationRemoval:
         # Bagel should be cancelled (status = SKIPPED)
         active_bagels = [
             i for i in result.order.items.items
-            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
+            if i.has_attribute('bread') and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 0, \
             f"Bagel should be removed. Active bagels: {len(active_bagels)}"
@@ -74,7 +74,7 @@ class TestCancellationRemoval:
         # Coffee should be cancelled (status = SKIPPED)
         active_coffees = [
             i for i in result.order.items.items
-            if getattr(i, 'is_sized_beverage', False) and i.status != TaskStatus.SKIPPED
+            if i.has_attribute('size') and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_coffees) == 0, \
             f"Coffee should be cancelled. Active coffees: {len(active_coffees)}"
@@ -115,7 +115,7 @@ class TestCancellationRemoval:
         # Coffee should be cancelled (status = SKIPPED)
         active_coffees = [
             i for i in result.order.items.items
-            if getattr(i, 'is_sized_beverage', False) and i.status != TaskStatus.SKIPPED
+            if i.has_attribute('size') and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_coffees) == 0, \
             f"Coffee should be cancelled. Active coffees: {len(active_coffees)}"
@@ -123,7 +123,7 @@ class TestCancellationRemoval:
         # Bagel should still be active
         active_bagels = [
             i for i in result.order.items.items
-            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
+            if i.has_attribute('bread') and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 1, \
             f"Bagel should be preserved. Active bagels: {len(active_bagels)}"
@@ -156,7 +156,7 @@ class TestCancellationRemoval:
         # Bagel should be cancelled (status = SKIPPED)
         active_bagels = [
             i for i in result.order.items.items
-            if getattr(i, 'is_bagel', False) and i.status != TaskStatus.SKIPPED
+            if i.has_attribute('bread') and i.status != TaskStatus.SKIPPED
         ]
         assert len(active_bagels) == 0, \
             f"Last item should be removed. Active bagels: {len(active_bagels)}"

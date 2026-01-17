@@ -32,7 +32,7 @@ class TestCorrectionsAfterMisunderstanding:
         result = sm.process("no, I said plain", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
 
         # Should have plain bagel or acknowledge correction
         if bagels:
@@ -62,7 +62,7 @@ class TestCorrectionsAfterMisunderstanding:
         result = sm.process("I meant the small one", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         # Should change to small or acknowledge
         if coffees:

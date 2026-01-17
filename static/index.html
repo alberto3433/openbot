@@ -1295,7 +1295,7 @@
 
     async function loadCompanyInfo() {
       try {
-        const response = await fetch("/company");
+        const response = await fetch("/api/v1/company");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         companyInfo = await response.json();
         console.log("[Company] Loaded:", companyInfo.name);
@@ -1310,7 +1310,7 @@
     async function loadStoresAndPopulateDropdown() {
       let stores = [];
       try {
-        const response = await fetch("/stores");
+        const response = await fetch("/api/v1/stores");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         stores = await response.json();
         console.log("[Stores] Loaded:", stores.length);
@@ -1396,7 +1396,7 @@
     async function startSession(callerId = null, storeId = null) {
       try {
         setStatus("Starting session...");
-        let url = "/chat/start";
+        let url = "/api/v1/chat/start";
         const params = new URLSearchParams();
         if (callerId) {
           params.append("caller_id", callerId);
@@ -1456,7 +1456,7 @@
 
     async function sendMessageNonStreaming(text) {
       try {
-        const resp = await fetch("/chat/message", {
+        const resp = await fetch("/api/v1/chat/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId, message: text }),
@@ -1487,7 +1487,7 @@
       let streamingMessageEl = null;
       let fullReply = "";
       try {
-        const resp = await fetch("/chat/message/stream", {
+        const resp = await fetch("/api/v1/chat/message/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId, message: text }),
@@ -1621,7 +1621,7 @@
         store_id: currentStoreId,
       };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-      navigator.sendBeacon("/chat/abandon", blob);
+      navigator.sendBeacon("/api/v1/chat/abandon", blob);
     }
     window.addEventListener("beforeunload", () => sendAbandonAnalytics("browser_close"));
 
@@ -1654,7 +1654,7 @@
 
     async function loadTTSVoices() {
       try {
-        const response = await fetch("/tts/voices");
+        const response = await fetch("/api/v1/tts/voices");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         ttsVoices = data.voices || [];
@@ -1718,7 +1718,7 @@
           ttsAudio.pause();
           ttsAudio = null;
         }
-        const response = await fetch("/tts/synthesize", {
+        const response = await fetch("/api/v1/tts/synthesize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, voice: ttsSelectedVoice, speed: 1.0 })

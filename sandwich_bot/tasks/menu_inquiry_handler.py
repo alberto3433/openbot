@@ -45,20 +45,15 @@ class MenuInquiryHandler:
     def __init__(
         self,
         config: "HandlerConfig",
-        list_by_pound_category: Callable[[str, OrderTask], StateMachineResult] | None = None,
     ):
         """
         Initialize the menu inquiry handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
-            list_by_pound_category: Callback to list items in a by-the-pound category.
         """
         self._menu_data = config.menu_data or {}
         self.pricing = config.pricing
-
-        # Handler-specific callback
-        self._list_by_pound_category = list_by_pound_category
 
     @property
     def menu_data(self) -> dict:
@@ -444,16 +439,6 @@ class MenuInquiryHandler:
                 if singular in seen_base:
                     continue
 
-            # For cheeses category, filter out items that belong in spreads
-            # Use data-driven category lookup to check if item is a spread
-            category_info = menu_cache.get_category_keyword_mapping(category)
-            is_cheese_category = category_info and category_info.get("slug") == "cheeses"
-            if is_cheese_category:
-                # Check if this item belongs in the spread category via database lookup
-                item_category = menu_cache.get_ingredient_category(item_lower)
-                if item_category == "spread":
-                    continue
-
             # Track base form
             base = item_lower.rstrip('s')
             if base in seen_base:
@@ -494,22 +479,8 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle by-the-pound categories (spread, cream cheese, etc.)
-        # Check if this category routes to by-pound handler via database
-        category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
-        if category_info and category_info.get("is_by_pound"):
-            category_slug = category_info.get("slug")
-            if self._list_by_pound_category:
-                return self._list_by_pound_category(category_slug, order)
-            display_name = category_info.get("display_name_plural", "items")
-            return StateMachineResult(
-                message=f"We have various {display_name}. Would you like to hear about them?",
-                order=order,
-            )
-
         # Handle beverage queries - use category info from database
-        if not category_info:
-            category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
+        category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
         if category_info and menu_cache.get_modifier_category(category_info.get("slug", "")) == "beverage":
             items, category_key = self._get_items_for_category(menu_query_type)
             display_name = category_info.get("display_name_plural", "beverages")

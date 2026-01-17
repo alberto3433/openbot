@@ -140,8 +140,8 @@ def send_payment_link_email(
                     details.append(config["style"])
                 if config.get("milk") and str(config["milk"]).lower() != "none":
                     details.append(str(config["milk"]).replace("_", " "))
-                # Handle flavor_syrup (new field name) or syrup (legacy)
-                syrup_value = config.get("flavor_syrup") or config.get("syrup")
+                # Handle flavor_syrup
+                syrup_value = config.get("flavor_syrup")
                 if syrup_value:
                     syrups = syrup_value if isinstance(syrup_value, list) else [syrup_value]
                     for s in syrups:
@@ -159,8 +159,7 @@ def send_payment_link_email(
                                 details.append(f"{sweetener_qty} {formatted}s")
                             else:
                                 details.append(formatted)
-                # Check both toppings and extras for backwards compatibility
-                toppings_data = config.get("toppings") or config.get("extras")
+                toppings_data = config.get("toppings")
                 if toppings_data:
                     toppings_list = toppings_data if isinstance(toppings_data, list) else [toppings_data]
                     for e in toppings_list:
@@ -337,88 +336,3 @@ Thanks,
         }
 
 
-def send_order_confirmation_email(
-    to_email: str,
-    order_id: int,
-    store_name: str,
-    order_type: str,
-    customer_name: Optional[str] = None,
-    estimated_time: Optional[str] = None,
-) -> dict:
-    """
-    Send an order confirmation email.
-
-    Args:
-        to_email: Customer's email address
-        order_id: The order ID
-        store_name: Name of the store
-        order_type: "pickup" or "delivery"
-        customer_name: Optional customer name
-        estimated_time: Optional estimated ready/delivery time
-
-    Returns:
-        dict with status
-    """
-    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
-
-    if order_type == "delivery":
-        action = "be delivered"
-    else:
-        action = "be ready for pickup"
-
-    time_msg = f" in about {estimated_time}" if estimated_time else " soon"
-
-    subject = f"Order Confirmed - {store_name} #{order_id}"
-
-    body_text = f"""{greeting}
-
-Your order #{order_id} from {store_name} is confirmed!
-
-It will {action}{time_msg}.
-
-Thanks,
-{store_name}
-"""
-
-    if not is_email_configured():
-        logger.info(
-            "MOCK EMAIL to %s: Subject: %s",
-            to_email,
-            subject
-        )
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": True,
-        }
-
-    try:
-        msg = MIMEText(body_text, "plain")
-        msg["Subject"] = subject
-        msg["From"] = SMTP_FROM_EMAIL
-        msg["To"] = to_email
-
-        # Connect and send with secure SSL context
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
-
-        logger.info("Confirmation email sent to %s for order %d", to_email, order_id)
-
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": False,
-        }
-
-    except Exception as e:
-        logger.error("Failed to send confirmation email to %s: %s", to_email, str(e))
-        return {
-            "status": "error",
-            "to_email": to_email,
-            "error": str(e),
-        }

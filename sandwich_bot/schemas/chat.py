@@ -145,28 +145,12 @@ class ChatMessageResponse(BaseModel):
         reply: Bot's natural language response to display
         order_state: Complete current order (items, customer, totals)
         actions: List of structured actions performed (for UI updates)
-        intent: Primary intent (deprecated, use actions[0].intent)
-        slots: Primary slots (deprecated, use actions[0].slots)
-
-    Deprecation Note:
-        The `intent` and `slots` fields are maintained for backward
-        compatibility with older frontend versions. New code should
-        use the `actions` list which supports multiple actions per turn.
     """
     reply: str
     order_state: Dict[str, Any]
     actions: List[ActionOut] = Field(
         default_factory=list,
         description="List of actions performed"
-    )
-    # Deprecated fields for backward compatibility
-    intent: Optional[str] = Field(
-        None,
-        description="Primary intent (deprecated, use actions)"
-    )
-    slots: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Primary slots (deprecated, use actions)"
     )
 
 

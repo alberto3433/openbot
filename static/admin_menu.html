@@ -260,6 +260,66 @@
     .attr-chip input[type="checkbox"] {
       display: none;
     }
+    /* Category autocomplete dropdown styles */
+    .category-input-wrapper {
+      position: relative;
+    }
+    .autocomplete-dropdown {
+      position: absolute;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .autocomplete-dropdown.show {
+      display: block;
+    }
+    .autocomplete-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .autocomplete-item:hover {
+      background: #f5f5f5;
+    }
+    .autocomplete-item.highlighted {
+      background: #e3f2fd;
+    }
+    .autocomplete-no-results {
+      padding: 8px 12px;
+      color: #888;
+      font-size: 13px;
+      font-style: italic;
+    }
+    /* Category tag styling (reuses tag-item from admin_common.css) */
+    .category-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 12px;
+      font-size: 12px;
+      color: #1565c0;
+    }
+    .category-tag .tag-remove {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #1976d2;
+      line-height: 1;
+    }
+    .category-tag .tag-remove:hover {
+      color: #d32f2f;
+    }
     /* Toast notification styles */
     .toast-container {
       position: fixed;
@@ -464,10 +524,11 @@
 
         <div class="field">
           <label>Categories</label>
-          <div class="attr-checkbox-group" id="categoriesContainer">
-            <!-- Category chips will be rendered here -->
+          <div class="tag-input-container category-input-wrapper" id="categoriesContainer" onclick="document.getElementById('categoryInput').focus()">
+            <input id="categoryInput" class="tag-input" type="text" placeholder="Type to search categories..." autocomplete="off" />
           </div>
-          <small style="color: #666; font-size: 0.8em;">Select categories this item belongs to (e.g., Drink, Food)</small>
+          <div class="autocomplete-dropdown" id="categoryDropdown"></div>
+          <small style="color: #666; font-size: 0.8em;">Type to search and select categories (e.g., Drink, Food)</small>
         </div>
 
         <div class="field">
@@ -500,7 +561,7 @@
 
   <script src="/static/admin_common.js"></script>
   <script>
-    const API_BASE = "";
+    const API_BASE = "/api/v1";
     let allItems = [];
     let filteredItems = [];
     let currentIndex = -1;
@@ -570,8 +631,16 @@
     const requiredPhrasesContainerEl = document.getElementById("requiredPhrasesContainer");
     const requiredPhraseInputEl = document.getElementById("requiredPhraseInput");
 
+    // Category autocomplete elements
+    const categoriesContainerEl = document.getElementById("categoriesContainer");
+    const categoryInputEl = document.getElementById("categoryInput");
+    const categoryDropdownEl = document.getElementById("categoryDropdown");
+    let selectedCategoryIds = []; // Track selected categories
+    let highlightedIndex = -1; // For keyboard navigation
+
     setupTagInput(aliasInputEl, aliasesContainerEl);
     setupTagInput(requiredPhraseInputEl, requiredPhrasesContainerEl);
+    setupCategoryAutocomplete();
 
     document.getElementById("newItemBtn").addEventListener("click", () => {
       selectItemByIndex(-1, true);
@@ -711,44 +780,151 @@
       renderSizePrices(categoryId ? parseInt(categoryId) : null, []);
     });
 
-    // Render category chips in the container
-    function renderCategoryChips(selectedIds = []) {
-      const container = document.getElementById("categoriesContainer");
-      if (!container) return;
-
-      if (allCategories.length === 0) {
-        container.innerHTML = '<span style="color: #888; font-size: 12px;">No categories defined. <a href="/static/admin_categories.html">Create categories</a></span>';
-        return;
-      }
-
-      let html = '';
-      for (const cat of allCategories) {
-        const isSelected = selectedIds.includes(cat.id);
-        const selectedClass = isSelected ? 'selected' : '';
-        const checked = isSelected ? 'checked' : '';
-        html += `<label class="attr-chip ${selectedClass}" data-category-id="${cat.id}">`;
-        html += `<input type="checkbox" value="${cat.id}" ${checked}>`;
-        html += `${cat.name}`;
-        html += `</label>`;
-      }
-      container.innerHTML = html;
-
-      // Add click listeners for chips
-      container.querySelectorAll(".attr-chip").forEach(chip => {
-        chip.addEventListener("click", () => {
-          const checkbox = chip.querySelector("input[type='checkbox']");
-          checkbox.checked = !checkbox.checked;
-          chip.classList.toggle("selected", checkbox.checked);
-        });
+    // Setup category autocomplete functionality
+    function setupCategoryAutocomplete() {
+      // Input event - filter and show dropdown
+      categoryInputEl.addEventListener("input", () => {
+        const query = categoryInputEl.value.toLowerCase().trim();
+        showCategoryDropdown(query);
       });
+
+      // Focus event - show all available categories
+      categoryInputEl.addEventListener("focus", () => {
+        const query = categoryInputEl.value.toLowerCase().trim();
+        showCategoryDropdown(query);
+      });
+
+      // Blur event - hide dropdown (with delay for click)
+      categoryInputEl.addEventListener("blur", () => {
+        setTimeout(() => {
+          categoryDropdownEl.classList.remove("show");
+        }, 200);
+      });
+
+      // Keyboard navigation
+      categoryInputEl.addEventListener("keydown", (e) => {
+        const items = categoryDropdownEl.querySelectorAll(".autocomplete-item");
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1);
+          updateHighlight(items);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          highlightedIndex = Math.max(highlightedIndex - 1, 0);
+          updateHighlight(items);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (highlightedIndex >= 0 && items[highlightedIndex]) {
+            const catId = parseInt(items[highlightedIndex].dataset.categoryId, 10);
+            addCategoryTag(catId);
+          }
+        } else if (e.key === "Escape") {
+          categoryDropdownEl.classList.remove("show");
+          categoryInputEl.blur();
+        } else if (e.key === "Backspace" && !categoryInputEl.value) {
+          // Remove last tag on backspace if input is empty
+          if (selectedCategoryIds.length > 0) {
+            const lastId = selectedCategoryIds[selectedCategoryIds.length - 1];
+            removeCategoryTag(lastId);
+          }
+        }
+      });
+
+      // Click outside to close
+      document.addEventListener("click", (e) => {
+        if (!categoriesContainerEl.contains(e.target) && !categoryDropdownEl.contains(e.target)) {
+          categoryDropdownEl.classList.remove("show");
+        }
+      });
+    }
+
+    function updateHighlight(items) {
+      items.forEach((item, i) => {
+        item.classList.toggle("highlighted", i === highlightedIndex);
+      });
+    }
+
+    function showCategoryDropdown(query) {
+      // Filter categories not already selected
+      const available = allCategories.filter(cat =>
+        !selectedCategoryIds.includes(cat.id) &&
+        (query === "" || cat.name.toLowerCase().includes(query))
+      );
+
+      if (available.length === 0) {
+        if (allCategories.length === 0) {
+          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">No categories defined. <a href="/static/admin_categories.html">Create categories</a></div>';
+        } else if (query) {
+          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">No matching categories</div>';
+        } else {
+          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">All categories selected</div>';
+        }
+      } else {
+        categoryDropdownEl.innerHTML = available.map(cat =>
+          `<div class="autocomplete-item" data-category-id="${cat.id}">${escapeHtml(cat.name)}</div>`
+        ).join("");
+
+        // Add click listeners
+        categoryDropdownEl.querySelectorAll(".autocomplete-item").forEach(item => {
+          item.addEventListener("mousedown", (e) => {
+            e.preventDefault(); // Prevent blur
+            const catId = parseInt(item.dataset.categoryId, 10);
+            addCategoryTag(catId);
+          });
+        });
+      }
+
+      highlightedIndex = -1;
+      categoryDropdownEl.classList.add("show");
+    }
+
+    function addCategoryTag(categoryId) {
+      if (selectedCategoryIds.includes(categoryId)) return;
+
+      const cat = allCategories.find(c => c.id === categoryId);
+      if (!cat) return;
+
+      selectedCategoryIds.push(categoryId);
+
+      // Create tag element
+      const tag = document.createElement("span");
+      tag.className = "category-tag";
+      tag.dataset.categoryId = categoryId;
+      tag.innerHTML = `<span class="tag-text">${escapeHtml(cat.name)}</span><span class="tag-remove">&times;</span>`;
+
+      tag.querySelector(".tag-remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeCategoryTag(categoryId);
+      });
+
+      // Insert before the input
+      categoriesContainerEl.insertBefore(tag, categoryInputEl);
+
+      // Clear input and hide dropdown
+      categoryInputEl.value = "";
+      categoryDropdownEl.classList.remove("show");
+    }
+
+    function removeCategoryTag(categoryId) {
+      selectedCategoryIds = selectedCategoryIds.filter(id => id !== categoryId);
+      const tag = categoriesContainerEl.querySelector(`.category-tag[data-category-id="${categoryId}"]`);
+      if (tag) tag.remove();
+    }
+
+    // Set categories from array of IDs (used when loading an item)
+    function setCategoryTags(ids = []) {
+      // Clear existing tags
+      categoriesContainerEl.querySelectorAll(".category-tag").forEach(tag => tag.remove());
+      selectedCategoryIds = [];
+      categoryInputEl.value = "";
+
+      // Add tags for each ID
+      ids.forEach(id => addCategoryTag(id));
     }
 
     // Get selected category IDs
     function getSelectedCategoryIds() {
-      const container = document.getElementById("categoriesContainer");
-      if (!container) return [];
-      const checkboxes = container.querySelectorAll("input[type='checkbox']:checked");
-      return Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+      return [...selectedCategoryIds];
     }
 
     function buildCategoryFilterFromItemTypes() {
@@ -870,7 +1046,7 @@
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
       // Reset categories to none selected
-      renderCategoryChips([]);
+      setCategoryTags([]);
 
       // Reset size pricing to single price
       sizeCategorySelectEl.value = "";
@@ -904,8 +1080,8 @@
       setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
       setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
 
-      // Render category chips with item's current categories
-      renderCategoryChips(item.category_ids || []);
+      // Set category tags with item's current categories
+      setCategoryTags(item.category_ids || []);
 
       // Set size category and render prices
       sizeCategorySelectEl.value = item.size_category_id || "";

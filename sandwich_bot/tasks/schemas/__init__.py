@@ -12,14 +12,9 @@ from .parser_responses import (
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
-    ParsedItemEntry,  # New unified type (replaces ParsedBagelEntry/ParsedCoffeeEntry)
+    ParsedItemEntry,
     ParsedMenuItemEntry,
-    ParsedBagelEntry,  # Deprecated - use ParsedItemEntry
-    ParsedCoffeeEntry,  # Deprecated - use ParsedItemEntry
-    ParsedSignatureItemEntry,
-    ParsedSpeedMenuBagelEntry,
     ParsedSideItemEntry,
-    ParsedByPoundEntry,
     ParsedItem,
     # Parser response schemas
     SideChoiceResponse,
@@ -34,9 +29,7 @@ from .parser_responses import (
     BagelOrderDetails,
     CoffeeOrderDetails,
     MenuItemOrderDetails,
-    ByPoundOrderItem,
     OpenInputResponse,
-    ByPoundCategoryResponse,
     DeliveryChoiceResponse,
     NameResponse,
     ConfirmationResponse,
@@ -58,14 +51,9 @@ __all__ = [
     # Qualifier conflict model
     "QualifierConflict",
     # ParsedItem types for multi-item handling
-    "ParsedItemEntry",  # New unified type
+    "ParsedItemEntry",
     "ParsedMenuItemEntry",
-    "ParsedBagelEntry",  # Deprecated
-    "ParsedCoffeeEntry",  # Deprecated
-    "ParsedSignatureItemEntry",
-    "ParsedSpeedMenuBagelEntry",
     "ParsedSideItemEntry",
-    "ParsedByPoundEntry",
     "ParsedItem",
     # Parser responses
     "SideChoiceResponse",
@@ -80,9 +68,7 @@ __all__ = [
     "BagelOrderDetails",
     "CoffeeOrderDetails",
     "MenuItemOrderDetails",
-    "ByPoundOrderItem",
     "OpenInputResponse",
-    "ByPoundCategoryResponse",
     "DeliveryChoiceResponse",
     "NameResponse",
     "ConfirmationResponse",

@@ -31,7 +31,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Should have added a bagel
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
 
         # Should be a plain bagel
@@ -58,7 +58,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Check if clarification is needed (multiple latte types exist)
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         if len(coffees) == 0:
             # System correctly asks for clarification between latte types
             assert "latte" in result.message.lower() or "matcha" in result.message.lower(), \
@@ -66,7 +66,7 @@ class TestNaturalLanguageVariation:
 
             # User clarifies they want regular latte
             result = sm.process("regular latte", result.order)
-            coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+            coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
 
@@ -121,7 +121,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Should have added a bagel
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
 
         bagel = bagels[0]
@@ -146,7 +146,7 @@ class TestNaturalLanguageVariation:
         assert result.message is not None
 
         # Should have added espresso (as coffee)
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         if coffees:
             coffee = coffees[0]

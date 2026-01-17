@@ -239,8 +239,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
       "cheese_types": ["Cheddar", "Swiss", "Provolone"],
     }
 
-    All menu structure is data-driven from the item_types table.
-    Use ItemType.expands_to to group multiple item types under a virtual type.
+    All menu structure is data-driven from the item_types and categories tables.
+    Use the categories table with MenuItemCategory join to group items.
 
     Args:
         db: Database session

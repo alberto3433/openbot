@@ -27,7 +27,6 @@ from .checkout_handler import CheckoutHandler
 from .menu_item_config_handler import MenuItemConfigHandler
 from .store_info_handler import StoreInfoHandler
 from .menu_inquiry_handler import MenuInquiryHandler
-from .by_pound_handler import ByPoundHandler
 from .order_utils_handler import OrderUtilsHandler
 from .item_adder_handler import ItemAdderHandler
 from .checkout_utils_handler import CheckoutUtilsHandler
@@ -109,7 +108,6 @@ from .parsers import (
     # LLM parsers
     parse_side_choice,
     parse_bagel_choice,
-    parse_by_pound_category,
     parse_open_input,
     parse_confirmation,
 )
@@ -291,15 +289,9 @@ class OrderStateMachine:
         self.checkout_utils_handler._configure_next_incomplete_bagel = self._configure_next_incomplete_bagel
         # Initialize store info handler
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
-        # Initialize by-the-pound handler
-        self.by_pound_handler = ByPoundHandler(
-            config=self._handler_config,
-            process_taking_items_input=self._handle_taking_items,
-        )
         # Initialize menu inquiry handler
         self.menu_inquiry_handler = MenuInquiryHandler(
             config=self._handler_config,
-            list_by_pound_category=self.by_pound_handler.list_by_pound_category,
         )
         # Initialize order utils handler
         self.order_utils_handler = OrderUtilsHandler(
@@ -334,7 +326,6 @@ class OrderStateMachine:
 
         # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
-            by_pound_handler=self.by_pound_handler,
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             modifier_change_handler=self.modifier_change_handler,
@@ -347,7 +338,6 @@ class OrderStateMachine:
             item_adder_handler=self.item_adder_handler,
             menu_inquiry_handler=self.menu_inquiry_handler,
             store_info_handler=self.store_info_handler,
-            by_pound_handler=self.by_pound_handler,
             checkout_utils_handler=self.checkout_utils_handler,
             checkout_handler=self.checkout_handler,
         )
@@ -371,8 +361,6 @@ class OrderStateMachine:
         self.query_handler.menu_data = self._menu_data
         # Update store info handler menu data
         self.store_info_handler.menu_data = self._menu_data
-        # Update by-the-pound handler menu data
-        self.by_pound_handler.menu_data = self._menu_data
         # Update menu inquiry handler menu data
         self.menu_inquiry_handler.menu_data = self._menu_data
         # Update item adder handler menu data

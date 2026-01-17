@@ -114,7 +114,7 @@ function setupRefreshCacheButton(buttonId = "refreshCacheBtn") {
     try {
       // Use authFetch if available, otherwise fall back to fetch
       const fetchFn = typeof authFetch === "function" ? authFetch : fetch;
-      const response = await fetchFn("/admin/menu/cache/refresh", { method: "POST" });
+      const response = await fetchFn("/api/v1/admin/menu/cache/refresh", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const result = await response.json();
 

@@ -104,18 +104,6 @@ def create_app(
     api_v1.include_router(tts_router)
     app.include_router(api_v1)
 
-    # Also mount at root for backward compatibility
-    app.include_router(chat_router)
-    app.include_router(admin_menu_router)
-    app.include_router(admin_orders_router)
-    app.include_router(admin_ingredients_router)
-    app.include_router(admin_analytics_router)
-    app.include_router(admin_stores_router)
-    app.include_router(admin_company_router)
-    app.include_router(public_stores_router)
-    app.include_router(public_company_router)
-    app.include_router(tts_router)
-
     # Health check endpoint
     @app.get("/health")
     def health_check():

@@ -54,10 +54,11 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, ItemTypeCategory
+from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, ItemTypeCategory, GlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..services.helpers import validate_aliases
 from ..schemas.modifiers import (
+    GlobalAttributeRef,
     ItemTypeListOut,
     ItemTypeOut,
     ItemTypeCreate,
@@ -85,10 +86,24 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         MenuItem.item_type_id == item_type.id
     ).count()
 
-    # Count linked global attributes
-    global_attribute_count = db.query(ItemTypeGlobalAttribute).filter(
-        ItemTypeGlobalAttribute.item_type_id == item_type.id
-    ).count()
+    # Query linked global attributes with their details
+    linked_attrs = (
+        db.query(GlobalAttribute)
+        .join(ItemTypeGlobalAttribute, ItemTypeGlobalAttribute.global_attribute_id == GlobalAttribute.id)
+        .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
+        .order_by(ItemTypeGlobalAttribute.display_order)
+        .all()
+    )
+
+    global_attribute_count = len(linked_attrs)
+    global_attributes = [
+        GlobalAttributeRef(
+            id=attr.id,
+            slug=attr.slug,
+            display_name=attr.display_name,
+        )
+        for attr in linked_attrs
+    ]
 
     # Derive configurability from linked global attributes
     is_configurable = has_linked_attributes(item_type.id, db)
@@ -109,6 +124,7 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         item_type_category_name=category_name,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
+        global_attributes=global_attributes,
         aliases=item_type.aliases,
     )
 

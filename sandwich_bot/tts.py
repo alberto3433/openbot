@@ -295,9 +295,3 @@ def get_tts_provider(
         raise
 
     return _provider_instance
-
-
-def get_available_voices(provider_type: Optional[TTSProvider] = None) -> List[Voice]:
-    """Get list of available voices for the specified provider."""
-    provider = get_tts_provider(provider_type)
-    return provider.voices

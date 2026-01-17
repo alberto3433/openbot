@@ -278,10 +278,6 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
     }
 
 
-# Alias for backward compatibility
-get_customer_info = lookup_customer_by_phone
-
-
 def get_primary_item_type_name(db: Session) -> str:
     """
     Get the display name of the primary configurable item type.
@@ -331,7 +327,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     else:
         meta = {}
 
-    # Derive category from item_type for backward compatibility
+    # Derive category from item_type
     category = item.item_type.display_name if item.item_type else None
 
     return MenuItemOut(

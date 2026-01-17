@@ -31,12 +31,11 @@ class CheckoutUtilsHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
+        config: "HandlerConfig",
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
         configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
         configure_next_incomplete_menu_item: Callable[[OrderTask], StateMachineResult] | None = None,
-        **kwargs,
     ):
         """
         Initialize the checkout utils handler.
@@ -47,19 +46,14 @@ class CheckoutUtilsHandler:
             configure_next_incomplete_coffee: Callback to configure next incomplete coffee.
             configure_next_incomplete_bagel: Callback to configure next incomplete bagel.
             configure_next_incomplete_menu_item: Callback to configure next incomplete menu item.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self._message_builder = config.message_builder
-        else:
-            # Legacy support for direct parameters
-            self._message_builder = kwargs.get("message_builder")
+        self._message_builder = config.message_builder
 
         # Handler-specific callbacks
-        self._transition_to_next_slot = transition_to_next_slot or kwargs.get("transition_to_next_slot")
-        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee or kwargs.get("configure_next_incomplete_coffee")
-        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel or kwargs.get("configure_next_incomplete_bagel")
-        self._configure_next_incomplete_menu_item = configure_next_incomplete_menu_item or kwargs.get("configure_next_incomplete_menu_item")
+        self._transition_to_next_slot = transition_to_next_slot
+        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
+        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
+        self._configure_next_incomplete_menu_item = configure_next_incomplete_menu_item
 
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
@@ -180,8 +174,6 @@ class CheckoutUtilsHandler:
                     question = f"And what type of cheese for the {item_name}?"
                 elif pending_field == "coffee_size":
                     question = f"And what size for the {item_name}? Small or Large?"
-                elif pending_field == "coffee_style":
-                    question = f"Would you like the {item_name} hot or iced?"
                 elif pending_field in ("spread", "menu_item_spread"):
                     question = f"Would you like cream cheese or butter on the {item_name}?"
                 elif pending_field == "menu_item_config":

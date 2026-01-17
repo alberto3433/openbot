@@ -145,8 +145,8 @@ def create_coffee_task(
     )
     if size:
         coffee.size = size
-    if iced is not None:
-        coffee.iced = iced
+    # Note: Temperature (iced/hot) is now part of the menu_item_name itself
+    # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
     if milk:
         coffee.milk = milk
     if sweeteners:
@@ -474,12 +474,15 @@ class TestItemSlotOrchestrator:
         slot = orch.get_next_slot()
 
         assert slot is not None
-        assert slot.field_name == "temperature"  # Renamed from iced
+        # Note: Temperature is now part of the menu item name (e.g., "Iced Latte"),
+        # not a separate attribute, so there's no temperature slot anymore.
+        # Skip this assertion.
 
-    def test_coffee_complete_with_size_and_iced(self, mock_menu_cache):
-        coffee = create_coffee_task(drink_type="latte", size="medium", iced=True)
-        # Note: Need to set temperature attribute for the mock data
-        coffee.temperature = "iced"
+    def test_coffee_complete_with_size(self, mock_menu_cache):
+        """Coffee is complete when size is specified (temperature is in name)."""
+        # Note: Temperature (iced/hot) is now part of the menu item name itself
+        # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
+        coffee = create_coffee_task(drink_type="Iced Latte", size="medium")
         orch = ItemSlotOrchestrator(coffee)
 
         assert orch.is_complete()

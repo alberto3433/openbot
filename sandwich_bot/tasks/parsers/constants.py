@@ -105,26 +105,13 @@ def extract_quantity(user_input: str, pattern: str) -> int:
     return 1
 
 # =============================================================================
-# Bagel Types and Spreads
+# Spreads
 # =============================================================================
 
-# NOTE: Bagel types and spreads are now loaded from the database via menu_data_cache.py.
-# Use get_bagel_types() for the set (includes aliases) or get_bagel_types_list()
-# for an ordered list (display/pagination). Both support aliases via the
-# 'aliases' column on ingredients where category='bread'.
-#
+# NOTE: Spreads are loaded from the database via menu_data_cache.py.
 # Spreads are loaded from ingredients where category='spread'.
 # Spread types/varieties are loaded from cream cheese menu items.
 # Use get_spreads(), get_spread_types(), and get_bagel_spreads() to access these.
-
-# =============================================================================
-# Modifier Category Classification
-# =============================================================================
-# NOTE: BAGEL_ONLY_TYPES, SPREAD_ONLY_TYPES, and AMBIGUOUS_MODIFIERS are now
-# computed dynamically from the database. Use:
-# - get_bagel_only_types() - bagel types that are NOT also spread types
-# - get_spread_only_types() - spread types that are NOT also bagel types
-# - get_ambiguous_modifiers() - types that are BOTH (need disambiguation)
 
 # =============================================================================
 # Signature Items
@@ -357,21 +344,21 @@ PRICE_INQUIRY_PATTERNS = [
 # Menu Category Keywords (MOVED TO DATABASE)
 # =============================================================================
 # NOTE: MENU_CATEGORY_KEYWORDS has been moved to the database.
-# Category keyword mappings are now stored in the item_types table:
-# - item_types.aliases: comma-separated keywords that map to this type
-# - item_types.expands_to: JSON array of slugs for meta-categories
-# - item_types.name_filter: substring filter for item names (e.g., "tea")
-# - item_types.is_virtual: true for meta-categories without direct items
+# Category keyword mappings are loaded from two sources:
+# 1. item_types table: For direct item type lookups (lookup_type="item_type")
+# 2. categories table: For category-based lookups (lookup_type="category")
+#
+# The categories table uses the menu_item_category join table to group
+# items into categories (e.g., "sandwich" category includes egg_sandwich,
+# fish_sandwich, deli_sandwich items).
 #
 # To look up category keywords, use:
 #   from sandwich_bot.menu_data_cache import menu_cache
-#   category_info = menu_cache.get_category_keyword_mapping("desserts")
-#   # Returns: {"slug": "dessert", "expands_to": ["pastry", "snack"], ...}
+#   category_info = menu_cache.get_category_keyword_mapping("sandwiches")
+#   # Returns: {"slug": "sandwich", "lookup_type": "category", ...}
 #
 # To get all available category keywords (for error messages):
 #   available = menu_cache.get_available_category_keywords()
-#
-# See migration: g7h8i9j0k1l2_add_category_keywords_to_item_types.py
 
 # =============================================================================
 # Store Info Inquiry Patterns
@@ -759,119 +746,6 @@ def get_bagel_spreads() -> set[str]:
     raise RuntimeError(
         "Bagel spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
     )
-
-
-def get_bagel_only_types() -> set[str]:
-    """
-    Get bagel types that are NOT also spread types (unambiguous bagel types).
-
-    These are types where disambiguation is not needed - e.g., "plain" is only
-    a bagel type, never a cream cheese flavor.
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Compute as set difference: bagel types that aren't spread types
-        bagel_types = cache.get_item_names("bagel")
-        spread_types = cache.get_ingredients("spread")
-        return bagel_types - spread_types
-    raise RuntimeError(
-        "Bagel-only types not available. Ensure menu_data_cache is loaded from the database."
-    )
-
-
-def get_spread_only_types() -> set[str]:
-    """
-    Get spread types that are NOT also bagel types (unambiguous spread types).
-
-    These are types where disambiguation is not needed - e.g., "scallion" is only
-    a cream cheese flavor, never a bagel type.
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Compute as set difference: spread types that aren't bagel types
-        bagel_types = cache.get_item_names("bagel")
-        spread_types = cache.get_ingredients("spread")
-        return spread_types - bagel_types
-    raise RuntimeError(
-        "Spread-only types not available. Ensure menu_data_cache is loaded from the database."
-    )
-
-
-def get_ambiguous_modifiers() -> set[str]:
-    """
-    Get types that are BOTH bagel types AND spread types (need disambiguation).
-
-    These are types like "blueberry" and "jalapeno" that exist as both bagel
-    flavors and cream cheese flavors, requiring clarification from the user.
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Compute as set intersection: types that are both bagel and spread types
-        bagel_types = cache.get_item_names("bagel")
-        spread_types = cache.get_ingredients("spread")
-        return bagel_types & spread_types
-    raise RuntimeError(
-        "Ambiguous modifiers not available. Ensure menu_data_cache is loaded from the database."
-    )
-
-
-def get_bagel_types() -> set[str]:
-    """
-    Get bagel types (plain, everything, etc.) from the database.
-
-    Returns bread attribute option names and aliases, including:
-    - Full display names: "plain bagel", "everything bagel"
-    - Short forms: "plain", "everything", "sesame"
-    - Aliases: "raisin bagel" -> "cinnamon raisin bagel"
-
-    Falls back to empty set if cache not available.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Get bread attribute options (not menu item names)
-        bread_options = cache.get_global_attribute_options('bread')
-        if bread_options:
-            matchable_words = set()
-            for opt in bread_options:
-                # Add display name (lowercased)
-                display = opt['display_name'].lower()
-                matchable_words.add(display)
-
-                # Add short form (remove ' bagel' suffix if present)
-                if display.endswith(' bagel'):
-                    short_form = display[:-6]  # remove ' bagel'
-                    matchable_words.add(short_form)
-
-                # Add aliases
-                if opt.get('aliases'):
-                    for alias in opt['aliases']:
-                        matchable_words.add(alias.lower())
-
-            return matchable_words
-    return set()
-
-
-def get_bagel_types_list() -> list[str]:
-    """
-    Get ordered list of bagel types for display/pagination.
-
-    Returns an alphabetically sorted list of bread option display names.
-    This is used for showing available bagel types to users.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Get bread attribute options and extract display names
-        bread_options = cache.get_global_attribute_options('bread')
-        if bread_options:
-            display_names = [opt['display_name'] for opt in bread_options]
-            return sorted(display_names)
-    return []
 
 
 def get_proteins() -> set[str]:
@@ -1274,54 +1148,6 @@ def find_bagel_matches(query: str) -> list[str]:
 # =============================================================================
 # These functions extract valid values from messy user input that may contain
 # conversational phrases like "make that a sesame bagel" -> "sesame"
-
-
-def normalize_bagel_type(value: str) -> str | None:
-    """
-    Extract a valid bagel type from a potentially messy input string.
-
-    Searches for known bagel types within the input, handling cases like:
-    - "make that a sesame bagel" -> "sesame"
-    - "actually sesame" -> "sesame"
-    - "change it to everything" -> "everything"
-
-    Args:
-        value: Raw input string that may contain a bagel type
-
-    Returns:
-        Normalized bagel type if found, None otherwise
-    """
-    if not value:
-        return None
-
-    value_lower = value.lower().strip()
-
-    # Quick check: if the value is already a valid bagel type, return it
-    try:
-        bagel_types = get_bagel_types()
-        if value_lower in bagel_types:
-            return value_lower
-
-        # Strip common suffixes first
-        if value_lower.endswith(" bagel"):
-            stripped = value_lower[:-6].strip()
-            if stripped in bagel_types:
-                return stripped
-
-        # Search for any valid bagel type within the string
-        # Sort by length descending to match longer types first (e.g., "everything" before "every")
-        for bagel_type in sorted(bagel_types, key=len, reverse=True):
-            # Use word boundary matching to avoid partial matches
-            # e.g., "plain" should match in "make that a plain bagel" but not in "explain"
-            pattern = r'\b' + re.escape(bagel_type) + r'\b'
-            if re.search(pattern, value_lower):
-                return bagel_type
-
-    except RuntimeError:
-        # Cache not loaded - can't normalize
-        pass
-
-    return None
 
 
 def normalize_spread(value: str) -> str | None:

@@ -26,9 +26,8 @@ Routes are organized into logical groups:
 
 Router Registration:
 --------------------
-All routers are registered in main.py under two prefixes:
-1. /api/v1/* - Versioned API (recommended)
-2. /* - Root paths for backward compatibility
+All routers are registered in main.py under:
+- /api/v1/* - Versioned API
 
 Each router is defined with a prefix and tags for OpenAPI documentation:
 

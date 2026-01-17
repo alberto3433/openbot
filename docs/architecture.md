@@ -145,8 +145,11 @@ All modifier entries (sweeteners, syrups, toppings, etc.) must use this canonica
 item_types
 ├── id, slug, display_name
 ├── is_configurable (requires attribute questions)
-├── expands_to (virtual types that expand to others)
 └── aliases (recognition patterns)
+
+categories
+├── id, slug, name
+└── (joined via menu_item_category table)
 
 item_type_attributes
 ├── item_type_id → item_types

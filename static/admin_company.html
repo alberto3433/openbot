@@ -622,7 +622,7 @@
 
   <script>
     // API base URL
-    const API_BASE = "/admin/company";
+    const API_BASE = "/api/v1/admin/company";
 
     // DOM elements
     const statusBar = document.getElementById("statusBar");
@@ -931,7 +931,7 @@
       status.textContent = "";
 
       try {
-        const response = await fetch("/admin/menu/cache/refresh", {
+        const response = await fetch("/api/v1/admin/menu/cache/refresh", {
           method: "POST",
           credentials: "include"
         });

@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 from .models import SessionAnalytics, Company
 from .menu_data_cache import menu_cache
 from .email_service import send_payment_link_email
-from .chains.integration import process_voice_message
-from .services.helpers import get_customer_info, build_store_info
+from .tasks.state_machine_adapter import process_message_with_state_machine
+from .services.helpers import lookup_customer_by_phone, build_store_info
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +61,6 @@ class ProcessingResult:
     order_persisted: bool = False
     analytics_logged: bool = False
     payment_email_sent: bool = False
-
-    # For backward compatibility with existing endpoints
-    primary_intent: str = "unknown"
-    primary_slots: Dict[str, Any] = field(default_factory=dict)
 
     # The full session (for endpoints that need it)
     session: Dict[str, Any] = field(default_factory=dict)
@@ -129,12 +125,12 @@ class MessageProcessor:
         store_info = self._build_store_info(session_store_id)
 
         # 4. Process through state machine
-        reply, updated_order_state, actions = process_voice_message(
+        reply, updated_order_state, actions = process_message_with_state_machine(
             user_message=ctx.user_message,
-            order_state=order_state,
+            order_state_dict=order_state,
             history=history,
             session_id=ctx.session_id,
-            menu_index=menu_index,
+            menu_data=menu_index,
             store_info=store_info,
             returning_customer=returning_customer,
         )
@@ -200,9 +196,6 @@ class MessageProcessor:
         self._save_session(ctx.session_id, session)
 
         # 9. Build result
-        primary_intent = actions[0].get("intent", "unknown") if actions else "unknown"
-        primary_slots = actions[0].get("slots", {}) if actions else {}
-
         return ProcessingResult(
             reply=reply,
             order_state=updated_order_state,
@@ -211,8 +204,6 @@ class MessageProcessor:
             order_persisted=order_persisted,
             analytics_logged=analytics_logged,
             payment_email_sent=payment_sent,
-            primary_intent=primary_intent,
-            primary_slots=primary_slots,
             session=session,
         )
 
@@ -239,9 +230,9 @@ class MessageProcessor:
     def _lookup_customer_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
         """Look up returning customer by phone number.
 
-        Delegates to the shared get_customer_info helper in services.helpers.
+        Delegates to the shared lookup_customer_by_phone helper in services.helpers.
         """
-        return get_customer_info(self.db, phone)
+        return lookup_customer_by_phone(self.db, phone)
 
     # -------------------------------------------------------------------------
     # Store Info

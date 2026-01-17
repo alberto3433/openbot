@@ -389,24 +389,3 @@ def geocode_to_zip(
     return None
 
 
-def format_address_options(addresses: list[CompletedAddress]) -> str:
-    """
-    Format multiple address options for user clarification.
-
-    Args:
-        addresses: List of possible addresses
-
-    Returns:
-        Formatted string asking user to choose
-    """
-    if not addresses:
-        return "I couldn't find any matching addresses."
-
-    if len(addresses) == 1:
-        return f"Is this the right address: {addresses[0].format_short()}?"
-
-    options = []
-    for i, addr in enumerate(addresses, 1):
-        options.append(f"{i}. {addr.format_short()}")
-
-    return "I found a few possible addresses:\n" + "\n".join(options) + "\nWhich one is correct?"

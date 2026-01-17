@@ -29,7 +29,7 @@ from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index_builder import get_menu_version
 from .menu_data_cache import menu_cache
-from .services.helpers import get_customer_info
+from .services.helpers import lookup_customer_by_phone
 
 
 logger = logging.getLogger(__name__)
@@ -260,9 +260,9 @@ def _get_or_create_phone_session(
 def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
     """Look up returning customer by phone number from past orders.
 
-    Delegates to the shared get_customer_info helper in services.helpers.
+    Delegates to the shared lookup_customer_by_phone helper in services.helpers.
     """
-    return get_customer_info(db, phone)
+    return lookup_customer_by_phone(db, phone)
 
 
 def _get_session_data(db: Session, session_id: str) -> Optional[Dict[str, Any]]:

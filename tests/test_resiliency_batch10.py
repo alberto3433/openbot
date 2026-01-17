@@ -59,7 +59,7 @@ class TestGratitudeSocialResponses:
 
         assert result.message is not None
         # Should not error or misinterpret
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, "Should not add extra items"
 
     def test_sorry_response(self):
@@ -78,7 +78,7 @@ class TestGratitudeSocialResponses:
 
         assert result.message is not None
         # Should either add the bagel or ask for clarification
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         has_bagel = len(bagels) >= 1
         mentions_bagel = "bagel" in result.message.lower()
 

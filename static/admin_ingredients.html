@@ -645,7 +645,7 @@
   <script src="/static/admin_common.js"></script>
   <script>
     // API base URLs
-    const API_BASE = "/admin/ingredients";
+    const API_BASE = "/api/v1/admin/ingredients";
 
     // Auth credentials storage
     let authCredentials = null;
@@ -795,7 +795,7 @@
     // Load stores
     async function loadStores() {
       try {
-        const resp = await fetch("/stores");
+        const resp = await fetch("/api/v1/stores");
         if (resp.ok) {
           const stores = await resp.json();
           STORE_NAMES = {};

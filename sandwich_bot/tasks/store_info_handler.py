@@ -328,159 +328,19 @@ class StoreInfoHandler:
         category: str | None,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle recommendation questions like 'what do you recommend?' or 'what's your best bagel?'
+        """Handle recommendation questions with a generic response.
 
         IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
         The user needs to explicitly order something after getting the recommendation.
 
         Args:
-            category: Type of recommendation asked - 'bagel', 'sandwich', 'coffee', 'breakfast', 'lunch', or None
+            category: Type of recommendation asked (unused - returns generic response)
             order: Current order state (unchanged)
         """
-        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
-
-        if category == "bagel":
-            return self._recommend_bagels(order)
-        elif category == "sandwich":
-            return self._recommend_sandwiches(items_by_type, order)
-        elif category == "coffee":
-            return self._recommend_coffee(items_by_type, order)
-        elif category == "breakfast":
-            return self._recommend_breakfast(items_by_type, order)
-        elif category == "lunch":
-            return self._recommend_lunch(items_by_type, order)
-        else:
-            # General recommendation - suggest popular items
-            return self._recommend_general(items_by_type, order)
-
-    def _recommend_bagels(self, order: OrderTask) -> StateMachineResult:
-        """Recommend popular bagel options."""
-        message = (
-            "Our most popular bagels are everything and plain! "
-            "The everything bagel with scallion cream cheese is a customer favorite. "
-            "We also have sesame, cinnamon raisin, and pumpernickel if you're feeling adventurous. "
-            "Would you like to try one?"
+        return StateMachineResult(
+            message="We have a great selection! What are you in the mood for?",
+            order=order,
         )
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_sandwiches(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
-        """Recommend popular sandwich options from the menu."""
-        # Look for signature items (all items with is_signature=true) or egg sandwiches
-        signature = items_by_type.get("signature_items", [])
-        egg_sandwiches = items_by_type.get("egg_sandwich", [])
-
-        recommendations = []
-
-        # Get up to 2 signature sandwiches
-        for item in signature[:2]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        # Get 1 egg sandwich if we have room
-        if len(recommendations) < 3 and egg_sandwiches:
-            name = egg_sandwiches[0].get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if recommendations:
-            if len(recommendations) == 1:
-                message = f"I'd recommend {recommendations[0]} - it's one of our favorites! Would you like to try it?"
-            else:
-                items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
-                message = f"Some of our most popular are {items_str}. Would you like to try one?"
-        else:
-            message = "Our egg sandwiches are really popular! Would you like to hear about them?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_coffee(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
-        """Recommend popular coffee options."""
-        message = (
-            "Our lattes are really popular - you can get them hot or iced! "
-            "We also have great drip coffee if you want something simple. "
-            "Would you like a coffee?"
-        )
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_breakfast(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
-        """Recommend breakfast options."""
-        # Look for signature items and egg items
-        signature_items = items_by_type.get("signature_item", [])
-        omelettes = items_by_type.get("omelette", [])
-
-        recommendations = []
-
-        # Get a signature item
-        for item in signature_items[:1]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        # Add a classic suggestion
-        recommendations.append("an everything bagel with cream cheese")
-
-        if omelettes:
-            name = omelettes[0].get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if len(recommendations) >= 2:
-            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}"
-            message = f"For breakfast, I'd suggest {items_str}. What sounds good?"
-        else:
-            message = "For breakfast, our bagels with cream cheese are always a hit, or try one of our egg sandwiches! What sounds good?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_lunch(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
-        """Recommend lunch options."""
-        signature = items_by_type.get("signature_items", [])
-        salad = items_by_type.get("salad_sandwich", [])
-
-        recommendations = []
-
-        for item in signature[:2]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        for item in salad[:1]:
-            name = item.get("name", "")
-            if name:
-                recommendations.append(name)
-
-        if recommendations:
-            items_str = ", ".join(recommendations[:-1]) + f", or {recommendations[-1]}" if len(recommendations) > 1 else recommendations[0]
-            message = f"For lunch, I'd recommend {items_str}. What sounds good?"
-        else:
-            message = "For lunch, our sandwiches are great! We have egg sandwiches, signature sandwiches, and salad sandwiches. What sounds good?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _recommend_general(self, items_by_type: dict, order: OrderTask) -> StateMachineResult:
-        """General recommendation when no specific category is asked."""
-        signature_items = items_by_type.get("signature_item", [])
-
-        # Get a signature item name if available
-        signature_item_name = None
-        if signature_items:
-            signature_item_name = signature_items[0].get("name", "")
-
-        if signature_item_name:
-            message = (
-                f"Our {signature_item_name} is really popular! "
-                "We're also known for our everything bagels with cream cheese, and our lattes are great too. "
-                "What are you in the mood for?"
-            )
-        else:
-            message = (
-                "Our everything bagel with scallion cream cheese is a customer favorite! "
-                "We also have great egg sandwiches and lattes. "
-                "What are you in the mood for?"
-            )
-
-        return StateMachineResult(message=message, order=order)
 
     # =========================================================================
     # Modifier Inquiry Handlers

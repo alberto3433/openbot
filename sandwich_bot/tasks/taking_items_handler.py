@@ -13,6 +13,7 @@ import uuid
 from typing import Callable, TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
+from sandwich_bot.exceptions import MenuDataNotLoadedError
 
 from .models import (
     OrderTask,
@@ -55,7 +56,6 @@ if TYPE_CHECKING:
     from .item_adder_handler import ItemAdderHandler
     from .menu_inquiry_handler import MenuInquiryHandler
     from .store_info_handler import StoreInfoHandler
-    from .by_pound_handler import ByPoundHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .checkout_handler import CheckoutHandler
 
@@ -404,7 +404,6 @@ class TakingItemsHandler:
     item_adder_handler: "ItemAdderHandler | None"
     menu_inquiry_handler: "MenuInquiryHandler | None"
     store_info_handler: "StoreInfoHandler | None"
-    by_pound_handler: "ByPoundHandler | None"
     checkout_utils_handler: "CheckoutUtilsHandler | None"
     checkout_handler: "CheckoutHandler | None"
     _returning_customer: dict | None
@@ -416,7 +415,6 @@ class TakingItemsHandler:
         item_adder_handler: "ItemAdderHandler | None" = None,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
         store_info_handler: "StoreInfoHandler | None" = None,
-        by_pound_handler: "ByPoundHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         checkout_handler: "CheckoutHandler | None" = None,
     ) -> None:
@@ -428,7 +426,6 @@ class TakingItemsHandler:
             item_adder_handler: Handler for adding items.
             menu_inquiry_handler: Handler for menu inquiries.
             store_info_handler: Handler for store info inquiries.
-            by_pound_handler: Handler for by-pound items.
             checkout_utils_handler: Handler for checkout utilities.
             checkout_handler: Handler for checkout flow including confirmation/repeat orders.
         """
@@ -440,7 +437,6 @@ class TakingItemsHandler:
         self.item_adder_handler = item_adder_handler
         self.menu_inquiry_handler = menu_inquiry_handler
         self.store_info_handler = store_info_handler
-        self.by_pound_handler = by_pound_handler
         self.checkout_utils_handler = checkout_utils_handler
         self.checkout_handler = checkout_handler
 
@@ -1880,9 +1876,6 @@ class TakingItemsHandler:
         if parsed.asking_signature_menu:
             return self.menu_inquiry_handler.handle_signature_menu_inquiry(parsed.signature_menu_type, order)
 
-        if parsed.asking_by_pound:
-            return self.by_pound_handler.handle_by_pound_inquiry(parsed.by_pound_category, order)
-
         if parsed.is_gratitude:
             return StateMachineResult(
                 message="You're welcome! Anything else I can get for you?",
@@ -2700,8 +2693,12 @@ class TakingItemsHandler:
                         elif item.has_attribute("size"):
                             # Items with size attribute use sized beverage config handler
                             # Note: temperature is now part of the menu item name (e.g., "Iced Latte")
-                            # Data-driven fallback: find item type with "size" attribute if not set
-                            item_type_slug = item.menu_item_type or menu_cache.find_item_type_with_attribute("size") or "menu_item"
+                            if not item.menu_item_type:
+                                raise MenuDataNotLoadedError(
+                                    f"MenuItemTask '{item.menu_item_name}' has size attribute but no menu_item_type set. "
+                                    f"Ensure menu_item_type is populated when creating items."
+                                )
+                            item_type_slug = item.menu_item_type
                             display_name = item.menu_item_name or menu_cache.get_item_type_display_name(item_type_slug)
                             if item.size is None:
                                 coffee_handler_items.append((item.id, display_name, item_type_slug, "coffee_size"))

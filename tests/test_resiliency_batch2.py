@@ -165,7 +165,7 @@ class TestAmbiguousItemOrders:
         assert result.message is not None
 
         # Should either ask about size/temp OR add coffee and start configuring
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         if coffees:
             # Coffee was added - check if it's asking for configuration
@@ -202,7 +202,7 @@ class TestAmbiguousItemOrders:
         assert result.message is not None
 
         # Should have added a bagel or be asking about it
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
 
         # Either:
         # 1. Bagel was added (possibly asking about type or cream cheese flavor)
@@ -247,7 +247,7 @@ class TestAmbiguousItemOrders:
         if items:
             # Check if it's a speed menu item (MenuItemTask) or asking to configure
             menu_items = [i for i in items if isinstance(i, MenuItemTask)]
-            bagels = [i for i in items if getattr(i, 'is_bagel', False)]
+            bagels = [i for i in items if i.has_attribute('bread')]
 
             # Should have added The Classic as a speed menu item
             if menu_items:

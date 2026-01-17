@@ -130,7 +130,7 @@ class TestOrderConfirmationCheckout:
         assert result.message is not None
 
         # Should not add another bagel and should proceed
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, f"Should still have just 1 bagel. Got: {len(bagels)}"
 
     def test_thats_it_for_now(self):

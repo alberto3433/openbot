@@ -252,8 +252,8 @@ class TestCriticalOrderScenarios:
 
         # Check that we have both items
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
-        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
+        coffees = [i for i in active_items if i.has_attribute('size')]
 
         print(f"Items in cart: {len(active_items)} (bagels: {len(bagels)}, coffees: {len(coffees)})")
 
@@ -325,8 +325,8 @@ class TestCriticalOrderScenarios:
 
         # Verify both items in cart
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
-        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
+        coffees = [i for i in active_items if i.has_attribute('size')]
 
         print(f"Final cart: {len(bagels)} bagel(s), {len(coffees)} coffee(s)")
 
@@ -366,7 +366,7 @@ class TestCriticalOrderScenarios:
 
         # Should either confirm both or ask minimal questions
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
 
         print(f"Bagels in cart: {len(bagels)}")
         for i, bagel in enumerate(bagels):
@@ -439,7 +439,7 @@ class TestCriticalOrderScenarios:
                 print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in active_items if i.has_attribute('size')]
 
         print(f"Total items: {len(active_items)}, Coffees: {len(coffees)}")
 
@@ -491,7 +491,7 @@ class TestCriticalOrderScenarios:
 
         # Check the bagel config
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
 
         if bagels:
             bagel = bagels[0]
@@ -619,7 +619,7 @@ class TestCriticalOrderScenarios:
             print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
 
         if bagels:
             bagel = bagels[0]
@@ -657,7 +657,7 @@ class TestCriticalOrderScenarios:
         print(f"Bot: {result.message}")
 
         active_items = order.items.get_active_items()
-        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in active_items if i.has_attribute('size')]
 
         if coffees:
             coffee = coffees[0]
@@ -708,8 +708,8 @@ class TestCriticalOrderScenarios:
 
         # Check cart - should have coffee, not bagel
         active_items = order.items.get_active_items()
-        bagels = [i for i in active_items if getattr(i, 'is_bagel', False)]
-        coffees = [i for i in active_items if getattr(i, 'is_sized_beverage', False)]
+        bagels = [i for i in active_items if i.has_attribute('bread')]
+        coffees = [i for i in active_items if i.has_attribute('size')]
 
         print(f"Cart after cancellation: {len(bagels)} bagels, {len(coffees)} coffees")
 

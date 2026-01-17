@@ -37,7 +37,7 @@ class TestReplacementModificationScenarios:
         result = sm.process("actually make it veggie cream cheese", order)
 
         # Get the bagel from the result
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
@@ -69,7 +69,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("make it a large", order)
 
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -101,7 +101,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("can you make it with oat milk instead", order)
 
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -132,7 +132,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("make it a decaf", order)
 
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
@@ -172,7 +172,7 @@ class TestReplacementModificationScenarios:
         assert "size" in result.message.lower(), f"Should ask for size, got: {result.message}"
 
         # Check that coffee was added with decaf=True even before configuration is complete
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, f"Should have 1 coffee, got {len(coffees)}"
         assert coffees[0].decaf is True, f"Decaf should be True from initial order, got: {coffees[0].decaf}"
 
@@ -185,7 +185,7 @@ class TestReplacementModificationScenarios:
             f"Should ask for hot/iced, got: {result.message}"
 
         # Check decaf is still True
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert coffees[0].decaf is True, f"Decaf should still be True after size, got: {coffees[0].decaf}"
         # Size may be stored in attribute_values or as a direct property
         size_val = getattr(coffees[0], 'size', None) or coffees[0].attribute_values.get('size')
@@ -196,7 +196,7 @@ class TestReplacementModificationScenarios:
 
         # After temperature, may ask for modifiers or be done
         # Check that we got past temperature by verifying temperature is set
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         coffee = coffees[0]
         # Temperature/iced may be stored in attribute_values or as direct property
         iced_val = getattr(coffee, 'iced', None)
@@ -209,7 +209,7 @@ class TestReplacementModificationScenarios:
             result = sm.process("no", result.order)
 
         # Coffee should now be complete or asking "anything else?"
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         final_coffee = coffees[0]
@@ -254,7 +254,7 @@ class TestReplacementModificationScenarios:
         result = sm.process("actually, make that two", order)
 
         # Should either have 2 bagels OR 1 bagel with quantity 2
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         total_quantity = sum(b.quantity for b in bagels)
 
         assert total_quantity == 2, f"Should have 2 bagels total, got {total_quantity}"
@@ -287,7 +287,7 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("remove the bacon", order)
 
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]

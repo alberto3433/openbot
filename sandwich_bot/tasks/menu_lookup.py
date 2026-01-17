@@ -346,7 +346,7 @@ class MenuLookup:
                 "slug": str,                    # The item_type slug
                 "display_name": str,            # Singular display name
                 "display_name_plural": str,     # Plural display name
-                "expands_to": list | None,      # List of slugs for meta-categories
+                "lookup_type": str,             # "item_type" or "category"
             }
             Returns None if no keyword matches.
         """
@@ -371,12 +371,11 @@ class MenuLookup:
         items_by_type = self._menu_data.get("items_by_type", {})
         items = items_by_type.get(item_type_slug, [])
 
-        # If no items found directly, check if this is a meta-category with expands_to
+        # If no items found directly, check if this is a category (lookup via join table)
         if not items:
             type_info = menu_cache.get_category_keyword_mapping(item_type_slug)
-            if type_info and type_info.get("expands_to"):
-                for sub_slug in type_info["expands_to"]:
-                    items.extend(items_by_type.get(sub_slug, []))
+            if type_info and type_info.get("lookup_type") == "category":
+                items = menu_cache.get_items_by_category(item_type_slug)
 
         if not items:
             return ""

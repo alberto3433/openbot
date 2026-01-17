@@ -47,15 +47,14 @@ class MenuItemConfigHandler(BaseHandler):
     # and queried via menu_cache.get_modifier_category(item_type_slug).
     # Values: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
 
-    def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
+    def __init__(self, config: "HandlerConfig"):
         """
         Initialize the menu item config handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
-            **kwargs: Legacy parameter support.
         """
-        super().__init__(config, **kwargs)
+        super().__init__(config)
         # Note: Item type attributes are cached in menu_cache (single source of truth)
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
@@ -1321,6 +1320,21 @@ class MenuItemConfigHandler(BaseHandler):
             if slug_readable == input_lower:
                 return opt
 
+        # Helper to parse aliases from option dict
+        def get_aliases(opt: dict) -> list[str]:
+            aliases_raw = opt.get("aliases", [])
+            if isinstance(aliases_raw, str):
+                if "|" in aliases_raw:
+                    return [a.strip() for a in aliases_raw.split("|") if a.strip()]
+                return [a.strip() for a in aliases_raw.split(",") if a.strip()]
+            return aliases_raw or []
+
+        # Try EXACT match on alias
+        for opt in options:
+            for alias in get_aliases(opt):
+                if alias.lower() == input_lower:
+                    return opt
+
         # Try if the FULL option name is in the user input
         # This handles "black forest ham please" → "Black Forest Ham"
         # But NOT "ham" → "Black Forest Ham" (substring of option name)
@@ -1328,6 +1342,14 @@ class MenuItemConfigHandler(BaseHandler):
             display_lower = opt["display_name"].lower()
             if display_lower in input_lower:
                 return opt
+
+        # Try if the FULL alias is in the user input
+        # This handles "sesame sourdough please" → option with alias "sesame sourdough"
+        for opt in options:
+            for alias in get_aliases(opt):
+                alias_lower = alias.lower()
+                if len(alias_lower) >= 3 and alias_lower in input_lower:
+                    return opt
 
         # NO substring matching in the other direction!
         # We deliberately don't check if input_lower is in display_name
@@ -1440,112 +1462,65 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Apply stored modifiers from disambiguation to the item.
 
-        This handles modifiers that were extracted before disambiguation
-        (e.g., "large iced oat milk latte" - oat milk is stored while
-        disambiguating between latte types).
+        Uses data-driven approach: gets is_multi_select from ingredient_categories
+        table to determine whether to use add_modifier() vs property setter.
 
         Args:
             item: The item to apply modifiers to
             modifiers: Dict of modifier values to apply
         """
-        # Handle common beverage modifiers
-        if "milk" in modifiers:
-            item.milk = modifiers["milk"]
-        if "sweetener" in modifiers:
-            # Sweeteners are stored as list of dicts
-            # Use add_sweetener() for proper normalization and storage
-            item.add_sweetener(modifiers["sweetener"], modifiers.get("sweetener_quantity", 1))
-        if "syrup" in modifiers or "flavor_syrup" in modifiers:
-            syrup = modifiers.get("syrup") or modifiers.get("flavor_syrup")
-            if syrup:
-                # Use add_flavor_syrup() for proper normalization and storage
-                item.add_flavor_syrup(syrup, modifiers.get("syrup_quantity", 1))
-        if "size" in modifiers:
-            item.size = modifiers["size"]
-        if "iced" in modifiers:
-            # Convert iced boolean to temperature string
-            item.temperature = "iced" if modifiers["iced"] else "hot"
-        if "temperature" in modifiers:
-            item.temperature = modifiers["temperature"]
-        if "decaf" in modifiers:
-            item.decaf = modifiers["decaf"]
+        if not modifiers:
+            return
 
-        # Handle food modifiers (spreads, proteins, etc.)
-        # These would come from _extract_modifiers_from_input
-        if "spread" in modifiers:
-            item.spread = modifiers["spread"]
+        from .menu_data_cache import menu_cache
+
+        # Keys that are special metadata, not actual modifier fields
+        skip_keys = {"_quantity"}
+        # Suffix for quantity keys (e.g., "sweetener_quantity")
+        quantity_suffix = "_quantity"
+        # Alias mappings for normalized field names
+        key_aliases = {"flavor_syrup": "syrup"}
+
+        # Track processed keys to avoid double-processing
+        processed: set[str] = set()
+
+        for key, value in modifiers.items():
+            # Skip special keys, quantity suffixes, and already-processed keys
+            if key in skip_keys or key.endswith(quantity_suffix) or key in processed:
+                continue
+
+            # Normalize key (e.g., flavor_syrup -> syrup)
+            normalized_key = key_aliases.get(key, key)
+
+            # Get field config to determine if this is a multi-select field
+            field_config = menu_cache.get_ingredient_category_field_config(normalized_key)
+            is_multi_select = field_config.get("is_multi_select", False) if field_config else False
+
+            if is_multi_select:
+                # Multi-select: use add_modifier with quantity
+                quantity = modifiers.get(f"{key}{quantity_suffix}", 1)
+
+                # Use dedicated add methods if available (for proper normalization)
+                if normalized_key == "sweetener" and hasattr(item, "add_sweetener"):
+                    item.add_sweetener(value, quantity)
+                elif normalized_key == "syrup" and hasattr(item, "add_flavor_syrup"):
+                    item.add_flavor_syrup(value, quantity)
+                else:
+                    # Generic multi-select: use add_modifier
+                    item.add_modifier(normalized_key, value, quantity, 0.0)
+            else:
+                # Single-select or boolean: use property setter if available
+                if hasattr(item, normalized_key):
+                    setattr(item, normalized_key, value)
+                else:
+                    # No property - set directly in attribute_values
+                    item.attribute_values[normalized_key] = value
+
+            processed.add(key)
 
     # =========================================================================
     # Handle User Input for Different States
     # =========================================================================
-
-    def _handle_temperature_input(
-        self, user_input: str, item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        """Handle temperature attribute input using DB-driven option matching."""
-        user_lower = user_input.lower().strip()
-
-        # Get temperature options from database
-        try:
-            temp_options = menu_cache.get_global_attribute_options("temperature")
-        except Exception:
-            # Fallback if temperature options not configured
-            temp_options = []
-
-        # Build pattern -> option_slug mapping from DB options and their aliases
-        pattern_to_option: dict[str, str] = {}
-        for opt in temp_options:
-            slug = opt["slug"].lower()
-            display = opt["display_name"].lower()
-            pattern_to_option[slug] = slug
-            pattern_to_option[display] = slug
-            # Add aliases if present
-            aliases = opt.get("aliases") or []
-            if isinstance(aliases, str):
-                aliases = [a.strip() for a in aliases.split("|") if a.strip()]
-            for alias in aliases:
-                pattern_to_option[alias.lower()] = slug
-
-        # Add common fallback patterns if not already in DB options
-        # These are universal temperature descriptors across all beverages
-        # Only add if the specific pattern isn't already defined
-        iced_fallbacks = ["iced", "ice", "cold"]
-        for pattern in iced_fallbacks:
-            if pattern not in pattern_to_option:
-                pattern_to_option[pattern] = "iced"
-        hot_fallbacks = ["hot", "warm"]
-        for pattern in hot_fallbacks:
-            if pattern not in pattern_to_option:
-                pattern_to_option[pattern] = "hot"
-
-        # Match user input against patterns
-        matched_option = None
-        for pattern, option_slug in pattern_to_option.items():
-            if pattern in user_lower:
-                matched_option = option_slug
-                break
-
-        if matched_option:
-            item.temperature = matched_option
-        else:
-            # Couldn't determine - ask again with DB option names
-            option_names = [opt["display_name"] for opt in temp_options]
-            if option_names:
-                options_str = " or ".join(option_names)
-            else:
-                options_str = "hot or iced"
-            return StateMachineResult(
-                message=f"Would you like that {options_str}?",
-                order=order,
-            )
-
-        # Extract and apply any additional modifiers from the input
-        self._extract_and_apply_modifiers(user_input, item)
-
-        # Advance to next question using the multi-item flow
-        return self._advance_to_next_question(
-            item, order, {"slug": "temperature"}, use_multi_item_orchestration=True
-        )
 
     def _handle_coffee_modifiers_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask
@@ -1578,26 +1553,26 @@ class MenuItemConfigHandler(BaseHandler):
                 price = 0.0
                 if self.pricing and item_type:
                     price = self.pricing.lookup_generic_modifier_price(
-                        mod.name, item_type, category
+                        mod.slug, item_type, category
                     ) or 0.0
 
                 # Use generic add_modifier for unified storage
-                item.add_modifier(category, mod.name, mod.quantity, price)
+                item.add_modifier(category, mod.slug, mod.quantity, price)
 
                 # Build display string for acknowledgment
                 if mod.quantity > 1:
                     if category == "syrup":
-                        applied.append(f"{mod.quantity} pumps {mod.name}")
+                        applied.append(f"{mod.quantity} pumps {mod.slug}")
                     else:
-                        applied.append(f"{mod.quantity} {mod.name}")
+                        applied.append(f"{mod.quantity} {mod.slug}")
                 elif category == "syrup":
-                    applied.append(f"{mod.name} syrup")
+                    applied.append(f"{mod.slug} syrup")
                 elif category == "milk":
-                    applied.append(f"{mod.name} milk")
+                    applied.append(f"{mod.slug} milk")
                 elif category == "style":
-                    applied.append(f"{mod.name} cream")
+                    applied.append(f"{mod.slug} cream")
                 else:
-                    applied.append(mod.name)
+                    applied.append(mod.slug)
 
         # If nothing was extracted, ask again
         if not applied:
@@ -1620,12 +1595,8 @@ class MenuItemConfigHandler(BaseHandler):
         if disambiguation_result:
             return disambiguation_result
 
-        # Special handling for attributes with custom parsing requirements
-        # Temperature attribute needs pattern matching against option aliases
-        if attr_slug in ("iced", "temperature"):
-            return self._handle_temperature_input(user_input, item, order)
-        if attr_slug == "milk_sweetener_syrup":
-            return self._handle_coffee_modifiers_input(user_input, item, order)
+        # NOTE: milk_sweetener_syrup now uses the standard multi_select flow
+        # which includes partial matching (e.g., "syrup" lists all syrup options)
 
         item_type = item.menu_item_type
         attrs = self._get_item_type_attributes(item_type)
@@ -1698,11 +1669,6 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Store in attribute_values
         item.attribute_values[attr_slug] = bool_value
-
-        # Also set direct field for attributes in DIRECT_FIELD_ATTRS (backward compat)
-        if attr_slug in self.DIRECT_FIELD_ATTRS and hasattr(item, attr_slug):
-            setattr(item, attr_slug, bool_value)
-            logger.debug("Set direct field %s = %s", attr_slug, bool_value)
 
         # Extract and apply any additional modifiers from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon modifier)
@@ -1896,19 +1862,31 @@ class MenuItemConfigHandler(BaseHandler):
                 option_price = sel_price or 0.0
 
                 # Look up price from pricing engine if not set
-                # Pass actual item type - pricing engine returns 0 for non-applicable types
+                # First check for variant pricing (menu_item_size_prices), then fall back to upcharges
+                variant_price_applied = False
                 if option_price == 0 and self.pricing:
-                    if attr_slug == "size":
-                        # Size upcharge - pricing engine returns price_modifier (0 for base sizes)
-                        option_price = self.pricing.lookup_attribute_option_upcharge(item.menu_item_type, "size", matched["slug"]) or 0.0
-                    elif attr_slug == "temperature" and matched["slug"].lower() == "iced":
-                        # Iced upcharge depends on size - conditional lookup
-                        size = item.attribute_values.get("size")
-                        if size:
-                            option_price = self.pricing.lookup_conditional_upcharge(item.menu_item_type, "size", size, "iced_price_modifier") or 0.0
+                    # Check if this item has variant pricing for this attribute
+                    # Variant pricing: full price per option (from menu_item_size_prices)
+                    # Upcharge pricing: base price + modifier (from attribute_options)
+                    variant_price, _ = self.pricing.lookup_size_price(
+                        item.menu_item_name, matched["slug"]
+                    )
+                    if variant_price is not None:
+                        # Variant pricing found - set unit_price to the looked-up price
+                        item.unit_price = variant_price
+                        variant_price_applied = True
+                        logger.info(
+                            "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
+                            item.id, attr_slug, matched["slug"], variant_price
+                        )
+                    else:
+                        # No variant pricing - try upcharge from attribute_options
+                        option_price = self.pricing.lookup_attribute_option_upcharge(
+                            item.menu_item_type, attr_slug, matched["slug"]
+                        ) or 0.0
 
-                # Store price if applicable and update unit_price
-                if option_price > 0:
+                # Store price if applicable and update unit_price (for upcharge-based pricing)
+                if not variant_price_applied and option_price > 0:
                     price_key = f"{attr_slug}_price"
                     item.attribute_values[price_key] = option_price
                     # Update unit_price to include this modifier price (multiplied by quantity)
@@ -1923,7 +1901,7 @@ class MenuItemConfigHandler(BaseHandler):
                 # Always use _selections format to support quantity
                 item.attribute_values[f"{attr_slug}_selections"] = [selection]
 
-            # NOTE: Do NOT call _extract_and_apply_modifiers here.
+            # NOTE: Generally do NOT call _extract_and_apply_modifiers here.
             # The user's input was a direct answer to the attribute question.
             # Extracting modifiers would cause duplicates (e.g., "2 scrambled eggs"
             # would add scrambled_egg to both add_egg_selections AND extras/extra_protein).
@@ -1954,7 +1932,6 @@ class MenuItemConfigHandler(BaseHandler):
                 if syrup:
                     stored_modifiers["syrup"] = syrup.name
                     stored_modifiers["syrup_quantity"] = syrup.quantity
-                # Note: temperature comes from parsed items, not modifier extraction
 
             # Store disambiguation state
             order.pending_attr_disambiguation = {
@@ -1975,11 +1952,11 @@ class MenuItemConfigHandler(BaseHandler):
                 order=order,
             )
 
-        # Check for category words (e.g., "milk", "sweetener", "syrup")
-        # that indicate user wants a specific category but needs to specify which one
-        category_result = self._check_category_match(user_lower, options, item, order, attr_slug)
-        if category_result:
-            return category_result
+        # Check for partial matches on option display names
+        # e.g., "syrup" matches "vanilla syrup", "caramel syrup", etc.
+        partial_result = self._check_partial_match(user_lower, options, item, order, attr_slug)
+        if partial_result:
+            return partial_result
 
         # No match at all - ask again WITHOUT listing options
         attr_name = attr["display_name"].lower()
@@ -1988,7 +1965,7 @@ class MenuItemConfigHandler(BaseHandler):
             order=order,
         )
 
-    def _check_category_match(
+    def _check_partial_match(
         self,
         user_input: str,
         options: list[dict],
@@ -1997,70 +1974,69 @@ class MenuItemConfigHandler(BaseHandler):
         attr_slug: str,
     ) -> StateMachineResult | None:
         """
-        Check if user input is a category word that matches options via must_match.
+        Check if user input partially matches option display names.
 
-        Uses must_match to filter options:
-        - Options with must_match set only match if input contains that phrase
-        - Options without must_match (None) match any input containing the category
+        This is a data-driven approach that searches for options where the
+        display_name contains any significant word from the user input.
 
-        For example, if user says "milk":
-        - "Oat Milk" (must_match="oat milk") - doesn't match
-        - "Whole Milk" (must_match=None) - matches (default milk option)
+        For example:
+        - "syrup" → matches "vanilla syrup", "caramel syrup", "hazelnut syrup"
+        - "what syrup do you have" → extracts "syrup", matches same options
+        - "caramel" → matches "caramel syrup", "caramel sauce", etc.
 
         Returns:
-        - None if no category match or if exactly one option matches (let normal flow handle it)
-        - StateMachineResult with clarification question if multiple options match
+        - None if no partial matches found
+        - StateMachineResult listing matching options if multiple found
         """
-        # Common category words that might appear in option names
-        category_keywords = {
-            "milk": "milk",
-            "milks": "milk",
-            "sweetener": "sweetener",
-            "sweetners": "sweetener",
-            "syrup": "syrup",
-            "syrups": "syrup",
+        # Stop words to skip when extracting search terms
+        stop_words = {
+            "what", "which", "do", "you", "have", "are", "the", "a", "an",
+            "is", "there", "any", "some", "can", "i", "get", "want", "like",
+            "options", "option", "choices", "choice", "available", "kind",
+            "kinds", "type", "types", "of", "for", "with", "please", "thanks",
         }
 
         user_lower = user_input.lower().strip()
 
-        # Check if user input matches a category
-        if user_lower not in category_keywords:
+        # Extract meaningful words (at least 3 chars, not stop words)
+        words = [
+            word.strip("?.,!") for word in user_lower.split()
+            if len(word.strip("?.,!")) >= 3 and word.strip("?.,!") not in stop_words
+        ]
+
+        if not words:
             return None
 
-        category = category_keywords[user_lower]
-        display_category = user_lower.rstrip("s")  # Remove plural 's' for display
-
-        # Find options in this category that pass must_match check
-        # Options with must_match=None will pass (they're default options for that category)
-        # Options with must_match set will only pass if input contains the phrase
+        # Search for options where display_name contains any of the search words
         matching_options = []
-        for opt in options:
-            display_lower = opt["display_name"].lower()
-            slug_lower = opt["slug"].lower()
+        matched_term = None
 
-            # Only consider options that belong to this category
-            if category not in display_lower and category not in slug_lower:
-                continue
+        for word in words:
+            # Singularize the word for matching (e.g., "syrups" -> "syrup")
+            singular_word = singularize(word)
 
-            # Check if option passes must_match requirement
-            if self._passes_must_match(user_input, opt):
-                matching_options.append(opt)
+            for opt in options:
+                display_lower = opt["display_name"].lower()
+
+                # Check if word is contained in display_name
+                if singular_word in display_lower or word in display_lower:
+                    if opt not in matching_options:
+                        matching_options.append(opt)
+                        if not matched_term:
+                            matched_term = singular_word
 
         if not matching_options:
-            # No options match - return None to let other handlers deal with it
             return None
 
         if len(matching_options) == 1:
             # Exactly one option matches - return None to let normal matching select it
-            # The single matching option (e.g., Whole Milk for "milk") will be picked up
-            # by the normal _match_option_from_input flow
             logger.info(
-                "Category '%s' matched single option: %s",
+                "Partial match '%s' matched single option: %s",
                 user_input, matching_options[0]["display_name"]
             )
             return None
 
-        # Multiple options match - ask for clarification
+        # Multiple options match - list them for user
         options_text = self._format_options_list(matching_options)
 
         # Stay in same pending state to handle the follow-up answer
@@ -2069,12 +2045,12 @@ class MenuItemConfigHandler(BaseHandler):
         order.pending_field = f"{item.menu_item_type}:{attr_slug}"
 
         logger.info(
-            "Category match: user said '%s', found %d matching %s options",
-            user_input, len(matching_options), display_category
+            "Partial match: user said '%s', term '%s' matched %d options",
+            user_input, matched_term, len(matching_options)
         )
 
         return StateMachineResult(
-            message=f"What kind of {display_category}? We have {options_text}.",
+            message=f"We have {options_text}. Which would you like?",
             order=order,
         )
 

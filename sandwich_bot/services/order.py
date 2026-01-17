@@ -340,7 +340,6 @@ def _add_order_items(db: Session, order: Order, items: list) -> None:
     """
     for it in items:
         # Prefer display_name which includes all item details (bagel choice, toasted, etc.)
-        # Fall back to menu_item_name for compatibility
         menu_item_name = (
             it.get("display_name")
             or it.get("menu_item_name")

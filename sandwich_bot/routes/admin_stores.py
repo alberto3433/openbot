@@ -124,6 +124,7 @@ def create_store(
         city_tax_rate=payload.city_tax_rate,
         state_tax_rate=payload.state_tax_rate,
         delivery_zip_codes=payload.delivery_zip_codes,
+        delivery_fee=payload.delivery_fee,
     )
     db.add(store)
     db.commit()
@@ -183,6 +184,8 @@ def update_store(
         store.state_tax_rate = payload.state_tax_rate
     if payload.delivery_zip_codes is not None:
         store.delivery_zip_codes = payload.delivery_zip_codes
+    if payload.delivery_fee is not None:
+        store.delivery_fee = payload.delivery_fee
 
     db.commit()
     db.refresh(store)

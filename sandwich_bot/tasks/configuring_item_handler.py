@@ -247,7 +247,6 @@ class ConfiguringItemHandler:
 
     def __init__(
         self,
-        by_pound_handler: "ByPoundHandler | None" = None,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
@@ -258,14 +257,12 @@ class ConfiguringItemHandler:
         Initialize the configuring item handler.
 
         Args:
-            by_pound_handler: Handler for by-pound items.
             config_helper_handler: Handler for config helpers (side choice, etc.).
             checkout_utils_handler: Handler for checkout utilities.
             modifier_change_handler: Handler for modifier changes.
             item_adder_handler: Handler for adding items.
             menu_item_handler: Handler for menu item configuration (deli sandwiches, espresso, etc.).
         """
-        self.by_pound_handler = by_pound_handler
         self.config_helper_handler = config_helper_handler
         self.checkout_utils_handler = checkout_utils_handler
         self.modifier_change_handler = modifier_change_handler
@@ -285,10 +282,6 @@ class ConfiguringItemHandler:
         THIS IS THE KEY: we use state-specific parsers that can ONLY
         interpret input as answers for the pending field. No new items.
         """
-        # Handle by-pound category selection (no item required)
-        if order.pending_field == "by_pound_category":
-            return self.by_pound_handler.handle_by_pound_category_selection(user_input, order)
-
         # Handle drink selection when multiple options were presented
         if order.pending_field == "drink_selection":
             return self.taking_items_handler.handle_drink_selection(user_input, order)
@@ -300,10 +293,6 @@ class ConfiguringItemHandler:
         # Handle generic item selection when multiple options were presented (cookies, muffins, etc.)
         if order.pending_field == "item_selection":
             return self._handle_item_selection(user_input, order)
-
-        # Handle category inquiry follow-up ("Would you like to hear what X we have?" -> "yes")
-        if order.pending_field == "category_inquiry":
-            return self.by_pound_handler.handle_category_inquiry_response(user_input, order)
 
         # Handle duplicate selection when user said "another one" with multiple items in cart
         if order.pending_field == "duplicate_selection":

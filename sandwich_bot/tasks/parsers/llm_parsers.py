@@ -13,16 +13,15 @@ import instructor
 from openai import OpenAI
 
 from ..schemas import (
-    SideChoiceResponse,
     BagelChoiceResponse,
-    ByPoundCategoryResponse,
-    DeliveryChoiceResponse,
-    NameResponse,
     ConfirmationResponse,
-    PaymentMethodResponse,
+    DeliveryChoiceResponse,
     EmailResponse,
-    PhoneResponse,
+    NameResponse,
     OpenInputResponse,
+    PaymentMethodResponse,
+    PhoneResponse,
+    SideChoiceResponse,
 )
 from .deterministic import (
     parse_open_input_deterministic,
@@ -104,47 +103,6 @@ Examples:
     return client.chat.completions.create(
         model=model,
         response_model=BagelChoiceResponse,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-
-def parse_by_pound_category(user_input: str, model: str = "gpt-4o-mini") -> ByPoundCategoryResponse:
-    """Parse user input when they're selecting a by-the-pound category or item."""
-    client = get_instructor_client()
-
-    prompt = f"""We asked the user which by-the-pound category they're interested in.
-We sell cheeses, spreads, cold cuts, fish, and salads by the pound.
-
-The user said: "{user_input}"
-
-Categories:
-- "cheese" - if they mention cheese, cheeses
-- "spread" - if they mention spread, spreads, cream cheese (by the pound)
-- "cold_cut" - if they mention cold cuts, deli meats, turkey, ham, pastrami, corned beef
-- "fish" - if they mention fish, lox, salmon, smoked fish, nova, sable, whitefish
-- "salad" - if they mention salad, salads, tuna salad, egg salad, chicken salad
-
-If user mentions a specific item they want to order (e.g., "I'll take the muenster" or "half pound of nova"),
-set wants_to_order to that item name.
-
-Examples:
-- "cheeses" / "the cheese" / "I'm interested in cheese" -> category: "cheese"
-- "what cheese do you sell" / "what cheeses do you have by the pound" -> category: "cheese"
-- "spreads" / "cream cheese by the pound" -> category: "spread"
-- "cold cuts" / "deli meats" -> category: "cold_cut"
-- "what cold cuts do you sell by the pound" / "what deli meats" -> category: "cold_cut"
-- "fish" / "smoked fish" / "the lox" -> category: "fish"
-- "what fish do you have" / "what smoked fish do you sell" -> category: "fish"
-- "salads" / "what salads" -> category: "salad"
-- "I'll take a half pound of nova" -> category: "fish", wants_to_order: "nova"
-- "the muenster please" -> category: "cheese", wants_to_order: "muenster"
-- "never mind" / "nothing" / "I'm good" -> category: null, unclear: false (they're declining)
-- Any unclear response -> unclear: true
-"""
-
-    return client.chat.completions.create(
-        model=model,
-        response_model=ByPoundCategoryResponse,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -422,25 +380,6 @@ Signature item inquiries:
   - "what are the signature items" -> asking_signature_menu: true (no specific type)
   - "tell me about the signature menu" -> asking_signature_menu: true (no specific type)
   - "what pre-made bagels do you have" -> asking_signature_menu: true, signature_menu_type: "signature_item"
-
-By-the-pound inquiries:
-- If user asks "what do you sell by the pound" or "do you have anything by the pound" -> asking_by_pound: true
-- If user asks about a specific category by the pound, also set by_pound_category:
-  - "what cheeses do you have" or "I'm interested in cheese" -> asking_by_pound: true, by_pound_category: "cheese"
-  - "what spreads do you have" / "what cream cheese do you have" / "what cream cheese types do you have" / "what cream cheese flavors do you have" / "what kind of cream cheese" -> asking_by_pound: true, by_pound_category: "spread"
-  - "what cold cuts do you have" -> asking_by_pound: true, by_pound_category: "cold_cut"
-  - "what fish do you sell" or "what smoked fish" -> asking_by_pound: true, by_pound_category: "fish"
-  - "what salads do you have by the pound" -> asking_by_pound: true, by_pound_category: "salad"
-
-By-the-pound ORDERS (user is ordering, not asking):
-- If user orders items by the pound, populate by_pound_items list with each item:
-  - "give me a pound of Muenster" -> by_pound_items: [{{"item_name": "Muenster", "quantity": "1 lb", "category": "cheese"}}]
-  - "a pound of Muenster and a pound of Provolone" -> by_pound_items: [{{"item_name": "Muenster", "quantity": "1 lb", "category": "cheese"}}, {{"item_name": "Provolone", "quantity": "1 lb", "category": "cheese"}}]
-  - "half pound of nova" -> by_pound_items: [{{"item_name": "Nova", "quantity": "half lb", "category": "fish"}}]
-  - "two pounds of turkey" -> by_pound_items: [{{"item_name": "Turkey", "quantity": "2 lbs", "category": "cold_cut"}}]
-  - "I'll take the muenster and the swiss" -> by_pound_items: [{{"item_name": "Muenster", "quantity": "1 lb", "category": "cheese"}}, {{"item_name": "Swiss", "quantity": "1 lb", "category": "cheese"}}]
-  - "give me a pound of tuna salad" -> by_pound_items: [{{"item_name": "Tuna Salad", "quantity": "1 lb", "category": "salad"}}]
-  - "a quarter pound of lox" -> by_pound_items: [{{"item_name": "Lox", "quantity": "quarter lb", "category": "fish"}}]
 """
 
     return client.chat.completions.create(

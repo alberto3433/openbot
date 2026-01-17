@@ -187,6 +187,29 @@ class AttributeOptionUpdate(BaseModel):
 # =============================================================================
 
 # =============================================================================
+# Global Attribute Reference (for ItemTypeOut)
+# =============================================================================
+
+class GlobalAttributeRef(BaseModel):
+    """
+    Lightweight reference to a global attribute linked to an item type.
+
+    Used in ItemTypeOut to show which global attributes are linked without
+    including full option details.
+
+    Attributes:
+        id: Database primary key
+        slug: URL-safe identifier (e.g., "bread", "size")
+        display_name: Human-readable name (e.g., "Bread", "Size")
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    display_name: str
+
+
+# =============================================================================
 # Item Type Category Schemas
 # =============================================================================
 
@@ -249,6 +272,7 @@ class ItemTypeOut(BaseModel):
         item_type_category_name: Display name of the category (e.g., "Food")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
+        global_attributes: List of linked global attributes (slug and display_name)
         aliases: List of synonyms for matching (e.g., ["coffee", "java"])
     """
     model_config = ConfigDict(from_attributes=True)
@@ -262,6 +286,7 @@ class ItemTypeOut(BaseModel):
     item_type_category_name: Optional[str] = None
     menu_item_count: int = 0
     global_attribute_count: int = 0
+    global_attributes: List[GlobalAttributeRef] = []
     aliases: list[str] = []
 
 

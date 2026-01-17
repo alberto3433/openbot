@@ -52,6 +52,9 @@ class ItemType(Base):
     - skip_config = True if has NO attributes with ask_in_conversation=True
 
     Use services.item_type_helpers for these derived values.
+
+    Note: Category grouping (e.g., "sandwich" containing egg sandwiches and fish sandwiches)
+    is handled via MenuItem.categories (MenuItemCategory join table), not via ItemType.
     """
     __tablename__ = "item_types"
 
@@ -59,11 +62,6 @@ class ItemType(Base):
     slug = Column(String, unique=True, nullable=False, index=True)  # e.g., "sandwich", "pizza", "drink"
     display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
     display_name_plural = Column(String, nullable=True)  # e.g., "coffees and teas" for sized_beverage (if irregular)
-
-    # Category keyword support (replaces MENU_CATEGORY_KEYWORDS constant)
-    expands_to = Column(JSON, nullable=True)  # JSON array of slugs for meta-categories (e.g., ["pastry", "snack"] for "dessert")
-    name_filter = Column(String, nullable=True)  # Substring filter for item names (e.g., "tea" to filter sized_beverage)
-    is_virtual = Column(Boolean, nullable=True, default=False)  # True for meta-categories without direct items
 
     # Item type category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
     item_type_category_id = Column(Integer, ForeignKey("item_type_categories.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -73,9 +71,24 @@ class ItemType(Base):
     # These have quantity-based pricing and no configuration attributes
     is_by_pound = Column(Boolean, nullable=False, default=False)
 
+    # Side choice: some items (e.g., omelettes) prompt for a side dish
+    has_side_choice = Column(Boolean, nullable=False, default=False)
+    side_choice_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="SET NULL"), nullable=True)
+
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
-    type_attributes = relationship("ItemTypeAttribute", back_populates="item_type", cascade="all, delete-orphan")
+    type_attributes = relationship(
+        "ItemTypeAttribute",
+        back_populates="item_type",
+        cascade="all, delete-orphan",
+        foreign_keys="[ItemTypeAttribute.item_type_id]",
+    )
+    # Side choice attribute reference (does NOT cascade delete - just a reference)
+    side_choice_attribute = relationship(
+        "ItemTypeAttribute",
+        foreign_keys="[ItemType.side_choice_attribute_id]",
+        uselist=False,
+    )
     type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
     global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type", cascade="all, delete-orphan")
     alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
@@ -85,11 +98,6 @@ class ItemType(Base):
         """Get list of aliases from child table."""
         return [a.alias for a in self.alias_records]
 
-    @property
-    def aliases_str(self) -> str | None:
-        """Get pipe-separated aliases string for backward compatibility."""
-        aliases = self.aliases
-        return '|'.join(aliases) if aliases else None
 
 
 class ItemTypeAlias(Base):
@@ -163,11 +171,6 @@ class ModifierCategory(Base):
         """Get list of aliases from child table."""
         return [a.alias for a in self.alias_records]
 
-    @property
-    def aliases_str(self) -> str | None:
-        """Get pipe-separated aliases string for backward compatibility."""
-        aliases = self.aliases
-        return '|'.join(aliases) if aliases else None
 
 
 class ModifierCategoryAlias(Base):
@@ -242,7 +245,11 @@ class ItemTypeAttribute(Base):
     )
 
     # Relationships
-    item_type = relationship("ItemType", back_populates="type_attributes")
+    item_type = relationship(
+        "ItemType",
+        back_populates="type_attributes",
+        foreign_keys="[ItemTypeAttribute.item_type_id]",
+    )
 
 
 # =============================================================================
@@ -458,7 +465,7 @@ class OrderItem(Base):
 
     # Item configuration (JSON) - stores all item-specific details
     # e.g., {"item_type": "bagel", "bagel_type": "everything", "spread": "cream cheese", "toasted": true}
-    # e.g., {"item_type": "drink", "size": "large", "milk": "oat", "style": "iced"}
+    # e.g., {"item_type": "sized_beverage", "size": "large", "milk": "oat", "temperature": "iced"}
     item_config = Column(JSON, nullable=True)
 
     quantity = Column(Integer, nullable=False)
@@ -548,12 +555,6 @@ class MenuItem(Base):
     def category_names(self) -> list[str]:
         """Get list of category display names from child table."""
         return [c.category.name for c in self.category_records]
-
-    @property
-    def aliases_str(self) -> str | None:
-        """Get pipe-separated aliases string for backward compatibility."""
-        aliases = self.aliases
-        return '|'.join(aliases) if aliases else None
 
     @property
     def base_price(self) -> float:
@@ -682,21 +683,10 @@ class Ingredient(Base):
         return [a.alias for a in self.alias_records]
 
     @property
-    def aliases_str(self) -> str | None:
-        """Get pipe-separated aliases string for backward compatibility."""
-        aliases = self.aliases
-        return '|'.join(aliases) if aliases else None
-
-    @property
     def must_match(self) -> list[str]:
         """Get list of must_match strings from child table."""
         return [m.must_match for m in self.must_match_records]
 
-    @property
-    def must_match_str(self) -> str | None:
-        """Get pipe-separated must_match string for backward compatibility."""
-        mm = self.must_match
-        return '|'.join(mm) if mm else None
 
 
 class IngredientAlias(Base):
@@ -917,9 +907,6 @@ class SessionAnalytics(Base):
     # Timestamp
     ended_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
-
-# Alias for backward compatibility
-AbandonedSession = SessionAnalytics
 
 
 # --- Store model for multi-location support ---

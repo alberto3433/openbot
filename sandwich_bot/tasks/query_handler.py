@@ -13,17 +13,13 @@ from typing import TYPE_CHECKING
 
 from sandwich_bot.menu_data_cache import menu_cache
 
-from .schemas import OrderPhase
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
-    get_by_pound_items,
-    get_by_pound_category_names,
     get_item_type_display_name,
 )
 
 # All category behavior is now data-driven via database:
 # - Category table + MenuItemCategory join: groups items by category (e.g., "sandwich", "drink")
-# - ItemType.is_by_pound: controls display format for by-pound items
 # - ItemType aliases: maps user terms to item type slugs
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
@@ -115,24 +111,6 @@ class QueryHandler:
 
         # Fallback message
         return "sandwiches or egg dishes"
-
-    def _get_by_pound_categories_message(self) -> str:
-        """Build a message listing available by-pound categories from database."""
-        try:
-            category_names = get_by_pound_category_names()
-            if category_names:
-                names = list(category_names.values())
-                if len(names) == 1:
-                    return names[0]
-                elif len(names) == 2:
-                    return f"{names[0]} and {names[1]}"
-                else:
-                    return ", ".join(names[:-1]) + f", and {names[-1]}"
-        except Exception as e:
-            logger.warning("Failed to get by-pound categories from database: %s", e)
-
-        # Fallback message
-        return "cheeses, spreads, cold cuts, fish, and salads"
 
     # =========================================================================
     # Store Info Handlers
@@ -824,134 +802,6 @@ class QueryHandler:
             message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
 
         return StateMachineResult(message=message, order=order)
-
-    # =========================================================================
-    # By-the-Pound Handlers
-    # =========================================================================
-
-    def handle_by_pound_inquiry(
-        self,
-        category: str | None,
-        order: "OrderTask",
-    ) -> StateMachineResult:
-        """Handle initial by-the-pound inquiry."""
-        if category:
-            return self.list_by_pound_category(category, order)
-
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "by_pound_category"
-        categories_list = self._get_by_pound_categories_message()
-        return StateMachineResult(
-            message=f"We have {categories_list} as food by the pound. Which are you interested in?",
-            order=order,
-        )
-
-    def list_by_pound_category(
-        self,
-        category: str,
-        order: "OrderTask",
-    ) -> StateMachineResult:
-        """List items in a specific by-the-pound category.
-
-        Uses data-driven lookup from database category info when available.
-        """
-        # Get category info from database for display name and flags
-        category_info = menu_cache.get_category_keyword_mapping(category)
-        category_name = get_by_pound_category_names().get(category, category)
-
-        # Try to get items from database first
-        items = []
-        items_by_type = self._menu_data.get("items_by_type", {}) if self._menu_data else {}
-
-        if category_info:
-            slug = category_info.get("slug", category)
-            category_name = category_info.get("display_name_plural") or category_info.get("display_name", category_name)
-
-            # Check if this category has items in items_by_type
-            items = [item.get("name", "") for item in items_by_type.get(slug, [])]
-
-        # Fall back to by_pound_items if no database items found
-        if not items:
-            by_pound_items = get_by_pound_items()
-            items = by_pound_items.get(category, [])
-
-        if not items:
-            order.clear_pending()
-            return StateMachineResult(
-                message=f"I don't have information on {category_name} right now. What else can I get for you?",
-                order=order,
-            )
-
-        if len(items) <= 3:
-            items_list = ", ".join(items)
-        else:
-            items_list = ", ".join(items[:-1]) + f", and {items[-1]}"
-
-        order.clear_pending()
-
-        # Check if this is a "dual use" category (used both by-pound and as modifiers)
-        # These don't need "food by the pound" in the message
-        is_dual_use = category_info.get("is_dual_use", False) if category_info else False
-
-        if is_dual_use:
-            message = f"Our {category_name} include: {items_list}. Would you like any of these, or something else?"
-        else:
-            message = f"Our {category_name} food by the pound include: {items_list}. Would you like any of these, or something else?"
-
-        return StateMachineResult(
-            message=message,
-            order=order,
-        )
-
-    # =========================================================================
-    # Category List Handlers
-    # =========================================================================
-
-    def list_category_items(
-        self,
-        category: str,
-        order: "OrderTask",
-    ) -> StateMachineResult:
-        """List items in a menu category (drinks, desserts, sides, etc.)."""
-        # Get category info from database-loaded cache
-        category_info = menu_cache.get_category_keyword_mapping(category)
-        if category_info:
-            display_name = category_info.get("display_name_plural") or category_info.get("display_name", category)
-            lookup_type = category_info.get("lookup_type", "item_type")
-            slug = category_info.get("slug")
-        else:
-            display_name = category
-            lookup_type = "item_type"
-            slug = category
-
-        items = []
-        if self._menu_data:
-            # Try direct category key first
-            items = self._menu_data.get(category, [])
-
-            if not items:
-                # Use lookup_type to determine query method
-                if lookup_type == "category":
-                    # Query via MenuItemCategory join table
-                    items = menu_cache.get_items_by_category(slug)
-                else:
-                    # Query by item_type_id
-                    items_by_type = self._menu_data.get("items_by_type", {})
-                    items = items_by_type.get(slug, [])
-
-        if not items:
-            return StateMachineResult(
-                message=f"I don't have information on {display_name} right now. What would you like to order?",
-                order=order,
-            )
-
-        item_names = [item.get("name", "Unknown") for item in items[:10]]
-        items_str = self._format_item_list(item_names)
-
-        return StateMachineResult(
-            message=f"For {display_name}, we have: {items_str}. Would you like any of these?",
-            order=order,
-        )
 
     # =========================================================================
     # Helper Methods

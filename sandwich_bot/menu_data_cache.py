@@ -2607,34 +2607,6 @@ class MenuDataCache:
         attrs = self.get_item_type_attributes(item_type_slug)
         return attribute_slug in attrs
 
-    def find_item_type_with_attribute(self, attribute_slug: str) -> str | None:
-        """Find an item type that has a specific attribute (data-driven lookup).
-
-        This is used when we need to infer an item type from its attributes,
-        for example when an item doesn't have menu_item_type set but has certain
-        attributes populated.
-
-        Args:
-            attribute_slug: The attribute slug to search for (e.g., "size", "bread")
-
-        Returns:
-            The item type slug if found, None otherwise.
-
-        Example:
-            >>> # Find which item type has "size" attribute
-            >>> item_type = menu_cache.find_item_type_with_attribute("size")
-            >>> # Returns "sized_beverage" or similar
-        """
-        if not self._is_loaded:
-            raise MenuDataNotLoadedError(
-                "Menu cache not loaded. Ensure menu_cache.load_from_db() is called at startup."
-            )
-        # Search all configurable item types
-        for item_type_slug in self._configurable_item_types:
-            if self.item_type_has_attribute(item_type_slug, attribute_slug):
-                return item_type_slug
-        return None
-
     def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
         """Load item type attributes from database.
 

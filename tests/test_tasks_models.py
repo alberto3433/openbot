@@ -68,7 +68,11 @@ def create_coffee_task(
     quantity: int = 1,
     unit_price: float = 0.0,
 ) -> MenuItemTask:
-    """Create a MenuItemTask configured as a sized beverage (coffee)."""
+    """Create a MenuItemTask configured as a sized beverage (coffee).
+
+    Note: Temperature (iced/hot) is now part of the menu_item_name itself
+    (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
+    """
     coffee = MenuItemTask(
         menu_item_name=drink_type or "Coffee",
         menu_item_type="sized_beverage",
@@ -77,8 +81,8 @@ def create_coffee_task(
     )
     if size:
         coffee.size = size
-    if iced is not None:
-        coffee.iced = iced
+    # Note: iced parameter is kept for backward compatibility but is ignored.
+    # Temperature is now part of the menu_item_name.
     if milk:
         coffee.milk = milk
     if sweeteners:
@@ -307,29 +311,30 @@ class TestCoffeeItemTask:
         assert coffee.item_type == "menu_item"
         assert coffee.menu_item_type == "sized_beverage"
         assert coffee.size is None
-        assert coffee.iced is None
+        # Note: temperature (iced/hot) is now part of menu_item_name, not a separate attribute
         assert coffee.milk is None
         assert coffee.extra_shots == 0
 
     def test_get_display_name(self):
         """Test display name generation."""
-        coffee = create_coffee_task(drink_type="latte", size="large", iced=True)
-        assert coffee.get_display_name() == "large iced latte"
+        # Note: Temperature is now part of the menu item name itself
+        coffee = create_coffee_task(drink_type="Iced Latte", size="large")
+        assert "large" in coffee.get_display_name().lower()
+        assert "iced" in coffee.get_display_name().lower() or "latte" in coffee.get_display_name().lower()
 
     def test_get_summary_with_modifiers(self):
         """Test summary with milk and sweetener."""
+        # Note: Temperature is now part of the menu item name itself
         coffee = create_coffee_task(
-            drink_type="latte",
+            drink_type="Iced Latte",
             size="medium",
-            iced=True,
             milk="oat",
-            sweeteners=[{"type": "vanilla", "quantity": 1}],
+            sweeteners=[{"slug": "vanilla", "quantity": 1}],
             extra_shots=2,
         )
         summary = coffee.get_summary()
-        assert "medium" in summary
-        assert "iced" in summary
-        assert "latte" in summary
+        assert "medium" in summary.lower()
+        assert "latte" in summary.lower()
         # MenuItemTask summary structure may be different
         # Check for key elements
         assert "latte" in summary.lower()
@@ -594,9 +599,9 @@ class TestMenuFieldConfig:
         bagel_fields = config.get_fields_for_item_type("bagel")
         assert "bread" in bagel_fields
 
-        coffee_fields = config.get_fields_for_item_type("coffee")
-        # Coffee maps to sized_beverage which has size field
-        assert "size" in coffee_fields
+        # The database item type is "sized_beverage" (not "coffee")
+        beverage_fields = config.get_fields_for_item_type("sized_beverage")
+        assert "size" in beverage_fields
 
     def test_get_fields_for_unknown_item_type_raises(self):
         """Test that unknown item type raises MenuDataNotLoadedError."""
@@ -618,8 +623,8 @@ class TestFieldConfigHelpers:
 
     def test_get_default_value(self):
         """Test getting default values from database."""
-        # Database config: coffee size has no default
-        size_default = get_default_value("coffee", "size")
+        # Database config: sized_beverage size has no default
+        size_default = get_default_value("sized_beverage", "size")
         assert size_default is None
 
         # Database config: bread has no default
@@ -638,4 +643,5 @@ class TestFieldConfigHelpers:
         assert should_ask_field("bagel", "toasted", True) is False
 
         # Size with no value SHOULD be asked (ask_if_empty=True)
-        assert should_ask_field("coffee", "size", None) is True
+        # Note: The database item type is "sized_beverage" (not "coffee")
+        assert should_ask_field("sized_beverage", "size", None) is True

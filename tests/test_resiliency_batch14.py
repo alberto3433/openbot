@@ -4,6 +4,8 @@ Resiliency Test Batch 14: Pronoun/Context References
 Tests the system's ability to handle pronouns and contextual references.
 """
 
+import pytest
+
 from sandwich_bot.tasks.state_machine import OrderStateMachine, OrderPhase
 from sandwich_bot.tasks.models import OrderTask
 from tests.test_helpers import BagelItemTask, CoffeeItemTask
@@ -32,7 +34,7 @@ class TestPronounContextReferences:
         result = sm.process("same thing", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         total_qty = sum(b.quantity for b in bagels)
 
         # Should have 2 bagels or acknowledge the request
@@ -59,15 +61,20 @@ class TestPronounContextReferences:
         result = sm.process("another one of those", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         total_qty = sum(c.quantity for c in coffees)
 
         # Should have 2 coffees
         assert total_qty >= 2, f"Should have 2 coffees. Qty={total_qty}"
 
+    @pytest.mark.skip(reason="Temperature is now part of menu item name; 'make that iced' would require ordering a different item")
     def test_make_that_iced(self):
         """
         Test: User says "make that iced" referring to last coffee.
+
+        DEPRECATED: Temperature (hot/iced) is now part of the menu item name itself
+        (e.g., "Iced Latte" vs "Hot Latte"). To change from hot to iced, user would
+        need to cancel the item and order the iced version as a different menu item.
 
         Scenario:
         - User has: hot latte
@@ -85,7 +92,7 @@ class TestPronounContextReferences:
         result = sm.process("make that iced", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         # Should have updated coffee to iced
         if coffees:

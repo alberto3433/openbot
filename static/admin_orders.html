@@ -275,7 +275,7 @@
   </div>
 
   <script>
-    const API_BASE = "";
+    const API_BASE = "/api/v1";
 
     // Auth credentials storage (cached after first successful auth)
     let authCredentials = null;
@@ -318,7 +318,7 @@
 
     async function loadStores() {
       try {
-        const resp = await fetch("/stores");
+        const resp = await fetch("/api/v1/stores");
         if (resp.ok) {
           const stores = await resp.json();
           STORE_DATA = {};

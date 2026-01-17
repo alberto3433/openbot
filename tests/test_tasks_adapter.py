@@ -73,7 +73,7 @@ def create_coffee_task(
     if size:
         coffee.size = size
     if iced is not None:
-        coffee.iced = iced
+        coffee.attribute_values["temperature"] = "iced" if iced else "hot"
     if decaf:
         coffee.decaf = decaf
     if milk:
@@ -260,7 +260,7 @@ class TestDictToOrderTask:
         assert len(order.items.items) == 1
         assert order.items.get_item_count() == 2  # quantity is 2
         item = order.items.items[0]
-        assert isinstance(item, MenuItemTask) and item.is_bagel
+        assert isinstance(item, MenuItemTask) and item.has_attribute("bread")
         assert item.bread == "everything bagel"
         assert item.toasted is True
         assert item.spread == "cream cheese"
@@ -272,13 +272,17 @@ class TestDictToOrderTask:
         """Test converting a coffee item (now uses MenuItemTask with sized_beverage)."""
         order_dict = {
             "items": [{
-                "item_type": "drink",
+                "item_type": "sized_beverage",
                 "menu_item_name": "iced latte",
                 "size": "large",
                 "item_config": {
-                    "milk": "oat",
-                    "sweeteners": [{"type": "sugar", "quantity": 2}],
-                    "style": "iced",
+                    "temperature": "iced",
+                    "attribute_values": {
+                        "milk_sweetener_syrup_selections": [
+                            {"slug": "oat", "category": "milk", "quantity": 1, "display_name": "Oat"},
+                            {"slug": "sugar", "category": "sweetener", "quantity": 2, "display_name": "Sugar"},
+                        ],
+                    },
                 },
                 "unit_price": 6.50,
             }]
@@ -287,30 +291,33 @@ class TestDictToOrderTask:
 
         assert order.items.get_item_count() == 1
         item = order.items.items[0]
-        # Coffee items are now MenuItemTask with is_sized_beverage=True
+        # Coffee items are now MenuItemTask with has_attribute('size')=True
         assert isinstance(item, MenuItemTask)
-        assert item.is_sized_beverage is True
+        assert item.has_attribute("size") is True
         assert item.menu_item_name == "iced latte"  # drink_type stored as menu_item_name
         assert item.size == "large"
-        assert item.iced is True  # inferred from "iced" in name
+        assert item.attribute_values.get("temperature") == "iced"
         assert item.milk == "oat"
-        assert item.sweeteners == [{"type": "sugar", "quantity": 2}]
+        # Sweeteners use unified storage format
+        assert len(item.sweeteners) == 1
+        assert item.sweeteners[0]["slug"] == "sugar"
+        assert item.sweeteners[0]["quantity"] == 2
 
     def test_multiple_items(self):
         """Test converting multiple items."""
         order_dict = {
             "items": [
                 {"item_type": "sandwich", "menu_item_name": "plain bagel", "toasted": False},
-                {"item_type": "drink", "menu_item_name": "coffee", "size": "medium"},
+                {"item_type": "sized_beverage", "menu_item_name": "coffee", "size": "medium"},
             ]
         }
         order = dict_to_order_task(order_dict)
 
         assert order.items.get_item_count() == 2
-        assert isinstance(order.items.items[0], MenuItemTask) and order.items.items[0].is_bagel
-        # Coffee items are now MenuItemTask with is_sized_beverage=True
+        assert isinstance(order.items.items[0], MenuItemTask) and order.items.items[0].has_attribute("bread")
+        # Coffee items are now MenuItemTask with has_attribute('size')=True
         assert isinstance(order.items.items[1], MenuItemTask)
-        assert order.items.items[1].is_sized_beverage is True
+        assert order.items.items[1].has_attribute("size") is True
 
     def test_confirmed_order(self):
         """Test converting confirmed order."""
@@ -388,7 +395,7 @@ class TestOrderTaskToDict:
         assert len(result["items"]) == 1
         item = result["items"][0]
         assert item["item_type"] == "bagel"  # Bagels now keep their type
-        assert item["bagel_type"] == "sesame"
+        assert item["bread"] == "sesame"  # Canonical field name is 'bread'
         assert item["toasted"] is True
         assert item["spread"] == "butter"
         assert item["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
@@ -403,7 +410,7 @@ class TestOrderTaskToDict:
             size="large",
             iced=True,
             milk="almond",
-            sweeteners=[{"type": "honey", "quantity": 1}],
+            sweeteners=[{"slug": "honey", "quantity": 1}],
             unit_price=5.50,
         )
         order.items.add_item(coffee)
@@ -656,7 +663,7 @@ class TestModifiersConsistency:
             drink_type="coffee",
             size="medium",
             iced=False,
-            sweeteners=[{"type": "sugar", "quantity": 1}],
+            sweeteners=[{"slug": "sugar", "quantity": 1}],
             unit_price=3.50,
         )
         order.items.add_item(coffee)

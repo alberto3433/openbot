@@ -8,111 +8,24 @@ It detects change requests, determines if clarification is needed for ambiguous
 modifiers, and applies changes once resolved.
 
 The handler is data-driven - it uses attribute slugs from the database rather
-than hardcoded food-specific categories.
+than hardcoded food-specific categories. Value normalization uses database-defined
+option aliases via menu_cache.resolve_option_by_alias().
 """
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from .models import MenuItemTask
-from .parsers.constants import (
-    CHANGE_REQUEST_PATTERNS,
-    normalize_bagel_type,
-    normalize_spread,
-)
+from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from sandwich_bot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
 
-# Normalizer registry: maps attribute slugs to normalization functions
-# These functions clean up user input to canonical form
-# (e.g., "sesame bagel" -> "sesame", "oat milk" -> "oat")
-def _normalize_bread(value: str) -> str:
-    """Normalize bread/bagel type value."""
-    result = normalize_bagel_type(value)
-    if result:
-        return result
-    # Fallback: strip common suffixes
-    if value.endswith(" bagel"):
-        return value[:-6].strip()
-    return value
-
-
-def _normalize_spread_type(value: str) -> str:
-    """Normalize spread type value.
-
-    Extracts just the spread type/flavor (e.g., "veggie" from "veggie cream cheese").
-    If the input contains a type prefix before "cream cheese", extract that prefix.
-    """
-    value_lower = value.lower().strip()
-
-    # First try to extract type prefix from the original value
-    # This handles cases like "veggie cream cheese" -> "veggie"
-    for suffix in [" cream cheese", " spread"]:
-        if value_lower.endswith(suffix):
-            prefix = value_lower[:-len(suffix)].strip()
-            if prefix:
-                return prefix
-            # If no prefix (just "cream cheese"), return as-is
-            return value_lower[:-len(suffix)].strip() if suffix == " spread" else "cream cheese"
-
-    # If it's just "cream cheese" with no prefix, return as-is
-    if value_lower in ("cream cheese", "plain cream cheese"):
-        return "cream cheese"
-
-    # For other cases, try normalize_spread to validate it's a known spread
-    result = normalize_spread(value)
-    if result:
-        # If normalize_spread returned a compound phrase, strip the suffix
-        for suffix in [" cream cheese", " spread"]:
-            if result.endswith(suffix):
-                prefix = result[:-len(suffix)].strip()
-                if prefix:
-                    return prefix
-        return result
-
-    return value_lower
-
-
-def _normalize_size(value: str) -> str:
-    """Normalize size value."""
-    return value
-
-
-def _normalize_milk(value: str) -> str | None:
-    """Normalize milk value, returning None for 'no milk'."""
-    for suffix in [" milk"]:
-        if value.endswith(suffix):
-            value = value[:-len(suffix)].strip()
-            break
-    if value in ("no", "black", "none"):
-        return None
-    return value
-
-
-def _normalize_decaf(value: str) -> bool:
-    """Normalize decaf value to boolean."""
-    return value in ("decaf", "a decaf")
-
-
-def _normalize_temperature(value: str) -> str:
-    """Normalize temperature value."""
-    return value  # Already normalized (iced/hot)
-
-
-# Registry of normalizers by attribute slug
-# Note: Some item types use "spread" and others use "spread_type" - handle both
-ATTR_NORMALIZERS: dict[str, Callable[[str], str | bool | None]] = {
-    "bread": _normalize_bread,
-    "spread": _normalize_spread_type,
-    "spread_type": _normalize_spread_type,
-    "size": _normalize_size,
-    "milk_sweetener_syrup": _normalize_milk,
-    "temperature": _normalize_temperature,
-    "decaf": _normalize_decaf,
-}
+# Patterns that indicate user wants to remove/clear an optional attribute
+# These result in None being set for nullable attributes
+NEGATION_PATTERNS = frozenset({"no", "none", "black", "without", "remove", "clear"})
 
 
 @dataclass
@@ -148,20 +61,14 @@ class ModifierChangeHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig | None" = None,
-        **kwargs,
+        config: "HandlerConfig",
     ):
         """Initialize the modifier change handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
-            **kwargs: Legacy parameter support.
         """
-        if config:
-            self.pricing = config.pricing
-        else:
-            # Legacy support for direct parameters
-            self.pricing = kwargs.get("pricing")
+        self.pricing = config.pricing
 
         # Cache data-driven lookups
         self._target_attr_map: dict[str, str] | None = None
@@ -313,6 +220,8 @@ class ModifierChangeHandler:
         """
         Generate a clarification message for ambiguous change requests.
 
+        Uses data-driven attribute display names from the database.
+
         Args:
             change_request: The ambiguous change request
 
@@ -321,13 +230,11 @@ class ModifierChangeHandler:
         """
         new_value = change_request.new_value
 
-        # Build options based on possible attribute slugs
+        # Build options using data-driven attribute display names
         options = []
         for attr_slug in change_request.possible_attributes:
-            if attr_slug == "bread":
-                options.append(f"a {new_value} bagel")
-            elif attr_slug == "spread_type":
-                options.append(f"{new_value} cream cheese")
+            display_name = self._get_attr_display_name(attr_slug)
+            options.append(f"{new_value} {display_name}")
 
         if len(options) == 2:
             return (
@@ -407,10 +314,11 @@ class ModifierChangeHandler:
                 message=f"This item doesn't have a {display_name} to change.",
             )
 
-        # Apply normalizer if one exists for this attribute
-        normalized_value = new_value_lower
-        if attr_slug in ATTR_NORMALIZERS:
-            normalized_value = ATTR_NORMALIZERS[attr_slug](new_value_lower)
+        # Use data-driven normalization based on database option aliases
+        item_type_slug = item.item_type if isinstance(item, MenuItemTask) else None
+        normalized_value = self._normalize_attribute_value(
+            attr_slug, new_value_lower, item_type_slug
+        )
 
         # Get old value and set new value
         old_value = self._get_attr_value(item, attr_slug)
@@ -438,6 +346,92 @@ class ModifierChangeHandler:
             message=message,
             applied_attribute=attr_slug,
         )
+
+    def _normalize_attribute_value(
+        self,
+        attr_slug: str,
+        value: str,
+        item_type_slug: str | None = None,
+    ) -> str | bool | None:
+        """Normalize an attribute value using data-driven option resolution.
+
+        Uses menu_cache.resolve_option_by_alias() to find canonical option values
+        from the database. Handles special cases:
+        - Negation patterns ("no", "none", "black") return None for nullable attrs
+        - Boolean attributes return True/False based on option match
+        - Falls back to cleaned input if no option match found
+
+        Args:
+            attr_slug: The attribute slug (e.g., "size", "milk", "bread")
+            value: The raw user input value (already lowercased)
+            item_type_slug: Optional item type for context-specific resolution
+
+        Returns:
+            Normalized value: canonical option slug, boolean, None, or cleaned input
+        """
+        value_clean = value.lower().strip()
+
+        # Check for negation patterns - user wants to remove/clear the attribute
+        # Split on spaces to check individual words (e.g., "no milk" -> check "no")
+        first_word = value_clean.split()[0] if value_clean else ""
+        if first_word in NEGATION_PATTERNS:
+            return None
+
+        # Get attribute info to check input_type
+        attr_info = None
+        if item_type_slug:
+            try:
+                attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                attr_info = attrs.get(attr_slug)
+            except Exception:
+                pass
+
+        # If no item_type provided, search all item types for this attribute
+        if not attr_info:
+            try:
+                for type_slug in menu_cache.get_all_item_type_slugs():
+                    attrs = menu_cache.get_item_type_attributes(type_slug)
+                    if attr_slug in attrs:
+                        attr_info = attrs[attr_slug]
+                        break
+            except Exception:
+                pass
+
+        # Handle boolean attributes
+        input_type = attr_info.get("input_type") if attr_info else None
+        if input_type == "boolean":
+            # For boolean, check if value matches the "true" option
+            # Common patterns: "decaf" -> True, "regular" -> False
+            option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
+            if option:
+                # If option slug suggests affirmative, return True
+                opt_slug = option.get("slug", "").lower()
+                return opt_slug in ("true", "yes", "decaf", attr_slug)
+            # Check for common affirmative words
+            return value_clean in ("yes", "true", "decaf", attr_slug)
+
+        # Try to resolve via option alias lookup (data-driven)
+        option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
+        if option:
+            return option.get("slug", value_clean)
+
+        # Strip common suffixes that users might include
+        # e.g., "oat milk" -> "oat", "sesame bagel" -> "sesame"
+        suffixes_to_strip = [" milk", " bagel", " bread", " cream cheese", " spread"]
+        stripped = value_clean
+        for suffix in suffixes_to_strip:
+            if stripped.endswith(suffix):
+                stripped = stripped[:-len(suffix)].strip()
+                break
+
+        # Try alias lookup again with stripped value
+        if stripped != value_clean:
+            option = menu_cache.resolve_option_by_alias(attr_slug, stripped)
+            if option:
+                return option.get("slug", stripped)
+
+        # Return the cleaned/stripped value as fallback
+        return stripped if stripped else value_clean
 
     def _get_attr_display_name(self, attr_slug: str) -> str:
         """Get human-readable display name for an attribute."""
@@ -520,6 +514,9 @@ class ModifierChangeHandler:
         """
         Resolve a pending clarification based on user response.
 
+        Uses data-driven attribute matching - checks if any word in the user's
+        response matches an attribute alias from the database.
+
         Args:
             pending_clarification: Dict with new_value and possible_attributes
             user_response: User's response to the clarification question
@@ -529,25 +526,23 @@ class ModifierChangeHandler:
         """
         user_response_lower = user_response.lower().strip()
         new_value = pending_clarification.get("new_value", "").lower()
+        possible_attributes = pending_clarification.get("possible_attributes", [])
 
-        # Check for explicit attribute indicators in response
-        if "bagel" in user_response_lower:
-            return "bread", None
+        # Get data-driven mapping of keywords to attribute slugs
+        target_attr_map = self._get_target_attr_map()
 
-        if "cream cheese" in user_response_lower or "spread" in user_response_lower:
-            return "spread_type", None
+        # Check if user response contains any known attribute keyword
+        # This handles cases like "the bagel" or "cream cheese" or "the spread"
+        for keyword, attr_slug in target_attr_map.items():
+            if keyword in user_response_lower and attr_slug in possible_attributes:
+                return attr_slug, None
 
-        # Check for affirmative responses to specific options
-        # If they said "blueberry bagel" for the first option
-        if f"{new_value} bagel" in user_response_lower:
-            return "bread", None
-
-        # If they said "blueberry cream cheese" for the second option
-        if f"{new_value} cream cheese" in user_response_lower:
-            return "spread_type", None
+        # Check for "{value} {keyword}" patterns (e.g., "blueberry bagel")
+        for keyword, attr_slug in target_attr_map.items():
+            if f"{new_value} {keyword}" in user_response_lower and attr_slug in possible_attributes:
+                return attr_slug, None
 
         # Check for ordinal responses ("the first one", "the second one")
-        possible_attributes = pending_clarification.get("possible_attributes", [])
         if len(possible_attributes) >= 1 and any(
             kw in user_response_lower for kw in ["first", "1st", "one"]
         ):
@@ -558,4 +553,13 @@ class ModifierChangeHandler:
         ):
             return possible_attributes[1], None
 
-        return None, "I didn't catch that. Could you say whether you'd like the bagel or the cream cheese changed?"
+        # Build error message dynamically from possible attributes
+        attr_names = [self._get_attr_display_name(attr) for attr in possible_attributes]
+        if len(attr_names) == 2:
+            options_str = f"the {attr_names[0]} or the {attr_names[1]}"
+        elif len(attr_names) > 2:
+            options_str = ", ".join(f"the {n}" for n in attr_names[:-1]) + f", or the {attr_names[-1]}"
+        else:
+            options_str = "which option"
+
+        return None, f"I didn't catch that. Could you say whether you'd like {options_str} changed?"

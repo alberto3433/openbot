@@ -37,9 +37,8 @@ Middleware Stack:
 
 API Versioning:
 ---------------
-All API endpoints are available under two prefixes:
-- /api/v1/* - Versioned API (recommended for new integrations)
-- /* - Root paths for backward compatibility
+All API endpoints are available under:
+- /api/v1/* - Versioned API
 
 Environment Variables:
 ----------------------
@@ -352,49 +351,3 @@ api_v1_router.include_router(vapi_router)
 
 # Mount versioned API
 app.include_router(api_v1_router)
-
-# Also mount at root for backward compatibility (will be deprecated in v2)
-# This allows existing clients to continue working without changes
-app.include_router(chat_router)
-app.include_router(admin_menu_router)
-app.include_router(admin_orders_router)
-app.include_router(admin_ingredients_router)
-app.include_router(admin_analytics_router)
-app.include_router(admin_stores_router)
-app.include_router(admin_company_router)
-app.include_router(admin_modifiers_router)
-app.include_router(admin_modifier_categories_router)
-app.include_router(admin_testing_router)
-app.include_router(admin_item_type_attributes_router)
-app.include_router(admin_response_patterns_router)
-app.include_router(admin_modifier_qualifiers_router)
-app.include_router(admin_ingredient_categories_router)
-app.include_router(admin_categories_router)
-app.include_router(admin_global_attributes_router)
-app.include_router(admin_item_type_global_attrs_router)
-app.include_router(admin_size_categories_router)
-app.include_router(admin_sizes_router)
-app.include_router(public_stores_router)
-app.include_router(public_company_router)
-app.include_router(tts_router)
-app.include_router(vapi_router)
-
-
-# =============================================================================
-# Backward Compatibility Exports
-# =============================================================================
-# These imports are re-exported for backward compatibility with existing code
-# that imports from main.py. New code should import from the specific modules.
-
-# From config
-from .config import (
-    RATE_LIMIT_ENABLED,
-)
-
-# From services/session
-
-# From services/order
-
-# From services/helpers
-
-# From schemas - Pydantic models

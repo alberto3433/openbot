@@ -1,13 +1,13 @@
 """
 Database connection management.
 
-This module provides both single-tenant (legacy) and multi-tenant database access.
+This module provides database access for the application.
 
 For multi-tenant mode:
     - Use get_tenant_db() dependency with tenant resolution from request
     - The tenant is determined by TenantMiddleware
 
-For single-tenant mode (backward compatibility):
+For single-tenant mode:
     - Use get_db() dependency which uses the default database
 
 Environment variables:
@@ -49,7 +49,7 @@ def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency that yields a SQLAlchemy Session.
 
-    This is the legacy single-tenant version for backward compatibility.
+    This is the single-tenant version that uses the default database.
     For multi-tenant support, use get_tenant_db() instead.
     """
     db = SessionLocal()
@@ -69,18 +69,17 @@ def get_tenant_db(request: Request) -> Generator[Session, None, None]:
         @app.get("/items")
         def get_items(db: Session = Depends(get_tenant_db)):
             ...
+
+    Raises:
+        ValueError: If tenant is not set in request state (TenantMiddleware not configured)
     """
     from .tenant import get_tenant_manager
 
     # Get tenant slug from request state (set by TenantMiddleware)
     if not hasattr(request.state, "tenant_slug"):
-        # Fall back to legacy database if tenant not set
-        db = SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-        return
+        raise ValueError(
+            "Tenant not set in request. Ensure TenantMiddleware is configured."
+        )
 
     tenant_slug = request.state.tenant_slug
     manager = get_tenant_manager()

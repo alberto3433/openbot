@@ -23,6 +23,7 @@ from .models import (
     get_modifier_name,
 )
 from sandwich_bot.exceptions import MenuDataNotLoadedError
+from sandwich_bot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,6 @@ class ModifierField:
     display_name: str  # Human-readable name (e.g., "cream cheese")
     aliases: list[str]  # Alternative names users might say (e.g., ["cc", "schmear"])
     is_list: bool = False  # True if field is a list (e.g., extras, sweeteners)
-    price_field: str | None = None  # Associated price field to clear (e.g., "spread_price")
-    related_fields: list[str] | None = None  # Other fields to clear together (e.g., spread_type)
 
 
 @dataclass
@@ -75,17 +74,11 @@ def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
 
     result = []
     for config in field_configs:
-        # Add related_fields for spread (to clear spread_type and spread_price together)
-        related_fields = None
-        if config["field_name"] == "spread":
-            related_fields = ["spread_type", "spread_price"]
-
         result.append(ModifierField(
             field_name=config["field_name"],
             display_name=config["display_name"],
             aliases=config["aliases"],
             is_list=config["is_list"],
-            related_fields=related_fields,
         ))
 
     logger.debug(
@@ -99,27 +92,19 @@ def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
 def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
     """Get the modifier field definitions for an item type.
 
-    Loads modifier fields from database. Fails fast if database not configured.
-    Uses the item's menu_item_type to determine which modifier fields to load.
+    Loads modifier fields from database. Fails fast if item type not set.
 
     Raises:
-        MenuDataNotLoadedError: If no modifier fields found in database
+        MenuDataNotLoadedError: If item has no menu_item_type or no modifier fields in database
     """
     if isinstance(item, MenuItemTask):
-        # Primary: use the item's explicit item_type
         item_type = getattr(item, 'menu_item_type', None)
-        if item_type:
-            return _load_modifier_fields_from_db(item_type)
-        # Secondary: infer item type from attributes (data-driven lookup)
-        # Check attributes the item has and find matching item type from DB
-        for attr_slug in ("size", "bread"):
-            if item.has_attribute(attr_slug):
-                from sandwich_bot.menu_data_cache import menu_cache
-                inferred_type = menu_cache.find_item_type_with_attribute(attr_slug)
-                if inferred_type:
-                    return _load_modifier_fields_from_db(inferred_type)
-        # Generic menu items use menu_item type
-        return _load_modifier_fields_from_db("menu_item")
+        if not item_type:
+            raise MenuDataNotLoadedError(
+                f"MenuItemTask '{item.menu_item_name}' has no menu_item_type set. "
+                f"Ensure menu_item_type is populated when creating items."
+            )
+        return _load_modifier_fields_from_db(item_type)
     else:
         return []
 
@@ -255,10 +240,13 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
             if normalized_input in value_str or value_str in normalized_input:
                 return ModifierMatch(field=field, matched_value=None, item=item)
 
-            # Special handling for cream cheese with flavor
-            # e.g., spread="kalamata olive cream cheese", user says "cream cheese"
-            if "cream cheese" in normalized_input or "cc" in normalized_input:
-                if "cream cheese" in value_str or field.field_name == "spread":
+            # Special handling for abbreviated/short modifier names that match longer values
+            # e.g., spread="kalamata olive cream cheese", user says "cream cheese" or "cc"
+            # Use database normalization to expand abbreviations
+            canonical_input = menu_cache.normalize_modifier(normalized_input)
+            if canonical_input:
+                canonical_lower = canonical_input.lower()
+                if canonical_lower in value_str:
                     return ModifierMatch(field=field, matched_value=None, item=item)
 
         # For list fields, check if any item matches the input directly
@@ -570,16 +558,6 @@ def remove_modifier_from_item(
         # Single value field - clear it
         removed_value = str(current_value)
         setattr(item, field.field_name, None)
-
-        # Clear related fields
-        if field.related_fields:
-            for related in field.related_fields:
-                if hasattr(item, related):
-                    setattr(item, related, None)
-
-        # Clear price field
-        if field.price_field and hasattr(item, field.price_field):
-            setattr(item, field.price_field, None)
 
         logger.info("Removed %s '%s' from %s", field.display_name, removed_value, type(item).__name__)
         return ModifierRemovalResult(

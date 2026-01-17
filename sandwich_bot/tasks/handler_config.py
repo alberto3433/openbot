@@ -68,9 +68,9 @@ class BaseHandler:
     Base class for state machine handlers.
 
     Provides common initialization logic to reduce boilerplate across handlers.
-    Handlers inherit from this and call super().__init__(config, **kwargs).
+    Handlers inherit from this and call super().__init__(config).
 
-    Attributes extracted from config (with legacy kwargs fallback):
+    Attributes extracted from config:
         model: LLM model name (default: "gpt-4o-mini")
         pricing: PricingEngine instance
         menu_lookup: MenuLookup instance
@@ -81,33 +81,21 @@ class BaseHandler:
         _check_redirect: Callback for redirect checks
     """
 
-    def __init__(self, config: "HandlerConfig | None" = None, **kwargs):
+    def __init__(self, config: "HandlerConfig"):
         """
-        Initialize base handler with config or legacy kwargs.
+        Initialize base handler with config.
 
         Args:
             config: HandlerConfig with shared dependencies.
-            **kwargs: Legacy parameter support for backwards compatibility.
         """
-        if config:
-            self.model = config.model
-            self.pricing = config.pricing
-            self.menu_lookup = config.menu_lookup
-            self._menu_data = config.menu_data or {}
-            self._store_info = config.store_info
-            self.message_builder = config.message_builder
-            self._get_next_question = config.get_next_question
-            self._check_redirect = config.check_redirect
-        else:
-            # Legacy support for direct parameters
-            self.model = kwargs.get("model", "gpt-4o-mini")
-            self.pricing = kwargs.get("pricing")
-            self.menu_lookup = kwargs.get("menu_lookup")
-            self._menu_data = kwargs.get("menu_data") or {}
-            self._store_info = kwargs.get("store_info")
-            self.message_builder = kwargs.get("message_builder")
-            self._get_next_question = kwargs.get("get_next_question")
-            self._check_redirect = kwargs.get("check_redirect")
+        self.model = config.model
+        self.pricing = config.pricing
+        self.menu_lookup = config.menu_lookup
+        self._menu_data = config.menu_data or {}
+        self._store_info = config.store_info
+        self.message_builder = config.message_builder
+        self._get_next_question = config.get_next_question
+        self._check_redirect = config.check_redirect
 
     @property
     def menu_data(self) -> dict:
@@ -156,5 +144,4 @@ class HandlerCallbacks:
     handle_taking_items_with_parsed: Callable[..., "StateMachineResult"] | None = None
 
     # Menu callbacks
-    list_by_pound_category: Callable[[str, "OrderTask"], "StateMachineResult"] | None = None
     build_order_summary: Callable[["OrderTask"], str] | None = None

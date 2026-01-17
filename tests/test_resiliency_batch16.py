@@ -54,7 +54,7 @@ class TestPartialIncompleteOrders:
         result = sm.process("and also a coffee", order)
 
         assert result.message is not None
-        coffees = [i for i in result.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
 
         # Should add coffee or ask about it
         has_coffee = len(coffees) >= 1
@@ -85,7 +85,7 @@ class TestPartialIncompleteOrders:
         result2 = sm.process("large", result1.order)
         assert result2.message is not None
 
-        coffees = [i for i in result2.order.items.items if getattr(i, 'is_sized_beverage', False)]
+        coffees = [i for i in result2.order.items.items if i.has_attribute('size')]
         if coffees:
             coffee = coffees[0]
             # Should have large size or be asking about it

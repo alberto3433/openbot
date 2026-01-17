@@ -153,22 +153,3 @@ def _get_ingredient_aliases(ingredient_name: str) -> list[str]:
         return []
 
 
-# Cache menu item default ingredients for performance
-_default_ingredients_cache: dict[int, list[dict]] = {}
-
-
-def get_cached_default_ingredients(menu_item_id: int, db: Optional[Session] = None) -> list[dict]:
-    """
-    Get default ingredients with caching.
-
-    Cache is cleared on server restart or when menu data is refreshed.
-    """
-    if menu_item_id not in _default_ingredients_cache:
-        _default_ingredients_cache[menu_item_id] = get_menu_item_default_ingredients(menu_item_id, db)
-    return _default_ingredients_cache[menu_item_id]
-
-
-def clear_default_ingredients_cache():
-    """Clear the default ingredients cache."""
-    _default_ingredients_cache.clear()
-    logger.info("Cleared default ingredients cache")

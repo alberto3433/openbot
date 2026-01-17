@@ -89,7 +89,7 @@ class TestGlutenFreeBagelE2E:
         result = sm.process("yes please", result.order)
 
         # Verify bagel was added with correct attributes
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]
@@ -115,7 +115,7 @@ class TestGlutenFreeBagelE2E:
         # User orders gluten free bagel with spread and toasted (explicit "one" to avoid quantity parsing)
         result = sm.process("one gluten free bagel with cream cheese toasted", order)
 
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, f"Should have 1 bagel, got {len(bagels)}"
 
         bagel = bagels[0]
@@ -190,7 +190,7 @@ class TestGlutenFreeBagelE2E:
 
         result = sm.process("plain bagel toasted", order)
 
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1, "Should have 1 bagel"
 
         bagel = bagels[0]

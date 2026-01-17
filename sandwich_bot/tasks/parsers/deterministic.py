@@ -214,7 +214,7 @@ def _build_coffee_parsed_item(
     # Incorporate temperature into item_name for menu item name matching
     # e.g., "latte" + "iced" -> "iced latte" to match "Iced Latte" menu item
     final_item_name = item_name
-    if temperature and temperature.lower() not in item_name.lower():
+    if temperature and item_name and temperature.lower() not in item_name.lower():
         final_item_name = f"{temperature} {item_name}"
 
     # Build attribute_values dict
@@ -1238,6 +1238,16 @@ def _extract_attribute_value(
         if display and display in text_lower:
             return slug
 
+        # Check slug prefix for common suffixed slugs (e.g., "plain_bagel" -> "plain")
+        # This handles cases where user says "plain" and slug is "plain_bagel"
+        for suffix in ["_bagel", "_coffee", "_tea", "_item"]:
+            if slug.endswith(suffix):
+                prefix = slug[:-len(suffix)]
+                # Use word boundary to avoid partial matches
+                if prefix and re.search(rf"\b{re.escape(prefix)}\b", text_lower):
+                    return slug
+                break  # Only check one suffix per slug
+
         # Check aliases
         for alias in option.get("aliases", []):
             alias_lower = alias.lower()
@@ -2125,8 +2135,24 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
         all_modifiers
     )
 
-    # If no known modifiers found, this isn't an add-modifier request
+    # If no known modifiers found, check if the text is a category name
+    # This handles "more cheese" where "cheese" is a category, not a specific ingredient
     if not modifiers_found:
+        # Check if modifier_text is an ingredient category
+        all_food_categories = menu_cache.get_ordered_ingredient_categories("food")
+        modifier_text_clean = modifier_text.lower().strip()
+        if modifier_text_clean in all_food_categories:
+            # User said "more <category>" - return with empty modifiers
+            # but modify_existing_item=True so state machine can handle it
+            logger.info(
+                "ADD MODIFIER (category): '%s' -> category=%s",
+                text[:50], modifier_text_clean
+            )
+            return OpenInputResponse(
+                modify_existing_item=True,
+                modify_target_description=target_item,
+                modify_add_modifiers=[modifier_text_clean.title()],  # e.g., "Cheese"
+            )
         return None
 
     # Clean up target_item if present (remove trailing "please", "thanks", etc.)

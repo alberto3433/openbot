@@ -27,7 +27,7 @@ class TestPreparationPreferences:
         result = sm.process("plain bagel extra toasted", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
 
         # Should have a bagel that's toasted
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
@@ -49,7 +49,7 @@ class TestPreparationPreferences:
         result = sm.process("everything bagel lightly toasted", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
 
         # Should have a bagel
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
@@ -69,7 +69,7 @@ class TestPreparationPreferences:
         result = sm.process("plain bagel with extra cream cheese", order)
 
         assert result.message is not None
-        bagels = [i for i in result.order.items.items if getattr(i, 'is_bagel', False)]
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
 
         # Should have a bagel with cream cheese
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"

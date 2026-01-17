@@ -102,6 +102,7 @@ class StoreOut(BaseModel):
         city_tax_rate: Local tax rate as decimal (0.045 = 4.5%)
         state_tax_rate: State tax rate as decimal
         delivery_zip_codes: Zip codes this store delivers to
+        delivery_fee: Delivery fee in dollars (default: 2.99)
         deleted_at: When store was soft-deleted (null if active)
         created_at: When store was created
         updated_at: When store was last updated
@@ -123,6 +124,7 @@ class StoreOut(BaseModel):
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
     delivery_zip_codes: List[str] = []
+    delivery_fee: float = 2.99
     deleted_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -149,6 +151,7 @@ class StoreCreate(BaseModel):
         city_tax_rate: Local tax rate (default: 0)
         state_tax_rate: State tax rate (default: 0)
         delivery_zip_codes: Delivery zones (default: empty)
+        delivery_fee: Delivery fee in dollars (default: 2.99)
 
     Example:
         {
@@ -177,6 +180,7 @@ class StoreCreate(BaseModel):
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
     delivery_zip_codes: List[str] = []
+    delivery_fee: float = 2.99
 
 
 class StoreUpdate(BaseModel):
@@ -199,6 +203,7 @@ class StoreUpdate(BaseModel):
         city_tax_rate: New local tax rate
         state_tax_rate: New state tax rate
         delivery_zip_codes: New delivery zones
+        delivery_fee: New delivery fee in dollars
 
     Example:
         # Update just the hours
@@ -220,3 +225,4 @@ class StoreUpdate(BaseModel):
     city_tax_rate: Optional[float] = None
     state_tax_rate: Optional[float] = None
     delivery_zip_codes: Optional[List[str]] = None
+    delivery_fee: Optional[float] = None

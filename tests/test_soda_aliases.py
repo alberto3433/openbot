@@ -108,25 +108,31 @@ class TestParseSodaDeterministic:
     def test_parse_soda_with_alias(self):
         """_parse_soda_deterministic should recognize soda aliases."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("I want a coke")
         assert result is not None
-        assert result.new_menu_item is not None
+        menu_item = get_menu_item(result)
+        assert menu_item is not None
         # "coke" alias should map to the canonical name "Coca-Cola"
-        assert "coca" in result.new_menu_item.lower()
+        assert "coca" in menu_item.item_name.lower()
 
     def test_parse_soda_with_oj_alias(self):
         """_parse_soda_deterministic should recognize 'oj' alias."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("can I get an oj")
         assert result is not None
-        assert result.new_menu_item is not None
+        menu_item = get_menu_item(result)
+        assert menu_item is not None
 
     def test_parse_soda_with_seltzer_alias(self):
         """_parse_soda_deterministic should recognize 'seltzer' alias."""
         from sandwich_bot.tasks.parsers.deterministic import _parse_soda_deterministic
+        from tests.test_helpers import get_menu_item
         result = _parse_soda_deterministic("I'll have a seltzer")
         assert result is not None
-        assert result.new_menu_item is not None
+        menu_item = get_menu_item(result)
+        assert menu_item is not None
 
     def test_parse_soda_with_nonexistent_item(self):
         """_parse_soda_deterministic should return None for non-existent sodas."""

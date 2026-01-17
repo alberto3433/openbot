@@ -90,7 +90,7 @@ class TestSyrupToExistingBeverage:
         # The item should be a sized_beverage MenuItemTask
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
-        assert item.is_sized_beverage, "Expected is_sized_beverage to be True"
+        assert item.has_attribute('size'), "Expected is_sized_beverage to be True"
 
         # Check that vanilla syrup was added
         syrup_flavors = [s.get("flavor") for s in item.flavor_syrups]

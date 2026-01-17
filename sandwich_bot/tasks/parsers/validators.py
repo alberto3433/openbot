@@ -196,21 +196,9 @@ def parse_toasted_deterministic(user_input: str) -> bool | None:
     )
 
 
-def parse_hot_iced_deterministic(user_input: str) -> bool | None:
-    """
-    Deterministically parse hot/iced preference for coffee.
-
-    Returns:
-        True if wants iced, False if wants hot, None if unclear
-    """
-    input_lower = user_input.lower()
-
-    if re.search(r'\b(iced|cold)\b', input_lower):
-        return True
-    if re.search(r'\b(hot|warm|regular)\b', input_lower):
-        return False
-
-    return None
+# Note: parse_hot_iced_deterministic removed - temperature (hot/iced) is now
+# part of the menu item name (e.g., "Iced Latte" vs "Hot Latte"), not a
+# separate configuration question.
 
 
 def validate_delivery_zip_code(

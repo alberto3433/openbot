@@ -84,10 +84,6 @@ class TestSlotComparisonLogging:
             mock_parse.return_value = MagicMock(
                 is_greeting=True,
                 unclear=False,
-                new_bagel=False,
-                new_bagel_quantity=0,
-                new_coffee=False,
-                new_coffee_quantity=0,
                 new_menu_item=None,
                 wants_checkout=False,
             )

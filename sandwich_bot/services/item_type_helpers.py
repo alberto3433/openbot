@@ -94,8 +94,7 @@ def get_item_type_config_status(item_type_id: int, db: Session) -> dict:
     """
     Get the full configuration status for an item type.
 
-    Returns a dict with derived is_configurable and skip_config values,
-    providing backward compatibility with code that expects these flags.
+    Returns a dict with derived is_configurable and skip_config values.
 
     Args:
         item_type_id: The ID of the item type to check

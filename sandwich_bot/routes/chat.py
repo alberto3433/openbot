@@ -73,7 +73,7 @@ from ..order_logic import apply_intent_to_order_state
 from ..menu_index_builder import get_menu_version
 from ..menu_data_cache import menu_cache
 from ..services.session import get_or_create_session, save_session
-from ..services.helpers import get_customer_info, get_or_create_company, get_primary_item_type_name
+from ..services.helpers import lookup_customer_by_phone, get_or_create_company, get_primary_item_type_name
 from ..schemas.chat import (
     ChatStartResponse,
     ChatMessageRequest,
@@ -115,9 +115,9 @@ limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
     """Look up a returning customer by phone number.
 
-    Delegates to the shared get_customer_info helper in services.helpers.
+    Delegates to the shared lookup_customer_by_phone helper in services.helpers.
     """
-    return get_customer_info(db, phone)
+    return lookup_customer_by_phone(db, phone)
 
 
 # =============================================================================
@@ -227,8 +227,6 @@ def chat_message(
             reply=result.reply,
             order_state=result.order_state,
             actions=processed_actions,
-            intent=result.primary_intent,
-            slots=result.primary_slots,
         )
 
     except ValueError as e:
@@ -239,8 +237,6 @@ def chat_message(
             reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
             order_state={},
             actions=[],
-            intent="error",
-            slots={},
         )
 
 
@@ -330,7 +326,7 @@ def debug_add_coffee(
     slots = {
         "menu_item_name": "Coffee",
         "quantity": 1,
-        "item_config": {"size": size, "style": "black"}
+        "item_config": {"size": size, "milk": "black"}
     }
 
     updated_state = apply_intent_to_order_state(order_state, "add_drink", slots, menu_index)

@@ -1651,9 +1651,9 @@ class MenuItemConfigHandler(BaseHandler):
         user_lower = user_input.lower().strip()
         attr_slug = attr["slug"]
 
-        # Check for explicit yes/no
-        yes_patterns = ["yes", "yeah", "yep", "sure", "please", "ok", "okay"]
-        no_patterns = ["no", "nope", "not", "skip", "none"]
+        # Check for explicit yes/no using patterns from database
+        yes_patterns = menu_cache.get_response_patterns("affirmative")
+        no_patterns = menu_cache.get_response_patterns("negative")
 
         # Also check for the attribute name with/without "not"
         attr_name = attr["display_name"].lower()
@@ -2173,7 +2173,7 @@ class MenuItemConfigHandler(BaseHandler):
         unanswered = self._get_unanswered_optional(item, item_type)
 
         # Check for "yes" - user wants to see the list
-        yes_patterns = ["yes", "yeah", "yep", "sure", "ok", "okay", "please"]
+        yes_patterns = menu_cache.get_response_patterns("affirmative")
         if any(user_lower == p or user_lower.startswith(p + " ") for p in yes_patterns):
             # If just "yes", list the options
             if user_lower in yes_patterns:

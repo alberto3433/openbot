@@ -2358,16 +2358,8 @@ class TakingItemsHandler:
         order.pending_suggested_item = None
         order.pending_field = None
 
-        # Check for affirmative response
-        affirmative_patterns = [
-            "yes", "yeah", "yep", "yup", "sure", "ok", "okay",
-            "give me one", "i'll take one", "i'll have one",
-            "i want one", "one please", "get me one",
-            "i'll take it", "i'll have it", "i want it",
-            "sounds good", "let's do it", "please", "definitely",
-            "absolutely", "of course", "why not", "go ahead",
-        ]
-
+        # Check for affirmative response using patterns from database
+        affirmative_patterns = menu_cache.get_response_patterns("affirmative")
         is_affirmative = any(pattern in user_lower for pattern in affirmative_patterns)
 
         if is_affirmative and suggested_item:

@@ -125,221 +125,6 @@ def extracted_modifiers_to_list(mods: ExtractedModifiers) -> list[QuantifiedModi
 
 
 # =============================================================================
-# Legacy Builder Functions (TO BE DELETED after migration)
-# =============================================================================
-
-def _build_bagel_parsed_item(
-    bread: str | None = None,
-    quantity: int = 1,
-    toasted: bool | None = None,
-    scooped: bool | None = None,
-    spread: str | None = None,
-    proteins: list[str] | None = None,
-    cheeses: list[str] | None = None,
-    toppings: list[str] | None = None,
-    modifiers: list[str] | None = None,
-    special_instructions: str | None = None,
-) -> ParsedItemEntry:
-    """Build a ParsedItemEntry for a bagel from boolean flag data.
-
-    Returns the unified ParsedItemEntry type with item_type="bagel" and
-    all bagel-specific data stored in attribute_values dict.
-
-    Args:
-        bread: The bread/bagel type (e.g., "everything", "plain")
-        spread: Atomic spread slug (e.g., "scallion_cream_cheese", "butter")
-    """
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-
-    # Build attribute_values dict
-    attr_values: dict = {}
-    if bread is not None:
-        attr_values["bread"] = bread
-    if toasted is not None:
-        attr_values["toasted"] = toasted
-    if scooped is not None:
-        attr_values["scooped"] = scooped
-    if spread is not None:
-        attr_values["spread"] = spread
-
-    # Build unified modifiers list with category
-    quantified_mods: list[QuantifiedModifier] = []
-    for p in proteins or []:
-        quantified_mods.append(QuantifiedModifier(slug=p, category="protein"))
-    for c in cheeses or []:
-        quantified_mods.append(QuantifiedModifier(slug=c, category="cheese"))
-    for t in toppings or []:
-        quantified_mods.append(QuantifiedModifier(slug=t, category="topping"))
-    for m in modifiers or []:
-        # Generic modifiers - category will be looked up later
-        quantified_mods.append(QuantifiedModifier(slug=m, category=None))
-
-    return ParsedItemEntry(
-        item_type="bagel",
-        quantity=quantity,
-        attribute_values=attr_values,
-        modifiers=quantified_mods,
-        special_instructions=special_instructions,
-    )
-
-
-def _build_coffee_parsed_item(
-    item_name: str,
-    size: str | None = None,
-    temperature: str | None = None,  # "iced" or "hot" - used for menu item name matching
-    quantity: int = 1,
-    milk: str | None = None,
-    decaf: bool | None = None,
-    cream_level: str | None = None,  # dark, light, regular
-    special_instructions: str | None = None,
-    sweeteners: list | None = None,
-    syrups: list | None = None,
-    extra_shots: int = 0,
-    original_text: str | None = None,
-) -> ParsedItemEntry:
-    """Build a ParsedItemEntry for a coffee/beverage from boolean flag data.
-
-    Returns the unified ParsedItemEntry type with item_type="sized_beverage" and
-    all coffee-specific data stored in attribute_values dict.
-
-    Args:
-        item_name: The beverage name (e.g., "Hot Latte", "Iced Coffee")
-
-    Note: temperature is used to help match menu item names (e.g., "Iced Latte" vs
-    "Hot Latte") but is NOT stored as a separate attribute since temperature is now
-    part of the menu item name itself.
-    """
-    # Incorporate temperature into item_name for menu item name matching
-    # e.g., "latte" + "iced" -> "iced latte" to match "Iced Latte" menu item
-    final_item_name = item_name
-    if temperature and item_name and temperature.lower() not in item_name.lower():
-        final_item_name = f"{temperature} {item_name}"
-
-    # Build attribute_values dict
-    # Note: temperature IS stored here for parsing context (what the user said),
-    # but when creating MenuItemTask, temperature becomes part of the menu_item_name.
-    attr_values: dict = {}
-    if size is not None:
-        attr_values["size"] = size
-    if temperature is not None:
-        attr_values["temperature"] = temperature
-    if milk is not None:
-        attr_values["milk"] = milk
-    if decaf is not None:
-        attr_values["decaf"] = decaf
-    if cream_level is not None:
-        attr_values["cream_level"] = cream_level
-    if extra_shots:
-        attr_values["extra_shots"] = extra_shots
-
-    # Build unified modifiers list with category and quantity
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-    quantified_mods: list[QuantifiedModifier] = []
-    for sw in sweeteners or []:
-        if isinstance(sw, QuantifiedModifier):
-            quantified_mods.append(QuantifiedModifier(
-                slug=sw.slug, category="sweetener", quantity=sw.quantity
-            ))
-        else:
-            # Handle dict or other formats
-            slug = sw.get("slug", sw) if isinstance(sw, dict) else str(sw)
-            qty = sw.get("quantity", 1) if isinstance(sw, dict) else 1
-            quantified_mods.append(QuantifiedModifier(
-                slug=slug, category="sweetener", quantity=qty
-            ))
-    for sy in syrups or []:
-        if isinstance(sy, QuantifiedModifier):
-            quantified_mods.append(QuantifiedModifier(
-                slug=sy.slug, category="syrup", quantity=sy.quantity
-            ))
-        else:
-            slug = sy.get("slug", sy) if isinstance(sy, dict) else str(sy)
-            qty = sy.get("quantity", 1) if isinstance(sy, dict) else 1
-            quantified_mods.append(QuantifiedModifier(
-                slug=slug, category="syrup", quantity=qty
-            ))
-
-    return ParsedItemEntry(
-        item_type="sized_beverage",
-        item_name=final_item_name,
-        quantity=quantity,
-        attribute_values=attr_values,
-        modifiers=quantified_mods,
-        special_instructions=special_instructions,
-        original_text=original_text,
-    )
-
-
-def _build_signature_item_parsed_item(
-    signature_item_name: str,
-    bread: str | None = None,
-    toasted: bool | None = None,
-    quantity: int = 1,
-    modifiers: list[str] | None = None,
-) -> ParsedItemEntry:
-    """Build a ParsedItemEntry for a signature item (is_signature=True)."""
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-
-    attr_values: dict = {}
-    if bread is not None:
-        attr_values["bread"] = bread
-    if toasted is not None:
-        attr_values["toasted"] = toasted
-
-    # Convert string modifiers to QuantifiedModifier (category looked up later)
-    quantified_mods = [QuantifiedModifier(slug=m, category=None) for m in (modifiers or [])]
-
-    return ParsedItemEntry(
-        item_type="menu_item",
-        item_name=signature_item_name,
-        quantity=quantity,
-        attribute_values=attr_values,
-        modifiers=quantified_mods,
-        is_signature=True,
-    )
-
-
-def _build_menu_item_parsed_item(
-    item_name: str,
-    quantity: int = 1,
-    bread: str | None = None,
-    toasted: bool | None = None,
-    modifiers: list[str] | None = None,
-) -> ParsedItemEntry:
-    """Build a ParsedItemEntry for a menu item from boolean flag data."""
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-
-    attr_values: dict = {}
-    if bread is not None:
-        attr_values["bread"] = bread
-    if toasted is not None:
-        attr_values["toasted"] = toasted
-
-    # Convert string modifiers to QuantifiedModifier (category looked up later)
-    quantified_mods = [QuantifiedModifier(slug=m, category=None) for m in (modifiers or [])]
-
-    return ParsedItemEntry(
-        item_type="menu_item",
-        item_name=item_name,
-        quantity=quantity,
-        attribute_values=attr_values,
-        modifiers=quantified_mods,
-    )
-
-
-def _build_side_parsed_item(
-    side_name: str,
-    quantity: int = 1,
-) -> ParsedItemEntry:
-    """Build a ParsedItemEntry for a side item (data-driven)."""
-    return ParsedItemEntry(
-        item_type="side",
-        item_name=side_name,
-        quantity=quantity,
-    )
-
-
-# =============================================================================
 # Compiled Regex Patterns (internal use)
 # =============================================================================
 
@@ -2828,13 +2613,22 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
         # Create entries for this part (may be >1 for uneven splits like "two hot")
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
-            parsed_items.append(_build_coffee_parsed_item(
-                item_name=base_drink_type,
-                size=base_size,
-                temperature=temperature,
+            # Temperature-to-item-name logic (moved from builder)
+            final_item_name = base_drink_type
+            if temperature and base_drink_type and temperature.lower() not in base_drink_type.lower():
+                final_item_name = f"{temperature} {base_drink_type}"
+            parsed_items.append(build_parsed_item(
+                item_type="sized_beverage",
+                item_name=final_item_name,
                 quantity=1,
-                milk=milk,
-                decaf=decaf,
+                attribute_values={
+                    k: v for k, v in [
+                        ("size", base_size),
+                        ("temperature", temperature),
+                        ("milk", milk),
+                        ("decaf", decaf),
+                    ] if v is not None
+                },
                 original_text=text,
             ))
             item_count += 1
@@ -2845,12 +2639,22 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
 
     # If we have fewer entries than total_quantity, fill with base drinks
     while len(parsed_items) < total_quantity:
-        parsed_items.append(_build_coffee_parsed_item(
-            item_name=base_drink_type,
-            size=base_size,
-            temperature="iced" if base_iced else ("hot" if base_iced is False else None),
+        # Temperature-to-item-name logic (moved from builder)
+        fill_temperature = "iced" if base_iced else ("hot" if base_iced is False else None)
+        final_item_name = base_drink_type
+        if fill_temperature and base_drink_type and fill_temperature.lower() not in base_drink_type.lower():
+            final_item_name = f"{fill_temperature} {base_drink_type}"
+        parsed_items.append(build_parsed_item(
+            item_type="sized_beverage",
+            item_name=final_item_name,
             quantity=1,
-            decaf=base_decaf,
+            attribute_values={
+                k: v for k, v in [
+                    ("size", base_size),
+                    ("temperature", fill_temperature),
+                    ("decaf", base_decaf),
+                ] if v is not None
+            },
             original_text=text,
         ))
 
@@ -2965,26 +2769,43 @@ def _parse_signature_item_deterministic(text: str) -> OpenInputResponse | None:
         ]
 
     # Build parsed_items for unified handler (Phase 8 dual-write)
+    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
     parsed_items = [
-        _build_signature_item_parsed_item(
-            signature_item_name=matched_item,
-            bread=bagel_choice,
-            toasted=toasted,
+        build_parsed_item(
+            item_type="menu_item",
+            item_name=matched_item,
             quantity=1,
-            modifiers=modifications,
+            attribute_values={
+                k: v for k, v in [
+                    ("bread", bagel_choice),
+                    ("toasted", toasted),
+                ] if v is not None
+            },
+            modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
+            is_signature=True,
         )
         for _ in range(quantity)
     ]
 
     # Add coffee to parsed_items if found
     if coffee_type:
-        parsed_items.append(_build_coffee_parsed_item(
-            item_name=coffee_type,
-            size=coffee_size,
-            temperature="iced" if coffee_iced else ("hot" if coffee_iced is False else None),
+        # Temperature-to-item-name logic (moved from builder)
+        coffee_temperature = "iced" if coffee_iced else ("hot" if coffee_iced is False else None)
+        final_coffee_name = coffee_type
+        if coffee_temperature and coffee_type and coffee_temperature.lower() not in coffee_type.lower():
+            final_coffee_name = f"{coffee_temperature} {coffee_type}"
+        parsed_items.append(build_parsed_item(
+            item_type="sized_beverage",
+            item_name=final_coffee_name,
             quantity=1,
-            milk=coffee_milk,
-            decaf=coffee_decaf,
+            attribute_values={
+                k: v for k, v in [
+                    ("size", coffee_size),
+                    ("temperature", coffee_temperature),
+                    ("milk", coffee_milk),
+                    ("decaf", coffee_decaf),
+                ] if v is not None
+            },
         ))
 
     # Phase 4: Only use parsed_items (deprecated fields removed)
@@ -3041,7 +2862,8 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 
     # Build parsed_items for unified handler (Phase 8 dual-write)
     parsed_items = [
-        _build_menu_item_parsed_item(
+        build_parsed_item(
+            item_type="menu_item",
             item_name=canonical_name,
             quantity=1,
         )
@@ -3670,7 +3492,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     if menu_item:
         logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
         return OpenInputResponse(
-            parsed_items=[_build_menu_item_parsed_item(item_name=menu_item, quantity=1)],
+            parsed_items=[build_parsed_item(item_type="menu_item", item_name=menu_item, quantity=1)],
         )
 
     # Try bagel
@@ -3681,7 +3503,17 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         spread = _extract_spread(item_text)
         logger.info("ADD MORE: parsed as bagel type='%s' (qty=1)", bagel_type)
         return OpenInputResponse(
-            parsed_items=[_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)],
+            parsed_items=[build_parsed_item(
+                item_type="bagel",
+                attribute_values={
+                    k: v for k, v in [
+                        ("bread", bagel_type),
+                        ("toasted", toasted),
+                        ("scooped", scooped),
+                        ("spread", spread),
+                    ] if v is not None
+                },
+            )],
         )
 
     # Check for common drink shorthand like "orange juice", "OJ", etc.
@@ -3700,7 +3532,11 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         if shorthand in item_lower:
             logger.info("ADD MORE: parsed shorthand '%s' as '%s' (qty=1)", shorthand, canonical)
             return OpenInputResponse(
-                parsed_items=[_build_coffee_parsed_item(item_name=canonical, quantity=1)],
+                parsed_items=[build_parsed_item(
+                    item_type="sized_beverage",
+                    item_name=canonical,
+                    quantity=1,
+                )],
             )
 
     # Couldn't parse the item - fall back to LLM
@@ -4648,7 +4484,19 @@ def parse_open_input_deterministic(
             modifications = _extract_menu_item_modifications(text)
             logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
-            early_parsed_items = [_build_menu_item_parsed_item(item_name=menu_item, quantity=1, bread=bagel_choice, toasted=toasted, modifiers=modifications) for _ in range(qty)]
+            from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
+            early_parsed_items = [
+                build_parsed_item(
+                    item_type="menu_item",
+                    item_name=menu_item,
+                    quantity=1,
+                    attribute_values={
+                        k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
+                    },
+                    modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
+                )
+                for _ in range(qty)
+            ]
             return OpenInputResponse(parsed_items=early_parsed_items)
 
     # Early check for standalone side items
@@ -4671,7 +4519,7 @@ def parse_open_input_deterministic(
                     qty = WORD_TO_NUM.get(qty_str, 1)
             logger.info("STANDALONE SIDE ITEM: matched '%s' -> %s (qty=%d)", text[:50], canonical_name, qty)
             # Phase 4: Only use parsed_items (deprecated fields removed)
-            standalone_side_parsed_items = [_build_side_parsed_item(side_name=canonical_name, quantity=1) for _ in range(qty)]
+            standalone_side_parsed_items = [build_parsed_item(item_type="side", item_name=canonical_name, quantity=1) for _ in range(qty)]
             return OpenInputResponse(parsed_items=standalone_side_parsed_items)
 
     # Early check for dessert/pastry items (cookies, brownies, muffins)
@@ -4725,7 +4573,7 @@ def parse_open_input_deterministic(
 
                 logger.info("DESSERT ITEM: matched '%s' -> %s (qty=%d)", text[:50], full_item, qty)
                 # Phase 4: Only use parsed_items (deprecated fields removed)
-                dessert_parsed_items = [_build_menu_item_parsed_item(item_name=full_item, quantity=1) for _ in range(qty)]
+                dessert_parsed_items = [build_parsed_item(item_type="menu_item", item_name=full_item, quantity=1) for _ in range(qty)]
                 return OpenInputResponse(parsed_items=dessert_parsed_items)
 
     # Check for known menu items FIRST - BEFORE any bagel patterns
@@ -4742,7 +4590,19 @@ def parse_open_input_deterministic(
             modifications = _extract_menu_item_modifications(text)
             logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
-            menu_item_parsed_items = [_build_menu_item_parsed_item(item_name=menu_item, quantity=1, bread=bagel_choice, toasted=toasted, modifiers=modifications) for _ in range(qty)]
+            from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
+            menu_item_parsed_items = [
+                build_parsed_item(
+                    item_type="menu_item",
+                    item_name=menu_item,
+                    quantity=1,
+                    attribute_values={
+                        k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
+                    },
+                    modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
+                )
+                for _ in range(qty)
+            ]
             return OpenInputResponse(parsed_items=menu_item_parsed_items)
         else:
             logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s' - is a coffee type, letting coffee parser handle it", menu_item)
@@ -4767,11 +4627,21 @@ def parse_open_input_deterministic(
 
             # Build parsed_items for unified handler
             bagel_qty_parsed_items = [
-                _build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)
+                build_parsed_item(
+                    item_type="bagel",
+                    attribute_values={
+                        k: v for k, v in [
+                            ("bread", bagel_type),
+                            ("toasted", toasted),
+                            ("scooped", scooped),
+                            ("spread", spread),
+                        ] if v is not None
+                    },
+                )
                 for _ in range(quantity)
             ]
             if side_item:
-                bagel_qty_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
+                bagel_qty_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
 
             # Phase 4: Only use parsed_items (deprecated fields removed)
             return OpenInputResponse(parsed_items=bagel_qty_parsed_items)
@@ -4790,9 +4660,19 @@ def parse_open_input_deterministic(
         )
 
         # Build parsed_items for unified handler
-        simple_bagel_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)]
+        simple_bagel_parsed_items = [build_parsed_item(
+            item_type="bagel",
+            attribute_values={
+                k: v for k, v in [
+                    ("bread", bagel_type),
+                    ("toasted", toasted),
+                    ("scooped", scooped),
+                    ("spread", spread),
+                ] if v is not None
+            },
+        )]
         if side_item:
-            simple_bagel_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
+            simple_bagel_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
 
         # Phase 4: Only use parsed_items (deprecated fields removed)
         return OpenInputResponse(parsed_items=simple_bagel_parsed_items)
@@ -4811,9 +4691,19 @@ def parse_open_input_deterministic(
                 bagel_type, toasted, scooped, spread, side_item
             )
             # Build parsed_items for unified handler
-            bagel_mention_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)]
+            bagel_mention_parsed_items = [build_parsed_item(
+                item_type="bagel",
+                attribute_values={
+                    k: v for k, v in [
+                        ("bread", bagel_type),
+                        ("toasted", toasted),
+                        ("scooped", scooped),
+                        ("spread", spread),
+                    ] if v is not None
+                },
+            )]
             if side_item:
-                bagel_mention_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
+                bagel_mention_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
 
             # Phase 4: Only use parsed_items (deprecated fields removed)
             return OpenInputResponse(parsed_items=bagel_mention_parsed_items)

@@ -546,7 +546,7 @@ class TestPriceRecalculationInvariants:
             item_type="bagel",
             order=order,
             quantity=1,
-            bagel_type="wheat",
+            bread="wheat",  # Use attribute slug, not legacy "bagel_type"
             toasted=True,
             spread="none",
             spread_type=None,

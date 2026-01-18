@@ -1548,7 +1548,7 @@ class MenuItemConfigHandler(BaseHandler):
         user_lower = user_input.lower().strip()
 
         # Check for "no thanks" / "nothing" / "that's it" to skip modifiers
-        skip_patterns = ["no", "nothing", "none", "that's it", "thats it", "i'm good", "im good", "nope"]
+        skip_patterns = menu_cache.get_response_patterns("negative")
         if any(p in user_lower for p in skip_patterns) and len(user_lower) < 20:
             # Mark item as complete and advance
             item.mark_complete()
@@ -1699,7 +1699,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Check for "none" / "no" / "skip"
         if attr.get("allow_none", False):
-            skip_patterns = ["no", "none", "skip", "nothing", "no thanks", "nope"]
+            skip_patterns = menu_cache.get_response_patterns("negative")
             if any(user_lower == p or user_lower.startswith(p + " ") for p in skip_patterns):
                 item.attribute_values[attr_slug] = None
                 return self._advance_to_next_question(item, order, attr)
@@ -2146,10 +2146,7 @@ class MenuItemConfigHandler(BaseHandler):
         item_type = item.menu_item_type
 
         # Check for "no" - user doesn't want to customize
-        no_patterns = [
-            "no", "nope", "no thanks", "that's it", "that's all",
-            "i'm good", "im good", "all set", "done", "nothing"
-        ]
+        no_patterns = menu_cache.get_response_patterns("negative")
         if any(user_lower == p or user_lower.startswith(p) for p in no_patterns):
             # Recalculate price and complete
             self._recalculate_item_price(item)

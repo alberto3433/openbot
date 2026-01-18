@@ -26,7 +26,6 @@ from .constants import (
     get_signature_item_aliases,
     # Dynamic spread functions (loaded from database)
     get_spreads,
-    get_spread_types,
     QUALIFIER_PATTERNS,
     STANDALONE_INSTRUCTION_PATTERNS,
     # GREETING_PATTERNS and DONE_PATTERNS are now loaded from database via menu_cache.get_response_regex()
@@ -64,7 +63,6 @@ def _build_bagel_parsed_item(
     toasted: bool | None = None,
     scooped: bool | None = None,
     spread: str | None = None,
-    spread_type: str | None = None,
     proteins: list[str] | None = None,
     cheeses: list[str] | None = None,
     toppings: list[str] | None = None,
@@ -78,6 +76,7 @@ def _build_bagel_parsed_item(
 
     Args:
         bread: The bread/bagel type (e.g., "everything", "plain")
+        spread: Atomic spread slug (e.g., "scallion_cream_cheese", "butter")
     """
     from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
 
@@ -91,8 +90,6 @@ def _build_bagel_parsed_item(
         attr_values["scooped"] = scooped
     if spread is not None:
         attr_values["spread"] = spread
-    if spread_type is not None:
-        attr_values["spread_type"] = spread_type
 
     # Build unified modifiers list with category
     quantified_mods: list[QuantifiedModifier] = []
@@ -1068,34 +1065,16 @@ def extract_modifiers_for_item_type(
 # Generic Data-Driven Extraction Functions
 # =============================================================================
 
-def _normalize_bread_value(slug: str | None) -> str | None:
-    """Normalize bread/bagel type slug to expected format.
-
-    Database stores slugs like 'plain_bagel', 'everything_bagel' but the
-    rest of the system expects 'plain', 'everything', 'cinnamon raisin'.
+def _slug_to_display(slug: str | None) -> str | None:
+    """Convert slug to display format (underscores to spaces).
 
     Args:
-        slug: Database slug (e.g., 'plain_bagel', 'cinnamon_raisin_bagel')
+        slug: Database slug (e.g., 'cinnamon_raisin', 'sun_dried_tomato')
 
     Returns:
-        Normalized name (e.g., 'plain', 'cinnamon raisin'), or None for false positives
+        Display format (e.g., 'cinnamon raisin', 'sun dried tomato')
     """
-    if not slug:
-        return slug
-
-    # If the slug is just "bagel", it's likely a false positive from matching
-    # the word "bagels" in text like "three bagels" - return None
-    if slug == "bagel":
-        return None
-
-    # Strip _bagel suffix if present
-    if slug.endswith("_bagel"):
-        slug = slug[:-6]  # Remove '_bagel'
-
-    # Replace underscores with spaces
-    slug = slug.replace("_", " ")
-
-    return slug
+    return slug.replace("_", " ") if slug else slug
 
 
 def _extract_attribute_value(
@@ -1162,16 +1141,6 @@ def _extract_attribute_value(
         # Check display name
         if display and display in text_lower:
             return slug
-
-        # Check slug prefix for common suffixed slugs (e.g., "plain_bagel" -> "plain")
-        # This handles cases where user says "plain" and slug is "plain_bagel"
-        for suffix in ["_bagel", "_coffee", "_tea", "_item"]:
-            if slug.endswith(suffix):
-                prefix = slug[:-len(suffix)]
-                # Use word boundary to avoid partial matches
-                if prefix and re.search(rf"\b{re.escape(prefix)}\b", text_lower):
-                    return slug
-                break  # Only check one suffix per slug
 
         # Check aliases
         for alias in option.get("aliases", []):
@@ -1731,132 +1700,139 @@ def _extract_scooped(text: str) -> bool | None:
     return None
 
 
-def _extract_spread(text: str) -> tuple[str | None, str | None]:
-    """Extract spread and spread type from text. Returns (spread, spread_type).
+def _extract_spread(text: str) -> str | None:
+    """Extract spread from text. Returns atomic spread slug.
 
-    Note: The returned spread is normalized to its canonical name (e.g., "cc" -> "cream cheese").
-    This ensures consistent display and correct pricing lookup.
+    Matches user input against spread options from the database.
+    Returns a single atomic slug (e.g., "scallion_cream_cheese", "butter").
 
-    Spread types are loaded from the database cache via get_spread_types().
+    The slug can be looked up in GlobalAttributeOption for display_name and pricing.
     """
     text_lower = text.lower()
 
-    spread = None
-    spread_type = None
+    # Get all spread options from database
+    try:
+        spread_options = menu_cache.get_global_attribute_options("spread")
+    except Exception:
+        # Fallback if spread attribute not found
+        return None
 
-    for s in sorted(get_spreads(), key=len, reverse=True):
-        if s in text_lower:
-            # Normalize alias to canonical name (e.g., "cc" -> "Cream Cheese")
-            normalized = menu_cache.normalize_modifier(s)
-            spread = normalized.lower() if normalized != s else s
-            break
+    # Build list of (match_text, slug) tuples for matching
+    # Include both display_name and aliases
+    match_candidates: list[tuple[str, str]] = []
+    for opt in spread_options:
+        slug = opt.get("slug", "")
+        display_name = opt.get("display_name", "").lower()
+        if display_name:
+            match_candidates.append((display_name, slug))
+        # Also check aliases
+        aliases = opt.get("aliases", [])
+        if aliases:
+            for alias in aliases:
+                match_candidates.append((alias.lower(), slug))
 
-    # Spread types loaded from database cache
-    all_spread_types = get_spread_types()
+    # Sort by match text length (longest first) to prefer specific matches
+    match_candidates.sort(key=lambda x: len(x[0]), reverse=True)
 
-    for st in sorted(all_spread_types, key=len, reverse=True):
-        if st in text_lower:
-            spread_type = st
-            break
+    # Find the first (longest) match in the text
+    for match_text, slug in match_candidates:
+        if match_text in text_lower:
+            return slug
 
-    if spread_type and not spread:
-        spread = "cream cheese"
-
-    return spread, spread_type
+    return None
 
 
 def extract_spread_with_disambiguation(
     text: str,
-) -> tuple[str | None, str | None, list[str]]:
+) -> tuple[str | None, list[str]]:
     """
-    Extract spread and spread type from text with disambiguation support.
+    Extract spread from text with disambiguation support.
 
     This function extends _extract_spread by using partial matching to find
-    potential spread type matches. When the user says something like "walnut
-    cream cheese", it will find all spread types containing "walnut" and
+    potential spread matches. When the user says something like "walnut
+    cream cheese", it will find all spreads containing "walnut" and
     return them for disambiguation if there are multiple matches.
-
-    Spread types are loaded from the database cache via get_spread_types().
 
     Args:
         text: User input text
 
     Returns:
-        Tuple of (spread, spread_type, disambiguation_options):
-        - spread: Base spread type (e.g., "cream cheese", "butter")
-        - spread_type: Specific variety (e.g., "scallion", "honey walnut")
-        - disambiguation_options: List of matching spread types if ambiguous,
+        Tuple of (spread_slug, disambiguation_options):
+        - spread_slug: Atomic spread slug (e.g., "scallion_cream_cheese", "butter")
+        - disambiguation_options: List of matching spread display names if ambiguous,
           empty list if exact match or no partial matches found
 
     Examples:
         >>> extract_spread_with_disambiguation("scallion cream cheese")
-        ("cream cheese", "scallion", [])
+        ("scallion_cream_cheese", [])
 
         >>> extract_spread_with_disambiguation("walnut cream cheese")
-        ("cream cheese", None, ["honey walnut", "maple raisin walnut"])
+        (None, ["Honey Walnut Cream Cheese", "Maple Raisin Walnut Cream Cheese"])
 
         >>> extract_spread_with_disambiguation("butter")
-        ("butter", None, [])
+        ("butter", [])
     """
-    from .constants import find_spread_matches, get_spread_types, get_spreads
-
     text_lower = text.lower()
-    spread = None
-    spread_type = None
     disambiguation_options: list[str] = []
 
-    # First, find the base spread (cream cheese, butter, etc.)
-    spreads = get_spreads()
-    for s in sorted(spreads, key=len, reverse=True):
-        if s in text_lower:
-            # Normalize alias to canonical name (e.g., "cc" -> "Cream Cheese")
-            normalized = menu_cache.normalize_modifier(s)
-            spread = normalized.lower() if normalized != s else s
-            break
+    # Get all spread options from database
+    try:
+        spread_options = menu_cache.get_global_attribute_options("spread")
+    except Exception:
+        return None, []
 
-    # Get all available spread types from database cache
-    all_spread_types = get_spread_types()
+    # Build list of (match_text, slug, display_name) tuples for matching
+    match_candidates: list[tuple[str, str, str]] = []
+    for opt in spread_options:
+        slug = opt.get("slug", "")
+        display_name = opt.get("display_name", "")
+        display_lower = display_name.lower()
+        if display_lower:
+            match_candidates.append((display_lower, slug, display_name))
+        # Also check aliases
+        aliases = opt.get("aliases", [])
+        if aliases:
+            for alias in aliases:
+                match_candidates.append((alias.lower(), slug, display_name))
 
-    # Try exact match first (longest match wins)
-    for st in sorted(all_spread_types, key=len, reverse=True):
-        if st in text_lower:
-            spread_type = st
-            break
+    # Sort by match text length (longest first) to prefer specific matches
+    match_candidates.sort(key=lambda x: len(x[0]), reverse=True)
 
-    # If no exact match, try partial matching for disambiguation
-    if not spread_type:
-        # Extract potential spread type words from input
-        # Remove common words and the base spread
-        words_to_check = text_lower
-        for remove in ["cream cheese", "butter", "spread", "please", "thanks", "with", "on", "the", "a"]:
-            words_to_check = words_to_check.replace(remove, " ")
+    # Try exact match first
+    for match_text, slug, _ in match_candidates:
+        if match_text in text_lower:
+            return slug, []
 
-        # Look for words that could be partial spread types
-        words = [w.strip() for w in words_to_check.split() if w.strip() and len(w.strip()) > 2]
+    # No exact match - try partial matching for disambiguation
+    words_to_check = text_lower
+    for remove in ["cream cheese", "butter", "spread", "please", "thanks", "with", "on", "the", "a"]:
+        words_to_check = words_to_check.replace(remove, " ")
 
-        for word in words:
-            matches = find_spread_matches(word)
-            if matches:
-                if len(matches) == 1:
-                    # Single match - use it
-                    spread_type = matches[0]
-                    disambiguation_options = []
-                    break
-                else:
-                    # Multiple matches - need disambiguation
-                    disambiguation_options = matches
-                    # Don't set spread_type - let caller handle disambiguation
-                    break
+    words = [w.strip() for w in words_to_check.split() if w.strip() and len(w.strip()) > 2]
 
-    # If we found a spread type but no base spread, default to cream cheese
-    if spread_type and not spread:
-        spread = "cream cheese"
+    for word in words:
+        matches = []
+        for match_text, slug, display_name in match_candidates:
+            if word in match_text:
+                matches.append((slug, display_name))
 
-    # If we have disambiguation options but no spread, default to cream cheese
-    if disambiguation_options and not spread:
-        spread = "cream cheese"
+        # Deduplicate by slug
+        seen_slugs = set()
+        unique_matches = []
+        for slug, display_name in matches:
+            if slug not in seen_slugs:
+                seen_slugs.add(slug)
+                unique_matches.append((slug, display_name))
 
-    return spread, spread_type, disambiguation_options
+        if unique_matches:
+            if len(unique_matches) == 1:
+                return unique_matches[0][0], []
+            else:
+                # Multiple matches - return display names for disambiguation
+                disambiguation_options = [m[1] for m in unique_matches]
+                return None, disambiguation_options
+
+    return None, []
 
 
 def _extract_side_item(text: str) -> tuple[str | None, int]:
@@ -1987,7 +1963,7 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     This must be called BEFORE menu item matching to prevent "scallion cream cheese"
     from being matched to "Scallion Cream Cheese Sandwich".
 
-    Spread types are loaded from the database cache via get_spread_types().
+    Spread options are loaded from the database cache (GlobalAttributeOption for "spread").
 
     Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
     """
@@ -2056,40 +2032,20 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     if not spread_part:
         return None
 
-    # === Extract spread and spread_type from spread_part ===
-    spread = None
-    spread_type = None
+    # === Extract spread from spread_part (atomic slug) ===
+    spread = _extract_spread(spread_part)
 
-    # Extract spread (cream cheese, butter, etc.)
-    for s in sorted(get_spreads(), key=len, reverse=True):
-        if s in spread_part:
-            spread = s
-            break
-
-    # Extract spread type (scallion, veggie, etc.) from database cache
-    all_spread_types = get_spread_types()
-
-    for st in sorted(all_spread_types, key=len, reverse=True):
-        if st in spread_part:
-            spread_type = st
-            break
-
-    # If we found either a spread or spread_type, this is a modification
-    if spread or spread_type:
-        # Default spread to cream cheese if only type is mentioned
-        if spread_type and not spread:
-            spread = "cream cheese"
-
+    # If we found a spread, this is a modification
+    if spread:
         logger.info(
-            "MODIFY EXISTING ITEM: '%s' -> spread=%s, spread_type=%s, target=%s",
-            text[:50], spread, spread_type, target_bagel
+            "MODIFY EXISTING ITEM: '%s' -> spread=%s, target=%s",
+            text[:50], spread, target_bagel
         )
 
         return OpenInputResponse(
             modify_existing_item=True,
             modify_target_description=target_bagel,
             modify_new_spread=spread,
-            modify_new_spread_type=spread_type,
         )
 
     return None
@@ -2123,7 +2079,7 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     # Use database-driven categories instead of hardcoded function calls
     all_modifiers: set[str] = set()
     for category in menu_cache.get_ordered_ingredient_categories("food"):
-        # Skip spreads - they're handled separately with spread_type extraction
+        # Skip spreads - they're handled separately in _parse_spread_modification
         if category == "spread":
             continue
         ingredients = menu_cache.get_ingredients(category)
@@ -2347,7 +2303,7 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
     # Extract bagel type
-    bagel_type = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+    bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
 
     # Extract toasted preference
     toasted = _extract_toasted(text)
@@ -2456,7 +2412,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
     # (before the first "one with" or split indicator)
     # This prevents "one plain" from being used as the base bagel type
     first_split = re.split(r"\b(?:one|1|first)\s+(?:with\s+)?", text_lower, maxsplit=1)[0]
-    base_bagel_type = _normalize_bread_value(_extract_attribute_value(first_split, "bagel", "bread"))
+    base_bagel_type = _slug_to_display(_extract_attribute_value(first_split, "bagel", "bread"))
 
     # Extract base toasted preference from initial part only
     base_toasted = _extract_toasted(first_split)
@@ -2526,7 +2482,7 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
             part_lower = re.sub(alias_pattern, canonical, part_lower)
 
         # Check if this part specifies a different bagel type (e.g., "one plain, one everything")
-        part_bagel_type = _normalize_bread_value(_extract_attribute_value(part_lower, "bagel", "bread"))
+        part_bagel_type = _slug_to_display(_extract_attribute_value(part_lower, "bagel", "bread"))
         if part_bagel_type:
             bagel_type = part_bagel_type
         else:
@@ -2541,43 +2497,11 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         elif base_toasted is not None:
             toasted = base_toasted
 
-        # Extract spread/modifier for this bagel
-        spread = None
-        spread_type = None
-
-        # Check for butter first (before cream cheese logic)
-        # Use word boundary to avoid matching "peanut butter"
-        if re.search(r"(?<!\w)butter(?!\s+cream cheese)\b", part_lower):
-            if "peanut" not in part_lower:
-                spread = "butter"
-
-        # Check for proteins as the main item (lox, nova, etc.)
-        if not spread:
-            for protein in ["nova scotia salmon", "nova", "lox", "salmon", "whitefish", "tuna"]:
-                if protein in part_lower:
-                    # This is actually a spread/fish order
-                    normalized = menu_cache.normalize_modifier(protein)
-                    spread = normalized
-                    break
-
-        # Check for cream cheese with type (e.g., "scallion cream cheese")
-        if not spread and "cream cheese" in part_lower:
-            spread = "cream cheese"
-            # Look for spread type before "cream cheese"
-            for st in sorted(get_spread_types(), key=len, reverse=True):
-                if st in part_lower:
-                    spread_type = st
-                    break
-
-        # Check for peanut butter, nutella, hummus, etc.
-        if not spread:
-            for spread_name in ["peanut butter", "nutella", "hummus", "avocado", "jelly", "jam"]:
-                if spread_name in part_lower:
-                    spread = spread_name
-                    break
+        # Extract spread for this bagel (atomic slug from database)
+        spread = _extract_spread(part_lower)
 
         # "plain" in split context means no spread - just a plain bagel
-        # Don't set spread for "plain"
+        # _extract_spread returns None if no spread found
 
         # Create entries for this part (may be >1 for uneven splits like "two not toasted")
         items_to_create = min(part_qty, total_quantity - item_count)
@@ -2587,12 +2511,11 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
                 quantity=1,
                 toasted=toasted,
                 spread=spread,
-                spread_type=spread_type,
             ))
             item_count += 1
             logger.info(
-                "SPLIT-QUANTITY: bagel %d: type=%s, toasted=%s, spread=%s, spread_type=%s",
-                item_count, bagel_type, toasted, spread, spread_type
+                "SPLIT-QUANTITY: bagel %d: type=%s, toasted=%s, spread=%s",
+                item_count, bagel_type, toasted, spread
             )
 
     # If we have fewer entries than total_quantity, fill with base bagels
@@ -2864,7 +2787,7 @@ def _parse_signature_item_deterministic(text: str) -> OpenInputResponse | None:
     toasted = _extract_toasted(text)
 
     # Extract bagel/bread choice using data-driven attribute extraction
-    bagel_choice = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+    bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
 
     # Extract modifications (e.g., "with mayo and mustard", "no onions")
     modifications = _extract_menu_item_modifications(text)
@@ -3132,7 +3055,7 @@ def _parse_coffee_deterministic(text: str) -> OpenInputResponse | None:
             if and_match:
                 remainder = and_match.group(1)
                 signature_item_toasted = _extract_toasted(remainder)
-                signature_item_bagel_choice = _normalize_bread_value(_extract_attribute_value(remainder, "bagel", "bread"))
+                signature_item_bagel_choice = _slug_to_display(_extract_attribute_value(remainder, "bagel", "bread"))
             # Add signature item to parsed_items
             parsed_items.append(_build_signature_item_parsed_item(
                 signature_item_name=matched_item,
@@ -3165,11 +3088,11 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
             break
 
     if not drink_type:
-        generic_soda_terms = {"soda", "pop", "soft drink", "fountain drink"}
-        for term in generic_soda_terms:
-            if re.search(rf'\b{re.escape(term)}\b', text_lower):
-                logger.info("Deterministic parse: detected generic soda term '%s', needs clarification", term)
-                return OpenInputResponse(needs_soda_clarification=True)
+        # Check for generic category terms that need clarification (data-driven)
+        category_slug = menu_cache.get_category_needing_clarification(text_lower)
+        if category_slug:
+            logger.info("Deterministic parse: detected generic category term '%s', needs clarification", category_slug)
+            return OpenInputResponse(needs_category_clarification=category_slug)
 
     if not drink_type:
         return None
@@ -3825,13 +3748,13 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
 
     # Try bagel
     if re.search(r'\bbagels?\b', item_text, re.IGNORECASE):
-        bagel_type = _normalize_bread_value(_extract_attribute_value(item_text, "bagel", "bread"))
+        bagel_type = _slug_to_display(_extract_attribute_value(item_text, "bagel", "bread"))
         toasted = _extract_toasted(item_text)
         scooped = _extract_scooped(item_text)
-        spread, spread_type = _extract_spread(item_text)
+        spread = _extract_spread(item_text)
         logger.info("ADD MORE: parsed as bagel type='%s' (qty=1)", bagel_type)
         return OpenInputResponse(
-            parsed_items=[_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)],
+            parsed_items=[_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)],
         )
 
     # Check for common drink shorthand like "orange juice", "OJ", etc.
@@ -4508,7 +4431,7 @@ def parse_open_input_deterministic(
     """
     Try to parse user input deterministically without LLM.
 
-    Spread types are loaded from the database cache via get_spread_types().
+    Spread options are loaded from the database cache (GlobalAttributeOption for "spread").
 
     Args:
         user_input: The user's input string
@@ -4783,7 +4706,7 @@ def parse_open_input_deterministic(
         menu_item, qty = _extract_menu_item_from_text(text)
         if menu_item:
             toasted = _extract_toasted(text)
-            bagel_choice = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+            bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             modifications = _extract_menu_item_modifications(text)
             logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
@@ -4877,7 +4800,7 @@ def parse_open_input_deterministic(
         coffee_types = get_coffee_types()
         if menu_item.lower() not in coffee_types:
             toasted = _extract_toasted(text)
-            bagel_choice = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+            bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             modifications = _extract_menu_item_modifications(text)
             logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
@@ -4893,20 +4816,20 @@ def parse_open_input_deterministic(
         quantity = _extract_quantity(quantity_str)
 
         if quantity:
-            bagel_type = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+            bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             toasted = _extract_toasted(text)
             scooped = _extract_scooped(text)
-            spread, spread_type = _extract_spread(text)
+            spread = _extract_spread(text)
             side_item, side_qty = _extract_side_item(text)
 
             logger.debug(
-                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
-                quantity, bagel_type, toasted, scooped, spread, spread_type, side_item
+                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
+                quantity, bagel_type, toasted, scooped, spread, side_item
             )
 
             # Build parsed_items for unified handler
             bagel_qty_parsed_items = [
-                _build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)
+                _build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)
                 for _ in range(quantity)
             ]
             if side_item:
@@ -4917,19 +4840,19 @@ def parse_open_input_deterministic(
 
     # Check for simple "a bagel" / "bagel please"
     if SIMPLE_BAGEL_PATTERN.search(text):
-        bagel_type = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+        bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
         toasted = _extract_toasted(text)
         scooped = _extract_scooped(text)
-        spread, spread_type = _extract_spread(text)
+        spread = _extract_spread(text)
         side_item, side_qty = _extract_side_item(text)
 
         logger.debug(
-            "Deterministic parse: single bagel - type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
-            bagel_type, toasted, scooped, spread, spread_type, side_item
+            "Deterministic parse: single bagel - type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
+            bagel_type, toasted, scooped, spread, side_item
         )
 
         # Build parsed_items for unified handler
-        simple_bagel_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)]
+        simple_bagel_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)]
         if side_item:
             simple_bagel_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
 
@@ -4938,19 +4861,19 @@ def parse_open_input_deterministic(
 
     # Check if text contains "bagel" anywhere (but only if no menu item was matched earlier)
     if re.search(r"\bbagels?\b", text, re.IGNORECASE):
-        bagel_type = _normalize_bread_value(_extract_attribute_value(text, "bagel", "bread"))
+        bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
         toasted = _extract_toasted(text)
         scooped = _extract_scooped(text)
-        spread, spread_type = _extract_spread(text)
+        spread = _extract_spread(text)
         side_item, side_qty = _extract_side_item(text)
 
         if bagel_type or toasted is not None or scooped is not None or spread or side_item:
             logger.debug(
-                "Deterministic parse: bagel mention - type=%s, toasted=%s, scooped=%s, spread=%s/%s, side=%s",
-                bagel_type, toasted, scooped, spread, spread_type, side_item
+                "Deterministic parse: bagel mention - type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
+                bagel_type, toasted, scooped, spread, side_item
             )
             # Build parsed_items for unified handler
-            bagel_mention_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread, spread_type=spread_type)]
+            bagel_mention_parsed_items = [_build_bagel_parsed_item(bread=bagel_type, toasted=toasted, scooped=scooped, spread=spread)]
             if side_item:
                 bagel_mention_parsed_items.extend([_build_side_parsed_item(side_name=side_item, quantity=1) for _ in range(side_qty)])
 

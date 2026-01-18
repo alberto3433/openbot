@@ -91,8 +91,6 @@ from .parsers import (
     SIMPLE_BAGEL_PATTERN,
     _get_coffee_order_pattern,
     # Deterministic parsers - Modifier extraction
-    extract_modifiers_from_input,
-    extract_coffee_modifiers_from_input,
     extract_notes_from_input,
     # Deterministic parsers - Internal helpers
     parse_open_input_deterministic,

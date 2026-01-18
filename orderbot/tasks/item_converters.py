@@ -229,7 +229,7 @@ class UnifiedItemConverter:
             "menu_item_name", "menu_item_id", "modifications", "removed_ingredients",
             "special_instructions", "notes", "modifiers", "free_details", "base_price",
             "line_total", "item_config", "attribute_values", "customization_offered",
-            "display_name", "needs_cheese_clarification",
+            "display_name",
         }
         for source in (item_dict, item_config):
             for key, value in source.items():

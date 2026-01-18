@@ -30,10 +30,9 @@ from .deterministic import (
     BAGEL_QUANTITY_PATTERN,
     SIMPLE_BAGEL_PATTERN,
     _get_coffee_order_pattern,
-    # Modifier extraction
-    extract_modifiers_from_input,
-    extract_coffee_modifiers_from_input,
+    # Modifier extraction (data-driven)
     extract_attribute_values,  # Generic data-driven extractor
+    extract_modifiers_for_item_type,  # Wrapper returning ExtractedModifiers
     extract_special_instructions_from_input,
     extract_notes_from_input,  # Backwards compatibility alias
     # Internal helpers (needed by state_machine)
@@ -131,10 +130,9 @@ __all__ = [
     "BAGEL_QUANTITY_PATTERN",
     "SIMPLE_BAGEL_PATTERN",
     "_get_coffee_order_pattern",
-    # Deterministic parsers - Modifier extraction
-    "extract_modifiers_from_input",
-    "extract_coffee_modifiers_from_input",
+    # Deterministic parsers - Modifier extraction (data-driven)
     "extract_attribute_values",  # Generic data-driven extractor
+    "extract_modifiers_for_item_type",  # Wrapper returning ExtractedModifiers
     "extract_special_instructions_from_input",
     "extract_notes_from_input",  # Backwards compatibility alias
     # Deterministic parsers - Internal helpers

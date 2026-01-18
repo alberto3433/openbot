@@ -30,7 +30,7 @@ from .schemas import (
     ParsedItemEntry,
     ParsedItem,
 )
-from .parsers import parse_open_input, extract_modifiers_from_input
+from .parsers import parse_open_input, extract_modifiers_for_item_type
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -542,11 +542,9 @@ def find_nth_item_of_type(
 def _build_extracted_modifiers(item: ParsedItemEntry) -> ExtractedModifiers:
     """Build ExtractedModifiers from ParsedItemEntry (data-driven).
 
-    Works for ALL item types - categorizes modifiers using database lookup.
+    Works for ALL item types - uses unified modifiers list with category/quantity.
     Handles:
-    - Plain modifiers (item.modifiers list)
-    - Quantified modifiers (item.sweeteners, item.syrups)
-    - Clarification flags (needs_cheese_clarification, wants_syrup)
+    - Unified modifiers (item.modifiers list with QuantifiedModifier objects)
     - Special instructions
 
     Args:
@@ -557,25 +555,15 @@ def _build_extracted_modifiers(item: ParsedItemEntry) -> ExtractedModifiers:
     """
     extracted_mods = ExtractedModifiers()
 
-    # 1. Categorize plain modifiers using database lookup
+    # Add all modifiers from unified list (category determined by parser)
     for mod in item.modifiers:
-        category = menu_cache.get_ingredient_category(mod)
-        # Use category from DB, or "topping" as generic fallback
-        extracted_mods.add(category or "topping", mod)
+        # Use category from modifier, or look up from DB, or fallback to "topping"
+        category = mod.category
+        if not category:
+            category = menu_cache.get_ingredient_category(mod.slug) or "topping"
+        extracted_mods.add(category, mod.slug, mod.quantity)
 
-    # 2. Add quantified modifiers (sweeteners, syrups)
-    for sw in item.sweeteners:
-        extracted_mods.add("sweetener", sw.slug, sw.quantity)
-    for sy in item.syrups:
-        extracted_mods.add("syrup", sy.slug, sy.quantity)
-
-    # 3. Handle clarification flags
-    if item.needs_cheese_clarification:
-        extracted_mods.needs_clarification["cheese"] = True
-    if item.wants_syrup:
-        extracted_mods.needs_clarification["syrup"] = True
-
-    # 4. Handle special instructions
+    # Handle special instructions
     if item.special_instructions:
         extracted_mods.special_instructions.append(item.special_instructions)
 
@@ -773,10 +761,13 @@ class TakingItemsHandler:
             )
 
         # User might have ordered something directly - pass the already parsed result
-        # Also extract modifiers from the raw input
-        extracted_modifiers = extract_modifiers_from_input(user_input)
-        if extracted_modifiers.has_modifiers():
-            logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
+        # Also extract modifiers from the raw input (using item_type from first parsed item)
+        extracted_modifiers = ExtractedModifiers()
+        if parsed.parsed_items:
+            item_type = parsed.parsed_items[0].item_type
+            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
+            if extracted_modifiers.has_modifiers():
+                logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
 
         # Phase is derived from orchestrator, no need to set explicitly
         return self.handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
@@ -918,9 +909,13 @@ class TakingItemsHandler:
         )
 
         # Extract modifiers from raw input (keyword-based, no LLM)
-        extracted_modifiers = extract_modifiers_from_input(user_input)
-        if extracted_modifiers.has_modifiers():
-            logger.info("Extracted modifiers from input: %s", extracted_modifiers)
+        # Use item_type from first parsed item if available
+        extracted_modifiers = ExtractedModifiers()
+        if parsed.parsed_items:
+            item_type = parsed.parsed_items[0].item_type
+            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
+            if extracted_modifiers.has_modifiers():
+                logger.info("Extracted modifiers from input: %s", extracted_modifiers)
 
         return self.handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
 
@@ -1334,23 +1329,21 @@ class TakingItemsHandler:
                     # Check if item accepts any modifiers (data-driven from DB)
                     item_type = last_item.menu_item_type
                     if item_type and menu_cache.item_accepts_input_modifiers(item_type):
-                        modifiers = extract_modifiers_from_input(raw_user_input)
-                        all_modifiers = modifiers.get_all()
+                        modifiers = extract_modifiers_for_item_type(raw_user_input, item_type)
 
-                        if all_modifiers:
+                        if modifiers.has_modifiers():
                             # Clear existing modifiers and apply new ones using unified storage
-                            logger.info("Replacement: applying modifiers to item: %s", all_modifiers)
+                            logger.info("Replacement: applying modifiers to item from categories: %s", modifiers.get_categories())
                             last_item.modifiers = []  # Clear existing modifiers
 
-                            for mod in all_modifiers:
-                                category = mod.get("category", "topping")
-                                slug = mod.get("slug", mod.get("name", "")).lower().replace(" ", "_")
-                                display_name = mod.get("display_name", mod.get("name", slug))
-                                last_item.add_modifier(
-                                    category=category,
-                                    slug=slug,
-                                    display_name=display_name,
-                                )
+                            # Iterate over all categories in the extracted modifiers
+                            for category in modifiers.get_categories():
+                                for qmod in modifiers.get(category):
+                                    last_item.add_modifier(
+                                        category=category,
+                                        slug=qmod.slug,
+                                        display_name=qmod.slug.replace("_", " ").title(),
+                                    )
 
                             # Update single_select attributes from modifiers (e.g., spread)
                             # Data-driven lookup for attribute storage

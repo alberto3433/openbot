@@ -30,7 +30,7 @@ from .parsers import (
     validate_phone_number,
     parse_confirmation,
     parse_open_input,
-    extract_modifiers_from_input,
+    extract_modifiers_for_item_type,
     TAX_QUESTION_PATTERN,
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
@@ -611,7 +611,8 @@ class CheckoutHandler(BaseHandler):
         # If they mentioned a new item, process it
         if item_parsed.parsed_items:
             logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
-            extracted_modifiers = extract_modifiers_from_input(user_input)
+            item_type = item_parsed.parsed_items[0].item_type
+            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
 
             # Use orchestrator to determine phase before processing
             if self._transition_to_next_slot:

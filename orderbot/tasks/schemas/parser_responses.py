@@ -16,17 +16,19 @@ from pydantic import BaseModel, Field
 # =============================================================================
 
 class QuantifiedModifier(BaseModel):
-    """A modifier with quantity (sweeteners, syrups, extra shots, etc.).
+    """A modifier with quantity and category.
 
     Generic type for any modifier that can have a quantity attached.
-    Used for sweeteners, syrups, and other quantifiable beverage additions.
+    Category is determined by the parser from database lookup.
 
     Examples:
-        QuantifiedModifier(slug="sugar", quantity=2)  # 2 sugars
-        QuantifiedModifier(slug="vanilla", quantity=1)  # 1 vanilla syrup
+        QuantifiedModifier(slug="sugar", quantity=2, category="sweetener")
+        QuantifiedModifier(slug="vanilla", quantity=1, category="syrup")
+        QuantifiedModifier(slug="bacon", quantity=1, category="protein")
     """
     slug: str
     quantity: int = 1
+    category: str | None = None  # e.g., "sweetener", "syrup", "protein", "topping"
 
 
 class QualifierConflict(BaseModel):
@@ -86,12 +88,12 @@ class Token(BaseModel):
 class ParsedItemEntry(BaseModel):
     """Unified parsed item entry for data-driven item handling.
 
-    This is the canonical representation for ALL item types, replacing the
-    item-specific ParsedBagelEntry and ParsedCoffeeEntry classes.
+    This is the canonical representation for ALL item types.
+    All attributes are stored in attribute_values dict (keyed by attribute slug).
+    All modifiers are stored in modifiers list with category and quantity.
 
-    All item attributes are stored in the attribute_values dict, keyed by
-    attribute slug from the database
-
+    Attribute access: Use attribute_values.get("slug") directly.
+    Modifier access: Use get_modifiers_by_category("category") helper.
     """
     type: Literal["item"] = "item"
 
@@ -100,15 +102,12 @@ class ParsedItemEntry(BaseModel):
     item_name: str | None = None  # Specific menu item name if known
     quantity: int = 1
 
-    # Data-driven attribute values (keyed by attribute slug)
-    # Keys match attribute slugs in the database
+    # Data-driven attribute values (keyed by attribute slug from database)
     attribute_values: dict = Field(default_factory=dict)
 
-    modifiers: list[str] = Field(default_factory=list)
-
-    # Structured modifiers for beverages (need quantity info)
-    sweeteners: list[QuantifiedModifier] = Field(default_factory=list)
-    syrups: list[QuantifiedModifier] = Field(default_factory=list)
+    # Unified modifiers list with category and quantity
+    # Category is determined by parser from DB lookup
+    modifiers: list[QuantifiedModifier] = Field(default_factory=list)
 
     # Special instructions text
     special_instructions: str | None = None
@@ -122,97 +121,17 @@ class ParsedItemEntry(BaseModel):
     # For by-pound items (e.g., "1/4 lb", "1 lb")
     weight_unit: str | None = None
 
-    # Flags that may require clarification
-    needs_cheese_clarification: bool = False
-    wants_syrup: bool = False  # User said "syrup" without specifying flavor
+    def get_modifiers_by_category(self, category: str) -> list[QuantifiedModifier]:
+        """Get all modifiers matching a category."""
+        return [m for m in self.modifiers if m.category == category]
 
-    # Bread type property (aligned with DB attribute slug)
-    @property
-    def bread(self) -> str | None:
-        """Get bread type from attribute_values."""
-        return self.attribute_values.get("bread")
-
-    @property
-    def toasted(self) -> bool | None:
-        """Get toasted from attribute_values."""
-        return self.attribute_values.get("toasted")
-
-    @property
-    def scooped(self) -> bool | None:
-        """Get scooped from attribute_values."""
-        return self.attribute_values.get("scooped")
-
-    @property
-    def spread(self) -> str | None:
-        """Get spread from attribute_values."""
-        return self.attribute_values.get("spread")
-
-    @property
-    def spread_type(self) -> str | None:
-        """Get spread_type from attribute_values."""
-        return self.attribute_values.get("spread_type")
-
-    @property
-    def drink_type(self) -> str | None:
-        """Get drink type (item_name for beverages)."""
-        return self.item_name
-
-    @property
-    def size(self) -> str | None:
-        """Get size from attribute_values."""
-        return self.attribute_values.get("size")
-
-    @property
-    def temperature(self) -> str | None:
-        """Get temperature from attribute_values."""
-        return self.attribute_values.get("temperature")
-
-    @property
-    def iced(self) -> bool | None:
-        """Backward-compatible property that derives bool from temperature."""
-        temp = self.attribute_values.get("temperature")
-        if temp is None:
-            return None
-        return temp == "iced"
-
-    @property
-    def milk(self) -> str | None:
-        """Get milk from attribute_values."""
-        return self.attribute_values.get("milk")
-
-    @property
-    def decaf(self) -> bool | None:
-        """Get decaf from attribute_values."""
-        return self.attribute_values.get("decaf")
-
-    @property
-    def cream_level(self) -> str | None:
-        """Get cream_level from attribute_values."""
-        return self.attribute_values.get("cream_level")
-
-    @property
-    def extra_shots(self) -> int:
-        """Get extra_shots from attribute_values."""
-        return self.attribute_values.get("extra_shots", 0)
-
-    # Backward-compatible properties for bagel ingredient categorization.
-    # In ParsedItemEntry, all ingredients are combined in modifiers list.
-    # These return empty lists since categorization is not preserved.
-    # The handler add_bagel() will recategorize modifiers if needed.
-    @property
-    def proteins(self) -> list[str]:
-        """Return empty list - proteins are in modifiers list."""
-        return []
-
-    @property
-    def cheeses(self) -> list[str]:
-        """Return empty list - cheeses are in modifiers list."""
-        return []
-
-    @property
-    def toppings(self) -> list[str]:
-        """Return empty list - toppings are in modifiers list."""
-        return []
+    def add_modifier(
+        self, slug: str, category: str | None = None, quantity: int = 1
+    ) -> None:
+        """Add a modifier to the list."""
+        self.modifiers.append(
+            QuantifiedModifier(slug=slug, category=category, quantity=quantity)
+        )
 
 class ParsedMenuItemEntry(BaseModel):
     """A parsed menu item from multi-item detection.
@@ -245,131 +164,127 @@ ParsedItem = Union[
 ]
 
 
-class SideChoiceResponse(BaseModel):
-    """Parser output when waiting for omelette side choice."""
-    choice: Literal["bagel", "fruit_salad", "unclear"] = Field(
-        description="What side the user chose: 'bagel', 'fruit_salad', or 'unclear' if not understood"
+class AttributeChoiceResponse(BaseModel):
+    """Generic parser output for any attribute selection.
+
+    Used for all single-attribute responses (bread type, size, temperature, etc.).
+    The attribute_slug identifies which attribute this response is for.
+    """
+    attribute_slug: str = Field(
+        default="",
+        description="The attribute slug being answered (e.g., 'bread', 'size', 'temperature')"
     )
-    bread: str | None = Field(
+    value: str | bool | None = Field(
         default=None,
-        description="If user specified a bagel type (e.g., 'plain bagel' -> 'plain'), capture it here"
+        description="The value chosen for this attribute"
     )
-    toasted: bool | None = Field(
-        default=None,
-        description="If user specified toasted preference (e.g., 'plain bagel toasted' -> True, 'not toasted' -> False)"
+    quantity: int = Field(
+        default=1,
+        description="How many items this applies to (e.g., '2 of them plain' -> 2)"
     )
-    spread: str | None = Field(
+    declined: bool = Field(
+        default=False,
+        description="User explicitly doesn't want this attribute (e.g., 'no spread')"
+    )
+    unclear: bool = Field(
+        default=False,
+        description="Set to true if the value couldn't be determined"
+    )
+    special_instructions: str | None = Field(
         default=None,
-        description="If user specified spread (e.g., 'with cream cheese' -> 'cream cheese', 'with butter' -> 'butter')"
+        description="Special instructions (e.g., 'light', 'extra', 'on the side')"
     )
     wants_cancel: bool = Field(
         default=False,
         description="User wants to cancel this item or the order"
     )
-
-
-class BagelChoiceResponse(BaseModel):
-    """Parser output when waiting for bagel type selection."""
-    bread: str | None = Field(
-        default=None,
-        description="The type of bagel: plain, everything, sesame, pumpernickel, etc."
+    # For compound attributes (e.g., spread + spread_type)
+    sub_values: dict = Field(
+        default_factory=dict,
+        description="Additional sub-values (e.g., {'spread_type': 'scallion'} for spread attribute)"
     )
-    quantity: int = Field(
-        default=1,
-        description="How many bagels this applies to (e.g., '2 of them plain' -> 2, 'both plain' -> 2)"
+
+    # Backward-compatible property aliases for callers using old field names
+    @property
+    def bread(self) -> str | None:
+        """Alias for value when attribute_slug is 'bread'."""
+        return self.value if isinstance(self.value, str) else None
+
+    @property
+    def toasted(self) -> bool | None:
+        """Alias for value when attribute_slug is 'toasted'."""
+        return self.value if isinstance(self.value, bool) else None
+
+    @property
+    def spread(self) -> str | None:
+        """Alias for value when attribute_slug is 'spread'."""
+        return self.value if isinstance(self.value, str) else None
+
+    @property
+    def spread_type(self) -> str | None:
+        """Get spread_type from sub_values."""
+        return self.sub_values.get("spread_type")
+
+    @property
+    def no_spread(self) -> bool:
+        """Alias for declined."""
+        return self.declined
+
+    @property
+    def size(self) -> str | None:
+        """Alias for value when attribute_slug is 'size'."""
+        return self.value if isinstance(self.value, str) else None
+
+    @property
+    def iced(self) -> bool | None:
+        """Alias for value when attribute_slug is 'temperature' or 'iced'."""
+        if isinstance(self.value, bool):
+            return self.value
+        if self.value == "iced":
+            return True
+        if self.value == "hot":
+            return False
+        return None
+
+    @property
+    def choice(self) -> str | None:
+        """Alias for value (for SideChoiceResponse compatibility)."""
+        return self.value if isinstance(self.value, str) else None
+
+
+class MultiAttributeChoiceResponse(BaseModel):
+    """Generic parser output for multiple items needing the same attribute.
+
+    Used when asking about an attribute for multiple items at once.
+    """
+    attribute_slug: str = Field(
+        description="The attribute slug being answered"
+    )
+    values: list = Field(
+        default_factory=list,
+        description="List of values in order for each item"
+    )
+    all_same_value: str | bool | None = Field(
+        default=None,
+        description="If all items have the same value, put it here"
     )
     unclear: bool = Field(
         default=False,
-        description="Set to true if the bagel type couldn't be determined"
+        description="Set to true if values couldn't be determined"
     )
 
 
-class MultiBagelChoiceResponse(BaseModel):
-    """Parser output when waiting for multiple bagel types."""
-    bagel_types: list[str] = Field(
-        default_factory=list,
-        description="List of bagel types in order mentioned (e.g., ['plain', 'cinnamon raisin'])"
-    )
-    all_same_type: str | None = Field(
-        default=None,
-        description="If all bagels are the same type, put it here (e.g., 'both plain' -> 'plain')"
-    )
-    unclear: bool = Field(
-        default=False,
-        description="Set to true if the bagel types couldn't be determined"
-    )
-
-
-class MultiToastedResponse(BaseModel):
-    """Parser output when asking about toasting multiple bagels."""
-    all_toasted: bool | None = Field(
-        default=None,
-        description="True if ALL bagels should be toasted, False if NONE, None if mixed/unclear"
-    )
-    toasted_list: list[bool] = Field(
-        default_factory=list,
-        description="List of toasted preferences in order (e.g., [True, False] for 'toast the first one')"
-    )
-
-
-class MultiSpreadResponse(BaseModel):
-    """Parser output when asking about spreads for multiple bagels."""
-    spreads: list[dict] = Field(
-        default_factory=list,
-        description="List of spread info in order: [{'spread': 'butter'}, {'spread': 'cream cheese', 'spread_type': 'scallion'}]"
-    )
-    all_same_spread: str | None = Field(
-        default=None,
-        description="If all bagels have the same spread (e.g., 'cream cheese on both' -> 'cream cheese')"
-    )
-    all_same_spread_type: str | None = Field(
-        default=None,
-        description="If all bagels have the same spread type"
-    )
-
-
-class SpreadChoiceResponse(BaseModel):
-    """Parser output when waiting for spread selection."""
-    spread: str | None = Field(
-        default=None,
-        description="The spread choice: cream cheese, butter, none, etc."
-    )
-    spread_type: str | None = Field(
-        default=None,
-        description="Specific spread variety if mentioned: scallion, veggie, plain, etc."
-    )
-    no_spread: bool = Field(
-        default=False,
-        description="User explicitly doesn't want spread"
-    )
-    special_instructions: str | None = Field(
-        default=None,
-        description="Special instructions about quantity/application: 'a little', 'extra', 'light', 'on the side', etc."
-    )
-
-
-class ToastedChoiceResponse(BaseModel):
-    """Parser output when waiting for toasted preference."""
-    toasted: bool | None = Field(
-        default=None,
-        description="True if toasted, False if not toasted, None if unclear"
-    )
-
-
-class CoffeeSizeResponse(BaseModel):
-    """Parser output when waiting for coffee size."""
-    size: str | None = Field(
-        default=None,
-        description="Coffee size: small or large"
-    )
-
-
-class CoffeeStyleResponse(BaseModel):
-    """Parser output when waiting for hot/iced preference."""
-    iced: bool | None = Field(
-        default=None,
-        description="True if iced, False if hot, None if unclear"
-    )
+# Backward-compatible aliases for existing code
+# TODO: Update callers to use AttributeChoiceResponse directly
+BagelChoiceResponse = AttributeChoiceResponse
+SpreadChoiceResponse = AttributeChoiceResponse
+ToastedChoiceResponse = AttributeChoiceResponse
+CoffeeSizeResponse = AttributeChoiceResponse
+CoffeeStyleResponse = AttributeChoiceResponse
+SideChoiceResponse = AttributeChoiceResponse
+MultiBagelChoiceResponse = MultiAttributeChoiceResponse
+MultiToastedResponse = MultiAttributeChoiceResponse
+MultiSpreadResponse = MultiAttributeChoiceResponse
 
 
 class BagelOrderDetails(BaseModel):

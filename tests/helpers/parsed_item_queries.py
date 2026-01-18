@@ -134,11 +134,15 @@ def get_coffee_item(result):
 
     Replaces: result.new_coffee is True / result.new_coffee_type
 
-    Checks for both "sized_beverage" and "coffee" item types since parsers may
-    use either depending on context.
+    Checks for "sized_beverage", "espresso", and "coffee" item types since parsers may
+    use any of these depending on context.
     """
     # Try sized_beverage first (new convention)
     item = get_parsed_item(result, item_type="sized_beverage")
+    if item is not None:
+        return item
+    # Try espresso
+    item = get_parsed_item(result, item_type="espresso")
     if item is not None:
         return item
     # Fall back to "coffee" item_type
@@ -150,9 +154,13 @@ def has_coffee(result) -> bool:
 
     Replaces: result.new_coffee is True
 
-    Checks for both "sized_beverage" and "coffee" item types.
+    Checks for "sized_beverage", "espresso", and "coffee" item types.
     """
-    return has_parsed_item(result, item_type="sized_beverage") or has_parsed_item(result, item_type="coffee")
+    return (
+        has_parsed_item(result, item_type="sized_beverage") or
+        has_parsed_item(result, item_type="espresso") or
+        has_parsed_item(result, item_type="coffee")
+    )
 
 
 def get_menu_item(result, item_name: str = None):

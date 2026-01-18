@@ -670,40 +670,6 @@ def get_bagel_spreads() -> set[str]:
 # If the cache is not available, functions return empty sets and fail gracefully.
 
 
-def get_coffee_types() -> set[str]:
-    """
-    Get coffee/tea beverage types from the database.
-
-    Returns data from cache if loaded (includes item names and aliases).
-    Falls back to empty set if cache not available.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_item_names function - combines sized_beverage + espresso
-        sized_bevs = cache.get_item_names("sized_beverage")
-        espresso = cache.get_item_names("espresso")
-        cached = sized_bevs | espresso
-        if cached:
-            return cached
-    return set()
-
-
-def get_soda_types() -> set[str]:
-    """
-    Get soda/bottled beverage types from the database.
-
-    Returns data from cache if loaded (includes item names and aliases).
-    Returns empty set if cache not available.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_item_names function
-        cached = cache.get_item_names("beverage")
-        if cached:
-            return cached
-    return set()
-
-
 def get_known_menu_items() -> set[str]:
     """
     Get all known menu item names and aliases from the database.
@@ -814,29 +780,6 @@ def get_by_pound_category_names() -> dict[str, str]:
     raise RuntimeError(
         "By-pound category names not available. Ensure menu_data_cache is loaded from the database."
     )
-
-
-def resolve_coffee_alias(name: str) -> str:
-    """
-    Resolve a coffee/tea name or alias to its canonical menu item name.
-
-    Args:
-        name: User input like "matcha" or "latte"
-
-    Returns:
-        Canonical menu item name (e.g., "Seasonal Latte Matcha" for "matcha")
-        or the original name if no mapping found.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic resolve_item_alias - search sized_beverage first, then espresso
-        result = cache.resolve_item_alias(name, "sized_beverage")
-        if result:
-            return result
-        result = cache.resolve_item_alias(name, "espresso")
-        if result:
-            return result
-    return name
 
 
 def resolve_soda_alias(name: str) -> str:

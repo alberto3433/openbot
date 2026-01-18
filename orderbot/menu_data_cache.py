@@ -202,6 +202,8 @@ class MenuDataCache:
         # Generic caches for data-driven lookups (replaces domain-specific caches)
         # Item names by ItemType slug (includes aliases)
         self._item_names_by_type: dict[str, set[str]] = {}  # item_type_slug -> set of names/aliases
+        # Combined item names for ALL configurable item types (cached for performance)
+        self._configurable_item_names: set[str] | None = None
         # Alias-to-canonical mapping by ItemType slug
         self._item_alias_to_canonical_by_type: dict[str, dict[str, str]] = {}  # item_type_slug -> {alias -> canonical}
         # Ingredients by category (protein, cheese, topping, spread, etc.)
@@ -5016,6 +5018,43 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return item_type_slug in self._configurable_item_type_slugs
+
+    def get_configurable_item_names(self) -> set[str]:
+        """
+        Get all item names/aliases for configurable item types.
+
+        This is the generic replacement for domain-specific functions like
+        get_coffee_types(). It returns the union of all item names from
+        item types that have askable attributes (ask_in_conversation=True).
+
+        Returns:
+            Set of lowercase item names and aliases for all configurable types.
+            For example: {"latte", "cappuccino", "bagel", "plain", "everything", ...}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Example:
+            >>> names = menu_cache.get_configurable_item_names()
+            >>> "latte" in names
+            True
+            >>> "bagel" in names
+            True
+        """
+        self._ensure_loaded()
+        # Use cached result if available
+        if self._configurable_item_names is not None:
+            return self._configurable_item_names.copy()
+
+        # Build cache: union of item names from all configurable types
+        result: set[str] = set()
+        for item_type_slug in self._configurable_item_type_slugs:
+            type_names = self._item_names_by_type.get(item_type_slug, set())
+            result |= type_names
+
+        # Cache the result
+        self._configurable_item_names = result
+        return result.copy()
 
     def get_items_with_required_phrases(self) -> dict[str, str]:
         """

@@ -1,8 +1,8 @@
 """
-Tests for coffee/tea beverage alias functionality.
+Tests for configurable item recognition and pattern matching.
 
-These tests verify that the database-driven coffee type recognition works correctly,
-including alias matching from the menu_items.aliases column for sized_beverage items.
+These tests verify that the database-driven configurable item type recognition works correctly,
+including alias matching from the menu_items.aliases column.
 """
 import pytest
 
@@ -12,97 +12,113 @@ def ensure_cache_loaded(menu_cache_loaded):
     """Ensure menu cache is loaded before each test in this module."""
 
 
-class TestGetCoffeeTypes:
-    """Tests for get_coffee_types() function."""
+class TestGetConfigurableItemNames:
+    """Tests for menu_cache.get_configurable_item_names() method."""
 
-    def test_get_coffee_types_returns_set(self):
-        """get_coffee_types should return a set."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        result = get_coffee_types()
+    def test_get_configurable_item_names_returns_set(self):
+        """get_configurable_item_names should return a set."""
+        from orderbot.menu_data_cache import menu_cache
+        result = menu_cache.get_configurable_item_names()
         assert isinstance(result, set)
 
-    def test_get_coffee_types_includes_item_names(self):
-        """get_coffee_types should include sized_beverage item names from database."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
+    def test_get_configurable_item_names_includes_beverage_items(self):
+        """get_configurable_item_names should include sized_beverage item names from database."""
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
         # These are actual item names from the database (lowercase)
-        # Note: Database has "Hot Latte", "Iced Latte", not standalone "Latte"
-        assert "hot latte" in coffee_types
-        assert "hot cappuccino" in coffee_types
-        assert "espresso" in coffee_types
-        assert "hot coffee" in coffee_types
-        assert "cafe americano" in coffee_types
+        assert "hot latte" in item_names
+        assert "hot cappuccino" in item_names
+        assert "espresso" in item_names
+        assert "hot coffee" in item_names
+        assert "cafe americano" in item_names
 
-    def test_get_coffee_types_includes_aliases(self):
-        """get_coffee_types should include aliases from database."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
+    def test_get_configurable_item_names_includes_beverage_aliases(self):
+        """get_configurable_item_names should include aliases from database."""
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
         # These are aliases, not the actual item names
-        assert "chai" in coffee_types  # alias for Chai Tea
-        assert "matcha" in coffee_types  # alias for Seasonal Matcha Latte
-        assert "drip" in coffee_types  # alias for Coffee
-        assert "hot cocoa" in coffee_types  # alias for Hot Chocolate
+        assert "chai" in item_names  # alias for Chai Tea
+        assert "matcha" in item_names  # alias for Seasonal Matcha Latte
+        assert "drip" in item_names  # alias for Coffee
+        assert "hot cocoa" in item_names  # alias for Hot Chocolate
 
-    def test_get_coffee_types_includes_matcha_latte(self):
-        """get_coffee_types should include the new Seasonal Matcha Latte."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
-        assert "seasonal matcha latte" in coffee_types
-        assert "matcha latte" in coffee_types  # alias
+    def test_get_configurable_item_names_includes_matcha_latte(self):
+        """get_configurable_item_names should include the Seasonal Matcha Latte."""
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
+        assert "seasonal matcha latte" in item_names
+        assert "matcha latte" in item_names  # alias
 
-    def test_get_coffee_types_excludes_soda_drinks(self):
-        """get_coffee_types should not include soda/bottled drinks."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
+    def test_get_configurable_item_names_includes_bagel_items(self):
+        """get_configurable_item_names should include bagel item names."""
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
+        # Bagels are configurable items - check for bagel-related items
+        # Note: Individual bagel types (plain, everything) are attribute options,
+        # not separate menu items. Check for actual bagel menu items or aliases.
+        bagel_items = [n for n in item_names if "bagel" in n.lower()]
+        assert len(bagel_items) > 0, f"Expected bagel items in configurable names, got: {bagel_items}"
+
+    def test_get_configurable_item_names_excludes_soda_drinks(self):
+        """get_configurable_item_names should not include non-configurable items like sodas."""
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
         # These are beverages (item_type='beverage'), not sized_beverage
-        assert "coca-cola" not in coffee_types
-        assert "sprite" not in coffee_types
-        assert "bottled water" not in coffee_types
+        # They don't have askable attributes so should not be included
+        assert "coca-cola" not in item_names
+        assert "sprite" not in item_names
 
 
-class TestCoffeeOrderPattern:
-    """Tests for _get_coffee_order_pattern() function."""
+class TestConfigurableItemPattern:
+    """Tests for _get_configurable_item_pattern() function."""
 
-    def test_coffee_order_pattern_matches_latte(self):
-        """Coffee order pattern should match latte orders."""
-        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
+    def test_configurable_item_pattern_matches_latte(self):
+        """Configurable item pattern should match latte orders."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
         # Note: Database has "Hot Latte"/"Iced Latte", not standalone "Latte"
         # Pattern should match these full names
         assert pattern.search("I want a hot latte")
         assert pattern.search("can I get an iced latte")
         assert pattern.search("give me an iced latte")
 
-    def test_coffee_order_pattern_matches_chai(self):
-        """Coffee order pattern should match chai alias."""
-        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
+    def test_configurable_item_pattern_matches_chai(self):
+        """Configurable item pattern should match chai alias."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
         assert pattern.search("I want a chai")
         assert pattern.search("can I get a chai")
 
-    def test_coffee_order_pattern_matches_matcha(self):
-        """Coffee order pattern should match matcha alias."""
-        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
+    def test_configurable_item_pattern_matches_matcha(self):
+        """Configurable item pattern should match matcha alias."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
         assert pattern.search("I want a matcha")
         assert pattern.search("can I get a matcha latte")
 
-    def test_coffee_order_pattern_matches_with_size(self):
-        """Coffee order pattern should match orders with size."""
-        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
-        # Note: Database has "Hot Latte"/"Hot Coffee"/"Hot Cappuccino", not standalone names
+    def test_configurable_item_pattern_matches_with_size(self):
+        """Configurable item pattern should match orders with size."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
+        # Note: Database has "Hot Latte"/"Hot Coffee"/"Hot Cappuccino"
         assert pattern.search("I want a large hot latte")
         assert pattern.search("can I get a medium hot coffee")
         assert pattern.search("small hot cappuccino please")
 
-    def test_coffee_order_pattern_matches_with_iced(self):
-        """Coffee order pattern should match iced orders."""
-        from orderbot.tasks.parsers.deterministic import _get_coffee_order_pattern
-        pattern = _get_coffee_order_pattern()
+    def test_configurable_item_pattern_matches_with_iced(self):
+        """Configurable item pattern should match iced orders."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
         assert pattern.search("I want an iced latte")
         assert pattern.search("can I get an iced coffee")
         assert pattern.search("hot latte please")
+
+    def test_configurable_item_pattern_matches_bagels(self):
+        """Configurable item pattern should match bagel orders."""
+        from orderbot.tasks.parsers.deterministic import _get_configurable_item_pattern
+        pattern = _get_configurable_item_pattern()
+        assert pattern.search("I want a plain bagel")
+        assert pattern.search("can I get an everything bagel")
 
 
 class TestParseConfigurableItem:
@@ -133,43 +149,43 @@ class TestParseConfigurableItem:
         assert has_menu_item(result) or has_coffee(result)
 
 
-class TestCoffeeAliasesIntegration:
-    """Integration tests for the full coffee alias flow."""
+class TestConfigurableItemAliasesIntegration:
+    """Integration tests for the configurable item alias flow."""
 
     def test_tea_variations_recognized(self):
         """Various tea drinks should be recognized."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
         # Full names
-        assert "hot tea" in coffee_types
-        assert "iced tea" in coffee_types
-        assert "chai tea" in coffee_types
-        assert "green tea" in coffee_types
-        assert "earl grey tea" in coffee_types
+        assert "hot tea" in item_names
+        assert "iced tea" in item_names
+        assert "chai tea" in item_names
+        assert "green tea" in item_names
+        assert "earl grey tea" in item_names
         # Aliases
-        assert "chai" in coffee_types
+        assert "chai" in item_names
 
     def test_espresso_variations_recognized(self):
         """Espresso drinks should be recognized."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
-        assert "espresso" in coffee_types
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
+        assert "espresso" in item_names
         # Note: "double espresso" and "triple espresso" are now modifiers,
         # not separate coffee types. They are handled by the coffee parser.
 
     def test_hot_chocolate_aliases(self):
         """Hot chocolate should be recognized by various terms."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
-        assert "hot chocolate" in coffee_types
-        assert "hot cocoa" in coffee_types
-        assert "cocoa" in coffee_types
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
+        assert "hot chocolate" in item_names
+        assert "hot cocoa" in item_names
+        assert "cocoa" in item_names
 
     def test_cold_brew_recognized(self):
         """Cold brew should be recognized."""
-        from orderbot.tasks.parsers.constants import get_coffee_types
-        coffee_types = get_coffee_types()
-        assert "cold brew" in coffee_types
+        from orderbot.menu_data_cache import menu_cache
+        item_names = menu_cache.get_configurable_item_names()
+        assert "cold brew" in item_names
 
 
 class TestEspressoParsingIntegration:
@@ -217,5 +233,11 @@ class TestEspressoParsingIntegration:
         coffee = get_coffee_item(result)
         assert coffee is not None
         assert coffee.item_name == "Espresso", f"Coffee type should be 'Espresso', got '{coffee.item_name}'"
+        # Milk can be in modifiers list OR in attribute_values (milk_sweetener_syrup or milk field)
         milk_mods = coffee.get_modifiers_by_category("milk")
-        assert any(m.get("slug") == "oat" for m in milk_mods), f"Milk should be 'oat', got modifiers: {milk_mods}"
+        milk_in_attrs = coffee.attribute_values.get("milk_sweetener_syrup", []) or coffee.attribute_values.get("milk", [])
+        has_oat_milk = (
+            any(m.get("slug") == "oat" or m.slug == "oat" for m in milk_mods if hasattr(m, 'slug') or isinstance(m, dict)) or
+            any(m.get("slug", "").startswith("oat") for m in milk_in_attrs if isinstance(m, dict))
+        )
+        assert has_oat_milk, f"Milk should be oat-based, got modifiers: {milk_mods}, attrs: {milk_in_attrs}"

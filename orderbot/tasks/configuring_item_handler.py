@@ -282,15 +282,7 @@ class ConfiguringItemHandler:
         THIS IS THE KEY: we use state-specific parsers that can ONLY
         interpret input as answers for the pending field. No new items.
         """
-        # Handle drink selection when multiple options were presented
-        if order.pending_field == "drink_selection":
-            return self.taking_items_handler.handle_drink_selection(user_input, order)
-
-        # Handle drink type selection when user asked for a generic "drink"
-        if order.pending_field == "drink_type":
-            return self.taking_items_handler.handle_drink_type_selection(user_input, order)
-
-        # Handle generic item selection when multiple options were presented (cookies, muffins, etc.)
+        # Handle generic item selection when multiple options were presented
         if order.pending_field == "item_selection":
             return self._handle_item_selection(user_input, order)
 

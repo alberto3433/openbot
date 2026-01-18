@@ -100,7 +100,7 @@ from .parsers import (
     _parse_store_info_inquiry,
     _parse_price_inquiry_deterministic,
     _parse_soda_deterministic,
-    _parse_coffee_deterministic,
+    _parse_configurable_item,
     # LLM parsers
     parse_side_choice,
     parse_bagel_choice,
@@ -566,24 +566,6 @@ class OrderStateMachine:
     def _transition_to_next_slot(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""
         self.slot_orchestration_handler.transition_to_next_slot(order)
-
-    def _configure_next_incomplete_menu_item(self, order: OrderTask) -> StateMachineResult:
-        """Configure the next incomplete MenuItemTask (espresso, deli sandwich, etc.)."""
-        from .models import MenuItemTask
-        from .schemas import OrderPhase
-
-        # Find the first incomplete MenuItemTask
-        for item in order.items.items:
-            if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                # Use menu_item_handler to get the first question
-                result = self.menu_item_handler.get_first_question(item, order)
-                if result:
-                    return result
-                # If no question needed, mark complete and continue
-                item.mark_complete()
-
-        # No incomplete menu items found - return to checkout flow
-        return self.checkout_utils_handler.get_next_question(order)
 
     def _configure_next_incomplete_item(self, order: OrderTask, item: "MenuItemTask | None" = None) -> StateMachineResult:
         """

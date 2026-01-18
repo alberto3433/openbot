@@ -11,10 +11,13 @@ by any code in orderbot/ - production code must be data-driven.
 
 from orderbot.tasks.models import MenuItemTask
 
+# Sentinel to distinguish between "not passed" and "explicitly passed as None"
+_UNSET = object()
+
 
 def BagelItemTask(
-    bread: str = None,
-    bagel_type: str = None,  # Alias for bread (backward compat)
+    bread: str = _UNSET,
+    bagel_type: str = _UNSET,  # Alias for bread (backward compat)
     toasted: bool = None,
     spread: str = None,
     extras: list = None,
@@ -25,7 +28,8 @@ def BagelItemTask(
     """Create a MenuItemTask configured as a bagel.
 
     Args:
-        bread: The bagel type (e.g., "plain", "everything")
+        bread: The bagel type (e.g., "plain", "everything"). Pass None explicitly
+               to create a bagel without bread set (for testing incomplete items).
         bagel_type: Alias for bread (backward compatibility)
         toasted: Whether the bagel should be toasted
         spread: The spread type
@@ -38,11 +42,17 @@ def BagelItemTask(
         MenuItemTask with menu_item_type="bagel" and attributes set
     """
     # Support both bread and bagel_type parameter names
-    bread_value = bread or bagel_type
-    if not bread_value:
-        bread_value = "plain"  # Default
+    # Use sentinel to detect if explicitly passed as None vs not passed
+    if bread is not _UNSET:
+        bread_value = bread
+    elif bagel_type is not _UNSET:
+        bread_value = bagel_type
+    else:
+        bread_value = "plain"  # Default when neither is specified
 
-    attribute_values = {"bread": bread_value}
+    attribute_values = {}
+    if bread_value is not None:
+        attribute_values["bread"] = bread_value
     if toasted is not None:
         attribute_values["toasted"] = toasted
     if spread:
@@ -51,8 +61,14 @@ def BagelItemTask(
         attribute_values["toppings"] = extras
     attribute_values.update(kwargs)
 
+    # Handle menu_item_name when bread is not set
+    if bread_value:
+        menu_name = f"{bread_value.title()} Bagel"
+    else:
+        menu_name = "Bagel"
+
     return MenuItemTask(
-        menu_item_name=f"{bread_value.title()} Bagel",
+        menu_item_name=menu_name,
         menu_item_type="bagel",
         quantity=quantity,
         unit_price=unit_price,

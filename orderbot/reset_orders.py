@@ -1,6 +1,5 @@
 # orderbot/reset_orders.py
 
-from sqlalchemy import text  # you can remove this import if you don't use text elsewhere
 from orderbot.db import SessionLocal
 from orderbot.models import Order, OrderItem
 

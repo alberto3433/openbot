@@ -26,7 +26,7 @@ from ..schemas import (
 from .deterministic import (
     parse_open_input_deterministic,
     _parse_multi_item_order,
-    _parse_bagel_with_modifiers,
+    _parse_configurable_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -228,14 +228,14 @@ def parse_open_input(
                     if is_multi_item_with_drink_first:
                         break
 
-        # Check for single bagel with modifiers pattern first
-        # e.g., "plain bagel with Egg Whites, Swiss, and Spinach"
+        # Check for configurable item patterns first (bagels, coffees, etc.)
+        # e.g., "plain bagel with Egg Whites, Swiss, and Spinach", "large iced latte"
         # But SKIP this if we detected a drink keyword before the bagel (multi-item order)
-        if "bagel" in input_lower and " with " in input_lower and not is_multi_item_with_drink_first:
-            logger.info("Bagel with modifiers pattern detected: %s", user_input[:50])
-            result = _parse_bagel_with_modifiers(user_input)
+        if not is_multi_item_with_drink_first:
+            logger.info("Trying configurable item pattern: %s", user_input[:50])
+            result = _parse_configurable_item(user_input)
             if result is not None:
-                logger.info("Parsed bagel with modifiers: %s", user_input[:50])
+                logger.info("Parsed configurable item: %s", user_input[:50])
                 return result
 
         # Otherwise try multi-item deterministic parsing

@@ -105,30 +105,30 @@ class TestCoffeeOrderPattern:
         assert pattern.search("hot latte please")
 
 
-class TestParseCoffeeDeterministic:
-    """Tests for _parse_coffee_deterministic() function."""
+class TestParseConfigurableItem:
+    """Tests for _parse_configurable_item() function for beverages."""
 
     def test_parse_coffee_with_alias(self):
-        """_parse_coffee_deterministic should recognize coffee aliases."""
-        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        """_parse_configurable_item should recognize coffee aliases."""
+        from orderbot.tasks.parsers.deterministic import _parse_configurable_item
         from tests.helpers import has_coffee, has_menu_item
-        result = _parse_coffee_deterministic("I want a chai")
+        result = _parse_configurable_item("I want a chai")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
 
     def test_parse_coffee_with_matcha_alias(self):
-        """_parse_coffee_deterministic should recognize 'matcha' alias."""
-        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        """_parse_configurable_item should recognize 'matcha' alias."""
+        from orderbot.tasks.parsers.deterministic import _parse_configurable_item
         from tests.helpers import has_coffee, has_menu_item
-        result = _parse_coffee_deterministic("can I get a matcha")
+        result = _parse_configurable_item("can I get a matcha")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
 
     def test_parse_coffee_with_drip_alias(self):
-        """_parse_coffee_deterministic should recognize 'drip' alias for coffee."""
-        from orderbot.tasks.parsers.deterministic import _parse_coffee_deterministic
+        """_parse_configurable_item should recognize 'drip' alias for coffee."""
+        from orderbot.tasks.parsers.deterministic import _parse_configurable_item
         from tests.helpers import has_coffee, has_menu_item
-        result = _parse_coffee_deterministic("I want a drip coffee")
+        result = _parse_configurable_item("I want a drip coffee")
         assert result is not None
         assert has_menu_item(result) or has_coffee(result)
 

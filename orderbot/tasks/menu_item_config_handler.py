@@ -66,22 +66,6 @@ class MenuItemConfigHandler(BaseHandler):
             return False
         return item_type_slug in menu_cache.get_configurable_item_types()
 
-    def _set_legacy_field_if_applicable(
-        self,
-        item: "MenuItemTask",
-        attr_slug: str,
-        display_value: str | None,
-        slug_value: str | None = None,
-    ) -> None:
-        """No-op - legacy field syncing is no longer needed.
-
-        All properties (bread, spread, toasted, scooped, decaf) now use
-        attribute_values as their backing store, so setting attribute_values
-        automatically makes the properties return the correct values.
-        """
-        # No-op: Properties now use attribute_values as backing store
-        pass
-
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
         """
         Get item type attributes from centralized cache.
@@ -1450,10 +1434,6 @@ class MenuItemConfigHandler(BaseHandler):
         else:
             item.attribute_values[attr_slug] = selected["slug"]
             item.attribute_values[f"{attr_slug}_selections"] = [selection]
-            # Also set legacy direct fields for backward compatibility
-            self._set_legacy_field_if_applicable(
-                item, attr_slug, selected["display_name"], slug_value=selected["slug"]
-            )
             # Update price if applicable
             if opt_price > 0:
                 price_key = f"{attr_slug}_price"
@@ -1850,12 +1830,6 @@ class MenuItemConfigHandler(BaseHandler):
             else:
                 # Single select - store slug and use _selections format to support quantity
                 item.attribute_values[attr_slug] = matched["slug"]
-
-                # Also set legacy direct fields for backward compatibility
-                # (e.g., item.spread = value when spread is set)
-                self._set_legacy_field_if_applicable(
-                    item, attr_slug, matched["display_name"], slug_value=matched["slug"]
-                )
 
                 # Determine the price for this option
                 option_price = sel_price or 0.0

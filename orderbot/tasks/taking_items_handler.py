@@ -66,25 +66,17 @@ ORDINAL_WORDS = {
 # These helpers check item type capabilities using database-driven attribute lookups.
 # They do NOT check for specific item type slugs - they check what attributes an item has.
 
-def _item_has_bread_attribute(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem's item_type has a bread attribute (data-driven)."""
+def _parsed_item_has_attribute(item: "ParsedItem", attr_slug: str) -> bool:
+    """Check if a ParsedItem's item_type has a specific attribute (data-driven)."""
     item_type = getattr(item, 'item_type', None)
     if not item_type:
         return False
-    return menu_cache.item_type_has_attribute(item_type, "bread")
+    return menu_cache.item_type_has_attribute(item_type, attr_slug)
 
 
-def _item_has_size_attribute(item: "ParsedItem") -> bool:
-    """Check if a ParsedItem's item_type has a size attribute (data-driven)."""
-    item_type = getattr(item, 'item_type', None)
-    if not item_type:
-        return False
-    return menu_cache.item_type_has_attribute(item_type, "size")
-
-
-def _get_bread_value(item: "ParsedItem") -> str | None:
-    """Get the bread value from a ParsedItem (data-driven)."""
-    return getattr(item, 'bread', None)
+def _get_parsed_item_attribute(item: "ParsedItem", attr_slug: str) -> str | None:
+    """Get an attribute value from a ParsedItem (data-driven)."""
+    return getattr(item, attr_slug, None)
 
 
 def _get_dynamic_help_text() -> str:
@@ -463,34 +455,58 @@ def _build_extracted_modifiers(item: ParsedItemEntry) -> ExtractedModifiers:
 
 
 def _build_item_summary(item: ParsedItemEntry) -> str:
-    """Build human-readable summary for an item (data-driven).
+    """Build human-readable summary for a parsed item (data-driven).
 
-    Uses item_name if present (e.g., "Iced Latte"), otherwise builds
-    from attribute_values (e.g., bread type) and item_type display name.
-    Handles quantity pluralization.
+    Returns uniform format: "{quantity}x {item_name}, {attr1}, {attr2}, ..."
 
     Args:
         item: The parsed item entry
 
     Returns:
-        Summary string like "Iced Latte" or "2 everything bagels"
+        Summary string
+
+    Examples:
+        "Everything Bagel, toasted, cream cheese"
+        "2x Latte, large, iced, oat milk"
     """
-    # Use item_name if present (e.g., "Iced Latte", "Turkey Club")
+    # Use item_name if present, otherwise item_type display name
     if item.item_name:
         base = item.item_name
     else:
-        # Build from attribute_values and item_type display name
-        type_display = menu_cache.get_item_type_display_name(item.item_type) or item.item_type
-        # Include bread attribute if present (e.g., "everything bagel")
-        bread = item.attribute_values.get("bread")
-        if bread:
-            base = f"{bread} {type_display}"
-        else:
-            base = type_display
+        base = menu_cache.get_item_type_display_name(item.item_type) or item.item_type
 
     # Add quantity prefix if more than 1
     if item.quantity > 1:
-        return f"{item.quantity} {base}s"
+        base = f"{item.quantity}x {base}"
+
+    # Collect attribute display values uniformly
+    attr_displays = []
+    for key, value in item.attribute_values.items():
+        # Skip internal storage fields
+        if key.endswith("_price") or key.endswith("_selections") or key.endswith("_upcharge"):
+            continue
+
+        if value is True:
+            # Boolean - use key as display (e.g., "toasted")
+            attr_displays.append(key)
+        elif value is False or value is None:
+            continue
+        elif isinstance(value, list):
+            # Multi-select - show all values
+            for v in value:
+                if isinstance(v, str):
+                    attr_displays.append(v)
+        else:
+            # Single-select - show value
+            attr_displays.append(str(value))
+
+    # Add modifiers if present
+    if item.modifiers:
+        attr_displays.extend(item.modifiers)
+
+    # Build final summary
+    if attr_displays:
+        return f"{base}, {', '.join(attr_displays)}"
     return base
 
 
@@ -1176,50 +1192,21 @@ class TakingItemsHandler:
                 # Check if parsed result has any valid new items
                 has_new_items = bool(parsed.parsed_items)
 
-                # Special case: If last item is a bagel and the "menu item" is a cream cheese sandwich,
-                # treat this as a spread change, not a menu item replacement.
-                # e.g., "make it blueberry cream cheese" -> change spread, not add Blueberry Cream Cheese Sandwich
-                cream_cheese_menu_item = next(
-                    (item for item in parsed.parsed_items
-                     if isinstance(item, ParsedItemEntry) and item.item_type == "menu_item"
-                         and item.item_name and "cream cheese sandwich" in item.item_name.lower()),
-                    None
-                )
-                cream_cheese_name = cream_cheese_menu_item.item_name if cream_cheese_menu_item else None
-                if has_new_items and cream_cheese_menu_item and cream_cheese_name and isinstance(last_item, MenuItemTask) and last_item.has_attribute("spread"):
-                    # Extract the spread name from the menu item name
-                    # "Blueberry Cream Cheese Sandwich" -> "blueberry cream cheese"
-                    spread_name = cream_cheese_name.lower().replace(" sandwich", "")
-                    last_attr = last_item.attribute_values
-                    old_spread = last_attr.get("spread") or "none"
-                    last_attr["spread"] = spread_name
-                    logger.info("Replacement: interpreted '%s' as spread change from '%s' to '%s'",
-                               cream_cheese_name, old_spread, spread_name)
-
-                    # Recalculate price if needed
-                    self.pricing.recalculate_item_price(last_item)
-
-                    updated_summary = last_item.get_summary()
-                    return StateMachineResult(
-                        message=f"Sure, I've changed that to {updated_summary}. Anything else?",
-                        order=order,
-                    )
-
-                # Special case: If last item is a bagel and user wants to change to a different bagel,
-                # preserve the existing modifiers (spread, toasted, protein, etc.)
+                # If last item has bread attribute and user specifies a new bread type,
+                # update the bread while preserving other modifiers (spread, toasted, etc.)
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
-                bagel_entry = next(
+                bread_entry = next(
                     (item for item in parsed.parsed_items
-                     if _item_has_bread_attribute(item) and _get_bread_value(item)),
+                     if _parsed_item_has_attribute(item, "bread") and _get_parsed_item_attribute(item, "bread")),
                     None
                 )
-                if has_new_items and bagel_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
-                    bagel_entry_bread = _get_bread_value(bagel_entry)
+                if has_new_items and bread_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
+                    new_bread = _get_parsed_item_attribute(bread_entry, "bread")
                     last_attr = last_item.attribute_values
-                    old_type = last_attr.get("bread") or "plain"
-                    last_attr["bread"] = bagel_entry_bread
-                    logger.info("Replacement: changed bagel type from '%s' to '%s', preserving modifiers",
-                               old_type, bagel_entry_bread)
+                    old_bread = last_attr.get("bread")
+                    last_attr["bread"] = new_bread
+                    logger.info("Replacement: changed bread from '%s' to '%s', preserving modifiers",
+                               old_bread, new_bread)
 
                     # Recalculate price if needed
                     self.pricing.recalculate_item_price(last_item)

@@ -843,142 +843,74 @@ class MenuItemTask(ItemTask):
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
-        # Handle espresso-style items (have shots attribute but no size)
-        if self.has_attribute("shots") and not self.has_attribute("size"):
-            decaf = self.attribute_values.get("decaf", False)
-
-            # Get shots display name from database (stored in shots_selections)
-            shots_display = self._get_attribute_display_name("shots")
-            if shots_display and shots_display.lower() != "single":
-                # Use database display name as prefix (e.g., "Double", "Triple")
-                display_name = f"{shots_display} {self.menu_item_name or 'Espresso'}"
-            else:
-                display_name = self.menu_item_name or "Espresso"
-
-            if decaf:
-                display_name = f"Decaf {display_name}"
-            return display_name
-
-        # Handle sized beverage display (items with size attribute)
-        if self.has_attribute("size"):
-            parts = []
-            # Get size display name from database (stored in size_selections)
-            size_display = self._get_attribute_display_name("size")
-            if size_display:
-                parts.append(size_display)
-            elif self.size:
-                parts.append(self.size)
-
-            if self.decaf:
-                parts.append("decaf")
-            if self.extra_shots == 1:
-                parts.append("double")
-            elif self.extra_shots >= 2:
-                parts.append("triple")
-            # Use menu_item_name, or fall back to item type display name if available
-            item_name = self.menu_item_name or getattr(self, 'menu_item_type', None) or "beverage"
-            parts.append(item_name)
-            return " ".join(parts)
-
         return self.menu_item_name
 
     def get_summary(self) -> str:
-        """Get a summary description of this menu item."""
-        parts = []
+        """Get a summary description of this menu item.
 
+        Returns uniform, data-driven summary in format:
+        "{quantity}x {menu_item_name}, {attr1}, {attr2}, ..."
+
+        Examples:
+            "Everything Bagel, toasted, cream cheese"
+            "Latte, large, iced, oat milk"
+            "2x Turkey Club, sourdough, bacon"
+        """
+        # Start with quantity prefix if > 1
+        base_name = self.get_display_name()
         if self.quantity > 1:
-            parts.append(f"{self.quantity}x")
+            base_name = f"{self.quantity}x {base_name}"
 
-        # Use display name (handles espresso shots/decaf)
-        parts.append(self.get_display_name())
+        # Collect attribute display values uniformly
+        attr_displays = []
 
-        # Add DB-driven attribute values (for deli_sandwich, etc.)
-        if self.attribute_values:
-            # Handle bread selection
-            bread = self.attribute_values.get("bread")
-            if bread:
-                # Get display name from database (stored in bread_selections)
-                bread_display = self._get_attribute_display_name("bread") or bread
-                parts.append(f"on {bread_display}")
+        for key, value in self.attribute_values.items():
+            # Skip internal storage fields (not for display)
+            if key.endswith("_price") or key.endswith("_selections") or key.endswith("_upcharge"):
+                continue
 
-            # Handle toasted - check both attribute_values and direct property
-            # (supports both menu_item_config_handler which uses attribute_values,
-            # and bagel_config_handler which uses direct property)
-            toasted_from_attr = self.attribute_values.get("toasted")
-            toasted_value = toasted_from_attr if toasted_from_attr is not None else self.toasted
-            if toasted_value is True:
-                parts.append("toasted")
-            elif toasted_value is False and bread:
-                parts.append("not toasted")
-
-            # Handle other customizations (extra protein, toppings, etc.)
-            extra_customizations = []
-            for key, value in self.attribute_values.items():
-                # Skip already handled fields and internal data fields
-                if key in ("bread", "toasted", "scooped"):
-                    continue  # Already handled above
-                if key.endswith("_price") or key.endswith("_selections"):
-                    continue  # Internal price/selection data, not for display
-                # Skip espresso-style fields that are in the display name (items with shots but no size)
-                if self.has_attribute("shots") and not self.has_attribute("size") and key in ("shots", "decaf"):
-                    continue  # Already handled in get_display_name()
-                if value is True:
-                    # Boolean attribute - use attribute display name from database
-                    display_name = self._get_attribute_display_name(key) or key
-                    extra_customizations.append(display_name)
-                elif value and value is not False:
-                    # Handle list values (multi-select attributes like extra proteins)
-                    if isinstance(value, list):
-                        # Get display names from {key}_selections
-                        display_names = self._get_all_attribute_display_names(key)
-                        if display_names:
-                            extra_customizations.extend(display_names)
-                        else:
-                            # Fallback: use raw values if no selections stored
-                            for item in value:
-                                if isinstance(item, str):
-                                    extra_customizations.append(item)
-                    else:
-                        # Single-select: get display name from database
-                        display_name = self._get_attribute_display_name(key, str(value))
-                        extra_customizations.append(display_name or str(value))
-            if extra_customizations:
-                parts.append(f"with {', '.join(extra_customizations)}")
-
-        # Add side choice info (data-driven approach)
-        elif self.side_choice:
-            # Check for {side_choice}_choice field dynamically
-            choice_field = f"{self.side_choice}_choice"
-            specific_choice = getattr(self, choice_field, None)
-            if specific_choice:
-                # Get display names from database
-                choice_display = self._get_attribute_display_name(choice_field, specific_choice) or specific_choice
-                side_display = self._get_attribute_display_name("side_choice", self.side_choice) or self.side_choice
-                side_parts = [choice_display, side_display]
-                if self.toasted:
-                    side_parts.append("toasted")
-                if self.spread:
-                    spread_display = self._get_attribute_display_name("spread_type", self.spread) or self.spread
-                    side_parts.append(f"with {spread_display}")
-                parts.append(f"with {' '.join(side_parts)}")
+            if value is True:
+                # Boolean attribute - use display name from DB or key
+                display_name = self._get_attribute_display_name(key) or key
+                attr_displays.append(display_name)
+            elif value is False or value is None:
+                # Skip false/none values
+                continue
+            elif isinstance(value, list):
+                # Multi-select: get all display names
+                display_names = self._get_all_attribute_display_names(key)
+                if display_names:
+                    attr_displays.extend(display_names)
+                else:
+                    # Use raw values if no selections stored
+                    for item in value:
+                        if isinstance(item, str):
+                            attr_displays.append(item)
             else:
-                # Side has no sub-selection - get display name from database
-                side_display = self._get_attribute_display_name("side_choice", self.side_choice) or self.side_choice
-                parts.append(f"with {side_display}")
+                # Single-select: get display name from DB
+                display_name = self._get_attribute_display_name(key, str(value))
+                attr_displays.append(display_name or str(value))
 
+        # Build final summary
+        if attr_displays:
+            summary = f"{base_name}, {', '.join(attr_displays)}"
+        else:
+            summary = base_name
+
+        # Add modifications in parentheses
         if self.modifications:
-            parts.append(f"({', '.join(self.modifications)})")
+            summary += f" ({', '.join(self.modifications)})"
 
-        # Add removed ingredients if present (e.g., "no bacon")
+        # Add removed ingredients (e.g., "no bacon")
         if self.removed_ingredients:
             removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
-            parts.append(f"({', '.join(removed_parts)})")
+            summary += f" ({', '.join(removed_parts)})"
 
-        # Add special instructions if present
+        # Add special instructions
         if self.special_instructions:
-            parts.append(f"(Special Instructions: {self.special_instructions})")
+            summary += f" (Special Instructions: {self.special_instructions})"
 
-        return " ".join(parts)
+        return summary
 
     def get_missing_customizations(self) -> list[str]:
         """Get list of missing required customizations.

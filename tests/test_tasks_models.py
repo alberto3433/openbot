@@ -316,11 +316,16 @@ class TestCoffeeItemTask:
         assert coffee.extra_shots == 0
 
     def test_get_display_name(self):
-        """Test display name generation."""
-        # Note: Temperature is now part of the menu item name itself
+        """Test display name generation.
+
+        get_display_name() now returns just the menu_item_name.
+        Attributes like size are shown uniformly in get_summary().
+        """
         coffee = create_coffee_task(drink_type="Iced Latte", size="large")
-        assert "large" in coffee.get_display_name().lower()
-        assert "iced" in coffee.get_display_name().lower() or "latte" in coffee.get_display_name().lower()
+        # Display name is just the menu item name
+        assert coffee.get_display_name() == "Iced Latte"
+        # Size is shown in summary, not display name
+        assert "large" in coffee.get_summary().lower()
 
     def test_get_summary_with_modifiers(self):
         """Test summary with milk and sweetener."""

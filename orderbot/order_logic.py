@@ -120,26 +120,172 @@ def _calculate_item_extras_generic(
     return total_extra
 
 
+def _get_item_type_attribute_slugs(item_type_slug: str, menu_index: Dict[str, Any]) -> list[str]:
+    """Get list of attribute slugs for an item type from menu_index."""
+    if not menu_index or not item_type_slug:
+        return []
+    item_types = menu_index.get("item_types", {})
+    item_type_data = item_types.get(item_type_slug, {})
+    return [attr.get("slug") for attr in item_type_data.get("attributes", []) if attr.get("slug")]
+
+
+def _add_item(state, slots, menu_index):
+    """
+    Generic handler to add any item type to the order.
+
+    Uses data-driven approach: looks up item type from menu, gets valid attributes
+    for that type, and copies matching slot values. No hardcoded item types.
+    """
+    name = slots.get("menu_item_name")
+    qty = slots.get("quantity") or 1
+
+    # Look up the menu item to get item_type and base_price
+    menu_item = _find_menu_item(menu_index, name)
+    item_type = menu_item.get("item_type") if menu_item else slots.get("item_type")
+    base_price = menu_item.get("base_price", 0) if menu_item else 0
+
+    # Build item dict with common fields
+    item = {
+        "item_type": item_type,
+        "menu_item_name": name,
+        "quantity": qty,
+    }
+
+    # Get valid attributes for this item type and copy from slots
+    if item_type and menu_index:
+        attr_slugs = _get_item_type_attribute_slugs(item_type, menu_index)
+        for attr_slug in attr_slugs:
+            if attr_slug in slots:
+                value = slots[attr_slug]
+                # Ensure list attributes are lists
+                if attr_slug in ("toppings", "sauces", "extras") and value is None:
+                    value = []
+                item[attr_slug] = value
+
+    # Also check item_config dict (used by some callers like drinks)
+    item_config = slots.get("item_config") or {}
+    if item_config:
+        item["item_config"] = item_config
+        # Merge item_config values into item for pricing calculation
+        for key, val in item_config.items():
+            if key not in item and val is not None:
+                item[key] = val
+
+    # Handle sauce → sauces normalization
+    if "sauce" in slots and slots["sauce"] and "sauces" not in item:
+        item["sauces"] = [slots["sauce"]]
+
+    # Calculate price using generic data-driven approach
+    extras = _calculate_item_extras_generic(item, menu_item, menu_index)
+    unit_price = base_price + extras
+
+    item["unit_price"] = unit_price
+    item["line_total"] = unit_price * qty
+
+    state["items"].append(item)
+    state["status"] = "collecting_items"
+    return state
+
+
+def _update_item(state, slots, menu_index):
+    """
+    Generic handler to update any item in the order.
+
+    Finds the item by index or by finding the last item of the target type.
+    Updates only the attributes that are provided in slots.
+    """
+    item_index = slots.get("item_index")
+    target_type = slots.get("item_type")  # Optional: find by item type
+
+    # If no index provided, find the last matching item
+    if item_index is None:
+        for i in range(len(state["items"]) - 1, -1, -1):
+            candidate = state["items"][i]
+            # If target_type specified, match on that
+            if target_type and candidate.get("item_type") == target_type:
+                item_index = i
+                break
+            # Otherwise, just use the last item
+            elif not target_type:
+                item_index = i
+                break
+
+    # Validate index
+    if item_index is None or item_index < 0 or item_index >= len(state["items"]):
+        return state
+
+    item = state["items"][item_index]
+    item_type = item.get("item_type")
+
+    # Track if customization changed for price recalculation
+    customization_changed = False
+
+    # Get valid attributes for this item type from config
+    attr_slugs = set(_get_item_type_attribute_slugs(item_type, menu_index) if item_type else [])
+
+    # Also include item's existing keys as valid attributes (handles cases where
+    # item_types config doesn't include all attributes like 'toasted')
+    system_fields = {"item_type", "menu_item_name", "quantity", "unit_price", "line_total", "item_config"}
+    attr_slugs.update(k for k in item.keys() if k not in system_fields)
+
+    # Update attributes that are provided in slots
+    for attr_slug in attr_slugs:
+        if slots.get(attr_slug) is not None:
+            item[attr_slug] = slots[attr_slug]
+            customization_changed = True
+
+    # Handle common fields
+    if slots.get("quantity") is not None:
+        item["quantity"] = slots["quantity"]
+    if slots.get("menu_item_name") is not None:
+        item["menu_item_name"] = slots["menu_item_name"]
+        customization_changed = True
+
+    # Handle sauce → sauces normalization
+    if slots.get("sauce") is not None:
+        item["sauces"] = [slots["sauce"]]
+        customization_changed = True
+
+    # Recalculate price if needed
+    if customization_changed or slots.get("quantity") is not None:
+        menu_item = _find_menu_item(menu_index, item["menu_item_name"])
+        base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
+        extras = _calculate_item_extras_generic(item, menu_item, menu_index)
+        item["unit_price"] = base + extras
+        item["line_total"] = item["unit_price"] * item["quantity"]
+
+    return state
+
+
 def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, returning_customer=None):
     state = deepcopy(order_state)
 
+    # Generic item handling - route all add/update intents to generic handlers
+    if intent == "add_item":
+        return _add_item(state, slots, menu_index)
+
+    if intent == "update_item":
+        return _update_item(state, slots, menu_index)
+
+    # Backward-compatible aliases for specific item types
+    # These all route to the generic handlers
     if intent == "add_sandwich":
-        return _add_sandwich(state, slots, menu_index)
+        return _add_item(state, slots, menu_index)
 
     if intent == "add_pizza":
-        return _add_pizza(state, slots, menu_index)
+        return _add_item(state, slots, menu_index)
 
     if intent in ("add_drink", "add_coffee", "add_sized_beverage", "add_beverage"):
-        return _add_drink(state, slots, menu_index)
+        return _add_item(state, slots, menu_index)
 
     if intent == "add_side":
-        return _add_side(state, slots, menu_index)
+        return _add_item(state, slots, menu_index)
 
     if intent == "update_sandwich":
-        return _update_sandwich(state, slots, menu_index)
+        return _update_item(state, slots, menu_index)
 
     if intent == "update_pizza":
-        return _update_pizza(state, slots, menu_index)
+        return _update_item(state, slots, menu_index)
 
     if intent == "remove_item":
         return _remove_item(state, slots, menu_index)
@@ -297,409 +443,6 @@ def _repeat_order(state, slots, menu_index, returning_customer):
         state["customer"]["name"] = returning_customer["name"]
     if returning_customer.get("phone"):
         state["customer"]["phone"] = returning_customer["phone"]
-
-    return state
-
-
-def _add_sandwich(state, slots, menu_index):
-    """
-    Add a sandwich to the order.
-
-    Uses data-driven pricing: base_price + attribute option price modifiers.
-    """
-    name = slots.get("menu_item_name")
-    qty = slots.get("quantity") or 1
-
-    # Get customization choices
-    bread = slots.get("bread")
-    protein = slots.get("protein")
-    cheese = slots.get("cheese")
-    toppings = slots.get("toppings") or []
-    sauces = slots.get("sauces") or []
-    size = slots.get("size")
-
-    # Look up the menu item
-    menu_item = _find_menu_item(menu_index, name)
-    base_price = menu_item.get("base_price", 0) if menu_item else 0
-    item_type = menu_item.get("item_type", "sandwich") if menu_item else "sandwich"
-
-    # Build item dict for generic pricing
-    item = {
-        "item_type": item_type,
-        "menu_item_name": name,
-        "size": size,
-        "bread": bread,
-        "protein": protein,
-        "cheese": cheese,
-        "toppings": toppings,
-        "sauces": sauces,
-        "toasted": slots.get("toasted"),
-        "quantity": qty,
-    }
-
-    # Calculate extras using the generic data-driven approach
-    extras = _calculate_item_extras_generic(item, menu_item, menu_index)
-    unit_price = base_price + extras
-
-    item["unit_price"] = unit_price
-    item["line_total"] = unit_price * qty
-
-    state["items"].append(item)
-    state["status"] = "collecting_items"
-    return state
-
-
-def _add_pizza(state, slots, menu_index):
-    """
-    Add a pizza to the order.
-
-    Uses data-driven pricing: base_price + attribute option price modifiers.
-    Handles both signature pizzas and custom/build-your-own pizzas.
-    """
-    name = slots.get("menu_item_name")
-    qty = slots.get("quantity") or 1
-
-    # Get customization choices
-    size = slots.get("size")
-    crust = slots.get("crust")
-    cheese = slots.get("cheese")
-    toppings = slots.get("toppings") or []
-    # Handle both single sauce (typical for pizza) and sauces array
-    sauce = slots.get("sauce")
-    sauces = slots.get("sauces") or []
-    if sauce and not sauces:
-        sauces = [sauce]
-
-    # Check if this is a custom/build-your-own pizza
-    is_custom = _is_custom_pizza_order(name, menu_index)
-
-    if is_custom:
-        # For custom pizza, use Build Your Own Pizza as the base
-        menu_item = _find_menu_item(menu_index, "Build Your Own Pizza")
-        base_price = menu_item.get("base_price", 0) if menu_item else 0
-        display_name = "Build Your Own Pizza"
-    else:
-        # Signature pizza pricing
-        menu_item = _find_menu_item(menu_index, name)
-        base_price = menu_item.get("base_price", 0) if menu_item else 0
-        display_name = name
-
-    item_type = menu_item.get("item_type", "pizza") if menu_item else "pizza"
-
-    # Build item dict for generic pricing
-    item = {
-        "item_type": item_type,
-        "menu_item_name": display_name,
-        "size": size,
-        "crust": crust,
-        "cheese": cheese,
-        "toppings": toppings,
-        "sauces": sauces,
-        "quantity": qty,
-        "is_custom": is_custom,
-    }
-
-    # Calculate extras using the generic data-driven approach
-    extras = _calculate_item_extras_generic(item, menu_item, menu_index)
-    unit_price = base_price + extras
-
-    item["unit_price"] = unit_price
-    item["line_total"] = unit_price * qty
-
-    state["items"].append(item)
-    state["status"] = "collecting_items"
-    return state
-
-
-def _is_custom_pizza_order(item_name: str, menu_index: Dict[str, Any]) -> bool:
-    """
-    Determine if a pizza order should be treated as a custom/build-your-own pizza.
-
-    Returns True if:
-    - The item name explicitly indicates custom/build-your-own
-    - The item name is not found in the menu as a signature pizza
-    """
-    if not item_name:
-        return True  # No name = custom pizza
-
-    name_lower = item_name.lower()
-
-    # Explicit custom indicators
-    if "custom" in name_lower or "build your own" in name_lower or "create your own" in name_lower:
-        return True
-
-    # Check if it's a known signature menu item
-    menu_item = _find_menu_item(menu_index, item_name)
-    if menu_item and menu_item.get("is_signature"):
-        return False
-
-    # If not found in menu at all, treat as custom
-    if not menu_item:
-        return True
-
-    return False
-
-
-def _add_drink(state, slots, menu_index):
-    name = slots.get("menu_item_name")
-    qty = slots.get("quantity") or 1
-    size = slots.get("size")
-    item_config = slots.get("item_config") or {}
-
-    # LLM might put coffee attributes directly in slots instead of item_config
-    # Merge them into item_config for consistent handling
-    coffee_attrs = ["style", "milk", "syrup", "sweetener", "extras"]
-    for attr in coffee_attrs:
-        if attr in slots and slots[attr] and attr not in item_config:
-            item_config[attr] = slots[attr]
-
-    # Size can come from slots directly or from item_config
-    if not size and item_config:
-        size = item_config.get("size")
-
-    menu_item = _find_menu_item(menu_index, name)
-    base = menu_item.get("base_price", 0) if menu_item else 0
-
-    # Check if this is a configurable drink (like coffee with sizes and customizations)
-    item_type_slug = menu_item.get("item_type") if menu_item else None
-    total_modifier = 0.0
-
-    if item_type_slug:
-        item_type_data = menu_index.get("item_types", {}).get(item_type_slug, {})
-        if item_type_data.get("is_configurable"):
-            # Calculate price modifiers for ALL selected options
-            for attr in item_type_data.get("attributes", []):
-                attr_slug = attr.get("slug")
-                # Check item_config first, then direct slots
-                attr_value = item_config.get(attr_slug) or slots.get(attr_slug)
-
-                # Also check direct slots for size
-                if attr_slug == "size" and not attr_value:
-                    attr_value = size
-
-                if not attr_value:
-                    continue
-
-                # Handle both single values and lists (for multi_select)
-                values = attr_value if isinstance(attr_value, list) else [attr_value]
-
-                for val in values:
-                    if not val or str(val).lower() == "none":
-                        continue
-                    # Normalize the value for matching
-                    val_normalized = str(val).lower().replace(" ", "_")
-                    # Also try without common suffixes like "_syrup", "_milk"
-                    val_base = val_normalized.replace("_syrup", "").replace("_milk", "")
-
-                    for opt in attr.get("options", []):
-                        opt_slug = opt.get("slug", "")
-                        # Match on exact slug, normalized value, or base value
-                        if opt_slug == val_normalized or opt_slug == val_base or opt_slug in val_normalized:
-                            total_modifier += opt.get("price_modifier", 0.0)
-                            break
-
-    unit_price = base + total_modifier
-
-    # Build a display-friendly item config
-    display_config = {}
-    if size:
-        display_config["size"] = size
-    if item_config:
-        for key, val in item_config.items():
-            if val and str(val).lower() != "none" and key != "size":
-                display_config[key] = val
-
-    item = {
-        "item_type": "drink",
-        "menu_item_name": name,
-        "size": size,
-        "item_config": display_config if display_config else None,
-        "bread": None,
-        "protein": None,
-        "cheese": None,
-        "toppings": [],
-        "sauces": [],
-        "toasted": None,
-        "quantity": qty,
-        "unit_price": unit_price,
-        "line_total": unit_price * qty,
-    }
-
-    state["items"].append(item)
-    state["status"] = "collecting_items"
-    return state
-
-
-def _add_side(state, slots, menu_index):
-    name = slots.get("menu_item_name")
-    qty = slots.get("quantity") or 1
-
-    menu_item = _find_menu_item(menu_index, name)
-    base = menu_item.get("base_price", 0) if menu_item else 0
-
-    item = {
-        "item_type": "side",
-        "menu_item_name": name,
-        "size": None,
-        "bread": None,
-        "protein": None,
-        "cheese": None,
-        "toppings": [],
-        "sauces": [],
-        "toasted": None,
-        "quantity": qty,
-        "unit_price": base,
-        "line_total": base * qty,
-    }
-
-    state["items"].append(item)
-    state["status"] = "collecting_items"
-    return state
-
-
-def _update_sandwich(state, slots, menu_index):
-    """
-    Update an existing sandwich in the order.
-    Uses item_index to identify which item to update.
-    Only updates fields that are provided (non-None) in slots.
-    Recalculates price including any extra_price from customizations.
-    """
-    item_index = slots.get("item_index")
-
-    # If no index provided, try to find the last item that can have toppings/modifiers
-    # Use a data-driven approach: look for items with 'bread' or 'toppings' fields,
-    # or items with item_type 'sandwich'
-    if item_index is None:
-        for i in range(len(state["items"]) - 1, -1, -1):
-            item = state["items"][i]
-            item_type = (item.get("item_type") or "").lower()
-
-            # Check if item is a sandwich-like type
-            if item_type == "sandwich":
-                item_index = i
-                break
-
-            # Check if item has sandwich-like attributes (bread, toppings)
-            if item.get("bread") is not None or item.get("toppings") is not None:
-                item_index = i
-                break
-
-    # Validate index
-    if item_index is None or item_index < 0 or item_index >= len(state["items"]):
-        # Can't update - no valid item found
-        return state
-
-    item = state["items"][item_index]
-
-    # Track if any customization changed (for price recalculation)
-    customization_changed = False
-
-    # Only update sandwich-specific fields that are explicitly provided
-    if slots.get("bread") is not None:
-        item["bread"] = slots["bread"]
-        customization_changed = True
-    if slots.get("protein") is not None:
-        item["protein"] = slots["protein"]
-        customization_changed = True
-    if slots.get("cheese") is not None:
-        item["cheese"] = slots["cheese"]
-        customization_changed = True
-    if slots.get("toppings") is not None:
-        item["toppings"] = slots["toppings"]
-        customization_changed = True
-    if slots.get("sauces") is not None:
-        item["sauces"] = slots["sauces"]
-        customization_changed = True
-    if slots.get("toasted") is not None:
-        item["toasted"] = slots["toasted"]
-    if slots.get("size") is not None:
-        item["size"] = slots["size"]
-    if slots.get("quantity") is not None:
-        item["quantity"] = slots["quantity"]
-
-    # If changing to a different menu item
-    if slots.get("menu_item_name") is not None:
-        item["menu_item_name"] = slots["menu_item_name"]
-        customization_changed = True
-
-    # Recalculate price if customizations changed
-    if customization_changed or slots.get("quantity") is not None:
-        menu_item = _find_menu_item(menu_index, item["menu_item_name"])
-        base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
-
-        # Use generic data-driven pricing
-        extras = _calculate_item_extras_generic(item, menu_item, menu_index)
-
-        item["unit_price"] = base + extras
-        item["line_total"] = item["unit_price"] * item["quantity"]
-
-    return state
-
-
-def _update_pizza(state, slots, menu_index):
-    """
-    Update an existing pizza in the order.
-    Uses item_index to identify which item to update.
-    Only updates fields that are provided (non-None) in slots.
-    Recalculates price including size and customization extras.
-    """
-    item_index = slots.get("item_index")
-
-    # If no index provided, try to find the last pizza in the order
-    if item_index is None:
-        for i in range(len(state["items"]) - 1, -1, -1):
-            if state["items"][i].get("item_type") == "pizza":
-                item_index = i
-                break
-
-    # Validate index
-    if item_index is None or item_index < 0 or item_index >= len(state["items"]):
-        # Can't update - no valid item found
-        return state
-
-    item = state["items"][item_index]
-
-    # Track if any customization changed (for price recalculation)
-    customization_changed = False
-
-    # Only update pizza-specific fields that are explicitly provided
-    if slots.get("size") is not None:
-        item["size"] = slots["size"]
-        customization_changed = True
-    if slots.get("crust") is not None:
-        item["crust"] = slots["crust"]
-        customization_changed = True
-    if slots.get("cheese") is not None:
-        item["cheese"] = slots["cheese"]
-        customization_changed = True
-    if slots.get("toppings") is not None:
-        item["toppings"] = slots["toppings"]
-        customization_changed = True
-    # Handle both single sauce and sauces array
-    if slots.get("sauce") is not None:
-        item["sauces"] = [slots["sauce"]]
-        customization_changed = True
-    if slots.get("sauces") is not None:
-        item["sauces"] = slots["sauces"]
-        customization_changed = True
-    if slots.get("quantity") is not None:
-        item["quantity"] = slots["quantity"]
-
-    # If changing to a different menu item
-    if slots.get("menu_item_name") is not None:
-        item["menu_item_name"] = slots["menu_item_name"]
-        customization_changed = True
-
-    # Recalculate price if customizations changed
-    if customization_changed or slots.get("quantity") is not None:
-        menu_item = _find_menu_item(menu_index, item["menu_item_name"])
-        base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
-
-        # Use generic data-driven pricing
-        extras = _calculate_item_extras_generic(item, menu_item, menu_index)
-
-        item["unit_price"] = base + extras
-        item["line_total"] = item["unit_price"] * item["quantity"]
 
     return state
 

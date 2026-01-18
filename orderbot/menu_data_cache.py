@@ -1612,12 +1612,13 @@ class MenuDataCache:
                     categories_by_modifier_type[cat.modifier_type] = set()
                 categories_by_modifier_type[cat.modifier_type].add(cat.slug)
 
-            # Load field configuration (code_field_name, is_multi_select)
+            # Load field configuration (code_field_name, is_multi_select, display_name)
             # If code_field_name is NULL, default to the category slug
             # If is_multi_select is NULL, default to False
             category_field_config[cat.slug] = {
                 "code_field_name": cat.code_field_name or cat.slug,
                 "is_multi_select": cat.is_multi_select or False,
+                "display_name": cat.display_name,
             }
 
             # Load display order for extraction ordering
@@ -2050,6 +2051,33 @@ class MenuDataCache:
                 all_ingredients.update(cat_ingredients)
             return all_ingredients
 
+    def get_ingredients_by_category_for_item_type(
+        self, item_type_slug: str
+    ) -> dict[str, set[str]]:
+        """Get ingredients for an item type, grouped by category.
+
+        Returns all valid ingredients for the item type organized by their
+        ingredient category (e.g., "spread", "protein", "topping").
+
+        Args:
+            item_type_slug: The ItemType slug (e.g., "bagel", "sandwich")
+
+        Returns:
+            Dict mapping category slug to set of ingredient names.
+            Returns empty dict if item type has no ingredients defined.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredients_by_category_for_item_type("bagel")
+            {"spread": {"cream cheese", "butter"}, "protein": {"bacon", "lox"}, ...}
+        """
+        self._ensure_loaded()
+        type_ingredients = self._ingredients_for_item_type.get(item_type_slug, {})
+        # Return a deep copy to prevent mutation
+        return {cat: ingredients.copy() for cat, ingredients in type_ingredients.items()}
+
     def get_all_item_type_slugs(self) -> set[str]:
         """Get all known ItemType slugs.
 
@@ -2262,7 +2290,7 @@ class MenuDataCache:
     def get_ingredient_category_field_config(self, category_slug: str) -> dict | None:
         """Get field configuration for an ingredient category.
 
-        Returns the code_field_name and is_multi_select for the category,
+        Returns the code_field_name, is_multi_select, and display_name for the category,
         used for data-driven modifier field definitions.
 
         Args:
@@ -2272,18 +2300,42 @@ class MenuDataCache:
             Dict with:
             - code_field_name: Python property name (e.g., "toppings", "flavor_syrups")
             - is_multi_select: True if category supports multiple selections
+            - display_name: Human-readable name (e.g., "Toppings", "Sweeteners")
 
             Returns None if category not found.
 
         Examples:
             >>> menu_cache.get_ingredient_category_field_config("topping")
-            {"code_field_name": "toppings", "is_multi_select": True}
+            {"code_field_name": "toppings", "is_multi_select": True, "display_name": "Toppings"}
 
             >>> menu_cache.get_ingredient_category_field_config("milk")
-            {"code_field_name": "milk", "is_multi_select": False}
+            {"code_field_name": "milk", "is_multi_select": False, "display_name": "Milk"}
         """
         self._ensure_loaded()
         return self._ingredient_category_field_config.get(category_slug)
+
+    def get_ingredient_category_display_name(self, category_slug: str) -> str:
+        """Get the display name for an ingredient category.
+
+        Args:
+            category_slug: The ingredient category slug (e.g., "topping", "protein")
+
+        Returns:
+            Human-readable display name (e.g., "Toppings", "Proteins").
+            Returns the slug in title case if category not found.
+
+        Examples:
+            >>> menu_cache.get_ingredient_category_display_name("topping")
+            "Toppings"
+            >>> menu_cache.get_ingredient_category_display_name("protein")
+            "Proteins"
+        """
+        self._ensure_loaded()
+        config = self._ingredient_category_field_config.get(category_slug)
+        if config and config.get("display_name"):
+            return config["display_name"]
+        # Fallback to title-cased slug
+        return category_slug.replace("_", " ").title()
 
     def get_modifier_categories_for_inquiry(self) -> dict[str, dict]:
         """Get all modifier categories for menu inquiry handling.

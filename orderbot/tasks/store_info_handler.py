@@ -357,8 +357,8 @@ class StoreInfoHandler:
         IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
 
         Args:
-            item_type: Type of item asked about - 'coffee', 'tea', 'hot_chocolate', 'bagel', 'sandwich', or None
-            category: Specific category asked about - 'sweeteners', 'milks', 'syrups', 'spreads', etc., or None
+            item_type: Type of item asked about
+            category: Specific category asked about
             order: Current order state (unchanged)
         """
         # If specific category asked about, return just that category
@@ -380,7 +380,7 @@ class StoreInfoHandler:
     ) -> StateMachineResult:
         """Describe available options for a specific modifier category.
 
-        For categories with database-backed items (toppings, proteins, cheeses, spreads),
+        For categories with database-backed items
         this method loads items dynamically and sets pagination state for "what else" follow-ups.
 
         Category data is loaded from menu_data["modifier_categories"] which comes from the
@@ -468,101 +468,53 @@ class StoreInfoHandler:
 
         return StateMachineResult(message=message, order=order)
 
-    def _format_beverage_modifiers_list(self) -> dict[str, str]:
-        """Get formatted lists of beverage modifiers from the database cache."""
-        from ..menu_data_cache import menu_cache
-
-        # Get options from cache using generic ingredient lookups
-        milks = list(menu_cache.get_ingredients("milk"))
-        sweeteners = list(menu_cache.get_ingredients("sweetener"))
-        syrups = list(menu_cache.get_ingredients("syrup"))
-
-        def format_list(items: list[str]) -> str:
-            if not items:
-                return ""
-            if len(items) == 1:
-                return items[0]
-            if len(items) == 2:
-                return f"{items[0]} or {items[1]}"
-            return ", ".join(items[:-1]) + ", or " + items[-1]
-
-        return {
-            "milks": format_list(milks),
-            "sweeteners": format_list(sweeteners),
-            "syrups": format_list(syrups),
-        }
-
-    def _format_food_modifiers_list(self) -> dict[str, str]:
-        """Get formatted lists of food modifiers from the database cache."""
-        from ..menu_data_cache import menu_cache
-
-        def format_list(items: list[str]) -> str:
-            if not items:
-                return ""
-            if len(items) == 1:
-                return items[0]
-            if len(items) == 2:
-                return f"{items[0]} or {items[1]}"
-            # Limit to 4 items for display
-            items = items[:4]
-            return ", ".join(items[:-1]) + ", or " + items[-1]
-
-        # Get options from cache using generic ingredient lookups
-        proteins = list(menu_cache.get_ingredients("protein"))
-        cheeses = list(menu_cache.get_ingredients("cheese"))
-        toppings = list(menu_cache.get_ingredients("topping"))
-        spreads = list(menu_cache.get_ingredients("spread"))
-
-        return {
-            "proteins": format_list(proteins),
-            "cheeses": format_list(cheeses),
-            "toppings": format_list(toppings),
-            "spreads": format_list(spreads),
-        }
-
     def _describe_item_modifiers(
         self,
         item_type: str,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Describe all available modifiers for a specific item type."""
+        """Describe all available modifiers for a specific item type.
+
+        Fully data-driven: queries the database for which ingredient categories
+        are valid for this item type and builds the message dynamically.
+        """
         from ..menu_data_cache import menu_cache
 
-        # Get dynamic modifier lists from database
-        bev_mods = self._format_beverage_modifiers_list()
-        food_mods = self._format_food_modifiers_list()
-
-        # Check the modifier category for this item type
-        modifier_category = menu_cache.get_modifier_category(item_type)
         item_type_display = get_item_type_display_name(item_type)
 
-        if modifier_category == "beverage":
-            # Build beverage modifier message dynamically
-            parts = [f"For {item_type_display}, you can add:"]
-            if bev_mods['sweeteners']:
-                parts.append(f"• Sweeteners: {bev_mods['sweeteners']}")
-            if bev_mods['milks']:
-                parts.append(f"• Milk: {bev_mods['milks']}")
-            if bev_mods['syrups']:
-                parts.append(f"• Flavor syrups: {bev_mods['syrups']}")
-            parts.append("Just let me know what you'd like!")
-            message = "\n".join(parts)
-        elif modifier_category == "food":
-            # Build food modifier message dynamically
-            parts = [f"For {item_type_display}, you can add:"]
-            if food_mods['spreads']:
-                parts.append(f"• Spreads: {food_mods['spreads']}")
-            if food_mods['proteins']:
-                parts.append(f"• Proteins: {food_mods['proteins']}")
-            if food_mods['cheeses']:
-                parts.append(f"• Cheeses: {food_mods['cheeses']}")
-            if food_mods['toppings']:
-                parts.append(f"• Toppings: {food_mods['toppings']}")
-            parts.append("What sounds good?")
-            message = "\n".join(parts)
-        else:
-            # Generic fallback
-            message = "We have various add-ons available. What would you like to add?"
+        # Get ingredients grouped by category for this specific item type
+        ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
+
+        if not ingredients_by_category:
+            # No modifiers defined for this item type
+            return StateMachineResult(
+                message=f"For {item_type_display}, we don't have additional add-ons. What else can I help you with?",
+                order=order,
+            )
+
+        # Build message dynamically from database
+        parts = [f"For {item_type_display}, you can add:"]
+
+        for category_slug, ingredients in ingredients_by_category.items():
+            if not ingredients:
+                continue
+
+            # Get display name from database
+            display_name = menu_cache.get_ingredient_category_display_name(category_slug)
+
+            # Format a sample of ingredients (limit to 4 for readability)
+            ingredient_list = sorted(ingredients)[:4]
+            if len(ingredient_list) == 1:
+                ingredients_str = ingredient_list[0]
+            elif len(ingredient_list) == 2:
+                ingredients_str = f"{ingredient_list[0]} or {ingredient_list[1]}"
+            else:
+                ingredients_str = ", ".join(ingredient_list[:-1]) + f", or {ingredient_list[-1]}"
+
+            parts.append(f"• {display_name}: {ingredients_str}")
+
+        parts.append("What would you like?")
+        message = "\n".join(parts)
 
         return StateMachineResult(message=message, order=order)
 
@@ -570,8 +522,6 @@ class StoreInfoHandler:
         """Describe general modifier options when no specific item/category is asked."""
         message = (
             "We have lots of ways to customize your order! "
-            "For drinks, we have various sweeteners, milks, and flavor syrups. "
-            "For bagels, we have cream cheese, butter, and lots of toppings. "
-            "What are you curious about?"
+            "What item are you curious about?"
         )
         return StateMachineResult(message=message, order=order)

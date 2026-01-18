@@ -22,6 +22,10 @@ def _make_menu_index(items, item_types=None):
         category = item.get("category", "other")
         item_type = item.get("item_type", category)
 
+        # Ensure item_type is set on the item dict for generic handlers
+        if "item_type" not in item:
+            item["item_type"] = item_type
+
         # Add to items_by_type for _find_menu_item lookup
         if item_type not in menu["items_by_type"]:
             menu["items_by_type"][item_type] = []

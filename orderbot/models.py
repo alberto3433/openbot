@@ -193,9 +193,6 @@ class ItemTypeAttribute(Base):
     Merges the functionality of item_type_field (conversation flow) and
     attribute_definitions (UI configuration) into a single table.
 
-    Examples for egg_sandwich: bread, bagel_type, protein, cheese, toppings, toasted
-    Examples for sized_beverage: size, iced, milk, sweetener, syrup
-
     Each attribute can have:
     - Options (via global_attribute_options linked through item_type_global_attributes)
     - A question_text for conversational prompts
@@ -207,8 +204,8 @@ class ItemTypeAttribute(Base):
     item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Identity
-    slug = Column(String(50), nullable=False)  # e.g., "bread", "bagel_type", "protein"
-    display_name = Column(String(100), nullable=True)  # e.g., "Bread", "Bagel Type", "Protein"
+    slug = Column(String(50), nullable=False)
+    display_name = Column(String(100), nullable=True)
 
     # Type and validation (from attribute_definitions)
     input_type = Column(String(20), nullable=False, default="single_select")
@@ -274,8 +271,8 @@ class GlobalAttribute(Base):
     __tablename__ = "global_attributes"
 
     id = Column(Integer, primary_key=True, index=True)
-    slug = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "spread", "topping", "bread"
-    display_name = Column(String(100), nullable=False)  # e.g., "Spread", "Topping", "Bread"
+    slug = Column(String(50), unique=True, nullable=False, index=True)
+    display_name = Column(String(100), nullable=False)
 
     # Input type determines UI and validation
     # "single_select": Pick exactly one
@@ -465,8 +462,6 @@ class OrderItem(Base):
     item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)
 
     # Item configuration (JSON) - stores all item-specific details
-    # e.g., {"item_type": "bagel", "bagel_type": "everything", "spread": "cream cheese", "toasted": true}
-    # e.g., {"item_type": "sized_beverage", "size": "large", "milk": "oat", "temperature": "iced"}
     item_config = Column(JSON, nullable=True)
 
     quantity = Column(Integer, nullable=False)
@@ -648,8 +643,8 @@ class Ingredient(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-    slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier (e.g., "oat_milk")
-    category = Column(String, nullable=False)   # 'bread', 'protein', 'cheese', 'topping', 'sauce', 'side', 'drink', etc.
+    slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier
+    category = Column(String, nullable=False)
     unit = Column(String, nullable=False)       # 'slice', 'piece', 'oz', 'bag', 'ml', etc.
     track_inventory = Column(Boolean, nullable=False, default=True)
     base_price = Column(Float, nullable=False, default=0.0)  # Price for custom sandwiches (proteins mainly)
@@ -731,10 +726,6 @@ class IngredientCategory(Base):
     The code_field_name and is_multi_select fields enable data-driven modifier
     field configuration, replacing hardcoded INGREDIENT_GROUP_TO_FIELD mappings.
 
-    Examples:
-        - protein, topping, sauce, cheese, spread -> modifier_type="food"
-        - milk, sweetener, syrup -> modifier_type="beverage"
-        - bread -> modifier_type=None (not a modifier, used for item types)
     """
     __tablename__ = "ingredient_categories"
 

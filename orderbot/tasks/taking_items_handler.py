@@ -2039,7 +2039,9 @@ class TakingItemsHandler:
     # Multi-Item Order Handling via ParsedItem Types
     # =========================================================================
 
-    def _add_parsed_item_entry(self, item: ParsedItemEntry, order: OrderTask) -> tuple[OrderTask, str]:
+    def _add_parsed_item_entry(
+        self, item: ParsedItemEntry, order: OrderTask
+    ) -> tuple[OrderTask, str, StateMachineResult | None]:
         """
         Handle ParsedItemEntry using unified data-driven approach.
 
@@ -2049,7 +2051,8 @@ class TakingItemsHandler:
         2. Passes all attribute_values to add_item (receiver filters to valid attrs)
         3. Builds summary using item_name or item_type display name
 
-        Returns tuple of (updated_order, item_summary_string).
+        Returns tuple of (updated_order, item_summary_string, disambiguation_result).
+        The third element is non-None when disambiguation is needed.
         """
         # 1. Build modifiers from all sources (data-driven, works for all item types)
         extracted_mods = _build_extracted_modifiers(item)
@@ -2071,26 +2074,34 @@ class TakingItemsHandler:
         )
         order = result.order
 
-        # 4. Build summary if item was added
+        # 4. Check if disambiguation was triggered (message present, no item added)
         items_after = len(order.items.items)
+        if result.message and items_after == items_before and order.pending_field:
+            # Disambiguation result - return it to be handled by caller
+            return order, "", result
+
+        # 5. Build summary if item was added
         if items_after > items_before:
             summary = _build_item_summary(item)
-            return order, summary
+            return order, summary, None
 
-        # Item wasn't added (disambiguation or error) - return empty summary
-        return order, ""
+        # Item wasn't added (error case) - return empty summary
+        return order, "", None
 
-    def _add_parsed_item(self, item: ParsedItem, order: OrderTask) -> tuple[OrderTask, str]:
+    def _add_parsed_item(
+        self, item: ParsedItem, order: OrderTask
+    ) -> tuple[OrderTask, str, StateMachineResult | None]:
         """
         Dispatch a parsed item to the appropriate handler.
 
-        Returns tuple of (updated_order, item_summary_string).
+        Returns tuple of (updated_order, item_summary_string, disambiguation_result).
+        The third element is non-None when disambiguation is needed.
         """
         # Handle unified ParsedItemEntry type (data-driven)
         if isinstance(item, ParsedItemEntry):
             return self._add_parsed_item_entry(item, order)
 
-        return order, ""
+        return order, "", None
 
     def _process_items(
         self,
@@ -2126,7 +2137,12 @@ class TakingItemsHandler:
         order.last_add_error = None
 
         for parsed_item in parsed.parsed_items:
-            order, summary = self._add_parsed_item(parsed_item, order)
+            order, summary, disambiguation_result = self._add_parsed_item(parsed_item, order)
+
+            # Check if disambiguation was triggered - return immediately
+            if disambiguation_result:
+                logger.info("Disambiguation triggered for item, returning result")
+                return disambiguation_result
 
             # Check if add failed (e.g., item not found on menu)
             if order.last_add_error is not None:
@@ -2146,102 +2162,6 @@ class TakingItemsHandler:
                     added_items.append((last_item.id, display_name, item_type))
                 logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
 
-        # Check if we're waiting for drink type selection (user said "drink" or partial term like "juice")
-        # This must be checked BEFORE checking summaries because add_coffee sets pending_field
-        # but _add_parsed_item still adds the generic term to summaries
-        if order.pending_field == "drink_type" and self.item_adder_handler.menu_lookup:
-            logger.info("Pending drink type selection - presenting drink options")
-
-            # Check if we have filtered options (partial term like "juice") or need full menu
-            if order.pending_item_options:
-                # Use pre-filtered options from add_coffee
-                all_drinks = order.pending_item_options
-                logger.info("Using %d pre-filtered drink options", len(all_drinks))
-            else:
-                # Get full drink menu for generic "drink" request (data-driven: all beverage item types)
-                items_by_type = self.item_adder_handler.menu_lookup.menu_data.get("items_by_type", {})
-                all_drinks = []
-                for item_type_slug, items in items_by_type.items():
-                    if menu_cache.get_modifier_category(item_type_slug) == "beverage":
-                        all_drinks.extend(items)
-
-            if all_drinks:
-                # Show first batch of drinks with pagination
-                batch = all_drinks[:DEFAULT_PAGINATION_SIZE]
-                remaining = len(all_drinks) - DEFAULT_PAGINATION_SIZE
-
-                drink_names = [item.get("name", "Unknown") for item in batch]
-
-                # Check if this is for an unknown drink request (user asked for something we don't have)
-                unknown_prefix = ""
-                if order.unknown_item_request:
-                    unknown_prefix = f"Sorry, we don't have {order.unknown_item_request}. "
-                    order.unknown_item_request = None  # Clear after using
-
-                if remaining > 0:
-                    # Format with "and more"
-                    if len(drink_names) == 1:
-                        drinks_str = drink_names[0]
-                    else:
-                        drinks_str = ", ".join(drink_names[:-1]) + f", {drink_names[-1]}"
-                    message = f"{unknown_prefix}We have {drinks_str}, and more. What type of drink would you like?"
-                    # Set pagination for "what else" follow-up
-                    order.set_menu_pagination("drink", DEFAULT_PAGINATION_SIZE, len(all_drinks))
-                else:
-                    # All drinks fit in one batch
-                    if len(drink_names) == 1:
-                        drinks_str = drink_names[0]
-                    elif len(drink_names) == 2:
-                        drinks_str = f"{drink_names[0]} or {drink_names[1]}"
-                    else:
-                        drinks_str = ", ".join(drink_names[:-1]) + f", or {drink_names[-1]}"
-                    message = f"{unknown_prefix}We have {drinks_str}. Which would you like?"
-
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
-                return StateMachineResult(message=message, order=order)
-
-        # Check if we're waiting for drink selection (e.g., "latte" matches Latte and Matcha Latte)
-        # This handles disambiguation when a drink type matches multiple menu items
-        if order.pending_field == "drink_selection" and order.pending_item_options:
-            logger.info("Pending drink selection - presenting %d options", len(order.pending_item_options))
-
-            # Build the clarification message from pending options
-            # Format: numbered list showing each option
-            option_list = []
-            for i, item in enumerate(order.pending_item_options, 1):
-                name = item.get("name", "Unknown")
-                price = item.get("base_price", 0)
-                if price > 0:
-                    option_list.append(f"{i}. {name} (${price:.2f})")
-                else:
-                    option_list.append(f"{i}. {name}")
-
-            options_str = "\n".join(option_list)
-
-            # Get the drink term from summaries (e.g., "latte" from "large iced latte")
-            # The first summary that looks like a drink is the one being disambiguated
-            drink_term = "that drink"
-            for summary in summaries:
-                if summary:
-                    # Extract just the drink type (last word typically)
-                    drink_term = summary.split()[-1] if summary else "that drink"
-                    break
-
-            # If there are other items (like bagels) that were added, acknowledge them
-            other_summaries = [s for s in summaries if s and drink_term.lower() not in s.lower()]
-            if other_summaries:
-                if len(other_summaries) == 1:
-                    prefix = f"Got it, {other_summaries[0]}! For the {drink_term}, "
-                else:
-                    items_str = ", ".join(other_summaries[:-1]) + f" and {other_summaries[-1]}"
-                    prefix = f"Got it, {items_str}! For the {drink_term}, "
-            else:
-                prefix = ""
-
-            message = f"{prefix}We have a few options:\n{options_str}\nWhich would you like?"
-            order.phase = OrderPhase.CONFIGURING_ITEM.value
-            return StateMachineResult(message=message, order=order)
-
         if not summaries:
             return None
 
@@ -2254,22 +2174,6 @@ class TakingItemsHandler:
                 items_needing_config.append((item_id, display_name, item_type))
 
         logger.info("Items needing configuration: %d", len(items_needing_config))
-
-        # Check if there's pending item disambiguation (e.g., "chips" matches multiple items)
-        # This happens when add_menu_item found multiple matches and set up disambiguation
-        if order.pending_field == "item_selection" and order.pending_item_options:
-            logger.info("Pending item disambiguation: %d options", len(order.pending_item_options))
-            # Build the disambiguation question
-            generic_term = summaries[0] if summaries else "item"
-            option_list = []
-            for i, item in enumerate(order.pending_item_options[:6], 1):
-                name = item.get("name", "Unknown")
-                option_list.append(f"{i}. {name}")
-            options_str = "\n".join(option_list)
-            return StateMachineResult(
-                message=f"We have a few {generic_term} options:\n{options_str}\nWhich would you like?",
-                order=order,
-            )
 
         # If no items need configuration, return simple confirmation
         if not items_needing_config:

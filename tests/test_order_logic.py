@@ -2,17 +2,32 @@ from orderbot.order_logic import apply_intent_to_order_state
 
 
 # Helper to create properly structured menu_index
-def _make_menu_index(items):
-    """Create a properly structured menu_index from a list of items."""
+def _make_menu_index(items, item_types=None):
+    """Create a properly structured menu_index from a list of items.
+
+    Args:
+        items: List of menu item dicts with name, category, base_price, etc.
+        item_types: Optional dict of item_types configuration for attribute pricing.
+    """
     menu = {
         "signature_sandwiches": [],
         "sides": [],
         "drinks": [],
         "desserts": [],
         "other": [],
+        "items_by_type": {},  # Data-driven lookup structure
+        "item_types": item_types or {},  # Attribute pricing configuration
     }
     for item in items:
         category = item.get("category", "other")
+        item_type = item.get("item_type", category)
+
+        # Add to items_by_type for _find_menu_item lookup
+        if item_type not in menu["items_by_type"]:
+            menu["items_by_type"][item_type] = []
+        menu["items_by_type"][item_type].append(item)
+
+        # Also add to legacy category lists
         if category == "drink":
             menu["drinks"].append(item)
         elif category == "side":
@@ -404,58 +419,65 @@ def test_remove_item_index_takes_priority_over_name():
 
 
 def _make_sandwich_menu_with_extras():
-    """Create a menu with sandwich customization options that have extra prices."""
+    """Create a menu with sandwich customization options that have extra prices.
+
+    Uses the data-driven item_types structure for attribute pricing.
+    """
+    item_types = {
+        "sandwich": {
+            "is_configurable": True,
+            "attributes": [
+                {
+                    "slug": "bread",
+                    "options": [
+                        {"slug": "white", "display_name": "White", "price_modifier": 0.0},
+                        {"slug": "wheat", "display_name": "Wheat", "price_modifier": 0.50},
+                        {"slug": "sourdough", "display_name": "Sourdough", "price_modifier": 1.00},
+                    ]
+                },
+                {
+                    "slug": "cheese",
+                    "options": [
+                        {"slug": "american", "display_name": "American", "price_modifier": 0.0},
+                        {"slug": "swiss", "display_name": "Swiss", "price_modifier": 0.50},
+                        {"slug": "provolone", "display_name": "Provolone", "price_modifier": 0.75},
+                    ]
+                },
+                {
+                    "slug": "protein",
+                    "options": [
+                        {"slug": "turkey", "display_name": "Turkey", "price_modifier": 0.0},
+                        {"slug": "double_turkey", "display_name": "Double Turkey", "price_modifier": 2.50},
+                    ]
+                },
+                {
+                    "slug": "toppings",
+                    "options": [
+                        {"slug": "lettuce", "display_name": "Lettuce", "price_modifier": 0.0},
+                        {"slug": "tomato", "display_name": "Tomato", "price_modifier": 0.0},
+                        {"slug": "avocado", "display_name": "Avocado", "price_modifier": 1.50},
+                        {"slug": "bacon", "display_name": "Bacon", "price_modifier": 1.00},
+                    ]
+                },
+                {
+                    "slug": "sauces",
+                    "options": [
+                        {"slug": "mayo", "display_name": "Mayo", "price_modifier": 0.0},
+                        {"slug": "chipotle_mayo", "display_name": "Chipotle Mayo", "price_modifier": 0.25},
+                    ]
+                },
+            ]
+        }
+    }
     return _make_menu_index([
         {
             "name": "Turkey Club",
             "category": "sandwich",
+            "item_type": "sandwich",
             "is_signature": True,
             "base_price": 8.0,
-            "recipe": {
-                "choice_groups": [
-                    {
-                        "name": "Bread",
-                        "options": [
-                            {"name": "White", "extra_price": 0.0},
-                            {"name": "Wheat", "extra_price": 0.50},
-                            {"name": "Sourdough", "extra_price": 1.00},
-                        ]
-                    },
-                    {
-                        "name": "Cheese",
-                        "options": [
-                            {"name": "American", "extra_price": 0.0},
-                            {"name": "Swiss", "extra_price": 0.50},
-                            {"name": "Provolone", "extra_price": 0.75},
-                        ]
-                    },
-                    {
-                        "name": "Protein",
-                        "options": [
-                            {"name": "Turkey", "extra_price": 0.0},
-                            {"name": "Double Turkey", "extra_price": 2.50},
-                        ]
-                    },
-                    {
-                        "name": "Toppings",
-                        "options": [
-                            {"name": "Lettuce", "extra_price": 0.0},
-                            {"name": "Tomato", "extra_price": 0.0},
-                            {"name": "Avocado", "extra_price": 1.50},
-                            {"name": "Bacon", "extra_price": 1.00},
-                        ]
-                    },
-                    {
-                        "name": "Sauce",
-                        "options": [
-                            {"name": "Mayo", "extra_price": 0.0},
-                            {"name": "Chipotle Mayo", "extra_price": 0.25},
-                        ]
-                    },
-                ]
-            }
         }
-    ])
+    ], item_types=item_types)
 
 
 def test_add_sandwich_with_no_extras():
@@ -825,145 +847,6 @@ def test_update_first_sandwich_by_index():
     # Second sandwich should be unchanged
     assert new["items"][1]["bread"] == "Wheat"
     assert new["items"][1]["toasted"] is True
-
-
-# ---- Tests for Custom Sandwich Pricing ----
-
-
-def _make_custom_sandwich_menu():
-    """Create a menu index with custom sandwich support."""
-    return {
-        "signature_sandwiches": [
-            {
-                "name": "Turkey Club",
-                "category": "sandwich",
-                "is_signature": True,
-                "base_price": 8.99,
-                "recipe": {"choice_groups": []},
-            },
-        ],
-        "custom_sandwiches": [
-            {
-                "name": "Custom Sandwich",
-                "category": "sandwich",
-                "is_signature": False,
-                "base_price": 5.99,
-                "recipe": {"choice_groups": []},
-            },
-        ],
-        "sides": [],
-        "drinks": [],
-        "desserts": [],
-        "other": [],
-        "protein_types": ["Turkey", "Ham", "Roast Beef", "Chicken", "Steak"],
-        "protein_prices": {
-            "turkey": 2.50,
-            "ham": 2.50,
-            "roast beef": 3.50,
-            "chicken": 3.00,
-            "steak": 4.00,
-        },
-        "bread_types": ["White", "Wheat", "Ciabatta"],
-        "bread_prices": {
-            "white": 0.0,
-            "wheat": 0.0,
-            "ciabatta": 1.00,
-        },
-    }
-
-
-def test_custom_sandwich_by_protein_name():
-    """Test that 'turkey sandwich' is treated as a custom sandwich with correct pricing."""
-    state = {"status": "draft", "items": [], "customer": {}}
-    slots = {
-        "menu_item_name": "Turkey Sandwich",
-        "bread": "White",
-        "protein": "Turkey",
-        "cheese": "American",
-        "toppings": ["Lettuce"],
-        "sauces": ["Mayo"],
-        "toasted": True,
-        "quantity": 1,
-    }
-    menu = _make_custom_sandwich_menu()
-
-    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
-
-    # Should be treated as custom sandwich
-    assert new["items"][0]["is_custom"] is True
-    # Price should be: base (5.99) + turkey (2.50) + white bread (0.00) = 8.49
-    assert new["items"][0]["unit_price"] == 8.49
-    assert new["items"][0]["menu_item_name"] == "Custom Turkey Sandwich"
-
-
-def test_custom_sandwich_with_premium_bread():
-    """Test custom sandwich pricing with premium bread."""
-    state = {"status": "draft", "items": [], "customer": {}}
-    slots = {
-        "menu_item_name": "Ham Sub",
-        "bread": "Ciabatta",
-        "protein": "Ham",
-        "cheese": "Swiss",
-        "toppings": [],
-        "sauces": [],
-        "toasted": False,
-        "quantity": 1,
-    }
-    menu = _make_custom_sandwich_menu()
-
-    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
-
-    # Price should be: base (5.99) + ham (2.50) + ciabatta (1.00) = 9.49
-    assert new["items"][0]["unit_price"] == 9.49
-    assert new["items"][0]["is_custom"] is True
-
-
-def test_custom_sandwich_protein_extracted_from_name():
-    """Test that protein is extracted from item name when not explicitly provided."""
-    state = {"status": "draft", "items": [], "customer": {}}
-    slots = {
-        "menu_item_name": "Steak Sandwich",  # Protein in name, not in slots
-        "bread": "Wheat",
-        "protein": None,  # Not provided explicitly
-        "cheese": None,
-        "toppings": [],
-        "sauces": [],
-        "toasted": True,
-        "quantity": 1,
-    }
-    menu = _make_custom_sandwich_menu()
-
-    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
-
-    # Should extract "Steak" from the name
-    assert new["items"][0]["protein"] == "Steak"
-    # Price should be: base (5.99) + steak (4.00) + wheat (0.00) = 9.99
-    assert new["items"][0]["unit_price"] == 9.99
-    assert new["items"][0]["is_custom"] is True
-
-
-def test_signature_sandwich_not_treated_as_custom():
-    """Test that signature sandwiches are NOT treated as custom."""
-    state = {"status": "draft", "items": [], "customer": {}}
-    slots = {
-        "menu_item_name": "Turkey Club",  # This is a signature sandwich
-        "bread": "Wheat",
-        "protein": None,
-        "cheese": None,
-        "toppings": ["Lettuce"],
-        "sauces": [],
-        "toasted": True,
-        "quantity": 1,
-    }
-    menu = _make_custom_sandwich_menu()
-
-    new = apply_intent_to_order_state(state, "add_sandwich", slots, menu)
-
-    # Should NOT be custom - it's a signature sandwich
-    assert new["items"][0].get("is_custom") is False
-    # Price should be the signature base price
-    assert new["items"][0]["unit_price"] == 8.99
-    assert new["items"][0]["menu_item_name"] == "Turkey Club"
 
 
 def test_repeat_order_copies_previous_order_items():

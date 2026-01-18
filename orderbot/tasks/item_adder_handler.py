@@ -749,8 +749,7 @@ class ItemAdderHandler:
             quantity: Number of items (stored during disambiguation)
             order: Current order task
             modifiers: Optional dict of modifiers to store during disambiguation (for beverages)
-            pending_field: The pending_field value to use (default: "item_selection",
-                          use "drink_selection" or "drink_type" for beverages)
+            pending_field: The pending_field value to use (default: "item_selection")
             item_type_filter: Optional item type to filter matches (e.g., "sized_beverage")
 
         Returns:
@@ -781,7 +780,7 @@ class ItemAdderHandler:
                     matching_items=all_drinks,
                     order=order,
                     quantity=quantity,
-                    pending_field="drink_type",
+                    pending_field="item_selection",
                     modifiers=modifiers,
                     show_prices=False,
                 )

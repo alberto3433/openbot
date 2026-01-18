@@ -21,94 +21,6 @@ def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict
     return None
 
 
-def _get_custom_sandwich_base(menu_index: Dict[str, Any]) -> Dict[str, Any]:
-    """Get the Custom Sandwich menu item for pricing non-signature sandwiches."""
-    item = _find_menu_item(menu_index, "Custom Sandwich")
-    if item:
-        return item
-    # Fallback with default price
-    return {"name": "Custom Sandwich", "base_price": 5.99}
-
-
-def _calculate_custom_sandwich_price(
-    menu_index: Dict[str, Any],
-    protein: str = None,
-    bread: str = None,
-) -> float:
-    """
-    Calculate the price for a custom/build-your-own sandwich.
-
-    Price = Custom Sandwich base price + protein price + bread premium
-    """
-    custom_item = _get_custom_sandwich_base(menu_index)
-    base_price = custom_item.get("base_price", 5.99)
-
-    # Add protein price
-    protein_prices = menu_index.get("protein_prices", {})
-    if protein:
-        protein_price = protein_prices.get(protein.lower(), 0.0)
-        base_price += protein_price
-
-    # Add bread premium
-    bread_prices = menu_index.get("bread_prices", {})
-    if bread:
-        bread_price = bread_prices.get(bread.lower(), 0.0)
-        base_price += bread_price
-
-    return base_price
-
-
-def _is_custom_sandwich_order(item_name: str, menu_index: Dict[str, Any]) -> bool:
-    """
-    Determine if an order should be treated as a custom sandwich.
-
-    Returns True if:
-    - The item name is explicitly "Custom Sandwich"
-    - The item name contains a protein name (e.g., "turkey sandwich", "ham sub")
-    - The item name is not found in the menu
-    """
-    if not item_name:
-        return False
-
-    name_lower = item_name.lower()
-
-    # Explicit custom sandwich
-    if "custom" in name_lower:
-        return True
-
-    # Check if it's a known menu item
-    menu_item = _find_menu_item(menu_index, item_name)
-    if menu_item and menu_item.get("is_signature"):
-        return False  # It's a signature sandwich
-
-    # Check if the name contains a protein (e.g., "turkey sandwich", "ham sub")
-    protein_types = menu_index.get("protein_types", [])
-    for protein in protein_types:
-        if protein.lower() in name_lower:
-            return True
-
-    # If not found in menu at all, treat as custom
-    if not menu_item:
-        return True
-
-    return False
-
-
-def _extract_protein_from_name(item_name: str, menu_index: Dict[str, Any]) -> Optional[str]:
-    """Extract protein name from a sandwich order like 'turkey sandwich'."""
-    if not item_name:
-        return None
-
-    name_lower = item_name.lower()
-    protein_types = menu_index.get("protein_types", [])
-
-    for protein in protein_types:
-        if protein.lower() in name_lower:
-            return protein
-
-    return None
-
-
 def _get_extra_price_for_choice(
     menu_item: Dict[str, Any],
     choice_group_name: str,
@@ -158,38 +70,6 @@ def _get_extra_price_for_choice(
                         return float(opt.get("price_modifier", 0.0))
 
     return 0.0
-
-
-def _calculate_customization_extras(
-    menu_item: Dict[str, Any],
-    bread: str = None,
-    cheese: str = None,
-    protein: str = None,
-    toppings: List[str] = None,
-    sauces: List[str] = None,
-    menu_index: Dict[str, Any] = None,
-) -> float:
-    """
-    Calculate the total extra price from all customization choices.
-
-    Uses the generic item_types system to look up price modifiers.
-    """
-    total_extra = 0.0
-
-    if bread:
-        total_extra += _get_extra_price_for_choice(menu_item, "Bread", bread, menu_index)
-    if cheese:
-        total_extra += _get_extra_price_for_choice(menu_item, "Cheese", cheese, menu_index)
-    if protein:
-        total_extra += _get_extra_price_for_choice(menu_item, "Protein", protein, menu_index)
-
-    # Toppings and sauces can have multiple selections
-    for topping in (toppings or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Toppings", topping, menu_index)
-    for sauce in (sauces or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Sauce", sauce, menu_index)
-
-    return total_extra
 
 
 def _calculate_item_extras_generic(
@@ -435,12 +315,12 @@ def _add_sandwich(state, slots, menu_index):
     """
     Add a sandwich to the order.
 
-    Handles both signature sandwiches and custom/build-your-own sandwiches.
+    Uses data-driven pricing: base_price + attribute option price modifiers.
     """
     name = slots.get("menu_item_name")
     qty = slots.get("quantity") or 1
 
-    # Get sandwich-specific customization choices
+    # Get customization choices
     bread = slots.get("bread")
     protein = slots.get("protein")
     cheese = slots.get("cheese")
@@ -448,35 +328,15 @@ def _add_sandwich(state, slots, menu_index):
     sauces = slots.get("sauces") or []
     size = slots.get("size")
 
-    # Check if this should be treated as a custom sandwich
-    is_custom = _is_custom_sandwich_order(name, menu_index)
+    # Look up the menu item
+    menu_item = _find_menu_item(menu_index, name)
+    base_price = menu_item.get("base_price", 0) if menu_item else 0
+    item_type = menu_item.get("item_type", "sandwich") if menu_item else "sandwich"
 
-    if is_custom:
-        # Custom sandwich pricing: base + protein + bread premium
-        if not protein:
-            protein = _extract_protein_from_name(name, menu_index)
-        unit_price = _calculate_custom_sandwich_price(menu_index, protein, bread)
-        display_name = "Custom Sandwich"
-        if protein:
-            display_name = f"Custom {protein} Sandwich"
-    else:
-        # Signature sandwich pricing: base price + customization extras
-        menu_item = _find_menu_item(menu_index, name)
-        base = menu_item.get("base_price", 0) if menu_item else 0
-
-        # Calculate extra price from customizations
-        extras = _calculate_customization_extras(
-            menu_item, bread, cheese, protein, toppings, sauces, menu_index
-        )
-
-        unit_price = base + extras
-        display_name = name
-
-    line_total = unit_price * qty
-
+    # Build item dict for generic pricing
     item = {
-        "item_type": "sandwich",
-        "menu_item_name": display_name,
+        "item_type": item_type,
+        "menu_item_name": name,
         "size": size,
         "bread": bread,
         "protein": protein,
@@ -485,10 +345,14 @@ def _add_sandwich(state, slots, menu_index):
         "sauces": sauces,
         "toasted": slots.get("toasted"),
         "quantity": qty,
-        "unit_price": unit_price,
-        "line_total": line_total,
-        "is_custom": is_custom,
     }
+
+    # Calculate extras using the generic data-driven approach
+    extras = _calculate_item_extras_generic(item, menu_item, menu_index)
+    unit_price = base_price + extras
+
+    item["unit_price"] = unit_price
+    item["line_total"] = unit_price * qty
 
     state["items"].append(item)
     state["status"] = "collecting_items"
@@ -769,21 +633,20 @@ def _update_sandwich(state, slots, menu_index):
     item_index = slots.get("item_index")
 
     # If no index provided, try to find the last item that can have toppings/modifiers
+    # Use a data-driven approach: look for items with 'bread' or 'toppings' fields,
+    # or items with item_type 'sandwich'
     if item_index is None:
-        from orderbot.menu_data_cache import menu_cache
         for i in range(len(state["items"]) - 1, -1, -1):
-            item_type = state["items"][i].get("item_type", "").lower()
-            # Data-driven check: items with bread attribute or food modifier category
-            if item_type:
-                modifier_cat = menu_cache.get_modifier_category(item_type)
-                has_bread = menu_cache.item_type_has_attribute(item_type, "bread")
-                if modifier_cat == "food" or has_bread:
-                    item_index = i
-                    break
-            # Also check if it's a bagel sandwich by name or bread
-            item_name = (state["items"][i].get("menu_item_name") or "").lower()
-            bread = (state["items"][i].get("bread") or "").lower()
-            if "bagel" in item_name or "bagel" in bread:
+            item = state["items"][i]
+            item_type = (item.get("item_type") or "").lower()
+
+            # Check if item is a sandwich-like type
+            if item_type == "sandwich":
+                item_index = i
+                break
+
+            # Check if item has sandwich-like attributes (bread, toppings)
+            if item.get("bread") is not None or item.get("toppings") is not None:
                 item_index = i
                 break
 
@@ -830,15 +693,8 @@ def _update_sandwich(state, slots, menu_index):
         menu_item = _find_menu_item(menu_index, item["menu_item_name"])
         base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
 
-        extras = _calculate_customization_extras(
-            menu_item,
-            item.get("bread"),
-            item.get("cheese"),
-            item.get("protein"),
-            item.get("toppings"),
-            item.get("sauces"),
-            menu_index,
-        )
+        # Use generic data-driven pricing
+        extras = _calculate_item_extras_generic(item, menu_item, menu_index)
 
         item["unit_price"] = base + extras
         item["line_total"] = item["unit_price"] * item["quantity"]

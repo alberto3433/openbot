@@ -125,7 +125,7 @@ class DisambiguationHandler:
             matching_items: List of matching menu items (must have >1 items)
             order: Current order task
             quantity: Number of items requested
-            pending_field: The pending_field value to set (e.g., "item_selection", "drink_selection")
+            pending_field: The pending_field value to set (default: "item_selection")
             modifiers: Optional dict of modifiers to preserve during disambiguation (for beverages)
             show_prices: Whether to show prices in the options list
 

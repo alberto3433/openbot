@@ -312,6 +312,130 @@ def _add_modifiers_from_input(
     return made_change
 
 
+# =============================================================================
+# Templatized Removal Pattern Matching (Data-Driven)
+# =============================================================================
+# These templates generate removal patterns dynamically from ingredient categories.
+# No hardcoded patterns like "no milk", "without sugar" - all driven by database.
+
+REMOVAL_TEMPLATES = [
+    "no {}",
+    "without {}",
+    "remove {}",
+    "remove the {}",
+    "hold the {}",
+]
+
+
+def _match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str | None:
+    """Check if input matches a removal pattern for any modifier category.
+
+    Uses templatized patterns ("no {}", "without {}", etc.) with category names
+    from the database. No hardcoded category names.
+
+    Args:
+        input_lower: Lowercase user input to check
+        item_type_slug: The item type to get modifier categories for
+
+    Returns:
+        Category slug if a removal pattern matches, None otherwise.
+
+    Examples:
+        >>> _match_category_removal_pattern("no milk", "sized_beverage")
+        "milk"
+        >>> _match_category_removal_pattern("without syrup", "sized_beverage")
+        "syrup"
+        >>> _match_category_removal_pattern("remove the sugar", "sized_beverage")
+        "sweetener"
+    """
+    # Get scannable modifier categories for this item type (data-driven)
+    categories = menu_cache.get_scannable_modifier_categories(item_type_slug)
+
+    for category in categories:
+        # Get category display name and slug
+        display_name = menu_cache.get_ingredient_category_display_name(category)
+        names_to_check = {category.lower(), display_name.lower()}
+
+        # Also check singular forms if display name is plural
+        if display_name.endswith("s") and len(display_name) > 2:
+            names_to_check.add(display_name[:-1].lower())
+
+        # Check each removal template with each name variant
+        for template in REMOVAL_TEMPLATES:
+            for name in names_to_check:
+                pattern = template.format(name)
+                if pattern in input_lower:
+                    return category
+
+    return None
+
+
+def _remove_modifiers_by_category(
+    item: "MenuItemTask",
+    category: str,
+) -> bool:
+    """Remove all modifiers of a specific category from an item.
+
+    Uses the unified modifiers list. Works for any item type and category.
+
+    Args:
+        item: The MenuItemTask to modify
+        category: The category of modifiers to remove (e.g., "milk", "syrup")
+
+    Returns:
+        True if any modifiers were removed, False otherwise.
+    """
+    current_modifiers = item.modifiers or []
+    if not current_modifiers:
+        return False
+
+    # Filter out modifiers of the specified category
+    new_modifiers = [m for m in current_modifiers if m.get("category") != category]
+
+    if len(new_modifiers) < len(current_modifiers):
+        item.modifiers = new_modifiers
+        logger.info(
+            "Removed %d %s modifier(s) from %s",
+            len(current_modifiers) - len(new_modifiers),
+            category,
+            item.menu_item_name or item.menu_item_type
+        )
+        return True
+
+    return False
+
+
+def _find_item_by_description(
+    active_items: list["MenuItemTask"],
+    description: str,
+) -> "MenuItemTask | None":
+    """Find an item in the cart by matching against its summary or name.
+
+    Uses get_summary() text for matching, which includes menu item name
+    plus all configured attributes and modifiers. This is what the user sees
+    in confirmations, so it's the most natural matching approach.
+
+    Args:
+        active_items: List of items in the cart
+        description: User's description of the item to find
+
+    Returns:
+        Matching MenuItemTask, or None if not found.
+    """
+    desc_lower = description.lower()
+
+    # Search from most recent first
+    for item in reversed(active_items):
+        # Match against summary (includes name + attributes + modifiers)
+        if desc_lower in item.get_summary().lower():
+            return item
+        # Also match against just the menu item name
+        if item.menu_item_name and desc_lower in item.menu_item_name.lower():
+            return item
+
+    return None
+
+
 def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
     """
     Extract ordinal reference from a cancellation description.
@@ -378,6 +502,8 @@ def find_nth_item_of_type(
     matching_items = []
     for idx, item in enumerate(items):
         item_summary = item.get_summary().lower()
+        # Check both menu_item_type (for MenuItemTask) and item_type (for legacy)
+        menu_item_type = getattr(item, 'menu_item_type', '') or ''
         item_type = getattr(item, 'item_type', '') or ''
         item_name = getattr(item, 'menu_item_name', '') or ''
         item_name_lower = item_name.lower()
@@ -387,7 +513,9 @@ def find_nth_item_of_type(
 
         # Direct keyword match in summary or type
         if (keyword_lower in item_summary or
+            keyword_lower == menu_item_type or
             keyword_lower == item_type or
+            (menu_item_type and menu_item_type in keyword_lower) or
             (item_type and item_type in keyword_lower)):
             matches = True
         # Check canonical name match (e.g., "coke" -> "Coca-Cola")
@@ -945,57 +1073,83 @@ class TakingItemsHandler:
                             order=order,
                         )
 
-            # Handle "add [spread]" for items that accept spreads - e.g., "add scallion cream cheese"
-            # This should modify an existing item, not add a new "Scallion Cream Cheese Sandwich"
+            # Check for category-level modifier removal using templatized patterns
+            # e.g., "no milk", "without syrup", "remove the sweetener"
+            # This is data-driven: patterns generated from database category names
+            if active_items:
+                last_item = active_items[-1]
+                if isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
+                    removed_category = _match_category_removal_pattern(input_lower, last_item.menu_item_type)
+                    if removed_category:
+                        if _remove_modifiers_by_category(last_item, removed_category):
+                            self.pricing.recalculate_item_price(last_item)
+                            updated_summary = last_item.get_summary()
+                            category_display = menu_cache.get_ingredient_category_display_name(removed_category)
+                            return StateMachineResult(
+                                message=f"Sure, I've removed the {category_display.lower()}. Your order is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
+
             if is_add_modifier_request and active_items:
-                # Check if input contains a spread pattern (longer matches first)
-                # Data-driven: get spreads from database ingredient category
-                detected_spread = None
-                for spread in sorted(menu_cache.get_ingredients("spread"), key=len, reverse=True):
-                    if spread in input_lower:
-                        detected_spread = spread
-                        break
-
-                if detected_spread:
-                    # Find an item that accepts spread to add the spread to
-                    # Prefer: 1) item without spread, 2) most recent item with spread attribute
-                    items_accepting_spread = [i for i in active_items if isinstance(i, MenuItemTask) and i.has_attribute("spread")]
-                    target_item = None
-
-                    # First, look for an item without a spread
-                    for item in reversed(items_accepting_spread):
-                        if item.attribute_values.get("spread") is None:
-                            target_item = item
+                # Check if input contains a modifier from a single_select attribute category
+                # Data-driven: loop through ingredient categories and find single_select attributes
+                for category in menu_cache.get_all_ingredient_categories():
+                    detected_modifier = None
+                    for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
+                        if modifier in input_lower:
+                            detected_modifier = modifier
                             break
 
-                    # If all items have spreads, use the most recent one
-                    if target_item is None and items_accepting_spread:
-                        target_item = items_accepting_spread[-1]
+                    if detected_modifier:
+                        # Find items that have a single_select attribute for this category
+                        items_accepting_modifier = []
+                        for item in active_items:
+                            if not isinstance(item, MenuItemTask):
+                                continue
+                            attr_slug = menu_cache.get_attribute_for_category(item.menu_item_type, category)
+                            if attr_slug:
+                                input_type = menu_cache.get_attribute_input_type(item.menu_item_type, attr_slug)
+                                if input_type == "single_select":
+                                    items_accepting_modifier.append((item, attr_slug))
 
-                    if target_item:
-                        # Normalize the spread name
-                        normalized_spread = menu_cache.normalize_modifier(detected_spread)
-                        old_spread = target_item.attribute_values.get("spread")
+                        if items_accepting_modifier:
+                            target_item = None
+                            target_attr = None
 
-                        # Set the spread on the item
-                        target_item.attribute_values["spread"] = normalized_spread
+                            # Prefer item without value set
+                            for item, attr_slug in reversed(items_accepting_modifier):
+                                if item.attribute_values.get(attr_slug) is None:
+                                    target_item = item
+                                    target_attr = attr_slug
+                                    break
 
-                        # Recalculate price
-                        self.pricing.recalculate_item_price(target_item)
-                        updated_summary = target_item.get_summary()
+                            # If all items have values, use the most recent one
+                            if target_item is None:
+                                target_item, target_attr = items_accepting_modifier[-1]
 
-                        if old_spread:
-                            logger.info("Add spread: changed spread from '%s' to '%s' on item", old_spread, normalized_spread)
-                            return StateMachineResult(
-                                message=f"Sure, I've changed the spread to {normalized_spread}. Your order is now {updated_summary}. Anything else?",
-                                order=order,
-                            )
-                        else:
-                            logger.info("Add spread: added '%s' to item", normalized_spread)
-                            return StateMachineResult(
-                                message=f"Sure, I've added {normalized_spread}. Your order is now {updated_summary}. Anything else?",
-                                order=order,
-                            )
+                            # Normalize and set the value (REPLACE behavior for single_select)
+                            normalized_modifier = menu_cache.normalize_modifier(detected_modifier)
+                            old_value = target_item.attribute_values.get(target_attr)
+                            target_item.attribute_values[target_attr] = normalized_modifier
+
+                            # Recalculate price
+                            self.pricing.recalculate_item_price(target_item)
+                            updated_summary = target_item.get_summary()
+
+                            category_display = menu_cache.get_ingredient_category_display_name(category)
+
+                            if old_value:
+                                logger.info("Add %s: changed from '%s' to '%s' on item", category, old_value, normalized_modifier)
+                                return StateMachineResult(
+                                    message=f"Sure, I've changed the {category_display.lower()} to {normalized_modifier}. Your order is now {updated_summary}. Anything else?",
+                                    order=order,
+                                )
+                            else:
+                                logger.info("Add %s: added '%s' to item", category, normalized_modifier)
+                                return StateMachineResult(
+                                    message=f"Sure, I've added {normalized_modifier}. Your order is now {updated_summary}. Anything else?",
+                                    order=order,
+                                )
 
         # Handle modification to an existing item in the cart
         # e.g., "can I have scallion cream cheese on the cinnamon raisin bagel"
@@ -1023,31 +1177,38 @@ class TakingItemsHandler:
 
             # Find the item that matches the target description
             target_item = None
-            # Items with bread attribute (bagels, some sandwiches) can be matched by bread/bagel type
-            items_with_bread = [i for i in active_items if isinstance(i, MenuItemTask) and i.has_attribute("bread")]
             menu_items_in_cart = [i for i in active_items if isinstance(i, MenuItemTask)]
 
             if target_desc:
-                # Explicit target - find matching item by bread/bagel type
-                for item in items_with_bread:
-                    item_bagel_type = (item.attribute_values.get("bread") or "").lower()
-                    # Match if the target description contains the bagel type
-                    # e.g., "cinnamon raisin" matches a cinnamon raisin bagel
-                    if item_bagel_type and item_bagel_type in target_desc:
+                # Match items by summary (data-driven, works for any item type)
+                for item in menu_items_in_cart:
+                    item_summary = item.get_summary().lower()
+                    # Match if target description is contained in summary or vice versa
+                    if target_desc in item_summary or item_summary in target_desc:
                         target_item = item
                         break
-                    # Also match if target is a category reference (e.g., "bagel") and there's only one item with bread
-                    target_category = menu_cache.is_category_reference(target_desc)
-                    if target_category and len(items_with_bread) == 1:
+                    # Also check if any word from target matches summary
+                    target_words = target_desc.split()
+                    if any(word in item_summary for word in target_words if len(word) > 2):
                         target_item = item
                         break
-                # Also check menu items by name if no bagel matched
+                # Also check by item name if no summary matched
                 if not target_item:
                     for item in menu_items_in_cart:
                         item_name = (item.menu_item_name or "").lower()
                         if item_name and item_name in target_desc:
                             target_item = item
                             break
+                # Check for category reference with single item (e.g., "the bagel" when only one bagel)
+                if not target_item:
+                    target_category = menu_cache.is_category_reference(target_desc)
+                    if target_category:
+                        matching_type_items = [
+                            i for i in menu_items_in_cart
+                            if i.menu_item_type == target_category
+                        ]
+                        if len(matching_type_items) == 1:
+                            target_item = matching_type_items[0]
             else:
                 # Implicit target ("add mayo", "add mustard", etc.)
                 # Use the last item in the cart regardless of type
@@ -1055,115 +1216,55 @@ class TakingItemsHandler:
                     target_item = active_items[-1]
 
             if target_item:
-                # Handle MenuItemTask
+                # Handle MenuItemTask - unified path for all item types
                 if isinstance(target_item, MenuItemTask):
-                    # For MenuItemTask, add modifiers to attribute_values
+                    # Apply spread modification (spreads are single_select attributes)
+                    # Use data-driven lookup to find the attribute slug for spread category
+                    if parsed.modify_new_spread:
+                        spread_attr = menu_cache.get_attribute_for_category(target_item.menu_item_type, "spread")
+                        if spread_attr:
+                            target_item.attribute_values[spread_attr] = parsed.modify_new_spread
+                    if parsed.modify_new_spread_type:
+                        spread_type_attr = menu_cache.get_attribute_for_category(target_item.menu_item_type, "spread")
+                        if spread_type_attr:
+                            # spread_type variant goes into the same attribute
+                            target_item.attribute_values[spread_type_attr] = parsed.modify_new_spread_type
+
+                    # Add modifiers using unified storage
                     if parsed.modify_add_modifiers:
                         # Build modifier→category lookup (data-driven from database)
                         modifier_to_category: dict[str, str] = {}
-                        for category in menu_cache.get_ordered_ingredient_categories("food"):
+                        for category in menu_cache.get_all_ingredient_categories():
                             for ingredient in menu_cache.get_ingredients(category):
                                 modifier_to_category[ingredient.lower()] = category
 
                         for modifier in parsed.modify_add_modifiers:
-                            # Handle qualified modifiers: "mayo (extra)" -> base="mayo", full="mayo_(extra)"
-                            # Extract base modifier name for categorization
+                            # Handle qualified modifiers: "mayo (extra)" -> base="mayo"
                             modifier_lower = modifier.lower()
-                            base_modifier = modifier_lower.split(" (")[0].strip()  # "mayo (extra)" -> "mayo"
-                            modifier_slug = modifier_lower.replace(" ", "_")  # Keep full "mayo_(extra)"
+                            base_modifier = modifier_lower.split(" (")[0].strip()
+                            modifier_slug = modifier_lower.replace(" ", "_")
 
-                            # Determine which attribute this modifier belongs to (data-driven)
-                            category = modifier_to_category.get(base_modifier)
-                            if category:
-                                attr_key = menu_cache.get_category_attribute_slug(category)
-                            else:
-                                # Default to condiments for unknown modifiers
-                                attr_key = "condiments"
+                            # Determine category from database lookup
+                            category = modifier_to_category.get(base_modifier, "topping")
 
-                            # Get or create the list for this attribute
-                            existing = target_item.attribute_values.get(attr_key)
-                            if existing is None:
-                                target_item.attribute_values[attr_key] = [modifier_slug]
-                            elif isinstance(existing, list):
-                                if modifier_slug not in existing:
-                                    existing.append(modifier_slug)
-                            else:
-                                # Convert single value to list
-                                target_item.attribute_values[attr_key] = [existing, modifier_slug]
+                            # Add to unified modifiers list
+                            target_item.add_modifier(
+                                category=category,
+                                slug=modifier_slug,
+                                display_name=modifier.title(),
+                            )
+                            logger.info("MODIFY ADD: Added '%s' (category=%s) to item", modifier, category)
 
-                            logger.info("MODIFY ADD (MenuItemTask): Added '%s' to '%s' attribute",
-                                       modifier, attr_key)
-
-                    # Recalculate price for menu item
-                    self.pricing.recalculate_menu_item_price(target_item)
+                    # Recalculate price
+                    self.pricing.recalculate_item_price(target_item)
 
                     updated_summary = target_item.get_summary()
-                    item_name = target_item.menu_item_name
-                    logger.info("MODIFY EXISTING (MenuItemTask): Updated '%s' with add_modifiers=%s",
-                               item_name, parsed.modify_add_modifiers)
+                    logger.info("MODIFY EXISTING: Updated '%s' with add_modifiers=%s",
+                               target_item.menu_item_name, parsed.modify_add_modifiers)
                     return StateMachineResult(
                         message=f"Sure, I've updated your {updated_summary}. Anything else?",
                         order=order,
                     )
-
-                # Bagel handling (original logic)
-                # Apply the spread modification
-                if parsed.modify_new_spread:
-                    target_item.attribute_values["spread"] = parsed.modify_new_spread
-                if parsed.modify_new_spread_type:
-                    target_item.attribute_values["spread_type"] = parsed.modify_new_spread_type
-
-                # Apply add-modifier modifications ("add bacon", "extra cheese", etc.)
-                if parsed.modify_add_modifiers:
-                    # Build modifier→category lookup (data-driven from database)
-                    modifier_to_category: dict[str, str] = {}
-                    for category in menu_cache.get_ordered_ingredient_categories("food"):
-                        for ingredient in menu_cache.get_ingredients(category):
-                            modifier_to_category[ingredient.lower()] = category
-
-                    for modifier in parsed.modify_add_modifiers:
-                        # Handle qualified modifiers: "bacon (extra)" -> base="bacon"
-                        # Extract base modifier name for categorization
-                        modifier_lower = modifier.lower()
-                        base_modifier = modifier_lower.split(" (")[0].strip()  # "bacon (extra)" -> "bacon"
-
-                        # Determine modifier category (data-driven)
-                        category = modifier_to_category.get(base_modifier)
-
-                        # Special handling for protein: single field with overflow to toppings
-                        target_attrs = target_item.attribute_values
-                        existing_protein = target_attrs.get("extra_protein")
-                        existing_toppings = target_attrs.get("toppings") or []
-                        if category == "protein":
-                            if not existing_protein:
-                                target_attrs["extra_protein"] = modifier  # Store full qualified modifier
-                            else:
-                                # Already have a protein, add to toppings
-                                if modifier not in existing_toppings:
-                                    if not target_attrs.get("toppings"):
-                                        target_attrs["toppings"] = []
-                                    target_attrs["toppings"].append(modifier)
-                        else:
-                            # All other modifiers (cheese, topping, unknown) go to toppings
-                            if modifier not in existing_toppings:
-                                if not target_attrs.get("toppings"):
-                                    target_attrs["toppings"] = []
-                                target_attrs["toppings"].append(modifier)
-                        logger.info("MODIFY ADD: Added '%s' to '%s'", modifier, target_attrs.get("bread"))
-
-                # Recalculate price
-                self.pricing.recalculate_item_price(target_item)
-
-                updated_summary = target_item.get_summary()
-                logger.info(
-                    "MODIFY EXISTING: Updated '%s' with spread=%s, spread_type=%s, add_modifiers=%s",
-                    target_item.attribute_values.get("bread"), parsed.modify_new_spread, parsed.modify_new_spread_type,
-                    parsed.modify_add_modifiers
-                )
-                return StateMachineResult(
-                    message=f"Sure, I've updated your {updated_summary}. Anything else?",
-                    order=order,
-                )
             else:
                 # Couldn't find matching item - inform user
                 if target_desc:
@@ -1192,233 +1293,125 @@ class TakingItemsHandler:
                 # Check if parsed result has any valid new items
                 has_new_items = bool(parsed.parsed_items)
 
-                # If last item has bread attribute and user specifies a new bread type,
-                # update the bread while preserving other modifiers (spread, toasted, etc.)
+                # If last item has a single_select attribute and user specifies a new value,
+                # update just that attribute while preserving other attributes and modifiers
                 # e.g., "make it pumpernickel" when they have "plain bagel toasted with cream cheese"
-                bread_entry = next(
-                    (item for item in parsed.parsed_items
-                     if _parsed_item_has_attribute(item, "bread") and _get_parsed_item_attribute(item, "bread")),
-                    None
-                )
-                if has_new_items and bread_entry and isinstance(last_item, MenuItemTask) and last_item.has_attribute("bread"):
-                    new_bread = _get_parsed_item_attribute(bread_entry, "bread")
-                    last_attr = last_item.attribute_values
-                    old_bread = last_attr.get("bread")
-                    last_attr["bread"] = new_bread
-                    logger.info("Replacement: changed bread from '%s' to '%s', preserving modifiers",
-                               old_bread, new_bread)
+                if has_new_items and isinstance(last_item, MenuItemTask):
+                    item_type = last_item.menu_item_type
+                    attrs_updated = []
 
-                    # Recalculate price if needed
-                    self.pricing.recalculate_item_price(last_item)
+                    # Check each parsed item for single_select attribute values we can transfer
+                    for parsed_item in parsed.parsed_items:
+                        if not hasattr(parsed_item, 'attribute_values'):
+                            continue
+                        parsed_attrs = getattr(parsed_item, 'attribute_values', {}) or {}
+                        for attr_slug, new_value in parsed_attrs.items():
+                            if not new_value:
+                                continue
+                            # Check if this is a single_select attribute on the target item
+                            input_type = menu_cache.get_attribute_input_type(item_type, attr_slug)
+                            if input_type == "single_select" and last_item.has_attribute(attr_slug):
+                                old_value = last_item.attribute_values.get(attr_slug)
+                                last_item.attribute_values[attr_slug] = new_value
+                                attrs_updated.append((attr_slug, old_value, new_value))
 
-                    updated_summary = last_item.get_summary()
-                    return StateMachineResult(
-                        message=f"Sure, I've changed that to {updated_summary}. Anything else?",
-                        order=order,
-                    )
+                    if attrs_updated:
+                        for attr_slug, old_value, new_value in attrs_updated:
+                            logger.info("Replacement: changed %s from '%s' to '%s', preserving modifiers",
+                                       attr_slug, old_value, new_value)
 
-                # If no new items parsed and last item accepts food modifiers, try applying as modifiers
-                if not has_new_items and isinstance(last_item, MenuItemTask) and last_item.has_attribute("spread") and raw_user_input:
-                    modifiers = extract_modifiers_from_input(raw_user_input)
-                    proteins = modifiers.get_names("protein")
-                    cheeses = modifiers.get_names("cheese")
-                    toppings = modifiers.get_names("topping")
-                    spreads = modifiers.get_names("spread")
-                    has_modifiers = proteins or cheeses or toppings
-
-                    if has_modifiers:
-                        # Apply modifiers to existing bagel instead of replacing
-                        logger.info("Replacement: applying modifiers to existing bagel: %s", modifiers)
-                        last_attr = last_item.attribute_values
-
-                        # Update protein - replace existing
-                        if proteins:
-                            last_attr["extra_protein"] = proteins[0]
-                            # Additional proteins go to toppings (replace existing toppings)
-                            last_attr["toppings"] = list(proteins[1:])
-                        else:
-                            # Clear protein if not in new modifiers
-                            last_attr["extra_protein"] = None
-                            last_attr["toppings"] = []
-
-                        # Add cheeses and toppings to item.toppings
-                        last_attr["toppings"].extend(cheeses)
-                        last_attr["toppings"].extend(toppings)
-
-                        # Update spread if specified
-                        if spreads:
-                            last_attr["spread"] = spreads[0]
-                        else:
-                            last_attr["spread"] = "none"
-
-                        # Recalculate price with new modifiers
+                        # Recalculate price if needed
                         self.pricing.recalculate_item_price(last_item)
 
-                        # Return confirmation with updated item
                         updated_summary = last_item.get_summary()
                         return StateMachineResult(
                             message=f"Sure, I've changed that to {updated_summary}. Anything else?",
                             order=order,
                         )
-                    else:
-                        # Check if user is changing the spread
-                        # e.g., "make it blueberry cream cheese"
-                        input_lower = raw_user_input.lower()
 
-                        # Check for spread changes (longer matches before shorter)
-                        # Data-driven: get spreads from database ingredient category
-                        new_spread = None
-                        for spread in sorted(menu_cache.get_ingredients("spread"), key=len, reverse=True):
-                            if spread in input_lower:
-                                # Normalize the spread name
-                                new_spread = menu_cache.normalize_modifier(spread)
-                                break
+                # If no new items parsed, try applying input as modifiers to last item
+                if not has_new_items and isinstance(last_item, MenuItemTask) and raw_user_input:
+                    # Check if item accepts any modifiers (data-driven from DB)
+                    item_type = last_item.menu_item_type
+                    if item_type and menu_cache.item_accepts_input_modifiers(item_type):
+                        modifiers = extract_modifiers_from_input(raw_user_input)
+                        all_modifiers = modifiers.get_all()
 
-                        if new_spread:
-                            last_attr = last_item.attribute_values
-                            old_spread = last_attr.get("spread") or "none"
-                            last_attr["spread"] = new_spread
-                            logger.info("Replacement: changed spread from '%s' to '%s'", old_spread, new_spread)
+                        if all_modifiers:
+                            # Clear existing modifiers and apply new ones using unified storage
+                            logger.info("Replacement: applying modifiers to item: %s", all_modifiers)
+                            last_item.modifiers = []  # Clear existing modifiers
 
-                            # Recalculate price if needed
+                            for mod in all_modifiers:
+                                category = mod.get("category", "topping")
+                                slug = mod.get("slug", mod.get("name", "")).lower().replace(" ", "_")
+                                display_name = mod.get("display_name", mod.get("name", slug))
+                                last_item.add_modifier(
+                                    category=category,
+                                    slug=slug,
+                                    display_name=display_name,
+                                )
+
+                            # Update single_select attributes from modifiers (e.g., spread)
+                            # Data-driven lookup for attribute storage
+                            for category in menu_cache.get_all_ingredient_categories():
+                                attr_slug = menu_cache.get_attribute_for_category(item_type, category)
+                                if attr_slug:
+                                    input_type = menu_cache.get_attribute_input_type(item_type, attr_slug)
+                                    if input_type == "single_select":
+                                        category_modifiers = modifiers.get_names(category)
+                                        if category_modifiers:
+                                            last_item.attribute_values[attr_slug] = category_modifiers[0]
+                                        else:
+                                            # Clear to None if not specified (don't use "none" string)
+                                            last_item.attribute_values[attr_slug] = None
+
+                            # Recalculate price with new modifiers
                             self.pricing.recalculate_item_price(last_item)
 
+                            # Return confirmation with updated item
                             updated_summary = last_item.get_summary()
                             return StateMachineResult(
                                 message=f"Sure, I've changed that to {updated_summary}. Anything else?",
                                 order=order,
                             )
+                    else:
+                        # Check if user is changing a single_select attribute value
+                        # e.g., "make it blueberry cream cheese"
+                        input_lower = raw_user_input.lower()
+                        item_type = last_item.menu_item_type
 
-                        # Bagel type change detection removed - now data-driven
+                        # Data-driven: check all ingredient categories that map to single_select attributes
+                        for category in menu_cache.get_all_ingredient_categories():
+                            attr_slug = menu_cache.get_attribute_for_category(item_type, category)
+                            if not attr_slug:
+                                continue
+                            input_type = menu_cache.get_attribute_input_type(item_type, attr_slug)
+                            if input_type != "single_select":
+                                continue
 
-                # If no new items parsed and last item has size attribute (beverage), check for size/style/milk changes
-                if not has_new_items and isinstance(last_item, MenuItemTask) and last_item.has_attribute("size") and raw_user_input:
-                    input_lower = raw_user_input.lower()
-                    made_change = False
+                            # Check if input contains a modifier from this category
+                            new_value = None
+                            for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
+                                if modifier in input_lower:
+                                    new_value = menu_cache.normalize_modifier(modifier)
+                                    break
 
-                    # Check for size changes (data-driven from DB)
-                    new_size = None
-                    size_options = menu_cache.get_global_attribute_options("size")
-                    for opt in size_options:
-                        size_slug = opt.get("slug", "")
-                        if size_slug in input_lower:
-                            new_size = size_slug
-                            break
+                            if new_value:
+                                last_attr = last_item.attribute_values
+                                old_value = last_attr.get(attr_slug)
+                                last_attr[attr_slug] = new_value
+                                category_display = menu_cache.get_ingredient_category_display_name(category)
+                                logger.info("Replacement: changed %s from '%s' to '%s'", category, old_value, new_value)
 
-                    last_attr = last_item.attribute_values
-                    if new_size and new_size != last_attr.get("size"):
-                        # Get default size from DB for logging
-                        default_size = next(
-                            (opt["slug"] for opt in size_options if opt.get("is_default")),
-                            size_options[0]["slug"] if size_options else "small"
-                        )
-                        old_size = last_attr.get("size") or default_size
-                        last_attr["size"] = new_size
-                        logger.info("Replacement: changed coffee size from '%s' to '%s'", old_size, new_size)
-                        made_change = True
+                                # Recalculate price if needed
+                                self.pricing.recalculate_item_price(last_item)
 
-                    # Note: temperature (hot/iced) is now part of the menu item name itself
-                    # (e.g., "Iced Latte" vs "Hot Latte"). To change temperature, user
-                    # would need to order a different menu item.
-
-                    # Check for decaf changes
-                    if "decaf" in input_lower:
-                        if not last_attr.get("decaf"):
-                            last_attr["decaf"] = True
-                            logger.info("Replacement: changed coffee to decaf")
-                            made_change = True
-                    elif "regular" in input_lower and last_attr.get("decaf"):
-                        # "make it regular" means not decaf
-                        last_attr["decaf"] = None
-                        logger.info("Replacement: changed coffee to regular (not decaf)")
-                        made_change = True
-
-                    # Check for milk changes using generic matcher
-                    milk_match = _match_modifier(input_lower, "milk")
-                    # Also check for "no milk" / "black" patterns
-                    if "no milk" in input_lower or "black" in input_lower:
-                        milk_match = {"slug": "none", "name": "None", "pattern": "no milk"}
-
-                    if milk_match:
-                        new_milk_slug = milk_match["slug"]
-                        # Use unified storage model
-                        if _add_modifier_to_item(
-                            last_item, new_milk_slug, milk_match["name"],
-                            quantity=1, category="milk"
-                        ):
-                            made_change = True
-
-                    # Check for milk removal: "without milk", "remove the milk"
-                    if ("without milk" in input_lower or "remove milk" in input_lower or
-                        "remove the milk" in input_lower):
-                        # Remove milk from unified storage
-                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
-                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
-                        milk_details = menu_cache.get_ingredient_details("milk")
-                        milk_slugs = {d["slug"] for d in milk_details}
-                        # Filter out any milk entries
-                        new_slugs = [s for s in mss_slugs if s not in milk_slugs]
-                        new_selections = [s for s in mss_selections if s.get("slug") not in milk_slugs]
-                        if len(new_slugs) != len(mss_slugs):
-                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
-                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
-                            logger.info("Replacement: removed milk from beverage")
-                            made_change = True
-
-                    # Check for flavor syrup changes using generic matcher
-                    syrup_match = _match_modifier(input_lower, "syrup")
-                    if syrup_match:
-                        quantity = _extract_quantity_from_input(input_lower, syrup_match["pattern"])
-                        if _add_modifier_to_item(
-                            last_item, syrup_match["slug"], syrup_match["name"],
-                            quantity=quantity, category="syrup"
-                        ):
-                            made_change = True
-
-                    # Check for syrup removal: "no syrup", "remove the syrup"
-                    if ("no syrup" in input_lower or "remove syrup" in input_lower or
-                        "without syrup" in input_lower):
-                        # Remove syrups from unified storage
-                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
-                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
-                        syrup_details = menu_cache.get_ingredient_details("syrup")
-                        syrup_slugs = {d["slug"] for d in syrup_details}
-                        # Filter out any syrup entries
-                        new_slugs = [s for s in mss_slugs if s not in syrup_slugs]
-                        new_selections = [s for s in mss_selections if s.get("slug") not in syrup_slugs]
-                        if len(new_slugs) != len(mss_slugs):
-                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
-                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
-                            logger.info("Replacement: removed all syrups from beverage")
-                            made_change = True
-
-                    # Check for sweetener removal: "without sugar", "remove the sugar"
-                    if ("without sugar" in input_lower or "remove sugar" in input_lower or
-                        "remove the sugar" in input_lower or "no sugar" in input_lower or
-                        "without sweetener" in input_lower or "remove sweetener" in input_lower or
-                        "no sweetener" in input_lower):
-                        # Remove sweeteners from unified storage
-                        mss_slugs = last_item.attribute_values.get("milk_sweetener_syrup", [])
-                        mss_selections = last_item.attribute_values.get("milk_sweetener_syrup_selections", [])
-                        sweetener_details = menu_cache.get_ingredient_details("sweetener")
-                        sweetener_slugs = {d["slug"] for d in sweetener_details}
-                        # Filter out any sweetener entries
-                        new_slugs = [s for s in mss_slugs if s not in sweetener_slugs]
-                        new_selections = [s for s in mss_selections if s.get("slug") not in sweetener_slugs]
-                        if len(new_slugs) != len(mss_slugs):
-                            last_item.attribute_values["milk_sweetener_syrup"] = new_slugs
-                            last_item.attribute_values["milk_sweetener_syrup_selections"] = new_selections
-                            logger.info("Replacement: removed all sweeteners from beverage")
-                            made_change = True
-
-                    # If any changes were made, recalculate price and return
-                    if made_change:
-                        self.pricing.recalculate_item_price(last_item)
-                        updated_summary = last_item.get_summary()
-                        return StateMachineResult(
-                            message=f"Sure, I've changed that to {updated_summary}. Anything else?",
-                            order=order,
-                        )
+                                updated_summary = last_item.get_summary()
+                                return StateMachineResult(
+                                    message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                                    order=order,
+                                )
 
                 # Normal replacement: remove old item, new item will be added below
                 replaced_item_name = last_item.get_summary()

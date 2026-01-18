@@ -56,8 +56,7 @@ def menu_data(db_engine):
     """Load menu data from database."""
     with db_engine.connect() as conn:
         result = conn.execute(text('''
-            SELECT m.id, m.name, m.category, m.base_price, m.item_type_id,
-                   m.is_signature, t.slug as type_slug
+            SELECT m.id, m.name, m.item_type_id, m.is_signature, t.slug as type_slug
             FROM menu_items m
             JOIN item_types t ON m.item_type_id = t.id
         '''))
@@ -65,16 +64,14 @@ def menu_data(db_engine):
 
     items_by_type = {}
     for row in rows:
-        type_slug = row[6]  # type_slug is now at index 6 (was 7)
+        type_slug = row[4]  # type_slug is at index 4
         if type_slug not in items_by_type:
             items_by_type[type_slug] = []
         items_by_type[type_slug].append({
             'id': row[0],
             'name': row[1],
-            'category': row[2],
-            'base_price': float(row[3]),
-            'item_type_id': row[4],
-            'is_signature': row[5],
+            'item_type_id': row[2],
+            'is_signature': row[3],
         })
 
     return {'items_by_type': items_by_type}

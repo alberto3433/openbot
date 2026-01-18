@@ -978,11 +978,9 @@ class MenuItemConfigHandler(BaseHandler):
                 # Use generic add_modifier for unified storage
                 item.add_modifier(category, mod.slug, mod.quantity, price)
 
-                # Build display name for acknowledgment
-                if category == "syrup":
-                    added_items.append(f"{mod.slug} syrup")
-                else:
-                    added_items.append(mod.slug)
+                # Build display name for acknowledgment using database lookup
+                display_name = menu_cache.get_ingredient_display_name(mod.slug)
+                added_items.append(display_name or mod.slug.replace("_", " ").title())
 
         # Handle categories needing clarification (e.g., "cheese" without type)
         for category, needs_clarification in modifiers.needs_clarification.items():
@@ -1485,7 +1483,7 @@ class MenuItemConfigHandler(BaseHandler):
         Apply stored modifiers from disambiguation to the item.
 
         Uses data-driven approach: gets is_multi_select from ingredient_categories
-        table to determine whether to use add_modifier() vs property setter.
+        table to determine whether to use add_modifier() vs dict-style access.
 
         Args:
             item: The item to apply modifiers to
@@ -1523,12 +1521,8 @@ class MenuItemConfigHandler(BaseHandler):
                 quantity = modifiers.get(f"{key}{quantity_suffix}", 1)
                 item.add_modifier(normalized_key, value, quantity, 0.0)
             else:
-                # Single-select or boolean: use property setter if available
-                if hasattr(item, normalized_key):
-                    setattr(item, normalized_key, value)
-                else:
-                    # No property - set directly in attribute_values
-                    item.attribute_values[normalized_key] = value
+                # Single-select or boolean: use dict-style access
+                item[normalized_key] = value
 
             processed.add(key)
 

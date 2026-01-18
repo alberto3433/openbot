@@ -90,36 +90,20 @@ class ParsedItemEntry(BaseModel):
     item-specific ParsedBagelEntry and ParsedCoffeeEntry classes.
 
     All item attributes are stored in the attribute_values dict, keyed by
-    attribute slug from the database (e.g., "size", "temperature", "bread").
+    attribute slug from the database
 
-    Examples:
-        # Bagel
-        ParsedItemEntry(
-            item_type="bagel",
-            attribute_values={"bread": "everything", "toasted": True, "spread_type": "scallion"},
-            modifiers=["bacon", "egg"],
-        )
-
-        # Coffee
-        ParsedItemEntry(
-            item_type="sized_beverage",
-            item_name="Latte",
-            attribute_values={"size": "large", "temperature": "iced", "milk": "oat"},
-            syrups=[QuantifiedModifier(slug="vanilla", quantity=1)],
-        )
     """
     type: Literal["item"] = "item"
 
     # Item identification
-    item_type: str  # "bagel", "sized_beverage", "espresso", "spread_sandwich", etc.
-    item_name: str | None = None  # Specific menu item name if known (e.g., "Latte", "Cappuccino")
+    item_type: str
+    item_name: str | None = None  # Specific menu item name if known
     quantity: int = 1
 
     # Data-driven attribute values (keyed by attribute slug)
-    # Keys match attribute slugs in the database: "bread", "size", "temperature", "milk", etc.
+    # Keys match attribute slugs in the database
     attribute_values: dict = Field(default_factory=dict)
 
-    # Modifiers (ingredients to add - proteins, cheeses, toppings, spreads, etc.)
     modifiers: list[str] = Field(default_factory=list)
 
     # Structured modifiers for beverages (need quantity info)

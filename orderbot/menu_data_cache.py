@@ -2008,6 +2008,37 @@ class MenuDataCache:
                     }
         return result
 
+    def get_ingredient_display_name(self, slug: str) -> str | None:
+        """Get the display name for an ingredient by its slug.
+
+        Looks up the ingredient across all categories and returns its
+        database display name (e.g., "Vanilla Syrup" for slug "vanilla").
+
+        Args:
+            slug: The ingredient slug to look up
+
+        Returns:
+            The display name from the database, or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_ingredient_display_name("vanilla")
+            "Vanilla Syrup"
+            >>> menu_cache.get_ingredient_display_name("oat_milk")
+            "Oat Milk"
+            >>> menu_cache.get_ingredient_display_name("unknown")
+            None
+        """
+        self._ensure_loaded()
+        slug_lower = slug.lower()
+        for details_list in self._ingredient_details_by_category.values():
+            for detail in details_list:
+                if detail.get("slug", "").lower() == slug_lower:
+                    return detail.get("name")
+        return None
+
     def get_ingredients_for_item_type(
         self, item_type_slug: str, category: str | None = None
     ) -> set[str]:
@@ -2709,6 +2740,67 @@ class MenuDataCache:
         """
         attrs = self.get_item_type_attributes(item_type_slug)
         return attribute_slug in attrs
+
+    def get_attribute_input_type(self, item_type_slug: str, attribute_slug: str) -> str | None:
+        """Get the input_type for a specific attribute on an item type.
+
+        Used to determine whether an attribute value should be REPLACED (single_select)
+        or APPENDED (multi_select) when modified.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage")
+            attribute_slug: The attribute slug (e.g., "spread", "toppings")
+
+        Returns:
+            The input_type string ("single_select", "multi_select", "boolean", "text")
+            or None if the attribute doesn't exist on this item type.
+
+        Example:
+            >>> input_type = menu_cache.get_attribute_input_type("bagel", "spread")
+            >>> if input_type == "single_select":
+            ...     item["spread"] = new_value  # REPLACE
+            >>> elif input_type == "multi_select":
+            ...     item["spread"].append(new_value)  # APPEND
+        """
+        attrs = self.get_item_type_attributes(item_type_slug)
+        attr_info = attrs.get(attribute_slug)
+        if attr_info:
+            return attr_info.get("input_type")
+        return None
+
+    def get_attribute_for_category(self, item_type_slug: str, category_slug: str) -> str | None:
+        """Get the attribute slug that stores modifiers for a given category.
+
+        Maps ingredient categories (e.g., "protein", "cheese") to the attribute
+        where those modifiers should be stored for a specific item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "bagel", "deli_sandwich")
+            category_slug: The ingredient category (e.g., "protein", "cheese", "spread")
+
+        Returns:
+            The attribute slug where modifiers of this category should be stored,
+            or None if no specific attribute is defined.
+
+        Note:
+            If no specific attribute is found, callers should use the unified
+            `modifiers` list on MenuItemTask instead.
+        """
+        # First check if there's an attribute with the same slug as the category
+        attrs = self.get_item_type_attributes(item_type_slug)
+        if category_slug in attrs:
+            return category_slug
+
+        # Check for common mappings (e.g., "spread" category -> "spread_type" attribute)
+        category_attr_mapping = {
+            "spread": "spread_type",
+        }
+        mapped_attr = category_attr_mapping.get(category_slug)
+        if mapped_attr and mapped_attr in attrs:
+            return mapped_attr
+
+        # No specific attribute - use unified modifiers list
+        return None
 
     def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
         """Load item type attributes from database.

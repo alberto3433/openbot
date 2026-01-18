@@ -23,7 +23,7 @@ from orderbot.tasks.field_config import (
 
 
 # =============================================================================
-# Helper functions to create bagel and coffee tasks (replacing legacy classes)
+# Helper functions to create bagel and coffee tasks (using dict-style access)
 # =============================================================================
 
 def create_bagel_task(
@@ -42,17 +42,17 @@ def create_bagel_task(
         quantity=quantity,
         unit_price=unit_price,
     )
-    # Set properties via setters (stored in attribute_values)
+    # Set values via dict-style access (stored in attribute_values)
     if toasted is not None:
-        bagel.toasted = toasted
+        bagel["toasted"] = toasted
     if spread:
-        bagel.spread = spread
+        bagel["spread_type"] = spread
     if spread_type:
-        bagel.spread_type = spread_type
+        bagel["spread_type"] = spread_type
     if bagel_type:
-        bagel.bread = bagel_type
+        bagel["bread"] = bagel_type
     if extras:
-        bagel.toppings = extras
+        bagel["toppings"] = extras
     return bagel
 
 
@@ -64,7 +64,6 @@ def create_coffee_task(
     sweeteners: list = None,
     extra_shots: int = 0,
     decaf: bool = False,
-    milk_upcharge: float = 0.0,
     quantity: int = 1,
     unit_price: float = 0.0,
 ) -> MenuItemTask:
@@ -80,19 +79,19 @@ def create_coffee_task(
         unit_price=unit_price,
     )
     if size:
-        coffee.size = size
-    # Note: iced parameter is kept for backward compatibility but is ignored.
-    # Temperature is now part of the menu_item_name.
+        coffee["size"] = size
     if milk:
-        coffee.milk = milk
+        coffee.add_modifier(category="milk", slug=milk)
     if sweeteners:
-        coffee.sweeteners = sweeteners
+        for s in sweeteners:
+            if isinstance(s, dict):
+                coffee.add_modifier(category="sweetener", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+            else:
+                coffee.add_modifier(category="sweetener", slug=str(s))
     if extra_shots:
-        coffee.extra_shots = extra_shots
+        coffee["extra_shots"] = extra_shots
     if decaf:
-        coffee.decaf = decaf
-    if milk_upcharge:
-        coffee.milk_upcharge = milk_upcharge
+        coffee["decaf"] = decaf
     return coffee
 
 
@@ -205,10 +204,10 @@ class TestBagelItemTask:
         assert bagel.item_type == "menu_item"
         assert bagel.menu_item_type == "bagel"
         assert bagel.quantity == 1
-        assert bagel.bread is None
-        assert bagel.toasted is None
-        assert bagel.spread is None
-        assert bagel.toppings == []
+        assert bagel["bread"] is None
+        assert bagel["toasted"] is None
+        assert bagel["spread_type"] is None
+        assert bagel.get("toppings", []) == []
 
     def test_get_display_name(self):
         """Test display name generation."""
@@ -310,10 +309,12 @@ class TestCoffeeItemTask:
         coffee = create_coffee_task()
         assert coffee.item_type == "menu_item"
         assert coffee.menu_item_type == "sized_beverage"
-        assert coffee.size is None
+        assert coffee["size"] is None
         # Note: temperature (iced/hot) is now part of menu_item_name, not a separate attribute
-        assert coffee.milk is None
-        assert coffee.extra_shots == 0
+        # Milk is stored in modifiers, not attribute_values
+        milk_mods = coffee.get_modifiers_by_category("milk")
+        assert len(milk_mods) == 0
+        assert coffee.get("extra_shots", 0) == 0
 
     def test_get_display_name(self):
         """Test display name generation.
@@ -422,7 +423,7 @@ class TestItemsTask:
 
         active = items_task.get_active_items()
         assert len(active) == 1
-        assert active[0].bread == "everything"
+        assert active[0]["bread"] == "everything"
 
     def test_get_current_item(self):
         """Get item that's in progress."""

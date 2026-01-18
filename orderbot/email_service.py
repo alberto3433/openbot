@@ -106,106 +106,46 @@ def send_payment_link_email(
         items_html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th><th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th></tr>"
 
         for item in items:
-            item_name = item.get("menu_item_name", "Item")
+            # Use pre-computed display fields from adapter (data-driven)
+            item_name = item.get("display_name") or item.get("menu_item_name", "Item")
             quantity = item.get("quantity", 1)
             line_total = item.get("line_total", 0)
+            base_price = item.get("base_price") or item.get("unit_price") or line_total
 
-            # Build details string
-            details = []
-            if item.get("size"):
-                details.append(item["size"])
+            # Get pre-computed modifiers list from adapter
+            modifiers = item.get("modifiers") or []
 
-            # Bagel/Sandwich modifiers
-            if item.get("bread"):
-                details.append(item["bread"])
-            if item.get("protein"):
-                details.append(item["protein"])
-            if item.get("cheese"):
-                details.append(item["cheese"])
-            if item.get("toppings"):
-                toppings_list = item["toppings"] if isinstance(item["toppings"], list) else [item["toppings"]]
-                for t in toppings_list:
-                    if t:
-                        details.append(str(t).replace("_", " "))
-            if item.get("sauces"):
-                sauces_list = item["sauces"] if isinstance(item["sauces"], list) else [item["sauces"]]
-                for s in sauces_list:
-                    if s:
-                        details.append(str(s).replace("_", " "))
+            # Separate priced modifiers (shown as line items) from free ones (shown as details)
+            priced_modifiers = [m for m in modifiers if m.get("price", 0) > 0]
+            free_modifiers = [m.get("name", "") for m in modifiers if m.get("price", 0) == 0 and m.get("name")]
 
-            # Coffee/Drink modifiers from item_config
-            if item.get("item_config"):
-                config = item["item_config"]
-                if config.get("style"):
-                    details.append(config["style"])
-                if config.get("milk") and str(config["milk"]).lower() != "none":
-                    details.append(str(config["milk"]).replace("_", " "))
-                # Handle flavor_syrup
-                syrup_value = config.get("flavor_syrup")
-                if syrup_value:
-                    syrups = syrup_value if isinstance(syrup_value, list) else [syrup_value]
-                    for s in syrups:
-                        if s:
-                            formatted = str(s).replace("_", " ")
-                            details.append(formatted if "syrup" in formatted.lower() else f"{formatted} syrup")
-                # Handle sweetener with quantity
-                if config.get("sweetener"):
-                    sweeteners = config["sweetener"] if isinstance(config["sweetener"], list) else [config["sweetener"]]
-                    sweetener_qty = config.get("sweetener_quantity", 1)
-                    for s in sweeteners:
-                        if s:
-                            formatted = str(s).replace("_", " ")
-                            if sweetener_qty > 1:
-                                details.append(f"{sweetener_qty} {formatted}s")
-                            else:
-                                details.append(formatted)
-                toppings_data = config.get("toppings")
-                if toppings_data:
-                    toppings_list = toppings_data if isinstance(toppings_data, list) else [toppings_data]
-                    for e in toppings_list:
-                        if e:
-                            details.append(str(e).replace("_", " "))
+            # Combine with any explicit free_details from adapter
+            free_details = list(item.get("free_details") or []) + free_modifiers
+            details_str = ", ".join(free_details) if free_details else ""
 
-            details_str = ", ".join(details) if details else ""
-
-            # Check if item has modifiers for itemized display (e.g., omelette side bagel with spread)
-            # Check both top-level and item_config (for persisted orders from database)
-            modifiers = item.get("modifiers") or (config.get("modifiers") if config else None) or []
-            has_modifiers = modifiers and len(modifiers) > 0
-
-            if has_modifiers:
-                # Calculate base price by subtracting modifiers (use stored if available)
-                modifiers_total = sum(m.get("price", 0) for m in modifiers)
-                stored_base_price = item.get("base_price") or (config.get("base_price") if config else None)
-                base_price = stored_base_price or (item.get("unit_price", line_total) - modifiers_total)
-                display_name = item.get("display_name", item_name)
-
-                # Get free details (for drinks: hot/iced, sweetener, etc.)
-                # Check both top-level and item_config
-                free_details = item.get("free_details") or (config.get("free_details") if config else None) or []
+            if priced_modifiers:
+                # Itemized display: show base item, then free details, then priced modifiers
                 free_details_str = " • ".join(free_details) if free_details else ""
 
-                # Plain text - show base item, then free details, then modifiers
-                items_text += f"  {quantity}x {display_name} - ${base_price:.2f}\n"
+                # Plain text - show base item, then free details, then priced modifiers
+                items_text += f"  {quantity}x {item_name} - ${base_price:.2f}\n"
                 if free_details_str:
                     items_text += f"    {free_details_str}\n"
-                for mod in modifiers:
+                for mod in priced_modifiers:
                     mod_price = mod.get("price", 0)
-                    price_str = f"${mod_price:.2f}" if mod_price > 0 else ""
-                    items_text += f"    + {mod['name']} {price_str}\n"
+                    items_text += f"    + {mod['name']} ${mod_price:.2f}\n"
 
-                # HTML - show base item row, free details, then modifier rows
-                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {display_name}</td>"
+                # HTML - show base item row, free details, then priced modifier rows
+                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
                 items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{free_details_str}</td>"
                 items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
-                for mod in modifiers:
+                for mod in priced_modifiers:
                     mod_price = mod.get("price", 0)
-                    price_str = f"${mod_price:.2f}" if mod_price > 0 else ""
                     items_html += f"<tr><td style='padding: 8px 8px 8px 24px; border-bottom: 1px solid #eee; color: #666;'>+ {mod['name']}</td>"
                     items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee;'></td>"
-                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>{price_str}</td></tr>"
+                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>${mod_price:.2f}</td></tr>"
             else:
-                # Standard item display (no modifiers)
+                # Standard item display (no priced modifiers)
                 # Plain text
                 items_text += f"  {quantity}x {item_name}"
                 if details_str:

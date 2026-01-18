@@ -170,7 +170,7 @@ class TestAmbiguousItemOrders:
         if coffees:
             # Coffee was added - check if it's asking for configuration
             coffee = coffees[0]
-            needs_config = coffee.size is None or coffee.iced is None
+            needs_config = coffee["size"] is None or coffee["temperature"] is None
             if needs_config:
                 # Should be asking about size or hot/iced
                 assert any(word in result.message.lower() for word in [

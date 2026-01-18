@@ -28,15 +28,15 @@ def create_bagel_task(
         quantity=quantity,
         unit_price=unit_price,
     )
-    # Set properties via setters (stored in attribute_values)
+    # Set attributes via dict-style access (stored in attribute_values)
     if toasted is not None:
-        bagel.toasted = toasted
+        bagel["toasted"] = toasted
     if spread:
-        bagel.spread = spread
+        bagel["spread_type"] = spread
     if bagel_type:
-        bagel.bread = bagel_type
+        bagel["bread"] = bagel_type
     if extras:
-        bagel.toppings = extras
+        bagel["toppings"] = extras
     return bagel
 
 

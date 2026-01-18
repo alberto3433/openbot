@@ -217,4 +217,5 @@ class TestEspressoParsingIntegration:
         coffee = get_coffee_item(result)
         assert coffee is not None
         assert coffee.item_name == "Espresso", f"Coffee type should be 'Espresso', got '{coffee.item_name}'"
-        assert coffee.milk == "oat", f"Milk should be 'oat', got '{coffee.milk}'"
+        milk_mods = coffee.get_modifiers_by_category("milk")
+        assert any(m.get("slug") == "oat" for m in milk_mods), f"Milk should be 'oat', got modifiers: {milk_mods}"

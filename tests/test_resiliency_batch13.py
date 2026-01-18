@@ -31,8 +31,8 @@ class TestPreparationPreferences:
 
         # Should have a bagel that's toasted
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
-        if bagels[0].toasted is not None:
-            assert bagels[0].toasted is True, "Should be toasted"
+        if bagels[0]["toasted"] is not None:
+            assert bagels[0]["toasted"] is True, "Should be toasted"
 
     def test_lightly_toasted(self):
         """
@@ -76,9 +76,9 @@ class TestPreparationPreferences:
         bagel = bagels[0]
         # Should have cream cheese noted somehow
         has_cc = (
-            bagel.spread == "cream cheese" or
-            "cream cheese" in (bagel.notes or "") or
-            "cream cheese" in str(bagel.toppings or [])
+            bagel["spread_type"] == "cream cheese" or
+            "cream cheese" in (bagel.special_instructions or "") or
+            "cream cheese" in str(bagel["toppings"] or [])
         )
         assert has_cc or "cream cheese" in result.message.lower(), \
             f"Should note cream cheese. Message: {result.message}"

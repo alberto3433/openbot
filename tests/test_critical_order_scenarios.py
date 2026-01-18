@@ -266,9 +266,9 @@ class TestCriticalOrderScenarios:
         # Check coffee has correct config
         if coffees:
             coffee = coffees[0]
-            print(f"Coffee config: size={coffee.size}, iced={coffee.iced}, type={coffee.drink_type}")
-            assert coffee.size == "large", f"Coffee should be large, got {coffee.size}"
-            assert coffee.iced == True, f"Coffee should be iced, got {coffee.iced}"
+            print(f"Coffee config: size={coffee['size']}, temperature={coffee['temperature']}, name={coffee.menu_item_name}")
+            assert coffee["size"] == "large", f"Coffee should be large, got {coffee['size']}"
+            assert coffee["temperature"] == "iced", f"Coffee should be iced, got {coffee['temperature']}"
 
         print("[PASS] TEST 2: Both items added, coffee configured correctly")
 
@@ -373,14 +373,14 @@ class TestCriticalOrderScenarios:
 
         print(f"Bagels in cart: {len(bagels)}")
         for i, bagel in enumerate(bagels):
-            print(f"  Bagel {i+1}: type={bagel.bread}, toasted={bagel.toasted}, spread={bagel.spread}")
+            print(f"  Bagel {i+1}: type={bagel['bread']}, toasted={bagel['toasted']}, spread={bagel['spread_type']}")
 
         assert len(bagels) == 2, f"Should have 2 bagels, got {len(bagels)}"
 
         # Both should have same config
         for bagel in bagels:
-            assert bagel.bread == "plain", f"Bagel type should be plain, got {bagel.bread}"
-            assert bagel.toasted == True, f"Bagel should be toasted, got {bagel.toasted}"
+            assert bagel["bread"] == "plain", f"Bagel type should be plain, got {bagel['bread']}"
+            assert bagel["toasted"] == True, f"Bagel should be toasted, got {bagel['toasted']}"
 
         print("[PASS] TEST 4: Multiple same items added correctly")
 
@@ -498,7 +498,7 @@ class TestCriticalOrderScenarios:
 
         if bagels:
             bagel = bagels[0]
-            print(f"Bagel config: toasted={bagel.toasted}, spread={bagel.spread}")
+            print(f"Bagel config: toasted={bagel['toasted']}, spread={bagel['spread_type']}")
             # Note: The system may or may not catch the modification depending on implementation
             # This test documents current behavior
 
@@ -626,12 +626,12 @@ class TestCriticalOrderScenarios:
 
         if bagels:
             bagel = bagels[0]
-            print(f"Bagel: type={bagel.bread}, toasted={bagel.toasted}")
-            print(f"Spread: {bagel.spread}")
-            print(f"Toppings: {bagel.toppings}")
+            print(f"Bagel: type={bagel['bread']}, toasted={bagel['toasted']}")
+            print(f"Spread: {bagel['spread_type']}")
+            print(f"Toppings: {bagel['toppings']}")
 
-            assert bagel.bread == "everything", f"Should be everything bagel, got {bagel.bread}"
-            assert bagel.toasted == True, "Should be toasted"
+            assert bagel["bread"] == "everything", f"Should be everything bagel, got {bagel['bread']}"
+            assert bagel["toasted"] == True, "Should be toasted"
 
         print("[PASS] TEST 8: Complex modifiers parsed")
 
@@ -664,12 +664,14 @@ class TestCriticalOrderScenarios:
 
         if coffees:
             coffee = coffees[0]
-            print(f"Coffee: type={coffee.drink_type}, size={coffee.size}, iced={coffee.iced}")
-            print(f"Milk: {coffee.milk}, Syrups: {coffee.flavor_syrups}")
+            print(f"Coffee: name={coffee.menu_item_name}, size={coffee['size']}, temperature={coffee['temperature']}")
+            milk_mods = coffee.get_modifiers_by_category("milk")
+            syrup_mods = coffee.get_modifiers_by_category("syrup")
+            print(f"Milk: {milk_mods}, Syrups: {syrup_mods}")
 
             # Check configuration
-            assert coffee.size == "large", f"Should be large, got {coffee.size}"
-            assert coffee.iced == True, f"Should be iced, got {coffee.iced}"
+            assert coffee["size"] == "large", f"Should be large, got {coffee['size']}"
+            assert coffee["temperature"] == "iced", f"Should be iced, got {coffee['temperature']}"
 
         # Should say "anything else" since fully configured
         assert len(coffees) >= 1, "Should have coffee"

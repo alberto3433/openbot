@@ -97,6 +97,6 @@ class TestPronounContextReferences:
         # Should have updated coffee to iced
         if coffees:
             coffee = coffees[0]
-            # Either iced is True or message acknowledges
-            assert coffee.iced is True or "iced" in result.message.lower(), \
-                f"Should be iced. iced={coffee.iced}, Message: {result.message}"
+            # Either temperature is "iced" or message acknowledges
+            assert coffee["temperature"] == "iced" or "iced" in result.message.lower(), \
+                f"Should be iced. temperature={coffee['temperature']}, Message: {result.message}"

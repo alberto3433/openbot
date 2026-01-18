@@ -34,13 +34,13 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
         menu_item_name=omelette_item['name'],
         menu_item_id=omelette_item.get('id', 500),
         unit_price=omelette_item.get('base_price', 12.50),
-        requires_side_choice=True,
         menu_item_type='omelette',
+        attribute_values={"requires_side_choice": True},
     )
     # Side choice already made - bagel, plain, toasted
-    omelette.side_choice = 'bagel'
-    omelette.bagel_choice = 'plain'
-    omelette.toasted = True
+    omelette["side_choice"] = 'bagel'
+    omelette["bagel_choice"] = 'plain'
+    omelette["toasted"] = True
     omelette.mark_in_progress()
     order.items.add_item(omelette)
 
@@ -51,8 +51,8 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     initial_price = omelette.unit_price
 
     print(f"\n=== BEFORE spread choice ===")
-    print(f"Spread: {omelette.spread}")
-    print(f"Spread Price: {getattr(omelette, 'spread_price', None)}")
+    print(f"Spread: {omelette['spread_type']}")
+    print(f"Spread Price: {omelette['spread_type_price']}")
     print(f"Unit Price: {omelette.unit_price}")
 
     # Process cream cheese choice via state machine
@@ -66,14 +66,14 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
 
     item = items[0]
     print(f"\n=== AFTER spread choice ===")
-    print(f"Spread: {item.spread}")
-    print(f"Spread Price: {getattr(item, 'spread_price', None)}")
+    print(f"Spread: {item['spread_type']}")
+    print(f"Spread Price: {item['spread_type_price']}")
     print(f"Unit Price: {item.unit_price}")
 
     # Assertions
-    assert item.spread == 'cream cheese', f"Spread not captured correctly: {item.spread}"
+    assert item["spread_type"] == 'cream cheese', f"Spread not captured correctly: {item['spread_type']}"
 
-    spread_price = getattr(item, 'spread_price', None)
+    spread_price = item["spread_type_price"]
     assert spread_price is not None, "Spread price not set"
     assert spread_price > 0, f"Spread price should be > 0, got {spread_price}"
 

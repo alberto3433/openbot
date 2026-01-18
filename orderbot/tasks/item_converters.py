@@ -334,24 +334,20 @@ class UnifiedItemConverter:
         # Note: bread is handled by _process_attribute_values_to_modifiers (data-driven)
         modifiers = []
 
-        # Add spread to modifiers if set
-        # For bagels, spread is stored as spread_type; for other items, could be either
+        # Add spread to modifiers if set (data-driven, no fallback chain)
         effective_spread = spread_type or spread
         if effective_spread and effective_spread.lower() != "none":
-            # Look up spread price from pricing engine if not already set
+            # Check if price already in selections, otherwise look up
             if spread_price is None and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
-                # Try compound spread name first (e.g., "scallion_cream_cheese")
-                if spread_type and spread and spread_type != spread:
-                    compound_slug = f"{spread_type}_{spread}".replace(" ", "_").lower()
-                    spread_price = pricing.lookup_modifier_price(compound_slug, menu_item_type)
-                # Fall back to base spread name
+                # Check spread_selections for pre-computed price
+                spread_selections = attribute_values.get("spread_selections", [])
+                for sel in spread_selections:
+                    if isinstance(sel, dict) and sel.get("slug") == effective_spread:
+                        spread_price = sel.get("price_modifier", 0)
+                        break
+                # Fall back to single lookup (no fallback chain)
                 if not spread_price:
-                    spread_price = pricing.lookup_modifier_price(effective_spread, menu_item_type)
-                # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
-                if not spread_price:
-                    plain_slug = f"plain_{effective_spread.lower().replace(' ', '_')}"
-                    spread_price = pricing.lookup_modifier_price(plain_slug, menu_item_type)
-                spread_price = spread_price or 0
+                    spread_price = pricing.lookup_modifier_price(effective_spread, menu_item_type) or 0
             spread_name = effective_spread
             if spread_type and spread and spread_type != spread and spread_type != "plain":
                 spread_name = f"{spread_type} {spread}"
@@ -361,14 +357,24 @@ class UnifiedItemConverter:
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
 
-        # Add extra_protein and toppings (with prices from pricing engine)
-        if extra_protein and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
-            protein_price = pricing.lookup_modifier_price(extra_protein, menu_item_type) or 0
-            modifiers.append({"name": extra_protein, "price": protein_price})
-        for extra in toppings_list:
-            if pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
-                extra_price = pricing.lookup_modifier_price(extra, menu_item_type) or 0
-                modifiers.append({"name": extra, "price": extra_price})
+        # Add modifiers from list-valued attribute_values (e.g., toppings) that need price lookup.
+        # Note: single-value attributes with *_upcharge are handled by _process_attribute_values_to_modifiers.
+        # Skip attributes already handled above.
+        handled_attrs = {"spread", "spread_type", "spread_price", "toasted", "side_choice"}
+        for attr_key, attr_val in attribute_values.items():
+            if attr_key in handled_attrs or attr_key.endswith(("_price", "_selections", "_upcharge")):
+                continue
+            if attr_val is None or attr_val == "" or attr_val is False:
+                continue
+
+            # Only handle list values (e.g., toppings) - single values handled by _process_attribute_values_to_modifiers
+            if isinstance(attr_val, list):
+                for item_val in attr_val:
+                    if isinstance(item_val, str) and item_val.lower() != "none":
+                        price = 0
+                        if pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
+                            price = pricing.lookup_modifier_price(item_val, menu_item_type) or 0
+                        modifiers.append({"name": item_val, "price": price})
 
         # Process modifiers from the unified modifiers field
         item_modifiers = getattr(item, 'modifiers', []) or []

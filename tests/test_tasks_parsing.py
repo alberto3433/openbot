@@ -1219,7 +1219,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "bagel", 1)
         assert result is not None
         item, idx = result
-        assert item.bread == "plain"
+        assert item["bread"] == "plain"
         assert idx == 0
 
     def test_find_second_bagel(self):
@@ -1236,7 +1236,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "bagel", 2)
         assert result is not None
         item, idx = result
-        assert item.bread == "everything"
+        assert item["bread"] == "everything"
         assert idx == 2
 
     def test_find_nth_item_generic(self):
@@ -1254,7 +1254,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "item", 2)
         assert result is not None
         item, idx = result
-        assert item.has_attribute('size')  # Created as sized_beverage via CoffeeItemTask helper
+        assert "size" in item  # Created as sized_beverage via CoffeeItemTask helper
         assert idx == 1
 
     def test_find_nth_item_out_of_range(self):
@@ -1551,6 +1551,7 @@ class TestNotesExtraction:
         coffee = get_coffee_item(result)
         assert coffee is not None
         # Check parsed_items has coffee with sugar sweetener and special instructions
+        # ParsedItemEntry uses .sweeteners field (list of QuantifiedModifier)
         assert len(coffee.sweeteners) >= 1  # Sweetener added for pricing
         assert coffee.sweeteners[0].slug == "sugar"
         assert coffee.special_instructions is not None

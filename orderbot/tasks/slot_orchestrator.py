@@ -315,6 +315,27 @@ class ItemSlotOrchestrator:
         self.item = item
         self.slots = get_item_slots(item)
 
+    def _get_slot_value(self, slot: ItemSlotDefinition) -> Any:
+        """Get the value of a slot from the item.
+
+        For MenuItemTask, uses dict-style access to attribute_values.
+        For other items, falls back to getattr.
+        """
+        if isinstance(self.item, MenuItemTask):
+            return self.item[slot.field_name]
+        return getattr(self.item, slot.field_name, None)
+
+    def _set_slot_value(self, slot: ItemSlotDefinition, value: Any) -> None:
+        """Set the value of a slot on the item.
+
+        For MenuItemTask, uses dict-style access to attribute_values.
+        For other items, falls back to setattr.
+        """
+        if isinstance(self.item, MenuItemTask):
+            self.item[slot.field_name] = value
+        else:
+            setattr(self.item, slot.field_name, value)
+
     def get_next_slot(self) -> ItemSlotDefinition | None:
         """Get the next unfilled required slot for this item."""
         for slot in self.slots:
@@ -323,7 +344,7 @@ class ItemSlotOrchestrator:
                 continue
 
             # Check if filled
-            value = getattr(self.item, slot.field_name, None)
+            value = self._get_slot_value(slot)
             if value is None and slot.required:
                 return slot
 
@@ -335,7 +356,7 @@ class ItemSlotOrchestrator:
 
     def fill_slot(self, slot: ItemSlotDefinition, value: Any) -> None:
         """Fill an item slot."""
-        setattr(self.item, slot.field_name, value)
+        self._set_slot_value(slot, value)
 
 
 # =============================================================================

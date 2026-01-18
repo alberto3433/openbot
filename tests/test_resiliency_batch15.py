@@ -36,9 +36,9 @@ class TestCorrectionsAfterMisunderstanding:
 
         # Should have plain bagel or acknowledge correction
         if bagels:
-            has_plain = any(b.bread == "plain" for b in bagels)
+            has_plain = any(b["bread"] == "plain" for b in bagels)
             assert has_plain or "plain" in result.message.lower(), \
-                f"Should correct to plain. Types: {[b.bread for b in bagels]}"
+                f"Should correct to plain. Types: {[b['bread'] for b in bagels]}"
 
     def test_i_meant_the_small_one(self):
         """
@@ -66,9 +66,9 @@ class TestCorrectionsAfterMisunderstanding:
 
         # Should change to small or acknowledge
         if coffees:
-            has_small = any(c.size == "small" for c in coffees)
+            has_small = any(c["size"] == "small" for c in coffees)
             assert has_small or "small" in result.message.lower(), \
-                f"Should change to small. Sizes: {[c.size for c in coffees]}"
+                f"Should change to small. Sizes: {[c['size'] for c in coffees]}"
 
     def test_thats_not_what_i_ordered(self):
         """

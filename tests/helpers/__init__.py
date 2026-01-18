@@ -11,18 +11,11 @@ by any code in sandwich_bot/ - production code must be data-driven.
 # Re-export from orderbot.tasks.models for convenience
 from orderbot.tasks.models import MenuItemTask, TaskStatus
 
-# Task factory helpers
-from .task_factories import (
-    create_bagel_task,
-    create_coffee_task,
-    BagelItemTask,
-    CoffeeItemTask,
-    is_bagel_item,
-    is_coffee_item,
-)
-
 # Menu helpers
 from .menu_helpers import test_is_soda_drink
+
+# Test item factory functions
+from .item_factories import BagelItemTask, CoffeeItemTask
 
 # Parsed item query helpers
 from .parsed_item_queries import (
@@ -46,15 +39,11 @@ __all__ = [
     # Re-exports from orderbot.tasks.models
     "MenuItemTask",
     "TaskStatus",
-    # Task factories
-    "create_bagel_task",
-    "create_coffee_task",
-    "BagelItemTask",
-    "CoffeeItemTask",
-    "is_bagel_item",
-    "is_coffee_item",
     # Menu helpers
     "test_is_soda_drink",
+    # Test item factory functions
+    "BagelItemTask",
+    "CoffeeItemTask",
     # Parsed item queries
     "get_parsed_items",
     "get_parsed_item",

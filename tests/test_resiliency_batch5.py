@@ -64,7 +64,7 @@ class TestMultiItemOrders:
         assert total_quantity >= 1, f"Should have at least 1 bagel, got {total_quantity}"
 
         # Should have recognized at least one type
-        types = [b.bread for b in bagels]
+        types = [b["bread"] for b in bagels]
         assert len(types) >= 1 and types[0] in ["everything", "plain"], \
             f"Should have recognized a bagel type. Types: {types}"
 

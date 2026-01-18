@@ -355,9 +355,9 @@ class TestStateMachineMultiBagel:
 
         # Verify ONLY the first bagel has type set (one-at-a-time approach)
         bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
-        assert bagels[0].bread == "plain", "First bagel should be plain"
-        assert bagels[1].bread is None, "Second bagel should not have type yet"
-        assert bagels[2].bread is None, "Third bagel should not have type yet"
+        assert bagels[0]["bread"] == "plain", "First bagel should be plain"
+        assert bagels[1]["bread"] is None, "Second bagel should not have type yet"
+        assert bagels[2]["bread"] is None, "Third bagel should not have type yet"
 
         # Should ask about TOASTED for first bagel (fully configure each bagel)
         # Data-driven handler uses item_type:attr_slug format
@@ -417,9 +417,9 @@ class TestMixedItemBagelChoice:
             menu_item_type="omelette",
             unit_price=12.50,
         )
-        # Set property accessors after construction (not in constructor)
-        omelette.requires_side_choice = True
-        omelette.side_choice = "bagel"
+        # Set dict-style attributes after construction
+        omelette["requires_side_choice"] = True
+        omelette["side_choice"] = "bagel"
         omelette.mark_in_progress()
         order.items.add_item(omelette)
 
@@ -439,11 +439,11 @@ class TestMixedItemBagelChoice:
             result = sm.configuring_item_handler.handle_configuring_item("plain", order)
 
             # Verify ONLY the omelette has bagel_choice set (one-at-a-time)
-            assert omelette.bagel_choice == "plain", \
-                f"Omelette should have bagel_choice=plain, got {omelette.bagel_choice}"
+            assert omelette["bagel_choice"] == "plain", \
+                f"Omelette should have bagel_choice=plain, got {omelette['bagel_choice']}"
             # The cream cheese bagel should NOT be configured yet
-            assert cc_bagel.bread is None, \
-                f"CC bagel should not have bagel_type yet, got {cc_bagel.bread}"
+            assert cc_bagel["bread"] is None, \
+                f"CC bagel should not have bagel_type yet, got {cc_bagel['bread']}"
 
             # After setting bagel_choice, omelette is complete (no toasted question for side bagels)
             # The flow moves to the next incomplete item (cc_bagel)
@@ -466,9 +466,9 @@ class TestMixedItemBagelChoice:
             menu_item_type="omelette",
             unit_price=12.50,
         )
-        # Set property accessors after construction (not in constructor)
-        omelette.requires_side_choice = True
-        omelette.side_choice = "bagel"
+        # Set dict-style attributes after construction
+        omelette["requires_side_choice"] = True
+        omelette["side_choice"] = "bagel"
         omelette.mark_in_progress()
         order.items.add_item(omelette)
 
@@ -486,8 +486,8 @@ class TestMixedItemBagelChoice:
             mock_parse.return_value = BagelChoiceResponse(bread="plain", quantity=1)
             result = sm.configuring_item_handler.handle_configuring_item("plain", order)
 
-        assert omelette.bagel_choice == "plain"
-        assert cc_bagel.bread is None  # Not configured yet
+        assert omelette["bagel_choice"] == "plain"
+        assert cc_bagel["bread"] is None  # Not configured yet
         # After setting bagel_choice, omelette is complete (no toasted question for side bagels)
         assert omelette.status.value == "complete"
 
@@ -519,7 +519,7 @@ class TestPriceRecalculationInvariants:
         result = sm.configuring_item_handler.handle_configuring_item("plain cream cheese", order)
 
         # Spread should be set to the slug from the matched option
-        assert bagel.spread == "plain_cc"
+        assert bagel["spread_type"] == "plain_cc"
         # Price should be higher than base price (2.50 + 2.00 spread price)
         assert bagel.unit_price >= 2.50
 
@@ -558,7 +558,7 @@ class TestPriceRecalculationInvariants:
         assert len(bagels) == 1
 
         bagel = bagels[0]
-        assert bagel.bread == "wheat"
+        assert bagel["bread"] == "wheat"
         # Check modifiers in unified list (not legacy property accessors)
         modifier_slugs = {m.get("slug") for m in bagel.modifiers}
         assert "ham" in modifier_slugs, f"Expected ham in modifiers: {bagel.modifiers}"
@@ -693,8 +693,8 @@ class TestAdditionalItemsAfterBagel:
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         bagel = BagelItemTask(bagel_type="wheat")
-        bagel.toasted = None  # Not yet answered
-        bagel.spread = None
+        bagel["toasted"] = None  # Not yet answered
+        bagel["spread_type"] = None
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
         order.pending_field = "bagel:toasted"
@@ -703,19 +703,19 @@ class TestAdditionalItemsAfterBagel:
 
         # Step 1: Answer toasted question
         result = sm.process("yes", order)
-        assert bagel.toasted is True, "Bagel should be marked as toasted"
+        assert bagel["toasted"] is True, "Bagel should be marked as toasted"
         # Should now ask about spread
         assert order.pending_field in ("spread", "menu_item_attr_spread_type", "bagel:spread_type"), f"Should be asking about spread, not {order.pending_field}"
 
         # Step 2: Answer spread question with "no"
         result = sm.process("no", order)
-        # Bagel should be complete - spread stored in attribute_values or legacy field
+        # Bagel should be complete - spread stored in attribute_values
         spread_set = (
-            bagel.spread is not None or
+            bagel["spread_type"] is not None or
             bagel.attribute_values.get('spread_type') is not None or
             'spread_type' in bagel.attribute_values  # Explicitly set to None counts as answered
         )
-        assert spread_set, f"Spread should be set: spread={bagel.spread}, attr={bagel.attribute_values}"
+        assert spread_set, f"Spread should be set: spread_type={bagel['spread_type']}, attr={bagel.attribute_values}"
 
         # Data-driven flow may have customization checkpoint before "Anything else?"
         # Handle "Any more changes?" checkpoint if present
@@ -812,7 +812,7 @@ class TestMenuItemToasted:
         assert len(items) == 1
         item = items[0]
         assert isinstance(item, MenuItemTask), f"Should be MenuItemTask, got {type(item)}"
-        assert item.toasted is True, f"Item should be toasted=True, got {item.toasted}"
+        assert item["toasted"] is True, f"Item should be toasted=True, got {item['toasted']}"
 
     def test_toasted_not_captured_when_not_specified(self, menu_data):
         """Test that toasted is None when not specified."""
@@ -840,7 +840,7 @@ class TestMenuItemToasted:
 
         items = result.order.items.get_active_items()
         item = items[0]
-        assert item.toasted is None, f"Item should be toasted=None, got {item.toasted}"
+        assert item["toasted"] is None, f"Item should be toasted=None, got {item['toasted']}"
 
 
 
@@ -1003,7 +1003,7 @@ class TestOrderTypeUpfront:
         # Should have added the bagel
         bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         assert len(bagels) == 1
-        assert bagels[0].bread == "plain"
+        assert bagels[0]["bread"] == "plain"
 
     def test_checkout_asks_for_name_when_order_type_set_upfront(self):
         """Test that checkout asks for name when order type was set upfront.
@@ -1133,7 +1133,7 @@ class TestOrderTypeUpfront:
         # Set up order state as it would be after choosing "email"
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="egg", toasted=True)
-        bagel.spread = "none"  # "with nothing on it"
+        bagel["spread_type"] = "none"  # "with nothing on it"
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
@@ -1829,7 +1829,7 @@ class TestBagelWithCoffeeConfig:
         ]
         # With disambiguation, coffee is added directly to items as in_progress
         assert len(coffee_items) == 1, "Expected one coffee item in order"
-        assert coffee_items[0].drink_type.lower() == "latte"
+        assert "latte" in coffee_items[0].menu_item_name.lower()
 
     def test_bagel_and_latte_full_flow(self):
         """Test complete bagel + latte configuration flow."""
@@ -1918,9 +1918,9 @@ class TestBagelWithCoffeeConfig:
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(bagels) == 1
         assert len(coffees) == 1
-        assert bagels[0].bread == "plain"
-        assert coffees[0].size == "large"
-        assert coffees[0].iced is False
+        assert bagels[0]["bread"] == "plain"
+        assert coffees[0]["size"] == "large"
+        assert coffees[0]["temperature"] == "hot"  # hot = not iced
 
     def test_bagel_and_coke_no_queue(self):
         """Test that bagel + coke doesn't queue coffee (sodas skip config)."""
@@ -2007,7 +2007,7 @@ class TestBagelWithCoffeeConfig:
 
         # If there's a second coffee, configure it too
         coffees = [i for i in order.items.items if i.has_attribute('size')]
-        incomplete_coffees = [c for c in coffees if c.size is None]
+        incomplete_coffees = [c for c in coffees if c["size"] is None]
         if incomplete_coffees:
             # Should be asking about second coffee size
             if "size" in result.message.lower() or "small" in result.message.lower():
@@ -2108,8 +2108,8 @@ class TestBagelWithCoffeeConfig:
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(bagels) == 2
         assert len(coffees) == 2
-        assert all(b.bread is not None for b in bagels), "All bagels should have type set"
-        assert all(c.size is not None for c in coffees), "All coffees should have size set"
+        assert all(b["bread"] is not None for b in bagels), "All bagels should have type set"
+        assert all(c["size"] is not None for c in coffees), "All coffees should have size set"
 
     def test_bagel_and_menu_item(self):
         """Test ordering a bagel and a menu item (like The Classic BEC) together."""
@@ -2208,7 +2208,7 @@ class TestDrinkClarification:
         # Should have added the second drink
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1
-        assert coffees[0].drink_type == "Tropicana Orange Juice 46 oz"
+        assert coffees[0].menu_item_name == "Tropicana Orange Juice 46 oz"
         assert coffees[0].unit_price == 8.99
         assert order.pending_field is None
         assert len(order.pending_item_options) == 0
@@ -2242,7 +2242,7 @@ class TestDrinkClarification:
         # Should have added the first drink
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1
-        assert coffees[0].drink_type == "Fresh Squeezed Orange Juice"
+        assert coffees[0].menu_item_name == "Fresh Squeezed Orange Juice"
         assert coffees[0].unit_price == 5.00
 
     def test_tropicana_matches_two_options(self):
@@ -2304,7 +2304,7 @@ class TestDrinkClarification:
         # Should add directly without asking (single match)
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1
-        assert coffees[0].drink_type == "Fresh Squeezed Orange Juice"
+        assert coffees[0].menu_item_name == "Fresh Squeezed Orange Juice"
         assert order.pending_field != "drink_selection"
 
 
@@ -2341,7 +2341,7 @@ class TestQuantityChange:
         assert result is not None
         coffees = [i for i in order.items.items if i.has_attribute('size')]
         assert len(coffees) == 2
-        assert all(c.drink_type == "Tropicana Orange Juice No Pulp" for c in coffees)
+        assert all(c.menu_item_name == "Tropicana Orange Juice No Pulp" for c in coffees)
 
     def test_can_you_make_it_two(self):
         """Test 'can you make it two' pattern."""
@@ -2431,7 +2431,7 @@ class TestCheeseChoice:
         order.pending_field = "bagel:cheese"
 
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.needs_cheese_clarification = True
+        bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
@@ -2454,7 +2454,7 @@ class TestCheeseChoice:
         order.pending_field = "bagel:cheese"
 
         bagel = BagelItemTask(bagel_type="everything", toasted=True)
-        bagel.needs_cheese_clarification = True
+        bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
@@ -2475,7 +2475,7 @@ class TestCheeseChoice:
         order.pending_field = "bagel:cheese"
 
         bagel = BagelItemTask(bagel_type="plain")
-        bagel.needs_cheese_clarification = True
+        bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
@@ -2496,7 +2496,7 @@ class TestCheeseChoice:
         order.pending_field = "bagel:cheese"
 
         bagel = BagelItemTask(bagel_type="plain")
-        bagel.needs_cheese_clarification = True
+        bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
@@ -2518,7 +2518,7 @@ class TestCheeseChoice:
         order.pending_field = "bagel:cheese"
 
         bagel = BagelItemTask(bagel_type="plain")
-        bagel.needs_cheese_clarification = True
+        bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
         order.pending_item_id = bagel.id
@@ -2526,9 +2526,10 @@ class TestCheeseChoice:
         result = sm.configuring_item_handler.handle_configuring_item("brie", order)
 
         # Should re-prompt, not add cheese
-        assert len(bagel.toppings) == 0
+        toppings = bagel["toppings"] or []
+        assert len(toppings) == 0
         assert "What kind of cheese" in result.message
-        assert bagel.needs_cheese_clarification is True
+        assert bagel["needs_cheese_clarification"] is True
 
 
 # =============================================================================
@@ -3076,7 +3077,7 @@ class TestCoffeeSize:
 
         result = sm.configuring_item_handler.handle_configuring_item("small please", order)
 
-        assert coffee.size == "small"
+        assert coffee["size"] == "small"
         assert order.pending_field in ("coffee_style", "menu_item_attr_iced", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
         assert "hot or iced" in result.message.lower()
 
@@ -3097,7 +3098,7 @@ class TestCoffeeSize:
 
         result = sm.configuring_item_handler.handle_configuring_item("I'll take a large", order)
 
-        assert coffee.size == "large"
+        assert coffee["size"] == "large"
         assert "hot or iced" in result.message.lower()
 
     def test_invalid_size_reprompts(self, menu_cache_loaded):
@@ -3127,7 +3128,7 @@ class TestCoffeeSize:
         # With data-driven approach, unknown size may get clarification or reprompt
         msg_lower = result.message.lower()
         # Accept either: size not set + reprompt, OR size set if jumbo was mapped
-        if coffee.size is None:
+        if coffee["size"] is None:
             # Should prompt for valid size
             assert "size" in msg_lower or "small" in msg_lower or "large" in msg_lower, \
                 f"Should ask about size, got: {result.message}"
@@ -3238,7 +3239,7 @@ class TestCoffeeSize:
         active_items = order.items.get_active_items()
         # Should only have the bagel left
         assert len(active_items) == 1
-        assert active_items[0].bread == "plain"
+        assert active_items[0]["bread"] == "plain"
         assert order.phase == OrderPhase.TAKING_ITEMS.value
         assert "removed" in result.message.lower()
 
@@ -3278,7 +3279,7 @@ class TestCoffeeStyle:
 
         result = sm.configuring_item_handler.handle_configuring_item("hot please", order)
 
-        assert coffee.iced is False
+        assert coffee["temperature"] == "hot"
         # Unified handler may go to customization checkpoint before marking complete
         assert coffee.status in (TaskStatus.IN_PROGRESS, TaskStatus.COMPLETE)
 
@@ -3300,7 +3301,7 @@ class TestCoffeeStyle:
 
         result = sm.configuring_item_handler.handle_configuring_item("iced", order)
 
-        assert coffee.iced is True
+        assert coffee["temperature"] == "iced"
         # Unified handler may go to customization checkpoint before marking complete
         assert coffee.status in (TaskStatus.IN_PROGRESS, TaskStatus.COMPLETE)
 
@@ -3321,7 +3322,7 @@ class TestCoffeeStyle:
 
         result = sm.configuring_item_handler.handle_configuring_item("cold", order)
 
-        assert coffee.iced is True
+        assert coffee["temperature"] == "iced"
 
     def test_invalid_style_reprompts(self):
         """Test that invalid style re-prompts user."""
@@ -3343,7 +3344,7 @@ class TestCoffeeStyle:
 
         # Should not be set - temperature should be None with invalid input
         # Note: The handler may store "lukewarm" as special_instructions but shouldn't set temperature
-        assert coffee.temperature is None or order.pending_field in ("coffee_style", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
+        assert coffee["temperature"] is None or order.pending_field in ("coffee_style", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
         # Should re-prompt
         assert "hot or iced" in result.message.lower()
 
@@ -3364,10 +3365,11 @@ class TestCoffeeStyle:
 
         result = sm.configuring_item_handler.handle_configuring_item("hot with 2 sugars", order)
 
-        assert coffee.iced is False
-        assert len(coffee.sweeteners) == 1
-        assert coffee.sweeteners[0]["type"] == "sugar"
-        assert coffee.sweeteners[0]["quantity"] == 2
+        assert coffee["temperature"] == "hot"
+        sweeteners = coffee.get_modifiers_by_category("sweetener")
+        assert len(sweeteners) == 1
+        assert sweeteners[0]["slug"] == "sugar"
+        assert sweeteners[0]["quantity"] == 2
 
     def test_style_with_syrup_extracts_both(self):
         """Test that syrup mentioned with style is extracted."""
@@ -3386,9 +3388,10 @@ class TestCoffeeStyle:
 
         result = sm.configuring_item_handler.handle_configuring_item("iced with vanilla", order)
 
-        assert coffee.iced is True
-        assert len(coffee.flavor_syrups) == 1
-        assert coffee.flavor_syrups[0]["type"] == "vanilla"
+        assert coffee["temperature"] == "iced"
+        syrups = coffee.get_modifiers_by_category("syrup")
+        assert len(syrups) == 1
+        assert syrups[0]["slug"] == "vanilla"
 
     def test_completes_coffee_and_clears_pending(self):
         """Test that coffee is marked complete and pending is cleared after full flow."""
@@ -3594,8 +3597,8 @@ class TestCoffeeModifiers:
         coffees = [i for i in order.items.items if hasattr(i, 'menu_item_type') and i.menu_item_type == 'sized_beverage']
         assert len(coffees) == 1
         coffee = coffees[0]
-        assert coffee.size == "small"
-        assert coffee.temperature == "hot" or coffee.iced is False  # hot = not iced
+        assert coffee["size"] == "small"
+        assert coffee["temperature"] == "hot"  # hot = not iced
 
         # Should be pending on modifiers field or customization checkpoint
         # Data-driven flow uses customization_checkpoint which offers "You can change Milk"
@@ -3627,7 +3630,8 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        assert result_coffee.milk is None
+        milk_modifiers = result_coffee.get_modifiers_by_category("milk")
+        assert len(milk_modifiers) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
     def test_without_sugar_removes_sweetener(self):
@@ -3652,7 +3656,8 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        assert result_coffee.sweeteners == []
+        sweeteners = result_coffee.get_modifiers_by_category("sweetener")
+        assert len(sweeteners) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
     def test_without_syrup_removes_syrup(self):
@@ -3677,7 +3682,8 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        assert result_coffee.flavor_syrups == []
+        syrups = result_coffee.get_modifiers_by_category("syrup")
+        assert len(syrups) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
 
@@ -3717,8 +3723,7 @@ class TestBagelModifierRemoval:
 
         # Spread should be removed
         result_bagel = active_items[0]
-        assert result_bagel.spread is None, "Spread should be removed"
-        assert result_bagel.spread_type is None, "Spread type should be removed"
+        assert result_bagel["spread_type"] is None, "Spread type should be removed"
 
         # Response should mention removed
         assert "removed" in result.message.lower()
@@ -3749,7 +3754,7 @@ class TestBagelModifierRemoval:
         active_items = result.order.items.get_active_items()
         assert len(active_items) == 1, "Bagel should NOT be removed"
         result_bagel = active_items[0]
-        assert result_bagel.spread is None, "Spread should be removed"
+        assert result_bagel["spread_type"] is None, "Spread should be removed"
 
     def test_add_scallion_cream_cheese_adds_spread_not_sandwich(self):
         """Test that 'add scallion cream cheese' adds spread to bagel, not a new sandwich.
@@ -3785,13 +3790,13 @@ class TestBagelModifierRemoval:
             f"Should have 1 item (bagel with spread), not 2. Got: {[i.get_summary() for i in active_items]}"
 
         # The bagel should now have the spread
-        from tests.helpers import is_bagel_item
         result_bagel = active_items[0]
-        assert is_bagel_item(result_bagel), "Item should be a bagel"
-        assert result_bagel.spread is not None, "Bagel should have spread added"
+        assert result_bagel.menu_item_type == "bagel", "Item should be a bagel"
+        assert result_bagel["spread_type"] is not None, "Bagel should have spread added"
         # Spread is stored as slug (e.g., "scallion_cc")
-        assert "scallion" in result_bagel.spread.lower() or "cc" in result_bagel.spread.lower(), \
-            f"Spread should be scallion cream cheese (slug), got: {result_bagel.spread}"
+        spread_type = result_bagel["spread_type"]
+        assert "scallion" in spread_type.lower() or "cc" in spread_type.lower(), \
+            f"Spread should be scallion cream cheese (slug), got: {spread_type}"
 
         # Response should confirm the spread was added
         assert "scallion" in result.message.lower() or "cream cheese" in result.message.lower()
@@ -3825,7 +3830,8 @@ class TestBagelModifierRemoval:
 
         # Spread should be updated (slug format like "veggie_cc")
         result_bagel = active_items[0]
-        assert "veggie" in result_bagel.spread.lower() or "cc" in result_bagel.spread.lower()
+        spread_type = result_bagel["spread_type"]
+        assert "veggie" in spread_type.lower() or "cc" in spread_type.lower()
 
     def test_plain_cream_cheese_sets_spread_not_none(self):
         """Test that 'plain cream cheese' sets cream cheese spread, not 'none'.
@@ -3860,11 +3866,12 @@ class TestBagelModifierRemoval:
         # The bagel should have cream cheese spread, NOT "none"
         active_items = order.items.get_active_items()
         assert len(active_items) == 1
-        assert active_items[0].spread is not None, "Spread should be set"
-        assert active_items[0].spread != "none", "Spread should NOT be 'none'"
+        assert active_items[0]["spread_type"] is not None, "Spread should be set"
+        assert active_items[0]["spread_type"] != "none", "Spread should NOT be 'none'"
         # Spread is stored as slug (e.g., "plain_cc")
-        assert "plain_cc" in active_items[0].spread or "cc" in active_items[0].spread, \
-            f"Spread should be plain cream cheese (slug), got: {active_items[0].spread}"
+        spread_type = active_items[0]["spread_type"]
+        assert "plain_cc" in spread_type or "cc" in spread_type, \
+            f"Spread should be plain cream cheese (slug), got: {spread_type}"
 
 
 # =============================================================================
@@ -3894,7 +3901,7 @@ class TestSideChoice:
 
         result = sm.config_helper_handler.handle_side_choice("fruit salad please", omelette, order)
 
-        assert omelette.side_choice == "fruit_salad"
+        assert omelette["side_choice"] == "fruit_salad"
         assert omelette.status == TaskStatus.COMPLETE
 
     def test_bagel_without_type_asks_for_type(self):
@@ -3920,7 +3927,7 @@ class TestSideChoice:
 
         # Should set side_choice and ask for bagel type
         assert "bagel" in result.message.lower() and "kind" in result.message.lower()
-        assert omelette.side_choice == "bagel"
+        assert omelette["side_choice"] == "bagel"
         # Data-driven uses "bagel:bread" format for pending_field
         assert order.pending_field in ("bagel_choice", "menu_item_attr_bread", "bagel:bread")
 
@@ -3945,8 +3952,8 @@ class TestSideChoice:
         result = sm.config_helper_handler.handle_side_choice("plain bagel", omelette, order)
 
         # Side choice and bagel type should be set
-        assert omelette.side_choice == "bagel"
-        assert omelette.bagel_choice == "plain"
+        assert omelette["side_choice"] == "bagel"
+        assert omelette["bagel_choice"] == "plain"
         # Item stays IN_PROGRESS until toasted/spread questions are answered
         assert omelette.status == TaskStatus.IN_PROGRESS
         # Should ask about toasted next
@@ -3996,7 +4003,7 @@ class TestSideChoice:
 
         result = sm.config_helper_handler.handle_side_choice("hmm not sure", omelette, order)
 
-        assert omelette.side_choice is None
+        assert omelette["side_choice"] is None
         assert "bagel" in result.message.lower() and "fruit" in result.message.lower()
         assert "ham omelette" in result.message.lower()
 
@@ -5108,7 +5115,7 @@ class TestGreetingHandler:
             # Should have added a bagel
             bagels = [i for i in order.items.items if i.has_attribute('bread')]
             assert len(bagels) >= 1
-            assert bagels[0].bread == "plain"
+            assert bagels[0]["bread"] == "plain"
 
     def test_greeting_with_coffee_order_adds_item(self):
         """Test that greeting with coffee order adds coffee to cart."""
@@ -5182,7 +5189,7 @@ class TestTakingItemsHandler:
 
             bagels = [i for i in order.items.items if i.has_attribute('bread')]
             assert len(bagels) >= 1
-            assert bagels[0].bread == "everything"
+            assert bagels[0]["bread"] == "everything"
             # Data-driven flow may ask about optional changes, spread, or proceed to "anything else"
             msg_lower = result.message.lower()
             assert "anything else" in msg_lower or "else" in msg_lower or "change" in msg_lower or "spread" in msg_lower
@@ -5312,7 +5319,7 @@ class TestTakingItemsHandler:
             # Should only have the bagel left
             active_items = order.items.get_active_items()
             assert len(active_items) == 1
-            assert active_items[0].bread == "plain"
+            assert active_items[0]["bread"] == "plain"
             assert "removed" in result.message.lower()
             assert "2 coffees" in result.message.lower()
 
@@ -6477,12 +6484,12 @@ class TestModifierRemovalDuringConfig:
 
         # Verify bacon was removed
         remaining_bagel = active_items[0]
-        from tests.helpers import is_bagel_item
-        assert is_bagel_item(remaining_bagel), "Item should be a bagel"
-        assert remaining_bagel.extra_protein is None, "Bacon should be removed"
+        assert remaining_bagel.menu_item_type == "bagel", "Item should be a bagel"
+        assert remaining_bagel["extra_protein"] is None, "Bacon should be removed"
 
         # Verify egg is still there
-        assert remaining_bagel.toppings == ["Egg"], "Egg should still be in toppings"
+        toppings = remaining_bagel["toppings"] or []
+        assert toppings == ["Egg"], "Egg should still be in toppings"
 
         # Verify we continue with the config question
         assert "removed" in result.message.lower() and "bacon" in result.message.lower()
@@ -6521,9 +6528,10 @@ class TestModifierRemovalDuringConfig:
         assert len(active_items) == 1, "Bagel should NOT be removed"
 
         remaining_bagel = active_items[0]
-        assert remaining_bagel.extra_protein == "bacon", "Bacon should still be there"
-        assert "Egg" not in remaining_bagel.toppings, "Egg should be removed from toppings"
-        assert "cheese" in remaining_bagel.toppings, "Cheese should still be in toppings"
+        assert remaining_bagel["extra_protein"] == "bacon", "Bacon should still be there"
+        toppings = remaining_bagel["toppings"] or []
+        assert "Egg" not in toppings, "Egg should be removed from toppings"
+        assert "cheese" in toppings, "Cheese should still be in toppings"
 
     def test_remove_nonexistent_modifier_falls_through_to_item_search(self):
         """Test that removing a modifier not on the item falls through to item search logic."""

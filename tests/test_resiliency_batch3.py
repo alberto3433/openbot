@@ -36,7 +36,7 @@ class TestNaturalLanguageVariation:
 
         # Should be a plain bagel
         bagel = bagels[0]
-        assert bagel.bread == "plain", f"Should be plain bagel, got: {bagel.bread}"
+        assert bagel["bread"] == "plain", f"Should be plain bagel, got: {bagel['bread']}"
 
     def test_lemme_get_a_coffee(self):
         """
@@ -71,9 +71,9 @@ class TestNaturalLanguageVariation:
         assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
 
         coffee = coffees[0]
-        assert coffee.drink_type.lower() == "latte", f"Should be latte, got: {coffee.drink_type}"
-        assert coffee.size == "large", f"Should be large, got: {coffee.size}"
-        assert coffee.iced is True, f"Should be iced, got: {coffee.iced}"
+        assert coffee.menu_item_name.lower() == "latte", f"Should be latte, got: {coffee.menu_item_name}"
+        assert coffee["size"] == "large", f"Should be large, got: {coffee['size']}"
+        assert coffee["temperature"] == "iced", f"Should be iced, got: {coffee['temperature']}"
 
     def test_throw_in_a_muffin(self):
         """
@@ -126,7 +126,7 @@ class TestNaturalLanguageVariation:
 
         bagel = bagels[0]
         # Should understand tosted as toasted
-        assert bagel.toasted is True, f"Should be toasted, got: {bagel.toasted}"
+        assert bagel["toasted"] is True, f"Should be toasted, got: {bagel['toasted']}"
 
     def test_typo_expresso(self):
         """
@@ -151,8 +151,8 @@ class TestNaturalLanguageVariation:
         if coffees:
             coffee = coffees[0]
             # Should be espresso
-            assert coffee.drink_type == "espresso", \
-                f"Should be espresso, got: {coffee.drink_type}"
+            assert coffee.menu_item_name.lower() == "espresso", \
+                f"Should be espresso, got: {coffee.menu_item_name}"
         else:
             # Or should be asking about espresso
             assert "espresso" in result.message.lower() or "expresso" in result.message.lower(), \

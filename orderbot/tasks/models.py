@@ -20,8 +20,7 @@ import uuid
 def get_modifier_name(entry: dict) -> str:
     """Extract the modifier name from a modifier entry dict.
 
-    Standard format uses "slug" key:
-        {"slug": "vanilla", "category": "syrup", "quantity": 1}
+    Standard format uses "slug" key
 
     Args:
         entry: Dict with modifier info
@@ -30,41 +29,6 @@ def get_modifier_name(entry: dict) -> str:
         The modifier slug, or empty string if not found
     """
     return entry.get("slug") or ""
-
-
-def normalize_modifier_entry(entry: dict, category: str | None = None) -> dict:
-    """Ensure a modifier entry has all standard fields.
-
-    Adds display_name (derived from slug if missing) and ensures quantity is present.
-
-    Args:
-        entry: Dict with modifier info (must have "slug" key)
-        category: Optional category to add (e.g., "syrup", "sweetener")
-
-    Returns:
-        Dict with "slug", "display_name", "quantity", and optionally "category"
-    """
-    name = get_modifier_name(entry)
-    effective_category = category or entry.get("category")
-
-    # Build display name, adding category suffix for syrups if not already present
-    display_name = entry.get("display_name")
-    if not display_name:
-        display_name = name.replace("_", " ").title()
-        # Add "Syrup" suffix for syrups if not already present
-        if effective_category == "syrup" and not display_name.lower().endswith(" syrup"):
-            display_name = f"{display_name} Syrup"
-
-    result = {
-        "slug": name,
-        "display_name": display_name,
-        "quantity": entry.get("quantity", 1),
-    }
-    if "price" in entry:
-        result["price"] = entry["price"]
-    if effective_category:
-        result["category"] = effective_category
-    return result
 
 
 class TaskStatus(str, Enum):
@@ -180,14 +144,13 @@ class BaseTask(BaseModel):
 # =============================================================================
 
 class ItemTask(BaseTask):
-    """Base class for order items (bagels, coffee, etc.)."""
+    """Base class for order items."""
 
-    item_type: str  # "bagel", "coffee", "sandwich", etc.
+    item_type: str
     quantity: int = 1
     unit_price: float = 0.0
 
     # Free-form special instructions that don't fit standard modifiers
-    # e.g., "light on the cream cheese", "extra crispy", "splash of milk"
     special_instructions: str | None = None
 
     def get_display_name(self) -> str:
@@ -200,7 +163,17 @@ class ItemTask(BaseTask):
 
 
 class MenuItemTask(ItemTask):
-    """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette')."""
+    """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette').
+
+    Attribute values are accessed via dict-style syntax:
+        item["size"] = "large"
+        item["bread"] = "everything"
+        if "toasted" in item:
+            ...
+
+    Modifiers (ingredients with categories) are stored in the modifiers list
+    and accessed via get_modifiers_by_category(), add_modifier(), remove_modifier().
+    """
 
     item_type: Literal["menu_item"] = "menu_item"
 
@@ -211,195 +184,45 @@ class MenuItemTask(ItemTask):
     modifications: list[str] = Field(default_factory=list)  # User modifications
     removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed
 
-    # NOTE: Customization fields (side_choice, bagel_choice, toasted, spread, etc.)
-    # are now stored in attribute_values via property accessors for data-driven architecture.
-    # See property definitions below.
     is_signature: bool = False  # Whether this is a signature/featured menu item
 
     # Dynamic attribute values from DB-driven configuration
     # Stores answers for attributes defined in item_type_attributes table
-    # e.g., {"bread": "plain", "add_egg": "scrambled_egg", "scooped": True}
     attribute_values: dict[str, Any] = Field(default_factory=dict)
 
     # Unified modifier storage - all modifiers regardless of category
-    # Each entry: {"slug": "vanilla", "category": "syrup", "quantity": 1, "price": 0.75, "display_name": "Vanilla Syrup"}
     modifiers: list[dict] = Field(default_factory=list)
 
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
     # -------------------------------------------------------------------------
-    # Generic helper properties
+    # Dict-style access to attribute_values
     # -------------------------------------------------------------------------
 
-    @property
-    def item_name(self) -> str | None:
-        """Alias for menu_item_name (backward-compatible accessor)."""
-        return self.menu_item_name
+    def __getitem__(self, key: str) -> Any:
+        """Get attribute value: item["size"], item["bread"], etc."""
+        return self.attribute_values.get(key)
 
-    @item_name.setter
-    def item_name(self, value: str | None) -> None:
-        """Set item name (updates menu_item_name)."""
-        if value is not None:
-            self.menu_item_name = value
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Set attribute value: item["size"] = "large"."""
+        if value is None:
+            # Setting to None removes the key
+            self.attribute_values.pop(key, None)
+        else:
+            self.attribute_values[key] = value
 
-    # -------------------------------------------------------------------------
-    # Beverage helper properties (for sized_beverage items like coffee)
-    # These provide a CoffeeItemTask-compatible interface using attribute_values
-    # -------------------------------------------------------------------------
+    def __delitem__(self, key: str) -> None:
+        """Delete attribute value: del item["size"]."""
+        self.attribute_values.pop(key, None)
 
-    @property
-    def drink_type(self) -> str | None:
-        """Get drink type (alias for menu_item_name for beverages with size attribute)."""
-        return self.menu_item_name if self.has_attribute("size") else None
+    def __contains__(self, key: str) -> bool:
+        """Check if attribute exists: "size" in item."""
+        return key in self.attribute_values
 
-    @drink_type.setter
-    def drink_type(self, value: str | None) -> None:
-        """Set drink type (updates menu_item_name for beverages)."""
-        if value is not None:
-            self.menu_item_name = value
-
-    @property
-    def size(self) -> str | None:
-        """Get beverage size from attribute_values."""
-        return self.attribute_values.get("size")
-
-    @size.setter
-    def size(self, value: str | None) -> None:
-        """Set beverage size in attribute_values."""
-        if value is not None:
-            self.attribute_values["size"] = value
-        elif "size" in self.attribute_values:
-            del self.attribute_values["size"]
-
-    @property
-    def decaf(self) -> bool | None:
-        """Get decaf flag from attribute_values."""
-        return self.attribute_values.get("decaf")
-
-    @decaf.setter
-    def decaf(self, value: bool | None) -> None:
-        """Set decaf flag in attribute_values."""
-        if value is not None:
-            self.attribute_values["decaf"] = value
-        elif "decaf" in self.attribute_values:
-            del self.attribute_values["decaf"]
-
-    @property
-    def temperature(self) -> str | None:
-        """Get temperature from attribute_values ('hot' or 'iced')."""
-        return self.attribute_values.get("temperature")
-
-    @temperature.setter
-    def temperature(self, value: str | None) -> None:
-        """Set temperature in attribute_values."""
-        if value is not None:
-            self.attribute_values["temperature"] = value
-        elif "temperature" in self.attribute_values:
-            del self.attribute_values["temperature"]
-
-    @property
-    def iced(self) -> bool | None:
-        """Get iced flag from temperature attribute.
-
-        Returns True if temperature is 'iced', False if 'hot', None if unset.
-        """
-        temp = self.attribute_values.get("temperature")
-        if temp is None:
-            return None
-        return temp == "iced"
-
-    @iced.setter
-    def iced(self, value: bool | None) -> None:
-        """Set iced flag by setting temperature attribute."""
-        if value is True:
-            self.attribute_values["temperature"] = "iced"
-        elif value is False:
-            self.attribute_values["temperature"] = "hot"
-        elif "temperature" in self.attribute_values:
-            del self.attribute_values["temperature"]
-
-    @property
-    def milk(self) -> str | None:
-        """Get milk type from modifiers.
-
-        Returns the slug of the first milk modifier.
-        """
-        for m in self.modifiers:
-            if m.get("category") == "milk":
-                return m.get("slug")
-        return None
-
-    @milk.setter
-    def milk(self, value: str | None) -> None:
-        """Set milk type in modifiers."""
-        # Remove existing milk entries
-        self.modifiers = [m for m in self.modifiers if m.get("category") != "milk"]
-
-        if value is not None:
-            self.modifiers.append({
-                "slug": value,
-                "display_name": value.replace("_", " ").title(),
-                "quantity": 1,
-                "category": "milk",
-            })
-
-    @property
-    def cream_level(self) -> str | None:
-        """Get cream level from attribute_values."""
-        return self.attribute_values.get("cream_level")
-
-    @cream_level.setter
-    def cream_level(self, value: str | None) -> None:
-        """Set cream level in attribute_values."""
-        if value is not None:
-            self.attribute_values["cream_level"] = value
-        elif "cream_level" in self.attribute_values:
-            del self.attribute_values["cream_level"]
-
-    @property
-    def sweeteners(self) -> list[dict]:
-        """Get sweeteners list from modifiers.
-
-        Returns entries with category="sweetener".
-        """
-        return [m for m in self.modifiers if m.get("category") == "sweetener"]
-
-    @sweeteners.setter
-    def sweeteners(self, value: list[dict]) -> None:
-        """Set sweeteners list in modifiers."""
-        # Remove existing sweetener entries
-        self.modifiers = [m for m in self.modifiers if m.get("category") != "sweetener"]
-
-        # Add new sweetener entries (normalize to canonical format)
-        for entry in (value or []):
-            normalized = normalize_modifier_entry(entry, category="sweetener")
-            slug = normalized["slug"]
-            # Check for duplicates
-            if slug and not any(m.get("slug") == slug and m.get("category") == "sweetener" for m in self.modifiers):
-                self.modifiers.append(normalized)
-
-    @property
-    def flavor_syrups(self) -> list[dict]:
-        """Get flavor syrups list from modifiers.
-
-        Returns entries with category="syrup".
-        """
-        return [m for m in self.modifiers if m.get("category") == "syrup"]
-
-    @flavor_syrups.setter
-    def flavor_syrups(self, value: list[dict]) -> None:
-        """Set flavor syrups list in modifiers."""
-        # Remove existing syrup entries
-        self.modifiers = [m for m in self.modifiers if m.get("category") != "syrup"]
-
-        # Add new syrup entries (normalize to canonical format)
-        for entry in (value or []):
-            normalized = normalize_modifier_entry(entry, category="syrup")
-            slug = normalized["slug"]
-            # Check for duplicates
-            if slug and not any(m.get("slug") == slug and m.get("category") == "syrup" for m in self.modifiers):
-                self.modifiers.append(normalized)
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get attribute value with default: item.get("size", "medium")."""
+        return self.attribute_values.get(key, default)
 
     def add_modifier(
         self,
@@ -414,22 +237,32 @@ class MenuItemTask(ItemTask):
         All modifiers are stored in a unified list regardless of category.
 
         Args:
-            category: Modifier category (e.g., "syrup", "sweetener", "milk", "protein", "topping")
-            slug: Modifier slug (e.g., "vanilla", "sugar", "oat", "bacon")
+            category: Modifier category
+            slug: Modifier slug
             quantity: Quantity (default 1)
             price: Price per unit (default 0.0)
-            display_name: Display name (if not provided, derived from slug)
+            display_name: Display name (if not provided, looked up from database)
         """
         # Check if already present
         if any(m.get("slug") == slug and m.get("category") == category for m in self.modifiers):
             return
+
+        # Look up display name from database if not provided
+        if not display_name:
+            # Lazy import to avoid circular dependency
+            from orderbot.menu_data_cache import menu_cache
+            display_name = menu_cache.get_ingredient_display_name(slug)
+
+        # Fall back to title-cased slug if not in database
+        if not display_name:
+            display_name = slug.replace("_", " ").title()
 
         # Build entry
         entry = {
             "slug": slug,
             "category": category,
             "quantity": quantity,
-            "display_name": display_name or slug.replace("_", " ").title(),
+            "display_name": display_name,
         }
         if price > 0:
             entry["price"] = price
@@ -471,105 +304,6 @@ class MenuItemTask(ItemTask):
                     return True
         return False
 
-    @property
-    def wants_syrup(self) -> bool:
-        """Get wants_syrup flag from attribute_values."""
-        return self.attribute_values.get("wants_syrup", False)
-
-    @wants_syrup.setter
-    def wants_syrup(self, value: bool) -> None:
-        """Set wants_syrup flag in attribute_values."""
-        self.attribute_values["wants_syrup"] = value
-
-    @property
-    def pending_syrup_quantity(self) -> int:
-        """Get pending_syrup_quantity from attribute_values."""
-        return self.attribute_values.get("pending_syrup_quantity", 1)
-
-    @pending_syrup_quantity.setter
-    def pending_syrup_quantity(self, value: int) -> None:
-        """Set pending_syrup_quantity in attribute_values."""
-        self.attribute_values["pending_syrup_quantity"] = value
-
-    @property
-    def extra_shots(self) -> int:
-        """Get extra_shots from attribute_values."""
-        return self.attribute_values.get("extra_shots", 0)
-
-    @extra_shots.setter
-    def extra_shots(self, value: int) -> None:
-        """Set extra_shots in attribute_values."""
-        self.attribute_values["extra_shots"] = value
-
-    # Upcharge properties for beverages
-    @property
-    def size_upcharge(self) -> float:
-        """Get size upcharge from attribute_values."""
-        return self.attribute_values.get("size_upcharge", 0.0)
-
-    @size_upcharge.setter
-    def size_upcharge(self, value: float) -> None:
-        """Set size upcharge in attribute_values."""
-        self.attribute_values["size_upcharge"] = value
-
-    @property
-    def milk_upcharge(self) -> float:
-        """Get milk upcharge from attribute_values."""
-        return self.attribute_values.get("milk_upcharge", 0.0)
-
-    @milk_upcharge.setter
-    def milk_upcharge(self, value: float) -> None:
-        """Set milk upcharge in attribute_values and update milk entry price."""
-        self.attribute_values["milk_upcharge"] = value
-        # Also update the price in the milk entry in modifiers
-        for entry in self.modifiers:
-            if entry.get("category") == "milk":
-                entry["price"] = value
-                break
-
-    @property
-    def syrup_upcharge(self) -> float:
-        """Get syrup upcharge from attribute_values."""
-        return self.attribute_values.get("syrup_upcharge", 0.0)
-
-    @syrup_upcharge.setter
-    def syrup_upcharge(self, value: float) -> None:
-        """Set syrup upcharge in attribute_values."""
-        self.attribute_values["syrup_upcharge"] = value
-
-    @property
-    def iced_upcharge(self) -> float:
-        """Get iced upcharge from attribute_values."""
-        return self.attribute_values.get("iced_upcharge", 0.0)
-
-    @iced_upcharge.setter
-    def iced_upcharge(self, value: float) -> None:
-        """Set iced upcharge in attribute_values."""
-        self.attribute_values["iced_upcharge"] = value
-
-    @property
-    def extra_shots_upcharge(self) -> float:
-        """Get extra shots upcharge from attribute_values."""
-        return self.attribute_values.get("extra_shots_upcharge", 0.0)
-
-    @extra_shots_upcharge.setter
-    def extra_shots_upcharge(self, value: float) -> None:
-        """Set extra shots upcharge in attribute_values."""
-        self.attribute_values["extra_shots_upcharge"] = value
-
-    @property
-    def is_espresso(self) -> bool:
-        """Check if this is an espresso drink (has shots attribute).
-
-        Data-driven: checks if item type has the 'shots' attribute,
-        which identifies espresso-style items that can have extra shots.
-        This is a capability check, not a name check.
-        """
-        # Espresso-style items have shots attribute
-        # This covers both pure espresso (shots without size) and
-        # espresso-based drinks that allow shot customization
-        return self.has_attribute("shots")
-
     # -------------------------------------------------------------------------
     # Generic attribute query method (data-driven)
     # -------------------------------------------------------------------------
@@ -581,16 +315,10 @@ class MenuItemTask(ItemTask):
         checking item type names directly. It queries the database to see
         what attributes are defined for this item's type.
 
-        Also supports legacy alias lookup (e.g., "spread" -> "spread_type").
-
-        Examples:
-            item.has_attribute("size")        # True for sized_beverage
-            item.has_attribute("bread")       # True for bagel
-            item.has_attribute("spread")      # True for bagel, some sandwiches
-            item.has_attribute("milk")        # True for sized_beverage
+        Also supports legacy alias lookup.
 
         Args:
-            attr_slug: The attribute slug to check for (e.g., "size", "spread", "milk")
+            attr_slug: The attribute slug to check for
 
         Returns:
             True if this item type has the specified attribute, False otherwise.
@@ -616,186 +344,8 @@ class MenuItemTask(ItemTask):
         return False
 
     # -------------------------------------------------------------------------
-    # Bagel helper properties (for bagel items)
-    # These provide a BagelItemTask-compatible interface using attribute_values
+    # Display name helpers (data-driven)
     # -------------------------------------------------------------------------
-
-    @property
-    def bread(self) -> str | None:
-        """Get bread type from attribute_values."""
-        return self.attribute_values.get("bread")
-
-    @bread.setter
-    def bread(self, value: str | None) -> None:
-        """Set bread type in attribute_values."""
-        if value is not None:
-            self.attribute_values["bread"] = value
-        elif "bread" in self.attribute_values:
-            del self.attribute_values["bread"]
-
-    @property
-    def bread_upcharge(self) -> float:
-        """Get bread type upcharge from attribute_values."""
-        return self.attribute_values.get("bread_upcharge", 0.0)
-
-    @bread_upcharge.setter
-    def bread_upcharge(self, value: float) -> None:
-        """Set bread type upcharge in attribute_values."""
-        self.attribute_values["bread_upcharge"] = value
-
-    @property
-    def toasted(self) -> bool | None:
-        """Get toasted flag from attribute_values."""
-        return self.attribute_values.get("toasted")
-
-    @toasted.setter
-    def toasted(self, value: bool | None) -> None:
-        """Set toasted flag in attribute_values."""
-        if value is not None:
-            self.attribute_values["toasted"] = value
-        elif "toasted" in self.attribute_values:
-            del self.attribute_values["toasted"]
-
-    @property
-    def scooped(self) -> bool | None:
-        """Get scooped flag from attribute_values."""
-        return self.attribute_values.get("scooped")
-
-    @scooped.setter
-    def scooped(self, value: bool | None) -> None:
-        """Set scooped flag in attribute_values."""
-        if value is not None:
-            self.attribute_values["scooped"] = value
-        elif "scooped" in self.attribute_values:
-            del self.attribute_values["scooped"]
-
-    @property
-    def spread_type(self) -> str | None:
-        """Get spread type from attribute_values."""
-        return self.attribute_values.get("spread_type")
-
-    @spread_type.setter
-    def spread_type(self, value: str | None) -> None:
-        """Set spread type in attribute_values."""
-        if value is not None:
-            self.attribute_values["spread_type"] = value
-        elif "spread_type" in self.attribute_values:
-            del self.attribute_values["spread_type"]
-
-    @property
-    def spread(self) -> str | None:
-        """Alias for spread_type (backward-compatible accessor)."""
-        return self.spread_type
-
-    @spread.setter
-    def spread(self, value: str | None) -> None:
-        """Set spread type (updates attribute_values["spread_type"])."""
-        self.spread_type = value
-
-    @property
-    def toppings(self) -> list[str]:
-        """Get toppings list from attribute_values.
-
-        Creates the list if it doesn't exist, so .append() works correctly.
-        """
-        if "toppings" not in self.attribute_values:
-            self.attribute_values["toppings"] = []
-        return self.attribute_values["toppings"]
-
-    @toppings.setter
-    def toppings(self, value: list[str]) -> None:
-        """Set toppings list in attribute_values."""
-        self.attribute_values["toppings"] = value or []
-
-    @property
-    def extra_protein(self) -> str | None:
-        """Get extra protein from attribute_values."""
-        return self.attribute_values.get("extra_protein")
-
-    @extra_protein.setter
-    def extra_protein(self, value: str | None) -> None:
-        """Set extra protein in attribute_values."""
-        if value is not None:
-            self.attribute_values["extra_protein"] = value
-        elif "extra_protein" in self.attribute_values:
-            del self.attribute_values["extra_protein"]
-
-    @property
-    def needs_cheese_clarification(self) -> bool:
-        """Get needs_cheese_clarification flag from attribute_values."""
-        return self.attribute_values.get("needs_cheese_clarification", False)
-
-    @needs_cheese_clarification.setter
-    def needs_cheese_clarification(self, value: bool) -> None:
-        """Set needs_cheese_clarification flag in attribute_values."""
-        self.attribute_values["needs_cheese_clarification"] = value
-
-    # -------------------------------------------------------------------------
-    # Side choice properties (for items with configurable sides like omelettes)
-    # These are stored in attribute_values for data-driven architecture
-    # -------------------------------------------------------------------------
-
-    @property
-    def side_choice(self) -> str | None:
-        """Get side choice from attribute_values (e.g., 'bagel' or 'fruit_salad')."""
-        return self.attribute_values.get("side_choice")
-
-    @side_choice.setter
-    def side_choice(self, value: str | None) -> None:
-        """Set side choice in attribute_values."""
-        if value is not None:
-            self.attribute_values["side_choice"] = value
-        elif "side_choice" in self.attribute_values:
-            del self.attribute_values["side_choice"]
-
-    @property
-    def bagel_choice(self) -> str | None:
-        """Get bagel choice from attribute_values (which bagel type for side)."""
-        return self.attribute_values.get("bagel_choice")
-
-    @bagel_choice.setter
-    def bagel_choice(self, value: str | None) -> None:
-        """Set bagel choice in attribute_values."""
-        if value is not None:
-            self.attribute_values["bagel_choice"] = value
-        elif "bagel_choice" in self.attribute_values:
-            del self.attribute_values["bagel_choice"]
-
-    @property
-    def bagel_choice_upcharge(self) -> float:
-        """Get bagel choice upcharge from attribute_values."""
-        return self.attribute_values.get("bagel_choice_upcharge", 0.0)
-
-    @bagel_choice_upcharge.setter
-    def bagel_choice_upcharge(self, value: float) -> None:
-        """Set bagel choice upcharge in attribute_values."""
-        self.attribute_values["bagel_choice_upcharge"] = value
-
-    @property
-    def spread_price(self) -> float | None:
-        """Get spread price from attribute_values."""
-        return self.attribute_values.get("spread_price")
-
-    @spread_price.setter
-    def spread_price(self, value: float | None) -> None:
-        """Set spread price in attribute_values."""
-        if value is not None:
-            self.attribute_values["spread_price"] = value
-        elif "spread_price" in self.attribute_values:
-            del self.attribute_values["spread_price"]
-
-    @property
-    def requires_side_choice(self) -> bool:
-        """Get requires_side_choice flag from attribute_values."""
-        return self.attribute_values.get("requires_side_choice", False)
-
-    @requires_side_choice.setter
-    def requires_side_choice(self, value: bool) -> None:
-        """Set requires_side_choice flag in attribute_values."""
-        if value:
-            self.attribute_values["requires_side_choice"] = value
-        elif "requires_side_choice" in self.attribute_values:
-            del self.attribute_values["requires_side_choice"]
 
     def _get_attribute_display_name(self, attr_slug: str, value_slug: str | None = None) -> str | None:
         """Get display name for an attribute value from stored selections.
@@ -918,12 +468,13 @@ class MenuItemTask(ItemTask):
         Uses data-driven approach: check for {side_choice}_choice field dynamically.
         """
         missing = []
-        if self.requires_side_choice and not self.side_choice:
+        if self["requires_side_choice"] and not self["side_choice"]:
             missing.append("side_choice")
         # Check if side_choice type needs a specific choice (e.g., bagel_choice for bagel)
-        if self.side_choice:
-            choice_field = f"{self.side_choice}_choice"
-            if hasattr(self, choice_field) and getattr(self, choice_field, None) is None:
+        side_choice = self["side_choice"]
+        if side_choice:
+            choice_field = f"{side_choice}_choice"
+            if self[choice_field] is None:
                 missing.append(choice_field)
         return missing
 
@@ -1157,7 +708,7 @@ class OrderTask(BaseTask):
     last_bot_message: str | None = None  # For context
 
     # Queue of items that need configuration after the current one is done
-    # Each entry is a dict with: item_id, item_type (e.g., "coffee", "bagel")
+    # Each entry is a dict with: item_id, item_type
     pending_config_queue: list[dict] = Field(default_factory=list)
 
     # Modifiers stored during item disambiguation

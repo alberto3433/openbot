@@ -131,15 +131,15 @@ def create_bagel_task(
         quantity=quantity,
         unit_price=unit_price,
     )
-    # Set properties via setters (stored in attribute_values)
+    # Set attribute values via dict-style access
     if toasted is not None:
-        bagel.toasted = toasted
+        bagel["toasted"] = toasted
     if spread:
-        bagel.spread = spread
+        bagel["spread_type"] = spread
     if bagel_type:
-        bagel.bread = bagel_type
+        bagel["bread"] = bagel_type
     if extras:
-        bagel.toppings = extras
+        bagel["toppings"] = extras
     return bagel
 
 
@@ -161,15 +161,19 @@ def create_coffee_task(
         unit_price=unit_price,
     )
     if size:
-        coffee.size = size
-    # Note: Temperature (iced/hot) is now part of the menu_item_name itself
-    # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
+        coffee["size"] = size
+    # Temperature (iced/hot) stored as "temperature" attribute with value "iced" or "hot"
+    if iced is not None:
+        coffee["temperature"] = "iced" if iced else "hot"
+    # Milk is now stored via get_modifiers_by_category("milk"), but for test setup
+    # we can add it as a modifier
     if milk:
-        coffee.milk = milk
+        coffee.add_modifier(category="milk", slug=milk)
     if sweeteners:
-        coffee.sweeteners = sweeteners
+        for sweetener in sweeteners:
+            coffee.add_modifier(category="sweetener", slug=sweetener)
     if extra_shots:
-        coffee.extra_shots = extra_shots
+        coffee["extra_shots"] = extra_shots
     return coffee
 
 
@@ -513,8 +517,8 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via property (not constructor which ignores extra fields)
-        item.requires_side_choice = True
+        # Set via dict-style access
+        item["requires_side_choice"] = True
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -526,9 +530,9 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via properties (not constructor which ignores extra fields)
-        item.requires_side_choice = True
-        item.side_choice = "bagel"
+        # Set via dict-style access
+        item["requires_side_choice"] = True
+        item["side_choice"] = "bagel"
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -540,12 +544,12 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via properties (not constructor which ignores extra fields)
-        item.requires_side_choice = True
-        item.side_choice = "fruit_salad"
-        # Set bagel_choice in attribute_values (even though fruit salad doesn't need it,
+        # Set via dict-style access
+        item["requires_side_choice"] = True
+        item["side_choice"] = "fruit_salad"
+        # Set bagel_choice (even though fruit salad doesn't need it,
         # the mock marks it as required so we need to fill it)
-        item.attribute_values["bagel_choice"] = "none"
+        item["bagel_choice"] = "none"
         orch = ItemSlotOrchestrator(item)
 
         assert orch.is_complete()
@@ -587,7 +591,7 @@ class TestFillSlot:
         slot = orch.get_next_slot()  # bread (was bagel_type)
         orch.fill_slot(slot, "everything")
 
-        assert bagel.bread == "everything"
+        assert bagel["bread"] == "everything"
 
 
 class TestSyncDbOrderToTask:

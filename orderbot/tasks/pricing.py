@@ -538,13 +538,10 @@ class PricingEngine:
     def recalculate_item_price(self, item) -> float:
         """Generic price recalculation for any menu item type.
 
-        This is the preferred entry point for price recalculation. It calculates
-        price using a data-driven approach:
+        This is the single entry point for all price recalculation. It calculates
+        price using a fully data-driven approach with no hardcoded attribute names:
 
-        total = base_price
-              + sum(attribute_option.price_modifier for selected attributes)
-              + conditional_modifiers (e.g., iced upcharge varies by size)
-              + sum(modifier prices for proteins, spreads, extras, syrups)
+        total = base_price + sum(attribute_option.price_modifier for all selected options)
 
         Args:
             item: Any item task (MenuItemTask)
@@ -563,21 +560,27 @@ class PricingEngine:
                 "menu_item_type is required but not set on item."
             )
 
-        # Get attribute values from the item
-        attr_values = getattr(item, 'attribute_values', {})
+        # Get attribute values and modifiers from the item
+        attr_values = getattr(item, 'attribute_values', {}) or {}
+        item_modifiers = getattr(item, 'modifiers', []) or []
 
-        # Get size value early - needed for both base price lookup and upcharge calc
+        # =====================================================================
+        # 1. Determine base price (respecting variant-based pricing)
+        # =====================================================================
+
+        # Check if item has variant-based pricing (e.g., size_prices)
+        # If so, the variant dimension is already factored into the base price
+        uses_variant_pricing = False
+        variant_attr = None  # The attribute covered by variant pricing (e.g., "size")
+
+        # Try to get size from attribute_values for variant lookup
         size_value = attr_values.get("size")
-
-        # Check if item has size-based pricing (explicit prices per size)
-        # If so, get base price using size; otherwise use traditional base_price + upcharge
-        uses_size_pricing = False
         size_price, size_data = self.lookup_size_price(item.menu_item_name, size_value)
 
         if size_price is not None:
-            # Item uses size-based pricing - price already includes size
             base_price = size_price
-            uses_size_pricing = True
+            uses_variant_pricing = True
+            variant_attr = "size"
         else:
             # Traditional pricing: base_price from menu item
             base_price = self.lookup_base_price(item.menu_item_name)
@@ -585,124 +588,82 @@ class PricingEngine:
         total = base_price
 
         # =====================================================================
-        # 1. Attribute option upcharges (size, bread type, etc.)
+        # 2. Process attribute_values generically (no hardcoded attribute names)
         # =====================================================================
 
-        # Size upcharge - only apply for items WITHOUT size-based pricing
-        # (items with size-based pricing already have size factored into base_price)
-        size_upcharge = 0.0
-        if not uses_size_pricing and size_value and size_value.lower() not in ("small", "s"):
-            size_upcharge = self.lookup_attribute_option_upcharge(
-                item_type, "size", size_value
-            )
-            total += size_upcharge
+        skip_suffixes = ("_price", "_upcharge", "_selections", "_choice")
 
-        # Store on item if property exists
-        if hasattr(item, 'size_upcharge'):
-            item.size_upcharge = size_upcharge
+        for attr_slug, attr_value in attr_values.items():
+            # Skip metadata/computed fields
+            if any(attr_slug.endswith(suffix) for suffix in skip_suffixes):
+                continue
+            if attr_slug.startswith("pending_"):
+                continue
 
-        # Bread type upcharge (for items with bread attribute)
-        bread_value = attr_values.get("bagel_type") or attr_values.get("bread")
-        bread_upcharge = 0.0
-        if bread_value:
-            bread_upcharge = self.lookup_attribute_option_upcharge(
-                item_type, "bread", bread_value
-            )
-            total += bread_upcharge
+            # Skip if variant pricing covers this attribute
+            if uses_variant_pricing and attr_slug == variant_attr:
+                continue
 
-        if hasattr(item, 'bread_upcharge'):
-            item.bread_upcharge = bread_upcharge
+            # Skip empty/none values
+            if attr_value is None or attr_value is False or attr_value == "":
+                continue
+            if isinstance(attr_value, str) and attr_value.lower() == "none":
+                continue
+
+            # Handle different value types
+            if isinstance(attr_value, bool) and attr_value is True:
+                # Boolean attributes (e.g., toasted=True) - look up upcharge
+                upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, "true")
+                total += upcharge
+
+            elif isinstance(attr_value, list):
+                # Multi-select: sum prices for each item
+                for item_val in attr_value:
+                    if isinstance(item_val, str) and item_val.lower() != "none":
+                        # Try attribute option first, then modifier
+                        upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, item_val)
+                        if upcharge > 0:
+                            total += upcharge
+                        else:
+                            price = self.lookup_modifier_price(item_val, item_type)
+                            total += price
+                    elif isinstance(item_val, dict):
+                        slug = get_modifier_name(item_val)
+                        qty = item_val.get("quantity", 1) or 1
+                        if slug:
+                            price = self.lookup_modifier_price(slug, item_type)
+                            total += price * qty
+
+            elif isinstance(attr_value, (int, float)):
+                # Numeric values - skip direct pricing (handled via modifiers list)
+                continue
+
+            elif isinstance(attr_value, str):
+                # Single string value - check attribute option first, then modifier
+                upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, attr_value)
+                if upcharge > 0:
+                    total += upcharge
+                else:
+                    price = self.lookup_modifier_price(attr_value, item_type)
+                    total += price
 
         # =====================================================================
-        # 2. Modifier upcharges (milk, syrup, protein, spread, extras)
+        # 3. Process item.modifiers generically (no hardcoded categories)
         # =====================================================================
-        # Note: Temperature (hot/iced) is now part of the menu item name itself
-        # (e.g., "Iced Latte" vs "Hot Latte"), not a modifier with upcharge.
 
-        # Milk upcharge - get from unified modifiers list
-        modifiers = getattr(item, 'modifiers', []) or []
-        milk_entries = [m for m in modifiers if m.get("category") == "milk"]
-        milk_value = milk_entries[0].get("slug") if milk_entries else attr_values.get("milk")
-        milk_upcharge = 0.0
-        if milk_value:
-            milk_upcharge = self.lookup_generic_modifier_price(
-                milk_value, item_type, "milk"
-            )
-            total += milk_upcharge
+        for modifier in item_modifiers:
+            if not isinstance(modifier, dict):
+                continue
 
-        attr_values["milk_upcharge"] = milk_upcharge
+            slug = get_modifier_name(modifier)
+            if not slug:
+                continue
 
-        # Syrup upcharge (sum of all syrups * quantities)
-        # Get from unified modifiers list (category="syrup")
-        syrup_selections = [m for m in modifiers if m.get("category") == "syrup"] or attr_values.get("syrup_selections", [])
-        syrup_upcharge = 0.0
-        for syrup in syrup_selections:
-            if isinstance(syrup, dict):
-                # Use get_modifier_name to handle all key formats ("slug", "type", "flavor")
-                flavor = get_modifier_name(syrup)
-                qty = syrup.get("quantity", 1) or 1
-                single_price = self.lookup_generic_modifier_price(
-                    flavor, item_type, "syrup"
-                )
-                entry_upcharge = single_price * qty
-                syrup_upcharge += entry_upcharge
-                syrup["price"] = entry_upcharge  # Store for adapter display
-        total += syrup_upcharge
+            quantity = modifier.get("quantity", 1) or 1
 
-        attr_values["syrup_upcharge"] = syrup_upcharge
-
-        # Extra shots upcharge (for espresso drinks)
-        extra_shots = attr_values.get("extra_shots", 0)
-        extra_shots_upcharge = 0.0
-        if extra_shots > 0:
-            if extra_shots == 1:
-                extra_shots_upcharge = self.lookup_generic_modifier_price(
-                    "double_shot", item_type, "extras"
-                )
-            elif extra_shots >= 2:
-                extra_shots_upcharge = self.lookup_generic_modifier_price(
-                    "triple_shot", item_type, "extras"
-                )
-            total += extra_shots_upcharge
-
-        attr_values["extra_shots_upcharge"] = extra_shots_upcharge
-
-        # Protein upcharge
-        protein = attr_values.get("extra_protein")
-        if protein:
-            protein_price = self.lookup_generic_modifier_price(
-                protein, item_type
-            )
-            total += protein_price
-
-        # Toppings upcharge (toppings, cheese, etc.)
-        toppings = attr_values.get("toppings")
-        if toppings:
-            for extra in toppings:
-                extra_price = self.lookup_generic_modifier_price(
-                    extra, item_type
-                )
-                total += extra_price
-
-        # Spread upcharge - try compound name, then base, then plain-prefixed
-        spread = attr_values.get("spread") or attr_values.get("spread_type")
-        spread_type = attr_values.get("spread_type")
-        spread_upcharge = 0.0
-        if spread and spread.lower() != "none":
-            # Try compound spread name first (e.g., "scallion_cream_cheese")
-            if spread_type:
-                compound_slug = f"{spread_type}_{spread}".replace(" ", "_").lower()
-                spread_upcharge = self.lookup_modifier_price(compound_slug, item_type)
-            # Fall back to base spread name
-            if spread_upcharge == 0.0:
-                spread_upcharge = self.lookup_modifier_price(spread, item_type)
-            # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
-            if spread_upcharge == 0.0:
-                plain_slug = f"plain_{spread.lower().replace(' ', '_')}"
-                spread_upcharge = self.lookup_modifier_price(plain_slug, item_type)
-            total += spread_upcharge
-
-        attr_values["spread_price"] = spread_upcharge if spread_upcharge > 0 else None
+            # Look up price for this modifier
+            price = self.lookup_modifier_price(slug, item_type)
+            total += price * quantity
 
         # =====================================================================
         # 4. Update item price
@@ -786,8 +747,8 @@ class PricingEngine:
         """
         Recalculate and update a menu item's price based on its current modifiers.
 
-        For menu items like omelettes, the base price is the menu item price
-        plus any spread upcharge for the side bagel.
+        This is an alias for recalculate_item_price() for backwards compatibility.
+        All price recalculation now goes through the unified data-driven method.
 
         Args:
             item: The MenuItemTask to recalculate
@@ -795,77 +756,7 @@ class PricingEngine:
         Returns:
             The new calculated price
         """
-        # Get base price from menu item
-        menu_item_data = None
-        if hasattr(item, 'menu_item_id') and item.menu_item_id:
-            from orderbot.menu_data_cache import menu_cache
-            menu_index = menu_cache.get_menu_index()
-            if menu_index:
-                # Search through all categories for the menu item
-                for category_data in menu_index.get("categories", {}).values():
-                    for mi in category_data.get("items", []):
-                        if mi.get("id") == item.menu_item_id:
-                            menu_item_data = mi
-                            break
-                    if menu_item_data:
-                        break
-
-        if not menu_item_data:
-            raise ValueError(
-                f"Cannot recalculate price for menu item '{getattr(item, 'menu_item_name', 'unknown')}'. "
-                f"Menu item with id={getattr(item, 'menu_item_id', None)} not found in menu index. "
-                "Ensure menu is loaded and item exists in database."
-            )
-
-        base_price = menu_item_data.get("base_price", 0.0)
-
-        if base_price == 0:
-            raise ValueError(
-                f"Cannot recalculate price for menu item '{getattr(item, 'menu_item_name', 'unknown')}'. "
-                f"base_price is missing or zero. "
-                "Ensure menu item has a valid base_price in the database."
-            )
-
-        total = base_price
-
-        # Determine item type for modifier price lookups (data-driven from DB)
-        item_type_slug = (
-            getattr(item, 'menu_item_type', None) or
-            menu_item_data.get("item_type")
-        )
-
-        # Add spread upcharge if spread is set - try compound, base, then plain-prefixed
-        if item.spread and item_type_slug:
-            spread_type = getattr(item, 'spread_type', None)
-            spread_price = 0.0
-            # Try compound spread name first (e.g., "scallion_cream_cheese")
-            if spread_type:
-                compound_slug = f"{spread_type}_{item.spread}".replace(" ", "_").lower()
-                spread_price = self.lookup_modifier_price(compound_slug, item_type_slug)
-            # Fall back to base spread name
-            if spread_price == 0.0:
-                spread_price = self.lookup_modifier_price(item.spread, item_type_slug)
-            # Fall back to plain-prefixed name (e.g., "plain_cream_cheese")
-            if spread_price == 0.0:
-                plain_slug = f"plain_{item.spread.lower().replace(' ', '_')}"
-                spread_price = self.lookup_modifier_price(plain_slug, item_type_slug)
-            item.spread_price = spread_price if spread_price > 0 else None
-            total += spread_price
-        else:
-            item.spread_price = None
-
-        # Update the item's price
-        item.unit_price = round(total, 2)
-
-        logger.info(
-            "Recalculated menu item price: %s base=$%.2f + spread=$%.2f -> total=$%.2f",
-            getattr(item, 'menu_item_name', 'unknown'),
-            base_price,
-            item.spread_price or 0.0,
-            item.unit_price
-        )
-
-        return item.unit_price
+        return self.recalculate_item_price(item)
 
     # =========================================================================
     # Category Pricing

@@ -41,10 +41,10 @@ class TestReplacementModificationScenarios:
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
-        assert updated_bagel.bread == "plain", "Bagel type should be preserved"
-        assert updated_bagel.toasted is True, "Toasted should be preserved"
+        assert updated_bagel["bread"] == "plain", "Bagel type should be preserved"
+        assert updated_bagel["toasted"] is True, "Toasted should be preserved"
         # Spread is stored as spread="cream cheese" + spread_type="veggie" = "veggie cream cheese"
-        assert updated_bagel.spread_type == "veggie", f"Spread type should be veggie, got: {updated_bagel.spread_type}"
+        assert updated_bagel["spread_type"] == "veggie", f"Spread type should be veggie, got: {updated_bagel['spread_type']}"
 
     def test_change_coffee_size_small_to_large(self):
         """
@@ -73,9 +73,9 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
-        assert updated_coffee.size == "large", f"Size should be large, got: {updated_coffee.size}"
-        assert updated_coffee.drink_type == "latte", "Drink type should be preserved"
-        assert updated_coffee.iced is False, "Iced should be preserved (False = hot)"
+        assert updated_coffee["size"] == "large", f"Size should be large, got: {updated_coffee['size']}"
+        assert updated_coffee.menu_item_name == "latte", "Drink type should be preserved"
+        assert updated_coffee["temperature"] == "hot", "Temperature should be preserved (hot)"
 
     def test_change_milk_type_on_coffee(self):
         """
@@ -105,9 +105,10 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
-        assert updated_coffee.milk == "oat", f"Milk should be oat, got: {updated_coffee.milk}"
-        assert updated_coffee.size == "medium", "Size should be preserved"
-        assert updated_coffee.drink_type == "latte", "Drink type should be preserved"
+        milk_mods = updated_coffee.get_modifiers_by_category("milk")
+        assert len(milk_mods) == 1 and milk_mods[0]["slug"] == "oat", f"Milk should be oat, got: {milk_mods}"
+        assert updated_coffee["size"] == "medium", "Size should be preserved"
+        assert updated_coffee.menu_item_name == "latte", "Drink type should be preserved"
 
     def test_change_coffee_to_decaf(self):
         """
@@ -136,10 +137,10 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
-        assert updated_coffee.decaf is True, f"Decaf should be True, got: {updated_coffee.decaf}"
-        assert updated_coffee.size == "medium", "Size should be preserved"
-        assert updated_coffee.drink_type == "latte", "Drink type should be preserved"
-        assert updated_coffee.iced is False, "Iced should be preserved"
+        assert updated_coffee["decaf"] is True, f"Decaf should be True, got: {updated_coffee['decaf']}"
+        assert updated_coffee["size"] == "medium", "Size should be preserved"
+        assert updated_coffee.menu_item_name == "latte", "Drink type should be preserved"
+        assert updated_coffee["temperature"] == "hot", "Temperature should be preserved (hot)"
 
     def test_order_decaf_coffee_upfront(self):
         """
@@ -174,7 +175,7 @@ class TestReplacementModificationScenarios:
         # Check that coffee was added with decaf=True even before configuration is complete
         coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert len(coffees) == 1, f"Should have 1 coffee, got {len(coffees)}"
-        assert coffees[0].decaf is True, f"Decaf should be True from initial order, got: {coffees[0].decaf}"
+        assert coffees[0]["decaf"] is True, f"Decaf should be True from initial order, got: {coffees[0]['decaf']}"
 
         # Step 2: Answer size - use "large" which is a valid DB option
         # (MenuItemConfigHandler uses DB options directly, not LLM parsing)
@@ -186,9 +187,9 @@ class TestReplacementModificationScenarios:
 
         # Check decaf is still True
         coffees = [i for i in result.order.items.items if i.has_attribute('size')]
-        assert coffees[0].decaf is True, f"Decaf should still be True after size, got: {coffees[0].decaf}"
-        # Size may be stored in attribute_values or as a direct property
-        size_val = getattr(coffees[0], 'size', None) or coffees[0].attribute_values.get('size')
+        assert coffees[0]["decaf"] is True, f"Decaf should still be True after size, got: {coffees[0]['decaf']}"
+        # Size is stored in attribute_values
+        size_val = coffees[0]["size"]
         assert size_val == "large", f"Size should be large, got: {size_val}"
 
         # Step 3: Answer hot/iced - MenuItemConfigHandler uses boolean attribute handling
@@ -198,11 +199,9 @@ class TestReplacementModificationScenarios:
         # Check that we got past temperature by verifying temperature is set
         coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         coffee = coffees[0]
-        # Temperature/iced may be stored in attribute_values or as direct property
-        iced_val = getattr(coffee, 'iced', None)
-        if iced_val is None:
-            iced_val = coffee.attribute_values.get('temperature') == 'iced'
-        assert iced_val is False, f"Iced should be False (hot), got: {iced_val}"
+        # Temperature is stored in attribute_values
+        temp_val = coffee["temperature"]
+        assert temp_val == "hot", f"Temperature should be 'hot', got: {temp_val}"
 
         # Step 4: If there are optional modifier questions, answer no
         if "milk" in result.message.lower() or "sugar" in result.message.lower() or "modifier" in result.message.lower():
@@ -213,14 +212,12 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         final_coffee = coffees[0]
-        assert final_coffee.decaf is True, f"Decaf should be True after config, got: {final_coffee.decaf}"
-        # Size may be stored in attribute_values or as direct property
-        final_size = getattr(final_coffee, 'size', None) or final_coffee.attribute_values.get('size')
+        assert final_coffee["decaf"] is True, f"Decaf should be True after config, got: {final_coffee['decaf']}"
+        # Size is stored in attribute_values
+        final_size = final_coffee["size"]
         assert final_size == "large", f"Size should be large, got: {final_size}"
-        final_iced = getattr(final_coffee, 'iced', None)
-        if final_iced is None:
-            final_iced = final_coffee.attribute_values.get('temperature') == 'iced'
-        assert final_iced is False, f"Iced should be False (hot), got: {final_iced}"
+        final_temp = final_coffee["temperature"]
+        assert final_temp == "hot", f"Temperature should be 'hot', got: {final_temp}"
         # Item may or may not be complete depending on optional modifiers
         # assert final_coffee.status == TaskStatus.COMPLETE, f"Coffee should be complete, got: {final_coffee.status}"
 
@@ -261,7 +258,7 @@ class TestReplacementModificationScenarios:
 
         # All bagels should have the same type
         for b in bagels:
-            assert b.bread == "everything", "Bagel type should be preserved"
+            assert b["bread"] == "everything", "Bagel type should be preserved"
 
     def test_remove_modifier_remove_the_bacon(self):
         """
@@ -280,7 +277,7 @@ class TestReplacementModificationScenarios:
             toasted=True,
             extra_protein="bacon",
         )
-        bagel.toppings = ["egg"]
+        bagel["toppings"] = ["egg"]
         bagel.mark_complete()
         order.items.add_item(bagel)
 
@@ -292,18 +289,20 @@ class TestReplacementModificationScenarios:
 
         updated_bagel = bagels[0]
         # Bacon should be removed from extra_protein or toppings
+        extra_protein = updated_bagel["extra_protein"]
+        toppings = updated_bagel["toppings"] or []
         has_bacon = (
-            (updated_bagel.extra_protein and "bacon" in updated_bagel.extra_protein.lower()) or
-            any("bacon" in e.lower() for e in (updated_bagel.toppings or []))
+            (extra_protein and "bacon" in extra_protein.lower()) or
+            any("bacon" in e.lower() for e in toppings)
         )
-        assert not has_bacon, f"Bacon should be removed. protein={updated_bagel.extra_protein}, toppings={updated_bagel.toppings}"
+        assert not has_bacon, f"Bacon should be removed. protein={extra_protein}, toppings={toppings}"
 
         # Egg should still be there
         has_egg = (
-            (updated_bagel.extra_protein and "egg" in updated_bagel.extra_protein.lower()) or
-            any("egg" in e.lower() for e in (updated_bagel.toppings or []))
+            (extra_protein and "egg" in extra_protein.lower()) or
+            any("egg" in e.lower() for e in toppings)
         )
-        assert has_egg, f"Egg should be preserved. protein={updated_bagel.extra_protein}, toppings={updated_bagel.toppings}"
+        assert has_egg, f"Egg should be preserved. protein={extra_protein}, toppings={toppings}"
 
     def test_bagel_toasted_should_ask_about_spread(self):
         """
@@ -416,9 +415,9 @@ class TestReplacementModificationScenarios:
             menu_item_name="Spinach & Feta Omelette",
             menu_item_id=500,
             unit_price=14.50,
-            requires_side_choice=True,
             menu_item_type="omelette",
         )
+        omelette["requires_side_choice"] = True
         omelette.mark_in_progress()
         order.items.add_item(omelette)
 
@@ -429,7 +428,7 @@ class TestReplacementModificationScenarios:
         # Check items_needing_config path was triggered and side_choice was identified
         # The omelette should need side_choice configuration
         omelette_item = result.order.items.items[0]
-        assert omelette_item.requires_side_choice, "Omelette should have requires_side_choice=True"
+        assert omelette_item["requires_side_choice"], "Omelette should have requires_side_choice=True"
 
         # Either pending_field should be side_choice OR the message should mention bagel/fruit
         # (depending on which item gets asked first)

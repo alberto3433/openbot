@@ -89,5 +89,5 @@ class TestPartialIncompleteOrders:
         if coffees:
             coffee = coffees[0]
             # Should have large size or be asking about it
-            assert coffee.size == "large" or "large" in result2.message.lower(), \
-                f"Should be large. Size={coffee.size}"
+            assert coffee["size"] == "large" or "large" in result2.message.lower(), \
+                f"Should be large. Size={coffee['size']}"

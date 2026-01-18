@@ -37,17 +37,17 @@ def create_bagel_task(
         quantity=quantity,
         unit_price=unit_price,
     )
-    # Set properties via setters (stored in attribute_values)
+    # Set properties via dict-style access (stored in attribute_values)
     if toasted is not None:
-        bagel.toasted = toasted
+        bagel["toasted"] = toasted
     if spread:
-        bagel.spread = spread
+        bagel["spread_type"] = spread
     if bagel_type:
-        bagel.bread = bagel_type
+        bagel["bread"] = bagel_type
     if bagel_type_upcharge:
-        bagel.bread_upcharge = bagel_type_upcharge
+        bagel["bread_upcharge"] = bagel_type_upcharge
     if extras:
-        bagel.toppings = extras
+        bagel["toppings"] = extras
     return bagel
 
 
@@ -71,19 +71,21 @@ def create_coffee_task(
         unit_price=unit_price,
     )
     if size:
-        coffee.size = size
+        coffee["size"] = size
     if iced is not None:
-        coffee.attribute_values["temperature"] = "iced" if iced else "hot"
+        coffee["temperature"] = "iced" if iced else "hot"
     if decaf:
-        coffee.decaf = decaf
+        coffee["decaf"] = decaf
     if milk:
-        coffee.milk = milk
-    if milk_upcharge:
-        coffee.milk_upcharge = milk_upcharge
+        coffee.add_modifier(category="milk", slug=milk, price=milk_upcharge)
     if sweeteners:
-        coffee.sweeteners = sweeteners
+        for s in sweeteners:
+            if isinstance(s, dict):
+                coffee.add_modifier(category="sweetener", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+            else:
+                coffee.add_modifier(category="sweetener", slug=str(s))
     if extra_shots:
-        coffee.extra_shots = extra_shots
+        coffee["extra_shots"] = extra_shots
     return coffee
 
 
@@ -168,6 +170,24 @@ def create_test_menu_data():
                         "options": [
                             {"slug": "vanilla", "display_name": "Vanilla", "price_modifier": 0.65},
                             {"slug": "hazelnut", "display_name": "Hazelnut", "price_modifier": 0.65},
+                        ]
+                    },
+                ]
+            },
+            "omelette": {
+                "attributes": [
+                    {
+                        "slug": "side_choice",
+                        "options": [
+                            {"slug": "bagel", "display_name": "Bagel", "price_modifier": 0.0},
+                            {"slug": "toast", "display_name": "Toast", "price_modifier": 0.0},
+                        ]
+                    },
+                    {
+                        "slug": "spread",
+                        "options": [
+                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
+                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
                         ]
                     },
                 ]
@@ -263,9 +283,9 @@ class TestDictToOrderTask:
         assert isinstance(item, MenuItemTask)
         assert item.menu_item_type == "bagel"
         assert item.menu_item_name == "everything bagel"
-        assert item.toasted is True
-        assert item.attribute_values.get("cheese") == "cream cheese"
-        assert item.toppings == ["lox", "capers"]
+        assert item["toasted"] is True
+        assert item["cheese"] == "cream cheese"
+        assert item["toppings"] == ["lox", "capers"]
         assert item.quantity == 2
         assert item.unit_price == 5.99
 
@@ -296,13 +316,17 @@ class TestDictToOrderTask:
         assert isinstance(item, MenuItemTask)
         assert item.has_attribute("size") is True
         assert item.menu_item_name == "iced latte"  # drink_type stored as menu_item_name
-        assert item.size == "large"
-        assert item.attribute_values.get("temperature") == "iced"
-        assert item.milk == "oat"
+        assert item["size"] == "large"
+        assert item["temperature"] == "iced"
+        # Milk and sweeteners stored as modifiers
+        milk_mods = item.get_modifiers_by_category("milk")
+        assert len(milk_mods) == 1
+        assert milk_mods[0]["slug"] == "oat"
         # Sweeteners use unified storage format
-        assert len(item.sweeteners) == 1
-        assert item.sweeteners[0]["slug"] == "sugar"
-        assert item.sweeteners[0]["quantity"] == 2
+        sweetener_mods = item.get_modifiers_by_category("sweetener")
+        assert len(sweetener_mods) == 1
+        assert sweetener_mods[0]["slug"] == "sugar"
+        assert sweetener_mods[0]["quantity"] == 2
 
     def test_multiple_items(self):
         """Test converting multiple items."""
@@ -723,14 +747,17 @@ class TestModifiersConsistency:
         item = MenuItemTask(
             menu_item_name="The Western Omelette",
             menu_item_type="omelette",
-            side_choice="bagel",
-            bagel_choice="everything",
-            toasted=True,
-            spread="cream cheese",
-            spread_price=1.50,
             modifications=["extra cheese"],
             unit_price=14.99,
+            attribute_values={
+                "side_choice": "bagel",
+                "bagel_choice": "everything",
+                "toasted": True,
+                "spread_type": "cream cheese",
+            },
         )
+        # Add spread as a modifier with price
+        item.add_modifier(category="spread", slug="cream cheese", price=1.50)
         order.items.add_item(item)
 
         result = order_task_to_dict(order, pricing=create_test_pricing())

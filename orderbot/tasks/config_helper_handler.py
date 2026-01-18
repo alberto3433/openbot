@@ -149,64 +149,8 @@ class ConfigHelperHandler:
         # Get removable modifiers from database
         removable_modifiers = _get_removable_modifiers()
 
-        if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask) and current_item.has_attribute("bread"):
-            modifier_removed = False
-            removed_modifier_name = cancel_desc
-
-            # Check extra_protein
-            attr_values = current_item.attribute_values
-            extra_protein = attr_values.get("extra_protein")
-            if extra_protein and cancel_desc in extra_protein.lower():
-                attr_values["extra_protein"] = None
-                modifier_removed = True
-                logger.info("Modifier removal during config: removed protein '%s' from bagel", cancel_desc)
-
-            # Check toppings list
-            toppings = attr_values.get("toppings") or []
-            if toppings:
-                new_toppings = []
-                for topping in toppings:
-                    if cancel_desc not in topping.lower():
-                        new_toppings.append(topping)
-                    else:
-                        modifier_removed = True
-                        logger.info("Modifier removal during config: removed topping '%s' from bagel", topping)
-                attr_values["toppings"] = new_toppings
-
-            # Check spread
-            spread = attr_values.get("spread") or attr_values.get("spread_type")
-            if spread and cancel_desc in spread.lower():
-                attr_values["spread"] = None
-                attr_values["spread_type"] = None
-                modifier_removed = True
-                logger.info("Modifier removal during config: removed spread '%s' from bagel", cancel_desc)
-
-            if modifier_removed:
-                # Recalculate price if pricing handler is available
-                if self.pricing:
-                    try:
-                        self.pricing.recalculate_item_price(current_item)
-                    except (ValueError, KeyError):
-                        # Price recalculation failed (missing menu data), skip
-                        logger.debug("Could not recalculate bagel price after modifier removal")
-
-                updated_summary = current_item.get_summary()
-
-                # Return to config question or continue with configuration
-                question = self.get_current_config_question(order, current_item)
-                if question:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_modifier_name}. {question}",
-                        order=order,
-                    )
-                else:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_modifier_name}. Your bagel is now {updated_summary}. Anything else?",
-                        order=order,
-                    )
-
-        # Handle modifier removal for MenuItemTask (deli sandwiches, etc.)
-        # Modifiers are stored in attribute_values with _selections format
+        # Handle modifier removal for MenuItemTask
+        # Supports both modern _selections format AND legacy direct attribute values
         if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask):
             modifier_removed = False
             removed_modifier_name = cancel_desc
@@ -224,7 +168,7 @@ class ConfigHelperHandler:
                 if attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
                     continue
 
-                # Check _selections data for this attribute
+                # Check _selections data for this attribute (modern format)
                 selections_key = f"{attr_slug}_selections"
                 selections = current_item.attribute_values.get(selections_key, [])
                 if selections and isinstance(selections, list):
@@ -237,7 +181,7 @@ class ConfigHelperHandler:
                             cancel_desc in sel_slug or cancel_desc_singular in sel_slug):
                             modifier_removed = True
                             removed_modifier_name = sel.get("display_name", cancel_desc)
-                            logger.info("Modifier removal during config: removed '%s' from menu item", removed_modifier_name)
+                            logger.info("Modifier removal during config: removed '%s' from %s", removed_modifier_name, current_item.menu_item_name)
                         else:
                             new_selections.append(sel)
 
@@ -251,6 +195,32 @@ class ConfigHelperHandler:
                             # All selections removed - clear the attribute
                             attrs_to_clear.append(attr_slug)
                             attrs_to_clear.append(selections_key)
+
+                # Also check legacy direct attribute values (string or list, not _selections)
+                # This handles items that store modifiers directly without _selections format
+                elif attr_value is not None and not selections:
+                    if isinstance(attr_value, str):
+                        # String value - check if it matches the cancel description
+                        if cancel_desc in attr_value.lower() or cancel_desc_singular in attr_value.lower():
+                            attrs_to_clear.append(attr_slug)
+                            modifier_removed = True
+                            removed_modifier_name = attr_value
+                            logger.info("Modifier removal during config: removed '%s' from %s", attr_value, current_item.menu_item_name)
+                    elif isinstance(attr_value, list) and all(isinstance(v, str) for v in attr_value):
+                        # List of strings - filter out matching items
+                        new_list = []
+                        for item_val in attr_value:
+                            if cancel_desc in item_val.lower() or cancel_desc_singular in item_val.lower():
+                                modifier_removed = True
+                                removed_modifier_name = item_val
+                                logger.info("Modifier removal during config: removed '%s' from %s", item_val, current_item.menu_item_name)
+                            else:
+                                new_list.append(item_val)
+                        if len(new_list) != len(attr_value):
+                            if new_list:
+                                current_item.attribute_values[attr_slug] = new_list
+                            else:
+                                attrs_to_clear.append(attr_slug)
 
             # Clear any attributes that had all selections removed
             for attr_key in attrs_to_clear:
@@ -430,10 +400,14 @@ class ConfigHelperHandler:
         if not field:
             return None
 
-        # Special case: side_choice is flow control, not a DB attribute
-        # TODO: Future enhancement - support menu items as components of other items
+        # Handle side_choice - query database for the question text
         if field == "side_choice":
-            return "Would you like a bagel or fruit salad with it?"
+            if isinstance(item, MenuItemTask) and item.menu_item_type:
+                side_attr = menu_cache.get_side_choice_attribute(item.menu_item_type)
+                if side_attr and side_attr.get("question_text"):
+                    return side_attr["question_text"]
+            # Fallback to generic question if DB lookup fails
+            return "Would you like a side with it?"
 
         # Parse pending_field to get item_type and attr_slug
         # Format: "item_type:attr_slug" (e.g., "bagel:toasted", "sized_beverage:size")
@@ -496,8 +470,16 @@ class ConfigHelperHandler:
         if attr_slug is None:
             # Couldn't understand the response
             logger.info("CHANGE CLARIFICATION: Couldn't understand response '%s'", user_input)
+            # Build a generic clarification message from the possible attributes
+            possible_attrs = clarification.get("possible_attributes", [])
+            if possible_attrs and len(possible_attrs) >= 2:
+                # Format: "Would you like to change the X or the Y?"
+                attr_names = [a.replace("_", " ") for a in possible_attrs]
+                fallback_msg = f"I didn't catch that. Would you like to change the {attr_names[0]} or the {attr_names[1]}?"
+            else:
+                fallback_msg = "I didn't catch that. Which part would you like to change?"
             return StateMachineResult(
-                message=error or "I didn't catch that. Would you like to change the bagel type or the cream cheese?",
+                message=error or fallback_msg,
                 order=order,
             )
 

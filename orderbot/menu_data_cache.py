@@ -25,10 +25,11 @@ Usage:
 
 import asyncio
 import logging
+import re
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Any
+from typing import Any, Pattern
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -125,7 +126,9 @@ class MenuDataCache:
         self._item_type_fields: dict[str, list[dict]] = {}  # item_type_slug -> list of field configs
 
         # Response patterns for recognizing user intent
-        self._response_patterns: dict[str, set[str]] = {}  # pattern_type -> set of patterns
+        self._response_patterns: dict[str, set[str]] = {}  # pattern_type -> set of exact patterns
+        self._response_regex_raw: dict[str, list[str]] = {}  # pattern_type -> list of raw regex strings
+        self._response_regex_compiled: dict[str, Pattern | None] = {}  # pattern_type -> compiled combined regex
 
         # Modifier qualifiers (extra, light, on the side, etc.)
         self._modifier_qualifiers: dict[str, dict] = {}  # pattern -> {normalized_form, category}
@@ -974,30 +977,78 @@ class MenuDataCache:
         - negative: no, nope, nah, no thanks, etc.
         - cancel: cancel, never mind, forget it, etc.
         - done: that's all, that's it, nothing else, etc.
+        - greeting: hi, hello, hey, good morning, etc.
 
         Patterns are organized by type for efficient lookup.
+        Regex patterns (is_regex=True) are stored separately and combined with
+        exact patterns into a single compiled regex per type for .match() usage.
         """
         from .models import ResponsePattern
 
         response_patterns: dict[str, set[str]] = {}
+        regex_patterns: dict[str, list[str]] = {}  # pattern_type -> list of regex strings
 
         # Query all response patterns
         patterns = db.query(ResponsePattern).all()
 
         for pattern in patterns:
             pattern_type = pattern.pattern_type
-            if pattern_type not in response_patterns:
-                response_patterns[pattern_type] = set()
-            response_patterns[pattern_type].add(pattern.pattern.lower())
+            if pattern.is_regex:
+                # Collect regex patterns
+                if pattern_type not in regex_patterns:
+                    regex_patterns[pattern_type] = []
+                regex_patterns[pattern_type].append(pattern.pattern)
+            else:
+                # Exact match patterns
+                if pattern_type not in response_patterns:
+                    response_patterns[pattern_type] = set()
+                response_patterns[pattern_type].add(pattern.pattern.lower())
 
         self._response_patterns = response_patterns
+        self._response_regex_raw = regex_patterns
 
-        total_patterns = sum(len(p) for p in response_patterns.values())
+        # Build combined regex for each type (exact patterns + regex patterns)
+        all_types = set(response_patterns.keys()) | set(regex_patterns.keys())
+        response_regex_compiled: dict[str, Pattern | None] = {}
+
+        for pattern_type in all_types:
+            pattern_parts = []
+
+            # Add escaped exact patterns
+            exact = response_patterns.get(pattern_type, set())
+            if exact:
+                escaped = [re.escape(p) for p in exact]
+                pattern_parts.extend(escaped)
+
+            # Add regex patterns as-is
+            regex_list = regex_patterns.get(pattern_type, [])
+            pattern_parts.extend(regex_list)
+
+            if pattern_parts:
+                # Combine all patterns with | and wrap in anchors
+                combined = "|".join(f"({p})" for p in pattern_parts)
+                full_pattern = f"^({combined})[\\s!.,]*$"
+                try:
+                    response_regex_compiled[pattern_type] = re.compile(full_pattern, re.IGNORECASE)
+                except re.error as e:
+                    logger.error("Failed to compile regex for %s: %s", pattern_type, e)
+                    response_regex_compiled[pattern_type] = None
+            else:
+                response_regex_compiled[pattern_type] = None
+
+        self._response_regex_compiled = response_regex_compiled
+
+        total_exact = sum(len(p) for p in response_patterns.values())
+        total_regex = sum(len(p) for p in regex_patterns.values())
         logger.debug(
-            "Loaded %d response patterns across %d types: %s",
-            total_patterns,
-            len(response_patterns),
-            ", ".join(f"{k}({len(v)})" for k, v in response_patterns.items()),
+            "Loaded %d exact + %d regex response patterns across %d types: %s",
+            total_exact,
+            total_regex,
+            len(all_types),
+            ", ".join(
+                f"{k}({len(response_patterns.get(k, set()))}+{len(regex_patterns.get(k, []))}r)"
+                for k in sorted(all_types)
+            ),
         )
 
     def _load_modifier_qualifiers(self, db: Session) -> None:
@@ -4354,12 +4405,12 @@ class MenuDataCache:
         """
         Check if text matches a response pattern type.
 
-        Performs exact match against patterns after normalizing the text
-        (lowercase, stripped).
+        First checks exact match against patterns (lowercase, stripped).
+        If no exact match, checks against compiled regex patterns.
 
         Args:
             text: User input to check
-            pattern_type: The type of response to check (affirmative, negative, cancel, done)
+            pattern_type: The type of response to check (affirmative, negative, cancel, done, greeting)
 
         Returns:
             True if text matches any pattern of the given type.
@@ -4374,8 +4425,43 @@ class MenuDataCache:
             True
         """
         self._ensure_loaded()
-        patterns = self._response_patterns.get(pattern_type, set())
-        return text.lower().strip() in patterns
+        normalized = text.lower().strip()
+
+        # Check exact patterns first
+        exact_patterns = self._response_patterns.get(pattern_type, set())
+        if normalized in exact_patterns:
+            return True
+
+        # Check regex patterns
+        regex = self._response_regex_compiled.get(pattern_type)
+        if regex and regex.match(normalized):
+            return True
+
+        return False
+
+    def get_response_regex(self, pattern_type: str) -> Pattern | None:
+        """
+        Get compiled regex pattern for a response type.
+
+        Returns a compiled regex that matches all patterns (exact + regex) for
+        the given type. Useful for parsers that need to use .match() directly.
+
+        Args:
+            pattern_type: The type of response (affirmative, negative, cancel, done, greeting)
+
+        Returns:
+            Compiled regex Pattern, or None if no patterns exist for the type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> regex = cache.get_response_regex("done")
+            >>> regex.match("that's all")
+            <re.Match object>
+        """
+        self._ensure_loaded()
+        return self._response_regex_compiled.get(pattern_type)
 
     def is_affirmative(self, text: str) -> bool:
         """
@@ -4448,6 +4534,24 @@ class MenuDataCache:
             True
         """
         return self.is_response_type(text, "done")
+
+    def is_greeting(self, text: str) -> bool:
+        """
+        Check if text is a greeting (hi, hello, hey, good morning, etc.).
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text matches a greeting pattern.
+
+        Examples:
+            >>> cache.is_greeting("hi")
+            True
+            >>> cache.is_greeting("good morning")
+            True
+        """
+        return self.is_response_type(text, "greeting")
 
     # =========================================================================
     # Modifier Qualifier Methods

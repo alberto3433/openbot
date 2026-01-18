@@ -133,11 +133,8 @@ STANDALONE_INSTRUCTION_PATTERNS = [
     r'\bmelted\b',  # "melted" (for cheese)
 ]
 
-# Greeting patterns
-GREETING_PATTERNS = re.compile(
-    r"^(hi|hello|hey|good morning|good afternoon|good evening|howdy|yo)[\s!.,]*$",
-    re.IGNORECASE
-)
+# Note: GREETING_PATTERNS moved to database (response_pattern table with pattern_type='greeting')
+# Use menu_cache.is_greeting(text) or menu_cache.get_response_regex("greeting") instead.
 
 # Gratitude patterns - thank you, thanks, etc.
 GRATITUDE_PATTERNS = re.compile(
@@ -145,13 +142,8 @@ GRATITUDE_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
-# Done ordering patterns
-DONE_PATTERNS = re.compile(
-    r"^(that'?s?\s*(all|it)(\s+for\s+now)?|no(pe|thing)?(\s*(else|more))?|i'?m\s*(good|done|all\s*set)|"
-    r"nothing(\s*(else|more))?|done|all\s*set|that\s*will\s*be\s*all|nah|"
-    r"just\s+the\s+\w+(\s+\w+)?|just\s+that|only\s+the\s+\w+(\s+\w+)?)[\s!.,]*$",
-    re.IGNORECASE
-)
+# Note: DONE_PATTERNS moved to database (response_pattern table with pattern_type='done')
+# Use menu_cache.is_done(text) or menu_cache.get_response_regex("done") instead.
 
 # Help request patterns - user needs assistance
 HELP_PATTERNS = re.compile(

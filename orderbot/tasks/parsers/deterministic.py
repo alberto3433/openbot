@@ -29,9 +29,8 @@ from .constants import (
     get_spread_types,
     QUALIFIER_PATTERNS,
     STANDALONE_INSTRUCTION_PATTERNS,
-    GREETING_PATTERNS,
+    # GREETING_PATTERNS and DONE_PATTERNS are now loaded from database via menu_cache.get_response_regex()
     GRATITUDE_PATTERNS,
-    DONE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     get_known_menu_items,
@@ -4790,8 +4789,8 @@ def parse_open_input_deterministic(
     # This must happen first so downstream parsers see canonical forms
     text = menu_cache.expand_abbreviations(text)
 
-    # Check for greetings
-    if GREETING_PATTERNS.match(text):
+    # Check for greetings (patterns loaded from database)
+    if menu_cache.is_greeting(text):
         logger.debug("Deterministic parse: greeting detected")
         return OpenInputResponse(is_greeting=True)
 
@@ -4805,8 +4804,8 @@ def parse_open_input_deterministic(
         logger.debug("Deterministic parse: help request detected")
         return OpenInputResponse(is_help_request=True)
 
-    # Check for done ordering
-    if DONE_PATTERNS.match(text):
+    # Check for done ordering (patterns loaded from database)
+    if menu_cache.is_done(text):
         logger.debug("Deterministic parse: done ordering detected")
         return OpenInputResponse(done_ordering=True)
 

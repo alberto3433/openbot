@@ -64,8 +64,8 @@ from .parsers import (
     get_bagel_spreads,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,
-    GREETING_PATTERNS,
-    DONE_PATTERNS,
+    # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
+    # - use menu_cache.is_greeting() / menu_cache.is_done() instead
     REPEAT_ORDER_PATTERNS,
     # Constants - Price inquiry patterns
     PRICE_INQUIRY_PATTERNS,

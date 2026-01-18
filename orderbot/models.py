@@ -127,8 +127,9 @@ class ResponsePattern(Base):
     __tablename__ = "response_pattern"
 
     id = Column(Integer, primary_key=True, index=True)
-    pattern_type = Column(String(50), nullable=False, index=True)  # 'affirmative', 'negative', 'cancel', 'done'
-    pattern = Column(String(100), nullable=False)  # The pattern to match
+    pattern_type = Column(String(50), nullable=False, index=True)  # 'affirmative', 'negative', 'cancel', 'done', 'greeting'
+    pattern = Column(String(100), nullable=False)  # The pattern to match (exact string or regex)
+    is_regex = Column(Boolean, nullable=False, default=False)  # If True, pattern is treated as regex
     created_at = Column(DateTime, server_default=func.now())
 
     __table_args__ = (

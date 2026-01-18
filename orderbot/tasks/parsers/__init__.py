@@ -87,8 +87,8 @@ from .constants import (
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Regex patterns - basic
     QUALIFIER_PATTERNS,
-    GREETING_PATTERNS,
-    DONE_PATTERNS,
+    # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
+    # - use menu_cache.is_greeting() / menu_cache.is_done() instead
     REPEAT_ORDER_PATTERNS,
     # Menu item recognition
     get_known_menu_items,
@@ -183,8 +183,8 @@ __all__ = [
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",
-    "GREETING_PATTERNS",
-    "DONE_PATTERNS",
+    # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
+    # - use menu_cache.is_greeting() / menu_cache.is_done() instead
     "REPEAT_ORDER_PATTERNS",
     # Constants - Menu item recognition
     "get_known_menu_items",

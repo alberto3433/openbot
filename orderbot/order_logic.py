@@ -22,52 +22,43 @@ def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict
 
 
 def _get_extra_price_for_choice(
-    menu_item: Dict[str, Any],
-    choice_group_name: str,
+    attr_slug: str,
     choice_value: str,
-    menu_index: Dict[str, Any] = None
+    item_type_slug: str,
+    menu_index: Dict[str, Any],
 ) -> float:
     """
-    Look up the extra_price for a specific customization choice.
+    Look up the price modifier for a specific attribute choice.
 
     Uses the generic item_types system to look up price modifiers.
+    This is a pure data-driven function with no hardcoded item types or attributes.
 
     Args:
-        menu_item: The menu item dict
-        choice_group_name: The group name (e.g., "Bread", "Cheese")
-        choice_value: The selected choice name (e.g., "Wheat", "Swiss")
-        menu_index: Optional menu index dict containing generic item_types
+        attr_slug: The attribute slug (e.g., "bread", "cheese", "size")
+        choice_value: The selected choice name (e.g., "wheat", "swiss")
+        item_type_slug: The item type slug (e.g., "sandwich", "pizza")
+        menu_index: Menu index dict containing item_types configuration
 
     Returns:
-        The extra_price for this choice, or 0.0 if not found
+        The price_modifier for this choice, or 0.0 if not found
     """
-    if not choice_value:
-        return 0.0
-
-    if not menu_index:
+    if not choice_value or not attr_slug or not item_type_slug or not menu_index:
         return 0.0
 
     item_types = menu_index.get("item_types", {})
-    # Map choice_group_name to attribute slug
-    attr_slug = choice_group_name.lower()
-    if attr_slug == "sauce":
-        attr_slug = "sauces"
-
-    # Get the item type for the menu item (default to "sandwich")
-    item_type_slug = "sandwich"
-    if menu_item:
-        item_type_slug = menu_item.get("item_type", "sandwich") or "sandwich"
-
     item_type_data = item_types.get(item_type_slug, {})
-    if item_type_data.get("is_configurable"):
-        for attr in item_type_data.get("attributes", []):
-            if attr.get("slug") == attr_slug:
-                for opt in attr.get("options", []):
-                    opt_name = opt.get("display_name", "").lower()
-                    opt_slug = opt.get("slug", "").lower()
-                    choice_lower = choice_value.lower()
-                    if opt_name == choice_lower or opt_slug == choice_lower:
-                        return float(opt.get("price_modifier", 0.0))
+
+    if not item_type_data.get("is_configurable"):
+        return 0.0
+
+    for attr in item_type_data.get("attributes", []):
+        if attr.get("slug") == attr_slug:
+            choice_lower = choice_value.lower()
+            for opt in attr.get("options", []):
+                opt_name = opt.get("display_name", "").lower()
+                opt_slug = opt.get("slug", "").lower()
+                if opt_name == choice_lower or opt_slug == choice_lower:
+                    return float(opt.get("price_modifier", 0.0))
 
     return 0.0
 
@@ -119,11 +110,11 @@ def _calculate_item_extras_generic(
         if isinstance(attr_value, list):
             for val in attr_value:
                 total_extra += _get_extra_price_for_choice(
-                    menu_item, attr_slug.title(), val, menu_index
+                    attr_slug, val, item_type_slug, menu_index
                 )
         else:
             total_extra += _get_extra_price_for_choice(
-                menu_item, attr_slug.title(), attr_value, menu_index
+                attr_slug, attr_value, item_type_slug, menu_index
             )
 
     return total_extra
@@ -281,21 +272,20 @@ def _repeat_order(state, slots, menu_index, returning_customer):
     # This prevents duplication if the intent is called multiple times
     state["items"] = []
 
-    # Copy all items from the previous order
+    # Copy all items from the previous order (passthrough all attributes)
     total_price = 0.0
     for prev_item in last_order_items:
-        item = {
-            "item_type": prev_item.get("item_type", "sandwich"),
-            "menu_item_name": prev_item.get("menu_item_name"),
-            "bread": prev_item.get("bread"),
-            "protein": prev_item.get("protein"),
-            "cheese": prev_item.get("cheese"),
-            "toppings": prev_item.get("toppings") or [],
-            "sauces": prev_item.get("sauces") or [],
-            "toasted": prev_item.get("toasted", False),
-            "quantity": prev_item.get("quantity", 1),
-            "unit_price": prev_item.get("price", 0.0),
-        }
+        # Copy all attributes from the previous item
+        item = dict(prev_item)
+
+        # Normalize field names: stored orders use "price", state uses "unit_price"
+        if "price" in item and "unit_price" not in item:
+            item["unit_price"] = item.pop("price")
+
+        # Ensure required fields have defaults
+        item.setdefault("quantity", 1)
+        item.setdefault("unit_price", 0.0)
+
         state["items"].append(item)
         total_price += item["unit_price"] * item["quantity"]
 
@@ -363,13 +353,13 @@ def _add_pizza(state, slots, menu_index):
     """
     Add a pizza to the order.
 
+    Uses data-driven pricing: base_price + attribute option price modifiers.
     Handles both signature pizzas and custom/build-your-own pizzas.
-    Pizza-specific attributes: size, crust, sauce, cheese, toppings.
     """
     name = slots.get("menu_item_name")
     qty = slots.get("quantity") or 1
 
-    # Get pizza-specific customization choices
+    # Get customization choices
     size = slots.get("size")
     crust = slots.get("crust")
     cheese = slots.get("cheese")
@@ -386,34 +376,19 @@ def _add_pizza(state, slots, menu_index):
     if is_custom:
         # For custom pizza, use Build Your Own Pizza as the base
         menu_item = _find_menu_item(menu_index, "Build Your Own Pizza")
-        base = menu_item.get("base_price", 10.99) if menu_item else 10.99
-
-        # Calculate price adjustments for size
-        size_extra = _get_size_price_adjustment(size, menu_item, menu_index)
-
-        # Calculate extras for toppings, cheese, etc.
-        extras = _calculate_pizza_extras(menu_item, crust, cheese, toppings, sauces, menu_index)
-
-        unit_price = base + size_extra + extras
+        base_price = menu_item.get("base_price", 0) if menu_item else 0
         display_name = "Build Your Own Pizza"
     else:
-        # Signature pizza pricing: base price + customization extras
+        # Signature pizza pricing
         menu_item = _find_menu_item(menu_index, name)
-        base = menu_item.get("base_price", 0) if menu_item else 0
-
-        # Calculate price adjustments for size (signature pizzas also vary by size)
-        size_extra = _get_size_price_adjustment(size, menu_item, menu_index)
-
-        # Calculate extras for additional toppings, cheese upgrades, etc.
-        extras = _calculate_pizza_extras(menu_item, crust, cheese, toppings, sauces, menu_index)
-
-        unit_price = base + size_extra + extras
+        base_price = menu_item.get("base_price", 0) if menu_item else 0
         display_name = name
 
-    line_total = unit_price * qty
+    item_type = menu_item.get("item_type", "pizza") if menu_item else "pizza"
 
+    # Build item dict for generic pricing
     item = {
-        "item_type": "pizza",
+        "item_type": item_type,
         "menu_item_name": display_name,
         "size": size,
         "crust": crust,
@@ -421,10 +396,15 @@ def _add_pizza(state, slots, menu_index):
         "toppings": toppings,
         "sauces": sauces,
         "quantity": qty,
-        "unit_price": unit_price,
-        "line_total": line_total,
         "is_custom": is_custom,
     }
+
+    # Calculate extras using the generic data-driven approach
+    extras = _calculate_item_extras_generic(item, menu_item, menu_index)
+    unit_price = base_price + extras
+
+    item["unit_price"] = unit_price
+    item["line_total"] = unit_price * qty
 
     state["items"].append(item)
     state["status"] = "collecting_items"
@@ -458,52 +438,6 @@ def _is_custom_pizza_order(item_name: str, menu_index: Dict[str, Any]) -> bool:
         return True
 
     return False
-
-
-def _calculate_pizza_extras(
-    menu_item: Dict[str, Any],
-    crust: str = None,
-    cheese: str = None,
-    toppings: List[str] = None,
-    sauces: List[str] = None,
-    menu_index: Dict[str, Any] = None
-) -> float:
-    """
-    Calculate extra price for pizza customizations.
-
-    Premium crusts, extra cheese, and premium toppings may have additional costs.
-    """
-    total_extra = 0.0
-
-    # Crust upgrades (e.g., Stuffed Crust might cost extra)
-    if crust:
-        total_extra += _get_extra_price_for_choice(menu_item, "Crust", crust, menu_index)
-
-    # Cheese upgrades (e.g., Extra Mozzarella)
-    if cheese:
-        total_extra += _get_extra_price_for_choice(menu_item, "Cheese", cheese, menu_index)
-
-    # Toppings (each topping may have a price)
-    for topping in (toppings or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Toppings", topping, menu_index)
-
-    # Sauce (usually no extra charge, but premium sauces might)
-    for sauce in (sauces or []):
-        total_extra += _get_extra_price_for_choice(menu_item, "Sauce", sauce, menu_index)
-
-    return total_extra
-
-
-def _get_size_price_adjustment(size: str, menu_item: Dict[str, Any], menu_index: Dict[str, Any]) -> float:
-    """
-    Get the price adjustment for a specific size.
-
-    Sizes typically have price modifiers (e.g., Small=0, Medium=+2, Large=+4).
-    """
-    if not size:
-        return 0.0
-
-    return _get_extra_price_for_choice(menu_item, "Size", size, menu_index)
 
 
 def _add_drink(state, slots, menu_index):
@@ -761,20 +695,10 @@ def _update_pizza(state, slots, menu_index):
         menu_item = _find_menu_item(menu_index, item["menu_item_name"])
         base = menu_item.get("base_price", 0) if menu_item else item.get("unit_price", 0)
 
-        # Calculate size adjustment
-        size_extra = _get_size_price_adjustment(item.get("size"), menu_item, menu_index)
+        # Use generic data-driven pricing
+        extras = _calculate_item_extras_generic(item, menu_item, menu_index)
 
-        # Calculate pizza-specific extras
-        extras = _calculate_pizza_extras(
-            menu_item,
-            item.get("crust"),
-            item.get("cheese"),
-            item.get("toppings"),
-            item.get("sauces"),
-            menu_index,
-        )
-
-        item["unit_price"] = base + size_extra + extras
+        item["unit_price"] = base + extras
         item["line_total"] = item["unit_price"] * item["quantity"]
 
     return state

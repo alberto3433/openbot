@@ -393,7 +393,6 @@ class UnifiedItemConverter:
             modifiers=modifiers,
             free_details=[],
             pricing=pricing,
-            skip_slugs={"toasted"},  # toasted is manually handled above with item-type-specific logic
             include_free_in_modifiers=True,
         )
 

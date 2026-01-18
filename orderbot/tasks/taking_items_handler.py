@@ -41,12 +41,6 @@ from .parsers.constants import DEFAULT_PAGINATION_SIZE
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
-    from .pricing import PricingEngine
-    from .item_adder_handler import ItemAdderHandler
-    from .menu_inquiry_handler import MenuInquiryHandler
-    from .store_info_handler import StoreInfoHandler
-    from .checkout_utils_handler import CheckoutUtilsHandler
-    from .checkout_handler import CheckoutHandler
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +120,10 @@ def _get_modifier_patterns(category: str) -> set[str]:
     """Get all matching patterns for an ingredient category.
 
     Returns a flat set of all patterns that can match this category for input detection.
-    Works for any ingredient category (milk, syrup, sweetener, spread, protein, etc.).
+    Works for any ingredient category
 
     Args:
-        category: The ingredient category (e.g., "syrup", "milk", "sweetener", "spread")
+        category: The ingredient category
 
     Returns:
         Set of lowercase patterns for matching user input.
@@ -150,17 +144,16 @@ def _match_modifier(
     """Match user input against an ingredient category and return details.
 
     Uses database slugs and display names for any ingredient category.
-    Works for milk, syrup, sweetener, spread, protein, cheese, etc.
 
     Args:
         input_lower: Lowercase user input to match against
-        category: The ingredient category (e.g., "syrup", "milk", "sweetener", "spread")
+        category: The ingredient category
 
     Returns:
         Dict with {slug, name, pattern} if matched, None otherwise.
-        - slug: Database identifier for storage (e.g., "oat_milk")
-        - name: Display name for UI (e.g., "Oat Milk")
-        - pattern: The pattern that matched (e.g., "oat")
+        - slug: Database identifier for storage
+        - name: Display name for UI
+        - pattern: The pattern that matched
 
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded
@@ -184,15 +177,12 @@ def _get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
     Used to detect if user input contains any modifier for this item type.
 
     Args:
-        item_type_slug: The item type slug (e.g., "sized_beverage", "bagel").
+        item_type_slug: The item type slug.
                        If None, returns empty set.
 
     Returns:
         Set of all modifier patterns (lowercase) for this item type.
 
-    Example:
-        >>> _get_all_modifier_patterns_for_item("sized_beverage")
-        {"oat", "almond", "vanilla", "sugar", ...}  # All milk/syrup/sweetener patterns
     """
     if not item_type_slug:
         return set()
@@ -209,8 +199,6 @@ def _get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
 
 def _extract_quantity_from_input(input_lower: str, pattern: str) -> int:
     """Extract quantity from user input for a modifier.
-
-    Handles patterns like "2 vanilla", "two sugars", "double shot".
 
     Args:
         input_lower: Lowercase user input

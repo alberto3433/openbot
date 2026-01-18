@@ -527,39 +527,19 @@
         statusPill.textContent = order.status;
 
         // Helper function to build item display key for consolidation
+        // Data-driven: uses modifiers list instead of hardcoded fields
         function buildItemKey(item) {
           const parts = [item.menu_item_name];
 
-          // Add config details that differentiate items
-          if (item.toasted === true) parts.push("toasted");
-          if (item.toasted === false) parts.push("not toasted");
-          if (item.size) parts.push(item.size);
-          if (item.bread) parts.push(item.bread);
-          if (item.protein && item.protein.toLowerCase() !== "none") parts.push(item.protein);
-          if (item.cheese && item.cheese.toLowerCase() !== "none") parts.push(item.cheese);
+          // Add all modifiers to create unique key
+          const modifiers = item.modifiers || [];
+          const modifierKeys = modifiers
+            .map(m => `${m.name}:${m.price || 0}`)
+            .sort();
+          parts.push(...modifierKeys);
 
-          // Add drink config
-          if (item.item_config) {
-            if (item.item_config.size) parts.push(item.item_config.size);
-            if (item.item_config.style) parts.push(item.item_config.style);
-            if (item.item_config.milk && item.item_config.milk.toLowerCase() !== "none") {
-              parts.push(item.item_config.milk);
-            }
-            if (item.item_config.flavor_syrup) parts.push(item.item_config.flavor_syrup);
-            if (item.item_config.sweetener) {
-              parts.push(item.item_config.sweetener);
-              parts.push(item.item_config.sweetener_quantity || 1);
-            }
-            if (item.item_config.decaf) {
-              parts.push("decaf");
-            }
-          }
-
-          // Add toppings and sauces
-          const toppings = (item.toppings || []).filter(t => t && t.toLowerCase() !== "none").sort();
-          const sauces = (item.sauces || []).sort();
-          parts.push(toppings.join(","));
-          parts.push(sauces.join(","));
+          // Add notes if present (different notes = different item)
+          if (item.notes) parts.push(item.notes);
 
           return parts.join("|");
         }
@@ -582,123 +562,25 @@
 
         const itemsHtml = Object.values(consolidatedItems)
           .map((item) => {
-            const extras = [];
-            if (item.toasted === true) extras.push("toasted");
-            if (item.toasted === false) extras.push("not toasted");
-            if (item.size) extras.push(item.size);
-            if (item.bread) extras.push(item.bread);
-            // Filter out "none" values for protein and cheese
-            if (item.protein && item.protein.toLowerCase() !== "none") extras.push(item.protein);
-            if (item.cheese && item.cheese.toLowerCase() !== "none") extras.push(item.cheese);
-            const extrasStr = extras.join(" • ");
-
-            // Filter out "none" values from toppings array
-            const filteredToppings = (item.toppings || []).filter(t => t && t.toLowerCase() !== "none");
-            const toppings = filteredToppings.length
-              ? `Toppings: ${filteredToppings.join(", ")}`
-              : "";
-            const sauces = item.sauces && item.sauces.length
-              ? `Sauces: ${item.sauces.join(", ")}`
-              : "";
-
-            // Handle item_config for coffee/drinks
-            let configStr = "";
-            if (item.item_config) {
-              const configParts = [];
-              if (item.item_config.size) configParts.push(item.item_config.size);
-              if (item.item_config.style) {
-                configParts.push(item.item_config.style);
-              }
-              if (item.item_config.milk && item.item_config.milk.toLowerCase() !== "none") {
-                configParts.push(item.item_config.milk.replace(/_/g, " "));
-              }
-              // Handle flavor_syrup (new field name) or syrup (legacy)
-              const syrupValue = item.item_config.flavor_syrup || item.item_config.syrup;
-              if (syrupValue) {
-                const syrups = Array.isArray(syrupValue) ? syrupValue : [syrupValue];
-                syrups.forEach(s => {
-                  const formatted = s.replace(/_/g, " ");
-                  // Don't add "syrup" if it's already in the name
-                  configParts.push(formatted.toLowerCase().includes("syrup") ? formatted : formatted + " syrup");
-                });
-              }
-              // Handle sweetener with quantity
-              if (item.item_config.sweetener) {
-                const sweeteners = Array.isArray(item.item_config.sweetener) ? item.item_config.sweetener : [item.item_config.sweetener];
-                const sweetenerQty = item.item_config.sweetener_quantity || 1;
-                sweeteners.filter(s => s).forEach(s => {
-                  const formatted = s.replace(/_/g, " ");
-                  if (sweetenerQty > 1) {
-                    configParts.push(`${sweetenerQty} ${formatted}s`);
-                  } else {
-                    configParts.push(formatted);
-                  }
-                });
-              }
-              if (item.item_config.decaf) {
-                configParts.push("decaf");
-              }
-              if (item.item_config.extras) {
-                const cfgExtras = Array.isArray(item.item_config.extras) ? item.item_config.extras : [item.item_config.extras];
-                cfgExtras.filter(e => e).forEach(e => configParts.push(e.replace(/_/g, " ")));
-              }
-              // Handle modifications (e.g., "mayo", "mustard", "ketchup" for speed menu bagels)
-              if (item.item_config.modifications && item.item_config.modifications.length > 0) {
-                configParts.push(item.item_config.modifications.join(", "));
-              }
-              configStr = configParts.join(" • ");
-            }
-
-            // For drinks with item_config, use configStr; otherwise use extrasStr
-            const displayExtras = item.item_config ? configStr : extrasStr;
-
             // Add notes if present
             const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
 
-            // Check if item has modifiers (for itemized display like omelette side bagel spreads)
-            // Check both top-level and item_config (for persisted orders from database)
-            const modifiers = item.modifiers || (item.item_config && item.item_config.modifiers) || [];
-            const freeDetails = item.free_details || (item.item_config && item.item_config.free_details) || [];
-            const storedBasePrice = item.base_price || (item.item_config && item.item_config.base_price);
-            const hasModifiers = modifiers.length > 0;
+            // Data-driven: all customizations are in the modifiers list
+            const modifiers = item.modifiers || [];
+            const basePrice = item.base_price || 0;
 
-            if (hasModifiers) {
-              // Calculate base price by subtracting modifiers (use stored if available)
-              const modifiersTotal = modifiers.reduce((sum, m) => sum + (m.price || 0), 0);
-              const basePrice = storedBasePrice || ((item.unit_price || item.line_total || 0) - modifiersTotal);
-
-              // For drinks, show free details (hot/iced, sweetener, etc.)
-              const freeDetailsHtml = freeDetails.length > 0
-                ? `<div class="muted">${freeDetails.join(" • ")}</div>`
-                : '';
-
-              // Build modifiers HTML
-              const modifiersHtml = modifiers.map(mod => {
-                const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
-                return `<div class="muted" style="display: flex; justify-content: space-between; padding-left: 16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
-              }).join('');
-
-              return `
-                <div class="item-card">
-                  <div style="display: flex; justify-content: space-between;"><strong>${item.quantity}× ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
-                  ${freeDetailsHtml}
-                  ${modifiersHtml}
-                  ${notesDisplay}
-                  <div style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>
-                </div>
-              `;
-            }
+            // Build modifiers HTML - show all customizations with prices
+            const modifiersHtml = modifiers.map(mod => {
+              const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
+              return `<div class="muted" style="display: flex; justify-content: space-between; padding-left: 16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
+            }).join('');
 
             return `
               <div class="item-card">
-                <div><strong>${item.quantity}× ${item.menu_item_name}</strong></div>
-                <div class="muted">${displayExtras}</div>
-                <div class="muted">
-                  ${toppings}<br/>
-                  ${sauces}
-                </div>
+                <div style="display: flex; justify-content: space-between;"><strong>${item.quantity}× ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
+                ${modifiersHtml}
                 ${notesDisplay}
-                <div><strong>$${item.line_total.toFixed(2)}</strong></div>
+                <div style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>
               </div>
             `;
           })

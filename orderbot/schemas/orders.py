@@ -32,8 +32,7 @@ includes subtotal + taxes + delivery fee (if applicable).
 Data Model:
 -----------
 Orders have a one-to-many relationship with OrderItems. Each OrderItem
-represents a single line item with its configuration (bread, toppings, etc.)
-and calculated price.
+represents a single line item with its modifiers and calculated price.
 
 Usage:
 ------
@@ -52,38 +51,28 @@ Usage:
         print(f"{item.menu_item_name}: ${item.line_total}")
 """
 
-import json
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class OrderItemOut(BaseModel):
     """
     Response model for an individual order line item.
 
-    Represents one item in an order, including all customization details
-    and the calculated price for that item.
+    Data-driven schema that works with any item type. All customizations
+    are represented generically in the modifiers list.
 
     Attributes:
         id: Database primary key
-        menu_item_name: Name of the menu item ordered
-        display_name: Full display name with all details (bagel type, toasted, etc.)
-        item_type: Type category (sandwich, bagel, coffee, etc.)
-        size: Size selection if applicable (small, medium, large)
-        bread: Bread choice for sandwiches/bagels
-        protein: Protein selection (turkey, ham, etc.)
-        cheese: Cheese selection
-        toppings: List of selected toppings
-        sauces: List of selected sauces
-        toasted: Whether the item should be toasted
-        item_config: Additional config for drinks (style, milk, syrup, etc.)
-        modifiers: List of price modifiers (e.g., lox, cream cheese) with name and price
+        menu_item_name: Name of the menu item ordered (e.g., "Latte", "Everything Bagel")
+        display_name: Full display name built by converter
+        item_type: Item type slug from database (e.g., "sized_beverage", "bagel")
+        modifiers: List of all customizations as {name: str, price: float}
         base_price: Base price before modifiers
-        free_details: Free details like hot/iced for drinks
         notes: Special instructions (e.g., "extra hot", "no ice")
         quantity: Number of this item ordered
-        unit_price: Price per item before quantity multiplication
+        unit_price: Price per item (base + modifiers)
         line_total: Total price for this line (unit_price * quantity)
     """
     model_config = ConfigDict(from_attributes=True)
@@ -92,17 +81,8 @@ class OrderItemOut(BaseModel):
     menu_item_name: str
     display_name: Optional[str] = None
     item_type: Optional[str] = None
-    size: Optional[str] = None
-    bread: Optional[str] = None
-    protein: Optional[str] = None
-    cheese: Optional[str] = None
-    toppings: Optional[List[str]] = None
-    sauces: Optional[List[str]] = None
-    toasted: Optional[bool] = None
-    item_config: Optional[Dict[str, Any]] = None
     modifiers: Optional[List[Dict[str, Any]]] = None
     base_price: Optional[float] = None
-    free_details: Optional[List[str]] = None
     notes: Optional[str] = None
     quantity: int
     unit_price: float
@@ -111,15 +91,9 @@ class OrderItemOut(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def extract_from_item_config(cls, data):
-        """Extract fields from item_config for backward compatibility.
-
-        Item configuration is now stored in the item_config JSON column.
-        This validator extracts fields from item_config to populate the
-        individual fields (item_type, bread, toasted, etc.) for API responses.
-        """
+        """Extract generic fields from item_config JSON column."""
         # Handle ORM objects with from_attributes=True
         if hasattr(data, '__dict__'):
-            # Convert ORM object to dict
             obj_dict = {
                 'id': getattr(data, 'id', None),
                 'menu_item_name': getattr(data, 'menu_item_name', None),
@@ -127,40 +101,16 @@ class OrderItemOut(BaseModel):
                 'unit_price': getattr(data, 'unit_price', None),
                 'line_total': getattr(data, 'line_total', None),
                 'notes': getattr(data, 'notes', None),
-                'item_config': getattr(data, 'item_config', None),
             }
-            # Extract fields from item_config
-            item_config = obj_dict.get('item_config') or {}
+            # Extract generic fields from item_config
+            item_config = getattr(data, 'item_config', None) or {}
             if isinstance(item_config, dict):
                 obj_dict['item_type'] = item_config.get('item_type')
-                obj_dict['size'] = item_config.get('size')
-                obj_dict['bread'] = item_config.get('bread') or item_config.get('bagel_type') or item_config.get('bagel_choice')
-                obj_dict['protein'] = item_config.get('protein') or item_config.get('extra_protein')
-                obj_dict['cheese'] = item_config.get('cheese') or item_config.get('spread')
-                obj_dict['toppings'] = item_config.get('toppings') or item_config.get('extras')
-                obj_dict['sauces'] = item_config.get('sauces')
-                obj_dict['toasted'] = item_config.get('toasted')
-                # Extract modifiers, base_price, and free_details for itemized display
+                obj_dict['display_name'] = item_config.get('display_name')
                 obj_dict['modifiers'] = item_config.get('modifiers')
                 obj_dict['base_price'] = item_config.get('base_price')
-                obj_dict['free_details'] = item_config.get('free_details')
             return obj_dict
         return data
-
-    @field_validator('toppings', 'sauces', mode='before')
-    @classmethod
-    def parse_json_list(cls, v):
-        """Parse JSON string to list if stored as string in database."""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return parsed
-            except json.JSONDecodeError:
-                return None
-        return v
 
 
 class OrderSummaryOut(BaseModel):

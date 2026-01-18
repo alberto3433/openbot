@@ -2052,36 +2052,26 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
 
 
 def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
-    """Detect requests to add modifiers (proteins, cheeses, toppings) to an existing item.
+    """Detect requests to add modifiers to an existing item.
 
     Catches patterns like:
-    - "add bacon" - add single modifier to current/last item
-    - "add bacon and cheese" - add multiple modifiers
-    - "add bacon to the bagel" - add modifier to specific item
-    - "add bacon to the plain bagel" - add modifier to specific item type
-    - "extra bacon" / "more bacon" - alternative action words
-    - "put bacon on it" - implicit target
+    - "add X" - add single modifier to current/last item
+    - "add X and Y" - add multiple modifiers
+    - "add X to the Y" - add modifier to specific item
+    - "extra X" / "more X" - alternative action words
+    - "put X on it" - implicit target
 
-    Does NOT catch patterns like:
-    - "add bacon egg and cheese" - this is a breakfast sandwich order
-    - "add ham egg and cheese" - this is a breakfast sandwich order
+    Does NOT catch patterns where the modifier text matches a known menu item
+    (e.g., if "bacon egg and cheese" is a menu item alias, "add bacon egg and cheese"
+    will be treated as a menu item order, not a modifier-add request).
 
     Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
     """
     text_lower = text.lower().strip()
 
-    # Skip patterns that look like breakfast sandwiches ("add bacon egg and cheese")
-    # These are matched as menu items via database synonyms
-    if re.search(r"\begg\s+(?:and|&|n)\s+cheese\b", text_lower):
-        return None
-
-    # Get known modifiers (food modifiers - NOT spreads, which are handled separately)
-    # Use database-driven categories instead of hardcoded function calls
+    # Get known modifiers from all food categories (database-driven)
     all_modifiers: set[str] = set()
     for category in menu_cache.get_ordered_ingredient_categories("food"):
-        # Skip spreads - they're handled separately in _parse_spread_modification
-        if category == "spread":
-            continue
         ingredients = menu_cache.get_ingredients(category)
         all_modifiers.update(ingredients)
 
@@ -2133,24 +2123,19 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     if not modifier_text:
         return None
 
+    # Check if modifier_text matches a known menu item (e.g., "bacon egg and cheese")
+    # If so, this is likely a menu item order, not a modifier-add request
+    menu_item, _ = _extract_menu_item_from_text(modifier_text)
+    if menu_item:
+        logger.debug("ADD MODIFIER: '%s' matches menu item '%s', skipping", modifier_text, menu_item)
+        return None
+
     # === Parse modifier_text to extract individual modifiers with qualifiers ===
     # Handle "extra bacon and cheese on the side", "bacon, cheese, and tomato", etc.
 
-    # Pre-process: Mask out spread patterns to prevent "cheese" from matching
-    # inside "cream cheese" (since "cheese" is an alias for American Cheese)
-    # Common patterns: "scallion cream cheese", "plain cream cheese", "cream cheese", "cc"
-    modifier_text_for_matching = modifier_text.lower()
-    spread_patterns = [
-        r'\b\w+\s+cream\s+cheese\b',  # "scallion cream cheese", "plain cream cheese"
-        r'\bcream\s+cheese\b',         # "cream cheese"
-        r'\bcc\b',                      # abbreviated "cc"
-    ]
-    for pattern in spread_patterns:
-        modifier_text_for_matching = re.sub(pattern, '___SPREAD___', modifier_text_for_matching)
-
     # Extract modifiers with qualifiers (e.g., "extra mayo" -> "mayo (extra)")
     modifiers_found, conflicts = extract_modifiers_with_qualifiers(
-        modifier_text_for_matching,
+        modifier_text.lower(),
         all_modifiers
     )
 

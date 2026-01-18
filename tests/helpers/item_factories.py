@@ -17,7 +17,6 @@ def BagelItemTask(
     bagel_type: str = None,  # Alias for bread (backward compat)
     toasted: bool = None,
     spread: str = None,
-    spread_type: str = None,
     extras: list = None,
     quantity: int = 1,
     unit_price: float = 0.0,
@@ -29,8 +28,7 @@ def BagelItemTask(
         bread: The bagel type (e.g., "plain", "everything")
         bagel_type: Alias for bread (backward compatibility)
         toasted: Whether the bagel should be toasted
-        spread: The spread type (alias for spread_type)
-        spread_type: The spread type
+        spread: The spread type
         extras: List of extra toppings
         quantity: Number of bagels
         unit_price: Price per bagel
@@ -47,8 +45,8 @@ def BagelItemTask(
     attribute_values = {"bread": bread_value}
     if toasted is not None:
         attribute_values["toasted"] = toasted
-    if spread or spread_type:
-        attribute_values["spread_type"] = spread or spread_type
+    if spread:
+        attribute_values["spread"] = spread
     if extras:
         attribute_values["toppings"] = extras
     attribute_values.update(kwargs)

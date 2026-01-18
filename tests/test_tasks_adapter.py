@@ -424,7 +424,7 @@ class TestOrderTaskToDict:
         assert item["item_type"] == "bagel"  # Bagels now keep their type
         assert item["attribute_values"]["bread"] == "sesame"  # Check in attribute_values
         assert item["attribute_values"]["toasted"] is True
-        assert item["attribute_values"]["spread_type"] == "butter"  # spread property stores as spread_type
+        assert item["attribute_values"]["spread"] == "butter"  # spread attribute uses slug 'spread'
         assert item["attribute_values"]["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
         assert item["quantity"] == 1
         assert item["unit_price"] == 4.99

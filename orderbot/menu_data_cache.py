@@ -3335,16 +3335,15 @@ class MenuDataCache:
                 "field_name": "spread",  # The attribute name on the item
                 "display_name": "spread",  # Human-readable name
                 "aliases": ["cream cheese", "cc", "schmear", ...],  # All recognized terms
-                "is_list": False,  # True for toppings, sweeteners, syrups
+                "is_list": True,  # From ingredient_categories.is_multi_select
                 "ingredient_group": "spread",  # Database ingredient_group
             }
         """
         from .db import SessionLocal
         from .models import ItemType, ItemTypeIngredient, Ingredient
 
-        # Field configuration is now data-driven from ingredient_categories table
+        # Field configuration is now fully data-driven from ingredient_categories table
         # (code_field_name, is_multi_select columns)
-        # Special case: milk_sweetener_syrup group is split by ingredient category
 
         result = []
         db = SessionLocal()
@@ -3371,18 +3370,13 @@ class MenuDataCache:
                 .all()
             )
 
-            # Group ingredients by group (or category for milk_sweetener_syrup)
+            # Group ingredients by ingredient_group
             from collections import defaultdict
             groups: dict[str, list[tuple[ItemTypeIngredient, Ingredient]]] = defaultdict(list)
 
             for link in ingredient_links:
                 ingredient = link.ingredient
                 group = link.ingredient_group
-
-                # For the combined milk_sweetener_syrup group, use ingredient category
-                if group == "milk_sweetener_syrup":
-                    group = ingredient.category  # 'milk', 'sweetener', or 'syrup'
-
                 groups[group].append((link, ingredient))
 
             # Convert each group to a modifier field
@@ -3420,56 +3414,6 @@ class MenuDataCache:
                     "aliases": aliases,
                     "is_list": field_config["is_multi_select"],
                     "ingredient_group": group,
-                })
-
-            # For any item type with spread global attribute, add spread modifiers
-            # Spreads are now stored as global attribute options
-            from .models import ItemTypeGlobalAttribute, GlobalAttribute, GlobalAttributeOption
-
-            spread_link = (
-                db.query(ItemTypeGlobalAttribute)
-                .join(GlobalAttribute)
-                .filter(
-                    ItemTypeGlobalAttribute.item_type_id == item_type.id,
-                    GlobalAttribute.slug == "spread",
-                )
-                .first()
-            )
-
-            if spread_link:
-                # Start with empty aliases - all aliases come from database
-                spread_aliases = []
-
-                # Get spread option names and aliases from global_attribute_options
-                spread_options = (
-                    db.query(GlobalAttributeOption)
-                    .filter(
-                        GlobalAttributeOption.global_attribute_id == spread_link.global_attribute_id,
-                        GlobalAttributeOption.is_available == True,
-                    )
-                    .all()
-                )
-
-                for opt in spread_options:
-                    # Add display name
-                    display = (opt.display_name or opt.slug.replace("_", " ")).lower()
-                    if display and display not in spread_aliases:
-                        spread_aliases.append(display)
-                    # Also add slug as an alias
-                    slug_alias = opt.slug.lower().replace("_", " ")
-                    if slug_alias and slug_alias not in spread_aliases:
-                        spread_aliases.append(slug_alias)
-
-                # Also add the category name "spread" as a catch-all alias
-                if "spread" not in spread_aliases:
-                    spread_aliases.append("spread")
-
-                result.append({
-                    "field_name": "spread",
-                    "display_name": "spread",
-                    "aliases": spread_aliases,
-                    "is_list": False,
-                    "ingredient_group": "spread",
                 })
 
             logger.debug(

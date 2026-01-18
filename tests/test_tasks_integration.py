@@ -234,35 +234,8 @@ def mock_get_category_keyword_mapping(keyword: str):
 
 
 # =============================================================================
-# Mock functions for parser constants (coffee types, bagel types, etc.)
+# Mock functions for parser constants (signature items, known menu items, etc.)
 # =============================================================================
-
-def mock_get_coffee_types():
-    """Return mock coffee types for deterministic parser."""
-    return {
-        "coffee", "latte", "cappuccino", "espresso", "americano",
-        "macchiato", "mocha", "chai", "tea", "matcha", "cold brew",
-        "iced coffee", "drip coffee", "hot chocolate",
-    }
-
-
-def mock_get_bagel_types():
-    """Return mock bagel types for deterministic parser."""
-    return {
-        "plain", "everything", "sesame", "poppy", "onion",
-        "pumpernickel", "whole wheat", "cinnamon raisin",
-        "salt", "egg", "bialy", "flagel",
-    }
-
-
-def mock_get_soda_types():
-    """Return mock soda/beverage types for deterministic parser."""
-    return {
-        "coke", "coca-cola", "diet coke", "sprite", "ginger ale",
-        "orange juice", "apple juice", "water", "lemonade",
-        "tropicana", "snapple",
-    }
-
 
 def mock_get_signature_item_aliases():
     """Return mock signature item aliases for deterministic parser.
@@ -307,13 +280,7 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants
-    monkeypatch.setattr(parser_constants, "get_coffee_types", mock_get_coffee_types)
-    monkeypatch.setattr(parser_constants, "get_soda_types", mock_get_soda_types)
-    # CRITICAL: Also patch in deterministic.py since it imports functions directly
-    # (from .constants import get_coffee_types) - it has its own reference
     import orderbot.tasks.parsers.deterministic as parser_deterministic
-    monkeypatch.setattr(parser_deterministic, "get_coffee_types", mock_get_coffee_types)
-    monkeypatch.setattr(parser_deterministic, "get_soda_types", mock_get_soda_types)
     # Mock signature items and known menu items - required for multi-item parsing
     monkeypatch.setattr(parser_constants, "get_signature_item_aliases", mock_get_signature_item_aliases)
     monkeypatch.setattr(parser_constants, "get_known_menu_items", mock_get_known_menu_items)

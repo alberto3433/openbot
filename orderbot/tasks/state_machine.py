@@ -54,8 +54,6 @@ from .parsers import (
     validate_delivery_zip_code,
     # Deterministic yes/no parsing
     parse_toasted_deterministic,
-    # Constants - Drink categories
-    get_coffee_types,
     # Constants - Number mapping
     WORD_TO_NUM,
     # Constants - Spread types (loaded from database via dynamic functions)
@@ -86,9 +84,9 @@ from .parsers import (
     CANCEL_ITEM_PATTERN,
     TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
-    BAGEL_QUANTITY_PATTERN,
-    SIMPLE_BAGEL_PATTERN,
-    _get_coffee_order_pattern,
+    # Unified data-driven pattern for detecting new item orders
+    _get_configurable_item_pattern,
+    ORDERING_LANGUAGE_PATTERN,
     # Deterministic parsers - Modifier extraction
     extract_notes_from_input,
     # Deterministic parsers - Internal helpers
@@ -128,29 +126,20 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
 
     This helps redirect users who say "bagel with cream cheese" when
     asked "What kind of bagel?" for their ham, egg, and cheese bagel.
+
+    Uses a unified data-driven pattern that matches:
+    - Item type triggers from database (bagel, latte, sandwich, etc.)
+    - Attribute option words from database (small, large, iced, hot, etc.)
+    - Ordering language phrases (I'd like, can I get, etc.)
     """
     text = user_input.lower().strip()
 
-    # Bagel type pattern check removed - now data-driven
-
-    # Pattern: "bagel with X" (ordering a new item with modifiers)
-    if re.search(r'\bbagel\s+with\s+\w+', text):
-        return True
-
-    # Pattern: quantity-based ordering ("2 bagels", "a bagel")
-    if BAGEL_QUANTITY_PATTERN.search(text):
-        return True
-
-    # Pattern: simple bagel ordering ("a bagel please", "bagel please")
-    if SIMPLE_BAGEL_PATTERN.search(text):
-        return True
-
-    # Pattern: coffee ordering
-    if _get_coffee_order_pattern().search(text):
-        return True
-
     # Pattern: explicit ordering language ("I'd like", "can I get", "I want")
-    if re.search(r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|(?:can|could|may)\s+i\s+(?:get|have))", text):
+    if ORDERING_LANGUAGE_PATTERN.search(text):
+        return True
+
+    # Pattern: any configurable item keyword from database
+    if _get_configurable_item_pattern().search(text):
         return True
 
     return False

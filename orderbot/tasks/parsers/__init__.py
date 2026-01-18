@@ -27,9 +27,9 @@ from .deterministic import (
     CANCEL_ITEM_PATTERN,
     TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
-    BAGEL_QUANTITY_PATTERN,
-    SIMPLE_BAGEL_PATTERN,
-    _get_coffee_order_pattern,
+    # Unified data-driven pattern for detecting new item orders
+    _get_configurable_item_pattern,
+    ORDERING_LANGUAGE_PATTERN,
     # Modifier extraction (data-driven)
     extract_attribute_values,  # Generic data-driven extractor
     extract_modifiers_for_item_type,  # Wrapper returning ExtractedModifiers
@@ -66,9 +66,6 @@ from .llm_parsers import (
 )
 
 from .constants import (
-    # Drink categories
-    get_coffee_types,
-    get_soda_types,
     # Number mapping
     WORD_TO_NUM,
     # Spread types (loaded from database via dynamic functions)
@@ -127,9 +124,9 @@ __all__ = [
     "CANCEL_ITEM_PATTERN",
     "TAX_QUESTION_PATTERN",
     "ORDER_STATUS_PATTERN",
-    "BAGEL_QUANTITY_PATTERN",
-    "SIMPLE_BAGEL_PATTERN",
-    "_get_coffee_order_pattern",
+    # Unified data-driven pattern for detecting new item orders
+    "_get_configurable_item_pattern",
+    "ORDERING_LANGUAGE_PATTERN",
     # Deterministic parsers - Modifier extraction (data-driven)
     "extract_attribute_values",  # Generic data-driven extractor
     "extract_modifiers_for_item_type",  # Wrapper returning ExtractedModifiers
@@ -161,9 +158,6 @@ __all__ = [
     "parse_payment_method",
     "parse_email",
     "parse_phone",
-    # Constants - Drink categories
-    "get_coffee_types",
-    "get_soda_types",
     # Constants - Number mapping
     "WORD_TO_NUM",
     # Constants - Spread types (loaded from database via dynamic functions)

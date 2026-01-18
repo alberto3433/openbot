@@ -33,9 +33,6 @@ from .constants import (
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     get_known_menu_items,
-    get_soda_types,
-    get_coffee_types,
-    resolve_coffee_alias,
     resolve_soda_alias,
     PRICE_INQUIRY_PATTERNS,
     STORE_HOURS_PATTERNS,
@@ -406,8 +403,10 @@ ADD_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Bagel quantity pattern - note: compound expressions like "half dozen" must come before single words
-BAGEL_QUANTITY_PATTERN = re.compile(
+# Bagel quantity pattern - internal use only for parsing (not for detection)
+# Note: Detection of new orders should use _get_configurable_item_pattern() instead
+# This pattern is only used for extracting quantity from bagel orders
+__BAGEL_QUANTITY_PATTERN = re.compile(
     r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
     r"(?:can|could|may)\s+i\s+(?:get|have)|"
     r"give\s+me|"
@@ -419,8 +418,8 @@ BAGEL_QUANTITY_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Simple bagel mention without quantity
-SIMPLE_BAGEL_PATTERN = re.compile(
+# Simple bagel mention pattern - internal use only for parsing (not for detection)
+__SIMPLE_BAGEL_PATTERN = re.compile(
     r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
     r"(?:can|could|may)\s+i\s+(?:get|have)|"
     r"give\s+me|"
@@ -430,43 +429,75 @@ SIMPLE_BAGEL_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Coffee order pattern - lazily built to use database-driven coffee types
-_COFFEE_ORDER_PATTERN_CACHE: re.Pattern | None = None
+# Unified configurable item pattern - lazily built from database
+_CONFIGURABLE_ITEM_PATTERN_CACHE: re.Pattern | None = None
 
 
-def _get_coffee_order_pattern() -> re.Pattern:
-    """Get the coffee order regex pattern, building it lazily on first use.
+def _get_configurable_item_pattern() -> re.Pattern:
+    """Get regex pattern for detecting configurable item orders from database.
 
-    Uses get_coffee_types() to get coffee/tea types from the database cache,
-    falling back to hardcoded defaults if cache isn't loaded.
+    Builds a unified pattern that matches any of:
+    - Item type triggers (e.g., "bagel", "latte", "omelette")
+    - Attribute option words (e.g., "small", "medium", "large", "iced", "hot")
+
+    This replaces domain-specific patterns (_BAGEL_QUANTITY_PATTERN,
+    _SIMPLE_BAGEL_PATTERN, etc.) with a single
+    data-driven pattern.
+
+    The pattern doesn't enforce word order - it detects presence of
+    item-related keywords to signal a potential new order attempt.
+
+    Returns:
+        Compiled regex pattern matching configurable item keywords.
     """
-    global _COFFEE_ORDER_PATTERN_CACHE
-    if _COFFEE_ORDER_PATTERN_CACHE is None:
-        coffee_types = get_coffee_types()
-        # Sort by length (longest first) to match longer names first
-        sorted_types = sorted(coffee_types, key=len, reverse=True)
-        types_pattern = "|".join(re.escape(t) for t in sorted_types)
-        _COFFEE_ORDER_PATTERN_CACHE = re.compile(
-            r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
-            r"(?:can|could|may)\s+i\s+(?:get|have)|"
-            r"give\s+me|"
-            r"let\s*(?:me|'s)\s*(?:get|have)|"
-            r")?\s*"
-            r"(?:an?\s+)?"
-            r"(?:(\d+|two|three|four|five)\s+)?"
-            r"(?:(small|medium|large)\s+)?"
-            r"(?:(iced|hot)\s+)?"
-            r"(?:(decaf)\s+)?"
-            rf"({types_pattern})"
-            r"(?:\s|$|[.,!?])",
-            re.IGNORECASE
-        )
-    return _COFFEE_ORDER_PATTERN_CACHE
+    global _CONFIGURABLE_ITEM_PATTERN_CACHE
+    if _CONFIGURABLE_ITEM_PATTERN_CACHE is not None:
+        return _CONFIGURABLE_ITEM_PATTERN_CACHE
+
+    # Collect all keywords that indicate a new item order
+    keywords: set[str] = set()
+
+    # 1. Item type triggers (bagel, latte, coffee, sandwich, etc.)
+    all_triggers = menu_cache.get_item_type_triggers()
+    for triggers in all_triggers.values():
+        keywords.update(triggers)
+
+    # 2. Attribute option words (small, medium, large, iced, hot, etc.)
+    attr_options = menu_cache.get_all_attribute_option_words()
+    keywords.update(attr_options.keys())
+
+    # 3. Item names from configurable types (for full menu item names)
+    configurable_names = menu_cache.get_configurable_item_names()
+    keywords.update(configurable_names)
+
+    # Filter out empty strings and very short words (< 2 chars)
+    keywords = {k for k in keywords if k and len(k) >= 2}
+
+    # Sort by length descending to match longer phrases first
+    sorted_keywords = sorted(keywords, key=len, reverse=True)
+
+    # Escape for regex and join with alternation
+    keywords_pattern = "|".join(re.escape(k) for k in sorted_keywords)
+
+    # Build pattern that matches keyword as word boundary
+    _CONFIGURABLE_ITEM_PATTERN_CACHE = re.compile(
+        rf"\b({keywords_pattern})\b",
+        re.IGNORECASE
+    )
+    return _CONFIGURABLE_ITEM_PATTERN_CACHE
 
 
-# Keep COFFEE_ORDER_PATTERN as a property-like accessor for backwards compatibility
-# Code should use _get_coffee_order_pattern() but this allows gradual migration
-COFFEE_ORDER_PATTERN = None  # Will be set lazily; use _get_coffee_order_pattern()
+# Ordering language pattern - phrases that indicate user wants to order
+# This is independent of specific menu items
+ORDERING_LANGUAGE_PATTERN = re.compile(
+    r"(?:"
+    r"i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)"
+    r"|(?:can|could|may)\s+i\s+(?:get|have)"
+    r"|give\s+me"
+    r"|let\s*(?:me|'s)\s*(?:get|have)"
+    r")",
+    re.IGNORECASE
+)
 
 
 # =============================================================================
@@ -2239,265 +2270,134 @@ def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None
 
 
 # =============================================================================
-# Split-Quantity Bagel Parsing
+# Generic Split-Quantity Parsing (Data-Driven)
 # =============================================================================
 
-def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
+def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     """
-    Parse orders with multiple bagels that have different configurations.
+    Detect configurable item type from text using database-driven keywords.
 
-    Detects patterns like:
-        - "two plain bagels one with scallion cream cheese one with lox"
-        - "2 bagels, one with lox, one with cream cheese"
-        - "three everything bagels one toasted one not toasted one with butter"
+    Args:
+        text: User input text (lowercase)
 
-    Returns OpenInputResponse with parsed_items populated with ParsedItemEntry objects.
+    Returns:
+        (item_type_slug, matched_trigger) or (None, None) if no match
     """
-    text_lower = text.lower().strip()
+    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
 
-    # Must have "bagel" in the text
-    if not re.search(r"\bbagels?\b", text_lower):
-        return None
+    for item_type_slug in configurable_slugs:
+        triggers = menu_cache.get_item_type_triggers(item_type_slug)
+        # Sort by length descending for longest match first
+        for trigger in sorted(triggers, key=len, reverse=True):
+            # Match trigger with optional plural 's'
+            if re.search(rf'\b{re.escape(trigger)}s?\b', text, re.IGNORECASE):
+                return item_type_slug, trigger
 
-    # Detect split-quantity patterns: "one with X" or "one X" repeated
-    # Pattern: look for "one with", "1 with", "first with", "second with", etc.
-    # Also match quantity words followed by bagel types or toasted/not toasted
-    bagel_types_pattern = r"(?:plain|everything|sesame|poppy|onion|salt|garlic|pumpernickel|whole\s+wheat|cinnamon\s+raisin|bialy)"
-    toasted_pattern = r"(?:not\s+)?toasted"
-    split_indicators = [
+    return None, None
+
+
+def _count_split_indicators(text: str) -> int:
+    """Count split-quantity indicators in text."""
+    indicators = [
         r"\bone\s+with\b",
         r"\b1\s+with\b",
         r"\bfirst\s+with\b",
         r"\bsecond\s+with\b",
         r"\bthe\s+other\s+with\b",
         r"\banother\s+with\b",
-        rf"\bone\s+(?:{toasted_pattern}|{bagel_types_pattern})\b",
-        rf"\btwo\s+(?:{toasted_pattern}|{bagel_types_pattern})\b",
-        rf"\bthree\s+(?:{toasted_pattern}|{bagel_types_pattern})\b",
-        rf"\b[123]\s+(?:{toasted_pattern}|{bagel_types_pattern})\b",
         r"\bfirst\s+one\b",
         r"\bsecond\s+one\b",
+        # Match "one/two/three [word]" patterns (not just "with")
+        r"\b(?:one|1)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
+        r"\b(?:two|2)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
+        r"\b(?:three|3)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
     ]
+    count = 0
+    for pattern in indicators:
+        count += len(re.findall(pattern, text, re.IGNORECASE))
+    return count
 
-    # Count how many split indicators we find
-    split_count = 0
-    for pattern in split_indicators:
-        matches = re.findall(pattern, text_lower)
-        split_count += len(matches)
 
-    # Need at least 2 split indicators to be a split-quantity order
-    if split_count < 2:
-        return None
+def _get_initial_part(text: str) -> str:
+    """Get the initial part of text before first split indicator."""
+    return re.split(r"\b(?:one|1|first)\s+(?:with\s+)?", text, maxsplit=1, flags=re.IGNORECASE)[0]
 
-    logger.info("SPLIT-QUANTITY BAGELS: detected %d split indicators in '%s'", split_count, text[:60])
 
-    # Extract the total quantity
-    total_quantity = 2  # Default
-    qty_match = re.match(
-        r"^(\d+|two|three|four|five|six)\s+",
-        text_lower
-    )
-    if qty_match:
-        qty_str = qty_match.group(1)
-        if qty_str.isdigit():
-            total_quantity = int(qty_str)
-        else:
-            total_quantity = WORD_TO_NUM.get(qty_str, 2)
+def _split_into_parts(text: str) -> list[tuple[int, str]]:
+    """
+    Split text into (quantity, specification) tuples.
 
-    # Extract the base bagel type from the INITIAL part of the text only
-    # (before the first "one with" or split indicator)
-    # This prevents "one plain" from being used as the base bagel type
-    first_split = re.split(r"\b(?:one|1|first)\s+(?:with\s+)?", text_lower, maxsplit=1)[0]
-    base_bagel_type = _slug_to_display(_extract_attribute_value(first_split, "bagel", "bread"))
-
-    # Extract base toasted preference from initial part only
-    base_toasted = _extract_toasted(first_split)
-
-    # Split the text into parts for each bagel
-    # Look for patterns like "one with X", "two Y", "the other with Z"
-    # Captures: (quantity_word, specification)
-    split_pattern = re.compile(
+    Returns list of (qty, spec_text) for each part of a split-quantity order.
+    """
+    pattern = re.compile(
         r"(?:,?\s*(?:and\s+)?)"  # Optional comma/and separator
-        r"(one|two|three|1|2|3|first|second|third|the\s+other|another)\s+"  # Quantity/ordinal (group 1)
-        r"(with\s+.+?|(?:not\s+)?toasted(?:\s+with\s+.+?)?|plain(?:\s+with\s+.+?)?|"  # Specification (group 2)
-        r"(?:plain|everything|sesame|poppy|onion|salt|garlic|pumpernickel|whole\s+wheat|cinnamon\s+raisin|bialy)(?:\s+with\s+.+?)?)"  # Or bagel type
+        r"(one|two|three|1|2|3|first|second|third|the\s+other|another)\s+"  # Quantity/ordinal
+        r"(.+?)"  # Specification (non-greedy)
         r"(?=(?:,?\s*(?:and\s+)?(?:one|two|three|1|2|3|first|second|third|the\s+other|another)\s+)|$)",
         re.IGNORECASE
     )
 
-    # Find all split parts with quantities
-    raw_parts = split_pattern.findall(text_lower)
-    logger.info("SPLIT-QUANTITY: found %d raw parts: %s", len(raw_parts), raw_parts)
+    raw_parts = pattern.findall(text)
 
-    # Convert to (quantity, specification) tuples
-    parts_with_qty: list[tuple[int, str]] = []
+    result = []
     for qty_word, spec in raw_parts:
         qty_word_lower = qty_word.lower().strip()
         # Map quantity words to numbers
         if qty_word_lower in ("one", "1", "first", "the other", "another"):
             qty = 1
-        elif qty_word_lower in ("two", "2", "second"):
-            qty = 2 if qty_word_lower in ("two", "2") else 1
-        elif qty_word_lower in ("three", "3", "third"):
-            qty = 3 if qty_word_lower in ("three", "3") else 1
+        elif qty_word_lower in ("two", "2"):
+            qty = 2
+        elif qty_word_lower == "second":
+            qty = 1  # "second" means the second item, qty=1
+        elif qty_word_lower in ("three", "3"):
+            qty = 3
+        elif qty_word_lower == "third":
+            qty = 1
         else:
             qty = 1
-        parts_with_qty.append((qty, spec.strip()))
+        result.append((qty, spec.strip()))
 
-    # If we didn't find enough parts with the regex, try a simpler split
-    if len(parts_with_qty) < 2:
-        # Try splitting on "one with" or "one " (legacy fallback, assumes qty=1 each)
-        simple_split = re.split(r",?\s*(?:and\s+)?(?:one|1)\s+(?:with\s+)?", text_lower)
-        # Filter out empty parts and the initial bagel description
-        parts_with_qty = [(1, p.strip()) for p in simple_split[1:] if p.strip()]
-        logger.info("SPLIT-QUANTITY: simple split found %d parts: %s", len(parts_with_qty), parts_with_qty)
-
-    if len(parts_with_qty) < 2:
-        return None
-
-    # Create ParsedItemEntry for each part (unified system)
-    parsed_items: list[ParsedItemEntry] = []
-    item_count = 0
-
-    for part_qty, part in parts_with_qty:
-        # Stop if we've reached the total quantity
-        if item_count >= total_quantity:
-            break
-
-        part_lower = part.lower().strip()
-
-        # Normalize common spread aliases BEFORE processing
-        # This allows "cc" to match "cream cheese" logic below
-        spread_aliases = {
-            r"\bcc\b": "cream cheese",
-            r"\bpb\b": "peanut butter",
-            r"\bsc\b": "scallion cream cheese",
-            r"\bvcc\b": "vegetable cream cheese",
-        }
-        for alias_pattern, canonical in spread_aliases.items():
-            part_lower = re.sub(alias_pattern, canonical, part_lower)
-
-        # Check if this part specifies a different bagel type (e.g., "one plain, one everything")
-        part_bagel_type = _slug_to_display(_extract_attribute_value(part_lower, "bagel", "bread"))
-        if part_bagel_type:
-            bagel_type = part_bagel_type
-        else:
-            bagel_type = base_bagel_type
-
-        # Extract toasted for this specific bagel
-        toasted = None
-        if "not toasted" in part_lower or "untoasted" in part_lower:
-            toasted = False
-        elif "toasted" in part_lower:
-            toasted = True
-        elif base_toasted is not None:
-            toasted = base_toasted
-
-        # Extract spread for this bagel (atomic slug from database)
-        spread = _extract_spread(part_lower)
-
-        # "plain" in split context means no spread - just a plain bagel
-        # _extract_spread returns None if no spread found
-
-        # Create entries for this part (may be >1 for uneven splits like "two not toasted")
-        items_to_create = min(part_qty, total_quantity - item_count)
-        for _ in range(items_to_create):
-            parsed_items.append(build_parsed_item(
-                item_type="bagel",
-                quantity=1,
-                attribute_values={
-                    k: v for k, v in [
-                        ("bread", bagel_type),
-                        ("toasted", toasted),
-                        ("spread", spread),
-                    ] if v is not None
-                },
-            ))
-            item_count += 1
-            logger.info(
-                "SPLIT-QUANTITY: bagel %d: type=%s, toasted=%s, spread=%s",
-                item_count, bagel_type, toasted, spread
-            )
-
-    # If we have fewer entries than total_quantity, fill with base bagels
-    while len(parsed_items) < total_quantity:
-        parsed_items.append(build_parsed_item(
-            item_type="bagel",
-            quantity=1,
-            attribute_values={
-                k: v for k, v in [
-                    ("bread", base_bagel_type),
-                    ("toasted", base_toasted),
-                ] if v is not None
-            },
-        ))
-
-    # Phase 4: Only use parsed_items (deprecated fields removed)
-    return OpenInputResponse(parsed_items=parsed_items)
+    return result
 
 
-def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
+def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     """
-    Parse orders with multiple drinks that have different configurations.
+    Parse orders with multiple configurable items that have different configurations.
+
+    This is a generic, data-driven parser that works for any configurable item type.
+    It replaces the hardcoded _parse_split_quantity_bagels and _parse_split_quantity_drinks.
 
     Detects patterns like:
-        - "two coffees one with milk one black"
+        - "two plain bagels one with scallion cream cheese one with lox"
         - "2 lattes, one iced, one hot"
         - "three teas one with sugar one with honey one plain"
 
-    Returns OpenInputResponse with parsed_items populated with ParsedItemEntry objects.
+    Returns:
+        OpenInputResponse with parsed_items populated, or None if not a split-quantity order.
     """
     text_lower = text.lower().strip()
 
-    # Build pattern for drink types (coffee, tea, latte, etc.)
-    # get_coffee_types() includes both item names and aliases from database
-    all_drink_types = list(get_coffee_types())
-    drink_pattern = "|".join(re.escape(d) for d in sorted(all_drink_types, key=len, reverse=True))
-
-    # Must have a drink type in the text (plural or singular)
-    drink_match = re.search(rf'\b({drink_pattern})s?\b', text_lower)
-    if not drink_match:
+    # 1. Detect item type from text
+    item_type, matched_trigger = _detect_configurable_item_type(text_lower)
+    if not item_type:
         return None
 
-    base_drink_type = drink_match.group(1)
-    # Resolve alias to canonical menu item name
-    base_drink_type = resolve_coffee_alias(base_drink_type)
-
-    # Detect split-quantity patterns: "one with X" or "one X" repeated
-    # Split indicators for drinks - expanded to support uneven splits like "two hot"
-    drink_spec_pattern = r"(?:with|iced|hot|black|decaf|plain)"
-    split_indicators = [
-        rf"\bone\s+{drink_spec_pattern}\b",
-        rf"\b1\s+{drink_spec_pattern}\b",
-        rf"\bfirst\s+{drink_spec_pattern}\b",
-        rf"\bsecond\s+{drink_spec_pattern}\b",
-        rf"\bthe\s+other\s+{drink_spec_pattern}\b",
-        rf"\banother\s+{drink_spec_pattern}\b",
-        rf"\btwo\s+{drink_spec_pattern}\b",
-        rf"\bthree\s+{drink_spec_pattern}\b",
-        rf"\b[123]\s+{drink_spec_pattern}\b",
-        r"\bfirst\s+one\b",
-        r"\bsecond\s+one\b",
-    ]
-
-    # Count how many split indicators we find
-    split_count = 0
-    for pattern in split_indicators:
-        matches = re.findall(pattern, text_lower)
-        split_count += len(matches)
-
-    # Need at least 2 split indicators to be a split-quantity order
+    # 2. Detect split-quantity pattern (need at least 2 indicators)
+    split_count = _count_split_indicators(text_lower)
     if split_count < 2:
         return None
 
-    logger.info("SPLIT-QUANTITY DRINKS: detected %d split indicators in '%s'", split_count, text[:60])
-
-    # Extract the total quantity
-    total_quantity = 2  # Default
-    qty_match = re.match(
-        r"^(\d+|two|three|four|five|six)\s+",
-        text_lower
+    logger.info(
+        "SPLIT-QUANTITY ITEMS: detected %d split indicators for item_type=%s in '%s'",
+        split_count, item_type, text[:60]
     )
+
+    # 3. Extract base properties from initial part
+    initial_part = _get_initial_part(text_lower)
+
+    # Extract total quantity
+    total_quantity = 2  # Default
+    qty_match = re.match(r"^(\d+|two|three|four|five|six)\s+", text_lower)
     if qty_match:
         qty_str = qty_match.group(1)
         if qty_str.isdigit():
@@ -2505,160 +2405,72 @@ def _parse_split_quantity_drinks(text: str) -> OpenInputResponse | None:
         else:
             total_quantity = WORD_TO_NUM.get(qty_str, 2)
 
-    # Extract base drink properties from the INITIAL part of the text
-    # (before the first "one with" or split indicator)
-    first_split = re.split(r"\b(?:one|1|first)\s+(?:with\s+|iced|hot|black|decaf)?", text_lower, maxsplit=1)[0]
+    # Extract base attributes using data-driven extractor
+    base_attrs = extract_attribute_values(initial_part, item_type)
 
-    # Extract base size from initial part
-    base_size = None
-    size_match = re.search(r'\b(small|medium|large)\b', first_split)
-    if size_match:
-        base_size = size_match.group(1)
+    # Try to match a specific menu item name within the type
+    base_item_name = _match_menu_item_for_type(initial_part, item_type)
 
-    # Extract base iced/hot from initial part (only if explicitly stated)
-    base_iced = None
-    if re.search(r'\biced\b', first_split):
-        base_iced = True
-    elif re.search(r'\bhot\b', first_split):
-        base_iced = False
+    # 4. Split into parts
+    parts = _split_into_parts(text_lower)
+    if len(parts) < 2:
+        # Try simpler split as fallback
+        simple_split = re.split(r",?\s*(?:and\s+)?(?:one|1)\s+(?:with\s+)?", text_lower, flags=re.IGNORECASE)
+        parts = [(1, p.strip()) for p in simple_split[1:] if p.strip()]
 
-    # Extract base decaf from initial part
-    base_decaf = None
-    if re.search(r'\bdecaf\b', first_split):
-        base_decaf = True
-
-    # Split the text into parts for each drink
-    # Captures: (quantity_word, specification)
-    split_pattern = re.compile(
-        r"(?:,?\s*(?:and\s+)?)"  # Optional comma/and separator
-        r"(one|two|three|1|2|3|first|second|third|the\s+other|another)\s+"  # Quantity/ordinal (group 1)
-        r"(with\s+.+?|iced(?:\s+with\s+.+?)?|hot(?:\s+with\s+.+?)?|black|decaf(?:\s+with\s+.+?)?|plain)"  # Specification (group 2)
-        r"(?=(?:,?\s*(?:and\s+)?(?:one|two|three|1|2|3|first|second|third|the\s+other|another)\s+)|$)",
-        re.IGNORECASE
-    )
-
-    # Find all split parts with quantities
-    raw_parts = split_pattern.findall(text_lower)
-    logger.info("SPLIT-QUANTITY DRINKS: found %d raw parts: %s", len(raw_parts), raw_parts)
-
-    # Convert to (quantity, specification) tuples
-    parts_with_qty: list[tuple[int, str]] = []
-    for qty_word, spec in raw_parts:
-        qty_word_lower = qty_word.lower().strip()
-        # Map quantity words to numbers
-        if qty_word_lower in ("one", "1", "first", "the other", "another"):
-            qty = 1
-        elif qty_word_lower in ("two", "2", "second"):
-            qty = 2 if qty_word_lower in ("two", "2") else 1
-        elif qty_word_lower in ("three", "3", "third"):
-            qty = 3 if qty_word_lower in ("three", "3") else 1
-        else:
-            qty = 1
-        parts_with_qty.append((qty, spec.strip()))
-
-    # If we didn't find enough parts with the regex, try a simpler split
-    if len(parts_with_qty) < 2:
-        # Try splitting on "one with" or "one " (legacy fallback, assumes qty=1 each)
-        simple_split = re.split(r",?\s*(?:and\s+)?(?:one|1)\s+(?:with\s+)?", text_lower)
-        # Filter out empty parts and the initial drink description
-        parts_with_qty = [(1, p.strip()) for p in simple_split[1:] if p.strip()]
-        logger.info("SPLIT-QUANTITY DRINKS: simple split found %d parts: %s", len(parts_with_qty), parts_with_qty)
-
-    if len(parts_with_qty) < 2:
+    if len(parts) < 2:
         return None
 
-    # Create ParsedItemEntry for each part (unified system)
+    logger.info("SPLIT-QUANTITY ITEMS: found %d parts: %s", len(parts), parts)
+
+    # 5. Process each part
     parsed_items: list[ParsedItemEntry] = []
     item_count = 0
 
-    for part_qty, part in parts_with_qty:
-        # Stop if we've reached the total quantity
+    for part_qty, part_text in parts:
         if item_count >= total_quantity:
             break
 
-        part_lower = part.lower().strip()
+        # Extract part-specific attributes
+        part_attrs = extract_attribute_values(part_text, item_type)
 
-        # Extract iced/hot for this specific drink
-        iced = None
-        temperature = None
-        if "iced" in part_lower:
-            iced = True
-            temperature = "iced"
-        elif "hot" in part_lower:
-            iced = False
-            temperature = "hot"
-        elif base_iced is not None:
-            iced = base_iced
-            temperature = "iced" if base_iced else "hot"
+        # Merge: part overrides base (only for non-None values)
+        merged_attrs = {**base_attrs}
+        for k, v in part_attrs.items():
+            if v is not None:
+                merged_attrs[k] = v
 
-        # Extract decaf for this specific drink
-        decaf = None
-        if "decaf" in part_lower:
-            decaf = True
-        elif base_decaf is not None:
-            decaf = base_decaf
+        # Extract modifiers for this part
+        part_mods = extract_modifiers_for_item_type(part_text, item_type)
+        mod_list = extracted_modifiers_to_list(part_mods)
 
-        # Extract milk preference for this drink
-        milk = None
-        if "black" in part_lower or "plain" in part_lower:
-            milk = "none"
-        else:
-            # Check for milk types
-            milk_match = re.search(r'\b(oat|almond|soy|skim|whole|coconut)\s*milk\b', part_lower)
-            if milk_match:
-                milk = milk_match.group(1)
-            elif re.search(r'\bwith\s+milk\b', part_lower):
-                milk = "whole"
-
-        # Create entries for this part (may be >1 for uneven splits like "two hot")
+        # Create items for this part
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
-            # Temperature-to-item-name logic (moved from builder)
-            final_item_name = base_drink_type
-            if temperature and base_drink_type and temperature.lower() not in base_drink_type.lower():
-                final_item_name = f"{temperature} {base_drink_type}"
             parsed_items.append(build_parsed_item(
-                item_type="sized_beverage",
-                item_name=final_item_name,
+                item_type=item_type,
+                item_name=base_item_name,
                 quantity=1,
-                attribute_values={
-                    k: v for k, v in [
-                        ("size", base_size),
-                        ("temperature", temperature),
-                        ("milk", milk),
-                        ("decaf", decaf),
-                    ] if v is not None
-                },
+                attribute_values={k: v for k, v in merged_attrs.items() if v is not None},
+                modifiers=mod_list,
                 original_text=text,
             ))
             item_count += 1
             logger.info(
-                "SPLIT-QUANTITY DRINKS: drink %d: type=%s, size=%s, iced=%s, decaf=%s, milk=%s",
-                item_count, base_drink_type, base_size, iced, decaf, milk
+                "SPLIT-QUANTITY ITEMS: item %d: type=%s, attrs=%s",
+                item_count, item_type, merged_attrs
             )
 
-    # If we have fewer entries than total_quantity, fill with base drinks
+    # 6. Fill remaining slots with base config
     while len(parsed_items) < total_quantity:
-        # Temperature-to-item-name logic (moved from builder)
-        fill_temperature = "iced" if base_iced else ("hot" if base_iced is False else None)
-        final_item_name = base_drink_type
-        if fill_temperature and base_drink_type and fill_temperature.lower() not in base_drink_type.lower():
-            final_item_name = f"{fill_temperature} {base_drink_type}"
         parsed_items.append(build_parsed_item(
-            item_type="sized_beverage",
-            item_name=final_item_name,
+            item_type=item_type,
+            item_name=base_item_name,
             quantity=1,
-            attribute_values={
-                k: v for k, v in [
-                    ("size", base_size),
-                    ("temperature", fill_temperature),
-                    ("decaf", base_decaf),
-                ] if v is not None
-            },
+            attribute_values={k: v for k, v in base_attrs.items() if v is not None},
             original_text=text,
         ))
 
-    # Phase 4: Only use parsed_items (deprecated fields removed)
     return OpenInputResponse(parsed_items=parsed_items)
 
 
@@ -2822,11 +2634,11 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     Routes bottled beverages through new_menu_item for disambiguation,
     not new_coffee (which is reserved for sized beverages like coffee/tea).
 
-    Uses database-loaded soda types (via get_soda_types()) which includes
+    Uses database-loaded beverage item names which includes
     both item names and their aliases.
     """
     text_lower = text.lower()
-    soda_types = get_soda_types()
+    soda_types = menu_cache.get_item_names("beverage")
 
     drink_type = None
     for soda in sorted(soda_types, key=len, reverse=True):
@@ -3669,9 +3481,9 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Get modifiers and attribute options for deprioritizing modifier-based triggers
     all_modifiers = menu_cache.get_all_modifier_words()
     all_attr_options = menu_cache.get_all_attribute_option_words()
-    # Get coffee types - these are primary triggers for beverage item types
-    coffee_types = get_coffee_types()
-    coffee_types_lower = {c.lower() for c in coffee_types}
+    # Get configurable item names - these are primary triggers for item types with askable attributes
+    configurable_item_names = menu_cache.get_configurable_item_names()
+    configurable_item_names_lower = {c.lower() for c in configurable_item_names}
 
     # Item type priority: prefer specific types over generic ones
     # When trigger is the same word for multiple types, prefer the type
@@ -3682,10 +3494,10 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         # Best: item type matches the trigger word (bagel -> bagel)
         if item_type.lower() == trigger_lower:
             return 0
-        # Also best: trigger is a known coffee/beverage type and item_type is a beverage type
+        # Also best: trigger is a known configurable item name and item_type is the matching type
         # e.g., "latte" -> sized_beverage should have high priority
-        # Use data-driven check instead of hardcoding "sized_beverage"
-        if trigger_lower in coffee_types_lower and menu_cache.get_modifier_category(item_type) == "beverage":
+        # Use data-driven check based on configurable item names
+        if trigger_lower in configurable_item_names_lower and menu_cache.get_modifier_category(item_type) == "beverage":
             return 1
         # Also best: trigger matches another item type name exactly
         # This means the trigger is likely targeting that specific type, not this one
@@ -4435,21 +4247,12 @@ def parse_open_input_deterministic(
     if add_more_result:
         return add_more_result
 
-    # Check for split-quantity bagels FIRST (e.g., "two bagels one with lox one with cream cheese")
-    # This MUST run BEFORE configurable_item to handle multi-bagel orders with different configs
-    split_qty_result = _parse_split_quantity_bagels(text)
+    # Check for split-quantity items (e.g., "two bagels one with lox one with cream cheese")
+    # This MUST run BEFORE configurable_item to handle multi-item orders with different configs
+    # Generic, data-driven parser that works for any configurable item type
+    split_qty_result = _parse_split_quantity_items(text)
     if split_qty_result:
         return split_qty_result
-
-    # Check for split-quantity drinks (e.g., "two coffees one with milk one black")
-    # This MUST run BEFORE configurable_item to handle multi-drink orders with different configs
-    split_qty_drinks_result = _parse_split_quantity_drinks(text)
-    if split_qty_drinks_result:
-        logger.info(
-            "DETERMINISTIC SPLIT-QTY DRINKS: matched '%s' -> %d drinks",
-            text[:50], len(split_qty_drinks_result.coffee_details)
-        )
-        return split_qty_drinks_result
 
     # Check for configurable items (bagels, coffee, etc.) using data-driven patterns
     # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
@@ -4581,10 +4384,10 @@ def parse_open_input_deterministic(
     # as menu items rather than just "everything bagel"
     menu_item, qty = _extract_menu_item_from_text(text)
     if menu_item:
-        # Skip if this is a coffee type - let coffee parser handle it instead
-        # This ensures espresso, latte, etc. are processed as coffee items with proper config
-        coffee_types = get_coffee_types()
-        if menu_item.lower() not in coffee_types:
+        # Skip if this is a configurable item - let configurable item parser handle it instead
+        # This ensures espresso, latte, bagels, etc. are processed with proper attribute config
+        configurable_item_names = menu_cache.get_configurable_item_names()
+        if menu_item.lower() not in configurable_item_names:
             toasted = _extract_toasted(text)
             bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             modifications = _extract_menu_item_modifications(text)
@@ -4608,7 +4411,7 @@ def parse_open_input_deterministic(
             logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s' - is a coffee type, letting coffee parser handle it", menu_item)
 
     # Check for bagel order with quantity
-    quantity_match = BAGEL_QUANTITY_PATTERN.search(text)
+    quantity_match = __BAGEL_QUANTITY_PATTERN.search(text)
     if quantity_match:
         quantity_str = quantity_match.group(1)
         quantity = _extract_quantity(quantity_str)
@@ -4647,7 +4450,7 @@ def parse_open_input_deterministic(
             return OpenInputResponse(parsed_items=bagel_qty_parsed_items)
 
     # Check for simple "a bagel" / "bagel please"
-    if SIMPLE_BAGEL_PATTERN.search(text):
+    if __SIMPLE_BAGEL_PATTERN.search(text):
         bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
         toasted = _extract_toasted(text)
         scooped = _extract_scooped(text)

@@ -54,7 +54,78 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Helper Functions for parsed_items Dual-Write
+# Generic Parsed Item Builder (Data-Driven)
+# =============================================================================
+
+def build_parsed_item(
+    item_type: str,
+    *,
+    item_name: str | None = None,
+    quantity: int = 1,
+    attribute_values: dict | None = None,
+    modifiers: list[QuantifiedModifier] | None = None,
+    special_instructions: str | None = None,
+    original_text: str | None = None,
+    is_signature: bool = False,
+    weight_unit: str | None = None,
+) -> ParsedItemEntry:
+    """
+    Build a ParsedItemEntry from provided data.
+
+    This is a pure data assembly function with no domain knowledge.
+    It accepts any item_type, any attribute names, any modifier categories.
+
+    Args:
+        item_type: The item type slug (e.g., "bagel", "sized_beverage", "menu_item")
+        item_name: Specific menu item name if known
+        quantity: Number of items
+        attribute_values: Dict of attribute slug -> value
+        modifiers: List of QuantifiedModifier with category set
+        special_instructions: Free-form instructions text
+        original_text: Original user input (for disambiguation context)
+        is_signature: Whether this is a signature/speed menu item
+        weight_unit: For by-pound items (e.g., "1/4 lb")
+
+    Returns:
+        ParsedItemEntry with all fields populated
+    """
+    return ParsedItemEntry(
+        item_type=item_type,
+        item_name=item_name,
+        quantity=quantity,
+        attribute_values=attribute_values or {},
+        modifiers=modifiers or [],
+        special_instructions=special_instructions,
+        original_text=original_text,
+        is_signature=is_signature,
+        weight_unit=weight_unit,
+    )
+
+
+def extracted_modifiers_to_list(mods: ExtractedModifiers) -> list[QuantifiedModifier]:
+    """Convert ExtractedModifiers to unified modifier list with categories."""
+    result: list[QuantifiedModifier] = []
+    for p in mods.proteins or []:
+        result.append(QuantifiedModifier(slug=p, category="protein"))
+    for c in mods.cheeses or []:
+        result.append(QuantifiedModifier(slug=c, category="cheese"))
+    for t in mods.toppings or []:
+        result.append(QuantifiedModifier(slug=t, category="topping"))
+    for s in mods.spreads or []:
+        result.append(QuantifiedModifier(slug=s, category="spread"))
+    if mods.sweetener:
+        result.append(QuantifiedModifier(
+            slug=mods.sweetener, category="sweetener", quantity=mods.sweetener_quantity
+        ))
+    if mods.flavor_syrup:
+        result.append(QuantifiedModifier(
+            slug=mods.flavor_syrup, category="syrup", quantity=mods.syrup_quantity
+        ))
+    return result
+
+
+# =============================================================================
+# Legacy Builder Functions (TO BE DELETED after migration)
 # =============================================================================
 
 def _build_bagel_parsed_item(
@@ -2546,11 +2617,16 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
         # Create entries for this part (may be >1 for uneven splits like "two not toasted")
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
-            parsed_items.append(_build_bagel_parsed_item(
-                bread=bagel_type,  # Use per-item bagel type (may differ from base)
+            parsed_items.append(build_parsed_item(
+                item_type="bagel",
                 quantity=1,
-                toasted=toasted,
-                spread=spread,
+                attribute_values={
+                    k: v for k, v in [
+                        ("bread", bagel_type),
+                        ("toasted", toasted),
+                        ("spread", spread),
+                    ] if v is not None
+                },
             ))
             item_count += 1
             logger.info(
@@ -2560,10 +2636,15 @@ def _parse_split_quantity_bagels(text: str) -> OpenInputResponse | None:
 
     # If we have fewer entries than total_quantity, fill with base bagels
     while len(parsed_items) < total_quantity:
-        parsed_items.append(_build_bagel_parsed_item(
-            bread=base_bagel_type,
+        parsed_items.append(build_parsed_item(
+            item_type="bagel",
             quantity=1,
-            toasted=base_toasted,
+            attribute_values={
+                k: v for k, v in [
+                    ("bread", base_bagel_type),
+                    ("toasted", base_toasted),
+                ] if v is not None
+            },
         ))
 
     # Phase 4: Only use parsed_items (deprecated fields removed)

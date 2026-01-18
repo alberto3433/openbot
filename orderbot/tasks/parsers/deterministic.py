@@ -20,7 +20,6 @@ from ..schemas import (
     QualifierConflict,
     # ParsedItem types for multi-item handling
     ParsedItemEntry,  # Unified type for all items
-    ParsedSideItemEntry,
 )
 from .constants import (
     WORD_TO_NUM,
@@ -293,10 +292,11 @@ def _build_menu_item_parsed_item(
 def _build_side_parsed_item(
     side_name: str,
     quantity: int = 1,
-) -> ParsedSideItemEntry:
-    """Build a ParsedSideItemEntry from boolean flag data."""
-    return ParsedSideItemEntry(
-        side_name=side_name,
+) -> ParsedItemEntry:
+    """Build a ParsedItemEntry for a side item (data-driven)."""
+    return ParsedItemEntry(
+        item_type="side",
+        item_name=side_name,
         quantity=quantity,
     )
 

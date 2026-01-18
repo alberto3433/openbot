@@ -5,8 +5,8 @@ This module provides utility functions for working with menu items,
 including looking up default ingredients/attributes for signature items.
 """
 
+import json
 import logging
-from functools import lru_cache
 from typing import Optional
 
 from sqlalchemy import text
@@ -21,8 +21,8 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
     """
     Get the default ingredients/attributes for a menu item.
 
-    This looks up the pre-configured attributes in menu_item_attribute_selections
-    and returns them as a list of dicts with ingredient info.
+    This looks up the default_config in the menu item's extra_metadata JSON field
+    and returns the ingredient names as a list of dicts.
 
     Args:
         menu_item_id: The ID of the menu item
@@ -31,9 +31,9 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
     Returns:
         List of dicts with keys:
         - name: Display name of the ingredient (e.g., "Applewood Smoked Bacon")
-        - attribute_slug: The attribute slug (e.g., "extra_protein", "cheese")
-        - attribute_name: The attribute display name (e.g., "Extra Protein")
-        - price: The price modifier for this ingredient
+        - attribute_slug: The attribute slug (e.g., "protein", "cheese", "toppings")
+        - attribute_name: The attribute display name
+        - price: Always 0.0 (defaults are included in base price)
         - is_default: Always True for these (they're menu item defaults)
     """
     close_db = False
@@ -42,34 +42,69 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
         close_db = True
 
     try:
-        result = db.execute(text('''
-            SELECT
-                ao.display_name as name,
-                ita.slug as attribute_slug,
-                ita.display_name as attribute_name,
-                ao.price_modifier as price
-            FROM menu_item_attribute_selections mias
-            JOIN attribute_options ao ON mias.option_id = ao.id
-            JOIN item_type_attributes ita ON mias.attribute_id = ita.id
-            WHERE mias.menu_item_id = :menu_item_id
-            ORDER BY ita.display_order, ao.display_order
-        '''), {'menu_item_id': menu_item_id})
+        result = db.execute(
+            text("SELECT extra_metadata FROM menu_items WHERE id = :menu_item_id"),
+            {"menu_item_id": menu_item_id}
+        )
+        row = result.fetchone()
+
+        if not row or not row.extra_metadata:
+            return []
+
+        try:
+            meta = json.loads(row.extra_metadata)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+        default_config = meta.get("default_config", {})
+        if not default_config:
+            return []
 
         ingredients = []
-        for row in result:
-            ingredients.append({
-                'name': row.name,
-                'attribute_slug': row.attribute_slug,
-                'attribute_name': row.attribute_name,
-                'price': float(row.price) if row.price else 0.0,
-                'is_default': True,
-            })
+        # Attribute slug mapping to display names
+        attr_display_names = {
+            "bread": "Bread",
+            "protein": "Protein",
+            "cheese": "Cheese",
+            "toppings": "Toppings",
+            "spread": "Spread",
+            "extras": "Extras",
+            "sauce": "Sauce",
+            "sauces": "Sauces",
+        }
+
+        for attr_slug, value in default_config.items():
+            # Skip non-ingredient attributes
+            if attr_slug in ("toasted", "scooped"):
+                continue
+
+            attr_name = attr_display_names.get(attr_slug, attr_slug.replace("_", " ").title())
+
+            if isinstance(value, list):
+                # Multi-value attributes like toppings
+                for item in value:
+                    ingredients.append({
+                        "name": str(item),
+                        "attribute_slug": attr_slug,
+                        "attribute_name": attr_name,
+                        "price": 0.0,
+                        "is_default": True,
+                    })
+            elif isinstance(value, str) and value:
+                # Single-value attributes like bread, protein
+                ingredients.append({
+                    "name": value,
+                    "attribute_slug": attr_slug,
+                    "attribute_name": attr_name,
+                    "price": 0.0,
+                    "is_default": True,
+                })
 
         logger.debug(
             "Found %d default ingredients for menu_item_id=%d: %s",
             len(ingredients),
             menu_item_id,
-            [i['name'] for i in ingredients]
+            [i["name"] for i in ingredients]
         )
 
         return ingredients

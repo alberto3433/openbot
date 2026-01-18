@@ -19,7 +19,7 @@ from orderbot.db import SessionLocal, engine
 from orderbot.models import (
     Base, MenuItem, ItemType, Ingredient, Company, Store,
     AttributeDefinition, AttributeOption,
-    ItemTypeAttribute, MenuItemAttributeValue, MenuItemAttributeSelection
+    ItemTypeAttribute
 )
 
 
@@ -161,107 +161,6 @@ def get_or_create_attribute_option(db: Session, item_type_attribute_id: int, ite
     db.add(option)
     db.flush()
     return option
-
-
-def create_relational_attribute_values(db: Session, menu_item: MenuItem, config: dict):
-    """
-    Create relational MenuItemAttributeValue and MenuItemAttributeSelection records
-    for a menu item's default_config.
-
-    This creates the relational representation that replaces the JSON default_config.
-    Both the JSON and relational representations coexist during the transition period.
-    """
-    if not menu_item.item_type_id:
-        return
-
-    # Get item type slug
-    item_type = db.query(ItemType).filter(ItemType.id == menu_item.item_type_id).first()
-    if not item_type:
-        return
-
-    item_type_slug = item_type.slug
-    attr_config = ITEM_TYPE_ATTRIBUTE_CONFIG.get(item_type_slug, {})
-
-    for key, value in config.items():
-        if value is None:
-            continue
-
-        # Get attribute configuration
-        attr_settings = attr_config.get(key, {
-            'display_name': key.title().replace('_', ' '),
-            'input_type': 'multi_select' if isinstance(value, list) else ('boolean' if isinstance(value, bool) else 'single_select'),
-            'is_required': False,
-            'still_ask': False,
-        })
-
-        # Get or create the item_type_attribute
-        attr = get_or_create_item_type_attribute(db, menu_item.item_type_id, key, attr_settings)
-        still_ask = attr_settings.get('still_ask', False)
-
-        if isinstance(value, list):
-            # Multi-select: create MenuItemAttributeSelection entries
-            # First check/create MenuItemAttributeValue for still_ask
-            existing_value = db.query(MenuItemAttributeValue).filter(
-                MenuItemAttributeValue.menu_item_id == menu_item.id,
-                MenuItemAttributeValue.attribute_id == attr.id
-            ).first()
-
-            if not existing_value:
-                existing_value = MenuItemAttributeValue(
-                    menu_item_id=menu_item.id,
-                    attribute_id=attr.id,
-                    still_ask=still_ask,
-                )
-                db.add(existing_value)
-                db.flush()
-
-            # Create selection entries for each value
-            for v in value:
-                option = get_or_create_attribute_option(db, attr.id, menu_item.item_type_id, str(v))
-                existing_selection = db.query(MenuItemAttributeSelection).filter(
-                    MenuItemAttributeSelection.menu_item_id == menu_item.id,
-                    MenuItemAttributeSelection.attribute_id == attr.id,
-                    MenuItemAttributeSelection.option_id == option.id
-                ).first()
-
-                if not existing_selection:
-                    selection = MenuItemAttributeSelection(
-                        menu_item_id=menu_item.id,
-                        attribute_id=attr.id,
-                        option_id=option.id,
-                    )
-                    db.add(selection)
-
-        elif isinstance(value, bool):
-            # Boolean value
-            existing = db.query(MenuItemAttributeValue).filter(
-                MenuItemAttributeValue.menu_item_id == menu_item.id,
-                MenuItemAttributeValue.attribute_id == attr.id
-            ).first()
-
-            if not existing:
-                db.add(MenuItemAttributeValue(
-                    menu_item_id=menu_item.id,
-                    attribute_id=attr.id,
-                    value_boolean=value,
-                    still_ask=still_ask,
-                ))
-
-        else:
-            # Single select: create option and reference it
-            option = get_or_create_attribute_option(db, attr.id, menu_item.item_type_id, str(value))
-            existing = db.query(MenuItemAttributeValue).filter(
-                MenuItemAttributeValue.menu_item_id == menu_item.id,
-                MenuItemAttributeValue.attribute_id == attr.id
-            ).first()
-
-            if not existing:
-                db.add(MenuItemAttributeValue(
-                    menu_item_id=menu_item.id,
-                    attribute_id=attr.id,
-                    option_id=option.id,
-                    still_ask=still_ask,
-                ))
 
 
 def ensure_company_and_stores(db: Session):
@@ -1779,29 +1678,19 @@ def populate_menu_items(db: Session):
     ]
 
     added = 0
-    relational_created = 0
     for item_data in items:
         existing = db.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
         if not existing:
             menu_item = MenuItem(**item_data)
             db.add(menu_item)
-            db.flush()  # Get ID for relational records
             added += 1
         else:
             # Update existing item
             for key, value in item_data.items():
                 setattr(existing, key, value)
-            menu_item = existing
-
-        # Create relational attribute values if default_config exists
-        config = item_data.get("default_config")
-        if config and menu_item.item_type_id:
-            create_relational_attribute_values(db, menu_item, config)
-            relational_created += 1
 
     db.commit()
     print(f"Added/updated {len(items)} menu items ({added} new)")
-    print(f"Created relational attribute values for {relational_created} items")
 
 
 def main():

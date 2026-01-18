@@ -616,8 +616,8 @@ def find_default_ingredient_match(
     """
     Find if user input matches a default ingredient of a menu item.
 
-    This checks the menu_item_attribute_selections table for ingredients
-    that are part of the menu item's default configuration.
+    This checks the default_config in the menu item's extra_metadata for
+    ingredients that are part of the menu item's default configuration.
 
     Args:
         item: The item to check (must be MenuItemTask with menu_item_id)

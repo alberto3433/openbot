@@ -433,8 +433,8 @@ class TestMixedItemBagelChoice:
         # Mock the parser to return "plain" and mock pricing lookup
         with patch("orderbot.tasks.parsers.llm_parsers.parse_bagel_choice") as mock_parse, \
              patch.object(sm.pricing, "lookup_base_price", return_value=12.50):
-            # BagelChoiceResponse uses "bread" field, not "bagel_type"
-            mock_parse.return_value = BagelChoiceResponse(bread="plain", quantity=1)
+            # BagelChoiceResponse (alias for AttributeChoiceResponse) uses "value" field
+            mock_parse.return_value = BagelChoiceResponse(value="plain", quantity=1)
 
             result = sm.configuring_item_handler.handle_configuring_item("plain", order)
 
@@ -482,8 +482,8 @@ class TestMixedItemBagelChoice:
         # Step 1: Set bagel type for omelette's bagel side
         with patch("orderbot.tasks.parsers.llm_parsers.parse_bagel_choice") as mock_parse, \
              patch.object(sm.pricing, "lookup_base_price", return_value=12.50):
-            # BagelChoiceResponse uses "bread" field, not "bagel_type"
-            mock_parse.return_value = BagelChoiceResponse(bread="plain", quantity=1)
+            # BagelChoiceResponse (alias for AttributeChoiceResponse) uses "value" field
+            mock_parse.return_value = BagelChoiceResponse(value="plain", quantity=1)
             result = sm.configuring_item_handler.handle_configuring_item("plain", order)
 
         assert omelette["bagel_choice"] == "plain"

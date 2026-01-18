@@ -8,7 +8,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from .models import (
     OrderTask,
@@ -34,8 +34,6 @@ class ItemAdderHandler:
     def __init__(
         self,
         config: HandlerConfig,
-        configure_next_incomplete_bagel: Callable[[OrderTask], StateMachineResult] | None = None,
-        configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
         menu_item_handler: "MenuItemConfigHandler | None" = None,
     ):
         """
@@ -43,17 +41,13 @@ class ItemAdderHandler:
 
         Args:
             config: HandlerConfig with shared dependencies.
-            configure_next_incomplete_bagel: Callback to configure bagels.
-            configure_next_incomplete_coffee: Callback to configure coffee/beverages.
-            menu_item_handler: Handler for menu item configuration (deli sandwiches, etc.).
+            menu_item_handler: Unified handler for all item configuration.
         """
         self.menu_lookup = config.menu_lookup
         self.pricing = config.pricing
         self._get_next_question = config.get_next_question
 
-        # Handler-specific callbacks
-        self._configure_next_incomplete_bagel = configure_next_incomplete_bagel
-        self._configure_next_incomplete_coffee = configure_next_incomplete_coffee
+        # Unified configuration handler for all item types
         self.menu_item_handler = menu_item_handler
         self._menu_data: dict = {}
 
@@ -100,12 +94,6 @@ class ItemAdderHandler:
 
             options = attr_data.get("options", [])
             input_type = attr_data.get("input_type", "single_select")
-
-            if attr_slug == "temperature":
-                logger.info(
-                    "INFER_ATTRIBUTES: Checking temperature attr, input_type=%s, options=%s",
-                    input_type, [o.get("slug") for o in options]
-                )
 
             # For boolean attributes, check if the attribute name appears in item name
             if input_type == "boolean":
@@ -275,9 +263,9 @@ class ItemAdderHandler:
                 "is_signature": menu_data.get("is_signature", False),
             }
 
-        # Step 2: Check if this is a configurable item type (e.g., bagel, which has "bread" attribute)
+        # Step 2: Check if this is a configurable item type (has conversation attributes)
         # These use the item type display name and pricing engine instead of menu lookup
-        is_configurable_type = item_type and menu_cache.item_type_has_attribute(item_type, "bread")
+        is_configurable_type = item_type and menu_cache.has_conversation_attributes(item_type)
         if is_configurable_type:
             canonical_name = menu_cache.get_item_type_display_name(item_type) or lookup_name
             base_price = self.pricing.lookup_base_price(canonical_name) if self.pricing else 0.0
@@ -316,11 +304,7 @@ class ItemAdderHandler:
         """Extract pre-filled attributes from kwargs based on item type.
 
         Extracts only kwargs that match known attribute slugs for the item type.
-        Callers should use canonical attribute names (e.g., 'bread' not 'bagel_type').
-
-        Legacy aliases are still supported for backwards compatibility:
-        - bagel_type -> bread
-        - spread -> spread (direct pass-through if attribute exists)
+        Unknown kwargs are ignored.
 
         Args:
             item_type: The item type slug
@@ -336,24 +320,8 @@ class ItemAdderHandler:
         known_attrs = set(menu_cache.get_item_type_attributes(item_type).keys())
 
         attrs = {}
-
-        # Legacy alias mappings for backwards compatibility
-        # TODO: Remove these once all callers use canonical names
-        legacy_aliases = {
-            "bagel_type": "bread",
-        }
-
         for key, value in kwargs.items():
-            if value is None:
-                continue
-
-            # Check if it's a legacy alias
-            if key in legacy_aliases:
-                canonical = legacy_aliases[key]
-                if canonical in known_attrs:
-                    attrs[canonical] = value
-            # Check if it's a known attribute
-            elif key in known_attrs:
+            if value is not None and key in known_attrs:
                 attrs[key] = value
 
         return attrs
@@ -395,13 +363,19 @@ class ItemAdderHandler:
         item_name: str,
         quantity: int,
         order: OrderTask,
-        toasted: bool | None = None,
-        bagel_choice: str | None = None,
+        attributes: dict | None = None,
         modifications: list[str] | None = None,
     ) -> StateMachineResult:
         """Add a menu item and determine next question.
 
         Uses DisambiguationHandler for unified disambiguation logic.
+
+        Args:
+            item_name: Name of the menu item
+            quantity: Number of items to add
+            order: Current order task
+            attributes: Optional dict of attribute values to pre-fill
+            modifications: Optional list of modification strings
         """
         # Ensure quantity is at least 1
         quantity = max(1, quantity)
@@ -428,14 +402,12 @@ class ItemAdderHandler:
             )
 
         # Step 2: Create the item using existing logic
-        # (Phase 4 will replace this with _create_configurable_item())
         return self._create_menu_item_from_lookup(
             menu_item=menu_item,
             item_name=item_name,
             quantity=quantity,
             order=order,
-            toasted=toasted,
-            bagel_choice=bagel_choice,
+            attributes=attributes,
             modifications=modifications,
         )
 
@@ -445,14 +417,18 @@ class ItemAdderHandler:
         item_name: str,
         quantity: int,
         order: OrderTask,
-        toasted: bool | None = None,
-        bagel_choice: str | None = None,
+        attributes: dict | None = None,
         modifications: list[str] | None = None,
     ) -> StateMachineResult:
         """Create a menu item from lookup result.
 
-        This is the existing item creation logic, extracted for clarity.
-        Phase 4 will consolidate this with _create_configurable_item().
+        Args:
+            menu_item: Menu item dict from lookup
+            item_name: Original item name from user
+            quantity: Number of items to create
+            order: Current order task
+            attributes: Optional dict of attribute values to pre-fill
+            modifications: Optional list of modification strings
         """
         # Use the canonical name from menu if found
         canonical_name = menu_item.get("name", item_name)
@@ -497,11 +473,11 @@ class ItemAdderHandler:
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
                 is_signature=is_signature,  # Signature item flag from menu data
             )
-            # Set toasted and bagel_choice directly in attribute_values
-            if toasted is not None:
-                item.attribute_values["toasted"] = toasted
-            if bagel_choice is not None:
-                item.attribute_values["bagel_choice"] = bagel_choice
+            # Apply pre-filled attributes
+            if attributes:
+                for attr_name, attr_value in attributes.items():
+                    if attr_value is not None:
+                        item.attribute_values[attr_name] = attr_value
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             self._infer_attributes_from_item_name(item)
             item.mark_in_progress()
@@ -509,7 +485,7 @@ class ItemAdderHandler:
             if first_item is None:
                 first_item = item
 
-        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, toasted=%s, bagel=%s, mods=%s)", quantity, canonical_name, price, menu_item_id, toasted, bagel_choice, modifications)
+        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, attrs=%s, mods=%s)", quantity, canonical_name, price, menu_item_id, attributes, modifications)
 
         if has_side_choice:
             # Set state to wait for side choice (applies to first item, others will be configured after)
@@ -574,13 +550,16 @@ class ItemAdderHandler:
         price = menu_item.get("base_price", 0.0)
         menu_item_id = menu_item.get("id")
 
+        # Get item type from DB lookup
+        item_type = menu_item.get("item_type")
+
         # Create the side item(s)
         for _ in range(quantity):
             item = MenuItemTask(
                 menu_item_name=canonical_name,
                 menu_item_id=menu_item_id,
                 unit_price=price,
-                menu_item_type="side",
+                menu_item_type=item_type,
             )
             item.mark_complete()  # Side items don't need configuration
             order.items.add_item(item)
@@ -760,24 +739,23 @@ class ItemAdderHandler:
         """
         item_lower = item_name.lower().strip()
 
-        # Check for generic drink terms using data-driven category reference
+        # Check for category reference (e.g., "drink", "beverage", "side", etc.)
         category_slug = menu_cache.is_category_reference(item_lower)
-        is_generic_drink = category_slug == "drink"  # Matches "drink", "drinks", "beverage", etc.
-        if is_generic_drink:
-            # Generic drink request - show beverages from category
-            all_drinks = menu_cache.get_items_by_category("drink")
-            # Filter by item_type if specified (e.g., only show sized_beverage items)
-            if item_type_filter and all_drinks:
-                all_drinks = [
-                    d for d in all_drinks
+        if category_slug:
+            # Generic category request - show items from that category
+            category_items = menu_cache.get_items_by_category(category_slug)
+            # Filter by item_type if specified
+            if item_type_filter and category_items:
+                category_items = [
+                    d for d in category_items
                     if d.get("item_type_slug") == item_type_filter or d.get("item_type") == item_type_filter
                 ]
-            if all_drinks:
-                logger.info("Generic drink request '%s', showing %d drinks (filter: %s)",
-                           item_name, len(all_drinks), item_type_filter)
+            if category_items:
+                logger.info("Generic category request '%s' (category=%s), showing %d items (filter: %s)",
+                           item_name, category_slug, len(category_items), item_type_filter)
                 result = self.disambiguation_handler.start_disambiguation(
-                    item_name="drink",
-                    matching_items=all_drinks,
+                    item_name=category_slug,
+                    matching_items=category_items,
                     order=order,
                     quantity=quantity,
                     pending_field="item_selection",
@@ -786,7 +764,7 @@ class ItemAdderHandler:
                 )
                 return (None, result)
 
-        # Check for generic category terms (chips, cookies, etc.) - data-driven
+        # Check for generic terms that match multiple items (data-driven)
         generic_term = self._extract_generic_term(item_name)
         # Input is "exact generic" if it directly matches multiple items (e.g., "chips")
         is_exact_generic = generic_term == item_lower
@@ -806,17 +784,12 @@ class ItemAdderHandler:
             ]
 
         # If no matches found but we have an item_type_filter, get all items of that type
-        # This handles cases like "coffee" where user wants a beverage but didn't specify which one
+        # This handles generic requests where user wants something of a specific type
         if not matching_items and item_type_filter:
-            all_drinks = menu_cache.get_items_by_category("drink")
-            if all_drinks:
-                matching_items = [
-                    d for d in all_drinks
-                    if d.get("item_type_slug") == item_type_filter or d.get("item_type") == item_type_filter
-                ]
-                if matching_items:
-                    logger.info("No text matches for '%s', using all %d items of type '%s'",
-                               item_name, len(matching_items), item_type_filter)
+            matching_items = menu_cache.get_items_by_item_type(item_type_filter)
+            if matching_items:
+                logger.info("No text matches for '%s', using all %d items of type '%s'",
+                           item_name, len(matching_items), item_type_filter)
 
         # Step 2: Handle results
         if len(matching_items) == 1:

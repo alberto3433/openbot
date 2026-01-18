@@ -341,13 +341,13 @@ class TestBeverages:
         "sprite",
     ])
     def test_soda_triggers_clarification(self, user_input):
-        """Soda items should trigger soda clarification."""
+        """Soda items should trigger category clarification."""
         from tests.helpers import has_menu_item
         result = get_parser_result(user_input)
 
-        # Either triggers soda clarification or returns as menu item for disambiguation
-        assert result.needs_soda_clarification or has_menu_item(result), \
-            f"'{user_input}' should trigger soda clarification or return as menu item in parsed_items"
+        # Either triggers category clarification or returns as menu item for disambiguation
+        assert result.needs_category_clarification is not None or has_menu_item(result), \
+            f"'{user_input}' should trigger category clarification or return as menu item in parsed_items"
 
 
 # ============================================================================

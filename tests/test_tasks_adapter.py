@@ -41,7 +41,7 @@ def create_bagel_task(
     if toasted is not None:
         bagel["toasted"] = toasted
     if spread:
-        bagel["spread_type"] = spread
+        bagel["spread"] = spread
     if bagel_type:
         bagel["bread"] = bagel_type
     if bagel_type_upcharge:

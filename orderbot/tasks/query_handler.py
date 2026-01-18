@@ -443,34 +443,6 @@ class QueryHandler:
         else:
             return word + "s"
 
-    def handle_soda_clarification(self, order: "OrderTask") -> StateMachineResult:
-        """Handle when user orders a generic 'soda' without specifying type.
-
-        Uses data-driven lookup from the 'soda' category in the database.
-        """
-        # Get items from category-based lookup
-        category_items = menu_cache.get_items_by_category("soda")
-
-        if category_items:
-            soda_names = [item.get("name", "") for item in category_items[:6]]
-            soda_names = [name for name in soda_names if name]
-            if len(soda_names) > 3:
-                soda_list = ", ".join(soda_names[:3]) + ", and others"
-            elif len(soda_names) > 1:
-                soda_list = ", ".join(soda_names[:-1]) + f", and {soda_names[-1]}"
-            else:
-                soda_list = soda_names[0] if soda_names else "Coke, Diet Coke, Sprite"
-
-            return StateMachineResult(
-                message=f"What kind? We have {soda_list}.",
-                order=order,
-            )
-
-        return StateMachineResult(
-            message="What kind? We have Coke, Diet Coke, Sprite, and others.",
-            order=order,
-        )
-
     # =========================================================================
     # Price Inquiry Handlers
     # =========================================================================

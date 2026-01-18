@@ -146,7 +146,7 @@ class TestParseSodaDeterministic:
         from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
         result = _parse_soda_deterministic("can I get a soda")
         assert result is not None
-        assert result.needs_soda_clarification is True
+        assert result.needs_category_clarification is not None
 
 
 class TestSodaAliasesIntegration:

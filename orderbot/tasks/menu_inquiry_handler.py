@@ -12,7 +12,6 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
@@ -85,7 +84,7 @@ class MenuInquiryHandler:
             logger.warning("Failed to get available categories from database: %s", e)
 
         # Fallback message
-        return "sandwiches or egg dishes"
+        return "our menu items"
 
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
@@ -157,22 +156,12 @@ class MenuInquiryHandler:
 
         if show_prices:
             item_list = []
-            # Check if this item type uses attribute-based pricing (has "bread" attribute)
-            item_type_attrs = menu_cache.get_item_type_attributes(lookup_type)
-            uses_attribute_pricing = "bread" in item_type_attrs
             for item in batch:
                 name = item.get('name', 'Unknown')
-                if uses_attribute_pricing and self.pricing:
-                    # Item type uses base + attribute upcharge pricing
-                    # Extract the attribute value from the item name (e.g., "Plain Bagel" -> "plain")
-                    attr_value = name.lower().replace(f" {lookup_type}", "").strip()
-                    try:
-                        base_price = self.pricing.lookup_base_price(lookup_type.title())
-                        upcharge = self.pricing.lookup_attribute_option_upcharge(lookup_type, "bread", attr_value)
-                        price = base_price + upcharge
-                    except ValueError:
-                        price = item.get('price') or item.get('base_price') or 0
-                else:
+                # Use pre-computed resolved price from menu_cache
+                price = menu_cache.get_resolved_item_price(name)
+                if price is None:
+                    # Fall back to item's own price fields
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
         else:
@@ -479,27 +468,6 @@ class MenuInquiryHandler:
                 order=order,
             )
 
-        # Handle beverage queries - use category info from database
-        category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
-        if category_info and menu_cache.get_modifier_category(category_info.get("slug", "")) == "beverage":
-            items, category_key = self._get_items_for_category(menu_query_type)
-            display_name = category_info.get("display_name_plural", "beverages")
-            if items:
-                items_str, has_more = self._format_items_list(items, 0, show_prices, category_key)
-                # Save pagination state if there are more items
-                if has_more:
-                    order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
-                else:
-                    order.clear_menu_pagination()
-                return StateMachineResult(
-                    message=f"Our {display_name} include: {items_str}. Would you like any of these?",
-                    order=order,
-                )
-            return StateMachineResult(
-                message=f"I don't have any {display_name} on the menu right now. Is there anything else I can help you with?",
-                order=order,
-            )
-
         # Use helper method to get items for this category
         items, lookup_type = self._get_items_for_category(menu_query_type)
 
@@ -541,21 +509,10 @@ class MenuInquiryHandler:
             order=order,
         )
 
-    def handle_soda_clarification(
-        self,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle when user orders a generic 'soda' without specifying type.
-
-        Asks what kind of soda they want, listing available options from the 'soda' category.
-        """
-        return self.handle_category_clarification("soda", order, fallback_message="Coke, Diet Coke, Sprite, and others")
-
     def handle_category_clarification(
         self,
         category_slug: str,
         order: OrderTask,
-        fallback_message: str = "various options",
     ) -> StateMachineResult:
         """Handle when user orders a generic category without specifying type.
 
@@ -565,7 +522,6 @@ class MenuInquiryHandler:
         Args:
             category_slug: The category slug to look up items from (e.g., "soda", "tea")
             order: Current order state
-            fallback_message: Message to show if no items found in category
 
         Returns:
             StateMachineResult asking for clarification with available options
@@ -582,17 +538,23 @@ class MenuInquiryHandler:
                 items_list = ", ".join(item_names[:3]) + ", and others"
             elif len(item_names) > 1:
                 items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+            elif item_names:
+                items_list = item_names[0]
             else:
-                items_list = item_names[0] if item_names else fallback_message
+                # No valid item names - generic response
+                return StateMachineResult(
+                    message="I don't have that available right now. What else can I get you?",
+                    order=order,
+                )
 
             return StateMachineResult(
                 message=f"What kind? We have {items_list}.",
                 order=order,
             )
 
-        # Fallback if no items in category
+        # No items in category - generic response
         return StateMachineResult(
-            message=f"What kind? We have {fallback_message}.",
+            message="I don't have that available right now. What else can I get you?",
             order=order,
         )
 
@@ -603,120 +565,129 @@ class MenuInquiryHandler:
     ) -> StateMachineResult:
         """Handle price inquiry for a specific item.
 
+        Uses the data-driven resolve_price_inquiry() method from menu_cache
+        to look up prices for items, categories, and modifiers.
+
         Args:
-            item_query: The item the user is asking about (e.g., 'sesame bagel', 'large latte')
+            item_query: The item the user is asking about (e.g., 'sesame bagel', 'lox')
+            order: Current order state
 
         Returns:
             StateMachineResult with the price information
         """
-        if not self.menu_data:
+        if not item_query:
             return StateMachineResult(
-                message="I'm sorry, I don't have pricing information available. What can I get for you?",
+                message="What would you like to know the price of?",
                 order=order,
             )
 
-        items_by_type = self.menu_data.get("items_by_type", {})
-        query_lower = item_query.lower().strip()
+        # Extract context from order state
+        current_item_type = None
+        pending_item = order.get_pending_item() if hasattr(order, 'get_pending_item') else None
+        if pending_item:
+            current_item_type = getattr(pending_item, 'menu_item_type', None)
 
-        # Strip leading "a " or "an " from the query
-        query_lower = re.sub(r"^(?:a|an)\s+", "", query_lower)
+        last_menu_category = None
+        pagination = order.get_menu_pagination() if hasattr(order, 'get_menu_pagination') else None
+        if pagination:
+            last_menu_category = pagination.get("category")
 
-        # Use data-driven lookup from ItemType aliases for category handling
-        category_info = menu_cache.get_category_keyword_mapping(query_lower)
+        # Use the unified data-driven lookup
+        result = menu_cache.resolve_price_inquiry(
+            query=item_query,
+            current_item_type=current_item_type,
+            last_menu_category=last_menu_category,
+        )
 
-        if category_info and self.pricing:
-            item_type = category_info.get("slug")
-            display_name_plural = category_info.get("display_name_plural", f"{query_lower}s")
-            min_price = self.pricing.get_min_price_for_category(item_type)
-            if min_price > 0:
+        result_type = result.get("type")
+
+        if result_type == "category":
+            display_name = result.get("display_name", item_query)
+            min_price = result.get("min_price", 0)
+            items = result.get("items", [])
+
+            # If there are multiple named items in the category, ask which kind
+            if items and len(items) > 1:
+                # Show a few examples
+                examples = items[:3]
+                examples_str = ", ".join(examples)
                 return StateMachineResult(
-                    message=f"Our {display_name_plural} start at ${min_price:.2f}. Would you like one?",
+                    message=f"We have several kinds of {display_name} including {examples_str}. What kind of {display_name.rstrip('s')} would you like?",
                     order=order,
                 )
 
-        # Search all menu items for a match
-        best_match = None
-        best_match_score = 0
+            return StateMachineResult(
+                message=f"Our {display_name} start at ${min_price:.2f}. Would you like one?",
+                order=order,
+            )
 
-        for item_type, items in items_by_type.items():
-            for item in items:
-                item_name = item.get("name", "").lower()
-                item_price = item.get("price", 0)
-
-                # Exact match
-                if item_name == query_lower:
-                    best_match = item
-                    best_match_score = 100
-                    break
-
-                # Check if query is contained in item name
-                if query_lower in item_name:
-                    score = len(query_lower) / len(item_name) * 80
-                    if score > best_match_score:
-                        best_match = item
-                        best_match_score = score
-
-                # Check if item name is contained in query
-                if item_name in query_lower:
-                    score = len(item_name) / len(query_lower) * 70
-                    if score > best_match_score:
-                        best_match = item
-                        best_match_score = score
-
-            if best_match_score == 100:
-                break
-
-        # Check for items that use attribute-based pricing (e.g., items with "bread" attribute)
-        # These items may not have direct prices in items_by_type
-        matched_item_type = None
-        for item_type_slug in items_by_type.keys():
-            item_type_attrs = menu_cache.get_item_type_attributes(item_type_slug)
-            if "bread" in item_type_attrs and item_type_slug in query_lower:
-                items_for_type = items_by_type.get(item_type_slug, [])
-                if not best_match and items_for_type:
-                    # Try to find a matching item
-                    for item in items_for_type:
-                        item_name = item.get("name", "").lower()
-                        if query_lower in item_name or item_name in query_lower:
-                            best_match = item
-                            best_match_score = 75
-                            matched_item_type = item_type_slug
-                            break
-                    # If they asked about a specific type but we didn't find it,
-                    # give the general price if available
-                    if not best_match and items_for_type:
-                        best_match = items_for_type[0]
-                        best_match_score = 50
-                        matched_item_type = item_type_slug
-                break
-
-        if best_match and best_match_score >= 50:
-            name = best_match.get("name", "Unknown")
-            # Check if item type uses attribute-based pricing (base + upcharge)
-            item_type_slug = matched_item_type or best_match.get("item_type")
-            if item_type_slug:
-                item_type_attrs = menu_cache.get_item_type_attributes(item_type_slug)
-                uses_attribute_pricing = "bread" in item_type_attrs
-            else:
-                uses_attribute_pricing = False
-
-            if uses_attribute_pricing and item_type_slug and self.pricing:
-                # Extract attribute value from name (e.g., "Plain Bagel" -> "plain")
-                attr_value = name.lower().replace(f" {item_type_slug}", "").strip()
-                try:
-                    base_price = self.pricing.lookup_base_price(item_type_slug.title())
-                    upcharge = self.pricing.lookup_attribute_option_upcharge(item_type_slug, "bread", attr_value)
-                    price = base_price + upcharge
-                except ValueError:
-                    price = best_match.get("price") or best_match.get("base_price") or 0
-            else:
-                price = best_match.get("price") or best_match.get("base_price") or 0
+        if result_type == "item":
+            name = result.get("name", item_query)
+            price = result.get("price", 0)
             return StateMachineResult(
                 message=f"{name} is ${price:.2f}. Would you like one?",
                 order=order,
             )
 
-        # No match found - give helpful response
+        if result_type == "sized_item":
+            name = result.get("name", item_query)
+            sizes = result.get("sizes", [])
+            if sizes:
+                # Format size options
+                size_strs = [
+                    f"{s.get('size_name', 'Unknown')} ${s.get('price', 0):.2f}"
+                    for s in sizes
+                ]
+                sizes_text = ", ".join(size_strs)
+                return StateMachineResult(
+                    message=f"{name} comes in: {sizes_text}. What size would you like?",
+                    order=order,
+                )
+            # Fallback if no sizes (shouldn't happen)
+            return StateMachineResult(
+                message=f"{name} pricing varies by size. What size would you like?",
+                order=order,
+            )
+
+        if result_type == "modifier":
+            name = result.get("name", item_query)
+            price = result.get("price", 0)
+            context = result.get("context", "")
+            if price > 0:
+                return StateMachineResult(
+                    message=f"{name} is ${price:.2f} as a {context}. Would you like to add it?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"{name} is included at no extra charge. Would you like to add it?",
+                    order=order,
+                )
+
+        if result_type == "needs_clarification":
+            name = result.get("name", item_query)
+            contexts = result.get("contexts", [])
+            # Format the options for clarification
+            options = []
+            for ctx in contexts:
+                label = ctx.get("label", "")
+                price = ctx.get("price", 0)
+                if price > 0:
+                    options.append(f"{label} (${price:.2f})")
+                else:
+                    options.append(f"{label} (included)")
+
+            if len(options) == 2:
+                options_text = f"{options[0]} or {options[1]}"
+            else:
+                options_text = ", ".join(options[:-1]) + f", or {options[-1]}"
+
+            return StateMachineResult(
+                message=f"Are you asking about {name} as {options_text}?",
+                order=order,
+            )
+
+        # result_type == "not_found"
         return StateMachineResult(
             message=f"I'm not sure about the price for '{item_query}'. Is there something else I can help you with?",
             order=order,

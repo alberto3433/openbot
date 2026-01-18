@@ -2343,6 +2343,167 @@ def _parse_bagel_with_modifiers(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# Generic Configurable Item Parsing (Data-Driven)
+# =============================================================================
+
+def _parse_configurable_item(text: str) -> OpenInputResponse | None:
+    """
+    Parse orders for any configurable item type using data-driven patterns.
+
+    This is the generic replacement for _parse_bagel_with_modifiers() and
+    _parse_coffee_deterministic(). It uses database configuration to detect
+    which item type is being ordered and extract the appropriate attributes.
+
+    Algorithm:
+    1. Check for exclusion phrases (e.g., "coffee cake" should not match "coffee")
+    2. Detect item type from text by matching against configurable item type triggers
+    3. If no configurable item type detected, return None
+    4. Extract quantity
+    5. Match specific menu item name within that type
+    6. Extract attributes using extract_attribute_values()
+    7. Extract modifiers using extract_modifiers_for_item_type()
+    8. Build and return ParsedItemEntry
+
+    Returns:
+        OpenInputResponse with parsed_items if a configurable item was detected,
+        None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
+    if menu_cache.text_matches_exclusion_phrase(text):
+        logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
+        return None
+
+    # 2. Detect which configurable item type this text matches
+    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+    detected_item_type: str | None = None
+    best_match_length = 0
+
+    for item_type_slug in configurable_slugs:
+        triggers = menu_cache.get_item_type_triggers(item_type_slug)
+        for trigger in triggers:
+            # Check for word boundary match
+            pattern = rf'\b{re.escape(trigger)}s?\b'
+            if re.search(pattern, text_lower):
+                # Prefer longer matches (more specific)
+                if len(trigger) > best_match_length:
+                    best_match_length = len(trigger)
+                    detected_item_type = item_type_slug
+
+    if not detected_item_type:
+        return None
+
+    logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
+
+    # 3. Extract quantity
+    quantity = 1
+    qty_match = re.match(
+        r"^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
+        text_lower
+    )
+    if qty_match:
+        qty_str = qty_match.group(1).strip()
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # 4. Extract attribute values using data-driven extraction
+    attr_values = extract_attribute_values(text, detected_item_type)
+
+    # 5. Extract modifiers using data-driven extraction
+    modifiers = extract_modifiers_for_item_type(text, detected_item_type)
+
+    # 6. Try to match a specific menu item name within this type
+    item_name = _match_menu_item_name_for_type(text, detected_item_type)
+
+    # 7. Build ParsedItemEntry
+    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
+
+    # Build unified modifiers list from ExtractedModifiers
+    quantified_mods: list[QuantifiedModifier] = []
+    for p in modifiers.proteins:
+        quantified_mods.append(QuantifiedModifier(slug=p, category="protein"))
+    for c in modifiers.cheeses:
+        quantified_mods.append(QuantifiedModifier(slug=c, category="cheese"))
+    for t in modifiers.toppings:
+        quantified_mods.append(QuantifiedModifier(slug=t, category="topping"))
+    for s in modifiers.spreads:
+        quantified_mods.append(QuantifiedModifier(slug=s, category="spread"))
+    # Add sweeteners and syrups for beverages
+    if modifiers.sweetener:
+        quantified_mods.append(QuantifiedModifier(
+            slug=modifiers.sweetener,
+            category="sweetener",
+            quantity=modifiers.sweetener_quantity
+        ))
+    if modifiers.flavor_syrup:
+        quantified_mods.append(QuantifiedModifier(
+            slug=modifiers.flavor_syrup,
+            category="syrup",
+            quantity=modifiers.syrup_quantity
+        ))
+    # Add milk as attribute value rather than modifier
+    if modifiers.milk and "milk" not in attr_values:
+        attr_values["milk"] = modifiers.milk
+    if modifiers.cream_level and "cream_level" not in attr_values:
+        attr_values["cream_level"] = modifiers.cream_level
+
+    logger.info(
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%d",
+        detected_item_type, quantity, item_name, list(attr_values.keys()), len(quantified_mods)
+    )
+
+    parsed_items = [
+        ParsedItemEntry(
+            item_type=detected_item_type,
+            item_name=item_name,
+            quantity=1,
+            attribute_values=attr_values.copy(),
+            modifiers=quantified_mods.copy(),
+            original_text=text,
+        )
+        for _ in range(quantity)
+    ]
+
+    return OpenInputResponse(parsed_items=parsed_items)
+
+
+def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None:
+    """
+    Try to match a specific menu item name within an item type.
+
+    For example, for sized_beverage, this would try to match "Iced Latte",
+    "Hot Coffee", "Chai Tea", etc.
+
+    Args:
+        text: User input text
+        item_type_slug: The item type slug to search within
+
+    Returns:
+        The canonical menu item name if found, None otherwise
+    """
+    text_lower = text.lower()
+
+    # Get all item names for this type
+    item_names = menu_cache.get_item_names_by_type(item_type_slug)
+    alias_to_canonical = menu_cache.get_item_alias_to_canonical_by_type(item_type_slug)
+
+    # Try to match longest name first for specificity
+    all_names_and_aliases = list(item_names) + list(alias_to_canonical.keys())
+    all_names_and_aliases.sort(key=len, reverse=True)
+
+    for name in all_names_and_aliases:
+        pattern = rf'\b{re.escape(name)}s?\b'
+        if re.search(pattern, text_lower):
+            # Return canonical name
+            return alias_to_canonical.get(name, name.title())
+
+    return None
+
+
+# =============================================================================
 # Split-Quantity Bagel Parsing
 # =============================================================================
 
@@ -4673,17 +4834,28 @@ def parse_open_input_deterministic(
         return add_more_result
 
     # Check for split-quantity bagels FIRST (e.g., "two bagels one with lox one with cream cheese")
-    # This MUST run BEFORE bagel_with_modifiers to handle multi-bagel orders with different configs
+    # This MUST run BEFORE configurable_item to handle multi-bagel orders with different configs
     split_qty_result = _parse_split_quantity_bagels(text)
     if split_qty_result:
         return split_qty_result
 
-    # Check for bagel with modifiers FIRST (e.g., "everything bagel with bacon and egg")
+    # Check for split-quantity drinks (e.g., "two coffees one with milk one black")
+    # This MUST run BEFORE configurable_item to handle multi-drink orders with different configs
+    split_qty_drinks_result = _parse_split_quantity_drinks(text)
+    if split_qty_drinks_result:
+        logger.info(
+            "DETERMINISTIC SPLIT-QTY DRINKS: matched '%s' -> %d drinks",
+            text[:50], len(split_qty_drinks_result.coffee_details)
+        )
+        return split_qty_drinks_result
+
+    # Check for configurable items (bagels, coffee, etc.) using data-driven patterns
     # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
     # interpreted as multiple items. Also prevents "bacon" from matching as a side item.
-    bagel_with_mods_result = _parse_bagel_with_modifiers(text)
-    if bagel_with_mods_result:
-        return bagel_with_mods_result
+    # Replaces _parse_bagel_with_modifiers and _parse_coffee_deterministic.
+    configurable_item_result = _parse_configurable_item(text)
+    if configurable_item_result:
+        return configurable_item_result
 
     # Check for multi-item orders (e.g., "one coffee and one latte", "bagel and a coffee")
     # Must be checked before single-item parsers to handle "X and Y" patterns
@@ -4880,33 +5052,12 @@ def parse_open_input_deterministic(
             # Phase 4: Only use parsed_items (deprecated fields removed)
             return OpenInputResponse(parsed_items=bagel_mention_parsed_items)
 
-    # Check for split-quantity drinks FIRST (e.g., "two coffees one with milk one black")
-    # This MUST run BEFORE regular coffee parsing to handle multi-drink orders with different configs
-    split_qty_drinks_result = _parse_split_quantity_drinks(text)
-    if split_qty_drinks_result:
-        logger.info(
-            "DETERMINISTIC SPLIT-QTY DRINKS: matched '%s' -> %d drinks",
-            text[:50], len(split_qty_drinks_result.coffee_details)
-        )
-        return split_qty_drinks_result
-
-    # Check for soda/bottled drink order FIRST (more specific names like "Snapple Iced Tea")
+    # Check for soda/bottled drink order (more specific names like "Snapple Iced Tea")
+    # Note: Sized beverages (coffee, tea, lattes) are handled by _parse_configurable_item
     soda_result = _parse_soda_deterministic(text)
     if soda_result:
         logger.info("DETERMINISTIC SODA: matched '%s'", text[:50])
         return soda_result
-
-    # Check for coffee/sized beverage order (more generic names like "iced tea")
-    coffee_result = _parse_coffee_deterministic(text)
-    if coffee_result:
-        # Get coffee type from parsed_items for logging
-        coffee_type = None
-        for item in coffee_result.parsed_items:
-            if hasattr(item, 'item_name'):
-                coffee_type = item.item_name
-                break
-        logger.info("DETERMINISTIC COFFEE: matched '%s' -> type=%s", text[:50], coffee_type)
-        return coffee_result
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])

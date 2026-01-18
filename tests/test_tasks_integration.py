@@ -4009,18 +4009,18 @@ class TestSideChoice:
 
 
 # =============================================================================
-# Soda Clarification Handler Tests
+# Category Clarification Handler Tests
 # =============================================================================
 
-class TestSodaClarification:
-    """Tests for _handle_soda_clarification.
+class TestCategoryClarification:
+    """Tests for handle_category_clarification.
 
     Note: These tests mock menu_cache.get_items_by_category since the code
     is now data-driven and queries the database directly.
     """
 
-    def test_lists_available_sodas_from_menu(self):
-        """Test that available sodas are listed from category lookup."""
+    def test_lists_available_items_from_category(self):
+        """Test that available items are listed from category lookup."""
         from unittest.mock import patch
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
@@ -4035,13 +4035,13 @@ class TestSodaClarification:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        with patch("orderbot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
-            result = sm.query_handler.handle_soda_clarification(order)
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.menu_inquiry_handler.handle_category_clarification("soda", order)
 
         assert "what kind" in result.message.lower()
         assert "coke" in result.message.lower()
 
-    def test_lists_many_sodas_with_and_others(self):
+    def test_lists_many_items_with_and_others(self):
         """Test that long list uses 'and others' format."""
         from unittest.mock import patch
         from orderbot.tasks.state_machine import OrderStateMachine
@@ -4059,13 +4059,13 @@ class TestSodaClarification:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        with patch("orderbot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
-            result = sm.query_handler.handle_soda_clarification(order)
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.menu_inquiry_handler.handle_category_clarification("soda", order)
 
         assert "and others" in result.message.lower()
 
-    def test_fallback_when_no_menu_data(self):
-        """Test fallback message when no sodas in category."""
+    def test_generic_message_when_no_items_in_category(self):
+        """Test generic message when no items found in category."""
         from unittest.mock import patch
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
@@ -4074,32 +4074,14 @@ class TestSodaClarification:
         order = OrderTask()
 
         # Mock empty category result
-        with patch("orderbot.tasks.query_handler.menu_cache.get_items_by_category", return_value=[]):
-            result = sm.query_handler.handle_soda_clarification(order)
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=[]):
+            result = sm.menu_inquiry_handler.handle_category_clarification("soda", order)
 
+        # Should use generic message without listing specific items
         assert "what kind" in result.message.lower()
-        # Fallback message has hardcoded sodas
-        assert "coke" in result.message.lower()
-        assert "sprite" in result.message.lower()
 
-    def test_fallback_with_empty_beverages(self):
-        """Test fallback when category returns empty list."""
-        from unittest.mock import patch
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-
-        sm = OrderStateMachine(menu_data={})
-        order = OrderTask()
-
-        # Mock empty category result
-        with patch("orderbot.tasks.query_handler.menu_cache.get_items_by_category", return_value=[]):
-            result = sm.query_handler.handle_soda_clarification(order)
-
-        # Should use fallback message
-        assert "coke" in result.message.lower()
-
-    def test_two_sodas_uses_and_format(self):
-        """Test that two sodas uses proper 'and' format."""
+    def test_two_items_uses_and_format(self):
+        """Test that two items uses proper 'and' format."""
         from unittest.mock import patch
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
@@ -4112,8 +4094,8 @@ class TestSodaClarification:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        with patch("orderbot.tasks.query_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
-            result = sm.query_handler.handle_soda_clarification(order)
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
+            result = sm.menu_inquiry_handler.handle_category_clarification("soda", order)
 
         # Should have "Coke, and Sprite" or similar format
         assert "coke" in result.message.lower()

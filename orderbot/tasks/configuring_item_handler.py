@@ -95,19 +95,19 @@ def _get_cached_config_answers() -> set[str]:
 def _parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
     """Parse pending_field to extract item_type and attribute slug.
 
-    The pending_field format is "item_type:attr_slug" (e.g., "bagel:spread_type").
+    The pending_field format is "item_type:attr_slug" (e.g., "bagel:spread").
     For flow-control fields without a colon, returns (None, pending_field).
 
     Args:
-        pending_field: The pending field string (e.g., "bagel:spread_type" or "drink_selection")
+        pending_field: The pending field string (e.g., "bagel:spread" or "drink_selection")
 
     Returns:
         Tuple of (item_type_slug, attr_slug). Both may be None if pending_field is None.
         For flow-control fields (no colon), item_type_slug will be None.
 
     Examples:
-        >>> _parse_pending_field("bagel:spread_type")
-        ("bagel", "spread_type")
+        >>> _parse_pending_field("bagel:spread")
+        ("bagel", "spread")
         >>> _parse_pending_field("drink_selection")
         (None, "drink_selection")
         >>> _parse_pending_field(None)
@@ -131,7 +131,7 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
     Args:
         user_input: The user's input text
         pending_field: The current configuration field in "item_type:attr_slug" format
-                      (e.g., "bagel:spread_type", "sized_beverage:size")
+                      (e.g., "bagel:spread", "sized_beverage:size")
 
     Returns:
         True if the request is off-topic and should trigger a redirect

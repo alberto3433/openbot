@@ -105,7 +105,7 @@ class ModifierChangeHandler:
                 pass
 
             # Add global attribute aliases from the database
-            # (e.g., "cream cheese" -> "spread_type")
+            # (e.g., "cream cheese" -> "spread")
             try:
                 db_aliases = menu_cache.get_all_global_attribute_aliases()
                 self._target_attr_map.update(db_aliases)

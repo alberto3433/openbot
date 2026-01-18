@@ -60,7 +60,6 @@ from .parsers import (
     WORD_TO_NUM,
     # Constants - Spread types (loaded from database via dynamic functions)
     get_spreads,
-    get_spread_types,
     get_bagel_spreads,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,
@@ -271,7 +270,6 @@ class OrderStateMachine:
         self.checkout_utils_handler = CheckoutUtilsHandler(
             config=self._handler_config,
             transition_to_next_slot=self._transition_to_next_slot,
-            configure_next_incomplete_coffee=self._configure_next_incomplete_coffee,
         )
         # Update handler config with get_next_question callback (now that checkout_utils_handler exists)
         self._handler_config.get_next_question = self.checkout_utils_handler.get_next_question
@@ -289,8 +287,6 @@ class OrderStateMachine:
         # Initialize item adder handler
         self.item_adder_handler = ItemAdderHandler(
             config=self._handler_config,
-            configure_next_incomplete_bagel=self._configure_next_incomplete_bagel,
-            configure_next_incomplete_coffee=self._configure_next_incomplete_coffee,
         )
         # Initialize modifier change handler
         self.modifier_change_handler = ModifierChangeHandler(config=self._handler_config)
@@ -588,14 +584,6 @@ class OrderStateMachine:
 
         # No incomplete menu items found - return to checkout flow
         return self.checkout_utils_handler.get_next_question(order)
-
-    def _configure_next_incomplete_bagel(self, order: OrderTask) -> StateMachineResult:
-        """Configure the next incomplete bagel item using menu_item_handler."""
-        return self.menu_item_handler.configure_next_incomplete_item(order, "bagel")
-
-    def _configure_next_incomplete_coffee(self, order: OrderTask) -> StateMachineResult:
-        """Configure the next incomplete coffee/beverage item using menu_item_handler."""
-        return self.menu_item_handler.configure_next_incomplete_item(order, "sized_beverage")
 
     def _configure_next_incomplete_item(self, order: OrderTask, item: "MenuItemTask | None" = None) -> StateMachineResult:
         """

@@ -142,7 +142,7 @@ class MenuDataCache:
         # E.g., "milk" -> {"milk_sweetener_syrup"}, "syrup" -> {"milk_sweetener_syrup"}
         self._modifier_category_to_attrs: dict[str, set[str]] = {}
 
-        # Global attribute aliases (e.g., "cream cheese" -> "spread_type")
+        # Global attribute aliases (e.g., "cream cheese" -> "spread")
         self._global_attribute_aliases: dict[str, str] = {}  # alias -> attr_slug
 
         # Global attribute property names (mapping DB slug to Python property name)
@@ -188,6 +188,14 @@ class MenuDataCache:
         # Derived from menu item names (e.g., "latte" triggers "sized_beverage")
         self._item_type_triggers: dict[str, set[str]] = {}  # item_type_slug -> set of trigger keywords
 
+        # Configurable item type slugs - item types that have ask_in_conversation=True attributes
+        # These require inline parsing with attribute extraction (e.g., "bagel", "sized_beverage")
+        self._configurable_item_type_slugs: set[str] = set()
+
+        # Items with required match phrases - for exclusion logic during parsing
+        # Maps item_name (lowercase) -> required_match_phrases string
+        self._items_with_required_phrases: dict[str, str] = {}
+
         # Menu items by unit type - for filtering by how items are sold
         self._by_unit_type_items: dict[str, set[str]] = {}  # unit_type -> set of item names (lowercase)
 
@@ -226,6 +234,20 @@ class MenuDataCache:
         # Modifier categories for menu inquiries (toppings, proteins, milks, etc.)
         # Maps slug -> {display_name, loads_from_ingredients, ingredient_category, description}
         self._modifier_categories: dict[str, dict] = {}
+
+        # Price inquiry support (data-driven)
+        # Pre-computed resolved prices for items with attribute-based pricing
+        # Maps item_name (lowercase) -> resolved_price (base + attribute upcharge)
+        self._resolved_item_prices: dict[str, float] = {}
+
+        # Item types with priced attributes (e.g., bagel with bread type upcharges)
+        # Maps item_type_slug -> first priced attribute slug (or None)
+        self._item_type_priced_attribute: dict[str, str | None] = {}
+
+        # Ingredient contexts for price inquiries
+        # Maps ingredient_name (lowercase) -> list of context dicts
+        # Each context: {context_type, item_type_slug, label, price}
+        self._ingredient_price_contexts: dict[str, list[dict]] = {}
 
         # Metadata
         self._last_refresh: datetime | None = None
@@ -295,6 +317,8 @@ class MenuDataCache:
                 # Data-driven parsing support loaders
                 self._load_compound_phrases(db)
                 self._load_item_type_triggers(db)
+                self._load_configurable_item_types(db)
+                self._load_items_with_required_phrases(db)
                 self._load_by_unit_type_items(db)
 
                 # Generic data-driven loaders (replace domain-specific functions)
@@ -308,6 +332,11 @@ class MenuDataCache:
 
                 # Load modifier categories (toppings, proteins, milks, etc.)
                 self._load_modifier_categories(db)
+
+                # Price inquiry support (pre-compute resolved prices)
+                self._load_priced_attributes(db)
+                self._load_resolved_item_prices(db)
+                self._load_ingredient_price_contexts(db)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -357,18 +386,19 @@ class MenuDataCache:
         - The hardcoded NO_THE_PREFIX_ITEMS constant in constants.py
         - The hardcoded MENU_ITEM_CANONICAL_NAMES constant in constants.py
         """
-        from .models import MenuItem, ItemType
+        from .models import MenuItem, ItemType, ItemTypeGlobalAttribute
 
         menu_items = set()
         alias_to_canonical: dict[str, str] = {}
 
-        # Get item_type ids to exclude items that have config flows
-        exclude_slugs = ['bagel', 'sized_beverage']
-        exclude_type_ids = set()
-        for slug in exclude_slugs:
-            item_type = db.query(ItemType).filter(ItemType.slug == slug).first()
-            if item_type:
-                exclude_type_ids.add(item_type.id)
+        # Data-driven: exclude item types that have askable attributes (need inline parsing)
+        # These items are recognized by their type-specific parsers, not as direct menu item matches
+        exclude_type_ids = set(
+            row[0] for row in db.query(ItemTypeGlobalAttribute.item_type_id)
+            .filter(ItemTypeGlobalAttribute.ask_in_conversation == True)  # noqa: E712
+            .distinct()
+            .all()
+        )
 
         # Use joinedload to avoid N+1 queries when accessing aliases
         all_items = (
@@ -1214,7 +1244,7 @@ class MenuDataCache:
         """Load global attribute aliases from the database.
 
         Maps alternative names for global attributes to their canonical slugs.
-        For example, "cream cheese" -> "spread_type".
+        For example, "cream cheese" -> "spread".
 
         This enables users to refer to attributes by common alternative names
         without hardcoding these mappings in the codebase.
@@ -1383,6 +1413,70 @@ class MenuDataCache:
         logger.debug(
             "Loaded item type triggers: %s",
             {k: len(v) for k, v in item_type_triggers.items()}
+        )
+
+    def _load_configurable_item_types(self, db: Session) -> None:
+        """Load slugs of item types that have askable attributes.
+
+        These are item types that need inline parsing with attribute extraction
+        (e.g., "bagel", "sized_beverage"). They have at least one attribute with
+        ask_in_conversation=True.
+        """
+        from .models import ItemType, ItemTypeGlobalAttribute
+
+        configurable_slugs: set[str] = set()
+
+        # Query item types that have at least one askable attribute
+        item_type_ids = (
+            db.query(ItemTypeGlobalAttribute.item_type_id)
+            .filter(ItemTypeGlobalAttribute.ask_in_conversation == True)  # noqa: E712
+            .distinct()
+            .all()
+        )
+        item_type_ids = {row[0] for row in item_type_ids}
+
+        # Get the slugs for those item type IDs
+        if item_type_ids:
+            item_types = (
+                db.query(ItemType)
+                .filter(ItemType.id.in_(item_type_ids))
+                .all()
+            )
+            for it in item_types:
+                configurable_slugs.add(it.slug)
+
+        self._configurable_item_type_slugs = configurable_slugs
+        logger.debug(
+            "Loaded %d configurable item type slugs: %s",
+            len(configurable_slugs), configurable_slugs
+        )
+
+    def _load_items_with_required_phrases(self, db: Session) -> None:
+        """Load menu items that have required_match_phrases set.
+
+        These items require specific phrases to be present in user input for a match.
+        Used for exclusion logic during parsing (e.g., "coffee cake" should not
+        match "coffee" as a beverage).
+        """
+        from .models import MenuItem
+
+        items_with_phrases: dict[str, str] = {}
+
+        # Query items with non-null required_match_phrases
+        items = (
+            db.query(MenuItem.name, MenuItem.required_match_phrases)
+            .filter(MenuItem.required_match_phrases.isnot(None))
+            .filter(MenuItem.required_match_phrases != "")
+            .all()
+        )
+
+        for name, phrases in items:
+            items_with_phrases[name.lower()] = phrases
+
+        self._items_with_required_phrases = items_with_phrases
+        logger.debug(
+            "Loaded %d items with required_match_phrases",
+            len(items_with_phrases)
         )
 
     def _load_by_unit_type_items(self, db: Session) -> None:
@@ -1810,6 +1904,27 @@ class MenuDataCache:
             return set()
         return self._item_names_by_type[item_type_slug].copy()
 
+    def get_item_names_by_type(self, item_type_slug: str) -> set[str]:
+        """Alias for get_item_names() - get all item names for a given item type."""
+        return self.get_item_names(item_type_slug)
+
+    def get_item_alias_to_canonical_by_type(self, item_type_slug: str) -> dict[str, str]:
+        """Get alias-to-canonical name mapping for a given item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+
+        Returns:
+            Dict mapping aliases (lowercase) to canonical names.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        self._ensure_loaded()
+        if item_type_slug not in self._item_alias_to_canonical_by_type:
+            return {}
+        return self._item_alias_to_canonical_by_type[item_type_slug].copy()
+
     def get_items_by_category(self, category_slug: str) -> list[dict]:
         """Get all menu items in a given high-level category (drink, food, etc.).
 
@@ -1832,6 +1947,35 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return self._menu_items_by_category_slug.get(category_slug, []).copy()
+
+    def get_items_by_item_type(self, item_type_slug: str) -> list[dict]:
+        """Get all menu items of a given item type.
+
+        This enables searches for all items of a specific type (e.g., all
+        sized_beverage items) for disambiguation or filtering.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+
+        Returns:
+            List of dicts with menu item info: [{"id": int, "name": str, "item_type": str, "base_price": float}]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        self._ensure_loaded()
+
+        # Get all menu items and filter by item type
+        result = []
+        for item_name, item_data in self._menu_items.items():
+            if item_data.get("item_type") == item_type_slug:
+                result.append({
+                    "id": item_data.get("id"),
+                    "name": item_data.get("name", item_name),
+                    "item_type": item_type_slug,
+                    "base_price": item_data.get("base_price", 0.0),
+                })
+        return result
 
     def is_category_slug(self, keyword: str) -> bool:
         """Check if a keyword is a valid high-level category slug.
@@ -2248,7 +2392,7 @@ class MenuDataCache:
             category_slug: The ingredient category (e.g., "spread", "protein", "milk")
 
         Returns:
-            The attribute slug (e.g., "spread_type", "extra_protein", "milk")
+            The attribute slug (e.g., "spread", "extra_protein", "milk")
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
@@ -2589,11 +2733,11 @@ class MenuDataCache:
             alias: The alias to look up (e.g., "cream cheese")
 
         Returns:
-            The attribute slug (e.g., "spread_type") if alias exists, None otherwise.
+            The attribute slug (e.g., "spread") if alias exists, None otherwise.
 
         Example:
             >>> cache.get_global_attribute_slug_by_alias("cream cheese")
-            "spread_type"
+            "spread"
             >>> cache.get_global_attribute_slug_by_alias("unknown")
             None
         """
@@ -2608,7 +2752,7 @@ class MenuDataCache:
 
         Example:
             >>> cache.get_all_global_attribute_aliases()
-            {"cream cheese": "spread_type", ...}
+            {"cream cheese": "spread", ...}
         """
         self._ensure_loaded()
         return self._global_attribute_aliases.copy()
@@ -2741,6 +2885,32 @@ class MenuDataCache:
         attrs = self.get_item_type_attributes(item_type_slug)
         return attribute_slug in attrs
 
+    def has_conversation_attributes(self, item_type_slug: str) -> bool:
+        """Check if an item type has any attributes that need to be asked in conversation.
+
+        This is the data-driven way to determine if an item needs configuration.
+        An item type "needs configuration" if it has at least one attribute with
+        ask_in_conversation=True.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+
+        Returns:
+            True if the item type has conversation attributes, False otherwise.
+
+        Example:
+            >>> # Instead of checking for specific attributes like "bread":
+            >>> if menu_cache.has_conversation_attributes(item.menu_item_type):
+            ...     # Start configuration flow
+        """
+        if not item_type_slug:
+            return False
+        attrs = self.get_item_type_attributes(item_type_slug)
+        return any(
+            attr_info.get("ask_in_conversation", False)
+            for attr_info in attrs.values()
+        )
+
     def get_attribute_input_type(self, item_type_slug: str, attribute_slug: str) -> str | None:
         """Get the input_type for a specific attribute on an item type.
 
@@ -2786,18 +2956,10 @@ class MenuDataCache:
             If no specific attribute is found, callers should use the unified
             `modifiers` list on MenuItemTask instead.
         """
-        # First check if there's an attribute with the same slug as the category
+        # Check if there's an attribute with the same slug as the category
         attrs = self.get_item_type_attributes(item_type_slug)
         if category_slug in attrs:
             return category_slug
-
-        # Check for common mappings (e.g., "spread" category -> "spread_type" attribute)
-        category_attr_mapping = {
-            "spread": "spread_type",
-        }
-        mapped_attr = category_attr_mapping.get(category_slug)
-        if mapped_attr and mapped_attr in attrs:
-            return mapped_attr
 
         # No specific attribute - use unified modifiers list
         return None
@@ -3746,7 +3908,7 @@ class MenuDataCache:
         """
         Get keywords relevant to a specific attribute for off-topic detection.
 
-        When configuring an attribute (e.g., "spread_type" for bagels), this returns
+        When configuring an attribute (e.g., "spread" for bagels), this returns
         keywords that indicate the user is asking about that same attribute, not
         going off-topic. For example, when asking about spread, "cream cheese",
         "butter", "schmear" are relevant keywords.
@@ -3754,7 +3916,7 @@ class MenuDataCache:
         Args:
             item_type_slug: The item type slug (e.g., "bagel", "sized_beverage").
                            Can be None for global attributes.
-            attr_slug: The attribute slug (e.g., "spread_type", "size", "toasted")
+            attr_slug: The attribute slug (e.g., "spread", "size", "toasted")
 
         Returns:
             Set of lowercase keywords relevant to this attribute, including:
@@ -3767,7 +3929,7 @@ class MenuDataCache:
             MenuDataNotLoadedError: If cache is not loaded
 
         Examples:
-            >>> cache.get_relevant_keywords_for_attribute("bagel", "spread_type")
+            >>> cache.get_relevant_keywords_for_attribute("bagel", "spread")
             {"spread", "cream cheese", "butter", "schmear", "scallion", ...}
             >>> cache.get_relevant_keywords_for_attribute("sized_beverage", "size")
             {"size", "small", "medium", "large", "regular", ...}
@@ -4186,6 +4348,37 @@ class MenuDataCache:
         if term_singular != term_lower:
             mapping = self._category_keywords.get(term_singular)
             if mapping:
+                return mapping["slug"]
+
+        return None
+
+    def get_category_needing_clarification(self, text: str) -> str | None:
+        """Check if text contains a generic category term that needs clarification.
+
+        Searches the input text for any category keywords (like "soda", "drink",
+        "beverage") that would require the user to specify which particular item
+        they want.
+
+        Args:
+            text: User input text to search (should be lowercase)
+
+        Returns:
+            Category slug if a generic category term is found, None otherwise.
+
+        Examples:
+            >>> menu_cache.get_category_needing_clarification("can i get a soda")
+            "beverage"  # or whatever the DB slug is for sodas
+            >>> menu_cache.get_category_needing_clarification("i want a coca cola")
+            None  # specific item, no clarification needed
+        """
+        self._ensure_loaded()
+        text_lower = text.lower().strip()
+
+        # Search for category keywords as whole words in the text
+        for keyword, mapping in self._category_keywords.items():
+            # Use word boundary matching to avoid partial matches
+            pattern = rf'\b{re.escape(keyword)}\b'
+            if re.search(pattern, text_lower):
                 return mapping["slug"]
 
         return None
@@ -4847,6 +5040,82 @@ class MenuDataCache:
             return self._item_type_triggers.get(item_type_slug, set()).copy()
         return {k: v.copy() for k, v in self._item_type_triggers.items()}
 
+    def get_configurable_item_type_slugs(self) -> set[str]:
+        """
+        Get slugs of item types that have askable attributes.
+
+        These are item types that require inline parsing with attribute extraction
+        (e.g., "bagel", "sized_beverage"). They have at least one attribute with
+        ask_in_conversation=True in the database.
+
+        Returns:
+            Set of item type slugs that are configurable.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._configurable_item_type_slugs.copy()
+
+    def is_configurable_item_type(self, item_type_slug: str) -> bool:
+        """
+        Check if an item type is configurable (has askable attributes).
+
+        Args:
+            item_type_slug: The item type slug to check (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            True if the item type has at least one ask_in_conversation=True attribute.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return item_type_slug in self._configurable_item_type_slugs
+
+    def get_items_with_required_phrases(self) -> dict[str, str]:
+        """
+        Get menu items that have required_match_phrases set.
+
+        These items require specific phrases in user input for a match.
+        Used for exclusion logic (e.g., "coffee cake" shouldn't match "coffee").
+
+        Returns:
+            Dict mapping item_name (lowercase) -> required_match_phrases string.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._items_with_required_phrases.copy()
+
+    def text_matches_exclusion_phrase(self, text: str) -> bool:
+        """
+        Check if text matches any menu item's required_match_phrases.
+
+        Used to detect when user input should be routed to a specific menu item
+        instead of being parsed as a generic item type.
+
+        For example, "coffee cake" should match "Russian Coffee Cake" instead of
+        being parsed as a coffee beverage.
+
+        Args:
+            text: User input text to check
+
+        Returns:
+            True if text contains a required_match_phrase for any menu item.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        text_lower = text.lower()
+        for item_name, phrases_str in self._items_with_required_phrases.items():
+            phrases = [p.strip().lower() for p in phrases_str.split(",")]
+            if any(phrase in text_lower for phrase in phrases):
+                return True
+        return False
+
     def get_menu_items_by_unit_type(self, unit_type: str) -> set[str]:
         """
         Get menu items sold by a specific unit type.
@@ -4917,6 +5186,441 @@ class MenuDataCache:
             if keyword_lower in triggers:
                 return item_type_slug
         return None
+
+    # =========================================================================
+    # Price Inquiry Support - Loaders
+    # =========================================================================
+
+    def _load_priced_attributes(self, db: Session) -> None:
+        """Load item types that have priced attributes.
+
+        Identifies item types where attribute options have price_modifier values,
+        which means the item price = base + attribute upcharge.
+
+        Examples: bagel (bread type upcharges), possibly others.
+        """
+        from .models import (
+            ItemType, ItemTypeAttribute, GlobalAttributeOption,
+            ItemTypeGlobalAttribute, GlobalAttribute, ItemTypeIngredient,
+        )
+
+        self._item_type_priced_attribute = {}
+
+        item_types = db.query(ItemType).all()
+
+        for it in item_types:
+            priced_attr = None
+
+            # Check global attributes linked to this item type
+            global_links = (
+                db.query(ItemTypeGlobalAttribute)
+                .filter(ItemTypeGlobalAttribute.item_type_id == it.id)
+                .all()
+            )
+            for link in global_links:
+                # Check if any options have price_modifier > 0
+                has_priced_options = (
+                    db.query(GlobalAttributeOption)
+                    .filter(
+                        GlobalAttributeOption.global_attribute_id == link.global_attribute_id,
+                        GlobalAttributeOption.price_modifier > 0,
+                    )
+                    .first()
+                )
+                if has_priced_options:
+                    attr = db.query(GlobalAttribute).filter(
+                        GlobalAttribute.id == link.global_attribute_id
+                    ).first()
+                    if attr:
+                        priced_attr = attr.slug
+                        break
+
+            # Check ItemTypeAttribute with loads_from_ingredients
+            if not priced_attr:
+                local_attrs = (
+                    db.query(ItemTypeAttribute)
+                    .filter(ItemTypeAttribute.item_type_id == it.id)
+                    .all()
+                )
+                for attr in local_attrs:
+                    if attr.loads_from_ingredients and attr.ingredient_group:
+                        has_priced_ing = (
+                            db.query(ItemTypeIngredient)
+                            .filter(
+                                ItemTypeIngredient.item_type_id == it.id,
+                                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+                                ItemTypeIngredient.price_modifier > 0,
+                            )
+                            .first()
+                        )
+                        if has_priced_ing:
+                            priced_attr = attr.slug
+                            break
+
+            self._item_type_priced_attribute[it.slug] = priced_attr
+
+        logger.debug(
+            "Loaded priced attributes for %d item types",
+            len([k for k, v in self._item_type_priced_attribute.items() if v]),
+        )
+
+    def _load_resolved_item_prices(self, db: Session) -> None:
+        """Pre-compute resolved prices for menu items.
+
+        For items with attribute-based pricing, we compute base + upcharge.
+        For regular items, we use base_price directly.
+        """
+        from .models import MenuItem, ItemType
+
+        self._resolved_item_prices = {}
+
+        items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.item_type))
+            .all()
+        )
+
+        for item in items:
+            if not item.item_type:
+                continue
+
+            self._resolved_item_prices[item.name.lower()] = float(item.base_price or 0)
+
+        logger.debug("Pre-loaded %d resolved item prices", len(self._resolved_item_prices))
+
+    def _load_ingredient_price_contexts(self, db: Session) -> None:
+        """Load ingredient price contexts for data-driven price inquiries.
+
+        For each ingredient, determine all contexts in which it can be priced:
+        - As a modifier on specific item types (e.g., lox on bagel)
+        - As a standalone item (e.g., lox by the pound)
+        """
+        from .models import Ingredient, ItemTypeIngredient, ItemType, MenuItem
+
+        self._ingredient_price_contexts = {}
+
+        ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
+
+        for ing in ingredients:
+            contexts = []
+            ing_name_lower = ing.name.lower()
+
+            # Context 1: As modifier on item types via ItemTypeIngredient
+            item_type_links = (
+                db.query(ItemTypeIngredient, ItemType)
+                .join(ItemType, ItemTypeIngredient.item_type_id == ItemType.id)
+                .filter(ItemTypeIngredient.ingredient_id == ing.id)
+                .all()
+            )
+            for link, item_type in item_type_links:
+                contexts.append({
+                    "context_type": "modifier",
+                    "item_type_slug": item_type.slug,
+                    "label": f"{item_type.display_name} topping",
+                    "price": float(link.price_modifier) if link.price_modifier else 0.0,
+                })
+
+            # Context 2: As standalone by-the-pound item
+            by_pound_items = (
+                db.query(MenuItem)
+                .join(ItemType, MenuItem.item_type_id == ItemType.id)
+                .filter(
+                    ItemType.is_by_pound == True,  # noqa: E712
+                    MenuItem.name.ilike(f"%{ing.name}%"),
+                )
+                .all()
+            )
+            for item in by_pound_items:
+                contexts.append({
+                    "context_type": "standalone",
+                    "item_type_slug": item.item_type.slug if item.item_type else None,
+                    "label": "by the pound",
+                    "price": float(item.base_price) if item.base_price else 0.0,
+                    "unit": "lb",
+                    "menu_item_name": item.name,
+                })
+
+            if contexts:
+                self._ingredient_price_contexts[ing_name_lower] = contexts
+                # Also add aliases
+                for alias in ing.aliases:
+                    alias_lower = alias.lower().strip()
+                    if alias_lower and alias_lower != ing_name_lower:
+                        self._ingredient_price_contexts[alias_lower] = contexts
+
+        logger.debug(
+            "Loaded price contexts for %d ingredients",
+            len(self._ingredient_price_contexts),
+        )
+
+    # =========================================================================
+    # Price Inquiry Support - Public Methods
+    # =========================================================================
+
+    def item_type_has_priced_attributes(self, item_type_slug: str) -> bool:
+        """Check if an item type has priced attribute options.
+
+        Args:
+            item_type_slug: The item type to check (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            True if the item type has attributes with price_modifier > 0.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return bool(self._item_type_priced_attribute.get(item_type_slug))
+
+    def get_first_priced_attribute(self, item_type_slug: str) -> str | None:
+        """Get the first priced attribute for an item type.
+
+        Args:
+            item_type_slug: The item type to check
+
+        Returns:
+            The attribute slug with priced options, or None.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._item_type_priced_attribute.get(item_type_slug)
+
+    def get_resolved_item_price(self, item_name: str) -> float | None:
+        """Get the pre-computed resolved price for a menu item.
+
+        Args:
+            item_name: The menu item name
+
+        Returns:
+            The resolved price or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._resolved_item_prices.get(item_name.lower())
+
+    def get_ingredient_price_contexts(self, ingredient_name: str) -> list[dict]:
+        """Get all price contexts for an ingredient.
+
+        Args:
+            ingredient_name: The ingredient name or alias
+
+        Returns:
+            List of context dicts, each with:
+            - context_type: "modifier" or "standalone"
+            - item_type_slug: The item type (for modifiers)
+            - label: Human-readable context label
+            - price: The price in this context
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._ingredient_price_contexts.get(ingredient_name.lower(), [])
+
+    def resolve_price_inquiry(
+        self,
+        query: str,
+        current_item_type: str | None = None,
+        last_menu_category: str | None = None,
+    ) -> dict:
+        """Resolve a price inquiry to a structured result.
+
+        This is the single entry point for all price lookups. It handles:
+        - Menu item prices (with fuzzy matching)
+        - Category minimum prices
+        - Modifier/ingredient prices (context-aware)
+
+        Args:
+            query: The user's price query (e.g., "plain bagel", "lox", "lattes")
+            current_item_type: Item type being configured (from pending item)
+            last_menu_category: Last category browsed (from menu pagination)
+
+        Returns:
+            Dict with one of these structures:
+            - {"type": "item", "name": str, "price": float}
+            - {"type": "sized_item", "name": str, "sizes": list}
+            - {"type": "category", "display_name": str, "min_price": float}
+            - {"type": "modifier", "name": str, "price": float, "context": str}
+            - {"type": "needs_clarification", "name": str, "contexts": list}
+            - {"type": "not_found", "query": str}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+
+        query_lower = query.lower().strip()
+        # Strip leading articles
+        query_lower = re.sub(r"^(?:a|an|the)\s+", "", query_lower)
+
+        # 1. Try category match first (e.g., "bagels", "coffees", "beverages")
+        category_info = self.get_category_keyword_mapping(query_lower)
+        if category_info:
+            slug = category_info.get("slug")
+            display_name = category_info.get("display_name_plural", query_lower)
+            lookup_type = category_info.get("lookup_type", "item_type")
+
+            # Get items based on lookup type
+            if lookup_type == "category":
+                # Query via MenuItemCategory (e.g., "sandwich", "drink")
+                items = self.get_items_by_category(slug)
+            else:
+                # Query by item_type_id (e.g., "bagel", "sized_beverage")
+                items_by_type = self._menu_index.get("items_by_type", {})
+                items = items_by_type.get(slug, [])
+
+            if items:
+                prices = [
+                    item.get("base_price") or item.get("price") or 0
+                    for item in items
+                    if (item.get("base_price") or item.get("price") or 0) > 0
+                ]
+                if prices:
+                    # Get unique item names for categories with multiple named items
+                    item_names = [item.get("name") for item in items if item.get("name")]
+                    return {
+                        "type": "category",
+                        "display_name": display_name,
+                        "item_type_slug": slug,
+                        "min_price": min(prices),
+                        "items": item_names,  # Include item names for "what kind" prompts
+                    }
+
+        # 2. Try exact menu item match (with aliases)
+        canonical_name = self._menu_item_alias_to_canonical.get(query_lower)
+        if canonical_name:
+            price = self._resolved_item_prices.get(canonical_name.lower())
+
+            # Check for size-based pricing in menu_index
+            items_by_type = self._menu_index.get("items_by_type", {})
+            for type_items in items_by_type.values():
+                for item_info in type_items:
+                    if item_info.get("name", "").lower() == canonical_name.lower():
+                        if item_info.get("size_prices"):
+                            return {
+                                "type": "sized_item",
+                                "name": canonical_name,
+                                "sizes": item_info["size_prices"],
+                            }
+                        break
+
+            if price is not None and price > 0:
+                return {
+                    "type": "item",
+                    "name": canonical_name,
+                    "price": price,
+                }
+
+        # 3. Try ingredient/modifier match
+        ingredient_contexts = self.get_ingredient_price_contexts(query_lower)
+        if ingredient_contexts:
+            # Determine the best context based on current state
+            if current_item_type:
+                matching = [
+                    c for c in ingredient_contexts
+                    if c.get("item_type_slug") == current_item_type
+                ]
+                if matching:
+                    ctx = matching[0]
+                    return {
+                        "type": "modifier",
+                        "name": query_lower.title(),
+                        "price": ctx["price"],
+                        "context": ctx["label"],
+                    }
+
+            if last_menu_category:
+                matching = [
+                    c for c in ingredient_contexts
+                    if c.get("item_type_slug") == last_menu_category
+                ]
+                if matching:
+                    ctx = matching[0]
+                    return {
+                        "type": "modifier",
+                        "name": query_lower.title(),
+                        "price": ctx["price"],
+                        "context": ctx["label"],
+                    }
+
+            # No context - need clarification if multiple distinct price options
+            unique_prices = set(c["price"] for c in ingredient_contexts)
+            if len(ingredient_contexts) > 1 and len(unique_prices) > 1:
+                return {
+                    "type": "needs_clarification",
+                    "name": query_lower.title(),
+                    "contexts": [
+                        {"label": c["label"], "price": c["price"]}
+                        for c in ingredient_contexts
+                    ],
+                }
+            elif ingredient_contexts:
+                ctx = ingredient_contexts[0]
+                return {
+                    "type": "modifier",
+                    "name": query_lower.title(),
+                    "price": ctx["price"],
+                    "context": ctx["label"],
+                }
+
+        # 4. Fuzzy match against menu items
+        fuzzy_matches = self.search_menu_items_by_name(query_lower)
+        if fuzzy_matches:
+            best_match = None
+            best_score = 0
+            for match in fuzzy_matches:
+                name = match.get("name", "")
+                name_lower = name.lower()
+                if name_lower == query_lower:
+                    best_match = match
+                    best_score = 100
+                    break
+                elif query_lower in name_lower:
+                    score = len(query_lower) / len(name_lower) * 80
+                    if score > best_score:
+                        best_match = match
+                        best_score = score
+                elif name_lower in query_lower:
+                    score = len(name_lower) / len(query_lower) * 70
+                    if score > best_score:
+                        best_match = match
+                        best_score = score
+
+            if best_match and best_score >= 50:
+                name = best_match.get("name", "")
+                price = best_match.get("base_price") or self._resolved_item_prices.get(name.lower())
+
+                # Check for size pricing
+                items_by_type = self._menu_index.get("items_by_type", {})
+                for type_items in items_by_type.values():
+                    for item_info in type_items:
+                        if item_info.get("name") == name and item_info.get("size_prices"):
+                            return {
+                                "type": "sized_item",
+                                "name": name,
+                                "sizes": item_info["size_prices"],
+                            }
+
+                if price and price > 0:
+                    return {
+                        "type": "item",
+                        "name": name,
+                        "price": price,
+                    }
+
+        # 5. Not found
+        return {
+            "type": "not_found",
+            "query": query,
+        }
 
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""

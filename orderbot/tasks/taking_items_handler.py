@@ -1219,11 +1219,6 @@ class TakingItemsHandler:
                         spread_attr = menu_cache.get_attribute_for_category(target_item.menu_item_type, "spread")
                         if spread_attr:
                             target_item.attribute_values[spread_attr] = parsed.modify_new_spread
-                    if parsed.modify_new_spread_type:
-                        spread_type_attr = menu_cache.get_attribute_for_category(target_item.menu_item_type, "spread")
-                        if spread_type_attr:
-                            # spread_type variant goes into the same attribute
-                            target_item.attribute_values[spread_type_attr] = parsed.modify_new_spread_type
 
                     # Add modifiers using unified storage
                     if parsed.modify_add_modifiers:
@@ -1931,8 +1926,10 @@ class TakingItemsHandler:
             if result:
                 return result
 
-        if parsed.needs_soda_clarification:
-            return self.menu_inquiry_handler.handle_soda_clarification(order)
+        if parsed.needs_category_clarification:
+            return self.menu_inquiry_handler.handle_category_clarification(
+                parsed.needs_category_clarification, order
+            )
 
         # Handle price inquiries for specific items
         if parsed.asks_about_price and parsed.price_query_item:

@@ -34,7 +34,6 @@ class CheckoutUtilsHandler:
         self,
         config: "HandlerConfig",
         transition_to_next_slot: Callable[[OrderTask], None] | None = None,
-        configure_next_incomplete_coffee: Callable[[OrderTask], StateMachineResult] | None = None,
     ):
         """
         Initialize the checkout utils handler.
@@ -42,7 +41,6 @@ class CheckoutUtilsHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             transition_to_next_slot: Callback to transition to the next slot.
-            configure_next_incomplete_coffee: Legacy callback (unused, kept for compatibility).
         """
         self._message_builder = config.message_builder
 

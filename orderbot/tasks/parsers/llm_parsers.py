@@ -40,29 +40,71 @@ def get_instructor_client():
     return instructor.from_openai(OpenAI(api_key=api_key))
 
 
-def parse_side_choice(user_input: str, item_name: str, model: str = "gpt-4o-mini") -> SideChoiceResponse:
-    """Parse user input when waiting for omelette side choice."""
+def parse_side_choice(
+    user_input: str,
+    item_name: str,
+    valid_options: list[dict] | None = None,
+    question_text: str | None = None,
+    model: str = "gpt-4o-mini",
+) -> SideChoiceResponse:
+    """Parse user input when waiting for side choice selection.
+
+    This is a generic, data-driven parser that works with any side choice options
+    loaded from the database. It only determines which option was chosen - any
+    further configuration of the chosen option is handled by standard item
+    configuration handlers.
+
+    Args:
+        user_input: The user's response
+        item_name: The parent item name (e.g., "Western Omelette")
+        valid_options: List of option dicts from DB with keys:
+            - slug: option identifier (e.g., "bagel", "fruit_salad")
+            - display_name: human-readable name (e.g., "Bagel", "Fruit Salad")
+            - aliases: optional list of alternative names
+        question_text: The question that was asked (for context in prompt)
+        model: OpenAI model to use
+
+    Returns:
+        SideChoiceResponse with:
+            - value: the chosen option slug (or "unclear" if not determined)
+            - wants_cancel: True if user wants to cancel the item
+    """
     client = get_instructor_client()
 
-    prompt = f"""The user ordered "{item_name}" which comes with a choice of bagel or fruit salad.
-We asked: "Would you like a bagel or fruit salad with your {item_name}?"
+    # Build options description from database data
+    if valid_options:
+        options_list = []
+        for opt in valid_options:
+            slug = opt.get("slug", "")
+            display = opt.get("display_name", slug)
+            aliases = opt.get("aliases", [])
+            if aliases:
+                alias_str = ", ".join(aliases[:3])  # Limit to 3 aliases
+                options_list.append(f"- {display} (slug: {slug}, also known as: {alias_str})")
+            else:
+                options_list.append(f"- {display} (slug: {slug})")
+        options_desc = "\n".join(options_list)
+    else:
+        options_desc = "- (options not specified)"
+
+    # Use provided question or build generic one
+    if not question_text:
+        question_text = f"Would you like a side with your {item_name}?"
+
+    prompt = f"""The user ordered "{item_name}" which comes with a choice of side.
+We asked: "{question_text}"
+
+Available options:
+{options_desc}
 
 The user said: "{user_input}"
 
-Determine their choice. Also capture any additional details they provide:
-- bagel_type: specific bagel type (plain, everything, sesame, etc.)
-- toasted: whether they want it toasted (true) or not toasted (false)
-- spread: if they specify a spread (cream cheese, butter)
+Determine which option they chose. Return the slug of the chosen option.
+If the user wants to cancel or remove the item, set wants_cancel to true.
+If you cannot determine their choice, set value to "unclear".
 
-Examples:
-- "bagel" -> choice: "bagel"
-- "plain bagel" -> choice: "bagel", bagel_type: "plain"
-- "plain bagel toasted" -> choice: "bagel", bagel_type: "plain", toasted: true
-- "everything bagel not toasted" -> choice: "bagel", bagel_type: "everything", toasted: false
-- "plain bagel toasted with cream cheese" -> choice: "bagel", bagel_type: "plain", toasted: true, spread: "cream cheese"
-- "everything bagel with butter" -> choice: "bagel", bagel_type: "everything", spread: "butter"
-- "fruit salad" -> choice: "fruit_salad"
-- "the fruit" -> choice: "fruit_salad"
+IMPORTANT: Only return the option slug - do NOT try to extract additional details
+like specific types or modifications. Those will be asked separately.
 """
 
     return client.chat.completions.create(
@@ -120,7 +162,7 @@ def parse_open_input(
     Tries deterministic parsing first for speed and consistency.
     Falls back to LLM for complex orders (menu items, multi-config bagels, coffee).
 
-    Spread types are loaded from the database cache via get_spread_types().
+    Spread options are loaded from the database cache.
 
     Args:
         user_input: The user's input string
@@ -232,8 +274,8 @@ Determine what they want:
 - If ordering bagels:
   - Set new_bagel=true
   - Set new_bagel_quantity to the number of bagels (default 1)
-  - If ALL bagels are the same, use new_bagel_type, new_bagel_toasted, new_bagel_spread, new_bagel_spread_type
-  - If bagels have DIFFERENT configurations, populate parsed_items list with ParsedItemEntry objects: {{"item_type": "bagel", "attribute_values": {{"bread": "...", "toasted": true/false/null, "spread_type": "..."}}}}
+  - If ALL bagels are the same, use new_bagel_type, new_bagel_toasted, new_bagel_spread (atomic slug like "scallion_cream_cheese")
+  - If bagels have DIFFERENT configurations, populate parsed_items list with ParsedItemEntry objects: {{"item_type": "bagel", "attribute_values": {{"bread": "...", "toasted": true/false/null, "spread": "..."}}}}
 - If ordering coffee/drink (IMPORTANT: latte, cappuccino, espresso, americano, macchiato, mocha, drip coffee, cold brew, tea, and similar beverages are ALWAYS coffee orders - use new_coffee fields, NOT new_menu_item):
   - Set new_coffee=true
   - Set new_coffee_quantity to the number of drinks (e.g., "3 diet cokes" -> 3, "two coffees" -> 2, default 1)
@@ -276,7 +318,7 @@ Examples:
 - "two plain bagels toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "plain", new_bagel_toasted: true
 - "one plain bagel and one everything bagel" -> new_bagel: true, new_bagel_quantity: 2, parsed_items: [{{"type": "bagel", "bagel_type": "plain"}}, {{"type": "bagel", "bagel_type": "everything"}}]
 - "plain bagel with butter and cinnamon raisin with cream cheese" -> new_bagel: true, new_bagel_quantity: 2, parsed_items: [{{"type": "bagel", "bagel_type": "plain", "spread": "butter"}}, {{"type": "bagel", "bagel_type": "cinnamon raisin", "spread": "cream cheese"}}]
-- "two everything bagels with scallion cream cheese toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "everything", new_bagel_toasted: true, new_bagel_spread: "cream cheese", new_bagel_spread_type: "scallion"
+- "two everything bagels with scallion cream cheese toasted" -> new_bagel: true, new_bagel_quantity: 2, new_bagel_type: "everything", new_bagel_toasted: true, new_bagel_spread: "scallion_cream_cheese"
 - "coffee please" -> new_coffee: true
 - "a large latte" -> new_coffee: true, new_coffee_type: "latte", new_coffee_size: "large"
 - "large iced coffee" -> new_coffee: true, new_coffee_size: "large", new_coffee_iced: true

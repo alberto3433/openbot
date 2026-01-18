@@ -565,25 +565,34 @@ class PricingEngine:
         item_modifiers = getattr(item, 'modifiers', []) or []
 
         # =====================================================================
-        # 1. Determine base price (respecting variant-based pricing)
+        # 1. Determine base price (respecting variant-based pricing and sides)
         # =====================================================================
 
-        # Check if item has variant-based pricing (e.g., size_prices)
-        # If so, the variant dimension is already factored into the base price
-        uses_variant_pricing = False
-        variant_attr = None  # The attribute covered by variant pricing (e.g., "size")
+        # Side items have base_price = 0 (e.g., bagel side with omelette is free,
+        # but modifiers like spread still cost extra)
+        is_side_item = getattr(item, 'side_of_item_id', None) is not None
 
-        # Try to get size from attribute_values for variant lookup
-        size_value = attr_values.get("size")
-        size_price, size_data = self.lookup_size_price(item.menu_item_name, size_value)
-
-        if size_price is not None:
-            base_price = size_price
-            uses_variant_pricing = True
-            variant_attr = "size"
+        if is_side_item:
+            base_price = 0.0
+            uses_variant_pricing = False
+            variant_attr = None
         else:
-            # Traditional pricing: base_price from menu item
-            base_price = self.lookup_base_price(item.menu_item_name)
+            # Check if item has variant-based pricing (e.g., size_prices)
+            # If so, the variant dimension is already factored into the base price
+            uses_variant_pricing = False
+            variant_attr = None  # The attribute covered by variant pricing (e.g., "size")
+
+            # Try to get size from attribute_values for variant lookup
+            size_value = attr_values.get("size")
+            size_price, size_data = self.lookup_size_price(item.menu_item_name, size_value)
+
+            if size_price is not None:
+                base_price = size_price
+                uses_variant_pricing = True
+                variant_attr = "size"
+            else:
+                # Traditional pricing: base_price from menu item
+                base_price = self.lookup_base_price(item.menu_item_name)
 
         total = base_price
 

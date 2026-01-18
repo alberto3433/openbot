@@ -130,10 +130,6 @@ class HandlerCallbacks:
 
     # Item configuration callbacks
     get_item_by_id: Callable[["OrderTask", str], "ItemTask | None"] | None = None
-    configure_coffee: Callable[["OrderTask"], "StateMachineResult"] | None = None
-    configure_next_incomplete_bagel: Callable[["OrderTask"], "StateMachineResult"] | None = None
-    configure_next_incomplete_coffee: Callable[["OrderTask"], "StateMachineResult"] | None = None
-    configure_next_incomplete_signature_item: Callable[["OrderTask"], "StateMachineResult"] | None = None
 
     # Flow transition callbacks
     transition_to_next_slot: Callable[["OrderTask"], None] | None = None

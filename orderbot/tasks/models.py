@@ -196,6 +196,18 @@ class MenuItemTask(ItemTask):
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
+    # Side item linking - if this item is a side (e.g., bagel with omelette),
+    # this holds the ID of the parent item
+    side_of_item_id: str | None = None
+
+    # -------------------------------------------------------------------------
+    # Side item helpers
+    # -------------------------------------------------------------------------
+
+    def is_side(self) -> bool:
+        """Check if this item is a side of another item."""
+        return self.side_of_item_id is not None
+
     # -------------------------------------------------------------------------
     # Dict-style access to attribute_values
     # -------------------------------------------------------------------------

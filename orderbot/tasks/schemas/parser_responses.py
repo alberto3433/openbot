@@ -198,10 +198,10 @@ class AttributeChoiceResponse(BaseModel):
         default=False,
         description="User wants to cancel this item or the order"
     )
-    # For compound attributes (e.g., spread + spread_type)
+    # For compound attributes (deprecated - all attributes are now atomic)
     sub_values: dict = Field(
         default_factory=dict,
-        description="Additional sub-values (e.g., {'spread_type': 'scallion'} for spread attribute)"
+        description="Additional sub-values (deprecated)"
     )
 
     # Backward-compatible property aliases for callers using old field names
@@ -219,11 +219,6 @@ class AttributeChoiceResponse(BaseModel):
     def spread(self) -> str | None:
         """Alias for value when attribute_slug is 'spread'."""
         return self.value if isinstance(self.value, str) else None
-
-    @property
-    def spread_type(self) -> str | None:
-        """Get spread_type from sub_values."""
-        return self.sub_values.get("spread_type")
 
     @property
     def no_spread(self) -> bool:
@@ -295,8 +290,7 @@ class BagelOrderDetails(BaseModel):
     """
     bagel_type: str | None = Field(default=None, description="Bagel type (plain, everything, cinnamon raisin, etc.)")
     toasted: bool | None = Field(default=None, description="Whether toasted")
-    spread: str | None = Field(default=None, description="Spread (cream cheese, butter, etc.)")
-    spread_type: str | None = Field(default=None, description="Spread variety (scallion, veggie, strawberry, etc.)")
+    spread: str | None = Field(default=None, description="Atomic spread slug (e.g., 'scallion_cream_cheese', 'butter')")
 
 
 class CoffeeOrderDetails(BaseModel):
@@ -331,9 +325,9 @@ class OpenInputResponse(BaseModel):
     """
 
     # Clarifications needed
-    needs_soda_clarification: bool = Field(
-        default=False,
-        description="User ordered a generic 'soda' without specifying type - need to ask what kind"
+    needs_category_clarification: str | None = Field(
+        default=None,
+        description="Category slug that needs clarification (e.g., 'soda' when user says 'I want a soda' without specifying type)"
     )
 
     # Menu inquiries
@@ -507,11 +501,7 @@ class OpenInputResponse(BaseModel):
     )
     modify_new_spread: str | None = Field(
         default=None,
-        description="New spread to apply to the existing item (e.g., 'cream cheese', 'butter')"
-    )
-    modify_new_spread_type: str | None = Field(
-        default=None,
-        description="Type of spread (e.g., 'scallion', 'veggie', 'plain')"
+        description="Atomic spread slug to apply (e.g., 'scallion_cream_cheese', 'butter')"
     )
     modify_add_modifiers: list[str] = Field(
         default_factory=list,

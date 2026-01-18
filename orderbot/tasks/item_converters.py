@@ -293,7 +293,6 @@ class UnifiedItemConverter:
         side_choice = attribute_values.get("side_choice")
         toasted = attribute_values.get("toasted")
         spread = attribute_values.get("spread")
-        spread_type = attribute_values.get("spread_type")
         spread_price = attribute_values.get("spread_price")
         extra_protein = attribute_values.get("extra_protein")
         toppings_list = attribute_values.get("toppings") or []
@@ -301,6 +300,10 @@ class UnifiedItemConverter:
         # Build display name (data-driven: bread and other attributes shown as modifiers)
         display_name = menu_item_name
 
+        # Add "(side)" suffix for items that are sides of another item
+        is_side_item = getattr(item, 'side_of_item_id', None) is not None
+        if is_side_item:
+            display_name = f"{display_name} (side)"
 
         if side_choice:
             # Data-driven side choice display: check for {side_choice}_choice field
@@ -334,23 +337,20 @@ class UnifiedItemConverter:
         # Note: bread is handled by _process_attribute_values_to_modifiers (data-driven)
         modifiers = []
 
-        # Add spread to modifiers if set (data-driven, no fallback chain)
-        effective_spread = spread_type or spread
-        if effective_spread and effective_spread.lower() != "none":
+        # Add spread to modifiers if set (data-driven, atomic spread value)
+        if spread and spread.lower() != "none":
             # Check if price already in selections, otherwise look up
             if spread_price is None and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
                 # Check spread_selections for pre-computed price
                 spread_selections = attribute_values.get("spread_selections", [])
                 for sel in spread_selections:
-                    if isinstance(sel, dict) and sel.get("slug") == effective_spread:
+                    if isinstance(sel, dict) and sel.get("slug") == spread:
                         spread_price = sel.get("price_modifier", 0)
                         break
-                # Fall back to single lookup (no fallback chain)
+                # Fall back to single lookup
                 if not spread_price:
-                    spread_price = pricing.lookup_modifier_price(effective_spread, menu_item_type) or 0
-            spread_name = effective_spread
-            if spread_type and spread and spread_type != spread and spread_type != "plain":
-                spread_name = f"{spread_type} {spread}"
+                    spread_price = pricing.lookup_modifier_price(spread, menu_item_type) or 0
+            spread_name = spread.replace("_", " ").title()
             modifiers.append({"name": spread_name, "price": spread_price or 0})
 
         item_modifications = getattr(item, 'modifications', []) or []
@@ -360,11 +360,17 @@ class UnifiedItemConverter:
         # Add modifiers from list-valued attribute_values (e.g., toppings) that need price lookup.
         # Note: single-value attributes with *_upcharge are handled by _process_attribute_values_to_modifiers.
         # Skip attributes already handled above.
-        handled_attrs = {"spread", "spread_type", "spread_price", "toasted", "side_choice"}
+        handled_attrs = {"spread", "spread_price", "toasted", "side_choice"}
         for attr_key, attr_val in attribute_values.items():
             if attr_key in handled_attrs or attr_key.endswith(("_price", "_selections", "_upcharge")):
                 continue
             if attr_val is None or attr_val == "" or attr_val is False:
+                continue
+
+            # Skip list-valued attributes that have a corresponding _selections key
+            # Those will be properly processed by _process_attribute_values_to_modifiers
+            # with correct display names (e.g., "Sugar" instead of raw slug "sugar")
+            if f"{attr_key}_selections" in attribute_values:
                 continue
 
             # Only handle list values (e.g., toppings) - single values handled by _process_attribute_values_to_modifiers

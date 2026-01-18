@@ -576,23 +576,36 @@ class ConfigHelperHandler:
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle side choice - uses constrained parser with data-driven options."""
+        """Handle side choice - creates child MenuItemTask for the chosen side.
+
+        This is a data-driven handler that works with any side choice options
+        from the database. The chosen side becomes a separate MenuItemTask that
+        is configured using standard item configuration handlers.
+
+        Flow:
+        1. Parse user's choice using generic parser with DB options
+        2. Create child MenuItemTask for the chosen side
+        3. Mark parent item complete
+        4. Let slot orchestrator pick up the new incomplete child item
+        """
         # Import here to avoid circular dependency
         from .state_machine import _check_redirect_to_pending_item
 
         # Load side choice options from database (data-driven)
-        item_type = item.menu_item_type
-        side_attr = menu_cache.get_side_choice_attribute(item_type) if item_type else None
+        parent_item_type = item.menu_item_type
+        side_attr = menu_cache.get_side_choice_attribute(parent_item_type) if parent_item_type else None
         question_text = f"Would you like a side with your {item.menu_item_name}?"
 
-        # Build valid_answers from database options
+        # Build valid_answers and options list from database
         valid_answers: set[str] = set()
+        valid_options: list[dict] = []
         if side_attr:
             attr_slug = side_attr.get("slug")
             question_text = side_attr.get("question_text") or question_text
             # Load options for the side_choice attribute
             try:
                 options = menu_cache.get_global_attribute_options(attr_slug)
+                valid_options = options  # Pass to parser
                 for opt in options:
                     # Add option slug and display_name as valid answers
                     valid_answers.add(opt.get("slug", "").lower())
@@ -611,8 +624,14 @@ class ConfigHelperHandler:
         if redirect:
             return redirect
 
-        # This parser can ONLY return side choice - no new items possible!
-        parsed = parse_side_choice(user_input, item.menu_item_name, model=self.model)
+        # Parse the side choice using generic data-driven parser
+        parsed = parse_side_choice(
+            user_input,
+            item.menu_item_name,
+            valid_options=valid_options,
+            question_text=question_text,
+            model=self.model,
+        )
 
         if parsed.wants_cancel:
             item.mark_skipped()
@@ -629,72 +648,52 @@ class ConfigHelperHandler:
                 order=order,
             )
 
-        # Apply the choice
-        attr_values = item.attribute_values
-        attr_values["side_choice"] = parsed.choice
+        # Record the side choice on parent for reference
+        item.attribute_values["side_choice"] = parsed.choice
 
-        # Data-driven: check if choice is a bread-based side (has bread attribute)
-        choice_attrs = menu_cache.get_item_type_attributes(parsed.choice) if parsed.choice else {}
-        is_bread_side = "bread" in choice_attrs
+        # Create a child MenuItemTask for the chosen side
+        # The side item type slug is the parsed choice (e.g., "bagel", "fruit_salad")
+        side_item_type = parsed.choice
+        side_display_name = menu_cache.get_item_type_display_name(side_item_type)
 
-        if is_bread_side:
-            if parsed.bread:
-                # User specified bagel type upfront (e.g., "plain bagel")
-                # Set bagel_choice but don't mark complete - still need toasted/spread questions
-                attr_values["bagel_choice"] = parsed.bread
+        # Create the child task with side_of_item_id linking to parent
+        child_item = MenuItemTask(
+            menu_item_name=side_display_name,
+            menu_item_type=side_item_type,
+            unit_price=0.0,  # Side items are free (base price = 0)
+            side_of_item_id=item.id,  # Link to parent item
+        )
 
-                # Also apply toasted if specified (e.g., "plain bagel toasted")
-                if parsed.toasted is not None:
-                    attr_values["toasted"] = parsed.toasted
+        # Check if the side requires configuration (has required attributes)
+        side_attrs = menu_cache.get_item_type_attributes(side_item_type) if side_item_type else {}
+        has_required_attrs = any(
+            attr_config.get("is_required", False) and attr_config.get("ask_in_conversation", False)
+            for attr_config in side_attrs.values()
+        )
 
-                # Also apply spread if specified (e.g., "with cream cheese")
-                # Note: spread price will be calculated by bagel_config_handler when spread is set
-                if parsed.spread:
-                    attr_values["spread_type"] = parsed.spread
-
-                order.clear_pending()
-                # Continue to ask remaining questions via configure_next_incomplete_bagel
-                # This will handle toasted, spread, and pricing
-                if self._get_next_question:
-                    return self._get_next_question(order)
-                # Fallback: ask about toasted if not specified, otherwise spread
-                if attr_values.get("toasted") is None:
-                    order.pending_field = "bagel:toasted"
-                    return StateMachineResult(
-                        message=f"Ok, {parsed.bread} bagel. Would you like that toasted?",
-                        order=order,
-                    )
-                elif attr_values.get("spread_type") is None:
-                    order.pending_field = "bagel:spread_type"
-                    toasted_desc = " toasted" if attr_values.get("toasted") else ""
-                    return StateMachineResult(
-                        message=f"Ok, {parsed.bread} bagel{toasted_desc}. Would you like butter or cream cheese on that?",
-                        order=order,
-                    )
-                else:
-                    # All fields filled - mark complete
-                    item.mark_complete()
-                    return StateMachineResult(
-                        message="Got it. Anything else?",
-                        order=order,
-                    )
-            else:
-                # Need to ask for bagel type
-                order.pending_field = "bagel:bread"
-                return StateMachineResult(
-                    message="What kind of bagel would you like?",
-                    order=order,
-                )
+        if has_required_attrs:
+            child_item.mark_in_progress()  # Needs configuration
         else:
-            # Fruit salad - omelette is complete
-            order.clear_pending()
-            item.mark_complete()
-            if self._get_next_question:
-                return self._get_next_question(order)
-            return StateMachineResult(
-                message="Got it. Anything else?",
-                order=order,
-            )
+            child_item.mark_complete()  # No configuration needed (e.g., fruit_salad)
+
+        # Add the child item to the order
+        order.items.add_item(child_item)
+
+        # Mark parent item complete - its configuration is done
+        item.mark_complete()
+
+        # Clear pending state
+        order.clear_pending()
+
+        # Let slot orchestrator pick up the next incomplete item (the child if it needs config)
+        if self._get_next_question:
+            return self._get_next_question(order)
+
+        # Fallback: return simple acknowledgment
+        return StateMachineResult(
+            message="Got it. Anything else?",
+            order=order,
+        )
 
     def handle_bagel_choice_for_side(
         self,

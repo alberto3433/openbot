@@ -39,7 +39,7 @@ class MenuItemConfigHandler(BaseHandler):
     # Item types are configurable if they have linked attributes in the DB.
     #
     # NOTE: All legacy attribute aliases have been eliminated:
-    # - Parsers now use canonical keys (bread, spread_type, etc.)
+    # - Parsers now use canonical keys (bread, spread, etc.)
     # - Properties (toasted, scooped, decaf, spread) now use attribute_values as backing store
     # - milk_sweetener_syrup uses unified storage with milk_sweetener_syrup_selections
 
@@ -1852,7 +1852,7 @@ class MenuItemConfigHandler(BaseHandler):
                 item.attribute_values[attr_slug] = matched["slug"]
 
                 # Also set legacy direct fields for backward compatibility
-                # (e.g., item.spread = value when spread_type is set)
+                # (e.g., item.spread = value when spread is set)
                 self._set_legacy_field_if_applicable(
                     item, attr_slug, matched["display_name"], slug_value=matched["slug"]
                 )

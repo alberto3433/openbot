@@ -249,11 +249,15 @@ class MenuItemTask(ItemTask):
 
         # Look up display name from database if not provided
         if not display_name:
-            # Lazy import to avoid circular dependency
-            from orderbot.menu_data_cache import menu_cache
-            display_name = menu_cache.get_ingredient_display_name(slug)
+            try:
+                # Lazy import to avoid circular dependency
+                from orderbot.menu_data_cache import menu_cache
+                display_name = menu_cache.get_ingredient_display_name(slug)
+            except Exception:
+                # If cache not loaded or lookup fails, fall back to title case
+                pass
 
-        # Fall back to title-cased slug if not in database
+        # Fall back to title-cased slug if not in database or lookup failed
         if not display_name:
             display_name = slug.replace("_", " ").title()
 

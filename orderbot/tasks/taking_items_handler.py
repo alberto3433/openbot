@@ -454,6 +454,94 @@ def find_nth_item_of_type(
     return None
 
 
+# =============================================================================
+# ParsedItemEntry Processing Helpers (Data-Driven)
+# =============================================================================
+
+def _build_extracted_modifiers(item: ParsedItemEntry) -> ExtractedModifiers:
+    """Build ExtractedModifiers from ParsedItemEntry (data-driven).
+
+    Works for ALL item types - categorizes modifiers using database lookup.
+    Handles:
+    - Plain modifiers (item.modifiers list)
+    - Quantified modifiers (item.sweeteners, item.syrups)
+    - Clarification flags (needs_cheese_clarification, wants_syrup)
+    - Special instructions
+
+    Args:
+        item: The parsed item entry
+
+    Returns:
+        ExtractedModifiers with all modifiers categorized
+    """
+    extracted_mods = ExtractedModifiers()
+
+    # 1. Categorize plain modifiers using database lookup
+    for mod in item.modifiers:
+        category = menu_cache.get_ingredient_category(mod)
+        # Use category from DB, or "topping" as generic fallback
+        extracted_mods.add(category or "topping", mod)
+
+    # 2. Add quantified modifiers (sweeteners, syrups)
+    for sw in item.sweeteners:
+        extracted_mods.add("sweetener", sw.slug, sw.quantity)
+    for sy in item.syrups:
+        extracted_mods.add("syrup", sy.slug, sy.quantity)
+
+    # 3. Handle clarification flags
+    if item.needs_cheese_clarification:
+        extracted_mods.needs_clarification["cheese"] = True
+    if item.wants_syrup:
+        extracted_mods.needs_clarification["syrup"] = True
+
+    # 4. Handle special instructions
+    if item.special_instructions:
+        extracted_mods.special_instructions.append(item.special_instructions)
+
+    return extracted_mods
+
+
+def _build_item_summary(item: ParsedItemEntry) -> str:
+    """Build human-readable summary for an item (data-driven).
+
+    Uses item_name if present (e.g., "Iced Latte"), otherwise falls back
+    to item_type display name. Handles quantity pluralization.
+
+    Args:
+        item: The parsed item entry
+
+    Returns:
+        Summary string like "Iced Latte" or "2 everything bagels"
+    """
+    # Use item_name if present (e.g., "Iced Latte", "Turkey Club")
+    if item.item_name:
+        base = item.item_name
+    else:
+        # Fall back to item_type display name
+        base = menu_cache.get_item_type_display_name(item.item_type) or item.item_type
+
+    # Add quantity prefix if more than 1
+    if item.quantity > 1:
+        return f"{item.quantity} {base}s"
+    return base
+
+
+def _has_any_modifiers(extracted_mods: ExtractedModifiers) -> bool:
+    """Check if ExtractedModifiers has any content worth passing.
+
+    Args:
+        extracted_mods: The extracted modifiers object
+
+    Returns:
+        True if there are modifiers, clarifications, or special instructions
+    """
+    return (
+        extracted_mods.has_modifiers() or
+        extracted_mods.has_special_instructions() or
+        bool(extracted_mods.needs_clarification)
+    )
+
+
 class TakingItemsHandler:
     """
     Handles the taking items phase of order flow.
@@ -2005,157 +2093,44 @@ class TakingItemsHandler:
 
     def _add_parsed_item_entry(self, item: ParsedItemEntry, order: OrderTask) -> tuple[OrderTask, str]:
         """
-        Handle the unified ParsedItemEntry type (data-driven).
+        Handle ParsedItemEntry using unified data-driven approach.
 
-        This method routes based on item_type and extracts attribute_values
-        to pass to the unified add_item() dispatcher.
+        This method works for ALL item types without branching on specific
+        item_type slugs. It:
+        1. Builds ExtractedModifiers from all modifier sources (data-driven)
+        2. Passes all attribute_values to add_item (receiver filters to valid attrs)
+        3. Builds summary using item_name or item_type display name
 
         Returns tuple of (updated_order, item_summary_string).
         """
-        item_type = item.item_type
+        # 1. Build modifiers from all sources (data-driven, works for all item types)
+        extracted_mods = _build_extracted_modifiers(item)
 
-        # Data-driven check: items with bread attribute (bagel-like)
-        if menu_cache.item_type_has_attribute(item_type, "bread"):
-            # Build ExtractedModifiers from modifiers list
-            extracted_mods = ExtractedModifiers()
-            # Parse modifiers into categories using data-driven lookup
-            for mod in item.modifiers:
-                category = menu_cache.get_ingredient_category(mod)
-                if category == "protein":
-                    extracted_mods.add("protein", mod)
-                elif category == "cheese":
-                    extracted_mods.add("cheese", mod)
-                else:
-                    extracted_mods.add("topping", mod)
+        # 2. Track item count to detect if item was actually added
+        #    (disambiguation returns without adding to order)
+        items_before = len(order.items.items)
 
-            if item.needs_cheese_clarification:
-                extracted_mods.needs_clarification["cheese"] = True
-            if item.special_instructions:
-                extracted_mods.special_instructions = [item.special_instructions]
+        # 3. Call add_item with all attribute_values as kwargs
+        #    The receiver (_extract_pre_filled_attributes) filters to valid attributes
+        result = self.item_adder_handler.add_item(
+            item_type=item.item_type,
+            order=order,
+            quantity=item.quantity,
+            item_name=item.item_name,
+            extracted_modifiers=extracted_mods if _has_any_modifiers(extracted_mods) else None,
+            original_input=item.original_text,
+            **item.attribute_values,  # Data-driven: pass all, receiver filters
+        )
+        order = result.order
 
-            # Use unified add_item() dispatcher (item_type from parsed item, not hardcoded)
-            result = self.item_adder_handler.add_item(
-                item_type=item_type,
-                order=order,
-                quantity=item.quantity,
-                bread=item.attribute_values.get("bread"),
-                toasted=item.attribute_values.get("toasted"),
-                scooped=item.attribute_values.get("scooped"),
-                spread=item.attribute_values.get("spread"),
-                spread_type=item.attribute_values.get("spread_type"),
-                extracted_modifiers=extracted_mods if extracted_mods.has_modifiers() or extracted_mods.has_special_instructions() or extracted_mods.needs_clarification.get("cheese") else None,
-            )
-            order = result.order
-
-            # Build summary (data-driven display name from DB)
-            bread_type = item.attribute_values.get("bread")
-            type_display_name = menu_cache.get_item_type_display_name(item_type)
-            item_desc = f"{bread_type} {type_display_name}" if bread_type else type_display_name
-            summary = item_desc
-            if item.attribute_values.get("toasted"):
-                summary += " toasted"
-            if item.quantity > 1:
-                summary = f"{item.quantity} {item_desc}s"
-                if item.attribute_values.get("toasted"):
-                    summary += " toasted"
+        # 4. Build summary if item was added
+        items_after = len(order.items.items)
+        if items_after > items_before:
+            summary = _build_item_summary(item)
             return order, summary
 
-        # Data-driven check: beverage items (modifier_category == "beverage")
-        elif menu_cache.get_modifier_category(item_type) == "beverage":
-            # Convert sweeteners and syrups to the format expected by add_item
-            sweetener = None
-            sweetener_quantity = 1
-            if item.sweeteners:
-                sweetener = item.sweeteners[0].slug
-                sweetener_quantity = item.sweeteners[0].quantity
-
-            flavor_syrup = None
-            syrup_quantity = 1
-            if item.syrups:
-                flavor_syrup = item.syrups[0].slug
-                syrup_quantity = item.syrups[0].quantity
-
-            # Note: temperature (iced/hot) is now part of the menu item name itself
-            # (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute
-
-            # Track item count before to detect if item was actually added
-            # (disambiguation returns without adding to order)
-            items_before = len(order.items.items)
-
-            # Use unified add_item() dispatcher
-            result = self.item_adder_handler.add_item(
-                item_type=item_type,
-                order=order,
-                quantity=item.quantity,
-                item_name=item.item_name,
-                size=item.attribute_values.get("size"),
-                milk=item.attribute_values.get("milk"),
-                sweetener=sweetener,
-                sweetener_quantity=sweetener_quantity,
-                flavor_syrup=flavor_syrup,
-                syrup_quantity=syrup_quantity,
-                decaf=item.attribute_values.get("decaf"),
-                cream_level=item.attribute_values.get("cream_level"),
-                extra_shots=item.attribute_values.get("extra_shots", 0),
-                special_instructions=item.special_instructions,
-                wants_syrup=item.wants_syrup,
-                original_input=item.original_text,
-            )
-            order = result.order
-            items_after = len(order.items.items)
-
-            # Only return summary if item was actually added
-            # (disambiguation triggers pending_field without adding item)
-            if items_after > items_before:
-                # Use item_name or derive from item_type display name (data-driven)
-                drink_name = item.item_name or menu_cache.get_item_type_display_name(item_type)
-                summary = drink_name
-                if item.quantity > 1:
-                    summary = f"{item.quantity} {drink_name}s"
-                return order, summary
-            else:
-                # Item wasn't added (disambiguation or error) - return empty summary
-                return order, ""
-
-        # Data-driven check: by-pound item types (cheese, fish, spread, etc.)
-        elif item_type in menu_cache.get_by_pound_category_names():
-            # By-pound items are sized items with "1/4 lb" or "1 lb" sizes
-            # The parser converts weight phrases to size + quantity:
-            # - "half pound" -> size="1/4 lb", quantity=2
-            # - "1 lb" -> size="1 lb", quantity=1
-            size = item.attribute_values.get("size", "1/4 lb")
-
-            # Use unified add_item() dispatcher with size parameter
-            result = self.item_adder_handler.add_item(
-                item_type=item_type,
-                order=order,
-                quantity=item.quantity,
-                item_name=item.item_name,
-                size=size,
-            )
-            order = result.order
-
-            # Build summary with size
-            summary = f"{size} {item.item_name}"
-            if item.quantity > 1:
-                summary = f"{item.quantity}x {summary}"
-            return order, summary
-
-        else:
-            # Generic item type - use add_menu_item
-            result = self.item_adder_handler.add_menu_item(
-                item.item_name or item_type,
-                item.quantity,
-                order,
-                item.attribute_values.get("toasted"),
-                item.attribute_values.get("bread"),
-                item.modifiers,
-            )
-            order = result.order
-            summary = item.item_name or item_type
-            if item.quantity > 1:
-                summary = f"{item.quantity} {summary}s"
-            return order, summary
+        # Item wasn't added (disambiguation or error) - return empty summary
+        return order, ""
 
     def _add_parsed_item(self, item: ParsedItem, order: OrderTask) -> tuple[OrderTask, str]:
         """

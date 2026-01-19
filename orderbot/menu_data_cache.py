@@ -104,6 +104,7 @@ class MenuDataCache:
 
         # Alias-to-canonical name mappings (for resolving user input to menu item names)
         self._signature_item_aliases: dict[str, str] = {}  # alias -> menu item name
+        self._signature_item_types: dict[str, str] = {}  # menu item name -> item_type_slug
         self._modifier_aliases: dict[str, str] = {}  # alias -> Ingredient.name (canonical)
         self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
@@ -139,14 +140,12 @@ class MenuDataCache:
 
         # Modifier category to attribute slugs index (data-driven lookup)
         # Maps modifier_category slug -> set of attribute slugs that contain options with that category
-        # E.g., "milk" -> {"milk_sweetener_syrup"}, "syrup" -> {"milk_sweetener_syrup"}
         self._modifier_category_to_attrs: dict[str, set[str]] = {}
 
         # Global attribute aliases (e.g., "cream cheese" -> "spread")
         self._global_attribute_aliases: dict[str, str] = {}  # alias -> attr_slug
 
         # Global attribute property names (mapping DB slug to Python property name)
-        # E.g., "milk_sweetener_syrup" -> "milk" (when property_name differs from slug)
         self._global_attribute_property_names: dict[str, str] = {}  # attr_slug -> property_name
 
         # Item type attributes cache (lazy-loaded per item type)
@@ -155,7 +154,7 @@ class MenuDataCache:
 
         # Field-to-slug mapping: maps code field names to DB attribute slugs
         # For attributes that load from ingredients, multiple field names (ingredient categories)
-        # can map to one attribute slug (e.g., "milk" -> "milk_sweetener_syrup")
+        # can map to one attribute slug
         # Lazily populated alongside _item_type_attributes
         self._field_to_slug_map: dict[str, dict[str, str]] = {}  # item_type_slug -> {field_name -> attr_slug}
 
@@ -198,6 +197,9 @@ class MenuDataCache:
 
         # Menu items by unit type - for filtering by how items are sold
         self._by_unit_type_items: dict[str, set[str]] = {}  # unit_type -> set of item names (lowercase)
+        # Aliases by unit type - for finding items by name/alias within a unit type
+        # Maps unit_type -> {alias_lowercase -> (canonical_name, item_type_slug)}
+        self._unit_type_aliases: dict[str, dict[str, tuple[str, str]]] = {}
 
         # Generic caches for data-driven lookups (replaces domain-specific caches)
         # Item names by ItemType slug (includes aliases)
@@ -410,7 +412,8 @@ class MenuDataCache:
         )
         for item in all_items:
             # Skip items that have their own configuration flows
-            if item.item_type_id in exclude_type_ids:
+            # BUT always include signature items (they should be recognized as menu items)
+            if item.item_type_id in exclude_type_ids and not item.is_signature:
                 continue
 
             canonical_name = item.name  # Preserve original casing
@@ -446,28 +449,36 @@ class MenuDataCache:
         """Load signature item aliases from database.
 
         Builds a mapping from user input variations (aliases) to the actual
-        menu item names in the database.
+        menu item names in the database, and also stores the item type for each.
 
         The mapping is used for recognizing orders like "bec", "bacon egg and cheese",
         "the classic", "the leo", etc. and resolving them to actual menu items.
         """
-        from .models import MenuItem
+        from .models import MenuItem, ItemType
 
         signature_item_aliases: dict[str, str] = {}
+        signature_item_types: dict[str, str] = {}
 
         # Query signature items (aliases are loaded via relationship)
         # Only signature items should be in this mapping
         # (non-signature items like "Coffee" have their own parsing flow)
-        # Use joinedload to avoid N+1 queries when accessing aliases
+        # Use joinedload to avoid N+1 queries when accessing aliases and item_type
         signature_items = (
             db.query(MenuItem)
-            .options(joinedload(MenuItem.alias_records))
+            .options(
+                joinedload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type)
+            )
             .filter(MenuItem.is_signature == True)  # noqa: E712
             .all()
         )
 
         for item in signature_items:
             canonical_name = item.name  # Keep original casing
+
+            # Store the item type for this signature item
+            if item.item_type:
+                signature_item_types[canonical_name] = item.item_type.slug
 
             # Add aliases from child table (now a list)
             for alias in item.aliases:
@@ -484,11 +495,13 @@ class MenuDataCache:
                 signature_item_aliases[name_lower[4:]] = canonical_name
 
         self._signature_item_aliases = signature_item_aliases
+        self._signature_item_types = signature_item_types
 
         logger.debug(
-            "Loaded %d signature item aliases from %d items",
+            "Loaded %d signature item aliases from %d items (%d with item types)",
             len(signature_item_aliases),
             len(signature_items),
+            len(signature_item_types),
         )
 
     def _load_by_pound_items(self, db: Session) -> None:
@@ -1481,29 +1494,72 @@ class MenuDataCache:
         )
 
     def _load_by_unit_type_items(self, db: Session) -> None:
-        """Load menu items grouped by unit_type.
+        """Load menu items grouped by unit_type, including aliases.
 
         Groups items by how they are sold:
         - 'each': sold individually (bagels, sandwiches, drinks)
         - 'by_weight': sold by weight (cream cheese by the lb, smoked fish)
         - 'dozen': sold by the dozen (bagel packages)
+
+        Also builds alias mappings for finding items by name/alias within each unit_type.
         """
-        from .models import MenuItem
+        import re
+        from .models import MenuItem, ItemType
 
         by_unit_type: dict[str, set[str]] = {}
+        unit_type_aliases: dict[str, dict[str, tuple[str, str]]] = {}
 
-        # Query all menu items with their unit_type
-        all_items = db.query(MenuItem.name, MenuItem.unit_type).all()
+        # Query all menu items with their unit_type, aliases, and item_type
+        all_items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
+            .all()
+        )
 
-        for name, unit_type in all_items:
+        # Track seen base names per unit_type to avoid duplicates from size variants
+        seen_base_names: dict[str, set[str]] = {}  # unit_type -> set of base names
+
+        for item in all_items:
+            unit_type = item.unit_type or "each"
+            item_type_slug = item.item_type.slug if item.item_type else "unknown"
+            name = item.name
+
+            # Extract base name without weight/size suffix: "Nova Scotia Salmon (1 lb)" -> "Nova Scotia Salmon"
+            base_name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+            base_name_lower = base_name.lower()
+
+            # Initialize dicts if needed
             if unit_type not in by_unit_type:
                 by_unit_type[unit_type] = set()
-            by_unit_type[unit_type].add(name.lower())
+            if unit_type not in unit_type_aliases:
+                unit_type_aliases[unit_type] = {}
+            if unit_type not in seen_base_names:
+                seen_base_names[unit_type] = set()
+
+            # Add to item names set
+            by_unit_type[unit_type].add(base_name_lower)
+
+            # Skip if we've already processed this base name for this unit_type
+            if base_name_lower in seen_base_names[unit_type]:
+                continue
+            seen_base_names[unit_type].add(base_name_lower)
+
+            # Add base name as alias
+            unit_type_aliases[unit_type][base_name_lower] = (base_name, item_type_slug)
+
+            # Add aliases if present
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    unit_type_aliases[unit_type][alias] = (base_name, item_type_slug)
 
         self._by_unit_type_items = by_unit_type
+        self._unit_type_aliases = unit_type_aliases
+
         logger.debug(
-            "Loaded items by unit_type: %s",
-            {k: len(v) for k, v in by_unit_type.items()}
+            "Loaded items by unit_type: %s, aliases: %s",
+            {k: len(v) for k, v in by_unit_type.items()},
+            {k: len(v) for k, v in unit_type_aliases.items()}
         )
 
     def _load_generic_item_names(self, db: Session) -> None:
@@ -2088,11 +2144,10 @@ class MenuDataCache:
 
         This is the generic method for data-driven modifier handling.
         Returns ingredient details including database slugs for storage
-        and display names for UI, replacing domain-specific functions like
-        _get_milk_options_espresso(), _get_sweetener_options(), etc.
+        and display names for UI.
 
         Args:
-            category: The ingredient category (e.g., "milk", "sweetener", "syrup")
+            category: The ingredient category
 
         Returns:
             List of ingredient detail dicts, each containing:
@@ -2103,19 +2158,6 @@ class MenuDataCache:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
 
-        Examples:
-            >>> menu_cache.get_ingredient_details("milk")
-            [
-                {"slug": "oat_milk", "name": "Oat Milk", "patterns": ["oat milk", "oat"]},
-                {"slug": "whole_milk", "name": "Whole Milk", "patterns": ["whole milk", "whole"]},
-                ...
-            ]
-            >>> menu_cache.get_ingredient_details("sweetener")
-            [
-                {"slug": "sugar", "name": "Sugar", "patterns": ["sugar"]},
-                {"slug": "splenda", "name": "Splenda", "patterns": ["splenda"]},
-                ...
-            ]
         """
         self._ensure_loaded()
         if category not in self._ingredient_details_by_category:
@@ -2157,7 +2199,7 @@ class MenuDataCache:
         """Get the display name for an ingredient by its slug.
 
         Looks up the ingredient across all categories and returns its
-        database display name (e.g., "Vanilla Syrup" for slug "vanilla").
+        database display name.
 
         Args:
             slug: The ingredient slug to look up
@@ -2168,13 +2210,6 @@ class MenuDataCache:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
 
-        Examples:
-            >>> menu_cache.get_ingredient_display_name("vanilla")
-            "Vanilla Syrup"
-            >>> menu_cache.get_ingredient_display_name("oat_milk")
-            "Oat Milk"
-            >>> menu_cache.get_ingredient_display_name("unknown")
-            None
         """
         self._ensure_loaded()
         slug_lower = slug.lower()
@@ -2428,12 +2463,6 @@ class MenuDataCache:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
 
-        Examples:
-            >>> menu_cache.get_ingredient_categories_by_modifier_type("food")
-            {"protein", "topping", "cheese", "spread"}
-
-            >>> menu_cache.get_ingredient_categories_by_modifier_type("beverage")
-            {"milk", "sweetener", "syrup"}
         """
         self._ensure_loaded()
         return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
@@ -2470,22 +2499,16 @@ class MenuDataCache:
         used for data-driven modifier field definitions.
 
         Args:
-            category_slug: The ingredient category slug (e.g., "topping", "sweetener")
+            category_slug: The ingredient category slug
 
         Returns:
             Dict with:
-            - code_field_name: Python property name (e.g., "toppings", "flavor_syrups")
+            - code_field_name: Python property name
             - is_multi_select: True if category supports multiple selections
-            - display_name: Human-readable name (e.g., "Toppings", "Sweeteners")
+            - display_name: Human-readable name
 
             Returns None if category not found.
 
-        Examples:
-            >>> menu_cache.get_ingredient_category_field_config("topping")
-            {"code_field_name": "toppings", "is_multi_select": True, "display_name": "Toppings"}
-
-            >>> menu_cache.get_ingredient_category_field_config("milk")
-            {"code_field_name": "milk", "is_multi_select": False, "display_name": "Milk"}
         """
         self._ensure_loaded()
         return self._ingredient_category_field_config.get(category_slug)
@@ -2567,7 +2590,7 @@ class MenuDataCache:
 
         Returns:
             "food" for items with food-style modifiers (proteins, cheeses, toppings)
-            "beverage" for items with beverage-style modifiers (milk, sweetener, syrup)
+            "beverage" for items with beverage-style modifiers
             None if the item type has no modifier category defined
 
         Raises:
@@ -2762,7 +2785,6 @@ class MenuDataCache:
         """Get the Python property name for an attribute slug.
 
         Some attributes have a different property name than their database slug.
-        For example, "milk_sweetener_syrup" -> "milk".
 
         This method does NOT require the cache to be loaded - it gracefully
         falls back to returning the slug itself if the cache isn't loaded.
@@ -2770,18 +2792,13 @@ class MenuDataCache:
         and the calling code should have fallback logic anyway.
 
         Args:
-            attr_slug: The attribute slug (e.g., "milk_sweetener_syrup")
+            attr_slug: The attribute slug
 
         Returns:
             The property name to use in Python code.
             Returns the slug itself if no custom property_name is defined
             or if the cache is not loaded.
 
-        Example:
-            >>> cache.get_property_name_for_attribute("milk_sweetener_syrup")
-            "milk"
-            >>> cache.get_property_name_for_attribute("size")
-            "size"
         """
         # Don't require cache to be loaded - property name mapping is optional
         # and the caller should handle the fallback case
@@ -2793,20 +2810,15 @@ class MenuDataCache:
         """Get attribute slugs that contain options with the given modifier category.
 
         This enables data-driven lookup of which attributes to search when
-        looking for a specific type of modifier (e.g., milk, syrup, sweetener).
+        looking for a specific type of modifier.
 
         Args:
-            modifier_category: The modifier category slug (e.g., "milk", "syrup", "sweetener")
+            modifier_category: The modifier category slug
 
         Returns:
             Set of attribute slugs that contain options with this modifier category.
             Empty set if no attributes contain options for this category.
 
-        Example:
-            >>> cache.get_attributes_for_modifier_category("milk")
-            {"milk_sweetener_syrup"}
-            >>> cache.get_attributes_for_modifier_category("syrup")
-            {"milk_sweetener_syrup"}
         """
         self._ensure_loaded()
         return self._modifier_category_to_attrs.get(modifier_category, set()).copy()
@@ -2816,16 +2828,11 @@ class MenuDataCache:
 
         Args:
             attr_slug: The attribute slug to check
-            modifier_category: The modifier category to look for (e.g., "milk", "syrup")
+            modifier_category: The modifier category to look for
 
         Returns:
             True if the attribute has options with this modifier category.
 
-        Example:
-            >>> cache.attribute_contains_modifier_category("milk_sweetener_syrup", "milk")
-            True
-            >>> cache.attribute_contains_modifier_category("size", "milk")
-            False
         """
         self._ensure_loaded()
         attrs_with_category = self._modifier_category_to_attrs.get(modifier_category, set())
@@ -3041,7 +3048,7 @@ class MenuDataCache:
                         opt_data["aliases"] = opt["aliases"]
                     if opt.get("must_match"):
                         opt_data["must_match"] = opt["must_match"]
-                    # Include modifier_category for combined attributes (milk_sweetener_syrup)
+                    # Include modifier_category for combined attributes
                     if opt.get("modifier_category"):
                         opt_data["category"] = opt["modifier_category"]
                     opts_data.append(opt_data)
@@ -3162,11 +3169,8 @@ class MenuDataCache:
         may differ from the DB attribute slug. This method returns a mapping that can be
         used to resolve code field names to DB attribute slugs.
 
-        For example, for sized_beverage:
-            {"milk": "milk_sweetener_syrup", "sweetener": "milk_sweetener_syrup", "syrup": "milk_sweetener_syrup"}
-
         Args:
-            item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
+            item_type_slug: The item type slug
 
         Returns:
             Dict mapping field_name -> attribute_slug for fields that differ.
@@ -3183,10 +3187,10 @@ class MenuDataCache:
 
         Args:
             item_type_slug: The item type slug
-            field_name: The code field name (e.g., "milk", "sweetener")
+            field_name: The code field name
 
         Returns:
-            The DB attribute slug (e.g., "milk_sweetener_syrup" or the field_name itself)
+            The DB attribute slug
         """
         field_map = self.get_field_to_slug_map(item_type_slug)
         return field_map.get(field_name, field_name)
@@ -3194,13 +3198,7 @@ class MenuDataCache:
     def get_scannable_modifier_categories(self, item_type_slug: str) -> list[str]:
         """Get ingredient categories that should be scanned for modifiers in user input.
 
-        This is the data-driven replacement for hardcoded lists like ["syrup", "milk", "sweetener"].
         Returns the ingredient categories that map to attributes for this item type.
-
-        For example:
-            - sized_beverage → ["milk", "syrup", "sweetener"]
-            - bagel → ["spread"] (if spread loads from ingredients)
-            - deli_sandwich → ["condiment", "sauce"] (if configured)
 
         Args:
             item_type_slug: The item type slug (e.g., "sized_beverage", "bagel")
@@ -3209,11 +3207,6 @@ class MenuDataCache:
             List of ingredient category slugs that should be scanned for this item type.
             Empty list if item type has no ingredient-based attributes.
 
-        Example:
-            >>> menu_cache.get_scannable_modifier_categories("sized_beverage")
-            ["milk", "syrup", "sweetener"]
-            >>> menu_cache.get_scannable_modifier_categories("bagel")
-            []  # bagel doesn't have ingredient-category-based modifiers
         """
         field_map = self.get_field_to_slug_map(item_type_slug)
         # The keys of field_map are the ingredient categories
@@ -3332,13 +3325,6 @@ class MenuDataCache:
 
         Returns:
             List of modifier field configs, each containing:
-            {
-                "field_name": "spread",  # The attribute name on the item
-                "display_name": "spread",  # Human-readable name
-                "aliases": ["cream cheese", "cc", "schmear", ...],  # All recognized terms
-                "is_list": True,  # From ingredient_categories.is_multi_select
-                "ingredient_group": "spread",  # Database ingredient_group
-            }
         """
         from .db import SessionLocal
         from .models import ItemType, ItemTypeIngredient, Ingredient
@@ -3496,10 +3482,39 @@ class MenuDataCache:
         self._ensure_loaded()
         return self._signature_item_aliases.copy()
 
+    def get_item_type_for_menu_item(self, menu_item_name: str) -> str | None:
+        """Get the item type slug for a menu item.
+
+        This is used to determine which item type a menu item belongs to,
+        so that we can parse its attributes and valid ingredients correctly.
+
+        Checks signature items first (for backwards compatibility), then falls
+        back to the menu index for all other menu items.
+
+        Args:
+            menu_item_name: The canonical menu item name (e.g., "The Classic BEC")
+
+        Returns:
+            The item type slug (e.g., "egg_sandwich") or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+
+        # First check signature items (original behavior)
+        result = self._signature_item_types.get(menu_item_name)
+        if result:
+            return result
+
+        # Fall back to menu index for all menu items
+        item_info = self._menu_index.get(menu_item_name, {})
+        return item_info.get("item_type")
+
     def get_by_pound_items(self) -> dict[str, list[str]]:
         """Get by-the-pound items organized by category.
 
-        Returns a dict mapping category names (fish, spread, cheese, cold_cut, salad)
+        Returns a dict mapping category names
         to lists of item names available in that category.
 
         Returns:
@@ -3509,11 +3524,6 @@ class MenuDataCache:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
 
-        Example:
-            {
-                "fish": ["Nova Scotia Salmon", "Whitefish Salad", "Sable", ...],
-                "spread": ["Plain Cream Cheese", "Scallion Cream Cheese", ...],
-            }
         """
         self._ensure_loaded()
         return {k: list(v) for k, v in self._by_pound_items.items()}
@@ -3522,7 +3532,7 @@ class MenuDataCache:
         """Get by-the-pound item alias mapping.
 
         Returns a dict mapping user input aliases to (canonical_name, category) tuples.
-        This is used for recognizing by-pound orders like "lox", "nova", "whitefish".
+        This is used for recognizing by-pound orders.
 
         Returns:
             Dict mapping lowercase alias -> (canonical_name, category).
@@ -3531,12 +3541,6 @@ class MenuDataCache:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
 
-        Example:
-            {
-                "lox": ("Nova Scotia Salmon", "fish"),
-                "nova": ("Nova Scotia Salmon", "fish"),
-                "scallion": ("Scallion Cream Cheese", "spread"),
-            }
         """
         self._ensure_loaded()
         return self._by_pound_aliases.copy()
@@ -4832,6 +4836,46 @@ class MenuDataCache:
         """
         return self.is_response_type(text, "greeting")
 
+    def get_standalone_instruction_patterns(self) -> list[Pattern]:
+        """
+        Get compiled regex patterns for standalone special instructions.
+
+        Returns a list of individually compiled regex patterns for detecting
+        special preparation instructions like "leave room for cream",
+        "lightly toasted", "cut in half", "spread thin", etc.
+
+        These are returned as individual patterns (not combined) because the
+        extraction logic needs to match and extract each instruction separately.
+
+        Returns:
+            List of compiled regex Pattern objects.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> patterns = cache.get_standalone_instruction_patterns()
+            >>> for pattern in patterns:
+            ...     match = pattern.search("I want it lightly toasted")
+            ...     if match:
+            ...         print(match.group(0))
+            lightly toasted
+        """
+        self._ensure_loaded()
+
+        # Check if we've already compiled these patterns
+        if not hasattr(self, '_standalone_instruction_patterns_compiled'):
+            self._standalone_instruction_patterns_compiled = []
+            raw_patterns = self._response_regex_raw.get('standalone_instruction', [])
+            for pattern_str in raw_patterns:
+                try:
+                    compiled = re.compile(pattern_str, re.IGNORECASE)
+                    self._standalone_instruction_patterns_compiled.append(compiled)
+                except re.error as e:
+                    logger.error("Failed to compile standalone instruction pattern '%s': %s", pattern_str, e)
+
+        return self._standalone_instruction_patterns_compiled
+
     # =========================================================================
     # Modifier Qualifier Methods
     # =========================================================================
@@ -5110,6 +5154,60 @@ class MenuDataCache:
         """
         self._ensure_loaded()
         return self._by_unit_type_items.get(unit_type, set()).copy()
+
+    def find_item_by_unit_type(self, item_name: str, unit_type: str) -> tuple[str, str] | None:
+        """Find an item by name or alias within a specific unit type.
+
+        This is the generic replacement for find_by_pound_item(). It searches
+        for items sold by a specific unit type (by_weight, dozen, each).
+
+        Args:
+            item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
+            unit_type: How items are sold - 'by_weight', 'dozen', or 'each'.
+
+        Returns:
+            Tuple of (canonical_name, item_type_slug) if found, None otherwise.
+            None is a semantic "not found", not an error.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+
+        Examples:
+            >>> cache.find_item_by_unit_type("lox", "by_weight")
+            ("Nova Scotia Salmon", "fish")
+            >>> cache.find_item_by_unit_type("bagels", "dozen")
+            ("Bagel", "bagel")
+        """
+        self._ensure_loaded()
+
+        aliases = self._unit_type_aliases.get(unit_type, {})
+        if not aliases:
+            return None
+
+        item_lower = item_name.lower().strip()
+
+        # Check direct alias match
+        if item_lower in aliases:
+            return aliases[item_lower]
+
+        # Try partial matching (same logic as find_by_pound_item)
+        best_match: tuple[str, str, int] | None = None  # (canonical_name, item_type, match_length)
+
+        for alias, (canonical_name, item_type_slug) in aliases.items():
+            # Check if input contains the alias or vice versa
+            if item_lower in alias:
+                match_len = len(alias)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (canonical_name, item_type_slug, match_len)
+            elif alias in item_lower:
+                match_len = len(alias)
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (canonical_name, item_type_slug, match_len)
+
+        if best_match:
+            return (best_match[0], best_match[1])
+
+        return None  # No match found - semantic "not found"
 
     def is_by_weight_item(self, item_name: str) -> bool:
         """

@@ -108,6 +108,7 @@ class UnifiedItemConverter:
         skip_slugs: set | None = None,
         price_lookup_fn=None,
         include_free_in_modifiers: bool = False,
+        item_type: str | None = None,
     ) -> float:
         """Process attribute_values into modifiers/free_details lists."""
         skip_slugs = skip_slugs or set()
@@ -136,9 +137,12 @@ class UnifiedItemConverter:
             # Get price from stored values
             price = attribute_values.get(f"{attr_slug}_price", 0) or attribute_values.get(f"{attr_slug}_upcharge", 0) or 0.0
 
-            # Try custom price lookup
-            if price == 0 and price_lookup_fn and pricing and isinstance(attr_value, str):
-                price = price_lookup_fn(attr_slug, attr_value, pricing) or 0.0
+            # Try custom price lookup (for string values)
+            if price == 0 and isinstance(attr_value, str):
+                if price_lookup_fn and pricing:
+                    price = price_lookup_fn(attr_slug, attr_value, pricing) or 0.0
+                elif pricing and item_type and hasattr(pricing, 'lookup_modifier_price'):
+                    price = pricing.lookup_modifier_price(attr_value, item_type) or 0.0
 
             # Build display name
             if attr_value is True:
@@ -146,7 +150,14 @@ class UnifiedItemConverter:
             elif isinstance(attr_value, list):
                 for val in attr_value:
                     val_display = str(val).replace("_", " ").title()
-                    if include_free_in_modifiers:
+                    val_price = 0.0
+                    # Look up price from pricing engine if available
+                    if pricing and item_type and hasattr(pricing, 'lookup_modifier_price'):
+                        val_price = pricing.lookup_modifier_price(str(val), item_type) or 0.0
+                    if val_price > 0:
+                        modifiers.append({"name": val_display, "price": val_price})
+                        total_upcharges += val_price
+                    elif include_free_in_modifiers:
                         modifiers.append({"name": val_display, "price": 0})
                     else:
                         free_details.append(val_display)
@@ -327,6 +338,7 @@ class UnifiedItemConverter:
             free_details=[],
             pricing=pricing,
             include_free_in_modifiers=True,
+            item_type=menu_item_type,
         )
 
         customization_offered = getattr(item, 'customization_offered', False)
@@ -334,8 +346,12 @@ class UnifiedItemConverter:
         # Get base_price from pricing engine if available, or from item
         # Data-driven: lookup by menu_item_name only, no attribute checks
         base_price = getattr(item, 'base_price', None)
-        if base_price is None and pricing and hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
-            base_price = pricing.lookup_menu_item_price(menu_item_name)
+        if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
+            try:
+                base_price = pricing.lookup_base_price(menu_item_name)
+            except (ValueError, KeyError):
+                # Item not in menu data, will fall back to unit_price
+                pass
         if base_price is None:
             base_price = item.unit_price or 0.0
 

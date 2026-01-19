@@ -114,9 +114,10 @@ def _parse_coffee_deterministic(user_input: str) -> OpenInputResponse | None:
 
 Similar pattern - when bagel is detected, create `ParsedBagelEntry` and add to `parsed_items`.
 
-### 1.3 Update `_parse_signature_item_deterministic()`
+### 1.3 ~~Update `_parse_signature_item_deterministic()`~~ (REMOVED)
 
-Create `ParsedMenuItemEntry` with `is_signature=True` and add to `parsed_items`.
+**Status: COMPLETED** - Function has been removed. Signature items are now handled by the generic
+menu item parser (`_extract_menu_item_from_text()`), which uses database aliases to match items.
 
 ### 1.4 Update `_parse_soda_deterministic()`
 

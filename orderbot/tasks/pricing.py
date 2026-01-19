@@ -108,44 +108,6 @@ class PricingEngine:
         # No size specified and multiple sizes - return None to trigger disambiguation
         return None, None
 
-    def get_size_options(self, menu_item_name: str) -> list[dict] | None:
-        """Get all available size options for a menu item.
-
-        Returns a list of size options with price, or None if item doesn't
-        have size-based pricing.
-
-        Args:
-            menu_item_name: Name of the menu item
-
-        Returns:
-            List of dicts with {size_id, size_name, price, display_order},
-            or None if no size-based pricing
-        """
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
-        if not menu_item:
-            return None
-
-        return menu_item.get("size_prices")
-
-    def get_size_question(self, menu_item_name: str) -> str | None:
-        """Get the question text to ask for size selection.
-
-        Args:
-            menu_item_name: Name of the menu item
-
-        Returns:
-            Question text (e.g., "What size?") or None if no size-based pricing
-        """
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
-        if not menu_item:
-            return None
-
-        return menu_item.get("size_question_text")
-
     def lookup_base_price(self, menu_item_name: str, size_name: str | None = None) -> float:
         """Look up base price for any menu item by name.
 
@@ -238,82 +200,6 @@ class PricingEngine:
         logger.debug(
             "Attribute option upcharge not found: %s.%s=%s",
             item_type, attr_slug, option_value
-        )
-        return 0.0
-
-    def lookup_conditional_upcharge(
-        self,
-        item_type: str,
-        source_attr: str,
-        source_value: str,
-        modifier_column: str,
-    ) -> float:
-        """Look up a conditional price modifier from another attribute's options.
-
-        This handles cases where a price upcharge depends on another attribute value.
-        The pattern is: {condition_value}_price_modifier on the source attribute options.
-
-        Args:
-            item_type: Item type slug (e.g., "sized_beverage")
-            source_attr: Attribute to look up the modifier from (e.g., "size")
-            source_value: Selected value of source attribute (e.g., "large")
-            modifier_column: Column name for the conditional modifier
-
-        Returns:
-            Conditional upcharge or 0.0 if not found
-        """
-        if not source_value:
-            return 0.0
-
-        source_lower = source_value.lower().strip()
-
-        if not self._menu_data:
-            raise ValueError(
-                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
-                "menu_data is required. Ensure menu is loaded."
-            )
-
-        item_types = self._menu_data.get("item_types", {})
-
-        if not item_types:
-            raise ValueError(
-                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
-                "menu_data must contain 'item_types' structure. "
-                "Ensure menu is loaded with full item type configuration."
-            )
-
-        type_data = item_types.get(item_type)
-
-        if not type_data or not isinstance(type_data, dict):
-            raise ValueError(
-                f"Item type '{item_type}' not found in menu_data. "
-                f"Cannot look up conditional upcharge for '{source_attr}.{modifier_column}'. "
-                f"Available item types: {list(item_types.keys())}"
-            )
-
-        attrs = type_data.get("attributes", [])
-        for attr in attrs:
-            if not isinstance(attr, dict):
-                continue
-            if attr.get("slug") == source_attr:
-                options = attr.get("options", [])
-                for opt in options:
-                    if not isinstance(opt, dict):
-                        continue
-                    opt_slug = opt.get("slug", "").lower()
-                    if opt_slug == source_lower or source_lower in opt_slug:
-                        upcharge = opt.get(modifier_column, 0.0)
-                        if upcharge > 0:
-                            logger.debug(
-                                "Found conditional upcharge: %s.%s.%s = $%.2f",
-                                source_attr, source_value, modifier_column, upcharge
-                            )
-                        return upcharge
-
-        # Attribute or option not found - return 0.0 (this is valid, not all options have upcharges)
-        logger.debug(
-            "Conditional upcharge not found: %s.%s.%s for item_type '%s'",
-            source_attr, source_value, modifier_column, item_type
         )
         return 0.0
 
@@ -410,45 +296,6 @@ class PricingEngine:
             modifier_name, item_type
         )
         return 0.0
-
-    # =========================================================================
-    # Quantity Parsing (for by-the-pound items)
-    # =========================================================================
-
-    def parse_quantity_to_pounds(self, quantity_str: str) -> float:
-        """Parse a quantity string to pounds.
-
-        Examples:
-            "1 lb" -> 1.0
-            "2 lbs" -> 2.0
-            "half lb" -> 0.5
-            "half pound" -> 0.5
-            "quarter lb" -> 0.25
-            "1/2 lb" -> 0.5
-            "1/4 lb" -> 0.25
-            "3/4 lb" -> 0.75
-        """
-        quantity_lower = quantity_str.lower().strip()
-
-        # Handle fractional words
-        if "half" in quantity_lower:
-            return 0.5
-        if "quarter" in quantity_lower:
-            return 0.25
-        if "three quarter" in quantity_lower or "3/4" in quantity_lower:
-            return 0.75
-        if "1/2" in quantity_lower:
-            return 0.5
-        if "1/4" in quantity_lower:
-            return 0.25
-
-        # Try to extract a number
-        match = re.search(r"(\d+(?:\.\d+)?)", quantity_lower)
-        if match:
-            return float(match.group(1))
-
-        # Default to 1 pound
-        return 1.0
 
     # =========================================================================
     # Modifier Pricing (Used by generic pricing)
@@ -687,85 +534,6 @@ class PricingEngine:
         )
 
         return new_price
-
-    # =========================================================================
-    # Display Name Helpers
-    # =========================================================================
-
-    def lookup_size_display_name(self, size_slug: str, item_type: str) -> str:
-        """
-        Look up the display name for a size from the database.
-
-        Args:
-            size_slug: The size slug (e.g., "small", "medium", "large")
-            item_type: Item type to look up size options for
-
-        Returns:
-            The display name from the database (e.g., "Small", "Medium", "Large"),
-            or the original slug if not found.
-
-        Raises:
-            ValueError: If menu_data is not loaded or item_type doesn't exist
-        """
-        if not size_slug:
-            return size_slug
-
-        size_lower = size_slug.lower().strip()
-
-        if not self._menu_data:
-            raise ValueError(
-                f"Cannot look up size display name for '{size_slug}'. "
-                "menu_data is required. Ensure menu is loaded."
-            )
-
-        item_types = self._menu_data.get("item_types", {})
-
-        if not item_types:
-            raise ValueError(
-                f"Cannot look up size display name for '{size_slug}'. "
-                "menu_data must contain 'item_types' structure. "
-                "Ensure menu is loaded with full item type configuration."
-            )
-
-        type_data = item_types.get(item_type)
-
-        if not type_data:
-            raise ValueError(
-                f"Item type '{item_type}' not found in menu_data. "
-                f"Cannot look up size display name. "
-                f"Available item types: {list(item_types.keys())}"
-            )
-
-        for attr in type_data.get("attributes", []):
-            if attr.get("slug") == "size":
-                for opt in attr.get("options", []):
-                    opt_slug = opt.get("slug", "").lower()
-                    if opt_slug == size_lower or size_lower in opt_slug:
-                        display_name = opt.get("display_name")
-                        if display_name:
-                            return display_name
-
-        # Not found - return the original slug as fallback (this is display, not pricing)
-        return size_slug
-
-    # =========================================================================
-    # Menu Item Price Recalculation
-    # =========================================================================
-
-    def recalculate_menu_item_price(self, item) -> float:
-        """
-        Recalculate and update a menu item's price based on its current modifiers.
-
-        This is an alias for recalculate_item_price() for backwards compatibility.
-        All price recalculation now goes through the unified data-driven method.
-
-        Args:
-            item: The MenuItemTask to recalculate
-
-        Returns:
-            The new calculated price
-        """
-        return self.recalculate_item_price(item)
 
     # =========================================================================
     # Category Pricing

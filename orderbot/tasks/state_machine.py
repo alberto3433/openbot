@@ -91,7 +91,6 @@ from .parsers import (
     _parse_multi_item_order,
     _parse_recommendation_inquiry,
     _parse_item_description_inquiry,
-    _parse_signature_item_deterministic,
     _parse_store_info_inquiry,
     _parse_price_inquiry_deterministic,
     _parse_soda_deterministic,

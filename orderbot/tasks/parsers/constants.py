@@ -15,21 +15,8 @@ logger = logging.getLogger(__name__)
 # Pagination Configuration
 # =============================================================================
 
-# Standard pagination size for all list displays (bagel types, drinks, menu items, modifiers)
+# Standard pagination size for all list displays
 DEFAULT_PAGINATION_SIZE = 5
-
-# =============================================================================
-# Drink Type Categories
-# =============================================================================
-
-# NOTE: Beverage types are now loaded from the database via menu_data_cache.py.
-# - Soda/bottled beverages: item_type='beverage' (use get_soda_types())
-# - Coffee/tea beverages: item_type='sized_beverage' (use get_coffee_types())
-# Both support aliases via the 'aliases' column on menu_items.
-#
-# NOTE: is_soda_drink() was moved to tests/helpers/menu_helpers.py as test_is_soda_drink()
-# because it encodes domain-specific knowledge and was only used in tests.
-
 # =============================================================================
 # Word to Number Mapping
 # =============================================================================
@@ -110,28 +97,8 @@ QUALIFIER_PATTERNS = [
     (r'\b(\w+)\s+on\s+the\s+side\b', 'on the side'),
 ]
 
-# Standalone instruction patterns - phrases that should be captured verbatim
-# These don't follow the "qualifier + target" format
-STANDALONE_INSTRUCTION_PATTERNS = [
-    # Coffee preparation
-    r'\b(?:leave\s+)?room\s+(?:for\s+(?:cream|milk))?\b',  # "leave room", "room for cream"
-    r'\bnot\s+too\s+hot\b',  # "not too hot"
-    r'\blukewarm\b',  # "lukewarm"
-    r'\bupside\s+down\b',  # "upside down" (espresso poured last)
-    r'\bwell\s+stirred\b',  # "well stirred"
-    r'\b(?:well\s+)?mixed\b',  # "mixed", "well mixed"
-    # Bagel/toast preparation
-    r'\blightly\s+toasted\b',  # "lightly toasted"
-    r'\bwell\s+done\b',  # "well done"
-    r'\bcut\s+in\s+half\b',  # "cut in half"
-    r'\bsliced\b',  # "sliced"
-    r'\bopen\s+faced\b',  # "open faced"
-    # Spread/topping application
-    r'\bspread\s+thin\b',  # "spread thin"
-    r'\b(?:only\s+)?on\s+one\s+side\b',  # "on one side", "only on one side"
-    r'\bon\s+both\s+(?:halves|sides)\b',  # "on both halves", "on both sides"
-    r'\bmelted\b',  # "melted" (for cheese)
-]
+# Note: STANDALONE_INSTRUCTION_PATTERNS moved to database (response_pattern table with pattern_type='standalone_instruction')
+# Use menu_cache.get_standalone_instruction_patterns() instead.
 
 # Note: GREETING_PATTERNS moved to database (response_pattern table with pattern_type='greeting')
 # Use menu_cache.is_greeting(text) or menu_cache.get_response_regex("greeting") instead.
@@ -565,11 +532,6 @@ def _get_menu_cache():
     return None
 
 
-# Note: get_spread_types(), get_spreads(), get_bagel_spreads() were removed - they were dead code.
-# Use menu_cache.get_global_attribute_options("spread") or
-# menu_cache.get_ingredients_for_item_type(item_type, "spread") instead.
-
-
 def get_known_menu_items() -> set[str]:
     """
     Get all known menu item names and aliases from the database.
@@ -617,9 +579,31 @@ def get_signature_item_aliases() -> dict[str, str]:
     )
 
 
+def find_item_by_unit_type(item_name: str, unit_type: str) -> tuple[str, str] | None:
+    """
+    Find an item by name or alias within a specific unit type.
+
+    This is the generic, data-driven replacement for find_by_pound_item().
+    Use this for all unit-type-based lookups.
+
+    Args:
+        item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
+        unit_type: How items are sold - 'by_weight', 'dozen', or 'each'.
+
+    Returns:
+        Tuple of (canonical_name, item_type_slug) if found, None otherwise.
+    """
+    cache = _get_menu_cache()
+    if cache:
+        return cache.find_item_by_unit_type(item_name, unit_type)
+    return None
+
+
 def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
     """
     Find a by-pound item and its category by name or alias.
+
+    DEPRECATED: Use find_item_by_unit_type(item_name, "by_weight") instead.
 
     Args:
         item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
@@ -627,10 +611,7 @@ def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
     Returns:
         Tuple of (canonical_name, category) if found, None otherwise.
     """
-    cache = _get_menu_cache()
-    if cache:
-        return cache.find_by_pound_item(item_name)
-    return None
+    return find_item_by_unit_type(item_name, "by_weight")
 
 
 def resolve_soda_alias(name: str) -> str:
@@ -685,58 +666,3 @@ def resolve_menu_item_alias(name: str) -> str | None:
     return None
 
 
-def find_spread_matches(query: str) -> list[str]:
-    """
-    Find spread types that match a partial query.
-
-    Uses substring matching against spread ingredients.
-
-    Args:
-        query: User input like "walnut" or "honey walnut"
-
-    Returns:
-        List of matching spread types.
-        Empty list if no matches.
-        Single item if exact match.
-        Multiple items if disambiguation needed.
-
-    Examples:
-        >>> find_spread_matches("walnut")
-        ["honey walnut", "maple raisin walnut"]
-        >>> find_spread_matches("scallion")
-        ["scallion"]
-    """
-    cache = _get_menu_cache()
-    if not cache:
-        raise RuntimeError(
-            "Spread matching not available. Ensure menu_data_cache is loaded with spread data from the database."
-        )
-
-    query_lower = query.lower().strip()
-
-    # Remove "cream cheese" from query if present
-    query_lower = query_lower.replace("cream cheese", "").strip()
-
-    if not query_lower:
-        return []
-
-    spread_types = cache.get_ingredients("spread")
-
-    # Check for exact match first
-    if query_lower in spread_types:
-        return [query_lower]
-
-    # Substring matching
-    matches = set()
-    for spread_type in spread_types:
-        if query_lower in spread_type or spread_type in query_lower:
-            matches.add(spread_type)
-
-    # Also check for word matches
-    for word in query_lower.split():
-        if len(word) > 2:
-            for spread_type in spread_types:
-                if word in spread_type.split():
-                    matches.add(spread_type)
-
-    return sorted(matches)

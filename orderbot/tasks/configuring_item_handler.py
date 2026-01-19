@@ -46,20 +46,11 @@ OFF_TOPIC_PATTERNS = [
     re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
 ]
 
-# Truly generic words that are always valid answers to configuration questions
-# These are universal affirmative/negative responses, not menu-item-specific values.
-# All menu-item-specific values (toasted, hot, small, etc.) come from the database.
-_GENERIC_AFFIRMATIVE_ANSWERS = {
-    "yes", "no", "yeah", "nope", "sure", "please", "ok", "okay",
-    "yep", "yup", "nah", "definitely", "absolutely", "of course",
-}
-
-
 def _get_valid_config_answers() -> set[str]:
     """Get the set of valid configuration answers from the database.
 
-    Combines truly generic affirmative/negative answers with all attribute options
-    from the database. This is fully data-driven - no hardcoded menu item values.
+    Combines affirmative/negative response patterns with all attribute options
+    from the database. This is fully data-driven - no hardcoded values.
 
     Returns:
         Set of lowercase answer words that are valid responses to config questions
@@ -69,8 +60,9 @@ def _get_valid_config_answers() -> set[str]:
     """
     from orderbot.menu_data_cache import menu_cache
 
-    # Start with truly generic affirmative/negative answers
-    answers = _GENERIC_AFFIRMATIVE_ANSWERS.copy()
+    # Start with affirmative/negative response patterns from database
+    answers = menu_cache.get_response_patterns("affirmative")
+    answers.update(menu_cache.get_response_patterns("negative"))
 
     # Get all attribute option words from database (includes negation variants)
     # This covers: size, temperature, toasted/not toasted, bagel types, side items, etc.
@@ -105,13 +97,6 @@ def _parse_pending_field(pending_field: str | None) -> tuple[str | None, str | N
         Tuple of (item_type_slug, attr_slug). Both may be None if pending_field is None.
         For flow-control fields (no colon), item_type_slug will be None.
 
-    Examples:
-        >>> _parse_pending_field("bagel:spread")
-        ("bagel", "spread")
-        >>> _parse_pending_field("drink_selection")
-        (None, "drink_selection")
-        >>> _parse_pending_field(None)
-        (None, None)
     """
     if not pending_field:
         return None, None

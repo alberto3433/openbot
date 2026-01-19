@@ -3,7 +3,7 @@ Deterministic Parsing Functions (no LLM).
 
 This module contains all regex/string-based parsing functions that don't
 require LLM calls. These are used for fast, consistent parsing of common
-input patterns like greetings, simple bagel orders, coffee orders, etc.
+input patterns
 """
 
 import re
@@ -25,7 +25,7 @@ from .constants import (
     WORD_TO_NUM,
     get_signature_item_aliases,
     QUALIFIER_PATTERNS,
-    STANDALONE_INSTRUCTION_PATTERNS,
+    # STANDALONE_INSTRUCTION_PATTERNS now loaded from database via menu_cache.get_standalone_instruction_patterns()
     # GREETING_PATTERNS and DONE_PATTERNS are now loaded from database via menu_cache.get_response_regex()
     GRATITUDE_PATTERNS,
     HELP_PATTERNS,
@@ -298,36 +298,12 @@ ONE_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# "another bagel" / "one more coffee" pattern - adds a new item of specified type (runs config flow)
-# Item type keywords to match after "another" or "one more"
-ANOTHER_ITEM_TYPE_KEYWORDS = {
-    "bagel": "bagel",
-    "bagels": "bagel",
-    "coffee": "coffee",
-    "coffees": "coffee",
-    "latte": "coffee",
-    "lattes": "coffee",
-    "cappuccino": "coffee",
-    "cappuccinos": "coffee",
-    "espresso": "espresso",  # Espresso uses MenuItemTask
-    "espressos": "espresso",
-    "americano": "coffee",
-    "americanos": "coffee",
-    "macchiato": "coffee",
-    "macchiatos": "coffee",
-    "mocha": "coffee",
-    "mochas": "coffee",
-    "tea": "coffee",  # Treat tea like coffee for ordering flow
-    "teas": "coffee",
-    "drink": "drink",
-    "drinks": "drink",
-    "sandwich": "sandwich",
-    "sandwiches": "sandwich",
-}
-
-ANOTHER_ITEM_TYPE_PATTERN = re.compile(
+# Generic pattern for "another X" / "one more X" - captures any word after the phrase
+# The captured word is validated against menu_cache.get_item_type_triggers() at runtime
+ANOTHER_ITEM_PATTERN = re.compile(
     r"^(?:and\s+)?(?:one\s+more|another)\s+"
-    r"(bagels?|coffees?|lattes?|cappuccinos?|espressos?|americanos?|macchiatos?|mochas?|teas?|drinks?|sandwich(?:es)?)"
+    r"(\w+)"  # Capture any single word (item type keyword)
+    r"s?"  # Optional plural 's'
     r"[\s!.,?]*$",
     re.IGNORECASE
 )
@@ -455,7 +431,7 @@ def _get_configurable_item_pattern() -> re.Pattern:
     # Collect all keywords that indicate a new item order
     keywords: set[str] = set()
 
-    # 1. Item type triggers (bagel, latte, coffee, sandwich, etc.)
+    # 1. Item type triggers
     all_triggers = menu_cache.get_item_type_triggers()
     for triggers in all_triggers.values():
         keywords.update(triggers)
@@ -661,8 +637,9 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
                 logger.debug(f"Extracted special instruction: '{instruction}' from input")
 
     # Check standalone patterns (e.g., "leave room", "cut in half", "melted")
-    for pattern in STANDALONE_INSTRUCTION_PATTERNS:
-        match = re.search(pattern, input_lower, re.IGNORECASE)
+    # Data-driven: patterns loaded from database via menu_cache
+    for pattern in menu_cache.get_standalone_instruction_patterns():
+        match = pattern.search(input_lower)  # Already compiled with IGNORECASE
         if match:
             instruction = match.group(0).strip()
             if instruction and instruction not in instructions:
@@ -687,11 +664,10 @@ def extract_attribute_values(
     """
     Extract attribute values from user input for a specific item type.
 
-    This is the generic, data-driven replacement for extract_modifiers_from_input()
-    and extract_coffee_modifiers_from_input(). It queries the database for what
+    This is the generic, data-driven function. It queries the database for what
     attributes the item type has and matches input against those options.
 
-    The same function works for any item type - coffee, bagel, steak, etc.
+    The same function works for any item type
     What gets extracted depends entirely on what the database says the item type accepts.
 
     Args:
@@ -851,15 +827,17 @@ def extract_attribute_values(
 
         if input_type == "boolean":
             # Handle boolean attributes (e.g., "toasted", "decaf")
-            # Check for positive patterns
             display_name = attr_config.get("display_name", attr_slug).lower()
-            if re.search(rf'\b{re.escape(display_name)}\b', input_lower):
-                result[attr_slug] = True
-                logger.debug("Extracted boolean attribute: %s = True", attr_slug)
-            # Check for "not X" or "no X" patterns
-            elif re.search(rf'\b(not?|no)\s+{re.escape(display_name)}\b', input_lower):
+            # Check for negative patterns FIRST (before positive check)
+            # This prevents "not toasted" from matching just "toasted"
+            # Handles: "not toasted", "no toasted", "untoasted"
+            if re.search(rf'\b(?:not\s+{re.escape(display_name)}|un{re.escape(display_name)}|no\s+{re.escape(display_name)})\b', input_lower):
                 result[attr_slug] = False
                 logger.debug("Extracted boolean attribute: %s = False", attr_slug)
+            # Check for positive patterns
+            elif re.search(rf'\b{re.escape(display_name)}\b', input_lower):
+                result[attr_slug] = True
+                logger.debug("Extracted boolean attribute: %s = True", attr_slug)
             continue
 
         if not options:
@@ -894,8 +872,7 @@ def extract_modifiers_for_item_type(
     """
     Extract modifiers from user input for a specific item type.
 
-    This is the data-driven replacement for the legacy extract_modifiers_from_input()
-    and extract_coffee_modifiers_from_input() functions. It wraps extract_attribute_values()
+    This is the data-driven function. It wraps extract_attribute_values()
     and converts the result to ExtractedModifiers for backward compatibility.
 
     Args:
@@ -1189,9 +1166,6 @@ def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
 def _is_modifier_chain(text: str) -> bool:
     """Check if text is a single item with modifier chain.
 
-    Detects patterns like "large iced coffee with sugar and 2 vanilla syrups"
-    which should NOT be split on "and".
-
     Returns:
         True if text appears to be a single item with chained modifiers
     """
@@ -1225,53 +1199,6 @@ def _is_modifier_chain(text: str) -> bool:
 
     # If no item keyword found, it's likely a modifier chain
     return True
-
-
-def _protect_compound_phrases(
-    text: str,
-    compound_phrases: set[str]
-) -> tuple[str, dict[str, str]]:
-    """Replace compound phrases with placeholders to prevent splitting.
-
-    Args:
-        text: Input text (lowercase)
-        compound_phrases: Set of phrases containing " and " that shouldn't be split
-
-    Returns:
-        (modified_text, {placeholder: original_phrase})
-    """
-    placeholder_map = {}
-    result = text
-
-    # Sort by length descending to match longer phrases first
-    for phrase in sorted(compound_phrases, key=len, reverse=True):
-        if phrase in result:
-            placeholder = f"__COMPOUND_{len(placeholder_map)}__"
-            placeholder_map[placeholder] = phrase
-            result = result.replace(phrase, placeholder)
-
-    return result, placeholder_map
-
-
-def _restore_compound_phrases(
-    parts: list[str],
-    placeholder_map: dict[str, str]
-) -> list[str]:
-    """Restore compound phrases from placeholders.
-
-    Args:
-        parts: List of text parts (may contain placeholders)
-        placeholder_map: {placeholder: original_phrase}
-
-    Returns:
-        List of parts with placeholders replaced by original phrases
-    """
-    restored = []
-    for part in parts:
-        for placeholder, phrase in placeholder_map.items():
-            part = part.replace(placeholder, phrase)
-        restored.append(part)
-    return restored
 
 
 def _parse_item_generic(
@@ -1341,7 +1268,6 @@ def _parse_item_generic(
             item_name = detected_name
 
     # Extract quantity from text
-    # Match patterns like "2 bagels", "three coffees", "a dozen bagels"
     quantity = 1
     qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?)\s+', text_lower)
     if qty_match:
@@ -1743,47 +1669,82 @@ def _extract_side_item(text: str) -> tuple[str | None, int]:
     return None, 1
 
 
-def _extract_menu_item_modifications(text: str) -> list[str]:
+def _extract_menu_item_modifications(
+    text: str, item_type: str | None = None
+) -> dict[str, list[dict[str, str]]]:
     """Extract modifications like 'with mayo and mustard' or 'no onions' from text.
 
-    Returns a list of modification strings (e.g., ['mayo', 'mustard'] or ['no onions']).
+    This is the data-driven version that only accepts ingredients explicitly
+    linked to the item type in the database.
+
+    Args:
+        text: The user input text
+        item_type: The item type slug (e.g., "sandwich", "salad"). If None,
+            returns empty result.
+
+    Returns:
+        Dict with 'additions' and 'removals' lists. Each entry is a dict with:
+        - slug: The ingredient slug (lowercase, normalized)
+        - category: The ingredient category (e.g., "topping", "protein")
+
+    Examples:
+        >>> _extract_menu_item_modifications("with mayo and lettuce", "sandwich")
+        {"additions": [{"slug": "mayo", "category": "condiment"}, {"slug": "lettuce", "category": "topping"}], "removals": []}
+
+        >>> _extract_menu_item_modifications("no onions please", "sandwich")
+        {"additions": [], "removals": [{"slug": "onion", "category": "topping"}]}
     """
-    modifications = []
+    result: dict[str, list[dict[str, str]]] = {"additions": [], "removals": []}
+
+    if not item_type:
+        logger.debug("No item_type provided, returning empty modifications")
+        return result
+
     text_lower = text.lower()
 
-    # Known condiments/sauces that can be added
-    known_additions = {
-        "mayo", "mayonnaise", "mustard", "ketchup", "hot sauce",
-        "salt", "pepper", "salt and pepper",
-        "lettuce", "tomato", "tomatoes", "onion", "onions", "red onion", "red onions",
-        "pickles", "pickle", "capers", "cucumber", "cucumbers",
-        "avocado", "bacon", "extra cheese",
-    }
+    # Get valid ingredients for this item type, organized by category
+    # This is the data-driven lookup that replaces hardcoded known_additions
+    ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
+    if not ingredients_by_category:
+        logger.debug("No ingredients defined for item type '%s'", item_type)
+        return result
 
-    # Coffee-specific modifiers that should NOT be applied to menu items
-    # Build dynamically from database (fail-fast if not loaded)
-    coffee_modifiers: set[str] = set()
-    # Add milk types and short forms
-    for milk in menu_cache.get_ingredients("milk"):
-        milk_lower = milk.lower()
-        coffee_modifiers.add(milk_lower)
-        if milk_lower.endswith(" milk"):
-            coffee_modifiers.add(milk_lower[:-5])  # Short form like "oat"
-    # Add syrup types and short forms
-    for syrup in menu_cache.get_ingredients("syrup"):
-        syrup_lower = syrup.lower()
-        coffee_modifiers.add(syrup_lower)
-        if syrup_lower.endswith(" syrup"):
-            coffee_modifiers.add(syrup_lower[:-6])  # Short form like "vanilla"
-    # Add sweetener types
-    for sweetener in menu_cache.get_ingredients("sweetener"):
-        coffee_modifiers.add(sweetener.lower())
-    # Add standard coffee modifiers (temperature, size, etc.)
-    coffee_modifiers.update({"iced", "hot", "decaf", "black", "small", "medium", "large", "nonfat", "2%"})
+    # Build reverse lookup: ingredient name -> category
+    ingredient_to_category: dict[str, str] = {}
+    for category, ingredients in ingredients_by_category.items():
+        for ingredient in ingredients:
+            ingredient_to_category[ingredient.lower()] = category
+
+    def match_ingredient(term: str) -> dict[str, str] | None:
+        """Try to match a term against valid ingredients for the item type."""
+        term = term.strip().lower()
+        if not term:
+            return None
+
+        # Handle "extra X" by stripping the "extra" prefix
+        if term.startswith("extra "):
+            term = term[6:].strip()
+
+        # Direct match
+        if term in ingredient_to_category:
+            return {"slug": term, "category": ingredient_to_category[term]}
+
+        # Try singular form (remove trailing 's')
+        if term.endswith("s") and len(term) > 2:
+            singular = term[:-1]
+            if singular in ingredient_to_category:
+                return {"slug": singular, "category": ingredient_to_category[singular]}
+
+        # Try with 's' added (in case user said singular but DB has plural)
+        plural = term + "s"
+        if plural in ingredient_to_category:
+            return {"slug": plural, "category": ingredient_to_category[plural]}
+
+        return None
 
     # Pattern for "with X and Y" or "with X, Y, and Z"
     with_pattern = re.search(
-        r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted|on\s+\w+\s+bagel)|\s*$)',
+        r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted)|\s*$)',
         text_lower,
         re.IGNORECASE
     )
@@ -1793,41 +1754,34 @@ def _extract_menu_item_modifications(text: str) -> list[str]:
         # Remove trailing punctuation
         with_text = re.sub(r'[.!?,]+$', '', with_text).strip()
 
-        # Skip if this is a bagel description like "with everything bagel"
-        if re.search(r'\bbagel\b', with_text):
-            pass
-        # Skip if this is a side description like "with fruit salad"
-        elif with_text in ('fruit salad', 'fruit'):
-            pass
-        else:
-            # Split by "and" and commas
-            parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
-            for part in parts:
-                part = part.strip()
-                # Skip coffee-specific modifiers (oat milk, vanilla, etc.)
-                if part in coffee_modifiers:
-                    continue
-                # Check if it's a known addition or starts with "extra"
-                if part in known_additions or part.startswith('extra '):
-                    modifications.append(part)
-                # Also allow any reasonable single/double word modifiers
-                elif part and len(part.split()) <= 2 and not re.search(r'\bbagel\b', part):
-                    # Exclude common non-modifier words
-                    skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
-                    if part not in skip_words and part not in coffee_modifiers:
-                        modifications.append(part)
+        # Split by "and" and commas
+        parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
+        for part in parts:
+            part = part.strip()
+            # Exclude common non-modifier words
+            skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
+            if part in skip_words:
+                continue
+
+            matched = match_ingredient(part)
+            if matched:
+                result["additions"].append(matched)
 
     # Pattern for "no X" modifications
     no_pattern = re.findall(r'\bno\s+(\w+(?:\s+\w+)?)', text_lower)
     for item in no_pattern:
         item = item.strip()
-        # Skip common false positives
+        # Skip common false positives (language patterns, not food)
         skip_items = {'thanks', 'problem', 'worries', 'that', 'more', 'need'}
-        if item not in skip_items:
-            modifications.append(f"no {item}")
+        if item in skip_items:
+            continue
 
-    logger.debug("Extracted modifications from '%s': %s", text[:50], modifications)
-    return modifications
+        matched = match_ingredient(item)
+        if matched:
+            result["removals"].append(matched)
+
+    logger.debug("Extracted modifications from '%s' for item_type '%s': %s", text[:50], item_type, result)
+    return result
 
 
 def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
@@ -2134,21 +2088,39 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
         return None
 
+    # 1b. Check for signature items FIRST - they take precedence over trigger-based detection
+    # This prevents "The Classic BEC on a wheat bagel" from matching "omelette" due to "bagel"
+    signature_item_name: str | None = None
+    signature_item_type: str | None = None
+    signature_aliases = get_signature_item_aliases()
+    # Sort aliases by length (longest first) for most specific match
+    sorted_aliases = sorted(signature_aliases.keys(), key=len, reverse=True)
+    for alias in sorted_aliases:
+        if re.search(rf'\b{re.escape(alias)}\b', text_lower):
+            signature_item_name = signature_aliases[alias]
+            # Look up the item type for this signature item
+            signature_item_type = menu_cache.get_item_type_for_menu_item(signature_item_name)
+            if signature_item_type:
+                logger.info("CONFIGURABLE_ITEM: signature item '%s' detected -> type '%s'", signature_item_name, signature_item_type)
+                break
+
     # 2. Detect which configurable item type this text matches
     configurable_slugs = menu_cache.get_configurable_item_type_slugs()
-    detected_item_type: str | None = None
+    detected_item_type: str | None = signature_item_type  # Use signature item type if found
     best_match_length = 0
 
-    for item_type_slug in configurable_slugs:
-        triggers = menu_cache.get_item_type_triggers(item_type_slug)
-        for trigger in triggers:
-            # Check for word boundary match
-            pattern = rf'\b{re.escape(trigger)}s?\b'
-            if re.search(pattern, text_lower):
-                # Prefer longer matches (more specific)
-                if len(trigger) > best_match_length:
-                    best_match_length = len(trigger)
-                    detected_item_type = item_type_slug
+    # Only do trigger-based detection if no signature item was found
+    if not detected_item_type:
+        for item_type_slug in configurable_slugs:
+            triggers = menu_cache.get_item_type_triggers(item_type_slug)
+            for trigger in triggers:
+                # Check for word boundary match
+                pattern = rf'\b{re.escape(trigger)}s?\b'
+                if re.search(pattern, text_lower):
+                    # Prefer longer matches (more specific)
+                    if len(trigger) > best_match_length:
+                        best_match_length = len(trigger)
+                        detected_item_type = item_type_slug
 
     if not detected_item_type:
         return None
@@ -2175,7 +2147,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     modifiers = extract_modifiers_for_item_type(text, detected_item_type)
 
     # 6. Try to match a specific menu item name within this type
-    item_name = _match_menu_item_name_for_type(text, detected_item_type)
+    # If we already found a signature item, use that name; otherwise try to match
+    item_name = signature_item_name or _match_menu_item_name_for_type(text, detected_item_type)
 
     # 7. Build ParsedItemEntry
     from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
@@ -2209,9 +2182,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     if modifiers.cream_level and "cream_level" not in attr_values:
         attr_values["cream_level"] = modifiers.cream_level
 
+    # Check if this is a signature/speed menu item
+    is_signature = False
+    if item_name:
+        signature_items = get_signature_item_aliases()
+        name_lower = item_name.lower()
+        if name_lower in signature_items or item_name in signature_items.values():
+            is_signature = True
+
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%d",
-        detected_item_type, quantity, item_name, list(attr_values.keys()), len(quantified_mods)
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%d, is_signature=%s",
+        detected_item_type, quantity, item_name, list(attr_values.keys()), len(quantified_mods), is_signature
     )
 
     parsed_items = [
@@ -2222,6 +2203,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             attribute_values=attr_values.copy(),
             modifiers=quantified_mods.copy(),
             original_text=text,
+            is_signature=is_signature,
         )
         for _ in range(quantity)
     ]
@@ -2464,156 +2446,6 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
             original_text=text,
         ))
 
-    return OpenInputResponse(parsed_items=parsed_items)
-
-
-# =============================================================================
-# Speed Menu Bagel Parsing
-# =============================================================================
-
-def _parse_signature_item_deterministic(text: str) -> OpenInputResponse | None:
-    """Parse signature item orders like 'The Classic BEC on a wheat bagel'."""
-    text_lower = text.lower()
-
-    # Get signature items mapping from database
-    signature_items = get_signature_item_aliases()
-
-    matched_item = None
-    matched_key = None
-
-    for key in sorted(signature_items.keys(), key=len, reverse=True):
-        if key in text_lower:
-            matched_item = signature_items[key]
-            matched_key = key
-            break
-
-    if not matched_item:
-        return None
-
-    # If user says "omelette" but matched item isn't an omelette, skip this match
-    # Let the menu item parser handle omelettes properly (e.g., "truffled egg omelette")
-    if re.search(r'\bomelet(?:te)?s?\b', text_lower) and 'omelette' not in matched_item.lower():
-        logger.info("SIGNATURE ITEM SKIP: text contains 'omelette' but matched '%s' is not an omelette", matched_item)
-        return None
-
-    logger.info("SIGNATURE ITEM MATCH: found '%s' -> %s in text '%s'", matched_key, matched_item, text[:50])
-
-    # Extract quantity
-    quantity = 1
-    qty_pattern = re.compile(
-        r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+" + re.escape(matched_key),
-        re.IGNORECASE
-    )
-    qty_match = qty_pattern.search(text_lower)
-    if qty_match:
-        qty_str = qty_match.group(1).lower()
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        elif qty_str in ("a", "an"):
-            quantity = 1
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
-
-    toasted = _extract_toasted(text)
-
-    # Extract bagel/bread choice using data-driven attribute extraction
-    bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-
-    # Extract modifications (e.g., "with mayo and mustard", "no onions")
-    modifications = _extract_menu_item_modifications(text)
-
-    logger.info(
-        "SIGNATURE ITEM PARSED: item=%s, qty=%d, toasted=%s, bagel_choice=%s, mods=%s",
-        matched_item, quantity, toasted, bagel_choice, modifications
-    )
-
-    # Check if there's also a coffee/drink mentioned in the input
-    # Look for patterns like "and a coffee", "with a latte", "and large iced coffee"
-    coffee_type = None
-    coffee_size = None
-    coffee_iced = None
-    coffee_decaf = None
-    coffee_milk = None
-
-    # Check for coffee after "and" or "with" - this indicates a second item
-    # "with" is included because beverages can't be modifiers for food items
-    # e.g., "classic BEC with coffee" = BEC + coffee (separate items)
-    and_coffee_match = re.search(
-        r'\b(?:and|with)\s+(?:a\s+)?(?:(small|medium|large)\s+)?(?:(hot|iced)\s+)?(?:(decaf)\s+)?'
-        r'(coffee|latte|cappuccino|espresso|americano|macchiato|mocha|tea|chai)',
-        text_lower
-    )
-    if and_coffee_match:
-        coffee_size = and_coffee_match.group(1)
-        if and_coffee_match.group(2) == 'iced':
-            coffee_iced = True
-        elif and_coffee_match.group(2) == 'hot':
-            coffee_iced = False
-        if and_coffee_match.group(3) == 'decaf':
-            coffee_decaf = True
-        coffee_type = and_coffee_match.group(4)
-
-        # Also check for milk
-        milk_match = re.search(r'with\s+(oat|almond|soy|skim|whole|coconut)\s*milk', text_lower)
-        if milk_match:
-            coffee_milk = milk_match.group(1)
-
-        logger.info(
-            "SIGNATURE ITEM + COFFEE: also found coffee - type=%s, size=%s, iced=%s, decaf=%s",
-            coffee_type, coffee_size, coffee_iced, coffee_decaf
-        )
-
-        # Remove coffee-related items from modifications since coffee is a separate item
-        beverage_words = {
-            'coffee', 'latte', 'cappuccino', 'espresso', 'americano',
-            'macchiato', 'mocha', 'tea', 'chai',
-        }
-        modifications = [
-            mod for mod in modifications
-            if mod.lower() not in beverage_words
-        ]
-
-    # Build parsed_items for unified handler (Phase 8 dual-write)
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-    parsed_items = [
-        build_parsed_item(
-            item_type="menu_item",
-            item_name=matched_item,
-            quantity=1,
-            attribute_values={
-                k: v for k, v in [
-                    ("bread", bagel_choice),
-                    ("toasted", toasted),
-                ] if v is not None
-            },
-            modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
-            is_signature=True,
-        )
-        for _ in range(quantity)
-    ]
-
-    # Add coffee to parsed_items if found
-    if coffee_type:
-        # Temperature-to-item-name logic (moved from builder)
-        coffee_temperature = "iced" if coffee_iced else ("hot" if coffee_iced is False else None)
-        final_coffee_name = coffee_type
-        if coffee_temperature and coffee_type and coffee_temperature.lower() not in coffee_type.lower():
-            final_coffee_name = f"{coffee_temperature} {coffee_type}"
-        parsed_items.append(build_parsed_item(
-            item_type="sized_beverage",
-            item_name=final_coffee_name,
-            quantity=1,
-            attribute_values={
-                k: v for k, v in [
-                    ("size", coffee_size),
-                    ("temperature", coffee_temperature),
-                    ("milk", coffee_milk),
-                    ("decaf", coffee_decaf),
-                ] if v is not None
-            },
-        ))
-
-    # Phase 4: Only use parsed_items (deprecated fields removed)
     return OpenInputResponse(parsed_items=parsed_items)
 
 
@@ -3282,17 +3114,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         logger.info("ADD MORE: parsed as configurable item '%s' (qty=1)", item_type)
         return configurable_result
 
-    # Try signature item
-    speed_result = _parse_signature_item_deterministic(item_text)
-    if speed_result and speed_result.parsed_items:
-        # Set quantity to 1 for "add another"
-        for item in speed_result.parsed_items:
-            item.quantity = 1
-        item_name = speed_result.parsed_items[0].menu_item_name if hasattr(speed_result.parsed_items[0], 'menu_item_name') else "signature item"
-        logger.info("ADD MORE: parsed as signature item '%s' (qty=1)", item_name)
-        return speed_result
-
-    # Try menu item
+    # Try menu item (includes signature items)
     menu_item, _ = _extract_menu_item_from_text(item_text)
     if menu_item:
         logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
@@ -4103,11 +3925,6 @@ def parse_open_input_deterministic(
     if by_pound_result:
         return by_pound_result
 
-    # Check for signature items
-    signature_item_result = _parse_signature_item_deterministic(text)
-    if signature_item_result:
-        return signature_item_result
-
     # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
     make_it_n_match = MAKE_IT_N_PATTERN.match(text)
     if make_it_n_match:
@@ -4161,14 +3978,25 @@ def parse_open_input_deterministic(
         logger.info("Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)", item_type or "any")
         return OpenInputResponse(cancel_item=cancel_value)
 
-    # Check for "another bagel" / "one more coffee" patterns (with item type specified)
+    # Check for "another" patterns (with item type specified)
     # This must be checked BEFORE ONE_MORE_PATTERN since it's more specific
-    another_item_match = ANOTHER_ITEM_TYPE_PATTERN.match(text)
+    # Uses data-driven validation against menu_cache triggers
+    another_item_match = ANOTHER_ITEM_PATTERN.match(text)
     if another_item_match:
         item_keyword = another_item_match.group(1).lower()
-        item_type = ANOTHER_ITEM_TYPE_KEYWORDS.get(item_keyword, item_keyword)
-        logger.info("Deterministic parse: 'another %s' detected, treating as new %s", item_keyword, item_type)
-        return OpenInputResponse(duplicate_new_item_type=item_type)
+        # Strip trailing 's' for plural forms (pattern captures base word, 's' is separate)
+        item_keyword_singular = item_keyword.rstrip('s') if item_keyword.endswith('s') else item_keyword
+
+        # Validate against data-driven category keywords or item type triggers
+        # This replaces the hardcoded ANOTHER_ITEM_TYPE_KEYWORDS mapping
+        category_info = menu_cache.get_category_keyword_mapping(item_keyword)
+        if not category_info:
+            category_info = menu_cache.get_category_keyword_mapping(item_keyword_singular)
+
+        if category_info:
+            # Valid item type keyword - pass to downstream handler
+            logger.info("Deterministic parse: 'another %s' detected, treating as new item", item_keyword)
+            return OpenInputResponse(duplicate_new_item_type=item_keyword)
 
     # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)
     if ONE_MORE_PATTERN.match(text):
@@ -4247,15 +4075,14 @@ def parse_open_input_deterministic(
     if split_qty_result:
         return split_qty_result
 
-    # Check for configurable items (bagels, coffee, etc.) using data-driven patterns
+    # Check for configurable items using data-driven patterns
     # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
     # interpreted as multiple items. Also prevents "bacon" from matching as a side item.
-    # Replaces _parse_bagel_with_modifiers and _parse_coffee_deterministic.
     configurable_item_result = _parse_configurable_item(text)
     if configurable_item_result:
         return configurable_item_result
 
-    # Check for multi-item orders (e.g., "one coffee and one latte", "bagel and a coffee")
+    # Check for multi-item orders
     # Must be checked before single-item parsers to handle "X and Y" patterns
     multi_item_result = _parse_multi_item_order(text)
     if multi_item_result:
@@ -4277,10 +4104,19 @@ def parse_open_input_deterministic(
         if menu_item:
             toasted = _extract_toasted(text)
             bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-            modifications = _extract_menu_item_modifications(text)
+            # Get item_type for data-driven modification extraction
+            item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
+            modifications = _extract_menu_item_modifications(text, item_type_for_mods)
             logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
+            # Convert structured modifications to QuantifiedModifier objects
+            mod_list = []
+            for add in modifications.get("additions", []):
+                mod_list.append(QuantifiedModifier(slug=add["slug"], category=add.get("category")))
+            for rem in modifications.get("removals", []):
+                # Prefix with "no_" to indicate removal
+                mod_list.append(QuantifiedModifier(slug=f"no_{rem['slug']}", category=rem.get("category")))
             early_parsed_items = [
                 build_parsed_item(
                     item_type="menu_item",
@@ -4289,7 +4125,7 @@ def parse_open_input_deterministic(
                     attribute_values={
                         k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
                     },
-                    modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
+                    modifiers=mod_list,
                 )
                 for _ in range(qty)
             ]
@@ -4383,10 +4219,19 @@ def parse_open_input_deterministic(
         if menu_item.lower() not in configurable_item_names:
             toasted = _extract_toasted(text)
             bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-            modifications = _extract_menu_item_modifications(text)
+            # Get item_type for data-driven modification extraction
+            item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
+            modifications = _extract_menu_item_modifications(text, item_type_for_mods)
             logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
+            # Convert structured modifications to QuantifiedModifier objects
+            mod_list = []
+            for add in modifications.get("additions", []):
+                mod_list.append(QuantifiedModifier(slug=add["slug"], category=add.get("category")))
+            for rem in modifications.get("removals", []):
+                # Prefix with "no_" to indicate removal
+                mod_list.append(QuantifiedModifier(slug=f"no_{rem['slug']}", category=rem.get("category")))
             menu_item_parsed_items = [
                 build_parsed_item(
                     item_type="menu_item",
@@ -4395,13 +4240,13 @@ def parse_open_input_deterministic(
                     attribute_values={
                         k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
                     },
-                    modifiers=[QuantifiedModifier(slug=m, category=None) for m in (modifications or [])],
+                    modifiers=mod_list,
                 )
                 for _ in range(qty)
             ]
             return OpenInputResponse(parsed_items=menu_item_parsed_items)
         else:
-            logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s' - is a coffee type, letting coffee parser handle it", menu_item)
+            logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s'", menu_item)
 
     # Check for bagel order with quantity
     quantity_match = __BAGEL_QUANTITY_PATTERN.search(text)
@@ -4505,7 +4350,6 @@ def parse_open_input_deterministic(
             return OpenInputResponse(parsed_items=bagel_mention_parsed_items)
 
     # Check for soda/bottled drink order (more specific names like "Snapple Iced Tea")
-    # Note: Sized beverages (coffee, tea, lattes) are handled by _parse_configurable_item
     soda_result = _parse_soda_deterministic(text)
     if soda_result:
         logger.info("DETERMINISTIC SODA: matched '%s'", text[:50])

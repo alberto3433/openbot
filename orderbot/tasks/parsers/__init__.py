@@ -41,7 +41,6 @@ from .deterministic import (
     _extract_spread,
     _extract_side_item,
     _extract_menu_item_from_text,
-    _parse_signature_item_deterministic,
     _parse_configurable_item,
     _parse_soda_deterministic,
     _parse_price_inquiry_deterministic,
@@ -70,7 +69,9 @@ from .constants import (
     WORD_TO_NUM,
     # Signature items (loaded from database via dynamic function)
     get_signature_item_aliases,
-    # By-the-pound item lookup (loaded from database via dynamic function)
+    # Generic unit type item lookup (data-driven, replaces find_by_pound_item)
+    find_item_by_unit_type,
+    # Legacy alias for backward compatibility (DEPRECATED: use find_item_by_unit_type instead)
     find_by_pound_item,
     # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
     # - use menu_cache.get_global_attribute_options("spread") instead
@@ -136,7 +137,6 @@ __all__ = [
     "_extract_spread",
     "_extract_side_item",
     "_extract_menu_item_from_text",
-    "_parse_signature_item_deterministic",
     "_parse_configurable_item",
     "_parse_soda_deterministic",
     "_parse_price_inquiry_deterministic",

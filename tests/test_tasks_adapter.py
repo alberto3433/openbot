@@ -298,12 +298,11 @@ class TestDictToOrderTask:
                 "size": "large",
                 "item_config": {
                     "temperature": "iced",
-                    "attribute_values": {
-                        "milk_sweetener_syrup_selections": [
-                            {"slug": "oat", "category": "milk", "quantity": 1, "display_name": "Oat"},
-                            {"slug": "sugar", "category": "sweetener", "quantity": 2, "display_name": "Sugar"},
-                        ],
-                    },
+                    # Modifiers stored in item_modifiers (standard format)
+                    "item_modifiers": [
+                        {"slug": "oat", "category": "milk", "quantity": 1, "display_name": "Oat"},
+                        {"slug": "sugar", "category": "sweetener", "quantity": 2, "display_name": "Sugar"},
+                    ],
                 },
                 "unit_price": 6.50,
             }]
@@ -605,8 +604,8 @@ class TestModifiersConsistency:
         assert "modifiers" in item["item_config"]
         # Both should be the same
         assert item["modifiers"] == item["item_config"]["modifiers"]
-        # Check lox modifier is present
-        modifier_names = [m["name"] for m in item["modifiers"]]
+        # Check lox modifier is present (title-cased)
+        modifier_names = [m["name"].lower() for m in item["modifiers"]]
         assert "nova scotia salmon" in modifier_names
 
     def test_bagel_modifiers_have_correct_prices(self):
@@ -788,8 +787,8 @@ class TestModifiersConsistency:
         assert "modifiers" in item_config
         modifiers = item_config["modifiers"]
 
-        # Should have both extras as modifiers
-        modifier_names = [m["name"] for m in modifiers]
+        # Should have both extras as modifiers (title-cased)
+        modifier_names = [m["name"].lower() for m in modifiers]
         assert "nova scotia salmon" in modifier_names
         assert "capers" in modifier_names
 

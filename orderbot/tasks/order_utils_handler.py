@@ -21,6 +21,7 @@ from ..services.tax_utils import calculate_taxes, round_money
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from ..services.message_builder import MessageBuilder
+    from .context import OrderContext
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,10 @@ class OrderUtilsHandler:
     def set_store_info(self, store_info: dict | None) -> None:
         """Set the store info for tax calculations (legacy method)."""
         self._store_info = store_info or {}
+
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set context from unified OrderContext."""
+        self._store_info = ctx.store_info
 
     def set_message_builder(self, message_builder: "MessageBuilder | None") -> None:
         """Set the message builder (for use when set post-init)."""

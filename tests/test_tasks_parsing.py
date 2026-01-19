@@ -1,23 +1,12 @@
 """
-Tests for the parsing module.
+Tests for the deterministic parsing module.
 
 Includes:
-- Schema validation tests (no LLM required)
-- Integration tests with mocked LLM responses
-- Optional integration tests with real LLM (requires API key)
+- Deterministic parser tests (no LLM required)
+- Pattern-based parsing for menu items, modifiers, and responses
 """
 
 import pytest
-import os
-from unittest.mock import MagicMock
-
-from orderbot.tasks.parsing import (
-    ParsedMenuItem,
-    ItemModification,
-    ParsedInput,
-    parse_user_message,
-    PARSING_SYSTEM_PROMPT,
-)
 
 # Import parsed_items helpers for testing the generic parsed_items API
 from tests.helpers import (
@@ -66,356 +55,6 @@ def _is_bagel_item(item) -> bool:
     """Check if a ParsedItem is a bagel."""
     item_type = getattr(item, 'item_type', None)
     return item_type == "bagel"
-
-
-# =============================================================================
-# Schema Validation Tests
-# =============================================================================
-
-class TestItemModification:
-    """Tests for ItemModification schema."""
-
-    def test_modification_by_index(self):
-        """Test modification targeting specific index."""
-        mod = ItemModification(
-            item_index=0,
-            field="toasted",
-            new_value=False,
-        )
-        assert mod.item_index == 0
-        assert mod.field == "toasted"
-        assert mod.new_value is False
-
-    def test_modification_by_type(self):
-        """Test modification targeting item type."""
-        mod = ItemModification(
-            item_type="bagel",
-            field="spread",
-            new_value="butter",
-        )
-        assert mod.item_type == "bagel"
-        assert mod.field == "spread"
-        assert mod.new_value == "butter"
-
-
-class TestParsedInput:
-    """Tests for ParsedInput schema."""
-
-    def test_empty_input(self):
-        """Test empty input has correct defaults."""
-        parsed = ParsedInput()
-        assert parsed.new_menu_items == []
-        assert parsed.modifications == []
-        assert parsed.answers == {}
-        assert parsed.wants_checkout is False
-        assert parsed.order_type is None
-        assert parsed.is_greeting is False
-
-    def test_multi_item_order(self):
-        """Test parsing result with multiple items."""
-        parsed = ParsedInput(
-            new_menu_items=[
-                ParsedMenuItem(item_name="everything bagel"),
-                ParsedMenuItem(item_name="plain bagel"),
-                ParsedMenuItem(item_name="large iced latte"),
-            ],
-        )
-        assert len(parsed.new_menu_items) == 3
-        assert parsed.new_menu_items[0].item_name == "everything bagel"
-        assert parsed.new_menu_items[2].item_name == "large iced latte"
-
-    def test_order_with_answers(self):
-        """Test parsing result with question answers."""
-        parsed = ParsedInput(
-            answers={
-                "toasted": True,
-                "spread": "cream cheese",
-            }
-        )
-        assert parsed.answers["toasted"] is True
-        assert parsed.answers["spread"] == "cream cheese"
-
-    def test_checkout_intent(self):
-        """Test parsing checkout intent."""
-        parsed = ParsedInput(wants_checkout=True)
-        assert parsed.wants_checkout is True
-
-    def test_cancellation_intent(self):
-        """Test parsing cancellation intent."""
-        parsed = ParsedInput(
-            cancel_item_index=0,
-            cancel_item_description="the plain bagel",
-        )
-        assert parsed.cancel_item_index == 0
-        assert parsed.cancel_item_description == "the plain bagel"
-
-    def test_delivery_info(self):
-        """Test parsing delivery information."""
-        parsed = ParsedInput(
-            order_type="delivery",
-            delivery_address="123 Main St, New York NY 10001",
-        )
-        assert parsed.order_type == "delivery"
-        assert parsed.delivery_address == "123 Main St, New York NY 10001"
-
-    def test_customer_info(self):
-        """Test parsing customer information."""
-        parsed = ParsedInput(
-            customer_name="John Doe",
-            customer_phone="555-1234",
-            customer_email="john@example.com",
-        )
-        assert parsed.customer_name == "John Doe"
-        assert parsed.customer_phone == "555-1234"
-        assert parsed.customer_email == "john@example.com"
-
-
-# =============================================================================
-# Parsing System Prompt Tests
-# =============================================================================
-
-class TestParsingSystemPrompt:
-    """Tests for the parsing system prompt."""
-
-    def test_prompt_exists(self):
-        """Test that system prompt is defined."""
-        assert PARSING_SYSTEM_PROMPT is not None
-        assert len(PARSING_SYSTEM_PROMPT) > 100
-
-    def test_prompt_contains_key_instructions(self):
-        """Test that prompt contains key parsing instructions."""
-        assert "bagel" in PARSING_SYSTEM_PROMPT.lower()
-        assert "coffee" in PARSING_SYSTEM_PROMPT.lower()
-        assert "extract" in PARSING_SYSTEM_PROMPT.lower()
-
-
-# =============================================================================
-# Mocked LLM Tests
-# =============================================================================
-
-class TestParseUserMessageMocked:
-    """Tests for parse_user_message with mocked LLM."""
-
-    def test_parse_simple_bagel_order(self):
-        """Test parsing a simple bagel order."""
-        # Create a mock client that returns a predefined ParsedInput
-        mock_result = ParsedInput(
-            new_menu_items=[
-                ParsedMenuItem(item_name="everything bagel toasted")
-            ]
-        )
-
-        mock_completion = MagicMock()
-        mock_completion.create.return_value = mock_result
-
-        mock_client = MagicMock()
-        mock_client.chat.completions = mock_completion
-
-        result = parse_user_message(
-            "I'd like an everything bagel toasted",
-            client=mock_client,
-        )
-
-        assert len(result.new_menu_items) == 1
-        assert result.new_menu_items[0].item_name == "everything bagel toasted"
-
-    def test_parse_multi_item_order(self):
-        """Test parsing a multi-item order."""
-        mock_result = ParsedInput(
-            new_menu_items=[
-                ParsedMenuItem(item_name="sesame bagel with cream cheese"),
-                ParsedMenuItem(item_name="large iced latte"),
-            ]
-        )
-
-        mock_completion = MagicMock()
-        mock_completion.create.return_value = mock_result
-
-        mock_client = MagicMock()
-        mock_client.chat.completions = mock_completion
-
-        result = parse_user_message(
-            "I want a sesame bagel with cream cheese and a large iced latte",
-            client=mock_client,
-        )
-
-        assert len(result.new_menu_items) == 2
-        assert result.new_menu_items[0].item_name == "sesame bagel with cream cheese"
-        assert result.new_menu_items[1].item_name == "large iced latte"
-
-    def test_parse_yes_answer(self):
-        """Test parsing 'yes' as an answer to pending question."""
-        mock_result = ParsedInput(
-            answers={"toasted": True}
-        )
-
-        mock_completion = MagicMock()
-        mock_completion.create.return_value = mock_result
-
-        mock_client = MagicMock()
-        mock_client.chat.completions = mock_completion
-
-        result = parse_user_message(
-            "yes please",
-            pending_question="Would you like that toasted?",
-            client=mock_client,
-        )
-
-        assert result.answers.get("toasted") is True
-
-    def test_parse_modification(self):
-        """Test parsing a modification request."""
-        mock_result = ParsedInput(
-            modifications=[
-                ItemModification(
-                    item_index=0,
-                    field="toasted",
-                    new_value=False,
-                )
-            ]
-        )
-
-        mock_completion = MagicMock()
-        mock_completion.create.return_value = mock_result
-
-        mock_client = MagicMock()
-        mock_client.chat.completions = mock_completion
-
-        result = parse_user_message(
-            "Actually, don't toast the bagel",
-            context={"current_item": "everything bagel"},
-            client=mock_client,
-        )
-
-        assert len(result.modifications) == 1
-        assert result.modifications[0].field == "toasted"
-        assert result.modifications[0].new_value is False
-
-
-# =============================================================================
-# Integration Tests (require API key)
-# =============================================================================
-
-@pytest.mark.skipif(
-    not os.getenv("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY not set"
-)
-class TestParseUserMessageIntegration:
-    """Integration tests with real LLM (requires API key)."""
-
-    def test_parse_simple_bagel(self):
-        """Test parsing a simple bagel order with real LLM."""
-        result = parse_user_message(
-            "I want an everything bagel toasted with cream cheese"
-        )
-
-        assert len(result.new_menu_items) >= 1
-        item = result.new_menu_items[0]
-        assert "bagel" in item.item_name.lower()
-
-    def test_parse_coffee_order(self):
-        """Test parsing a coffee order with real LLM."""
-        result = parse_user_message(
-            "Large iced latte with oat milk please"
-        )
-
-        assert len(result.new_menu_items) >= 1
-        item = result.new_menu_items[0]
-        assert "latte" in item.item_name.lower()
-
-    @pytest.mark.xfail(reason="LLM may interpret 'coffee with milk' as answering a milk question instead of ordering coffee")
-    def test_parse_coffee_with_milk_defaults_to_whole(self):
-        """Test that 'coffee with milk' is captured as a menu item."""
-        result = parse_user_message("coffee with milk")
-
-        assert len(result.new_menu_items) >= 1
-        item = result.new_menu_items[0]
-        assert "coffee" in item.item_name.lower()
-
-    @pytest.mark.xfail(reason="LLM may interpret this as modifications instead of a new menu item")
-    def test_parse_coffee_with_splash_of_milk(self):
-        """Test that 'coffee with a splash of milk' is captured as a menu item."""
-        result = parse_user_message("small coffee with a splash of milk")
-
-        assert len(result.new_menu_items) >= 1
-        item = result.new_menu_items[0]
-        assert "coffee" in item.item_name.lower()
-
-    def test_parse_coffee_with_sweetener_and_syrup(self):
-        """Test that coffee with 'sugar and vanilla syrups' is captured as a menu item."""
-        result = parse_user_message("large iced coffee with sugar and 2 vanilla syrups")
-
-        assert len(result.new_menu_items) >= 1
-        item = result.new_menu_items[0]
-        assert "coffee" in item.item_name.lower()
-
-    def test_parse_greeting(self):
-        """Test parsing a simple greeting."""
-        result = parse_user_message("Hi there!")
-
-        assert result.is_greeting is True
-        assert len(result.new_menu_items) == 0
-
-    def test_parse_yes_answer_no_new_items(self):
-        """Test that 'yes' answer to a pending question doesn't create new items."""
-        result = parse_user_message(
-            "yes",
-            pending_question="Would you like that toasted?",
-            context={"current_item": "plain bagel"}
-        )
-
-        # Should NOT create new items - that's the key thing
-        assert len(result.new_menu_items) == 0
-
-        # Should have the answer via either 'answers' field or as a modification
-        has_toasted_answer = result.answers.get("toasted") is True
-        has_toasted_modification = any(
-            m.field == "toasted" and m.new_value is True
-            for m in result.modifications
-        )
-        assert has_toasted_answer or has_toasted_modification
-
-    def test_parse_spread_answer_no_new_items(self):
-        """Test that spread answer to a pending question doesn't create new items."""
-        result = parse_user_message(
-            "cream cheese",
-            pending_question="Would you like cream cheese or butter on that?",
-            context={"current_item": "plain bagel"}
-        )
-
-        # Should NOT create new items - that's the key thing
-        assert len(result.new_menu_items) == 0
-
-        # Should have the answer via either 'answers' field or as a modification
-        has_spread_answer = result.answers.get("spread") == "cream cheese"
-        has_spread_modification = any(
-            m.field == "spread" and m.new_value == "cream cheese"
-            for m in result.modifications
-        )
-        assert has_spread_answer or has_spread_modification
-
-    def test_parse_checkout_intent(self):
-        """Test parsing checkout intent."""
-        result = parse_user_message(
-            "That's all, I'm ready to pay",
-            context={"items_count": 2}
-        )
-
-        assert result.wants_checkout is True or result.no_more_items is True
-
-    def test_parse_cancellation(self):
-        """Test parsing item cancellation."""
-        result = parse_user_message(
-            "Actually, forget the bagel. Just the coffee.",
-            context={"items": ["everything bagel", "latte"]}
-        )
-
-        # Should either have cancel_item_index or cancel_item_description
-        assert (
-            result.cancel_item_index is not None or
-            result.cancel_item_description is not None or
-            len(result.modifications) > 0
-        )
 
 
 # =============================================================================
@@ -715,7 +354,7 @@ class TestDeterministicParserFallback:
     @pytest.mark.parametrize("text,expected_type", [
         ("coffee please", "coffee"),
         ("The Leo", "signature_item"),
-        ("the chipotle egg omelette", "menu_item"),  # Omelettes are menu items (not signature)
+        ("the chipotle egg omelette", "omelette"),  # Omelettes are configurable items with their own type
     ])
     def test_deterministic_handles_coffee_and_menu_items(self, text, expected_type):
         """Test that coffee and menu items are now handled deterministically."""
@@ -733,7 +372,12 @@ class TestDeterministicParserFallback:
             assert sig_item.item_name is not None
         elif expected_type == "menu_item":
             menu_item = get_menu_item(result)
-            assert menu_item is not None
+            assert menu_item is not None, f"Expected menu_item, got parsed_items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
+        elif expected_type == "omelette":
+            # Omelettes are configurable items with their own item_type
+            omelette_item = get_parsed_item(result, item_type="omelette")
+            assert omelette_item is not None, f"Expected omelette item, got parsed_items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
+            assert omelette_item.item_name is not None
         else:
             menu_item = get_menu_item(result)
             assert menu_item is not None
@@ -2093,8 +1737,9 @@ class TestSplitQuantityBagelParsing:
 
         result = _parse_split_quantity_items("two plain bagels one with scallion cream cheese one with lox")
         assert result is not None
+        print(f"DEBUG: parsed_items = {[(i.item_type, i.item_name, i.attribute_values) for i in result.parsed_items]}")
         bagels = get_parsed_items(result, item_type="bagel")
-        assert len(bagels) == 2
+        assert len(bagels) == 2, f"Expected 2 bagels, got {len(bagels)}. All items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
         # First bagel: scallion cream cheese
         assert bagels[0].attribute_values.get("bread") == "plain"
         assert bagels[0].attribute_values.get("spread") == "cream cheese"

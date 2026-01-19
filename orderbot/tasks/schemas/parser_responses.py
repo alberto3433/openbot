@@ -6,7 +6,6 @@ in different states of the order flow. Each model constrains the possible
 interpretations of user input for a specific context.
 """
 
-import warnings
 from typing import Literal, Union
 from pydantic import BaseModel, Field
 
@@ -172,17 +171,14 @@ class ParsedItemEntry(BaseModel):
             )
         )
 
-    # Backward compatibility - will be removed after migration
     @property
     def attribute_values(self) -> dict:
-        """DEPRECATED: Use selections instead. Returns dict for backward compat."""
+        """Convert selections to dict format for backward compatibility."""
         result = {}
         for sel in self.selections:
-            # For boolean categories, convert yes/no to True/False
             if sel.slug in ("yes", "no"):
                 result[sel.category] = sel.slug == "yes"
             else:
-                # For multi-select, accumulate into a list
                 if sel.category in result:
                     existing = result[sel.category]
                     if isinstance(existing, list):
@@ -195,18 +191,9 @@ class ParsedItemEntry(BaseModel):
 
     @property
     def modifiers(self) -> list[Selection]:
-        """DEPRECATED: Use selections instead. Returns selections for backward compat."""
+        """Return selections for backward compatibility."""
         return self.selections
 
-    def get_modifiers_by_category(self, category: str) -> list[Selection]:
-        """DEPRECATED: Use get_selections instead."""
-        return self.get_selections(category)
-
-    def add_modifier(
-        self, slug: str, category: str | None = None, quantity: int = 1
-    ) -> None:
-        """DEPRECATED: Use add_selection instead."""
-        self.add_selection(slug=slug, category=category or "unknown", quantity=quantity)
 
 # ParsedItem is the unified type for all parsed items.
 ParsedItem = ParsedItemEntry
@@ -251,28 +238,6 @@ class AttributeChoiceResponse(BaseModel):
         default_factory=dict,
         description="Additional sub-values (deprecated)"
     )
-
-class MultiAttributeChoiceResponse(BaseModel):
-    """Generic parser output for multiple items needing the same attribute.
-
-    Used when asking about an attribute for multiple items at once.
-    """
-    attribute_slug: str = Field(
-        description="The attribute slug being answered"
-    )
-    values: list = Field(
-        default_factory=list,
-        description="List of values in order for each item"
-    )
-    all_same_value: str | bool | None = Field(
-        default=None,
-        description="If all items have the same value, put it here"
-    )
-    unclear: bool = Field(
-        default=False,
-        description="Set to true if values couldn't be determined"
-    )
-
 
 class OpenInputResponse(BaseModel):
     """Parser output when open for new items (not configuring a specific item).
@@ -466,10 +431,6 @@ class OpenInputResponse(BaseModel):
     modify_target_description: str | None = Field(
         default=None,
         description="Description of the item to modify (e.g., 'cinnamon raisin bagel', 'plain bagel')"
-    )
-    modify_new_spread: str | None = Field(
-        default=None,
-        description="Atomic spread slug to apply (e.g., 'scallion_cream_cheese', 'butter')"
     )
     modify_add_modifiers: list[str] = Field(
         default_factory=list,

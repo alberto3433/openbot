@@ -658,6 +658,23 @@ class TestMenuItemToasted:
                     {"id": 1, "name": "Ham Egg & Cheese on Wheat", "base_price": 8.50, "item_type": "egg_bagel"},
                 ],
             },
+            "item_types": {
+                "egg_bagel": {
+                    "slug": "egg_bagel",
+                    "display_name": "Egg Bagel",
+                    "attributes": [
+                        {
+                            "slug": "toasted",
+                            "input_type": "boolean",
+                            "is_required": False,
+                            "options": [
+                                {"slug": "yes", "display_name": "Toasted", "price_modifier": 0},
+                                {"slug": "no", "display_name": "Not Toasted", "price_modifier": 0},
+                            ]
+                        }
+                    ]
+                }
+            },
         }
 
     def test_toasted_captured_for_menu_item(self, menu_data):
@@ -669,7 +686,7 @@ class TestMenuItemToasted:
             OrderStateMachine,
             OpenInputResponse,
         )
-        from orderbot.tasks.schemas.parser_responses import ParsedItemEntry
+        from orderbot.tasks.schemas.parser_responses import ParsedItemEntry, Selection
         from orderbot.tasks.models import OrderTask, MenuItemTask
 
         order = OrderTask()
@@ -677,13 +694,14 @@ class TestMenuItemToasted:
 
         # Simulate parsed input with toasted set
         # Note: item_type must match the fixture's item_type ("egg_bagel")
+        # Use selections with Selection(slug="yes", category="toasted") for True
         parsed = OpenInputResponse(
             parsed_items=[
                 ParsedItemEntry(
                     item_type="egg_bagel",
                     item_name="Ham Egg & Cheese on Wheat",
                     quantity=1,
-                    attribute_values={"toasted": True},
+                    selections=[Selection(slug="yes", category="toasted")],
                 )
             ]
         )

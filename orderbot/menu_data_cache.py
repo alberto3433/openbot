@@ -2215,6 +2215,38 @@ class MenuDataCache:
         self._ensure_loaded()
         return set(self._item_names_by_type.keys())
 
+    def get_item_type_names_for_regex(self) -> list[str]:
+        """Get all item type names (display names and aliases) for regex pattern building.
+
+        Returns a list of item type names suitable for building dynamic regex patterns.
+        Includes both singular display names and aliases, sorted by length (longest first)
+        to ensure longer matches are tried before shorter ones in regex alternation.
+
+        Returns:
+            List of item type names sorted by length (longest first).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+
+        Examples:
+            >>> menu_cache.get_item_type_names_for_regex()
+            ["deli sandwich", "sandwich", "omelette", "beverage", "bagel", ...]
+        """
+        self._ensure_loaded()
+
+        names: set[str] = set()
+        for key, info in self._category_keywords.items():
+            if info.get("lookup_type") == "item_type":
+                # Add the key itself (could be slug or alias)
+                names.add(key.lower())
+                # Add display name
+                display_name = info.get("display_name", "")
+                if display_name:
+                    names.add(display_name.lower())
+
+        # Sort by length (longest first) for regex alternation priority
+        return sorted(names, key=len, reverse=True)
+
     def get_all_ingredient_categories(self) -> set[str]:
         """Get all known ingredient categories.
 

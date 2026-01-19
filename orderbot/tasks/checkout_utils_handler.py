@@ -18,6 +18,7 @@ from ..menu_data_cache import menu_cache
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from ..services.message_builder import MessageBuilder
+    from .context import OrderContext
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,14 @@ class CheckoutUtilsHandler:
         self._last_order_type: str | None = None
 
     def set_repeat_order_info(self, is_repeat: bool, last_order_type: str | None) -> None:
-        """Set repeat order info for personalized delivery question."""
+        """Set repeat order info for personalized delivery question (legacy method)."""
         self._is_repeat_order = is_repeat
         self._last_order_type = last_order_type
+
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set context from unified OrderContext."""
+        self._is_repeat_order = ctx.is_repeat_order
+        self._last_order_type = ctx.last_order_type
 
     def _get_question_for_attribute(
         self,

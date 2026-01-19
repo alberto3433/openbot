@@ -19,6 +19,7 @@ from .models import (
     ItemTask,
     TaskStatus,
 )
+from .context import OrderContext
 from .pricing import PricingEngine
 from .menu_lookup import MenuLookup
 from .query_handler import QueryHandler
@@ -50,12 +51,8 @@ from .parsers import (
     validate_phone_number,
     extract_zip_code,
     validate_delivery_zip_code,
-    # Deterministic yes/no parsing
-    parse_toasted_deterministic,
     # Constants - Number mapping
     WORD_TO_NUM,
-    # Constants - Regex patterns (basic)
-    QUALIFIER_PATTERNS,
     # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
     # - use menu_cache.is_greeting() / menu_cache.is_done() instead
     REPEAT_ORDER_PATTERNS,
@@ -68,10 +65,6 @@ from .parsers import (
     STORE_LOCATION_PATTERNS,
     DELIVERY_ZONE_PATTERNS,
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
-    # Constants - Recommendation patterns
-    RECOMMENDATION_PATTERNS,
-    # Constants - Item description patterns
-    ITEM_DESCRIPTION_PATTERNS,
     # String normalization utilities
     normalize_for_match,
     # Deterministic parsers - Compiled patterns
@@ -317,22 +310,74 @@ class OrderStateMachine:
     @menu_data.setter
     def menu_data(self, value: dict) -> None:
         self._menu_data = value or {}
-        # Update handler config menu data (used by handlers initialized with config)
-        self._handler_config.menu_data = self._menu_data
-        # Update menu lookup engine menu data
-        self.menu_lookup.menu_data = self._menu_data
-        # Update pricing engine menu data
-        self.pricing.menu_data = self._menu_data
-        # Update query handler menu data
-        self.query_handler.menu_data = self._menu_data
-        # Update store info handler menu data
-        self.store_info_handler.menu_data = self._menu_data
-        # Update menu inquiry handler menu data
-        self.menu_inquiry_handler.menu_data = self._menu_data
-        # Update item adder handler menu data
-        self.item_adder_handler.menu_data = self._menu_data
-        # Update taking items handler menu data
-        self.taking_items_handler.menu_data = self._menu_data
+        # Propagate to all menu_data-dependent components
+        for handler in self._get_menu_data_handlers():
+            handler.menu_data = self._menu_data
+
+    def _get_menu_data_handlers(self) -> list:
+        """Return all handlers/components that need menu_data updates."""
+        return [
+            self._handler_config,
+            self.menu_lookup,
+            self.pricing,
+            self.query_handler,
+            self.store_info_handler,
+            self.menu_inquiry_handler,
+            self.item_adder_handler,
+            self.taking_items_handler,
+        ]
+
+    def _update_handler_context(
+        self,
+        store_info: dict | None,
+        returning_customer: dict | None,
+    ) -> OrderContext:
+        """
+        Create and distribute context to all handlers.
+
+        This centralizes context distribution that was previously scattered
+        across multiple set_context/set_store_info/set_repeat_order_info calls.
+
+        Args:
+            store_info: Store configuration (delivery zones, tax rates, etc.)
+            returning_customer: Returning customer data if available
+
+        Returns:
+            The created OrderContext for reference
+        """
+        # Create callback for repeat order info updates
+        def set_repeat_info(is_repeat: bool, last_order_type: str | None) -> None:
+            self._is_repeat_order = is_repeat
+            self._last_order_type = last_order_type
+            # Also update checkout_utils_handler when repeat info changes
+            self.checkout_utils_handler.set_context(OrderContext(
+                is_repeat_order=is_repeat,
+                last_order_type=last_order_type,
+            ))
+
+        # Create unified context
+        ctx = OrderContext(
+            store_info=store_info or {},
+            returning_customer=returning_customer,
+            is_repeat_order=getattr(self, '_is_repeat_order', False),
+            last_order_type=getattr(self, '_last_order_type', None),
+            menu_data=self._menu_data,
+            set_repeat_info_callback=set_repeat_info,
+        )
+
+        # Store on instance for reference
+        self._returning_customer = returning_customer
+        self._store_info = store_info or {}
+
+        # Distribute to all handlers
+        self.query_handler.store_info = ctx.store_info
+        self.checkout_handler.set_context(ctx)
+        self.store_info_handler.set_context(ctx)
+        self.order_utils_handler.set_context(ctx)
+        self.checkout_utils_handler.set_context(ctx)
+        self.taking_items_handler.set_context(ctx)
+
+        return ctx
 
     def process(
         self,
@@ -356,44 +401,14 @@ class OrderStateMachine:
         if order is None:
             order = OrderTask()
 
-        # Store returning customer data for repeat order handling
-        self._returning_customer = returning_customer
-        # Store store info for delivery validation
-        self._store_info = store_info or {}
-        # Update query handler with current store info
-        self.query_handler.store_info = self._store_info
-        # Update checkout handler with current context (including confirmation context)
-        self.checkout_handler.set_context(
-            store_info=self._store_info,
-            returning_customer=returning_customer,
-            is_repeat_order=getattr(self, '_is_repeat_order', False),
-            last_order_type=getattr(self, '_last_order_type', None),
-            menu_data=self._menu_data,
-        )
-        # Update store info handler with current store info
-        self.store_info_handler.set_store_info(self._store_info)
-        # Update order utils handler with current store info
-        self.order_utils_handler.set_store_info(self._store_info)
-        # Update checkout utils handler with repeat order info
-        self.checkout_utils_handler.set_repeat_order_info(
-            is_repeat=getattr(self, '_is_repeat_order', False),
-            last_order_type=getattr(self, '_last_order_type', None),
-        )
-        # Update taking items handler with context
-        def set_repeat_info(is_repeat: bool, last_order_type: str | None) -> None:
-            self._is_repeat_order = is_repeat
-            self._last_order_type = last_order_type
-            self.checkout_utils_handler.set_repeat_order_info(is_repeat, last_order_type)
-        self.taking_items_handler.set_context(
-            returning_customer=returning_customer,
-            set_repeat_info_callback=set_repeat_info,
-        )
-
         # Reset repeat order flag - only set when user explicitly requests repeat order
         # This prevents the flag from persisting across different sessions on the singleton
         if not hasattr(self, '_is_repeat_order') or order.items.get_item_count() == 0:
             self._is_repeat_order = False
             self._last_order_type = None
+
+        # Update all handlers with unified context
+        self._update_handler_context(store_info, returning_customer)
 
         # Add user message to history
         order.add_message("user", user_input)

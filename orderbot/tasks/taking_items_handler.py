@@ -40,6 +40,7 @@ from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
+    from .context import OrderContext
 
 logger = logging.getLogger(__name__)
 
@@ -583,9 +584,13 @@ def _build_item_summary(item: ParsedItemEntry) -> str:
             # Single-select - show value
             attr_displays.append(str(value))
 
-    # Add modifiers if present
+    # Add modifiers if present (selections converted to display names)
     if item.modifiers:
-        attr_displays.extend(item.modifiers)
+        for sel in item.modifiers:
+            display = sel.display_name or sel.slug
+            if sel.quantity > 1:
+                display = f"{sel.quantity}x {display}"
+            attr_displays.append(display)
 
     # Build final summary
     if attr_displays:
@@ -688,12 +693,18 @@ class TakingItemsHandler:
 
     def set_context(
         self,
-        returning_customer: dict | None,
+        ctx: "OrderContext | None" = None,
+        # Legacy kwargs for backward compatibility
+        returning_customer: dict | None = None,
         set_repeat_info_callback: Callable[[bool, str | None], None] | None = None,
     ) -> None:
-        """Set per-request context."""
-        self._returning_customer = returning_customer
-        self._set_repeat_info_callback = set_repeat_info_callback
+        """Set per-request context from unified OrderContext."""
+        if ctx is not None:
+            self._returning_customer = ctx.returning_customer
+            self._set_repeat_info_callback = ctx.set_repeat_info_callback
+        else:
+            self._returning_customer = returning_customer
+            self._set_repeat_info_callback = set_repeat_info_callback
 
     def handle_greeting(
         self,
@@ -1173,14 +1184,7 @@ class TakingItemsHandler:
             if target_item:
                 # Handle MenuItemTask - unified path for all item types
                 if isinstance(target_item, MenuItemTask):
-                    # Apply spread modification (spreads are single_select attributes)
-                    # Use data-driven lookup to find the attribute slug for spread category
-                    if parsed.modify_new_spread:
-                        spread_attr = menu_cache.get_attribute_for_category(target_item.menu_item_type, "spread")
-                        if spread_attr:
-                            target_item.attribute_values[spread_attr] = parsed.modify_new_spread
-
-                    # Add modifiers using unified storage
+                    # Add modifiers using unified storage (includes spreads, toppings, etc.)
                     if parsed.modify_add_modifiers:
                         # Build modifier→category lookup (data-driven from database)
                         modifier_to_category: dict[str, str] = {}

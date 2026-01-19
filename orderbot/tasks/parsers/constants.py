@@ -423,6 +423,22 @@ RECOMMENDATION_PATTERNS = [
 # =============================================================================
 
 
+def clean_extracted_text(text: str) -> str:
+    """
+    Clean extracted text by removing trailing punctuation and whitespace.
+
+    This is commonly used after extracting text from regex match groups
+    to normalize user input.
+
+    Args:
+        text: The text to clean
+
+    Returns:
+        The cleaned text with trailing punctuation removed and whitespace stripped
+    """
+    return re.sub(r'[.!?,]+$', '', text).strip()
+
+
 def normalize_for_match(s: str) -> str:
     """
     Normalize a string for fuzzy matching.

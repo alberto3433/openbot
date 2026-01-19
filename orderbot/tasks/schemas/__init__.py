@@ -18,7 +18,6 @@ from .parser_responses import (
     ParsedItem,
     # Parser response schemas
     AttributeChoiceResponse,
-    MultiAttributeChoiceResponse,
     OpenInputResponse,
     DeliveryChoiceResponse,
     NameResponse,
@@ -43,7 +42,6 @@ __all__ = [
     "ParsedItem",
     # Parser responses
     "AttributeChoiceResponse",
-    "MultiAttributeChoiceResponse",
     "OpenInputResponse",
     "DeliveryChoiceResponse",
     "NameResponse",

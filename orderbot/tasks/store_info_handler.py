@@ -9,6 +9,10 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import OrderContext
 
 from .models import OrderTask
 from .schemas import StateMachineResult
@@ -51,8 +55,12 @@ class StoreInfoHandler:
         self._menu_data = value or {}
 
     def set_store_info(self, store_info: dict | None) -> None:
-        """Set the store info for this request."""
+        """Set the store info for this request (legacy method)."""
         self._store_info = store_info
+
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set context from unified OrderContext."""
+        self._store_info = ctx.store_info
 
     def handle_store_hours_inquiry(self, order: OrderTask) -> StateMachineResult:
         """Handle inquiry about store hours.

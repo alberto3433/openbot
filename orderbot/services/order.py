@@ -39,6 +39,7 @@ specific configurations.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -47,6 +48,172 @@ from ..models import Order, OrderItem, Store
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Helper Data Structures
+# =============================================================================
+
+@dataclass
+class CustomerInfo:
+    """Extracted customer information."""
+    name: str | None
+    phone: str | None
+    email: str | None
+    pickup_time: str | None = None
+
+
+@dataclass
+class TaxInfo:
+    """Store tax rates and fees."""
+    city_tax_rate: float
+    state_tax_rate: float
+    delivery_fee: float
+
+
+@dataclass
+class OrderTotals:
+    """Calculated order totals."""
+    subtotal: float
+    city_tax: float
+    state_tax: float
+    delivery_fee: float
+    total: float
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _first_non_empty(*vals: Any) -> str | None:
+    """Return the first non-empty string value from the arguments."""
+    for v in vals:
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _extract_customer_info(
+    order_state: Dict[str, Any],
+    slots: Dict[str, Any],
+    include_pickup_time: bool = False,
+) -> CustomerInfo:
+    """Extract customer information from order state and slots.
+
+    Args:
+        order_state: Current order state dict
+        slots: Slots from the LLM action
+        include_pickup_time: Whether to extract pickup_time
+
+    Returns:
+        CustomerInfo with extracted values
+    """
+    customer_block = order_state.get("customer") or {}
+
+    name = _first_non_empty(
+        customer_block.get("name"),
+        order_state.get("customer_name"),
+        order_state.get("name"),
+        slots.get("customer_name"),
+        slots.get("name"),
+    )
+
+    phone = _first_non_empty(
+        customer_block.get("phone"),
+        order_state.get("phone"),
+        slots.get("phone"),
+        slots.get("phone_number"),
+    )
+
+    email = _first_non_empty(
+        customer_block.get("email"),
+        order_state.get("customer_email"),
+        slots.get("customer_email"),
+        slots.get("email"),
+    )
+
+    pickup_time = None
+    if include_pickup_time:
+        pickup_time = _first_non_empty(
+            customer_block.get("pickup_time"),
+            order_state.get("pickup_time"),
+            slots.get("pickup_time"),
+            slots.get("pickup_time_str"),
+        )
+
+    return CustomerInfo(name=name, phone=phone, email=email, pickup_time=pickup_time)
+
+
+def _get_store_tax_info(db: Session, store_id: str | None) -> TaxInfo:
+    """Get tax rates and delivery fee from store.
+
+    Args:
+        db: Database session
+        store_id: Store identifier
+
+    Returns:
+        TaxInfo with rates and fees (defaults to 0 if store not found)
+    """
+    city_tax_rate = 0.0
+    state_tax_rate = 0.0
+    delivery_fee = 0.0
+
+    if store_id:
+        store = db.query(Store).filter(Store.store_id == store_id).first()
+        if store:
+            city_tax_rate = store.city_tax_rate or 0.0
+            state_tax_rate = store.state_tax_rate or 0.0
+            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
+
+    return TaxInfo(
+        city_tax_rate=city_tax_rate,
+        state_tax_rate=state_tax_rate,
+        delivery_fee=delivery_fee,
+    )
+
+
+def _calculate_order_totals(
+    subtotal: float,
+    tax_info: TaxInfo,
+    is_delivery: bool,
+) -> OrderTotals:
+    """Calculate order totals including taxes and delivery fee.
+
+    Args:
+        subtotal: Order subtotal
+        tax_info: Tax rates and delivery fee from store
+        is_delivery: Whether this is a delivery order
+
+    Returns:
+        OrderTotals with calculated values
+    """
+    city_tax = subtotal * tax_info.city_tax_rate
+    state_tax = subtotal * tax_info.state_tax_rate
+    actual_delivery_fee = tax_info.delivery_fee if is_delivery else 0.0
+    total = subtotal + city_tax + state_tax + actual_delivery_fee
+
+    return OrderTotals(
+        subtotal=subtotal,
+        city_tax=city_tax,
+        state_tax=state_tax,
+        delivery_fee=actual_delivery_fee,
+        total=total,
+    )
+
+
+def _update_checkout_state(order_state: Dict[str, Any], totals: OrderTotals) -> None:
+    """Update checkout_state in order_state with calculated totals.
+
+    Args:
+        order_state: Order state dict to update (mutated in place)
+        totals: Calculated order totals
+    """
+    order_state["checkout_state"] = order_state.get("checkout_state", {})
+    order_state["checkout_state"]["subtotal"] = totals.subtotal
+    order_state["checkout_state"]["city_tax"] = totals.city_tax
+    order_state["checkout_state"]["state_tax"] = totals.state_tax
+    order_state["checkout_state"]["delivery_fee"] = totals.delivery_fee
+    order_state["checkout_state"]["total"] = totals.total
 
 
 def persist_pending_order(
@@ -79,86 +246,32 @@ def persist_pending_order(
 
     slots = slots or {}
     items = order_state.get("items") or []
-    customer_block = order_state.get("customer") or {}
 
-    def first_non_empty(*vals):
-        for v in vals:
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        return None
-
-    customer_name = first_non_empty(
-        customer_block.get("name"),
-        order_state.get("customer_name"),
-        order_state.get("name"),
-        slots.get("customer_name"),
-        slots.get("name"),
-    )
-
-    phone = first_non_empty(
-        customer_block.get("phone"),
-        order_state.get("phone"),
-        slots.get("phone"),
-        slots.get("phone_number"),
-    )
-
-    customer_email = first_non_empty(
-        customer_block.get("email"),
-        order_state.get("customer_email"),
-        slots.get("customer_email"),
-        slots.get("email"),
-    )
-
-    # Calculate subtotal from line items
+    # Extract customer info and calculate totals using helpers
+    customer = _extract_customer_info(order_state, slots)
     subtotal = sum((it.get("line_total") or 0.0) for it in items)
-
-    # Get tax rates and delivery fee from store
-    city_tax_rate = 0.0
-    state_tax_rate = 0.0
-    delivery_fee = 0.0
-
-    if store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            city_tax_rate = store.city_tax_rate or 0.0
-            state_tax_rate = store.state_tax_rate or 0.0
-            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
-
-    # Calculate taxes
-    city_tax = subtotal * city_tax_rate
-    state_tax = subtotal * state_tax_rate
-
+    tax_info = _get_store_tax_info(db, store_id)
     order_type = order_state.get("order_type", "pickup")
-    delivery_address = order_state.get("delivery_address")
-
-    # Add delivery fee if delivery order
-    actual_delivery_fee = delivery_fee if order_type == "delivery" else 0.0
-
-    # Total price = subtotal + taxes + delivery fee
-    total_price = subtotal + city_tax + state_tax + actual_delivery_fee
+    is_delivery = order_type == "delivery"
+    totals = _calculate_order_totals(subtotal, tax_info, is_delivery)
 
     # Store tax breakdown in order state for reference
-    order_state["checkout_state"] = order_state.get("checkout_state", {})
-    order_state["checkout_state"]["subtotal"] = subtotal
-    order_state["checkout_state"]["city_tax"] = city_tax
-    order_state["checkout_state"]["state_tax"] = state_tax
-    order_state["checkout_state"]["delivery_fee"] = actual_delivery_fee
-    order_state["checkout_state"]["total"] = total_price
+    _update_checkout_state(order_state, totals)
 
     # Create order with pending_payment status
     order = Order(
         status="pending_payment",
-        customer_name=customer_name,
-        phone=phone,
-        customer_email=customer_email,
-        subtotal=subtotal,
-        city_tax=city_tax,
-        state_tax=state_tax,
-        delivery_fee=actual_delivery_fee,
-        total_price=total_price,
+        customer_name=customer.name,
+        phone=customer.phone,
+        customer_email=customer.email,
+        subtotal=totals.subtotal,
+        city_tax=totals.city_tax,
+        state_tax=totals.state_tax,
+        delivery_fee=totals.delivery_fee,
+        total_price=totals.total,
         store_id=store_id,
         order_type=order_type,
-        delivery_address=delivery_address,
+        delivery_address=order_state.get("delivery_address"),
         payment_status="pending",
         payment_method=order_state.get("payment_method"),
     )
@@ -201,80 +314,22 @@ def persist_confirmed_order(
 
     slots = slots or {}
     items = order_state.get("items") or []
-    customer_block = order_state.get("customer") or {}
 
-    def first_non_empty(*vals):
-        for v in vals:
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        return None
-
-    customer_name = first_non_empty(
-        customer_block.get("name"),
-        order_state.get("customer_name"),
-        order_state.get("name"),
-        slots.get("customer_name"),
-        slots.get("name"),
-    )
-
-    phone = first_non_empty(
-        customer_block.get("phone"),
-        order_state.get("phone"),
-        slots.get("phone"),
-        slots.get("phone_number"),
-    )
-
-    customer_email = first_non_empty(
-        customer_block.get("email"),
-        order_state.get("customer_email"),
-        slots.get("customer_email"),
-        slots.get("email"),
-    )
-
-    pickup_time = first_non_empty(
-        customer_block.get("pickup_time"),
-        order_state.get("pickup_time"),
-        slots.get("pickup_time"),
-        slots.get("pickup_time_str"),
-    )
-
-    # Calculate subtotal from line items
+    # Extract customer info and calculate totals using helpers
+    customer = _extract_customer_info(order_state, slots, include_pickup_time=True)
     subtotal = sum((it.get("line_total") or 0.0) for it in items)
-
-    # Get tax rates and delivery fee from store
-    city_tax_rate = 0.0
-    state_tax_rate = 0.0
-    delivery_fee = 0.0
-
-    if store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            city_tax_rate = store.city_tax_rate or 0.0
-            state_tax_rate = store.state_tax_rate or 0.0
-            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
-
-    # Calculate taxes
-    city_tax = subtotal * city_tax_rate
-    state_tax = subtotal * state_tax_rate
-
-    # Add delivery fee if delivery order
+    tax_info = _get_store_tax_info(db, store_id)
     order_type = order_state.get("order_type", "pickup")
-    actual_delivery_fee = delivery_fee if order_type == "delivery" else 0.0
-
-    # Total price = subtotal + taxes + delivery fee
-    total_price = subtotal + city_tax + state_tax + actual_delivery_fee
+    is_delivery = order_type == "delivery"
+    totals = _calculate_order_totals(subtotal, tax_info, is_delivery)
 
     # Store tax breakdown in order state for reference
-    order_state["checkout_state"] = order_state.get("checkout_state", {})
-    order_state["checkout_state"]["subtotal"] = subtotal
-    order_state["checkout_state"]["city_tax"] = city_tax
-    order_state["checkout_state"]["state_tax"] = state_tax
-    order_state["checkout_state"]["delivery_fee"] = actual_delivery_fee
-    order_state["checkout_state"]["total"] = total_price
+    _update_checkout_state(order_state, totals)
 
     logger.info(
         "Order total: subtotal=$%.2f, city_tax=$%.2f (%.3f%%), state_tax=$%.2f (%.3f%%), delivery=$%.2f, total=$%.2f",
-        subtotal, city_tax, city_tax_rate * 100, state_tax, state_tax_rate * 100, actual_delivery_fee, total_price
+        totals.subtotal, totals.city_tax, tax_info.city_tax_rate * 100,
+        totals.state_tax, tax_info.state_tax_rate * 100, totals.delivery_fee, totals.total
     )
 
     # Create or update Order row
@@ -289,15 +344,15 @@ def persist_confirmed_order(
     if order:
         # Update existing order
         order.status = "confirmed"
-        order.customer_name = customer_name
-        order.phone = phone
-        order.customer_email = customer_email
-        order.pickup_time = pickup_time
-        order.subtotal = subtotal
-        order.city_tax = city_tax
-        order.state_tax = state_tax
-        order.delivery_fee = actual_delivery_fee
-        order.total_price = total_price
+        order.customer_name = customer.name
+        order.phone = customer.phone
+        order.customer_email = customer.email
+        order.pickup_time = customer.pickup_time
+        order.subtotal = totals.subtotal
+        order.city_tax = totals.city_tax
+        order.state_tax = totals.state_tax
+        order.delivery_fee = totals.delivery_fee
+        order.total_price = totals.total
         order.store_id = store_id
         order.order_type = order_type
         order.delivery_address = order_state.get("delivery_address")
@@ -306,15 +361,15 @@ def persist_confirmed_order(
         # Create new order
         order = Order(
             status="confirmed",
-            customer_name=customer_name,
-            phone=phone,
-            customer_email=customer_email,
-            pickup_time=pickup_time,
-            subtotal=subtotal,
-            city_tax=city_tax,
-            state_tax=state_tax,
-            delivery_fee=actual_delivery_fee,
-            total_price=total_price,
+            customer_name=customer.name,
+            phone=customer.phone,
+            customer_email=customer.email,
+            pickup_time=customer.pickup_time,
+            subtotal=totals.subtotal,
+            city_tax=totals.city_tax,
+            state_tax=totals.state_tax,
+            delivery_fee=totals.delivery_fee,
+            total_price=totals.total,
             store_id=store_id,
             order_type=order_type,
             delivery_address=order_state.get("delivery_address"),

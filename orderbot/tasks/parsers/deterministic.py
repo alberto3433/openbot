@@ -2508,6 +2508,17 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     # Extract base attributes using data-driven extractor
     base_attrs = extract_attribute_values(initial_part, item_type)
 
+    # Also extract global attributes for base (spread, toasted, scooped)
+    base_spread = _extract_single_select_global_attribute(initial_part, "spread")
+    if base_spread:
+        base_attrs["spread"] = base_spread
+    base_toasted = _extract_boolean_global_attribute(initial_part, "toasted")
+    if base_toasted is not None:
+        base_attrs["toasted"] = base_toasted
+    base_scooped = _extract_boolean_global_attribute(initial_part, "scooped")
+    if base_scooped is not None:
+        base_attrs["scooped"] = base_scooped
+
     # Try to match a specific menu item name within the type
     base_item_name = _match_menu_item_name_for_type(initial_part, item_type)
 
@@ -2531,8 +2542,19 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
         if item_count >= total_quantity:
             break
 
-        # Extract part-specific attributes
+        # Extract part-specific attributes (item-type-specific)
         part_attrs = extract_attribute_values(part_text, item_type)
+
+        # Also extract global attributes (spread, toasted, scooped) that apply across item types
+        spread = _extract_single_select_global_attribute(part_text, "spread")
+        if spread:
+            part_attrs["spread"] = spread
+        toasted = _extract_boolean_global_attribute(part_text, "toasted")
+        if toasted is not None:
+            part_attrs["toasted"] = toasted
+        scooped = _extract_boolean_global_attribute(part_text, "scooped")
+        if scooped is not None:
+            part_attrs["scooped"] = scooped
 
         # Merge: part overrides base (only for non-None values)
         merged_attrs = {**base_attrs}

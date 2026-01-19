@@ -18,7 +18,8 @@ from .validators import (
     validate_delivery_zip_code,
     # Deterministic yes/no parsing
     parse_yes_no_deterministic,
-    parse_toasted_deterministic,
+    # Note: parse_toasted_deterministic was removed - toasted preference is now
+    # parsed via data-driven boolean attribute lookup. See deterministic.py.
 )
 
 from .deterministic import (
@@ -37,11 +38,6 @@ from .deterministic import (
     # Generic item builder
     build_parsed_item,
     # Internal helpers (needed by state_machine)
-    _extract_quantity,
-    _extract_toasted,
-    _extract_spread,
-    _extract_side_item,
-    _extract_menu_item_from_text,
     _parse_configurable_item,
     _parse_soda_deterministic,
     _parse_price_inquiry_deterministic,
@@ -50,6 +46,10 @@ from .deterministic import (
     _parse_item_description_inquiry,
     _parse_multi_item_order,
     parse_open_input_deterministic,
+    # Internal helpers (used by tests)
+    _extract_quantity,
+    _extract_toasted,
+    _extract_spread,
 )
 
 from .llm_parsers import (
@@ -108,6 +108,7 @@ from .constants import (
     # Item description patterns
     ITEM_DESCRIPTION_PATTERNS,
     # String normalization utilities
+    clean_extracted_text,
     normalize_for_match,
 )
 
@@ -119,7 +120,7 @@ __all__ = [
     "validate_delivery_zip_code",
     # Deterministic yes/no parsing
     "parse_yes_no_deterministic",
-    "parse_toasted_deterministic",
+    # Note: parse_toasted_deterministic removed - now data-driven via _extract_toasted
     # Deterministic parsers - Compiled patterns
     "REPLACE_ITEM_PATTERN",
     "CANCEL_ITEM_PATTERN",
@@ -135,11 +136,6 @@ __all__ = [
     # Generic item builder
     "build_parsed_item",
     # Deterministic parsers - Internal helpers
-    "_extract_quantity",
-    "_extract_toasted",
-    "_extract_spread",
-    "_extract_side_item",
-    "_extract_menu_item_from_text",
     "_parse_configurable_item",
     "_parse_soda_deterministic",
     "_parse_price_inquiry_deterministic",
@@ -148,6 +144,10 @@ __all__ = [
     "_parse_item_description_inquiry",
     "_parse_multi_item_order",
     "parse_open_input_deterministic",
+    # Internal helpers (used by tests)
+    "_extract_quantity",
+    "_extract_toasted",
+    "_extract_spread",
     # LLM parsers
     "get_instructor_client",
     "parse_side_choice",
@@ -197,5 +197,6 @@ __all__ = [
     # Constants - Item description patterns
     "ITEM_DESCRIPTION_PATTERNS",
     # String normalization utilities
+    "clean_extracted_text",
     "normalize_for_match",
 ]

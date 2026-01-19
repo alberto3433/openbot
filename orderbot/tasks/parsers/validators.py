@@ -180,21 +180,9 @@ def parse_yes_no_deterministic(
     return None
 
 
-def parse_toasted_deterministic(user_input: str) -> bool | None:
-    """
-    Deterministically parse toasted preference.
-
-    Handles special cases like "not toasted", "untoasted", "toast it".
-
-    Returns:
-        True if wants toasted, False if not, None if unclear
-    """
-    return parse_yes_no_deterministic(
-        user_input,
-        no_patterns=r'\b(not toasted|untoasted|don\'t toast|no|nope|nah)\b',
-        yes_patterns=r'\b(yes|yeah|yep|yup|sure|please|toasted|toast it)\b',
-    )
-
+# Note: parse_toasted_deterministic was removed - toasted preference is now
+# parsed via data-driven boolean attribute lookup using global_attribute_options
+# with aliases. See _extract_boolean_global_attribute() in deterministic.py.
 
 # Note: parse_hot_iced_deterministic removed - temperature (hot/iced) is now
 # part of the menu item name (e.g., "Iced Latte" vs "Hot Latte"), not a

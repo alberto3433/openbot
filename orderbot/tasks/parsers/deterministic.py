@@ -45,6 +45,8 @@ from .constants import (
     MORE_MENU_ITEMS_PATTERNS,
     CUSTOMER_SERVICE_PATTERNS,
     find_item_by_unit_type,
+    # String utilities
+    clean_extracted_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -945,13 +947,23 @@ def _extract_attribute_value(
     input_type = attr_config.get("input_type", "single_select")
 
     # Boolean attributes (toasted, decaf, scooped, etc.)
+    # Use alias-based lookup via GlobalAttributeOptions (data-driven)
     if input_type == "boolean":
-        # Check for negative patterns first ("not toasted", "untoasted")
-        slug_lower = attr_slug.lower()
-        if re.search(rf"\b(?:not\s+{slug_lower}|un{slug_lower})\b", text_lower):
+        # Try to resolve via global attribute options with aliases
+        try:
+            options = menu_cache.get_global_attribute_options(attr_slug)
+            if options:
+                matched = menu_cache.resolve_option_by_alias(attr_slug, text_lower)
+                if matched:
+                    return matched["slug"] == "true"
+        except Exception:
+            # No options configured for this boolean attribute, fall through to fallback
+            pass
+
+        # Fallback to generic yes/no patterns from response_patterns table
+        if menu_cache.is_negative(text_lower):
             return False
-        # Check for positive pattern
-        if re.search(rf"\b{slug_lower}(?:ed)?\b", text_lower):
+        if menu_cache.is_affirmative(text_lower):
             return True
         return None
 
@@ -1278,7 +1290,8 @@ def _parse_item_generic(
         # Helper to filter extracted values by category (data-driven from database)
         def matches_category(opt: dict, category: str) -> bool:
             """Check if option belongs to category (data-driven from database)."""
-            return opt.get("category", "").lower() == category.lower()
+            opt_category = opt.get("category") or ""
+            return opt_category.lower() == category.lower()
 
         def extract_from_combined_attr(attr_slug: str, filter_fn) -> list[dict]:
             """Extract values from a combined attribute, filtering by type."""
@@ -1296,7 +1309,7 @@ def _parse_item_generic(
                             "slug": values,
                             "quantity": 1,
                             "display_name": opt.get("display_name", values),
-                            "category": opt.get("category", "")
+                            "category": opt.get("category") or ""
                         }]
             return []
 
@@ -1421,7 +1434,7 @@ def _parse_item_generic(
             slug=sy.slug, category=sy.category, quantity=sy.quantity
         ))
 
-    return ParsedItemEntry(
+    return build_parsed_item(
         item_type=item_type,
         item_name=item_name,
         quantity=quantity,
@@ -1446,32 +1459,149 @@ def _extract_quantity(text: str) -> int | None:
     return WORD_TO_NUM.get(text)
 
 
-def _extract_toasted(text: str) -> bool | None:
-    """Extract toasted preference from text."""
+def _extract_boolean_global_attribute(text: str, attr_slug: str) -> bool | None:
+    """Extract a boolean attribute value using global attribute options (data-driven).
+
+    This function looks up boolean options (true/false) for the given attribute
+    from global_attribute_options and matches the user input against aliases
+    defined for those options using substring matching.
+
+    Args:
+        text: User input text
+        attr_slug: The attribute slug (e.g., "toasted", "scooped", "decaf")
+
+    Returns:
+        True if matched to true option, False if matched to false option, None if no match.
+    """
     text_lower = text.lower()
 
-    # Check for "not toasted" or "untoasted" first (including typos)
-    if re.search(r"\b(?:not\s+(?:toasted|tosted|tostd)|untoasted)\b", text_lower):
+    # Try to resolve via global attribute options with aliases (substring matching)
+    try:
+        options = menu_cache.get_global_attribute_options(attr_slug)
+        if options:
+            # Build list of (alias, is_true) tuples sorted by length descending
+            # so we match longer aliases first (e.g., "not toasted" before "toasted")
+            alias_matches: list[tuple[str, bool]] = []
+            for opt in options:
+                is_true_option = opt["slug"] == "true"
+                # Check the option's aliases from the linked ingredient
+                aliases = opt.get("aliases", [])
+                for alias in aliases:
+                    alias_matches.append((alias.lower(), is_true_option))
+
+            # Sort by length descending to match longer aliases first
+            alias_matches.sort(key=lambda x: len(x[0]), reverse=True)
+
+            # Check if any alias appears in the text
+            for alias, is_true_option in alias_matches:
+                if alias in text_lower:
+                    return is_true_option
+    except Exception:
+        # No options configured for this attribute, fall through to fallback
+        pass
+
+    # Fallback: Use regex pattern matching based on the attribute slug itself
+    # This handles cases where database options aren't configured
+    slug_lower = attr_slug.lower()
+
+    # Check for negative patterns first ("not {slug}", "un{slug}")
+    if re.search(rf"\b(?:not\s+{re.escape(slug_lower)}(?:ed)?|un{re.escape(slug_lower)}(?:ed)?)\b", text_lower):
         return False
-    # Check for "toasted" and common typos
-    if re.search(r"\b(?:toasted|tosted|tostd)\b", text_lower):
+
+    # Check for positive pattern ("{slug}" or "{slug}ed")
+    if re.search(rf"\b{re.escape(slug_lower)}(?:ed)?\b", text_lower):
         return True
 
     return None
+
+
+def _extract_toasted(text: str) -> bool | None:
+    """Extract toasted preference from text (data-driven).
+
+    Uses global attribute options with aliases for pattern matching.
+    Delegates to _extract_boolean_global_attribute for data-driven lookup.
+    """
+    return _extract_boolean_global_attribute(text, "toasted")
 
 
 def _extract_scooped(text: str) -> bool | None:
-    """Extract scooped preference from text (bagel with inside bread removed)."""
+    """Extract scooped preference from text (data-driven).
+
+    Uses global attribute options with aliases for pattern matching.
+    Delegates to _extract_boolean_global_attribute for data-driven lookup.
+    """
+    return _extract_boolean_global_attribute(text, "scooped")
+
+
+def _extract_single_select_global_attribute(text: str, attr_slug: str) -> str | None:
+    """Extract a single-select global attribute value from text (data-driven).
+
+    This function looks up options for the given attribute from global_attribute_options
+    and matches the user input against aliases defined for those options.
+
+    Args:
+        text: User input text
+        attr_slug: The attribute slug (e.g., "bread", "spread", "size")
+
+    Returns:
+        The matched option slug if found, None otherwise.
+    """
     text_lower = text.lower()
 
-    # Check for "not scooped" first
-    if re.search(r"\bnot\s+scooped\b", text_lower):
-        return False
-    # Check for "scooped"
-    if re.search(r"\bscooped\b", text_lower):
-        return True
+    try:
+        options = menu_cache.get_global_attribute_options(attr_slug)
+        if not options:
+            return None
+
+        # Build list of (alias, slug) tuples sorted by length descending
+        alias_matches: list[tuple[str, str]] = []
+        for opt in options:
+            slug = opt.get("slug", "")
+            # Add display_name as an alias
+            display_name = opt.get("display_name", "").lower()
+            if display_name:
+                alias_matches.append((display_name, slug))
+            # Add slug as words (underscores to spaces)
+            slug_words = slug.replace("_", " ").lower()
+            alias_matches.append((slug_words, slug))
+            # Check the option's aliases
+            aliases = opt.get("aliases", [])
+            for alias in aliases:
+                alias_matches.append((alias.lower(), slug))
+
+        # Sort by length descending to match longer aliases first
+        alias_matches.sort(key=lambda x: len(x[0]), reverse=True)
+
+        # Check if any alias appears in the text
+        for alias, slug in alias_matches:
+            if alias in text_lower:
+                return slug
+    except Exception:
+        # No options configured for this attribute
+        pass
 
     return None
+
+
+# Wrapper functions for backwards compatibility during refactoring
+# These delegate to the generic data-driven extraction functions
+
+def _extract_toasted(text: str) -> bool | None:
+    """Extract toasted preference from text.
+
+    DEPRECATED: Wrapper for backwards compatibility.
+    Use _extract_boolean_global_attribute(text, "toasted") directly.
+    """
+    return _extract_boolean_global_attribute(text, "toasted")
+
+
+def _extract_scooped(text: str) -> bool | None:
+    """Extract scooped preference from text.
+
+    DEPRECATED: Wrapper for backwards compatibility.
+    Use _extract_boolean_global_attribute(text, "scooped") directly.
+    """
+    return _extract_boolean_global_attribute(text, "scooped")
 
 
 def _extract_spread(text: str) -> str | None:
@@ -1720,7 +1850,7 @@ def _extract_menu_item_modifications(
     if with_pattern:
         with_text = with_pattern.group(1).strip()
         # Remove trailing punctuation
-        with_text = re.sub(r'[.!?,]+$', '', with_text).strip()
+        with_text = clean_extracted_text(with_text)
 
         # Split by "and" and commas
         parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
@@ -1753,104 +1883,125 @@ def _extract_menu_item_modifications(
 
 
 def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
-    """Detect requests to modify an existing cart item with a spread.
+    """Detect requests to modify an existing cart item with a modifier.
 
     Catches patterns like:
-    - "can I have scallion cream cheese on the cinnamon raisin bagel"
+    - "can I have cream cheese on the cinnamon raisin bagel"
     - "put butter on the plain bagel"
-    - "add cream cheese to the everything bagel"
+    - "add mayo to the sandwich"
     - "make the bagel with scallion cream cheese"
     - "make it with butter"
 
-    This must be called BEFORE menu item matching to prevent "scallion cream cheese"
-    from being matched to "Scallion Cream Cheese Sandwich".
+    Item type names are loaded dynamically from the database, so this function
+    works with any item types (bagels, sandwiches, omelettes, etc.).
 
-    Spread options are loaded from the database cache (GlobalAttributeOption for "spread").
+    This must be called BEFORE menu item matching to prevent modifiers like
+    "scallion cream cheese" from being matched to menu items.
 
     Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
     """
     text_lower = text.lower().strip()
 
-    spread_part = None
-    target_bagel = None
-
-    # === Pattern Group 1: SPREAD preposition TARGET bagel ===
-    # These patterns have spread BEFORE the target bagel
-    # Group 1: spread, Group 2: bagel type
-    spread_before_target_patterns = [
-        # "can I have X on the Y bagel"
-        r"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel",
-        # "put X on the Y bagel"
-        r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*bagel",
-        # "X on the Y bagel" (simple form)
-        r"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel$",
-        # "i want X on the Y bagel"
-        r"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*bagel",
-    ]
-
-    for pattern in spread_before_target_patterns:
-        match = re.search(pattern, text_lower)
-        if match:
-            spread_part = match.group(1).strip()
-            target_bagel = match.group(2).strip()
-            break
-
-    # === Pattern Group 2: TARGET bagel with SPREAD ===
-    # These patterns have target BEFORE the spread (reversed order)
-    # "make the plain bagel with X" - Group 1: bagel type, Group 2: spread
-    if not spread_part:
-        match = re.search(
-            r"make\s+(?:the|my)\s+(.+?)\s+bagel\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
-            text_lower
-        )
-        if match:
-            target_bagel = match.group(1).strip()
-            spread_part = match.group(2).strip()
-
-    # === Pattern Group 3: Implicit target (IT or THE BAGEL) ===
-    # "make it with X", "make the bagel with X", "put X on it"
-    # target_bagel stays None to indicate "find any/last bagel"
-    if not spread_part:
-        implicit_target_patterns = [
-            # "make the bagel with X" - no specific bagel type
-            r"make\s+(?:the|my)\s+bagel\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
-            # "make it with X"
-            r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
-            # "put X on it"
-            r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
-            # "i want X on it"
-            r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
-            # "can I have X on it"
-            r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
-        ]
-        for pattern in implicit_target_patterns:
-            match = re.search(pattern, text_lower)
-            if match:
-                spread_part = match.group(1).strip()
-                target_bagel = None  # Implicit - find last/only bagel
-                break
-
-    # No pattern matched
-    if not spread_part:
+    # Build dynamic item type pattern from database
+    item_type_names = menu_cache.get_item_type_names_for_regex()
+    if not item_type_names:
         return None
 
-    # === Extract spread from spread_part (atomic slug) ===
-    spread = _extract_spread(spread_part)
+    # Build regex alternation: (bagel|sandwich|omelette|...)
+    # Names are sorted by length (longest first) so "deli sandwich" matches before "sandwich"
+    item_type_pattern = "(?:" + "|".join(re.escape(name) for name in item_type_names) + ")"
 
-    # If we found a spread, this is a modification
-    if spread:
-        logger.info(
-            "MODIFY EXISTING ITEM: '%s' -> spread=%s, target=%s",
-            text[:50], spread, target_bagel
-        )
+    modifier_part = None
+    target_description = None
+    matched_item_type = None
 
-        return OpenInputResponse(
-            modify_existing_item=True,
-            modify_target_description=target_bagel,
-            modify_new_spread=spread,
-        )
+    # === Pattern Group 1: MODIFIER preposition TARGET item_type ===
+    # These patterns have modifier BEFORE the target item type
+    # Group 1: modifier, Group 2: item description (e.g., "plain", "cinnamon raisin")
+    modifier_before_target_patterns = [
+        # "can I have X on the Y {item_type}"
+        rf"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "put X on the Y {item_type}"
+        rf"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "X on the Y {item_type}" (simple form)
+        rf"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}$",
+        # "i want X on the Y {item_type}"
+        rf"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+    ]
 
-    return None
+    for pattern in modifier_before_target_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            modifier_part = match.group(1).strip()
+            target_description = match.group(2).strip()
+            break
+
+    # === Pattern Group 2: TARGET item_type with MODIFIER ===
+    # These patterns have target BEFORE the modifier (reversed order)
+    # "make the plain {item_type} with X" - Group 1: item description, Group 2: modifier
+    if not modifier_part:
+        pattern = rf"make\s+(?:the|my)\s+(.+?)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$"
+        match = re.search(pattern, text_lower)
+        if match:
+            target_description = match.group(1).strip()
+            modifier_part = match.group(2).strip()
+
+    # === Pattern Group 3: Implicit target (IT or generic item type) ===
+    # "make it with X", "make the bagel with X", "put X on it"
+    # target_description stays None to indicate "find any/last item"
+    if not modifier_part:
+        # First try patterns with generic item type (no specific description)
+        generic_patterns = [
+            # "make the {item_type} with X" - no specific description
+            rf"make\s+(?:the|my)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+        ]
+        for pattern in generic_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                modifier_part = match.group(1).strip()
+                target_description = None
+                break
+
+        # Then try implicit "it" patterns
+        if not modifier_part:
+            implicit_target_patterns = [
+                # "make it with X"
+                r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+                # "put X on it"
+                r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
+                # "i want X on it"
+                r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
+                # "can I have X on it"
+                r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
+            ]
+            for pattern in implicit_target_patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    modifier_part = match.group(1).strip()
+                    target_description = None
+                    break
+
+    # No pattern matched
+    if not modifier_part:
+        return None
+
+    # Clean up modifier_part - remove trailing "please/thanks"
+    modifier_part = re.sub(r"\s+(?:please|thanks)$", "", modifier_part).strip()
+
+    # Skip if modifier_part is empty or too short
+    if not modifier_part or len(modifier_part) < 2:
+        return None
+
+    logger.info(
+        "MODIFY EXISTING ITEM: '%s' -> modifier=%s, target=%s",
+        text[:50], modifier_part, target_description
+    )
+
+    return OpenInputResponse(
+        modify_existing_item=True,
+        modify_target_description=target_description,
+        modify_add_modifiers=[modifier_part],
+    )
 
 
 def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
@@ -2206,6 +2357,11 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     """
     Detect configurable item type from text using database-driven keywords.
 
+    Uses smart matching to prefer:
+    1. Triggers that match the item type slug (e.g., "bagel" for bagel type)
+    2. Triggers that appear at the start of the text
+    3. Longer triggers
+
     Args:
         text: User input text (lowercase)
 
@@ -2213,16 +2369,31 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
         (item_type_slug, matched_trigger) or (None, None) if no match
     """
     configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+    text_lower = text.lower()
+    text_len = len(text_lower)
+
+    # Collect all matches with position info for smarter selection
+    # Format: (item_type, trigger, length, start_pos, slug_matches)
+    matches: list[tuple[str, str, int, int, bool]] = []
 
     for item_type_slug in configurable_slugs:
         triggers = menu_cache.get_item_type_triggers(item_type_slug)
-        # Sort by length descending for longest match first
-        for trigger in sorted(triggers, key=len, reverse=True):
+        for trigger in triggers:
             # Match trigger with optional plural 's'
-            if re.search(rf'\b{re.escape(trigger)}s?\b', text, re.IGNORECASE):
-                return item_type_slug, trigger
+            pattern = rf'\b{re.escape(trigger)}s?\b'
+            match = re.search(pattern, text_lower)
+            if match:
+                start_pos = match.start()
+                # Prefer item types where slug matches trigger
+                slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
+                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches))
 
-    return None, None
+    if not matches:
+        return None, None
+
+    # Sort by: (1) slug_matches (True first), (2) start_pos (earlier first), (3) length (longer first)
+    matches.sort(key=lambda x: (not x[4], x[3], -x[2]))
+    return matches[0][0], matches[0][1]
 
 
 def _count_split_indicators(text: str) -> int:
@@ -2614,7 +2785,7 @@ def _parse_price_inquiry_deterministic(text: str) -> OpenInputResponse | None:
         match = pattern.search(text_lower)
         if match:
             item_text = match.group(1).strip()
-            item_text = re.sub(r'[.!?,]+$', '', item_text).strip()
+            item_text = clean_extracted_text(item_text)
 
             logger.debug("Price inquiry detected: item_text='%s'", item_text)
 
@@ -2705,7 +2876,7 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
         if match:
             category_text = match.group(1).strip()
             # Remove trailing punctuation
-            category_text = re.sub(r'[.!?,]+$', '', category_text).strip()
+            category_text = clean_extracted_text(category_text)
 
             # Check if it's a generic term that should trigger general menu listing
             if category_text in general_menu_terms:
@@ -2834,7 +3005,7 @@ def _parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
         match = pattern.search(text_lower)
         if match:
             location_query = match.group(1).strip()
-            location_query = re.sub(r'[.!?,]+$', '', location_query).strip()
+            location_query = clean_extracted_text(location_query)
             logger.info("STORE INFO INQUIRY (delivery zone): '%s' -> '%s'", text[:50], location_query)
             return OpenInputResponse(
                 asks_delivery_zone=True,
@@ -2855,7 +3026,7 @@ def _parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
         match = pattern.search(text_lower)
         if match:
             item_name = match.group(1).strip()
-            item_name = re.sub(r'[.!?,]+$', '', item_name).strip()
+            item_name = clean_extracted_text(item_name)
             item_name = re.sub(r'\s+sandwich$', '', item_name).strip()
             if item_name:
                 logger.info("ITEM DESCRIPTION INQUIRY: '%s' -> item='%s'", text[:50], item_name)
@@ -2897,7 +3068,7 @@ def _parse_modifier_inquiry(
             if item_group > 0:
                 try:
                     item_text = match.group(item_group).strip()
-                    item_text = re.sub(r'[.!?,]+$', '', item_text).strip()
+                    item_text = clean_extracted_text(item_text)
                 except (IndexError, AttributeError):
                     pass
 
@@ -2905,7 +3076,7 @@ def _parse_modifier_inquiry(
             if category_group > 0:
                 try:
                     category_text = match.group(category_group).strip()
-                    category_text = re.sub(r'[.!?,]+$', '', category_text).strip()
+                    category_text = clean_extracted_text(category_text)
                 except (IndexError, AttributeError):
                     pass
 
@@ -3102,7 +3273,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     if item_text:
         item_text = item_text.strip()
         # Clean up trailing punctuation
-        item_text = re.sub(r'[.!?,]+$', '', item_text).strip()
+        item_text = clean_extracted_text(item_text)
 
     logger.info("ADD MORE REQUEST: detected in '%s', item_text='%s'", text[:50], item_text)
 
@@ -3145,49 +3316,33 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
             parsed_items=[build_parsed_item(item_type="menu_item", item_name=menu_item, quantity=1)],
         )
 
-    # Try bagel
-    if re.search(r'\bbagels?\b', item_text, re.IGNORECASE):
-        bagel_type = _slug_to_display(_extract_attribute_value(item_text, "bagel", "bread"))
-        toasted = _extract_toasted(item_text)
-        scooped = _extract_scooped(item_text)
-        spread = _extract_spread(item_text)
-        logger.info("ADD MORE: parsed as bagel type='%s' (qty=1)", bagel_type)
+    # Try to detect any configurable item type using data-driven triggers
+    # This replaces hardcoded bagel detection
+    detected_type, _ = _detect_configurable_item_type(item_text)
+    if detected_type:
+        # Extract attributes using data-driven extraction
+        attr_values = extract_attribute_values(item_text, detected_type)
+        logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_values.keys()))
         return OpenInputResponse(
             parsed_items=[build_parsed_item(
-                item_type="bagel",
-                attribute_values={
-                    k: v for k, v in [
-                        ("bread", bagel_type),
-                        ("toasted", toasted),
-                        ("scooped", scooped),
-                        ("spread", spread),
-                    ] if v is not None
-                },
+                item_type=detected_type,
+                attribute_values=attr_values,
             )],
         )
 
-    # Check for common drink shorthand like "orange juice", "OJ", etc.
-    # that might not match the full soda pattern
-    drink_shorthands = {
-        "orange juice": "Tropicana Orange Juice",
-        "oj": "Tropicana Orange Juice",
-        "apple juice": "Apple Juice",
-        "cranberry juice": "Cranberry Juice",
-        "lemonade": "Lemonade",
-        "water": "Water",
-        "bottled water": "Bottled Water",
-    }
-    item_lower = item_text.lower()
-    for shorthand, canonical in drink_shorthands.items():
-        if shorthand in item_lower:
-            logger.info("ADD MORE: parsed shorthand '%s' as '%s' (qty=1)", shorthand, canonical)
-            return OpenInputResponse(
-                parsed_items=[build_parsed_item(
-                    item_type="sized_beverage",
-                    item_name=canonical,
-                    quantity=1,
-                )],
-            )
+    # Try to resolve item via menu alias lookup (data-driven, replaces hardcoded drink_shorthands)
+    resolved_item = menu_cache.resolve_menu_item_alias(item_text)
+    if resolved_item:
+        # Look up item type for the resolved item
+        resolved_item_type = menu_cache.get_item_type_for_menu_item(resolved_item)
+        logger.info("ADD MORE: resolved alias '%s' -> '%s' (type=%s, qty=1)", item_text[:30], resolved_item, resolved_item_type)
+        return OpenInputResponse(
+            parsed_items=[build_parsed_item(
+                item_type=resolved_item_type or "menu_item",
+                item_name=resolved_item,
+                quantity=1,
+            )],
+        )
 
     # Couldn't parse the item - fall back to LLM
     logger.debug("ADD MORE: couldn't parse item '%s', falling back", item_text)
@@ -4138,12 +4293,22 @@ def parse_open_input_deterministic(
     ]):
         menu_item, qty = _extract_menu_item_from_text(text)
         if menu_item:
-            toasted = _extract_toasted(text)
-            bread_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-            # Get item_type for data-driven modification extraction
+            # Get item_type for data-driven modification and attribute extraction
             item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
+            # Extract attributes using data-driven approach
+            attr_values = {}
+            if item_type_for_mods:
+                attr_values = extract_attribute_values(text, item_type_for_mods)
+            else:
+                # Fallback: extract common global attributes for items without a specific type
+                toasted = _extract_boolean_global_attribute(text, "toasted")
+                bread_type = _extract_single_select_global_attribute(text, "bread")
+                if toasted is not None:
+                    attr_values["toasted"] = toasted
+                if bread_type:
+                    attr_values["bread"] = bread_type
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bread=%s, mods=%s)", text[:50], menu_item, qty, toasted, bread_type, modifications)
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
             # Convert structured modifications to QuantifiedModifier objects
@@ -4158,9 +4323,7 @@ def parse_open_input_deterministic(
                     item_type="menu_item",
                     item_name=menu_item,
                     quantity=1,
-                    attribute_values={
-                        k: v for k, v in [("bread", bread_type), ("toasted", toasted)] if v is not None
-                    },
+                    attribute_values=attr_values,
                     modifiers=mod_list,
                 )
                 for _ in range(qty)

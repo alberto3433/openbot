@@ -68,16 +68,14 @@ from .llm_parsers import (
 from .constants import (
     # Number mapping
     WORD_TO_NUM,
-    # Spread types (loaded from database via dynamic functions)
-    get_spreads,
-    get_spread_types,
-    get_bagel_spreads,
     # Signature items (loaded from database via dynamic function)
     get_signature_item_aliases,
-    # By-the-pound items and categories (loaded from database via dynamic functions)
-    get_by_pound_items,
+    # By-the-pound item lookup (loaded from database via dynamic function)
     find_by_pound_item,
-    get_by_pound_category_names,
+    # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
+    # - use menu_cache.get_global_attribute_options("spread") instead
+    # Note: get_by_pound_items(), get_by_pound_category_names() were removed - dead code
+    # - use menu_cache.get_by_pound_items() or menu_cache.get_by_pound_category_names() directly
     # Note: get_proteins(), get_cheeses(), get_toppings() were removed
     # - use menu_cache.get_ingredients("protein"), etc. instead
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
@@ -160,18 +158,14 @@ __all__ = [
     "parse_phone",
     # Constants - Number mapping
     "WORD_TO_NUM",
-    # Constants - Spread types (loaded from database via dynamic functions)
-    "get_spreads",
-    "get_spread_types",
-    "get_bagel_spreads",
     # Constants - Signature items (loaded from database via dynamic function)
     "get_signature_item_aliases",
-    # Constants - By-the-pound items and categories (loaded from database via dynamic functions)
-    "get_by_pound_items",
+    # Constants - By-the-pound item lookup (loaded from database via dynamic function)
     "find_by_pound_item",
-    "get_by_pound_category_names",
-    # Note: get_proteins(), get_cheeses(), get_toppings() were removed
-    # - use menu_cache.get_ingredients("protein"), etc. instead
+    # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
+    # Note: get_by_pound_items(), get_by_pound_category_names() were removed - dead code
+    # Note: get_proteins(), get_cheeses(), get_toppings() were removed - dead code
+    # - use menu_cache directly for all of these
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",

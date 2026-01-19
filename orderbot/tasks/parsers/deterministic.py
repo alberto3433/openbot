@@ -24,8 +24,6 @@ from ..schemas import (
 from .constants import (
     WORD_TO_NUM,
     get_signature_item_aliases,
-    # Dynamic spread functions (loaded from database)
-    get_spreads,
     QUALIFIER_PATTERNS,
     STANDALONE_INSTRUCTION_PATTERNS,
     # GREETING_PATTERNS and DONE_PATTERNS are now loaded from database via menu_cache.get_response_regex()
@@ -976,17 +974,12 @@ def _extract_attribute_value(
 
     Args:
         text: User input text (will be lowercased)
-        item_type: Item type slug (e.g., "bagel", "sized_beverage")
-        attr_slug: Attribute slug (e.g., "size", "toasted", "bread")
+        item_type: Item type slug
+        attr_slug: Attribute slug
 
     Returns:
         Matched option value (slug or boolean), or None if no match
 
-    Example:
-        >>> _extract_attribute_value("large iced coffee", "sized_beverage", "size")
-        "large"
-        >>> _extract_attribute_value("everything bagel toasted", "bagel", "toasted")
-        True
     """
     text_lower = text.lower()
 

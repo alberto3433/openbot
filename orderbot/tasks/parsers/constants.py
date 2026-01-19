@@ -565,109 +565,9 @@ def _get_menu_cache():
     return None
 
 
-def get_spread_types() -> set[str]:
-    """
-    Get cream cheese variety/flavor types (scallion, vegetable, strawberry, etc.).
-
-    These are the FLAVOR MODIFIERS that can be applied to cream cheese.
-    Extracted from compound spread names like "Scallion Cream Cheese".
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Get CC varieties from global attribute options for "spread"
-        # These have display_name like "Scallion Cream Cheese"
-        try:
-            spread_options = cache.get_global_attribute_options("spread")
-            flavors = set()
-            for opt in spread_options:
-                display_name = opt.get("display_name", "").lower()
-                # Extract flavor from compound CC names (e.g., "scallion cream cheese" -> "scallion")
-                if display_name.endswith(" cream cheese"):
-                    flavor = display_name.replace(" cream cheese", "").strip()
-                    if flavor and flavor != "plain":  # Skip "plain" as it's the default
-                        flavors.add(flavor)
-                # Also handle tofu variants (e.g., "scallion tofu" -> "scallion")
-                elif display_name.endswith(" tofu"):
-                    flavor = display_name.replace(" tofu", "").strip()
-                    if flavor and flavor != "plain":
-                        flavors.add(flavor)
-            return flavors
-        except Exception:
-            pass  # Fall back to ingredients if global options not available
-
-        # Fallback: try extracting from spread ingredients
-        all_spreads = cache.get_ingredients("spread")
-        if all_spreads:
-            flavors = set()
-            for spread in all_spreads:
-                spread_lower = spread.lower()
-                if spread_lower.endswith(" cream cheese") and spread_lower != "cream cheese":
-                    flavor = spread_lower.replace(" cream cheese", "").strip()
-                    if flavor and flavor != "plain":
-                        flavors.add(flavor)
-            return flavors
-    raise RuntimeError(
-        "Spread types not available. Ensure menu_data_cache is loaded with spread data from the database."
-    )
-
-
-def get_spreads() -> set[str]:
-    """
-    Get base spread types (cream cheese, butter, etc.).
-
-    These are the BASE spreads that can stand alone, NOT compound names
-    like "Scallion Cream Cheese".
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Get all spread ingredients
-        all_spreads = cache.get_ingredients("spread")
-        if all_spreads:
-            # Return only base spreads (not compound CC names)
-            # Base spreads are: cream cheese, butter, peanut butter, hummus, etc.
-            base_spreads = set()
-            for spread in all_spreads:
-                spread_lower = spread.lower()
-                # Compound CC names end with " cream cheese" but aren't just "cream cheese"
-                if spread_lower.endswith(" cream cheese") and spread_lower != "cream cheese":
-                    continue  # Skip compound names like "scallion cream cheese"
-                base_spreads.add(spread_lower)
-            return base_spreads
-    raise RuntimeError(
-        "Spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
-    )
-
-
-def get_bagel_spreads() -> set[str]:
-    """
-    Get all spread patterns for matching in user input.
-
-    Returns combined set of base spreads, spread types, and combined patterns
-    (e.g., "cream cheese", "scallion", "scallion cream cheese").
-
-    Returns data from cache. Raises RuntimeError if cache not loaded.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        # Use generic get_ingredients_for_item_type to get spreads valid for bagels
-        cached = cache.get_ingredients_for_item_type("bagel", "spread")
-        if cached:
-            return cached
-    raise RuntimeError(
-        "Bagel spreads not available. Ensure menu_data_cache is loaded with spread data from the database."
-    )
-
-
-# Note: get_proteins(), get_toppings(), get_cheeses() were removed - they were dead code.
-# Use menu_cache.get_ingredients("protein"), etc. instead if needed.
-
-# Note: _FALLBACK_BAGEL_TYPES and _FALLBACK_COFFEE_TYPES were removed.
-# Bagel and coffee types are now loaded from the database.
-# If the cache is not available, functions return empty sets and fail gracefully.
+# Note: get_spread_types(), get_spreads(), get_bagel_spreads() were removed - they were dead code.
+# Use menu_cache.get_global_attribute_options("spread") or
+# menu_cache.get_ingredients_for_item_type(item_type, "spread") instead.
 
 
 def get_known_menu_items() -> set[str]:
@@ -717,30 +617,6 @@ def get_signature_item_aliases() -> dict[str, str]:
     )
 
 
-def get_by_pound_items() -> dict[str, list[str]]:
-    """
-    Get by-the-pound items organized by category from database.
-
-    Returns a dict mapping category names (fish, spread, cheese, cold_cut, salad)
-    to lists of item names available in that category.
-
-    Returns:
-        Dict mapping category -> list of item names.
-
-    Raises:
-        RuntimeError: If menu cache is not loaded. There is no fallback -
-            code should fail if database isn't properly set up.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        cached = cache.get_by_pound_items()
-        if cached:  # Empty dict means cache not loaded
-            return cached
-    raise RuntimeError(
-        "By-pound items not available. Ensure menu_data_cache is loaded from the database."
-    )
-
-
 def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
     """
     Find a by-pound item and its category by name or alias.
@@ -755,31 +631,6 @@ def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
     if cache:
         return cache.find_by_pound_item(item_name)
     return None
-
-
-def get_by_pound_category_names() -> dict[str, str]:
-    """
-    Get by-the-pound category display names from ItemType table.
-
-    Returns a dict mapping category slugs (cheese, cold_cut, fish, salad, spread)
-    to human-readable display names (cheeses, cold cuts, smoked fish, salads, spreads)
-    using ItemType.display_name_plural.
-
-    Returns:
-        Dict mapping category slug -> display name.
-
-    Raises:
-        RuntimeError: If menu cache is not loaded. There is no fallback -
-            code should fail if database isn't properly set up.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        cached = cache.get_by_pound_category_names()
-        if cached:  # Empty dict means cache not loaded
-            return cached
-    raise RuntimeError(
-        "By-pound category names not available. Ensure menu_data_cache is loaded from the database."
-    )
 
 
 def resolve_soda_alias(name: str) -> str:

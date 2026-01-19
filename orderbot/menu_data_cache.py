@@ -1357,7 +1357,6 @@ class MenuDataCache:
         Builds a mapping from item_type_slug -> set of keywords that trigger
         detection of that item type. Keywords are derived from menu item names.
 
-        Example: "latte", "cappuccino", "espresso" -> "sized_beverage"
         """
         from .models import MenuItem, ItemType, MenuItemAlias
 
@@ -4383,9 +4382,6 @@ class MenuDataCache:
         Returns:
             Set of menu item names and aliases in that category
 
-        Examples:
-            >>> menu_cache.get_menu_item_names_by_category("beverage")
-            {"Latte", "Cappuccino", "Espresso", "Coffee", "Cold Brew", ...}
         """
         self._ensure_loaded()
         names = set()

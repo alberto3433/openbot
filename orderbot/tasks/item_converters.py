@@ -252,14 +252,8 @@ class UnifiedItemConverter:
                 if attr_val == mod_name and f"{attr_slug}_price" not in attribute_values:
                     attribute_values[f"{attr_slug}_price"] = mod["price"]
 
-        # Restore modifiers from item_config or attribute_values
-        stored_modifiers = []
-        # Check for modifiers in item_config (serialized unified modifiers)
-        if item_config.get("item_modifiers"):
-            stored_modifiers = item_config["item_modifiers"]
-        # Also check attribute_values for legacy milk_sweetener_syrup_selections
-        elif attribute_values.get("milk_sweetener_syrup_selections"):
-            stored_modifiers = attribute_values.get("milk_sweetener_syrup_selections", [])
+        # Restore modifiers from item_config
+        stored_modifiers = item_config.get("item_modifiers") or []
 
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
@@ -281,7 +275,11 @@ class UnifiedItemConverter:
         item: ItemTask,
         pricing: "PricingEngine | None" = None,
     ) -> Dict[str, Any]:
-        """Convert ItemTask to dict using data-driven attribute handling."""
+        """Convert ItemTask to dict using data-driven attribute handling.
+
+        This method is fully data-driven with no hardcoded attribute names,
+        menu item names, or domain-specific logic.
+        """
         menu_item_name = item.menu_item_name
         menu_item_type = getattr(item, 'menu_item_type', None)
         removed_ingredients = getattr(item, 'removed_ingredients', []) or []
@@ -289,15 +287,7 @@ class UnifiedItemConverter:
         # Get DB-driven attribute values (source of truth for all customizations)
         attribute_values = getattr(item, 'attribute_values', {}) or {}
 
-        # Read values from attribute_values (data-driven, no hardcoded field list)
-        side_choice = attribute_values.get("side_choice")
-        toasted = attribute_values.get("toasted")
-        spread = attribute_values.get("spread")
-        spread_price = attribute_values.get("spread_price")
-        extra_protein = attribute_values.get("extra_protein")
-        toppings_list = attribute_values.get("toppings") or []
-
-        # Build display name (data-driven: bread and other attributes shown as modifiers)
+        # Build display name (simple: just the menu item name)
         display_name = menu_item_name
 
         # Add "(side)" suffix for items that are sides of another item
@@ -305,82 +295,13 @@ class UnifiedItemConverter:
         if is_side_item:
             display_name = f"{display_name} (side)"
 
-        if side_choice:
-            # Data-driven side choice display: check for {side_choice}_choice field
-            choice_field = f"{side_choice}_choice"
-            specific_choice = attribute_values.get(choice_field)
-            if specific_choice:
-                display_name = f"{display_name} with {specific_choice} {side_choice}"
-            else:
-                side_display = side_choice.replace("_", " ")
-                display_name = f"{display_name} with {side_display}"
-
-        # Build side config for items with configurable sides
-        side_config = None
-        if side_choice:
-            choice_field = f"{side_choice}_choice"
-            specific_choice = attribute_values.get(choice_field)
-            if specific_choice:
-                side_parts = [specific_choice, side_choice]
-                if toasted is True:
-                    side_parts.append("toasted")
-                if spread and spread != "none":
-                    side_parts.append(f"with {spread}")
-                side_config = {
-                    f"{side_choice}_type": specific_choice,
-                    "toasted": toasted,
-                    "spread": spread,
-                    "description": " ".join(side_parts),
-                }
-
         # Build modifiers list with prices
-        # Note: bread is handled by _process_attribute_values_to_modifiers (data-driven)
         modifiers = []
 
-        # Add spread to modifiers if set (data-driven, atomic spread value)
-        if spread and spread.lower() != "none":
-            # Check if price already in selections, otherwise look up
-            if spread_price is None and pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
-                # Check spread_selections for pre-computed price
-                spread_selections = attribute_values.get("spread_selections", [])
-                for sel in spread_selections:
-                    if isinstance(sel, dict) and sel.get("slug") == spread:
-                        spread_price = sel.get("price_modifier", 0)
-                        break
-                # Fall back to single lookup
-                if not spread_price:
-                    spread_price = pricing.lookup_modifier_price(spread, menu_item_type) or 0
-            spread_name = spread.replace("_", " ").title()
-            modifiers.append({"name": spread_name, "price": spread_price or 0})
-
+        # Add modifications (free, no price lookup needed)
         item_modifications = getattr(item, 'modifications', []) or []
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
-
-        # Add modifiers from list-valued attribute_values (e.g., toppings) that need price lookup.
-        # Note: single-value attributes with *_upcharge are handled by _process_attribute_values_to_modifiers.
-        # Skip attributes already handled above.
-        handled_attrs = {"spread", "spread_price", "toasted", "side_choice"}
-        for attr_key, attr_val in attribute_values.items():
-            if attr_key in handled_attrs or attr_key.endswith(("_price", "_selections", "_upcharge")):
-                continue
-            if attr_val is None or attr_val == "" or attr_val is False:
-                continue
-
-            # Skip list-valued attributes that have a corresponding _selections key
-            # Those will be properly processed by _process_attribute_values_to_modifiers
-            # with correct display names (e.g., "Sugar" instead of raw slug "sugar")
-            if f"{attr_key}_selections" in attribute_values:
-                continue
-
-            # Only handle list values (e.g., toppings) - single values handled by _process_attribute_values_to_modifiers
-            if isinstance(attr_val, list):
-                for item_val in attr_val:
-                    if isinstance(item_val, str) and item_val.lower() != "none":
-                        price = 0
-                        if pricing and hasattr(pricing, 'lookup_modifier_price') and menu_item_type:
-                            price = pricing.lookup_modifier_price(item_val, menu_item_type) or 0
-                        modifiers.append({"name": item_val, "price": price})
 
         # Process modifiers from the unified modifiers field
         item_modifiers = getattr(item, 'modifiers', []) or []
@@ -399,7 +320,7 @@ class UnifiedItemConverter:
                 modifiers.append({"name": mod_display, "price": mod_price})
 
         # Convert DB-driven attribute_values to modifiers for cart display
-        # (for attributes not in the unified modifiers field)
+        # This handles ALL attributes generically (no special cases)
         self._process_attribute_values_to_modifiers(
             attribute_values=attribute_values,
             modifiers=modifiers,
@@ -411,16 +332,10 @@ class UnifiedItemConverter:
         customization_offered = getattr(item, 'customization_offered', False)
 
         # Get base_price from pricing engine if available, or from item
+        # Data-driven: lookup by menu_item_name only, no attribute checks
         base_price = getattr(item, 'base_price', None)
-        if base_price is None and pricing:
-            item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
-            if "bread" in item_attrs:
-                try:
-                    base_price = pricing.lookup_base_price("Bagel")
-                except ValueError:
-                    pass
-            elif hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
-                base_price = pricing.lookup_menu_item_price(menu_item_name)
+        if base_price is None and pricing and hasattr(pricing, 'lookup_menu_item_price') and menu_item_name:
+            base_price = pricing.lookup_menu_item_price(menu_item_name)
         if base_price is None:
             base_price = item.unit_price or 0.0
 
@@ -456,10 +371,6 @@ class UnifiedItemConverter:
         for attr_key, attr_val in attribute_values.items():
             if attr_key not in result and attr_val is not None:
                 result[attr_key] = attr_val
-
-        # Add side_config if present
-        if side_config:
-            result["side_config"] = side_config
 
         # Build item_config (data-driven)
         item_config = {

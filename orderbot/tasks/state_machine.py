@@ -56,9 +56,6 @@ from .parsers import (
     parse_toasted_deterministic,
     # Constants - Number mapping
     WORD_TO_NUM,
-    # Constants - Spread types (loaded from database via dynamic functions)
-    get_spreads,
-    get_bagel_spreads,
     # Constants - Regex patterns (basic)
     QUALIFIER_PATTERNS,
     # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database

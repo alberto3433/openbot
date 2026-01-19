@@ -14,7 +14,6 @@ import logging
 import re
 from typing import Any, Callable
 
-from .models import get_modifier_name
 
 logger = logging.getLogger(__name__)
 
@@ -484,7 +483,7 @@ class PricingEngine:
                             price = self.lookup_modifier_price(item_val, item_type)
                             total += price
                     elif isinstance(item_val, dict):
-                        slug = get_modifier_name(item_val)
+                        slug = item_val.get("slug") or ""
                         qty = item_val.get("quantity", 1) or 1
                         if slug:
                             price = self.lookup_modifier_price(slug, item_type)
@@ -511,7 +510,7 @@ class PricingEngine:
             if not isinstance(modifier, dict):
                 continue
 
-            slug = get_modifier_name(modifier)
+            slug = modifier.get("slug") or ""
             if not slug:
                 continue
 

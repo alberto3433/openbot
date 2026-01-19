@@ -15,6 +15,26 @@ from orderbot.tasks.models import MenuItemTask
 _UNSET = object()
 
 
+def _convert_attrs_to_selections(attribute_values: dict) -> list[dict]:
+    """Convert attribute_values dict to selections list.
+
+    This is needed because Pydantic doesn't call property setters during __init__.
+    """
+    selections = []
+    for key, val in attribute_values.items():
+        if isinstance(val, bool):
+            selections.append({"slug": "yes" if val else "no", "category": key, "quantity": 1, "price": 0})
+        elif isinstance(val, list):
+            for v in val:
+                if isinstance(v, dict):
+                    selections.append(v)
+                else:
+                    selections.append({"slug": str(v), "category": key, "quantity": 1, "price": 0})
+        elif val is not None:
+            selections.append({"slug": str(val), "category": key, "quantity": 1, "price": 0})
+    return selections
+
+
 def BagelItemTask(
     bread: str = _UNSET,
     bagel_type: str = _UNSET,  # Alias for bread (backward compat)
@@ -67,12 +87,15 @@ def BagelItemTask(
     else:
         menu_name = "Bagel"
 
+    # Convert attribute_values to selections (Pydantic doesn't use property setters during init)
+    selections = _convert_attrs_to_selections(attribute_values)
+
     return MenuItemTask(
         menu_item_name=menu_name,
         menu_item_type="bagel",
         quantity=quantity,
         unit_price=unit_price,
-        attribute_values=attribute_values,
+        selections=selections,
     )
 
 
@@ -118,12 +141,15 @@ def CoffeeItemTask(
         attribute_values["decaf"] = decaf
     attribute_values.update(kwargs)
 
+    # Convert attribute_values to selections (Pydantic doesn't use property setters during init)
+    selections = _convert_attrs_to_selections(attribute_values)
+
     item = MenuItemTask(
         menu_item_name=drink_type or "Coffee",
         menu_item_type="sized_beverage",
         quantity=quantity,
         unit_price=unit_price,
-        attribute_values=attribute_values,
+        selections=selections,
     )
 
     # Add modifiers

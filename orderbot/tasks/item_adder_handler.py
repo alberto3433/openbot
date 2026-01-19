@@ -15,7 +15,7 @@ from .models import (
     MenuItemTask,
     TaskStatus,
 )
-from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers
+from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
 from ..menu_data_cache import menu_cache
@@ -154,7 +154,7 @@ class ItemAdderHandler:
                 - item_name: Menu item name (e.g., "Iced Latte", "Turkey Club")
                 - Any attribute values to pre-fill (bread, toasted, size, milk, etc.)
                 - modifications, bagel_choice (for menu items with bagel choice)
-                - extracted_modifiers (for any item with modifiers)
+                - extracted_selections (list of Selection objects for any item)
 
         Returns:
             StateMachineResult with next question or confirmation
@@ -210,8 +210,8 @@ class ItemAdderHandler:
         # Build pre_filled_attributes from kwargs (data-driven, queries DB for item type attributes)
         pre_filled_attributes = self._extract_pre_filled_attributes(item_type, kwargs)
 
-        # Get extracted_modifiers from kwargs if provided
-        extracted_modifiers = kwargs.get("extracted_modifiers")
+        # Get extracted_selections from kwargs if provided
+        extracted_selections = kwargs.get("extracted_selections")
 
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
@@ -226,7 +226,7 @@ class ItemAdderHandler:
             quantity=quantity,
             user_input=kwargs.get("original_input"),
             pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
-            extracted_modifiers=extracted_modifiers,
+            extracted_selections=extracted_selections,
         )
 
         return result
@@ -608,7 +608,7 @@ class ItemAdderHandler:
         quantity: int = 1,
         user_input: str | None = None,
         pre_filled_attributes: dict | None = None,
-        extracted_modifiers: "ExtractedModifiers | None" = None,
+        extracted_selections: list[Selection] | None = None,
     ) -> StateMachineResult:
         """
         Create an item and start its configuration flow if needed.
@@ -622,7 +622,7 @@ class ItemAdderHandler:
             quantity: Number of items to create (default: 1)
             user_input: Original user input for attribute extraction (optional)
             pre_filled_attributes: Dict of attribute values to pre-fill (optional)
-            extracted_modifiers: ExtractedModifiers object to apply (optional)
+            extracted_selections: List of Selection objects to apply (optional)
 
         Returns:
             StateMachineResult with next question or confirmation
@@ -665,9 +665,9 @@ class ItemAdderHandler:
                     if attr_value is not None:
                         item.attribute_values[attr_name] = attr_value
 
-            # Apply extracted modifiers if provided
-            if extracted_modifiers and self.menu_item_handler:
-                self.menu_item_handler._apply_extracted_modifiers(item, extracted_modifiers)
+            # Apply extracted selections if provided
+            if extracted_selections and self.menu_item_handler:
+                self.menu_item_handler._apply_selections(item, extracted_selections)
 
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             # This prevents asking questions already answered by the item name

@@ -16,7 +16,6 @@ from .models import (
     TaskStatus,
     ItemTask,
     MenuItemTask,
-    get_modifier_name,
 )
 from orderbot.menu_data_cache import menu_cache
 
@@ -69,7 +68,7 @@ class UnifiedItemConverter:
         include_free_in_modifiers: bool,
     ) -> float:
         """Process a single selection item and return its price contribution."""
-        sel_slug = get_modifier_name(sel)
+        sel_slug = sel.get("slug") or ""
         sel_display = sel.get("display_name") or sel_slug.replace("_", " ").title()
         sel_price = sel.get("price", 0) or 0.0
         sel_quantity = sel.get("quantity", 1) or 1

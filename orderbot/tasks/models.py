@@ -17,20 +17,6 @@ from pydantic import BaseModel, Field
 import uuid
 
 
-def get_modifier_name(entry: dict) -> str:
-    """Extract the modifier name from a modifier entry dict.
-
-    Standard format uses "slug" key
-
-    Args:
-        entry: Dict with modifier info
-
-    Returns:
-        The modifier slug, or empty string if not found
-    """
-    return entry.get("slug") or ""
-
-
 class TaskStatus(str, Enum):
     """Status of a task in the hierarchy."""
     PENDING = "pending"  # Not started, waiting for prerequisites
@@ -165,14 +151,24 @@ class ItemTask(BaseTask):
 class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette').
 
-    Attribute values are accessed via dict-style syntax:
-        item["size"] = "large"
-        item["bread"] = "everything"
-        if "toasted" in item:
-            ...
+    All customizations (attribute choices and modifier add-ons) are stored in
+    a unified `selections` list using the Selection format.
 
-    Modifiers (ingredients with categories) are stored in the modifiers list
-    and accessed via get_modifiers_by_category(), add_modifier(), remove_modifier().
+    Access methods:
+    - get_selection(category): Get first selection for a category
+    - get_selections(category): Get all selections for a category
+    - get_selection_value(category): Get slug of first selection
+    - has_selection(category): Check if any selection exists
+    - add_selection(...): Add a new selection
+    - remove_selection(...): Remove selection(s)
+
+    Examples:
+        item.add_selection("everything", "bread", display_name="Everything")
+        item.add_selection("yes", "toasted", display_name="Toasted")
+        item.add_selection("bacon", "protein", quantity=2, price=1.50)
+
+        bread = item.get_selection_value("bread")  # "everything"
+        is_toasted = item.get_selection_value("toasted") == "yes"
     """
 
     item_type: Literal["menu_item"] = "menu_item"
@@ -186,12 +182,9 @@ class MenuItemTask(ItemTask):
 
     is_signature: bool = False  # Whether this is a signature/featured menu item
 
-    # Dynamic attribute values from DB-driven configuration
-    # Stores answers for attributes defined in item_type_attributes table
-    attribute_values: dict[str, Any] = Field(default_factory=dict)
-
-    # Unified modifier storage - all modifiers regardless of category
-    modifiers: list[dict] = Field(default_factory=list)
+    # Unified selections list - all customizations (attributes and modifiers)
+    # Import Selection type for type hint
+    selections: list[dict] = Field(default_factory=list)  # list[Selection] but stored as dict for serialization
 
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
@@ -209,32 +202,274 @@ class MenuItemTask(ItemTask):
         return self.side_of_item_id is not None
 
     # -------------------------------------------------------------------------
-    # Dict-style access to attribute_values
+    # Selection access methods
     # -------------------------------------------------------------------------
 
+    def get_selection(self, category: str) -> dict | None:
+        """Get first selection for a category (for single-select attributes).
+
+        Args:
+            category: The category to look up (e.g., "bread", "size", "toasted")
+
+        Returns:
+            Selection dict or None if not found
+        """
+        for sel in self.selections:
+            if sel.get("category") == category:
+                return sel
+        return None
+
+    def get_selections(self, category: str) -> list[dict]:
+        """Get all selections for a category (for multi-select).
+
+        Args:
+            category: The category to filter by
+
+        Returns:
+            List of Selection dicts matching the category
+        """
+        return [sel for sel in self.selections if sel.get("category") == category]
+
+    def get_selection_value(self, category: str) -> str | None:
+        """Get the slug of the first selection for a category.
+
+        Convenience method for single-select attributes.
+
+        Args:
+            category: The category to look up
+
+        Returns:
+            The slug value or None if not found
+        """
+        sel = self.get_selection(category)
+        return sel.get("slug") if sel else None
+
+    def has_selection(self, category: str) -> bool:
+        """Check if any selection exists for a category.
+
+        Args:
+            category: The category to check
+
+        Returns:
+            True if at least one selection exists for this category
+        """
+        return any(sel.get("category") == category for sel in self.selections)
+
+    def add_selection(
+        self,
+        slug: str,
+        category: str,
+        quantity: int = 1,
+        price: float = 0.0,
+        display_name: str | None = None,
+    ) -> None:
+        """Add a selection to the item.
+
+        Args:
+            slug: Selected option identifier (e.g., "plain", "bacon", "yes")
+            category: What type of selection (e.g., "bread", "protein", "toasted")
+            quantity: How many (default 1)
+            price: Price contribution per unit (default 0.0)
+            display_name: Human-readable name (looked up from cache if not provided)
+        """
+        # Check if already present (same slug and category)
+        if any(s.get("slug") == slug and s.get("category") == category for s in self.selections):
+            return
+
+        # Look up display name from database if not provided
+        if not display_name:
+            try:
+                from orderbot.menu_data_cache import menu_cache
+                # Try ingredient lookup first
+                display_name = menu_cache.get_ingredient_display_name(slug)
+                if not display_name:
+                    # Try attribute option lookup
+                    display_name = menu_cache.get_attribute_option_display_name(category, slug)
+            except Exception:
+                pass
+
+        # Fall back to title-cased slug if lookup failed
+        if not display_name:
+            # Handle boolean slugs specially
+            if slug == "yes":
+                display_name = category.replace("_", " ").title()
+            elif slug == "no":
+                display_name = f"Not {category.replace('_', ' ').title()}"
+            else:
+                display_name = slug.replace("_", " ").title()
+
+        # Build selection entry
+        selection = {
+            "slug": slug,
+            "category": category,
+            "quantity": quantity,
+            "price": price,
+            "display_name": display_name,
+        }
+
+        self.selections.append(selection)
+
+        # Update unit_price if selection has a price
+        if price > 0:
+            self.unit_price = (self.unit_price or 0.0) + (price * quantity)
+
+    def remove_selection(self, category: str, slug: str | None = None) -> bool:
+        """Remove selection(s) by category and optionally slug.
+
+        Args:
+            category: The category to remove from
+            slug: If provided, only remove selection with this slug.
+                  If None, removes ALL selections for this category.
+
+        Returns:
+            True if any selections were removed, False otherwise
+        """
+        removed_any = False
+        i = 0
+        while i < len(self.selections):
+            sel = self.selections[i]
+            if sel.get("category") == category:
+                if slug is None or sel.get("slug") == slug:
+                    removed = self.selections.pop(i)
+                    # Subtract price from unit_price
+                    price = removed.get("price", 0)
+                    if price > 0:
+                        self.unit_price -= price * removed.get("quantity", 1)
+                    removed_any = True
+                    continue  # Don't increment i since we removed an element
+            i += 1
+        return removed_any
+
+    def update_selection_quantity(self, category: str, slug: str, quantity: int) -> bool:
+        """Update quantity for an existing selection.
+
+        Args:
+            category: The category to find
+            slug: The slug to find
+            quantity: New quantity
+
+        Returns:
+            True if found and updated, False otherwise
+        """
+        for sel in self.selections:
+            if sel.get("category") == category and sel.get("slug") == slug:
+                old_quantity = sel.get("quantity", 1)
+                price = sel.get("price", 0)
+                # Update unit_price
+                if price > 0:
+                    self.unit_price -= price * old_quantity
+                    self.unit_price += price * quantity
+                sel["quantity"] = quantity
+                return True
+        return False
+
+    # -------------------------------------------------------------------------
+    # Backward compatibility - DEPRECATED, will be removed
+    # -------------------------------------------------------------------------
+
+    @property
+    def attribute_values(self) -> dict[str, Any]:
+        """DEPRECATED: Use selections and get_selection_value() instead.
+
+        Returns a dict for backward compatibility with code that expects attribute_values.
+        """
+        result: dict[str, Any] = {}
+        for sel in self.selections:
+            category = sel.get("category", "")
+            slug = sel.get("slug", "")
+            display_name = sel.get("display_name")
+            price = sel.get("price", 0)
+
+            # For boolean categories, convert yes/no to True/False
+            if slug == "yes":
+                result[category] = True
+            elif slug == "no":
+                result[category] = False
+            else:
+                # Check if multi-select (already have a value for this category)
+                if category in result:
+                    existing = result[category]
+                    if isinstance(existing, list):
+                        existing.append(slug)
+                    else:
+                        result[category] = [existing, slug]
+                else:
+                    result[category] = slug
+
+            # Store _selections for display name lookup (backward compat)
+            selections_key = f"{category}_selections"
+            if selections_key not in result:
+                result[selections_key] = []
+            result[selections_key].append({"slug": slug, "display_name": display_name})
+
+            # Store price
+            if price > 0:
+                result[f"{category}_price"] = price
+
+        return result
+
+    @attribute_values.setter
+    def attribute_values(self, value: dict[str, Any]) -> None:
+        """DEPRECATED: Convert dict to selections for backward compatibility."""
+        # Clear existing selections that would be overwritten
+        # This is for backward compat when code sets attribute_values directly
+        for key, val in value.items():
+            # Skip metadata keys
+            if key.endswith("_selections") or key.endswith("_price") or key.endswith("_upcharge"):
+                continue
+
+            # Remove existing selections for this category
+            self.remove_selection(key)
+
+            # Add new selection(s)
+            if isinstance(val, bool):
+                self.add_selection("yes" if val else "no", key)
+            elif isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        self.add_selection(item, key)
+            elif val is not None:
+                self.add_selection(str(val), key)
+
+    @property
+    def modifiers(self) -> list[dict]:
+        """DEPRECATED: Use selections instead. Returns selections for backward compat."""
+        return self.selections
+
     def __getitem__(self, key: str) -> Any:
-        """Get attribute value: item["size"], item["bread"], etc."""
+        """DEPRECATED: Get selection value: item["size"], item["bread"], etc."""
         return self.attribute_values.get(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
-        """Set attribute value: item["size"] = "large"."""
+        """DEPRECATED: Set selection: item["size"] = "large"."""
+        # Remove existing selection for this category
+        self.remove_selection(key)
+
         if value is None:
-            # Setting to None removes the key
-            self.attribute_values.pop(key, None)
+            return  # Just remove, don't add
+
+        # Add new selection
+        if isinstance(value, bool):
+            self.add_selection("yes" if value else "no", key)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    self.add_selection(item, key)
         else:
-            self.attribute_values[key] = value
+            self.add_selection(str(value), key)
 
     def __delitem__(self, key: str) -> None:
-        """Delete attribute value: del item["size"]."""
-        self.attribute_values.pop(key, None)
+        """DEPRECATED: Delete selection: del item["size"]."""
+        self.remove_selection(key)
 
     def __contains__(self, key: str) -> bool:
-        """Check if attribute exists: "size" in item."""
-        return key in self.attribute_values
+        """DEPRECATED: Check if selection exists: "size" in item."""
+        return self.has_selection(key)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Get attribute value with default: item.get("size", "medium")."""
-        return self.attribute_values.get(key, default)
+        """DEPRECATED: Get selection value with default."""
+        val = self.attribute_values.get(key)
+        return val if val is not None else default
 
     def add_modifier(
         self,
@@ -244,94 +479,29 @@ class MenuItemTask(ItemTask):
         price: float = 0.0,
         display_name: str | None = None,
     ) -> None:
-        """Add a modifier to the item.
-
-        All modifiers are stored in a unified list regardless of category.
-
-        Args:
-            category: Modifier category
-            slug: Modifier slug
-            quantity: Quantity (default 1)
-            price: Price per unit (default 0.0)
-            display_name: Display name (if not provided, looked up from database)
-        """
-        # Check if already present
-        if any(m.get("slug") == slug and m.get("category") == category for m in self.modifiers):
-            return
-
-        # Look up display name from database if not provided
-        if not display_name:
-            try:
-                # Lazy import to avoid circular dependency
-                from orderbot.menu_data_cache import menu_cache
-                display_name = menu_cache.get_ingredient_display_name(slug)
-            except Exception:
-                # If cache not loaded or lookup fails, fall back to title case
-                pass
-
-        # Fall back to title-cased slug if not in database or lookup failed
-        if not display_name:
-            display_name = slug.replace("_", " ").title()
-
-        # Build entry
-        entry = {
-            "slug": slug,
-            "category": category,
-            "quantity": quantity,
-            "display_name": display_name,
-        }
-        if price > 0:
-            entry["price"] = price
-
-        self.modifiers.append(entry)
-
-        # Update unit_price if modifier has a price
-        if price > 0:
-            self.unit_price = (self.unit_price or 0.0) + (price * quantity)
+        """DEPRECATED: Use add_selection instead."""
+        self.add_selection(slug, category, quantity, price, display_name)
 
     def get_modifiers_by_category(self, category: str) -> list[dict]:
-        """Get all modifiers of a specific category.
-
-        Args:
-            category: The category to filter by (e.g., "milk", "syrup", "protein")
-
-        Returns:
-            List of modifier dicts matching the category
-        """
-        return [m for m in self.modifiers if m.get("category") == category]
+        """DEPRECATED: Use get_selections instead."""
+        return self.get_selections(category)
 
     def remove_modifier(self, slug: str, category: str | None = None) -> bool:
-        """Remove a modifier by slug.
-
-        Args:
-            slug: The modifier slug to remove
-            category: Optional category to match (if None, removes first match)
-
-        Returns:
-            True if a modifier was removed, False otherwise
-        """
-        for i, m in enumerate(self.modifiers):
-            if m.get("slug") == slug:
-                if category is None or m.get("category") == category:
-                    removed = self.modifiers.pop(i)
-                    # Subtract price from unit_price
-                    if removed.get("price", 0) > 0:
-                        self.unit_price -= removed["price"] * removed.get("quantity", 1)
-                    return True
+        """DEPRECATED: Use remove_selection instead."""
+        if category:
+            return self.remove_selection(category, slug)
+        # If no category, find and remove first match
+        for sel in self.selections:
+            if sel.get("slug") == slug:
+                return self.remove_selection(sel.get("category", ""), slug)
         return False
 
     # -------------------------------------------------------------------------
-    # Generic attribute query method (data-driven)
+    # Attribute query method (data-driven)
     # -------------------------------------------------------------------------
 
     def has_attribute(self, attr_slug: str) -> bool:
         """Check if this item type has a specific attribute defined in the database.
-
-        This is the preferred way to check item capabilities instead of
-        checking item type names directly. It queries the database to see
-        what attributes are defined for this item's type.
-
-        Also supports legacy alias lookup.
 
         Args:
             attr_slug: The attribute slug to check for
@@ -344,13 +514,10 @@ class MenuItemTask(ItemTask):
         from orderbot.menu_data_cache import menu_cache
         attrs = menu_cache.get_item_type_attributes(self.menu_item_type)
 
-        # Direct check first
         if attr_slug in attrs:
             return True
 
-        # Check legacy aliases using the field-to-slug mapping from field_config
-        # This mapping defines: code_field_name -> db_attribute_slug
-        # Import inside method to avoid circular imports
+        # Check legacy aliases
         from orderbot.tasks.field_config import _FIELD_TO_SLUG_MAP
         field_map = _FIELD_TO_SLUG_MAP.get(self.menu_item_type, {})
         db_slug = field_map.get(attr_slug)
@@ -360,52 +527,8 @@ class MenuItemTask(ItemTask):
         return False
 
     # -------------------------------------------------------------------------
-    # Display name helpers (data-driven)
+    # Display helpers
     # -------------------------------------------------------------------------
-
-    def _get_attribute_display_name(self, attr_slug: str, value_slug: str | None = None) -> str | None:
-        """Get display name for an attribute value from stored selections.
-
-        Looks up the display_name from {attr_slug}_selections which stores
-        database-provided display names alongside slugs.
-
-        Args:
-            attr_slug: The attribute slug (e.g., "bread", "shots", "size")
-            value_slug: Optional value slug to find in multi-select lists.
-                        If None, returns the first selection's display name.
-
-        Returns:
-            The display name if found, None otherwise.
-        """
-        selections = self.attribute_values.get(f"{attr_slug}_selections", [])
-        if not selections or not isinstance(selections, list):
-            return None
-
-        if value_slug:
-            # Find specific value in selections list
-            for sel in selections:
-                if isinstance(sel, dict) and sel.get("slug") == value_slug:
-                    return sel.get("display_name")
-            return None
-
-        # Return first selection's display name
-        if len(selections) > 0 and isinstance(selections[0], dict):
-            return selections[0].get("display_name")
-        return None
-
-    def _get_all_attribute_display_names(self, attr_slug: str) -> list[str]:
-        """Get all display names for a multi-select attribute.
-
-        Returns:
-            List of display names from {attr_slug}_selections.
-        """
-        selections = self.attribute_values.get(f"{attr_slug}_selections", [])
-        if not selections or not isinstance(selections, list):
-            return []
-        return [
-            sel.get("display_name") for sel in selections
-            if isinstance(sel, dict) and sel.get("display_name")
-        ]
 
     def get_display_name(self) -> str:
         """Get display name for this menu item."""
@@ -414,52 +537,38 @@ class MenuItemTask(ItemTask):
     def get_summary(self) -> str:
         """Get a summary description of this menu item.
 
-        Returns uniform, data-driven summary in format:
-        "{quantity}x {menu_item_name}, {attr1}, {attr2}, ..."
+        Returns uniform summary in format:
+        "{quantity}x {menu_item_name}, {selection1}, {selection2}, ..."
 
         Examples:
-            "Everything Bagel, toasted, cream cheese"
-            "Latte, large, iced, oat milk"
-            "2x Turkey Club, sourdough, bacon"
+            "Everything Bagel, Toasted, Scallion Cream Cheese"
+            "Latte, Large, Iced, Oat Milk"
+            "2x Turkey Club, Sourdough, Bacon"
         """
-        # Start with quantity prefix if > 1
         base_name = self.get_display_name()
         if self.quantity > 1:
             base_name = f"{self.quantity}x {base_name}"
 
-        # Collect attribute display values uniformly
-        attr_displays = []
+        # Collect display names from selections
+        displays = []
+        for sel in self.selections:
+            slug = sel.get("slug", "")
+            display_name = sel.get("display_name", "")
+            quantity = sel.get("quantity", 1)
 
-        for key, value in self.attribute_values.items():
-            # Skip internal storage fields (not for display)
-            if key.endswith("_price") or key.endswith("_selections") or key.endswith("_upcharge"):
+            # Skip "no" selections (user declined)
+            if slug == "no":
                 continue
 
-            if value is True:
-                # Boolean attribute - use display name from DB or key
-                display_name = self._get_attribute_display_name(key) or key
-                attr_displays.append(display_name)
-            elif value is False or value is None:
-                # Skip false/none values
-                continue
-            elif isinstance(value, list):
-                # Multi-select: get all display names
-                display_names = self._get_all_attribute_display_names(key)
-                if display_names:
-                    attr_displays.extend(display_names)
+            if display_name:
+                if quantity > 1:
+                    displays.append(f"{quantity}x {display_name}")
                 else:
-                    # Use raw values if no selections stored
-                    for item in value:
-                        if isinstance(item, str):
-                            attr_displays.append(item)
-            else:
-                # Single-select: get display name from DB
-                display_name = self._get_attribute_display_name(key, str(value))
-                attr_displays.append(display_name or str(value))
+                    displays.append(display_name)
 
         # Build final summary
-        if attr_displays:
-            summary = f"{base_name}, {', '.join(attr_displays)}"
+        if displays:
+            summary = f"{base_name}, {', '.join(displays)}"
         else:
             summary = base_name
 
@@ -467,7 +576,7 @@ class MenuItemTask(ItemTask):
         if self.modifications:
             summary += f" ({', '.join(self.modifications)})"
 
-        # Add removed ingredients (e.g., "no bacon")
+        # Add removed ingredients
         if self.removed_ingredients:
             removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
             summary += f" ({', '.join(removed_parts)})"
@@ -477,6 +586,26 @@ class MenuItemTask(ItemTask):
             summary += f" (Special Instructions: {self.special_instructions})"
 
         return summary
+
+    def get_missing_customizations(self) -> list[str]:
+        """Get list of missing required customizations.
+
+        Uses data-driven approach: check for {side_choice}_choice field dynamically.
+        """
+        missing = []
+        if self.get_selection_value("requires_side_choice") == "yes" and not self.has_selection("side_choice"):
+            missing.append("side_choice")
+        # Check if side_choice type needs a specific choice (e.g., bagel_choice for bagel)
+        side_choice = self.get_selection_value("side_choice")
+        if side_choice:
+            choice_field = f"{side_choice}_choice"
+            if not self.has_selection(choice_field):
+                missing.append(choice_field)
+        return missing
+
+    def is_fully_customized(self) -> bool:
+        """Check if all required customizations are complete."""
+        return len(self.get_missing_customizations()) == 0
 
 
 # =============================================================================

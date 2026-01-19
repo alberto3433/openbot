@@ -30,11 +30,12 @@ from .deterministic import (
     # Unified data-driven pattern for detecting new item orders
     _get_configurable_item_pattern,
     ORDERING_LANGUAGE_PATTERN,
-    # Modifier extraction (data-driven)
-    extract_attribute_values,  # Generic data-driven extractor
-    extract_modifiers_for_item_type,  # Wrapper returning ExtractedModifiers
+    # Attribute/modifier extraction (data-driven)
+    extract_attribute_values,  # Generic data-driven extractor returning dict
     extract_special_instructions_from_input,
     extract_notes_from_input,  # Backwards compatibility alias
+    # Generic item builder
+    build_parsed_item,
     # Internal helpers (needed by state_machine)
     _extract_quantity,
     _extract_toasted,
@@ -127,11 +128,12 @@ __all__ = [
     # Unified data-driven pattern for detecting new item orders
     "_get_configurable_item_pattern",
     "ORDERING_LANGUAGE_PATTERN",
-    # Deterministic parsers - Modifier extraction (data-driven)
-    "extract_attribute_values",  # Generic data-driven extractor
-    "extract_modifiers_for_item_type",  # Wrapper returning ExtractedModifiers
+    # Deterministic parsers - Attribute/modifier extraction (data-driven)
+    "extract_attribute_values",  # Generic data-driven extractor returning dict
     "extract_special_instructions_from_input",
     "extract_notes_from_input",  # Backwards compatibility alias
+    # Generic item builder
+    "build_parsed_item",
     # Deterministic parsers - Internal helpers
     "_extract_quantity",
     "_extract_toasted",

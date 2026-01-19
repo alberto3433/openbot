@@ -42,7 +42,7 @@ from .schemas import (
     OrderPhase,
     StateMachineResult,
     OpenInputResponse,
-    ExtractedModifiers,
+    Selection,
 )
 from .parsers import (
     # Validators
@@ -599,7 +599,7 @@ class OrderStateMachine:
         self,
         parsed: OpenInputResponse,
         order: OrderTask,
-        extracted_modifiers: ExtractedModifiers | None = None,
+        extracted_modifiers: list[Selection] | None = None,
         raw_user_input: str | None = None,
     ) -> StateMachineResult:
         """Delegate to taking items handler."""

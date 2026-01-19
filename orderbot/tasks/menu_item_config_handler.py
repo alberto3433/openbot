@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache, singularize
 from .models import OrderTask, MenuItemTask
-from .schemas import StateMachineResult, OrderPhase, ExtractedModifiers
+from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
@@ -871,11 +871,11 @@ class MenuItemConfigHandler(BaseHandler):
     # Modifier Extraction During Configuration
     # =========================================================================
 
-    def _extract_modifiers_from_input(
+    def _extract_selections_from_input(
         self, user_input: str, item_type: str
-    ) -> ExtractedModifiers | None:
+    ) -> list[Selection]:
         """
-        Extract modifiers from user input based on item type.
+        Extract selections from user input based on item type.
 
         Uses the generic data-driven extract_attribute_values() function which
         queries the database for what attributes the item type accepts and
@@ -886,22 +886,19 @@ class MenuItemConfigHandler(BaseHandler):
             item_type: The item type slug (e.g., "deli_sandwich", "espresso")
 
         Returns:
-            ExtractedModifiers with category-based storage, or None if no modifiers found
+            List of Selection objects, empty if no selections found
         """
         # Use generic data-driven extraction
         attr_values = extract_attribute_values(user_input, item_type)
 
         if not attr_values:
-            return None
+            return []
 
-        # Convert flat dict to ExtractedModifiers for backward compatibility
-        modifiers = ExtractedModifiers()
+        selections: list[Selection] = []
 
         for attr_slug, value in attr_values.items():
             if attr_slug == "special_instructions":
-                # Special instructions are a list of strings
-                if isinstance(value, list):
-                    modifiers.special_instructions = value
+                # Special instructions stored separately, skip here
                 continue
 
             if isinstance(value, list):
@@ -911,71 +908,70 @@ class MenuItemConfigHandler(BaseHandler):
                         slug = item.get("slug", "")
                         quantity = item.get("quantity", 1)
                         category = item.get("category") or attr_slug
+                        price = item.get("price", 0.0)
+                        display_name = item.get("display_name")
                         if slug:
-                            modifiers.add(category, slug, quantity)
+                            selections.append(Selection(
+                                slug=slug,
+                                category=category,
+                                quantity=quantity,
+                                price=price,
+                                display_name=display_name,
+                            ))
             elif isinstance(value, bool):
-                # Boolean attribute - store as single-value category
-                if value:
-                    modifiers.add(attr_slug, "yes", 1)
+                # Boolean attribute - store as yes/no slug
+                selections.append(Selection(
+                    slug="yes" if value else "no",
+                    category=attr_slug,
+                    quantity=1,
+                ))
             elif isinstance(value, str):
                 # Single-select attribute: just the slug
-                modifiers.add(attr_slug, value, 1)
+                selections.append(Selection(
+                    slug=value,
+                    category=attr_slug,
+                    quantity=1,
+                ))
 
-        if modifiers.has_modifiers() or modifiers.has_special_instructions():
-            logger.debug("Extracted modifiers from input: %s", modifiers)
-            return modifiers
+        if selections:
+            logger.debug("Extracted selections from input: %s", selections)
 
-        return None
+        return selections
 
-    def _apply_extracted_modifiers(
-        self, item: MenuItemTask, modifiers: ExtractedModifiers
+    def _apply_selections(
+        self, item: MenuItemTask, selections: list[Selection]
     ) -> str | None:
         """
-        Apply extracted modifiers to a menu item in a data-driven way.
+        Apply selections to a menu item in a data-driven way.
 
-        Iterates through all categories in the extracted modifiers and applies
-        them generically using the item's add_modifier() method. Prices are
-        looked up from the pricing engine.
+        Iterates through all selections and applies them generically using the
+        item's add_modifier() method. Prices are looked up from the pricing engine
+        if not already set in the selection.
 
         Args:
-            item: The menu item to apply modifiers to
-            modifiers: Extracted modifiers from user input
+            item: The menu item to apply selections to
+            selections: List of Selection objects from user input
 
         Returns:
-            Acknowledgment string if modifiers were applied, None otherwise
+            Acknowledgment string if selections were applied, None otherwise
         """
         added_items = []
         item_type = item.menu_item_type
 
-        # Get all categories that have modifiers
-        for category in modifiers.get_categories():
-            category_modifiers = modifiers.get_all(category)
+        for sel in selections:
+            # Look up price from pricing engine if not already set
+            price = sel.price
+            if price == 0.0 and self.pricing and item_type:
+                price = self.pricing.lookup_generic_modifier_price(
+                    sel.slug, item_type, sel.category
+                ) or 0.0
 
-            for mod in category_modifiers:
-                # Look up price from pricing engine
-                price = 0.0
-                if self.pricing and item_type:
-                    price = self.pricing.lookup_generic_modifier_price(
-                        mod.slug, item_type, category
-                    ) or 0.0
+            # Use generic add_modifier for unified storage
+            item.add_modifier(sel.category, sel.slug, sel.quantity, price)
 
-                # Use generic add_modifier for unified storage
-                item.add_modifier(category, mod.slug, mod.quantity, price)
-
-                # Build display name for acknowledgment using database lookup
-                display_name = menu_cache.get_ingredient_display_name(mod.slug)
-                added_items.append(display_name or mod.slug.replace("_", " ").title())
-
-        # Handle categories needing clarification (e.g., "cheese" without type)
-        for category, needs_clarification in modifiers.needs_clarification.items():
-            if needs_clarification:
-                item.attribute_values[f"needs_{category}_clarification"] = True
-
-        # Special instructions
-        if modifiers.has_special_instructions():
-            existing = item.special_instructions or ""
-            new_instr = modifiers.get_special_instructions_string()
-            item.special_instructions = f"{existing}, {new_instr}".strip(", ") if existing else new_instr
+            # Build display name for acknowledgment using database lookup
+            display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)
+            added_items.append(display_name or sel.slug.replace("_", " ").title())
 
         # Build acknowledgment string
         if not added_items:
@@ -987,31 +983,31 @@ class MenuItemConfigHandler(BaseHandler):
             items_str = ", ".join(added_items[:-1]) + f" and {added_items[-1]}"
             return f"I've added {items_str}. "
 
-    def _extract_and_apply_modifiers(
+    def _extract_and_apply_selections(
         self, user_input: str, item: MenuItemTask
     ) -> str | None:
         """
-        Extract modifiers from user input and apply them to the item.
+        Extract selections from user input and apply them to the item.
 
         This is a convenience method that combines extraction and application.
         Call this after successfully handling an attribute input to capture
-        any additional modifiers mentioned with the answer.
+        any additional selections mentioned with the answer.
 
         Args:
             user_input: Raw user input string
-            item: The menu item to apply modifiers to
+            item: The menu item to apply selections to
 
         Returns:
-            Acknowledgment string if modifiers were applied, None otherwise
+            Acknowledgment string if selections were applied, None otherwise
         """
         item_type = item.menu_item_type
         if not item_type:
             return None
 
-        modifiers = self._extract_modifiers_from_input(user_input, item_type)
-        if modifiers:
-            logger.info("Applying extracted modifiers to %s: %s", item.menu_item_name, modifiers)
-            return self._apply_extracted_modifiers(item, modifiers)
+        selections = self._extract_selections_from_input(user_input, item_type)
+        if selections:
+            logger.info("Applying extracted selections to %s: %s", item.menu_item_name, selections)
+            return self._apply_selections(item, selections)
 
         return None
 
@@ -1594,9 +1590,9 @@ class MenuItemConfigHandler(BaseHandler):
         # Store in attribute_values
         item.attribute_values[attr_slug] = bool_value
 
-        # Extract and apply any additional modifiers from the input
-        # (e.g., "yes with bacon" -> captures the boolean AND the bacon modifier)
-        self._extract_and_apply_modifiers(user_input, item)
+        # Extract and apply any additional selections from the input
+        # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)
+        self._extract_and_apply_selections(user_input, item)
 
         return self._advance_to_next_question(item, order, attr)
 
@@ -1743,9 +1739,9 @@ class MenuItemConfigHandler(BaseHandler):
                 else:
                     ack_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}"
 
-                # NOTE: Do NOT call _extract_and_apply_modifiers here.
+                # NOTE: Do NOT call _extract_and_apply_selections here.
                 # Multi-select input has been fully handled above. Extracting
-                # modifiers would cause duplicates (e.g., "2 scrambled eggs"
+                # selections would cause duplicates (e.g., "2 scrambled eggs"
                 # would add scrambled_egg to both add_egg_selections AND extras).
 
                 return self._advance_to_next_question(item, order, attr, ack_text)
@@ -1817,9 +1813,9 @@ class MenuItemConfigHandler(BaseHandler):
                 # Always use _selections format to support quantity
                 item.attribute_values[f"{attr_slug}_selections"] = [selection]
 
-            # NOTE: Generally do NOT call _extract_and_apply_modifiers here.
+            # NOTE: Generally do NOT call _extract_and_apply_selections here.
             # The user's input was a direct answer to the attribute question.
-            # Extracting modifiers would cause duplicates (e.g., "2 scrambled eggs"
+            # Extracting selections would cause duplicates (e.g., "2 scrambled eggs"
             # would add scrambled_egg to both add_egg_selections AND extras/extra_protein).
 
             # Acknowledgment with quantity and qualifier
@@ -1831,18 +1827,16 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Multiple partial matches - store disambiguation state and ask
         if partial_matches:
-            # Extract any modifiers that should be remembered during disambiguation
+            # Extract any selections that should be remembered during disambiguation
             # (e.g., "walnut with bacon" -> remember bacon while disambiguating walnut type)
-            extracted_mods = self._extract_modifiers_from_input(user_input, item.menu_item_type)
+            extracted_selections = self._extract_selections_from_input(user_input, item.menu_item_type)
             stored_modifiers = {"_quantity": quantity}
-            if extracted_mods:
-                # Convert extracted modifiers to dict for storage (generic loop over all categories)
-                for category in extracted_mods.get_categories():
-                    mod = extracted_mods.get_first(category)
-                    if mod:
-                        stored_modifiers[category] = mod.slug
-                        if mod.quantity > 1:
-                            stored_modifiers[f"{category}_quantity"] = mod.quantity
+            if extracted_selections:
+                # Convert extracted selections to dict for storage
+                for sel in extracted_selections:
+                    stored_modifiers[sel.category] = sel.slug
+                    if sel.quantity > 1:
+                        stored_modifiers[f"{sel.category}_quantity"] = sel.quantity
 
             # Store disambiguation state
             order.pending_attr_disambiguation = {

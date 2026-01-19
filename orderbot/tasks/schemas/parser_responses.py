@@ -12,23 +12,36 @@ from pydantic import BaseModel, Field
 
 
 # =============================================================================
-# Helper Types for Modifiers with Quantity
+# Unified Selection Model
 # =============================================================================
 
-class QuantifiedModifier(BaseModel):
-    """A modifier with quantity and category.
+class Selection(BaseModel):
+    """A single customization choice for a menu item.
 
-    Generic type for any modifier that can have a quantity attached.
-    Category is determined by the parser from database lookup.
+    This is the canonical format for ALL item customizations - both attribute
+    choices (bread, size, toasted) and modifier add-ons (bacon, syrup, milk).
+
+    The format is uniform across all selection types:
+    - Attribute selections: Selection(slug="plain", category="bread", ...)
+    - Boolean attributes: Selection(slug="yes", category="toasted", ...)
+    - Modifier add-ons: Selection(slug="bacon", category="protein", quantity=2, ...)
 
     Examples:
-        QuantifiedModifier(slug="sugar", quantity=2, category="sweetener")
-        QuantifiedModifier(slug="vanilla", quantity=1, category="syrup")
-        QuantifiedModifier(slug="bacon", quantity=1, category="protein")
+        Selection(slug="everything", category="bread", price=0, display_name="Everything")
+        Selection(slug="yes", category="toasted", price=0, display_name="Toasted")
+        Selection(slug="large", category="size", price=0.90, display_name="Large")
+        Selection(slug="bacon", category="protein", quantity=2, price=1.50, display_name="Bacon")
+        Selection(slug="vanilla", category="syrup", price=0.50, display_name="Vanilla")
     """
-    slug: str
-    quantity: int = 1
-    category: str | None = None  # e.g., "sweetener", "syrup", "protein", "topping"
+    slug: str  # Selected option identifier (e.g., "plain", "bacon", "large", "yes")
+    category: str  # What type of selection (e.g., "bread", "protein", "size", "toasted")
+    quantity: int = 1  # How many (default 1)
+    price: float = 0.0  # Price contribution per unit
+    display_name: str | None = None  # Human-readable name (populated from cache if not provided)
+
+
+# Backward compatibility alias - will be removed after migration
+QuantifiedModifier = Selection
 
 
 class QualifierConflict(BaseModel):
@@ -89,11 +102,14 @@ class ParsedItemEntry(BaseModel):
     """Unified parsed item entry for data-driven item handling.
 
     This is the canonical representation for ALL item types.
-    All attributes are stored in attribute_values dict (keyed by attribute slug).
-    All modifiers are stored in modifiers list with category and quantity.
+    All customizations (attributes and modifiers) are stored in a unified
+    `selections` list using the Selection format.
 
-    Attribute access: Use attribute_values.get("slug") directly.
-    Modifier access: Use get_modifiers_by_category("category") helper.
+    Access methods:
+    - get_selection(category): Get first selection for a category
+    - get_selections(category): Get all selections for a category
+    - has_selection(category): Check if any selection exists for category
+    - add_selection(...): Add a new selection
     """
     type: Literal["item"] = "item"
 
@@ -102,12 +118,8 @@ class ParsedItemEntry(BaseModel):
     item_name: str | None = None  # Specific menu item name if known
     quantity: int = 1
 
-    # Data-driven attribute values (keyed by attribute slug from database)
-    attribute_values: dict = Field(default_factory=dict)
-
-    # Unified modifiers list with category and quantity
-    # Category is determined by parser from DB lookup
-    modifiers: list[QuantifiedModifier] = Field(default_factory=list)
+    # Unified selections list - all customizations (attributes and modifiers)
+    selections: list[Selection] = Field(default_factory=list)
 
     # Special instructions text
     special_instructions: str | None = None
@@ -121,17 +133,80 @@ class ParsedItemEntry(BaseModel):
     # For by-pound items (e.g., "1/4 lb", "1 lb")
     weight_unit: str | None = None
 
-    def get_modifiers_by_category(self, category: str) -> list[QuantifiedModifier]:
-        """Get all modifiers matching a category."""
-        return [m for m in self.modifiers if m.category == category]
+    def get_selection(self, category: str) -> Selection | None:
+        """Get first selection for a category (for single-select attributes)."""
+        for sel in self.selections:
+            if sel.category == category:
+                return sel
+        return None
+
+    def get_selections(self, category: str) -> list[Selection]:
+        """Get all selections for a category (for multi-select)."""
+        return [sel for sel in self.selections if sel.category == category]
+
+    def get_selection_value(self, category: str) -> str | None:
+        """Get the slug of the first selection for a category."""
+        sel = self.get_selection(category)
+        return sel.slug if sel else None
+
+    def has_selection(self, category: str) -> bool:
+        """Check if any selection exists for a category."""
+        return any(sel.category == category for sel in self.selections)
+
+    def add_selection(
+        self,
+        slug: str,
+        category: str,
+        quantity: int = 1,
+        price: float = 0.0,
+        display_name: str | None = None,
+    ) -> None:
+        """Add a selection to the list."""
+        self.selections.append(
+            Selection(
+                slug=slug,
+                category=category,
+                quantity=quantity,
+                price=price,
+                display_name=display_name,
+            )
+        )
+
+    # Backward compatibility - will be removed after migration
+    @property
+    def attribute_values(self) -> dict:
+        """DEPRECATED: Use selections instead. Returns dict for backward compat."""
+        result = {}
+        for sel in self.selections:
+            # For boolean categories, convert yes/no to True/False
+            if sel.slug in ("yes", "no"):
+                result[sel.category] = sel.slug == "yes"
+            else:
+                # For multi-select, accumulate into a list
+                if sel.category in result:
+                    existing = result[sel.category]
+                    if isinstance(existing, list):
+                        existing.append(sel.slug)
+                    else:
+                        result[sel.category] = [existing, sel.slug]
+                else:
+                    result[sel.category] = sel.slug
+        return result
+
+    @property
+    def modifiers(self) -> list[Selection]:
+        """DEPRECATED: Use selections instead. Returns selections for backward compat."""
+        return self.selections
+
+    def get_modifiers_by_category(self, category: str) -> list[Selection]:
+        """DEPRECATED: Use get_selections instead."""
+        return self.get_selections(category)
 
     def add_modifier(
         self, slug: str, category: str | None = None, quantity: int = 1
     ) -> None:
-        """Add a modifier to the list."""
-        self.modifiers.append(
-            QuantifiedModifier(slug=slug, category=category, quantity=quantity)
-        )
+        """DEPRECATED: Use add_selection instead."""
+        self.add_selection(slug=slug, category=category or "unknown", quantity=quantity)
 
 # ParsedItem is the unified type for all parsed items.
 ParsedItem = ParsedItemEntry

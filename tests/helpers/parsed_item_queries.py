@@ -115,6 +115,8 @@ def get_bagel_item(result):
     """Shorthand to get the first bagel from parsed_items.
 
     Replaces: result.new_bagel is True / result.new_bagel_type
+
+    Note: Plain bagels use "bagel" item type in the database.
     """
     return get_parsed_item(result, item_type="bagel")
 
@@ -123,6 +125,8 @@ def has_bagel(result) -> bool:
     """Shorthand to check if any bagel exists.
 
     Replaces: result.new_bagel is True
+
+    Note: Plain bagels use "bagel" item type in the database.
     """
     return has_parsed_item(result, item_type="bagel")
 

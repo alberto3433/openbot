@@ -528,51 +528,9 @@ class QueryHandler:
             if best_match_score == 100:
                 break
 
-        # Check for items with bread attribute (data-driven, not just bagels)
-        # Find item types that have "bread" attribute
-        bread_item_types = [
-            it_slug for it_slug in items_by_type.keys()
-            if "bread" in menu_cache.get_item_type_attributes(it_slug)
-        ]
-        # Check if query mentions any bread-based item type
-        is_bread_query = any(it_slug in query_lower for it_slug in bread_item_types)
-        if is_bread_query and not best_match:
-            for bread_type in bread_item_types:
-                bread_items = items_by_type.get(bread_type, [])
-                for item in bread_items:
-                    item_name = item.get("name", "").lower()
-                    if query_lower in item_name or item_name in query_lower:
-                        best_match = item
-                        best_match_score = 75
-                        break
-                if best_match:
-                    break
-            # Fall back to first item if no specific match
-            if not best_match:
-                for bread_type in bread_item_types:
-                    bread_items = items_by_type.get(bread_type, [])
-                    if bread_items:
-                        best_match = bread_items[0]
-                        best_match_score = 50
-                        break
-
         if best_match and best_match_score >= 50:
             name = best_match.get("name", "Unknown")
-            item_type = best_match.get("item_type")
-            # Check if item has bread attribute (data-driven) for special pricing
-            item_attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
-            if "bread" in item_attrs:
-                # Extract bread type from item name (e.g., "Everything Bagel" -> "everything")
-                type_display = menu_cache.get_item_type_display_name(item_type) if item_type else ""
-                bread_type = name.lower().replace(type_display.lower(), "").strip()
-                try:
-                    base_price = self._pricing.lookup_base_price(name)
-                    upcharge = self._pricing.lookup_attribute_option_upcharge(item_type, "bread", bread_type)
-                    price = base_price + upcharge
-                except ValueError:
-                    price = best_match.get("price") or best_match.get("base_price") or 0
-            else:
-                price = best_match.get("price") or best_match.get("base_price") or 0
+            price = best_match.get("price") or best_match.get("base_price") or 0
             return StateMachineResult(
                 message=f"{name} is ${price:.2f}. Would you like one?",
                 order=order,

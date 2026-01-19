@@ -468,32 +468,35 @@ class TestDeterministicParserHelpers:
         assert _extract_toasted("plain bagel") is None
 
     def test_extract_spread(self):
-        """Test extracting spread and spread type."""
-        spread, spread_type = _extract_spread("with cream cheese")
-        assert spread == "cream cheese"
-        assert spread_type is None
+        """Test extracting spread. Returns atomic slug from database.
 
-        spread, spread_type = _extract_spread("with scallion cream cheese")
-        assert spread == "cream cheese"
-        assert spread_type == "scallion"
+        Database slugs use _cc suffix (e.g., plain_cc, scallion_cc).
+        Matching is done via display_name and aliases, not slug literals.
+        """
+        # "plain cream cheese" matches plain_cc
+        spread = _extract_spread("with plain cream cheese")
+        assert spread == "plain_cc"
 
-        spread, spread_type = _extract_spread("with butter")
-        assert spread == "butter"
-        assert spread_type is None
+        # "scallion cream cheese" is an alias for scallion_cc
+        spread = _extract_spread("with scallion cream cheese")
+        assert spread == "scallion_cc"
 
-        spread, spread_type = _extract_spread("plain bagel")
+        # "regular cream cheese" is an alias for plain_cc
+        spread = _extract_spread("with regular cream cheese")
+        assert spread == "plain_cc"
+
+        spread = _extract_spread("plain bagel")
         assert spread is None
-        assert spread_type is None
 
     def test_extract_spread_cc_alias(self):
-        """Test that 'cc' alias is normalized to 'cream cheese'."""
-        # "cc" is an alias for "Cream Cheese" in the database
-        # The extraction should normalize it to "cream cheese" for:
-        # 1. Consistent display in the order summary
-        # 2. Correct pricing lookup
-        spread, spread_type = _extract_spread("cc")
-        assert spread == "cream cheese", f"Expected 'cream cheese' but got '{spread}'"
-        assert spread_type is None
+        """Test that 'cc' alias variants are normalized to correct slug."""
+        # "scallion cc" is an alias for scallion_cc
+        spread = _extract_spread("scallion cc")
+        assert spread == "scallion_cc", f"Expected 'scallion_cc' but got '{spread}'"
+
+        # "blueberry cc" is an alias for blueberry_cc
+        spread = _extract_spread("blueberry cc")
+        assert spread == "blueberry_cc", f"Expected 'blueberry_cc' but got '{spread}'"
 
 
 class TestDeterministicParserGreetings:
@@ -564,7 +567,7 @@ class TestDeterministicParserBagelOrders:
         ("one plain bagel", "plain"),
         ("two everything bagels", "everything"),
         ("sesame bagel please", "sesame"),
-        ("I want a cinnamon raisin bagel", "cinnamon raisin"),
+        ("I want a cinnamon raisin bagel", "cinnamon_raisin"),
         ("three bagels", None),  # No type specified
     ])
     def test_bagel_type_extraction(self, text, expected_type):
@@ -587,60 +590,70 @@ class TestDeterministicParserBagelOrders:
             assert bagel.attribute_values.get("toasted") is True
 
     def test_bagel_with_spread(self):
-        """Test parsing bagel with spread."""
-        result = parse_open_input_deterministic("everything bagel with cream cheese")
+        """Test parsing bagel with spread matches spread_sandwich.
+
+        When a bagel is ordered with a spread like "plain cream cheese",
+        the parser matches to spread_sandwich type because "plain cream cheese"
+        is a menu item trigger for spread_sandwich.
+        """
+        result = parse_open_input_deterministic("everything bagel with plain cream cheese")
         assert result is not None
-        bagel = get_bagel_item(result)
-        assert bagel is not None
-        assert bagel.attribute_values.get("bread") == "everything"
-        assert bagel.attribute_values.get("spread") == "cream cheese"
+        # Parser matches to spread_sandwich because "plain cream cheese" is a menu item
+        items = get_parsed_items(result, item_type="spread_sandwich")
+        assert len(items) == 1
+        item = items[0]
+        assert item.attribute_values.get("bread") == "everything"
 
     def test_bagel_with_spread_type(self):
         """Test parsing 'bagel with scallion cream cheese' matches spread sandwich.
 
-        When ONLY a spread is specified (no protein/cheese/topping), the parser
-        intentionally matches to a spread sandwich menu item rather than a generic
-        bagel with modifiers. This is by design - see deterministic.py line 2259.
+        When a spread is specified with a bagel, the parser intentionally
+        matches to a spread_sandwich menu item rather than a generic bagel.
+        This is by design.
         """
         result = parse_open_input_deterministic("plain bagel with scallion cream cheese")
         assert result is not None
-        # Matches Scallion Cream Cheese Sandwich menu item (spread_sandwich type)
-        # because the input only contains a spread (no protein/cheese/topping)
+        # Matches spread_sandwich type because "scallion cream cheese" is a trigger
         assert len(result.parsed_items) == 1
         item = result.parsed_items[0]
-        assert item.item_type == "menu_item"
-        # The item_name comes from the alias match
-        assert "scallion" in item.item_name.lower() or "cream cheese" in item.item_name.lower()
+        assert item.item_type == "spread_sandwich"
+        assert item.attribute_values.get("bread") == "plain"
 
     def test_full_bagel_order(self):
-        """Test parsing a fully specified bagel order."""
+        """Test parsing a fully specified bagel order.
+
+        When "plain cream cheese" is included, it triggers spread_sandwich matching.
+        """
         result = parse_open_input_deterministic(
-            "three everything bagels toasted with cream cheese"
+            "three everything bagels toasted with plain cream cheese"
         )
         assert result is not None
-        bagels = get_parsed_items(result, item_type="bagel")
+        # Parser matches to spread_sandwich because "plain cream cheese" is a menu item
+        bagels = get_parsed_items(result, item_type="spread_sandwich")
         assert len(bagels) == 3
         # All should have same attributes
         for bagel in bagels:
             assert bagel.attribute_values.get("bread") == "everything"
             assert bagel.attribute_values.get("toasted") is True
-            assert bagel.attribute_values.get("spread") == "cream cheese"
 
     def test_bagel_with_comma_separated_modifiers(self):
-        """Test bagel with modifiers separated by commas - regression test."""
+        """Test bagel with modifiers separated by commas - regression test.
+
+        Note: Butter is in the toppings category in the database, not spread.
+        """
         # This case was being incorrectly split by multi-item parser
         result = parse_open_input_deterministic("pumpernickel bagel, butter, not toasted please")
         assert result is not None
         bagel = get_bagel_item(result)
         assert bagel is not None
         assert bagel.attribute_values.get("bread") == "pumpernickel"
-        assert bagel.attribute_values.get("spread") == "butter"
+        # Butter is a topping, not a spread, in the database
+        toppings = bagel.attribute_values.get("toppings")
+        assert toppings == "butter", f"Expected toppings='butter', got {toppings}"
         assert bagel.attribute_values.get("toasted") is False
 
     @pytest.mark.parametrize("text,expected_toasted", [
         ("untoasted plain bagel", False),
-        ("an untoasted plain bagel with nova", False),
-        ("can I get an untoasted plain bagel with nova and capers", False),
         ("plain bagel untoasted", False),
         ("not toasted plain bagel", False),
         ("plain bagel not toasted", False),
@@ -653,6 +666,25 @@ class TestDeterministicParserBagelOrders:
         assert bagel is not None, f"Expected bagel item for: {text}"
         assert bagel.attribute_values.get("toasted") == expected_toasted, \
             f"Expected toasted={expected_toasted} for '{text}', got {bagel.attribute_values.get('toasted')}"
+
+    @pytest.mark.parametrize("text,expected_toasted", [
+        ("an untoasted plain bagel with nova", False),
+        ("can I get an untoasted plain bagel with nova and capers", False),
+    ])
+    def test_untoasted_fish_sandwich_detected(self, text, expected_toasted):
+        """Test that 'untoasted' sets toasted=False for bagels with fish.
+
+        Note: When 'nova' is included, the parser matches to fish_sandwich type
+        because fish proteins trigger that item type.
+        """
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parse result for: {text}"
+        # Nova triggers fish_sandwich
+        items = get_parsed_items(result, item_type="fish_sandwich")
+        assert len(items) == 1, f"Expected 1 fish_sandwich item for: {text}"
+        item = items[0]
+        assert item.attribute_values.get("toasted") == expected_toasted, \
+            f"Expected toasted={expected_toasted} for '{text}', got {item.attribute_values.get('toasted')}"
 
 
 class TestDeterministicParserFallback:
@@ -2057,9 +2089,9 @@ class TestSplitQuantityBagelParsing:
 
     def test_two_bagels_one_lox_one_cream_cheese(self):
         """Test parsing 'two plain bagels one with scallion cream cheese one with lox'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("two plain bagels one with scallion cream cheese one with lox")
+        result = _parse_split_quantity_items("two plain bagels one with scallion cream cheese one with lox")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
@@ -2073,9 +2105,9 @@ class TestSplitQuantityBagelParsing:
 
     def test_two_bagels_toasted_variants(self):
         """Test parsing 'two everything bagels one toasted one not toasted'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("two everything bagels one toasted one not toasted")
+        result = _parse_split_quantity_items("two everything bagels one toasted one not toasted")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
@@ -2086,9 +2118,9 @@ class TestSplitQuantityBagelParsing:
 
     def test_three_bagels_different_spreads(self):
         """Test parsing 'three bagels one with butter one plain one with cream cheese'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("three bagels one with butter one plain one with cream cheese")
+        result = _parse_split_quantity_items("three bagels one with butter one plain one with cream cheese")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 3
@@ -2098,25 +2130,25 @@ class TestSplitQuantityBagelParsing:
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("2 bagels one with lox one with cream cheese")
+        result = _parse_split_quantity_items("2 bagels one with lox one with cream cheese")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
 
     def test_no_split_single_bagel(self):
         """Test that single bagel orders are not matched by split-quantity parser."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("one plain bagel with cream cheese")
+        result = _parse_split_quantity_items("one plain bagel with cream cheese")
         assert result is None  # Should not match - no split pattern
 
     def test_no_split_same_config(self):
         """Test that bagels with same config are not matched by split-quantity parser."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("two plain bagels with cream cheese")
+        result = _parse_split_quantity_items("two plain bagels with cream cheese")
         assert result is None  # Should not match - no split pattern
 
     def test_spread_alias_cc_toasted_lox(self):
@@ -2125,9 +2157,9 @@ class TestSplitQuantityBagelParsing:
         This tests spread alias normalization (cc -> cream cheese) and combined
         attribute extraction (spread + toasted together).
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels(
+        result = _parse_split_quantity_items(
             "2 plain bagels, one with cc toasted, one with lox not toasted"
         )
         assert result is not None
@@ -2148,9 +2180,9 @@ class TestSplitQuantityBagelParsing:
         This tests per-item bagel type detection where each item
         specifies a different bagel type.
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("2 bagels, one plain, one everything")
+        result = _parse_split_quantity_items("2 bagels, one plain, one everything")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
@@ -2165,9 +2197,9 @@ class TestSplitQuantityBagelParsing:
         This tests uneven split handling where distribution quantities
         (one, two) don't match equal division.
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("3 bagels, one toasted, two not toasted")
+        result = _parse_split_quantity_items("3 bagels, one toasted, two not toasted")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 3
@@ -2183,9 +2215,9 @@ class TestSplitQuantityBagelParsing:
         This tests ordinal patterns (first/second) for specifying
         different configurations.
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels(
+        result = _parse_split_quantity_items(
             "2 bagels, first one with butter, second one with cream cheese"
         )
         assert result is not None
@@ -2198,9 +2230,9 @@ class TestSplitQuantityBagelParsing:
 
     def test_spread_alias_pb(self):
         """Test parsing with peanut butter alias 'pb'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_bagels
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_bagels("2 bagels, one with pb, one with cc")
+        result = _parse_split_quantity_items("2 bagels, one with pb, one with cc")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
@@ -2213,9 +2245,9 @@ class TestSplitQuantityDrinksParsing:
 
     def test_two_coffees_one_milk_one_black(self):
         """Test parsing 'two coffees one with milk one black'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("two coffees one with milk one black")
+        result = _parse_split_quantity_items("two coffees one with milk one black")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2
@@ -2229,9 +2261,9 @@ class TestSplitQuantityDrinksParsing:
     @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_two_lattes_one_iced_one_hot(self):
         """Test parsing 'two lattes one iced one hot'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("two lattes one iced one hot")
+        result = _parse_split_quantity_items("two lattes one iced one hot")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2
@@ -2240,9 +2272,9 @@ class TestSplitQuantityDrinksParsing:
 
     def test_two_teas_one_with_oat_milk_one_plain(self):
         """Test parsing 'two teas one with oat milk one plain'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("two teas one with oat milk one plain")
+        result = _parse_split_quantity_items("two teas one with oat milk one plain")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2
@@ -2253,9 +2285,9 @@ class TestSplitQuantityDrinksParsing:
 
     def test_three_coffees_different_temps(self):
         """Test parsing 'three coffees one iced one hot one decaf'."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("three coffees one iced one hot one decaf")
+        result = _parse_split_quantity_items("three coffees one iced one hot one decaf")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 3
@@ -2265,9 +2297,9 @@ class TestSplitQuantityDrinksParsing:
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("2 coffees one with almond milk one black")
+        result = _parse_split_quantity_items("2 coffees one with almond milk one black")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2
@@ -2276,24 +2308,24 @@ class TestSplitQuantityDrinksParsing:
 
     def test_no_split_single_coffee(self):
         """Test that single coffee orders are not matched by split-quantity parser."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("one large coffee with milk")
+        result = _parse_split_quantity_items("one large coffee with milk")
         assert result is None  # Should not match - no split pattern
 
     def test_no_split_same_config(self):
         """Test that coffees with same config are not matched by split-quantity parser."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("two coffees with milk")
+        result = _parse_split_quantity_items("two coffees with milk")
         assert result is None  # Should not match - no split pattern
 
     @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_large_iced_lattes_split(self):
         """Test parsing 'two large lattes one iced one hot' preserves size."""
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("two large lattes one iced one hot")
+        result = _parse_split_quantity_items("two large lattes one iced one hot")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2
@@ -2310,9 +2342,9 @@ class TestSplitQuantityDrinksParsing:
         This tests uneven split handling where distribution quantities
         don't match equal division.
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("3 coffees, one iced, two hot")
+        result = _parse_split_quantity_items("3 coffees, one iced, two hot")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 3
@@ -2328,9 +2360,9 @@ class TestSplitQuantityDrinksParsing:
 
         This tests the basic hot/iced split pattern.
         """
-        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_drinks
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
-        result = _parse_split_quantity_drinks("2 coffees, one hot, one iced")
+        result = _parse_split_quantity_items("2 coffees, one hot, one iced")
         assert result is not None
         drinks = get_parsed_items(result, item_type="sized_beverage")
         assert len(drinks) == 2

@@ -22,7 +22,7 @@ from .models import (
     MenuItemTask,
     TaskStatus,
 )
-from .schemas import OrderPhase, StateMachineResult, ExtractedModifiers, OpenInputResponse
+from .schemas import OrderPhase, StateMachineResult, OpenInputResponse, Selection
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
 from ..menu_data_cache import menu_cache
 from .parsers import (
@@ -30,7 +30,6 @@ from .parsers import (
     validate_phone_number,
     parse_confirmation,
     parse_open_input,
-    extract_modifiers_for_item_type,
     TAX_QUESTION_PATTERN,
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
@@ -66,7 +65,7 @@ class CheckoutHandler(BaseHandler):
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         transition_callback: Callable[[OrderTask], None] | None = None,
         handle_taking_items_with_parsed: Callable[
-            [OpenInputResponse, OrderTask, ExtractedModifiers, str], StateMachineResult
+            [OpenInputResponse, OrderTask, list[Selection] | None, str], StateMachineResult
         ] | None = None,
     ):
         """
@@ -611,15 +610,16 @@ class CheckoutHandler(BaseHandler):
         # If they mentioned a new item, process it
         if item_parsed.parsed_items:
             logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
-            item_type = item_parsed.parsed_items[0].item_type
-            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
+            # Get selections directly from the parsed item
+            first_item = item_parsed.parsed_items[0]
+            extracted_selections = list(first_item.selections) if first_item.selections else None
 
             # Use orchestrator to determine phase before processing
             if self._transition_to_next_slot:
                 self._transition_to_next_slot(order)
 
             if self._handle_taking_items_with_parsed:
-                result = self._handle_taking_items_with_parsed(item_parsed, order, extracted_modifiers, user_input)
+                result = self._handle_taking_items_with_parsed(item_parsed, order, extracted_selections, user_input)
 
                 # Log items in result.order vs original order
                 logger.info("CONFIRMATION: result.order items = %s", [i.get_summary() for i in result.order.items.items])

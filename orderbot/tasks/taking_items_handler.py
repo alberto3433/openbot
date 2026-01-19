@@ -24,12 +24,12 @@ from .schemas.phases import OrderPhase
 from .schemas import (
     StateMachineResult,
     OpenInputResponse,
-    ExtractedModifiers,
+    Selection,
     # ParsedItem types for multi-item handling
     ParsedItemEntry,
     ParsedItem,
 )
-from .parsers import parse_open_input, extract_modifiers_for_item_type
+from .parsers import parse_open_input, extract_attribute_values
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -523,35 +523,18 @@ def find_nth_item_of_type(
 # ParsedItemEntry Processing Helpers (Data-Driven)
 # =============================================================================
 
-def _build_extracted_modifiers(item: ParsedItemEntry) -> ExtractedModifiers:
-    """Build ExtractedModifiers from ParsedItemEntry (data-driven).
+def _get_selections_from_parsed_item(item: ParsedItemEntry) -> list[Selection]:
+    """Get selections from a ParsedItemEntry.
 
-    Works for ALL item types - uses unified modifiers list with category/quantity.
-    Handles:
-    - Unified modifiers (item.modifiers list with QuantifiedModifier objects)
-    - Special instructions
+    Works for ALL item types - uses unified selections list.
 
     Args:
         item: The parsed item entry
 
     Returns:
-        ExtractedModifiers with all modifiers categorized
+        List of Selection objects from the item
     """
-    extracted_mods = ExtractedModifiers()
-
-    # Add all modifiers from unified list (category determined by parser)
-    for mod in item.modifiers:
-        # Use category from modifier, or look up from DB, or fallback to "topping"
-        category = mod.category
-        if not category:
-            category = menu_cache.get_ingredient_category(mod.slug) or "topping"
-        extracted_mods.add(category, mod.slug, mod.quantity)
-
-    # Handle special instructions
-    if item.special_instructions:
-        extracted_mods.special_instructions.append(item.special_instructions)
-
-    return extracted_mods
+    return list(item.selections)
 
 
 def _build_item_summary(item: ParsedItemEntry) -> str:
@@ -610,20 +593,16 @@ def _build_item_summary(item: ParsedItemEntry) -> str:
     return base
 
 
-def _has_any_modifiers(extracted_mods: ExtractedModifiers) -> bool:
-    """Check if ExtractedModifiers has any content worth passing.
+def _has_any_selections(selections: list[Selection] | None) -> bool:
+    """Check if selections list has any content worth passing.
 
     Args:
-        extracted_mods: The extracted modifiers object
+        selections: The list of selections
 
     Returns:
-        True if there are modifiers, clarifications, or special instructions
+        True if there are any selections
     """
-    return (
-        extracted_mods.has_modifiers() or
-        extracted_mods.has_special_instructions() or
-        bool(extracted_mods.needs_clarification)
-    )
+    return bool(selections)
 
 
 class TakingItemsHandler:
@@ -745,16 +724,15 @@ class TakingItemsHandler:
             )
 
         # User might have ordered something directly - pass the already parsed result
-        # Also extract modifiers from the raw input (using item_type from first parsed item)
-        extracted_modifiers = ExtractedModifiers()
-        if parsed.parsed_items:
-            item_type = parsed.parsed_items[0].item_type
-            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
-            if extracted_modifiers.has_modifiers():
-                logger.info("Extracted modifiers from greeting input: %s", extracted_modifiers)
+        # Selections are already extracted in the parsed items during parsing
+        extracted_selections: list[Selection] | None = None
+        if parsed.parsed_items and parsed.parsed_items[0].selections:
+            extracted_selections = list(parsed.parsed_items[0].selections)
+            if extracted_selections:
+                logger.info("Selections from greeting input: %s", extracted_selections)
 
         # Phase is derived from orchestrator, no need to set explicitly
-        return self.handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
+        return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
 
     def handle_taking_items(
         self,
@@ -892,22 +870,20 @@ class TakingItemsHandler:
             ingredient_to_items=self._ingredient_to_items,
         )
 
-        # Extract modifiers from raw input (keyword-based, no LLM)
-        # Use item_type from first parsed item if available
-        extracted_modifiers = ExtractedModifiers()
-        if parsed.parsed_items:
-            item_type = parsed.parsed_items[0].item_type
-            extracted_modifiers = extract_modifiers_for_item_type(user_input, item_type)
-            if extracted_modifiers.has_modifiers():
-                logger.info("Extracted modifiers from input: %s", extracted_modifiers)
+        # Selections are already extracted in the parsed items during parsing
+        extracted_selections: list[Selection] | None = None
+        if parsed.parsed_items and parsed.parsed_items[0].selections:
+            extracted_selections = list(parsed.parsed_items[0].selections)
+            if extracted_selections:
+                logger.info("Selections from input: %s", extracted_selections)
 
-        return self.handle_taking_items_with_parsed(parsed, order, extracted_modifiers, user_input)
+        return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
 
     def handle_taking_items_with_parsed(
         self,
         parsed: OpenInputResponse,
         order: OrderTask,
-        extracted_modifiers: ExtractedModifiers | None = None,
+        extracted_selections: list[Selection] | None = None,
         raw_user_input: str | None = None,
     ) -> StateMachineResult:
         """Handle taking new item orders with already-parsed input."""
@@ -1303,37 +1279,54 @@ class TakingItemsHandler:
                             order=order,
                         )
 
-                # If no new items parsed, try applying input as modifiers to last item
+                # If no new items parsed, try applying input as selections to last item
                 if not has_new_items and isinstance(last_item, MenuItemTask) and raw_user_input:
                     # Check if item accepts any modifiers (data-driven from DB)
                     item_type = last_item.menu_item_type
                     if item_type and menu_cache.item_accepts_input_modifiers(item_type):
-                        modifiers = extract_modifiers_for_item_type(raw_user_input, item_type)
+                        # Extract attribute values and convert to selections
+                        attr_values = extract_attribute_values(raw_user_input, item_type)
+                        selections: list[Selection] = []
+                        if attr_values:
+                            for attr_slug, value in attr_values.items():
+                                if attr_slug == "special_instructions":
+                                    continue
+                                if isinstance(value, list):
+                                    for item in value:
+                                        if isinstance(item, dict) and item.get("slug"):
+                                            selections.append(Selection(
+                                                slug=item["slug"],
+                                                category=item.get("category") or attr_slug,
+                                                quantity=item.get("quantity", 1),
+                                            ))
+                                elif isinstance(value, str) and value:
+                                    selections.append(Selection(slug=value, category=attr_slug))
 
-                        if modifiers.has_modifiers():
+                        if selections:
                             # Clear existing modifiers and apply new ones using unified storage
-                            logger.info("Replacement: applying modifiers to item from categories: %s", modifiers.get_categories())
+                            categories = {sel.category for sel in selections}
+                            logger.info("Replacement: applying selections to item from categories: %s", categories)
                             last_item.modifiers = []  # Clear existing modifiers
 
-                            # Iterate over all categories in the extracted modifiers
-                            for category in modifiers.get_categories():
-                                for qmod in modifiers.get(category):
-                                    last_item.add_modifier(
-                                        category=category,
-                                        slug=qmod.slug,
-                                        display_name=qmod.slug.replace("_", " ").title(),
-                                    )
+                            # Apply all selections
+                            for sel in selections:
+                                last_item.add_modifier(
+                                    category=sel.category,
+                                    slug=sel.slug,
+                                    display_name=sel.slug.replace("_", " ").title(),
+                                )
 
-                            # Update single_select attributes from modifiers (e.g., spread)
+                            # Update single_select attributes from selections (e.g., spread)
                             # Data-driven lookup for attribute storage
                             for category in menu_cache.get_all_ingredient_categories():
                                 attr_slug = menu_cache.get_attribute_for_category(item_type, category)
                                 if attr_slug:
                                     input_type = menu_cache.get_attribute_input_type(item_type, attr_slug)
                                     if input_type == "single_select":
-                                        category_modifiers = modifiers.get_names(category)
-                                        if category_modifiers:
-                                            last_item.attribute_values[attr_slug] = category_modifiers[0]
+                                        # Find selections with this category
+                                        cat_selections = [s.slug for s in selections if s.category == category]
+                                        if cat_selections:
+                                            last_item.attribute_values[attr_slug] = cat_selections[0]
                                         else:
                                             # Clear to None if not specified (don't use "none" string)
                                             last_item.attribute_values[attr_slug] = None
@@ -1989,15 +1982,15 @@ class TakingItemsHandler:
 
         This method works for ALL item types without branching on specific
         item_type slugs. It:
-        1. Builds ExtractedModifiers from all modifier sources (data-driven)
+        1. Gets selections from the parsed item
         2. Passes all attribute_values to add_item (receiver filters to valid attrs)
         3. Builds summary using item_name or item_type display name
 
         Returns tuple of (updated_order, item_summary_string, disambiguation_result).
         The third element is non-None when disambiguation is needed.
         """
-        # 1. Build modifiers from all sources (data-driven, works for all item types)
-        extracted_mods = _build_extracted_modifiers(item)
+        # 1. Get selections from parsed item (data-driven, works for all item types)
+        selections = _get_selections_from_parsed_item(item)
 
         # 2. Track item count to detect if item was actually added
         #    (disambiguation returns without adding to order)
@@ -2010,9 +2003,9 @@ class TakingItemsHandler:
             order=order,
             quantity=item.quantity,
             item_name=item.item_name,
-            extracted_modifiers=extracted_mods if _has_any_modifiers(extracted_mods) else None,
+            extracted_selections=selections if _has_any_selections(selections) else None,
             original_input=item.original_text,
-            **item.attribute_values,  # Data-driven: pass all, receiver filters
+            **item.attribute_values,  # Data-driven: pass all, receiver filters (backward compat)
         )
         order = result.order
 

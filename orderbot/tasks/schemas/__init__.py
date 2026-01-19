@@ -7,7 +7,9 @@ state machine for parsing user input and representing order phases.
 
 from .phases import OrderPhase
 from .parser_responses import (
-    # Generic type for modifiers with quantity (sweeteners, syrups, etc.)
+    # Selection model for unified customizations
+    Selection,
+    # Backward compatibility alias
     QuantifiedModifier,
     # Qualifier conflict model
     QualifierConflict,
@@ -25,16 +27,14 @@ from .parser_responses import (
     EmailResponse,
     PhoneResponse,
 )
-from .modifiers import (
-    ExtractedModifiers,
-    QuantifiedModifier as ExtractedQuantifiedModifier,
-)
 from .result import StateMachineResult
 
 __all__ = [
     # Phases
     "OrderPhase",
-    # Generic type for modifiers with quantity (sweeteners, syrups, etc.)
+    # Selection model for unified customizations
+    "Selection",
+    # Backward compatibility alias
     "QuantifiedModifier",
     # Qualifier conflict model
     "QualifierConflict",
@@ -51,8 +51,6 @@ __all__ = [
     "PaymentMethodResponse",
     "EmailResponse",
     "PhoneResponse",
-    # Modifiers
-    "ExtractedModifiers",
     # Result
     "StateMachineResult",
 ]

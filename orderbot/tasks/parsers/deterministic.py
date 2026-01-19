@@ -13,9 +13,9 @@ from orderbot.menu_data_cache import menu_cache, singularize
 
 from ..schemas import (
     OpenInputResponse,
-    ExtractedModifiers,
-    # Generic type for modifiers with quantity (sweeteners, syrups, etc.)
-    QuantifiedModifier,
+    # Selection model for unified customizations (QuantifiedModifier is alias)
+    Selection,
+    QuantifiedModifier,  # Alias for Selection, used for modifiers
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
@@ -59,12 +59,14 @@ def build_parsed_item(
     *,
     item_name: str | None = None,
     quantity: int = 1,
-    attribute_values: dict | None = None,
-    modifiers: list[QuantifiedModifier] | None = None,
+    selections: list[Selection] | None = None,
     special_instructions: str | None = None,
     original_text: str | None = None,
     is_signature: bool = False,
     weight_unit: str | None = None,
+    # Backward compatibility - convert to selections internally
+    attribute_values: dict | None = None,
+    modifiers: list[Selection] | None = None,
 ) -> ParsedItemEntry:
     """
     Build a ParsedItemEntry from provided data.
@@ -72,53 +74,77 @@ def build_parsed_item(
     This is a pure data assembly function with no domain knowledge.
     It accepts any item_type, any attribute names, any modifier categories.
 
+    All customizations should be provided via the `selections` parameter.
+    The `attribute_values` and `modifiers` parameters are deprecated and
+    provided for backward compatibility during migration.
+
     Args:
         item_type: The item type slug (e.g., "bagel", "sized_beverage", "menu_item")
         item_name: Specific menu item name if known
         quantity: Number of items
-        attribute_values: Dict of attribute slug -> value
-        modifiers: List of QuantifiedModifier with category set
+        selections: List of Selection objects (preferred)
         special_instructions: Free-form instructions text
         original_text: Original user input (for disambiguation context)
         is_signature: Whether this is a signature/speed menu item
         weight_unit: For by-pound items (e.g., "1/4 lb")
+        attribute_values: DEPRECATED - Dict of attribute slug -> value
+        modifiers: DEPRECATED - List of Selection objects (old parameter name)
 
     Returns:
         ParsedItemEntry with all fields populated
     """
+    # Build the selections list
+    final_selections: list[Selection] = []
+
+    # If selections provided directly, use them
+    if selections:
+        final_selections.extend(selections)
+
+    # Backward compat: convert attribute_values dict to selections
+    if attribute_values:
+        for category, value in attribute_values.items():
+            if category == "special_instructions":
+                continue  # Handle separately
+            if isinstance(value, bool):
+                # Boolean attribute: use yes/no slugs
+                final_selections.append(Selection(
+                    slug="yes" if value else "no",
+                    category=category,
+                ))
+            elif isinstance(value, list):
+                # Multi-select: each item is a dict with slug, quantity, etc.
+                for item in value:
+                    if isinstance(item, dict):
+                        # Use item's category if present and not None, otherwise use outer category
+                        item_category = item.get("category") or category
+                        final_selections.append(Selection(
+                            slug=item.get("slug", ""),
+                            category=item_category,
+                            quantity=item.get("quantity", 1),
+                            price=item.get("price", 0.0),
+                            display_name=item.get("display_name"),
+                        ))
+                    else:
+                        # Simple string value
+                        final_selections.append(Selection(slug=str(item), category=category))
+            elif isinstance(value, str):
+                # Single-select: just the slug
+                final_selections.append(Selection(slug=value, category=category))
+
+    # Backward compat: add modifiers if provided
+    if modifiers:
+        final_selections.extend(modifiers)
+
     return ParsedItemEntry(
         item_type=item_type,
         item_name=item_name,
         quantity=quantity,
-        attribute_values=attribute_values or {},
-        modifiers=modifiers or [],
+        selections=final_selections,
         special_instructions=special_instructions,
         original_text=original_text,
         is_signature=is_signature,
         weight_unit=weight_unit,
     )
-
-
-def extracted_modifiers_to_list(mods: ExtractedModifiers) -> list[QuantifiedModifier]:
-    """Convert ExtractedModifiers to unified modifier list with categories."""
-    result: list[QuantifiedModifier] = []
-    for p in mods.proteins or []:
-        result.append(QuantifiedModifier(slug=p, category="protein"))
-    for c in mods.cheeses or []:
-        result.append(QuantifiedModifier(slug=c, category="cheese"))
-    for t in mods.toppings or []:
-        result.append(QuantifiedModifier(slug=t, category="topping"))
-    for s in mods.spreads or []:
-        result.append(QuantifiedModifier(slug=s, category="spread"))
-    if mods.sweetener:
-        result.append(QuantifiedModifier(
-            slug=mods.sweetener, category="sweetener", quantity=mods.sweetener_quantity
-        ))
-    if mods.flavor_syrup:
-        result.append(QuantifiedModifier(
-            slug=mods.flavor_syrup, category="syrup", quantity=mods.syrup_quantity
-        ))
-    return result
 
 
 # =============================================================================
@@ -867,59 +893,6 @@ def extract_attribute_values(
     return result
 
 
-def extract_modifiers_for_item_type(
-    user_input: str,
-    item_type: str,
-) -> ExtractedModifiers:
-    """
-    Extract modifiers from user input for a specific item type.
-
-    This is the data-driven function. It wraps extract_attribute_values()
-    and converts the result to ExtractedModifiers for backward compatibility.
-
-    Args:
-        user_input: The raw user input string
-        item_type: The item type slug (e.g., "bagel", "sized_beverage", "deli_sandwich")
-
-    Returns:
-        ExtractedModifiers with categorized modifiers
-    """
-    attr_values = extract_attribute_values(user_input, item_type)
-
-    if not attr_values:
-        return ExtractedModifiers()
-
-    # Convert flat dict to ExtractedModifiers
-    modifiers = ExtractedModifiers()
-
-    for attr_slug, value in attr_values.items():
-        if attr_slug == "special_instructions":
-            # Special instructions are a list of strings
-            if isinstance(value, list):
-                modifiers.special_instructions = value
-            continue
-
-        if isinstance(value, list):
-            # Multi-select attribute: list of {slug, quantity, display_name, category, ...}
-            for item in value:
-                if isinstance(item, dict):
-                    slug = item.get("slug", "")
-                    quantity = item.get("quantity", 1)
-                    # Use explicit category from item, or fall back to attr_slug
-                    category = item.get("category") or attr_slug
-                    if slug:
-                        modifiers.add(category, slug, quantity)
-        elif isinstance(value, bool):
-            # Boolean attribute - store as single-value category with "yes"/"no"
-            if value:
-                modifiers.add(attr_slug, "yes", 1)
-        elif isinstance(value, str):
-            # Single-select attribute: just the slug
-            modifiers.add(attr_slug, value, 1)
-
-    return modifiers
-
-
 # =============================================================================
 # Helper Extraction Functions
 # =============================================================================
@@ -1078,6 +1051,8 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
     """Detect item type and matched menu item from text.
 
     Uses database-driven trigger keywords for each item type.
+    Prefers triggers that match at the end of the text (noun position)
+    over adjective-position matches of the same length.
 
     Args:
         text: User input text
@@ -1096,27 +1071,35 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
     # Get all item type triggers from cache
     all_triggers = menu_cache.get_item_type_triggers()
 
-    # Sort item types by trigger length (longer matches first)
-    # This ensures "bacon egg and cheese" matches before just "egg"
-    best_match = None
-    best_match_length = 0
-    best_item_type = None
+    # Collect all matches with their position and length
+    # Format: (item_type, keyword, match_length, end_position, is_at_end_region, slug_matches)
+    matches: list[tuple[str, str, int, int, bool, bool]] = []
 
     for item_type_slug, triggers in all_triggers.items():
-        # Check each trigger keyword
         for keyword in triggers:
             keyword_lower = keyword.lower()
-            if keyword_lower in text_lower:
-                # Prefer longer matches
-                if len(keyword_lower) > best_match_length:
-                    best_match_length = len(keyword_lower)
-                    best_match = keyword
-                    best_item_type = item_type_slug
+            # Find all occurrences
+            idx = text_lower.find(keyword_lower)
+            while idx != -1:
+                end_pos = idx + len(keyword_lower)
+                # Check if this match is in the "end region" (last 20% of text or last 15 chars)
+                text_len = len(text_lower)
+                end_region_start = max(text_len - 15, int(text_len * 0.8))
+                is_at_end = end_pos >= end_region_start
+                # Prefer item types where the slug matches the trigger (e.g., bagel -> bagel)
+                slug_matches = keyword_lower == item_type_slug or keyword_lower.rstrip("s") == item_type_slug
+                matches.append((item_type_slug, keyword, len(keyword_lower), end_pos, is_at_end, slug_matches))
+                idx = text_lower.find(keyword_lower, idx + 1)
 
-    if best_item_type:
-        return best_item_type, best_match
+    if not matches:
+        return None, None
 
-    return None, None
+    # Sort by: (1) is_at_end_region (True first), (2) slug_matches (True first), (3) match_length (longer first)
+    # This prefers: triggers at end > slug matches > longer matches
+    matches.sort(key=lambda x: (not x[4], not x[5], -x[2]))
+    best_item_type, best_match, _, _, _, _ = matches[0]
+
+    return best_item_type, best_match
 
 
 def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
@@ -1292,34 +1275,10 @@ def _parse_item_generic(
         attrs = menu_cache.get_item_type_attributes(item_type)
         generic_extracted = extract_attribute_values(text, item_type)
 
-        # Helper to filter extracted values by type using slug/display_name patterns
-        # This handles combined attributes (like milk_sweetener_syrup) where options
-        # may not have category set consistently
-        def is_milk_option(opt: dict) -> bool:
-            """Check if option is a milk type based on slug/display_name."""
-            slug = opt.get("slug", "").lower()
-            display = opt.get("display_name", "").lower()
-            # Check for milk patterns (but not "syrup" to avoid false positives)
-            return ("milk" in slug or "milk" in display or
-                    slug == "half_n_half" or "half n half" in display.lower() or
-                    "half and half" in display.lower())
-
-        def is_syrup_option(opt: dict) -> bool:
-            """Check if option is a syrup type based on slug/display_name."""
-            slug = opt.get("slug", "").lower()
-            display = opt.get("display_name", "").lower()
-            return "syrup" in slug or "syrup" in display
-
-        def is_sweetener_option(opt: dict) -> bool:
-            """Check if option is a sweetener type based on slug/display_name/category."""
-            slug = opt.get("slug", "").lower()
-            category = opt.get("category", "")
-            if category == "sweeteners":
-                return True
-            # Common sweetener slugs
-            sweetener_slugs = {"sugar", "splenda", "equal", "sweet_n_low",
-                              "sugar_in_the_raw", "stevia", "honey"}
-            return slug in sweetener_slugs
+        # Helper to filter extracted values by category (data-driven from database)
+        def matches_category(opt: dict, category: str) -> bool:
+            """Check if option belongs to category (data-driven from database)."""
+            return opt.get("category", "").lower() == category.lower()
 
         def extract_from_combined_attr(attr_slug: str, filter_fn) -> list[dict]:
             """Extract values from a combined attribute, filtering by type."""
@@ -1333,7 +1292,12 @@ def _parse_item_generic(
                 options = attrs.get(attr_slug, {}).get("options", [])
                 for opt in options:
                     if opt.get("slug") == values and filter_fn(opt):
-                        return [{"slug": values, "quantity": 1, "display_name": opt.get("display_name", values)}]
+                        return [{
+                            "slug": values,
+                            "quantity": 1,
+                            "display_name": opt.get("display_name", values),
+                            "category": opt.get("category", "")
+                        }]
             return []
 
         # Check for combined milk_sweetener_syrup attribute
@@ -1342,7 +1306,7 @@ def _parse_item_generic(
 
         # Extract sweeteners
         if has_combined:
-            sweetener_items = extract_from_combined_attr(combined_attr, is_sweetener_option)
+            sweetener_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "sweetener"))
         else:
             sweetener_attr_slug = menu_cache.resolve_field_to_slug(item_type, "sweetener")
             if sweetener_attr_slug in attrs:
@@ -1355,12 +1319,13 @@ def _parse_item_generic(
             if isinstance(item, dict):
                 sweeteners.append(QuantifiedModifier(
                     slug=item.get("slug", ""),
+                    category=item.get("category") or "",
                     quantity=item.get("quantity", 1)
                 ))
 
         # Extract syrups
         if has_combined:
-            syrup_items = extract_from_combined_attr(combined_attr, is_syrup_option)
+            syrup_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "syrup"))
         else:
             syrup_attr_slug = menu_cache.resolve_field_to_slug(item_type, "syrup")
             if syrup_attr_slug not in attrs:
@@ -1375,13 +1340,14 @@ def _parse_item_generic(
             if isinstance(item, dict):
                 syrups.append(QuantifiedModifier(
                     slug=item.get("slug", ""),
+                    category=item.get("category") or "",
                     quantity=item.get("quantity", 1)
                 ))
 
         # Extract milk
         if "milk" not in attribute_values:
             if has_combined:
-                milk_items = extract_from_combined_attr(combined_attr, is_milk_option)
+                milk_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "milk"))
             else:
                 milk_attr_slug = menu_cache.resolve_field_to_slug(item_type, "milk")
                 if milk_attr_slug in attrs:
@@ -1443,16 +1409,16 @@ def _parse_item_generic(
             slug=mod, category=category, quantity=1
         ))
 
-    # Add sweeteners with category
+    # Add sweeteners with category from database
     for sw in sweeteners:
         unified_modifiers.append(QuantifiedModifier(
-            slug=sw.slug, category="sweetener", quantity=sw.quantity
+            slug=sw.slug, category=sw.category, quantity=sw.quantity
         ))
 
-    # Add syrups with category
+    # Add syrups with category from database
     for sy in syrups:
         unified_modifiers.append(QuantifiedModifier(
-            slug=sy.slug, category="syrup", quantity=sy.quantity
+            slug=sy.slug, category=sy.category, quantity=sy.quantity
         ))
 
     return ParsedItemEntry(
@@ -2076,8 +2042,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     4. Extract quantity
     5. Match specific menu item name within that type
     6. Extract attributes using extract_attribute_values()
-    7. Extract modifiers using extract_modifiers_for_item_type()
-    8. Build and return ParsedItemEntry
+    7. Build and return ParsedItemEntry via build_parsed_item()
 
     Returns:
         OpenInputResponse with parsed_items if a configurable item was detected,
@@ -2109,20 +2074,33 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 2. Detect which configurable item type this text matches
     configurable_slugs = menu_cache.get_configurable_item_type_slugs()
     detected_item_type: str | None = signature_item_type  # Use signature item type if found
-    best_match_length = 0
 
     # Only do trigger-based detection if no signature item was found
     if not detected_item_type:
+        # Collect all matches with position info for smarter selection
+        # Format: (item_type, trigger, length, end_pos, is_at_end, slug_matches)
+        matches: list[tuple[str, str, int, int, bool, bool]] = []
+        text_len = len(text_lower)
+
         for item_type_slug in configurable_slugs:
             triggers = menu_cache.get_item_type_triggers(item_type_slug)
             for trigger in triggers:
                 # Check for word boundary match
                 pattern = rf'\b{re.escape(trigger)}s?\b'
-                if re.search(pattern, text_lower):
-                    # Prefer longer matches (more specific)
-                    if len(trigger) > best_match_length:
-                        best_match_length = len(trigger)
-                        detected_item_type = item_type_slug
+                match = re.search(pattern, text_lower)
+                if match:
+                    end_pos = match.end()
+                    # Check if match is in "end region" (last 20% or last 15 chars)
+                    end_region_start = max(text_len - 15, int(text_len * 0.8))
+                    is_at_end = end_pos >= end_region_start
+                    # Prefer item types where slug matches trigger
+                    slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
+                    matches.append((item_type_slug, trigger, len(trigger), end_pos, is_at_end, slug_matches))
+
+        if matches:
+            # Sort by: (1) is_at_end (True first), (2) slug_matches (True first), (3) length (longer first)
+            matches.sort(key=lambda x: (not x[4], not x[5], -x[2]))
+            detected_item_type = matches[0][0]
 
     if not detected_item_type:
         return None
@@ -2130,9 +2108,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
 
     # 3. Extract quantity
+    # Handle common prefixes like "I want 5", "Can I get three", "Give me two", etc.
     quantity = 1
     qty_match = re.match(
-        r"^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
+        r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
+        r"(?:can|could|may)\s+i\s+(?:get|have)|"
+        r"give\s+me|"
+        r"let\s*(?:me|'s)\s*(?:get|have)|"
+        r")?\s*"
+        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
         text_lower
     )
     if qty_match:
@@ -2143,46 +2127,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
     # 4. Extract attribute values using data-driven extraction
+    # This returns all attributes as {slug: value} where value can be:
+    # - string for single_select
+    # - list[{slug, quantity, ...}] for multi_select
+    # - bool for boolean
     attr_values = extract_attribute_values(text, detected_item_type)
 
-    # 5. Extract modifiers using data-driven extraction
-    modifiers = extract_modifiers_for_item_type(text, detected_item_type)
-
-    # 6. Try to match a specific menu item name within this type
+    # 5. Try to match a specific menu item name within this type
     # If we already found a signature item, use that name; otherwise try to match
     item_name = signature_item_name or _match_menu_item_name_for_type(text, detected_item_type)
-
-    # 7. Build ParsedItemEntry
-    from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-
-    # Build unified modifiers list from ExtractedModifiers
-    quantified_mods: list[QuantifiedModifier] = []
-    for p in modifiers.proteins:
-        quantified_mods.append(QuantifiedModifier(slug=p, category="protein"))
-    for c in modifiers.cheeses:
-        quantified_mods.append(QuantifiedModifier(slug=c, category="cheese"))
-    for t in modifiers.toppings:
-        quantified_mods.append(QuantifiedModifier(slug=t, category="topping"))
-    for s in modifiers.spreads:
-        quantified_mods.append(QuantifiedModifier(slug=s, category="spread"))
-    # Add sweeteners and syrups for beverages
-    if modifiers.sweetener:
-        quantified_mods.append(QuantifiedModifier(
-            slug=modifiers.sweetener,
-            category="sweetener",
-            quantity=modifiers.sweetener_quantity
-        ))
-    if modifiers.flavor_syrup:
-        quantified_mods.append(QuantifiedModifier(
-            slug=modifiers.flavor_syrup,
-            category="syrup",
-            quantity=modifiers.syrup_quantity
-        ))
-    # Add milk as attribute value rather than modifier
-    if modifiers.milk and "milk" not in attr_values:
-        attr_values["milk"] = modifiers.milk
-    if modifiers.cream_level and "cream_level" not in attr_values:
-        attr_values["cream_level"] = modifiers.cream_level
 
     # Check if this is a signature/speed menu item
     is_signature = False
@@ -2193,17 +2146,16 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             is_signature = True
 
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%d, is_signature=%s",
-        detected_item_type, quantity, item_name, list(attr_values.keys()), len(quantified_mods), is_signature
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, is_signature=%s",
+        detected_item_type, quantity, item_name, list(attr_values.keys()), is_signature
     )
 
+    # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
     parsed_items = [
-        ParsedItemEntry(
+        build_parsed_item(
             item_type=detected_item_type,
             item_name=item_name,
-            quantity=1,
             attribute_values=attr_values.copy(),
-            modifiers=quantified_mods.copy(),
             original_text=text,
             is_signature=is_signature,
         )
@@ -2386,7 +2338,7 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     base_attrs = extract_attribute_values(initial_part, item_type)
 
     # Try to match a specific menu item name within the type
-    base_item_name = _match_menu_item_for_type(initial_part, item_type)
+    base_item_name = _match_menu_item_name_for_type(initial_part, item_type)
 
     # 4. Split into parts
     parts = _split_into_parts(text_lower)
@@ -2417,11 +2369,7 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
             if v is not None:
                 merged_attrs[k] = v
 
-        # Extract modifiers for this part
-        part_mods = extract_modifiers_for_item_type(part_text, item_type)
-        mod_list = extracted_modifiers_to_list(part_mods)
-
-        # Create items for this part
+        # Create items for this part (build_parsed_item converts attrs to selections)
         items_to_create = min(part_qty, total_quantity - item_count)
         for _ in range(items_to_create):
             parsed_items.append(build_parsed_item(
@@ -2429,7 +2377,6 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
                 item_name=base_item_name,
                 quantity=1,
                 attribute_values={k: v for k, v in merged_attrs.items() if v is not None},
-                modifiers=mod_list,
                 original_text=text,
             ))
             item_count += 1

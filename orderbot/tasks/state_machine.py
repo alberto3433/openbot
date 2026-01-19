@@ -41,8 +41,6 @@ from .handler_config import HandlerConfig
 from .schemas import (
     OrderPhase,
     StateMachineResult,
-    BagelOrderDetails,
-    CoffeeOrderDetails,
     OpenInputResponse,
     ExtractedModifiers,
 )

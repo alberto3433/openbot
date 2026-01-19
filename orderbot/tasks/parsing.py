@@ -172,7 +172,7 @@ class ParsedInput(BaseModel):
     )
     options_inquiry_attribute: str | None = Field(
         default=None,
-        description="The specific attribute/option being asked about: 'cheese', 'filling', 'bagel_choice', 'side_choice', 'spread', 'extras', etc."
+        description="The specific attribute/option being asked about: 'cheese', 'filling', 'bread', 'side_choice', 'spread', 'extras', etc."
     )
 
     # General
@@ -301,32 +301,31 @@ When there is a pending question, short responses like "yes", "no", "cream chees
 - If pending question asks for address and user provides one -> delivery_address: "the address", DO NOT create new_menu_items
 - ONLY create new_menu_items when user explicitly asks for a NEW item (e.g., "I want another bagel", "add a coffee", "can I also get...")
 
-OMELETTE SIDE CHOICE AND BAGEL CHOICE - CRITICAL:
+OMELETTE SIDE CHOICE - CRITICAL:
 When a user ORDERS an omelette (e.g., "can I get the chipotle egg omelette?"):
-- DO NOT set side_choice or bagel_choice - leave them unset!
+- DO NOT set side_choice - leave it unset!
 - The system will ask about the side choice in a follow-up question
 - Example: "can I get the chipotle egg omelette?" -> new_menu_items: [{item_name: "The Chipotle Egg Omelette"}], answers: {} (EMPTY!)
 
-ONLY set side_choice/bagel_choice when the user is ANSWERING a pending question:
+ONLY set side_choice when the user is ANSWERING a pending question:
 - If pending question asks "Would you like a bagel or fruit salad with your [omelette]?" and user says:
   - "bagel" -> answers: {"side_choice": "bagel"}, DO NOT create new_menu_items
   - "fruit salad" -> answers: {"side_choice": "fruit_salad"}, DO NOT create new_menu_items
-- If pending question asks "What kind of bagel would you like?" (after choosing bagel as side):
-  - "pumpernickel" -> answers: {"bagel_choice": "pumpernickel"}, DO NOT create new_menu_items
-  - "everything bagel" -> answers: {"bagel_choice": "everything"}, DO NOT create new_menu_items
-  - "plain" -> answers: {"bagel_choice": "plain"}, DO NOT create new_menu_items
+- If pending question asks "What kind of bagel would you like?" (configuring bagel side):
+  - "pumpernickel" -> answers: {"bread": "pumpernickel"}, DO NOT create new_menu_items
+  - "everything bagel" -> answers: {"bread": "everything"}, DO NOT create new_menu_items
+  - "plain" -> answers: {"bread": "plain"}, DO NOT create new_menu_items
 - These are answers about the SIDE for the omelette, NOT separate bagel orders!
-- Key pattern: If pending question is about side/bagel choice, it's for the omelette's side.
-- User saying "give me the pumpernickel bagel" after being asked about bagel choice = answers: {"bagel_choice": "pumpernickel"}
+- Key pattern: If pending question is about side choice or bagel type, it's for the omelette's side.
 
 CONTEXT CLUES FOR OMELETTE SIDES:
-- If context has "omelette_pending: true" or "pending_customization: side_choice" or "pending_customization: bagel_choice":
+- If context has "omelette_pending: true" or "pending_customization: side_choice" or "pending_customization: bread":
   - ANY mention of "bagel" = answers: {"side_choice": "bagel"}, NOT a new bagel order
-  - ANY bagel type like "plain", "everything", "pumpernickel" = answers: {"bagel_choice": "..."}, NOT a new bagel
+  - ANY bagel type like "plain", "everything", "pumpernickel" = answers: {"bread": "..."}, NOT a new bagel
   - "fruit salad" = answers: {"side_choice": "fruit_salad"}
 - The word "bagel" in response to an omelette side question is NEVER a new bagel order!
 
-CRITICAL: When user ORDERS an omelette, DO NOT pre-fill side_choice or bagel_choice!
+CRITICAL: When user ORDERS an omelette, DO NOT pre-fill side_choice!
 
 ORDER CONFIRMATION:
 - ONLY set confirms_order when the pending question is SPECIFICALLY asking about the order summary (e.g., "Does that look right?", "Is that correct?")
@@ -370,7 +369,7 @@ DO NOT set needs_clarification for menu queries - set menu_query instead!
 OPTIONS INQUIRY - CRITICAL (Different from menu queries!):
 When user asks about CUSTOMIZATION OPTIONS for an item they ordered (or are ordering), use options_inquiry:
 - "what cheese can I have on the omelette?" -> options_inquiry: true, options_inquiry_item_type: "omelette", options_inquiry_attribute: "cheese"
-- "what are my bagel choices?" -> options_inquiry: true, options_inquiry_item_type: "omelette", options_inquiry_attribute: "bagel_choice"
+- "what are my bagel choices?" -> options_inquiry: true, options_inquiry_item_type: "bagel", options_inquiry_attribute: "bread"
 - "what fillings do you have?" -> options_inquiry: true, options_inquiry_item_type: "omelette", options_inquiry_attribute: "filling"
 - "what spreads can I get?" -> options_inquiry: true, options_inquiry_item_type: "bagel", options_inquiry_attribute: "spread"
 - "what extras can I add?" -> options_inquiry: true, options_inquiry_item_type: "omelette", options_inquiry_attribute: "extras"
@@ -382,8 +381,8 @@ Key difference between menu_query and options_inquiry:
 - options_inquiry: "What cheese can I have on the omelette?" (asking about OPTIONS for customizing an item)
 
 Common attribute names for options_inquiry_attribute:
-- Omelettes: "cheese", "filling", "bagel_choice", "side_choice", "egg_style", "extras"
-- Bagels: "spread", "extras", "toasted"
+- Omelettes: "cheese", "filling", "side_choice", "egg_style", "extras"
+- Bagels: "bread", "spread", "extras", "toasted"
 - Coffee: "milk", "sweetener", "size", "flavor_syrup"
 
 DO NOT set menu_query for options inquiries - they are different!

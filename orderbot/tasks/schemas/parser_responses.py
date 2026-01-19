@@ -133,35 +133,8 @@ class ParsedItemEntry(BaseModel):
             QuantifiedModifier(slug=slug, category=category, quantity=quantity)
         )
 
-class ParsedMenuItemEntry(BaseModel):
-    """A parsed menu item from multi-item detection.
-
-    This handles both regular menu items and signature items (is_signature=True).
-    Signature items are pre-configured items like 'The Classic BEC', 'The Leo', etc.
-    """
-    type: Literal["menu_item"] = "menu_item"
-    menu_item_name: str
-    quantity: int = 1
-    bread: str | None = None
-    toasted: bool | None = None
-    modifiers: list[str] = Field(default_factory=list)
-    is_signature: bool = False  # True for signature items like "The Classic BEC"
-
-
-class ParsedSideItemEntry(BaseModel):
-    """A parsed side item from multi-item detection."""
-    type: Literal["side"] = "side"
-    side_name: str
-    quantity: int = 1
-
-
-# Union type for dispatcher
-# ParsedItemEntry is the unified type for all parsed items.
-ParsedItem = Union[
-    ParsedItemEntry,
-    ParsedMenuItemEntry,
-    ParsedSideItemEntry,
-]
+# ParsedItem is the unified type for all parsed items.
+ParsedItem = ParsedItemEntry
 
 
 class AttributeChoiceResponse(BaseModel):
@@ -204,49 +177,6 @@ class AttributeChoiceResponse(BaseModel):
         description="Additional sub-values (deprecated)"
     )
 
-    # Backward-compatible property aliases for callers using old field names
-    @property
-    def bread(self) -> str | None:
-        """Alias for value when attribute_slug is 'bread'."""
-        return self.value if isinstance(self.value, str) else None
-
-    @property
-    def toasted(self) -> bool | None:
-        """Alias for value when attribute_slug is 'toasted'."""
-        return self.value if isinstance(self.value, bool) else None
-
-    @property
-    def spread(self) -> str | None:
-        """Alias for value when attribute_slug is 'spread'."""
-        return self.value if isinstance(self.value, str) else None
-
-    @property
-    def no_spread(self) -> bool:
-        """Alias for declined."""
-        return self.declined
-
-    @property
-    def size(self) -> str | None:
-        """Alias for value when attribute_slug is 'size'."""
-        return self.value if isinstance(self.value, str) else None
-
-    @property
-    def iced(self) -> bool | None:
-        """Alias for value when attribute_slug is 'temperature' or 'iced'."""
-        if isinstance(self.value, bool):
-            return self.value
-        if self.value == "iced":
-            return True
-        if self.value == "hot":
-            return False
-        return None
-
-    @property
-    def choice(self) -> str | None:
-        """Alias for value (for SideChoiceResponse compatibility)."""
-        return self.value if isinstance(self.value, str) else None
-
-
 class MultiAttributeChoiceResponse(BaseModel):
     """Generic parser output for multiple items needing the same attribute.
 
@@ -269,57 +199,10 @@ class MultiAttributeChoiceResponse(BaseModel):
     )
 
 
-# Backward-compatible aliases for existing code
-# TODO: Update callers to use AttributeChoiceResponse directly
-SpreadChoiceResponse = AttributeChoiceResponse
-ToastedChoiceResponse = AttributeChoiceResponse
-CoffeeSizeResponse = AttributeChoiceResponse
-CoffeeStyleResponse = AttributeChoiceResponse
-SideChoiceResponse = AttributeChoiceResponse
-MultiToastedResponse = MultiAttributeChoiceResponse
-MultiSpreadResponse = MultiAttributeChoiceResponse
-
-
-class BagelOrderDetails(BaseModel):
-    """DEPRECATED: Use ParsedItemEntry with item_type='bagel' instead.
-
-    Details for a single bagel in an order. This class is maintained for
-    backward compatibility with the deprecated bagel_details field.
-    """
-    bagel_type: str | None = Field(default=None, description="Bagel type (plain, everything, cinnamon raisin, etc.)")
-    toasted: bool | None = Field(default=None, description="Whether toasted")
-    spread: str | None = Field(default=None, description="Atomic spread slug (e.g., 'scallion_cream_cheese', 'butter')")
-
-
-class CoffeeOrderDetails(BaseModel):
-    """DEPRECATED: Use ParsedItemEntry with item_type='sized_beverage' instead.
-
-    Details for a single coffee/drink in an order. This class is maintained for
-    backward compatibility with the deprecated coffee_details field.
-    """
-    drink_type: str = Field(description="Coffee/drink type (coffee, latte, cappuccino, etc.)")
-    size: str | None = Field(default=None, description="Size: small or large")
-    iced: bool | None = Field(default=None, description="True if iced, False if hot, None if not specified")
-    decaf: bool | None = Field(default=None, description="True if decaf, False if regular, None if not specified")
-    quantity: int = Field(default=1, description="Number of this drink")
-    milk: str | None = Field(default=None, description="Milk type: whole, skim, oat, almond, none/black")
-    special_instructions: str | None = Field(default=None, description="Special instructions like 'a splash of milk', 'extra hot'")
-
-
-class MenuItemOrderDetails(BaseModel):
-    """Details for a single menu item in a multi-item order."""
-    name: str = Field(description="Menu item name (e.g., 'The BLT', 'The Lexington')")
-    quantity: int = Field(default=1, description="Number of this item")
-    bagel_choice: str | None = Field(default=None, description="Bagel type if specified")
-    toasted: bool | None = Field(default=None, description="Whether toasted")
-    modifications: list[str] = Field(default_factory=list, description="Modifications like 'no onions'")
-
-
 class OpenInputResponse(BaseModel):
     """Parser output when open for new items (not configuring a specific item).
 
-    All item data is stored in the `parsed_items` field as a list of ParsedItemEntry,
-    ParsedMenuItemEntry, or ParsedSideItemEntry objects.
+    All item data is stored in the `parsed_items` field as a list of ParsedItemEntry objects.
     """
 
     # Clarifications needed
@@ -394,7 +277,19 @@ class OpenInputResponse(BaseModel):
     )
     recommendation_category: str | None = Field(
         default=None,
-        description="Category of recommendation asked: 'bagel', 'sandwich', 'coffee', 'breakfast', 'lunch', or None for general"
+        description="DEPRECATED: Use recommendation_match_type instead. Category of recommendation asked."
+    )
+    recommendation_match_type: str | None = Field(
+        default=None,
+        description="Type of recommendation match: 'general' (no specific category), 'menu_items' (matched specific items), 'item_type' (matched an item type)"
+    )
+    recommendation_menu_item_ids: list[int] | None = Field(
+        default=None,
+        description="List of menu item IDs that matched the recommendation search (when recommendation_match_type='menu_items')"
+    )
+    recommendation_item_type_slug: str | None = Field(
+        default=None,
+        description="Item type slug that matched the recommendation search (when recommendation_match_type='item_type')"
     )
 
     # Item description inquiries (should NOT add to cart)

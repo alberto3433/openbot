@@ -20,8 +20,8 @@ from ..schemas import (
     OpenInputResponse,
     PaymentMethodResponse,
     PhoneResponse,
-    SideChoiceResponse,
 )
+from ..schemas.parser_responses import AttributeChoiceResponse
 from .deterministic import (
     parse_open_input_deterministic,
     _parse_multi_item_order,
@@ -45,7 +45,7 @@ def parse_side_choice(
     valid_options: list[dict] | None = None,
     question_text: str | None = None,
     model: str = "gpt-4o-mini",
-) -> SideChoiceResponse:
+) -> AttributeChoiceResponse:
     """Parse user input when waiting for side choice selection.
 
     This is a generic, data-driven parser that works with any side choice options
@@ -64,7 +64,7 @@ def parse_side_choice(
         model: OpenAI model to use
 
     Returns:
-        SideChoiceResponse with:
+        AttributeChoiceResponse with:
             - value: the chosen option slug (or "unclear" if not determined)
             - wants_cancel: True if user wants to cancel the item
     """
@@ -108,7 +108,7 @@ like specific types or modifications. Those will be asked separately.
 
     return client.chat.completions.create(
         model=model,
-        response_model=SideChoiceResponse,
+        response_model=AttributeChoiceResponse,
         messages=[{"role": "user", "content": prompt}],
     )
 

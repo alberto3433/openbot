@@ -28,10 +28,8 @@ def get_parsed_items(result, item_type: str = None, is_signature: bool = None,
     matches = []
     for item in result.parsed_items:
         # Filter by item_type
-        # Note: ParsedItemEntry uses "item_type", while ParsedMenuItemEntry and
-        # ParsedSideItemEntry use "type" field
         if item_type is not None:
-            actual_type = getattr(item, 'item_type', None) or getattr(item, 'type', None)
+            actual_type = getattr(item, 'item_type', None)
             if actual_type != item_type:
                 continue
         # Filter by is_signature

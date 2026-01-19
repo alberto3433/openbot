@@ -109,6 +109,7 @@ class MenuDataCache:
         self._side_items: set[str] = set()  # All side item names/aliases (lowercase)
         self._side_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
         self._menu_item_alias_to_canonical: dict[str, str] = {}  # alias -> MenuItem.name (canonical)
+        self._menu_item_name_to_id: dict[str, int] = {}  # canonical name (lowercase) -> MenuItem.id
 
         # Abbreviations for text expansion before parsing (e.g., "cc" -> "cream cheese")
         # Unlike aliases (used for matching), abbreviations replace text in the input
@@ -251,6 +252,14 @@ class MenuDataCache:
         # Each context: {context_type, item_type_slug, label, price}
         self._ingredient_price_contexts: dict[str, list[dict]] = {}
 
+        # Recommendation search support (includes ALL menu items, not filtered)
+        # Maps canonical_name (lowercase) -> {id, name, item_type_slug}
+        self._all_menu_items_by_name: dict[str, dict] = {}
+        # Keyword index for partial matching: keyword -> list of canonical names (lowercase)
+        self._recommendation_keyword_index: dict[str, list[str]] = {}
+        # Item type slug/display_name/aliases -> slug mapping for fallback lookup
+        # (Already covered by _category_keywords, just noting for reference)
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False
@@ -340,6 +349,9 @@ class MenuDataCache:
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
+
+                # Recommendation search support (includes ALL menu items)
+                self._load_recommendation_search_data(db)
 
                 self._last_refresh = datetime.now()
                 self._is_loaded = True
@@ -5283,6 +5295,133 @@ class MenuDataCache:
             "Loaded price contexts for %d ingredients",
             len(self._ingredient_price_contexts),
         )
+
+    def _load_recommendation_search_data(self, db: Session) -> None:
+        """Load ALL menu items for recommendation search (no filtering).
+
+        Unlike _load_known_menu_items which excludes items with config flows,
+        this loads every menu item for recommendation search functionality.
+
+        Builds:
+        1. _all_menu_items_by_name: canonical_name (lowercase) -> {id, name, item_type_slug}
+        2. _recommendation_keyword_index: keyword -> list of canonical names
+        """
+        from .models import MenuItem, ItemType
+
+        all_items: dict[str, dict] = {}
+        keyword_index: dict[str, list[str]] = defaultdict(list)
+
+        # Load all menu items with item_type relationship
+        items = (
+            db.query(MenuItem)
+            .options(
+                joinedload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type),
+            )
+            .all()
+        )
+
+        for item in items:
+            canonical_name = item.name
+            name_lower = canonical_name.lower()
+            item_type_slug = item.item_type.slug if item.item_type else None
+
+            # Store item data
+            item_data = {
+                "id": item.id,
+                "name": canonical_name,
+                "item_type_slug": item_type_slug,
+            }
+            all_items[name_lower] = item_data
+
+            # Build keyword index from name words
+            for word in name_lower.split():
+                # Skip very short words and common articles
+                if len(word) >= 3 and word not in {"the", "and", "with"}:
+                    keyword_index[word].append(name_lower)
+
+            # Also index aliases
+            for alias in item.aliases:
+                alias_lower = alias.lower().strip()
+                if alias_lower:
+                    # Store alias -> same item data
+                    all_items[alias_lower] = item_data
+                    # Index alias words
+                    for word in alias_lower.split():
+                        if len(word) >= 3 and word not in {"the", "and", "with"}:
+                            keyword_index[word].append(name_lower)
+
+        self._all_menu_items_by_name = all_items
+        self._recommendation_keyword_index = dict(keyword_index)
+
+        logger.debug(
+            "Loaded recommendation search data: %d items, %d keywords",
+            len(all_items),
+            len(keyword_index),
+        )
+
+    def search_menu_items_for_recommendation(self, term: str) -> list[dict]:
+        """Search menu items by partial name/alias match for recommendations.
+
+        Args:
+            term: Search term (already singularized), e.g., "tea", "bagel", "snack"
+
+        Returns:
+            List of matching items: [{"id": int, "name": str, "item_type_slug": str}, ...]
+            Returns empty list if no matches.
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+
+        if not term_lower:
+            return []
+
+        matches: dict[int, dict] = {}  # id -> item_data (dedupe by ID)
+
+        # 1. Check keyword index for partial matches
+        if term_lower in self._recommendation_keyword_index:
+            for name_lower in self._recommendation_keyword_index[term_lower]:
+                item_data = self._all_menu_items_by_name.get(name_lower)
+                if item_data and item_data["id"] not in matches:
+                    matches[item_data["id"]] = item_data
+
+        # 2. Also do substring search on all names/aliases
+        for name_lower, item_data in self._all_menu_items_by_name.items():
+            if term_lower in name_lower and item_data["id"] not in matches:
+                matches[item_data["id"]] = item_data
+
+        return list(matches.values())
+
+    def search_item_type_for_recommendation(self, term: str) -> str | None:
+        """Search item types by display_name/aliases for recommendation fallback.
+
+        Args:
+            term: Search term (already singularized), e.g., "snack", "beverage"
+
+        Returns:
+            item_type_slug if found, None otherwise.
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+
+        if not term_lower:
+            return None
+
+        # Check _category_keywords which contains item_type display names and aliases
+        info = self._category_keywords.get(term_lower)
+        if info and info.get("lookup_type") == "item_type":
+            return info.get("slug")
+
+        # Also check partial match on display names
+        for keyword, info in self._category_keywords.items():
+            if info.get("lookup_type") != "item_type":
+                continue
+            # Check if term is substring of display_name
+            display_name = info.get("display_name", "").lower()
+            if term_lower in display_name or display_name in term_lower:
+                return info.get("slug")
+
+        return None
 
     # =========================================================================
     # Price Inquiry Support - Public Methods

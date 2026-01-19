@@ -9,7 +9,7 @@ input patterns
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.menu_data_cache import menu_cache, singularize
 
 from ..schemas import (
     OpenInputResponse,
@@ -38,6 +38,8 @@ from .constants import (
     DELIVERY_ZONE_PATTERNS,
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     RECOMMENDATION_PATTERNS,
+    RECOMMENDATION_GENERAL_PATTERNS,
+    RECOMMENDATION_TERM_PATTERNS,
     ITEM_DESCRIPTION_PATTERNS,
     MODIFIER_INQUIRY_PATTERNS,
     MORE_MENU_ITEMS_PATTERNS,
@@ -2780,15 +2782,88 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
 
 
 def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
-    """Parse recommendation questions."""
+    """Parse recommendation questions using data-driven two-tier lookup.
+
+    1. Check general patterns (domain-agnostic) - return "general" match type
+    2. Check term-extracting patterns - singularize term and do lookup:
+       a. Search menu_items by partial name/alias match
+       b. Fallback: Search item_types by display_name/aliases
+    3. Return structured match result with menu_item_ids or item_type_slug
+    """
     text_lower = text.lower().strip()
 
-    for pattern, category in RECOMMENDATION_PATTERNS:
+    # 1. Check general patterns first (domain-agnostic, no term extraction)
+    for pattern in RECOMMENDATION_GENERAL_PATTERNS:
         if pattern.search(text_lower):
-            logger.info("RECOMMENDATION INQUIRY: '%s' (category: %s)", text[:50], category)
+            logger.info("RECOMMENDATION INQUIRY (general): '%s'", text[:50])
             return OpenInputResponse(
                 asks_recommendation=True,
-                recommendation_category=category,
+                recommendation_match_type="general",
+                recommendation_category="general",  # Backward compat
+            )
+
+    # 2. Check term-extracting patterns
+    for pattern in RECOMMENDATION_TERM_PATTERNS:
+        match = pattern.search(text_lower)
+        if match:
+            # Extract and clean the captured term
+            raw_term = match.group(1).strip()
+
+            # Skip if term is too short or generic
+            if len(raw_term) < 2 or raw_term in {"a", "an", "the", "some", "any"}:
+                continue
+
+            # Remove trailing punctuation and common words
+            term = re.sub(r"[?!.,]+$", "", raw_term).strip()
+            if not term:
+                continue
+
+            # Singularize the term (teas -> tea, bagels -> bagel)
+            term_singular = singularize(term)
+
+            logger.info(
+                "RECOMMENDATION INQUIRY (term): '%s' -> term='%s' (singular='%s')",
+                text[:50], term, term_singular
+            )
+
+            # 3a. Search menu items first
+            matching_items = menu_cache.search_menu_items_for_recommendation(term_singular)
+            if matching_items:
+                menu_item_ids = [item["id"] for item in matching_items]
+                logger.info(
+                    "RECOMMENDATION: Found %d menu items for '%s': %s",
+                    len(menu_item_ids), term_singular, menu_item_ids[:5]
+                )
+                return OpenInputResponse(
+                    asks_recommendation=True,
+                    recommendation_match_type="menu_items",
+                    recommendation_menu_item_ids=menu_item_ids,
+                    recommendation_category=term_singular,  # Backward compat
+                )
+
+            # 3b. Fallback: Search item types
+            item_type_slug = menu_cache.search_item_type_for_recommendation(term_singular)
+            if item_type_slug:
+                logger.info(
+                    "RECOMMENDATION: Found item type '%s' for '%s'",
+                    item_type_slug, term_singular
+                )
+                return OpenInputResponse(
+                    asks_recommendation=True,
+                    recommendation_match_type="item_type",
+                    recommendation_item_type_slug=item_type_slug,
+                    recommendation_category=item_type_slug,  # Backward compat
+                )
+
+            # No matches found, but it's still a recommendation question - return general
+            logger.info(
+                "RECOMMENDATION: No matches for '%s', returning general",
+                term_singular
+            )
+            return OpenInputResponse(
+                asks_recommendation=True,
+                recommendation_match_type="general",
+                recommendation_category="general",  # Backward compat
             )
 
     return None
@@ -4117,11 +4192,11 @@ def parse_open_input_deterministic(
         menu_item, qty = _extract_menu_item_from_text(text)
         if menu_item:
             toasted = _extract_toasted(text)
-            bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
+            bread_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             # Get item_type for data-driven modification extraction
             item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
+            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, toasted=%s, bread=%s, mods=%s)", text[:50], menu_item, qty, toasted, bread_type, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
             # Convert structured modifications to QuantifiedModifier objects
@@ -4137,7 +4212,7 @@ def parse_open_input_deterministic(
                     item_name=menu_item,
                     quantity=1,
                     attribute_values={
-                        k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
+                        k: v for k, v in [("bread", bread_type), ("toasted", toasted)] if v is not None
                     },
                     modifiers=mod_list,
                 )
@@ -4232,11 +4307,11 @@ def parse_open_input_deterministic(
         configurable_item_names = menu_cache.get_configurable_item_names()
         if menu_item.lower() not in configurable_item_names:
             toasted = _extract_toasted(text)
-            bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
+            bread_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
             # Get item_type for data-driven modification extraction
             item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bagel=%s, mods=%s)", text[:50], menu_item, qty, toasted, bagel_choice, modifications)
+            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bread=%s, mods=%s)", text[:50], menu_item, qty, toasted, bread_type, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
             # Convert structured modifications to QuantifiedModifier objects
@@ -4252,7 +4327,7 @@ def parse_open_input_deterministic(
                     item_name=menu_item,
                     quantity=1,
                     attribute_values={
-                        k: v for k, v in [("bread", bagel_choice), ("toasted", toasted)] if v is not None
+                        k: v for k, v in [("bread", bread_type), ("toasted", toasted)] if v is not None
                     },
                     modifiers=mod_list,
                 )

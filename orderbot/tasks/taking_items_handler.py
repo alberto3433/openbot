@@ -25,7 +25,6 @@ from .schemas import (
     StateMachineResult,
     OpenInputResponse,
     ExtractedModifiers,
-    CoffeeOrderDetails,
     # ParsedItem types for multi-item handling
     ParsedItemEntry,
     ParsedItem,

@@ -1753,46 +1753,70 @@ class TestRecommendationInquiryParsing:
 
     Recommendation questions should NOT add items to cart - they should
     just provide recommendations for items in the requested category.
+
+    The recommendation system is now data-driven:
+    1. General patterns return recommendation_match_type="general"
+    2. Term-extracting patterns do a two-tier lookup:
+       a. Search menu_items by partial name match
+       b. Fallback: search item_types by display_name/aliases
+    3. Breakfast/lunch patterns are treated as "general" (no specific items)
     """
 
-    @pytest.mark.parametrize("text,expected_category", [
-        # Direct "recommend" patterns
+    @pytest.mark.parametrize("text,expected_match_type", [
+        # Direct "recommend" patterns - general match type
         ("what do you recommend?", "general"),
         ("what would you recommend?", "general"),
         ("any recommendations?", "general"),
         ("do you have any recommendations?", "general"),
-        # Bagel recommendations
-        ("what kind of bagel do you recommend?", "bagel"),
-        ("what bagel do you recommend?", "bagel"),
-        ("which bagel is best?", "bagel"),
-        ("what's your best bagel?", "bagel"),
-        ("what's popular for bagels?", "bagel"),
-        # Sandwich recommendations
-        ("what sandwich do you recommend?", "sandwich"),
-        ("which sandwich is best?", "sandwich"),
-        ("what's your most popular sandwich?", "sandwich"),
-        # Coffee recommendations
-        ("what coffee do you recommend?", "coffee"),
-        ("what's your best coffee?", "coffee"),
-        ("what coffee is popular?", "coffee"),
-        # Breakfast recommendations
-        ("what do you recommend for breakfast?", "breakfast"),
-        ("what's good for breakfast?", "breakfast"),
-        # Lunch recommendations
-        ("what do you recommend for lunch?", "lunch"),
-        ("what's popular for lunch?", "lunch"),
-        # Popular/best patterns
+        # Popular/best patterns - general match type
         ("what's popular?", "general"),
         ("what's your most popular item?", "general"),
         ("what sells best?", "general"),
+        # Breakfast/lunch recommendations - treated as general
+        ("what do you recommend for breakfast?", "general"),
+        ("what's good for breakfast?", "general"),
+        ("what do you recommend for lunch?", "general"),
+        ("what's popular for lunch?", "general"),
     ])
-    def test_recommendation_patterns_detected(self, text, expected_category):
-        """Test that recommendation questions are detected with correct category."""
+    def test_general_recommendation_patterns(self, text, expected_match_type):
+        """Test that general recommendation patterns return 'general' match type."""
         from orderbot.tasks.state_machine import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
-        assert result.recommendation_category == expected_category
+        assert result.recommendation_match_type == expected_match_type
+
+    @pytest.mark.parametrize("text", [
+        # Term-extracting patterns - these do data-driven lookup
+        # The exact return depends on database content, so we just check detection
+        "what kind of bagel do you recommend?",
+        "what bagel do you recommend?",
+        "which bagel is best?",
+        "what's your best bagel?",
+        "what's popular for bagels?",
+        "what sandwich do you recommend?",
+        "which sandwich is best?",
+        "what's your most popular sandwich?",
+        "what coffee do you recommend?",
+        "what's your best coffee?",
+        "what coffee is popular?",
+        # Generic term patterns (data-driven)
+        "what teas do you recommend?",
+        "recommend a snack",
+        "best pastries",
+    ])
+    def test_term_recommendation_patterns_detected(self, text):
+        """Test that term-extracting recommendation patterns are detected.
+
+        These patterns extract a search term and do a data-driven lookup.
+        The exact return values depend on database content.
+        """
+        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
+        result = _parse_recommendation_inquiry(text)
+        assert result is not None, f"Failed to detect recommendation in: {text}"
+        assert result.asks_recommendation is True
+        # Should have a match type (general, menu_items, or item_type)
+        assert result.recommendation_match_type in {"general", "menu_items", "item_type"}
 
     @pytest.mark.parametrize("text", [
         # Order intents (should NOT be detected as recommendations)

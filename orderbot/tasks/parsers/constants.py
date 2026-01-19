@@ -363,10 +363,47 @@ CUSTOMER_SERVICE_PATTERNS = [
 # Recommendation Inquiry Patterns
 # =============================================================================
 
-# Recommendation inquiry patterns - these are QUESTIONS, not orders
-# When matched, we should answer with recommendations but NOT add to cart
+# General recommendation patterns (no term extraction) - domain-agnostic
+# These return "general" as the recommendation type
+RECOMMENDATION_GENERAL_PATTERNS = [
+    re.compile(r"what\s+(?:do\s+you|would\s+you|should\s+i|can\s+you)\s+recommend\??$", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)\??$", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:most\s+)?popular\??$", re.IGNORECASE),
+    re.compile(r"what\s+(?:are\s+)?(?:your\s+)?(?:best|most\s+popular)\s+(?:sellers?|items?)", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?most\s+popular\s+item", re.IGNORECASE),
+    re.compile(r"(?:any|have\s+any|got\s+any|do\s+you\s+have\s+any)\s+recommendations?\??", re.IGNORECASE),
+    re.compile(r"(?:suggest|recommend)\s+(?:something|anything)", re.IGNORECASE),
+    re.compile(r"what\s+sells\s+best", re.IGNORECASE),
+    # Meal-based recommendations (breakfast/lunch) - treat as general
+    re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
+    re.compile(r"recommend\s+(?:something\s+)?for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
+]
+
+# Term-extracting recommendation patterns - data-driven item/type lookup
+# These patterns capture a search term (e.g., "bagels", "coffee", "teas")
+# The term is singularized and used for menu_items -> item_type fallback search
+RECOMMENDATION_TERM_PATTERNS = [
+    # "what {TERM} do you recommend" - captures term before verb phrase
+    re.compile(r"what\s+(?:kind\s+of\s+)?(.+?)\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE),
+    # "what's your best/popular {TERM}" - captures term after adjective
+    re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "which {TERM} is/are best/popular/good" - captures term after "which"
+    re.compile(r"which\s+(.+?)\s+(?:is|are)\s+(?:best|popular|good)", re.IGNORECASE),
+    # "recommend a {TERM}" - captures term after "recommend a/some"
+    re.compile(r"recommend\s+(?:a\s+|some\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+    # "best/popular/favorite {TERM}" - captures term after adjective
+    re.compile(r"(?:best|popular|favorite)\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "what's popular for {TERM}" - captures term after "for"
+    re.compile(r"what(?:'?s|\s+is)\s+popular\s+for\s+(.+?)(?:\?|$)", re.IGNORECASE),
+    # "what {TERM} is popular/good/best" - captures term between what and is
+    re.compile(r"what\s+(.+?)\s+is\s+(?:popular|good|best)", re.IGNORECASE),
+]
+
+# DEPRECATED: Legacy combined list for backward compatibility
+# Use RECOMMENDATION_GENERAL_PATTERNS and RECOMMENDATION_TERM_PATTERNS instead
 RECOMMENDATION_PATTERNS = [
-    # General recommendations - catch-all patterns (order matters, specific first)
+    # Keep the general patterns with "general" tag for backward compatibility
     (re.compile(r"what\s+(?:do\s+you|would\s+you|should\s+i|can\s+you)\s+recommend\??$", re.IGNORECASE), "general"),
     (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)\??$", re.IGNORECASE), "general"),
     (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:most\s+)?popular\??$", re.IGNORECASE), "general"),
@@ -375,31 +412,6 @@ RECOMMENDATION_PATTERNS = [
     (re.compile(r"(?:any|have\s+any|got\s+any|do\s+you\s+have\s+any)\s+recommendations?\??", re.IGNORECASE), "general"),
     (re.compile(r"(?:suggest|recommend)\s+(?:something|anything)", re.IGNORECASE), "general"),
     (re.compile(r"what\s+sells\s+best", re.IGNORECASE), "general"),
-    # Bagel-specific recommendations
-    (re.compile(r"what\s+(?:kind\s+of\s+)?bagels?\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "bagel"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+bagel", re.IGNORECASE), "bagel"),
-    (re.compile(r"which\s+bagels?\s+(?:is|are)\s+(?:best|popular|good)", re.IGNORECASE), "bagel"),
-    (re.compile(r"recommend\s+(?:a\s+)?bagel", re.IGNORECASE), "bagel"),
-    (re.compile(r"(?:best|popular|favorite)\s+bagels?", re.IGNORECASE), "bagel"),
-    (re.compile(r"what(?:'?s|\s+is)\s+popular\s+for\s+bagels?\??", re.IGNORECASE), "bagel"),
-    # Sandwich-specific recommendations
-    (re.compile(r"what\s+sandwi(?:ch|ches)\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "sandwich"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+sandwich", re.IGNORECASE), "sandwich"),
-    (re.compile(r"which\s+sandwi(?:ch|ches)\s+(?:is|are)\s+(?:best|popular|good)", re.IGNORECASE), "sandwich"),
-    (re.compile(r"recommend\s+(?:a\s+)?sandwich", re.IGNORECASE), "sandwich"),
-    (re.compile(r"(?:best|popular|favorite)\s+sandwi(?:ch|ches)", re.IGNORECASE), "sandwich"),
-    # Coffee-specific recommendations
-    (re.compile(r"what\s+(?:kind\s+of\s+)?(?:coffee|drink)s?\s+(?:do\s+you|would\s+you|should\s+i)\s+recommend", re.IGNORECASE), "coffee"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:best|most\s+popular)\s+(?:coffee|drink)", re.IGNORECASE), "coffee"),
-    (re.compile(r"recommend\s+(?:a\s+)?(?:coffee|drink)", re.IGNORECASE), "coffee"),
-    (re.compile(r"what\s+coffee\s+is\s+(?:popular|good|best)", re.IGNORECASE), "coffee"),
-    # Breakfast/lunch recommendations
-    (re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+breakfast", re.IGNORECASE), "breakfast"),
-    (re.compile(r"what(?:'?s|\s+is)\s+good\s+for\s+breakfast", re.IGNORECASE), "breakfast"),
-    (re.compile(r"recommend\s+(?:something\s+)?for\s+breakfast", re.IGNORECASE), "breakfast"),
-    (re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+lunch", re.IGNORECASE), "lunch"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+lunch", re.IGNORECASE), "lunch"),
-    (re.compile(r"recommend\s+(?:something\s+)?for\s+lunch", re.IGNORECASE), "lunch"),
 ]
 
 # =============================================================================

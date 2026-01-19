@@ -138,6 +138,20 @@ def get_mock_spread_sandwich_attributes():
     }
 
 
+def get_mock_egg_bagel_attributes():
+    """Return mock attributes for egg_bagel item type."""
+    return {
+        "toasted": {
+            "slug": "toasted",
+            "display_name": "Toasted",
+            "is_required": False,
+            "ask_in_conversation": True,
+            "input_type": "boolean",
+            "display_order": 1,
+        },
+    }
+
+
 def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
@@ -146,6 +160,8 @@ def mock_get_item_type_attributes(item_type_slug):
         return get_mock_coffee_attributes()
     elif item_type_slug == "spread_sandwich":
         return get_mock_spread_sandwich_attributes()
+    elif item_type_slug == "egg_bagel":
+        return get_mock_egg_bagel_attributes()
     return {}
 
 
@@ -300,7 +316,7 @@ class TestStateMachineMultiBagel:
         from orderbot.tasks.state_machine import (
             OrderStateMachine,
         )
-        from orderbot.tasks.schemas import OrderPhase, BagelChoiceResponse
+        from orderbot.tasks.schemas import OrderPhase
         from orderbot.tasks.models import OrderTask
         from tests.helpers import BagelItemTask
 
@@ -653,19 +669,21 @@ class TestMenuItemToasted:
             OrderStateMachine,
             OpenInputResponse,
         )
-        from orderbot.tasks.schemas.parser_responses import ParsedMenuItemEntry
+        from orderbot.tasks.schemas.parser_responses import ParsedItemEntry
         from orderbot.tasks.models import OrderTask, MenuItemTask
 
         order = OrderTask()
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Simulate parsed input with toasted set
+        # Note: item_type must match the fixture's item_type ("egg_bagel")
         parsed = OpenInputResponse(
             parsed_items=[
-                ParsedMenuItemEntry(
-                    menu_item_name="Ham Egg & Cheese on Wheat",
+                ParsedItemEntry(
+                    item_type="egg_bagel",
+                    item_name="Ham Egg & Cheese on Wheat",
                     quantity=1,
-                    toasted=True,
+                    attribute_values={"toasted": True},
                 )
             ]
         )
@@ -687,19 +705,21 @@ class TestMenuItemToasted:
             OrderStateMachine,
             OpenInputResponse,
         )
-        from orderbot.tasks.schemas.parser_responses import ParsedMenuItemEntry
+        from orderbot.tasks.schemas.parser_responses import ParsedItemEntry
         from orderbot.tasks.models import OrderTask
 
         order = OrderTask()
         sm = OrderStateMachine(menu_data=menu_data)
 
         # Simulate parsed input without toasted
+        # Note: item_type must match the fixture's item_type ("egg_bagel")
         parsed = OpenInputResponse(
             parsed_items=[
-                ParsedMenuItemEntry(
-                    menu_item_name="Ham Egg & Cheese on Wheat",
+                ParsedItemEntry(
+                    item_type="egg_bagel",
+                    item_name="Ham Egg & Cheese on Wheat",
                     quantity=1,
-                    toasted=None,
+                    attribute_values={},
                 )
             ]
         )

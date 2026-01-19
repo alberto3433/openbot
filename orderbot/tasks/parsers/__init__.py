@@ -102,6 +102,8 @@ from .constants import (
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Recommendation patterns
     RECOMMENDATION_PATTERNS,
+    RECOMMENDATION_GENERAL_PATTERNS,
+    RECOMMENDATION_TERM_PATTERNS,
     # Item description patterns
     ITEM_DESCRIPTION_PATTERNS,
     # String normalization utilities
@@ -188,6 +190,8 @@ __all__ = [
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Constants - Recommendation patterns
     "RECOMMENDATION_PATTERNS",
+    "RECOMMENDATION_GENERAL_PATTERNS",
+    "RECOMMENDATION_TERM_PATTERNS",
     # Constants - Item description patterns
     "ITEM_DESCRIPTION_PATTERNS",
     # String normalization utilities

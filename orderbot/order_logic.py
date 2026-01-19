@@ -1,6 +1,8 @@
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
 
+from .menu_data_cache import menu_cache
+
 
 def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict[str, Any]]:
     """
@@ -157,8 +159,8 @@ def _add_item(state, slots, menu_index):
         for attr_slug in attr_slugs:
             if attr_slug in slots:
                 value = slots[attr_slug]
-                # Ensure list attributes are lists
-                if attr_slug in ("toppings", "sauces", "extras") and value is None:
+                # Ensure multi-select attributes are lists (data-driven check)
+                if menu_cache.is_multi_select_attribute(attr_slug) and value is None:
                     value = []
                 item[attr_slug] = value
 

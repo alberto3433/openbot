@@ -37,27 +37,12 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
-from .parsers.constants import DEFAULT_PAGINATION_SIZE
+from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
 
 logger = logging.getLogger(__name__)
-
-
-# Ordinal reference mapping for "remove the second bagel", "cancel the 3rd coffee", etc.
-ORDINAL_WORDS = {
-    "first": 1, "1st": 1,
-    "second": 2, "2nd": 2,
-    "third": 3, "3rd": 3,
-    "fourth": 4, "4th": 4,
-    "fifth": 5, "5th": 5,
-    "sixth": 6, "6th": 6,
-    "seventh": 7, "7th": 7,
-    "eighth": 8, "8th": 8,
-    "ninth": 9, "9th": 9,
-    "tenth": 10, "10th": 10,
-}
 
 
 # =============================================================================

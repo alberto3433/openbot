@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
+from ..menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -61,24 +62,13 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
             return []
 
         ingredients = []
-        # Attribute slug mapping to display names
-        attr_display_names = {
-            "bread": "Bread",
-            "protein": "Protein",
-            "cheese": "Cheese",
-            "toppings": "Toppings",
-            "spread": "Spread",
-            "extras": "Extras",
-            "sauce": "Sauce",
-            "sauces": "Sauces",
-        }
 
         for attr_slug, value in default_config.items():
-            # Skip non-ingredient attributes
-            if attr_slug in ("toasted", "scooped"):
+            # Skip boolean attributes (e.g., toasted, scooped) - they're not ingredients
+            if menu_cache.is_boolean_attribute(attr_slug):
                 continue
 
-            attr_name = attr_display_names.get(attr_slug, attr_slug.replace("_", " ").title())
+            attr_name = menu_cache.get_attribute_display_name(attr_slug)
 
             if isinstance(value, list):
                 # Multi-value attributes like toppings

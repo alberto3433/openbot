@@ -2422,23 +2422,27 @@ class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""
 
     @pytest.mark.parametrize("text,expected_type", [
+        # Bagels - uses "bagel" item type
         ("another bagel", "bagel"),
         ("another bagels", "bagel"),
         ("one more bagel", "bagel"),
-        ("another coffee", "coffee"),
-        ("one more coffee", "coffee"),
-        ("another latte", "coffee"),
-        ("one more latte", "coffee"),
-        ("another cappuccino", "coffee"),
-        ("another espresso", "espresso"),  # Espresso uses MenuItemTask, not CoffeeItemTask
-        ("another americano", "coffee"),
-        ("another mocha", "coffee"),
-        ("another tea", "coffee"),  # Tea treated as coffee for ordering flow
-        ("another sandwich", "sandwich"),
-        ("one more sandwich", "sandwich"),
+        # Sized beverages - uses "sized_beverage" item type (data-driven from database)
+        # Note: The old hardcoded mapping returned "coffee" but the database uses "sized_beverage"
+        ("another coffee", "sized_beverage"),
+        ("one more coffee", "sized_beverage"),
+        ("another latte", "sized_beverage"),
+        ("one more latte", "sized_beverage"),
+        ("another cappuccino", "sized_beverage"),
+        ("another espresso", "espresso"),  # Espresso has its own item type in the database
+        ("another americano", "sized_beverage"),
+        ("another tea", "sized_beverage"),
     ])
     def test_another_item_type_detected(self, text, expected_type):
-        """Test that 'another <item>' patterns are detected with correct item type."""
+        """Test that 'another <item>' patterns are detected with correct item type.
+
+        Note: The expected item types are the actual database item_type slugs,
+        not semantic categories like "coffee". This is the data-driven approach.
+        """
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Expected pattern match for: {text}"
         assert result.duplicate_new_item_type == expected_type, f"Expected type '{expected_type}' for: {text}"

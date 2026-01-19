@@ -397,41 +397,27 @@ class ModifierChangeHandler:
             except Exception:
                 pass
 
-        # Handle boolean attributes
+        # Handle boolean attributes (data-driven via options with "true"/"false" slugs)
         input_type = attr_info.get("input_type") if attr_info else None
         if input_type == "boolean":
-            # For boolean, check if value matches the "true" option
-            # Common patterns: "decaf" -> True, "regular" -> False
+            # Boolean attributes have options with slugs "true" and "false"
+            # Aliases like "decaf", "yes" -> "true" and "regular", "no" -> "false"
+            # are resolved via the option's linked ingredient aliases
             option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
             if option:
-                # If option slug suggests affirmative, return True
-                opt_slug = option.get("slug", "").lower()
-                return opt_slug in ("true", "yes", "decaf", attr_slug)
-            # Check for common affirmative words
-            return value_clean in ("yes", "true", "decaf", attr_slug)
+                return option.get("slug", "").lower() == "true"
+            # No match found - return None to indicate unknown value
+            return None
 
         # Try to resolve via option alias lookup (data-driven)
+        # Aliases like "oat milk" -> "oat_milk", "everything bagel" -> "everything"
+        # are handled by ingredient aliases in the database
         option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
         if option:
             return option.get("slug", value_clean)
 
-        # Strip common suffixes that users might include
-        # e.g., "oat milk" -> "oat", "sesame bagel" -> "sesame"
-        suffixes_to_strip = [" milk", " bagel", " bread", " cream cheese", " spread"]
-        stripped = value_clean
-        for suffix in suffixes_to_strip:
-            if stripped.endswith(suffix):
-                stripped = stripped[:-len(suffix)].strip()
-                break
-
-        # Try alias lookup again with stripped value
-        if stripped != value_clean:
-            option = menu_cache.resolve_option_by_alias(attr_slug, stripped)
-            if option:
-                return option.get("slug", stripped)
-
-        # Return the cleaned/stripped value as fallback
-        return stripped if stripped else value_clean
+        # Return the cleaned value as fallback (no hardcoded suffix stripping needed)
+        return value_clean
 
     def _get_attr_display_name(self, attr_slug: str) -> str:
         """Get human-readable display name for an attribute."""

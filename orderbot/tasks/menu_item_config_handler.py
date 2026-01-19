@@ -1510,61 +1510,6 @@ class MenuItemConfigHandler(BaseHandler):
     # Handle User Input for Different States
     # =========================================================================
 
-    def _handle_coffee_modifiers_input(
-        self, user_input: str, item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        """Handle beverage modifiers input in a data-driven way.
-
-        Uses the generic extract_attribute_values() function to parse user input like
-        "oat milk with 2 sugars and vanilla" and applies modifiers generically
-        with pricing from the database.
-        """
-        user_lower = user_input.lower().strip()
-
-        # Check for "no thanks" / "nothing" / "that's it" to skip modifiers
-        skip_patterns = menu_cache.get_response_patterns("negative")
-        if any(p in user_lower for p in skip_patterns) and len(user_lower) < 20:
-            # Mark item as complete and advance
-            item.mark_complete()
-            order.clear_pending()
-            return self._get_next_question(order)
-
-        # Use the generic modifier extractor (data-driven, queries DB for item type attributes)
-        item_type = item.menu_item_type
-        modifiers = self._extract_modifiers_from_input(user_input, item_type)
-
-        if not modifiers or not modifiers.has_modifiers():
-            return StateMachineResult(
-                message="Sorry, I didn't catch that. What kind of milk, sweetener, or syrup would you like? You can ask 'what options?' to see choices.",
-                order=order,
-            )
-
-        # Apply extracted modifiers using data-driven approach with pricing
-        applied = []
-        for category in modifiers.get_categories():
-            for mod in modifiers.get_all(category):
-                # Look up price from pricing engine
-                price = 0.0
-                if self.pricing and item_type:
-                    price = self.pricing.lookup_generic_modifier_price(
-                        mod.slug, item_type, category
-                    ) or 0.0
-
-                # Use generic add_modifier for unified storage
-                item.add_modifier(category, mod.slug, mod.quantity, price)
-
-                # Build display name - use display_name from modifier if available
-                display_name = getattr(mod, 'display_name', None) or mod.slug
-                if mod.quantity > 1:
-                    applied.append(f"{mod.quantity} {display_name}")
-                else:
-                    applied.append(display_name)
-
-        # Mark item as complete since we got modifier info
-        item.mark_complete()
-        order.clear_pending()
-        return self._get_next_question(order)
-
     def handle_attribute_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr_slug: str
     ) -> StateMachineResult:
@@ -1764,10 +1709,8 @@ class MenuItemConfigHandler(BaseHandler):
                     # Look up price from pricing engine if not in option
                     # Pass actual item type - pricing engine returns 0 for non-applicable types
                     if sel_price == 0 and self.pricing:
-                        # Try syrup price first, then milk
-                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type, "syrup") or 0.0
-                        if sel_price == 0:
-                            sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type, "milk") or 0.0
+                        # Search all attributes for this item type (no category hint needed)
+                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type) or 0.0
                         # Update the selection with the looked-up price
                         if sel_price > 0:
                             sel["price"] = sel_price
@@ -1893,18 +1836,13 @@ class MenuItemConfigHandler(BaseHandler):
             extracted_mods = self._extract_modifiers_from_input(user_input, item.menu_item_type)
             stored_modifiers = {"_quantity": quantity}
             if extracted_mods:
-                # Convert extracted modifiers to dict for storage
-                milk = extracted_mods.get_first("milk")
-                if milk:
-                    stored_modifiers["milk"] = milk.name
-                sweetener = extracted_mods.get_first("sweetener")
-                if sweetener:
-                    stored_modifiers["sweetener"] = sweetener.name
-                    stored_modifiers["sweetener_quantity"] = sweetener.quantity
-                syrup = extracted_mods.get_first("syrup")
-                if syrup:
-                    stored_modifiers["syrup"] = syrup.name
-                    stored_modifiers["syrup_quantity"] = syrup.quantity
+                # Convert extracted modifiers to dict for storage (generic loop over all categories)
+                for category in extracted_mods.get_categories():
+                    mod = extracted_mods.get_first(category)
+                    if mod:
+                        stored_modifiers[category] = mod.slug
+                        if mod.quantity > 1:
+                            stored_modifiers[f"{category}_quantity"] = mod.quantity
 
             # Store disambiguation state
             order.pending_attr_disambiguation = {
@@ -2376,18 +2314,8 @@ class MenuItemConfigHandler(BaseHandler):
                     logger.info("Captured %s=True from input", attr_slug)
 
             elif input_type in ("single_select", "multi_select") and options:
-                # For cheese-related attributes, mask out "cream cheese" patterns to prevent
-                # "Strawberry Cream Cheese Sandwich" from matching American Cheese's
-                # "cheese" alias. The word "cheese" in "cream cheese" is not sliced cheese.
-                input_for_matching = user_input
-                if attr_slug in ("cheese", "extra_cheese"):
-                    # Mask common cream cheese patterns
-                    input_for_matching = re.sub(
-                        r'\b\w*\s*cream\s+cheese\b', '___SPREAD___', user_input, flags=re.IGNORECASE
-                    )
-
                 # Only capture if we get a unique match (ignore disambiguation cases)
-                matched, _ = self._match_option_from_input(input_for_matching, options)
+                matched, _ = self._match_option_from_input(user_input, options)
                 if matched:
                     item.attribute_values[attr_slug] = matched["slug"]
                     opt_price = matched.get("price") or matched.get("price_modifier") or 0

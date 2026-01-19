@@ -359,106 +359,6 @@ class TestStateMachineMultiBagel:
         assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "bagel:toasted")
 
 
-class TestMixedItemBagelChoice:
-    """Tests for bagel type assignment - one item at a time (sequential flow)."""
-
-    def test_omelette_with_bagel_configured_first(self):
-        """Test that omelette with bagel side is configured via legacy flow."""
-        from orderbot.tasks.state_machine import (
-            OrderStateMachine,
-            OrderPhase,
-        )
-        from orderbot.tasks.schemas.parser_responses import BagelChoiceResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask, MenuItemTask
-
-        # Create order with:
-        # - MenuItemTask omelette with bagel side needing bagel_choice
-        # - BagelItemTask with cream cheese spread needing bagel_type
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "bagel_choice"
-
-        omelette = MenuItemTask(
-            menu_item_name="Western Omelette",
-            menu_item_type="omelette",
-            unit_price=12.50,
-        )
-        # Set dict-style attributes after construction
-        omelette["requires_side_choice"] = True
-        omelette["side_choice"] = "bagel"
-        omelette.mark_in_progress()
-        order.items.add_item(omelette)
-
-        cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
-        cc_bagel.mark_in_progress()
-        order.items.add_item(cc_bagel)
-
-        order.pending_item_id = omelette.id
-        sm = OrderStateMachine()
-
-        # Mock the parser to return "plain" and mock pricing lookup
-        with patch("orderbot.tasks.parsers.llm_parsers.parse_bagel_choice") as mock_parse, \
-             patch.object(sm.pricing, "lookup_base_price", return_value=12.50):
-            # BagelChoiceResponse (alias for AttributeChoiceResponse) uses "value" field
-            mock_parse.return_value = BagelChoiceResponse(value="plain", quantity=1)
-
-            result = sm.configuring_item_handler.handle_configuring_item("plain", order)
-
-            # Verify ONLY the omelette has bagel_choice set (one-at-a-time)
-            assert omelette["bagel_choice"] == "plain", \
-                f"Omelette should have bagel_choice=plain, got {omelette['bagel_choice']}"
-            # The cream cheese bagel should NOT be configured yet
-            assert cc_bagel["bread"] is None, \
-                f"CC bagel should not have bagel_type yet, got {cc_bagel['bread']}"
-
-            # After setting bagel_choice, omelette is complete (no toasted question for side bagels)
-            # The flow moves to the next incomplete item (cc_bagel)
-            assert omelette.status.value == "complete"
-
-    def test_sequential_configuration_flow(self):
-        """Test that items are configured one at a time in sequence."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase
-        from orderbot.tasks.schemas.parser_responses import BagelChoiceResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask, MenuItemTask
-
-        order = OrderTask()
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "bagel_choice"
-
-        omelette = MenuItemTask(
-            menu_item_name="Western Omelette",
-            menu_item_type="omelette",
-            unit_price=12.50,
-        )
-        # Set dict-style attributes after construction
-        omelette["requires_side_choice"] = True
-        omelette["side_choice"] = "bagel"
-        omelette.mark_in_progress()
-        order.items.add_item(omelette)
-
-        cc_bagel = BagelItemTask(bagel_type=None, spread="cream cheese")
-        cc_bagel.mark_in_progress()
-        order.items.add_item(cc_bagel)
-
-        order.pending_item_id = omelette.id
-        sm = OrderStateMachine()
-
-        # Step 1: Set bagel type for omelette's bagel side
-        with patch("orderbot.tasks.parsers.llm_parsers.parse_bagel_choice") as mock_parse, \
-             patch.object(sm.pricing, "lookup_base_price", return_value=12.50):
-            # BagelChoiceResponse (alias for AttributeChoiceResponse) uses "value" field
-            mock_parse.return_value = BagelChoiceResponse(value="plain", quantity=1)
-            result = sm.configuring_item_handler.handle_configuring_item("plain", order)
-
-        assert omelette["bagel_choice"] == "plain"
-        assert cc_bagel["bread"] is None  # Not configured yet
-        # After setting bagel_choice, omelette is complete (no toasted question for side bagels)
-        assert omelette.status.value == "complete"
-
-
 # =============================================================================
 # Price Recalculation Tests
 # =============================================================================
@@ -1929,12 +1829,12 @@ class TestBagelWithCoffeeConfig:
             result = sm.process("1", order)
 
         # Should ask for bagel type first (or be configuring a coffee if no bagel)
-        # With data-driven approach, pending_field may be "menu_item_attr_size" for coffee
+        # With data-driven approach, pending_field may be "sized_beverage:size" for coffee
         msg_lower = result.message.lower()
         valid_states = (
             "bagel" in msg_lower or
             "size" in msg_lower or  # Coffee size question
-            order.pending_field in ("bagel_choice", "coffee_size", "menu_item_attr_size", "bagel:bread", "sized_beverage:size")
+            order.pending_field in ("bagel:bread", "sized_beverage:size")
         )
         assert valid_states, f"Expected bagel or coffee question, got: {result.message}"
 
@@ -1943,7 +1843,7 @@ class TestBagelWithCoffeeConfig:
         initial_coffee_count = len(coffees)
         assert initial_coffee_count >= 1, f"Expected at least 1 coffee item, got: {initial_coffee_count}"
 
-        if order.pending_field == "bagel_choice":
+        if order.pending_field == "bagel:bread":
             # Configure bagel: plain
             result = sm.process("plain", order)
             assert "toasted" in result.message.lower(), f"Expected toasted question, got: {result.message}"

@@ -468,7 +468,6 @@ class ItemAdderHandler:
                 menu_item_name=canonical_name,
                 menu_item_id=menu_item_id,
                 unit_price=price,
-                requires_side_choice=has_side_choice,
                 menu_item_type=item_type,
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
                 is_signature=is_signature,  # Signature item flag from menu data

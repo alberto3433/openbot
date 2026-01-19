@@ -1,237 +1,225 @@
-# Plan: Make item_converters.py More Generic and Data-Driven
+# Plan: Remove Legacy `bagel_choice` Code and Dead Side Selection Logic
 
-## Analysis
+## Overview
 
-### Current State
+The `handle_bagel_choice_for_side()` function and related `bagel_choice` infrastructure are legacy code from an OLD architecture where bagel type was stored on the parent item (omelette). The NEW architecture creates a child `MenuItemTask` for the bagel side, which uses the standard `bread` attribute.
 
-The `MenuItemConverter.from_dict()` method (lines 327-344) has **hardcoded field mappings**:
+This plan removes all dead code and cleans up the domain-specific `bagel_choice` references.
+
+## Architecture Context
+
+**OLD (Legacy):** Store everything on parent item
+```
+OmeletteItem:
+  side_choice: "bagel"
+  bagel_choice: "plain"  ← Domain-specific attribute
+```
+
+**NEW (Current):** Child item model
+```
+OmeletteItem:
+  side_choice: "bagel"
+
+BagelItem (child):
+  side_of_item_id: omelette.id
+  bread: "plain"  ← Standard bagel attribute
+```
+
+---
+
+## Phase 1: Remove Dead Handler and Parser
+
+### 1.1 Delete `handle_bagel_choice_for_side()`
+**File:** `orderbot/tasks/config_helper_handler.py`
+**Lines:** 698-744
+
+This function is never called - no routing exists for it.
+
+### 1.2 Delete `parse_bagel_choice()` function
+**File:** `orderbot/tasks/parsers/llm_parsers.py`
+**Lines:** 117-149
+
+Only called by the dead handler above.
+
+### 1.3 Remove `parse_bagel_choice` exports
+**File:** `orderbot/tasks/parsers/__init__.py`
+- Remove from imports (line ~57)
+- Remove from `__all__` list (line ~151)
+
+### 1.4 Remove unused import in state_machine
+**File:** `orderbot/tasks/state_machine.py`
+- Remove `parse_bagel_choice` from imports (line ~100)
+
+### 1.5 Check and potentially remove `BagelChoiceResponse`
+**File:** `orderbot/tasks/schemas/parser_responses.py`
+- Check if `BagelChoiceResponse` class is used elsewhere
+- If only used by dead `parse_bagel_choice`, delete it
+
+---
+
+## Phase 2: Remove Dead Model Methods
+
+### 2.1 Delete `get_missing_customizations()` method
+**File:** `orderbot/tasks/models.py`
+**Lines:** 481-495
+
+This method checks `self["requires_side_choice"]` which is always `None` in production because:
+- Constructor kwarg `requires_side_choice=` is silently ignored by Pydantic
+- The `{side_choice}_choice` pattern (e.g., "bagel_choice") is obsolete with child item model
+
+### 2.2 Delete `is_fully_customized()` method
+**File:** `orderbot/tasks/models.py`
+**Lines:** 497-499
+
+Only calls the dead `get_missing_customizations()` method.
+
+---
+
+## Phase 3: Remove No-op Constructor Arguments
+
+### 3.1 Remove `requires_side_choice=` kwarg
+**File:** `orderbot/tasks/item_adder_handler.py`
+**Line:** ~471
 
 ```python
-menu_item = MenuItemTask(
-    menu_item_name=item_dict.get("menu_item_name") or "Unknown",
-    menu_item_id=item_dict.get("menu_item_id"),
-    menu_item_type=menu_item_type,
-    modifications=item_dict.get("modifications") or [],
-    removed_ingredients=...,
-    side_choice=item_dict.get("side_choice"),      # ← Hardcoded
-    bagel_choice=item_dict.get("bagel_choice"),    # ← Hardcoded
-    toasted=item_dict.get("toasted"),              # ← Hardcoded
-    spread=item_dict.get("spread"),                # ← Hardcoded
-    spread_price=spread_price,                     # ← Hardcoded
-    requires_side_choice=item_dict.get("requires_side_choice", False),
+# BEFORE
+item = MenuItemTask(
+    ...
+    requires_side_choice=has_side_choice,  # DELETE THIS LINE
     ...
 )
 ```
 
-Similarly, the `MenuItemTask` model (lines 216-222 of models.py) has **hardcoded fields**:
+### 3.2 Remove `requires_side_choice=` kwarg
+**File:** `orderbot/tasks/configuring_item_handler.py`
+**Line:** ~462
 
-```python
-side_choice: str | None = None
-bagel_choice: str | None = None
-bagel_choice_upcharge: float = 0.0
-spread_price: float | None = None
-requires_side_choice: bool = False
-```
-
-### Problem
-
-This violates the data-driven architecture principle from CLAUDE.md:
-
-> **No hardcoded attributes** - Item attributes come from `item_type_attributes` table
-
-These field names (`side_choice`, `bagel_choice`, `toasted`, `spread`) are **domain-specific vocabulary** that shouldn't exist in the codebase. If we wanted to use this system for a sushi restaurant, these fields would be meaningless.
-
-### Target State
-
-All item configuration should flow through `attribute_values` dict, which is populated from:
-1. Database-defined attributes (`get_item_type_attributes()`)
-2. Incoming dict data (dynamically mapped)
-
-The model should have **zero domain-specific field names** - only:
-- Generic identity fields: `menu_item_name`, `menu_item_id`, `menu_item_type`
-- Generic state fields: `status`, `quantity`, `unit_price`
-- Generic container: `attribute_values: dict[str, Any]`
+Same change as above.
 
 ---
 
-## Implementation Plan
+## Phase 4: Clean Up LLM Prompts
 
-### Phase 1: Audit Current Usage
+### 4.1 Remove `bagel_choice` from prompt examples
+**File:** `orderbot/tasks/parsing.py`
 
-Before removing hardcoded fields, identify all usages:
+Remove/update these references:
+- Line ~175: Remove "bagel_choice" from attribute examples
+- Lines ~306-329: Remove bagel_choice examples from prompt
+- Line ~373: Remove bagel_choice options inquiry example
+- Line ~385: Remove "bagel_choice" from omelette attribute list
 
-| Field | Usages | Migration Path |
-|-------|--------|----------------|
-| `side_choice` | ~15 files | Move to `attribute_values["side_choice"]` |
-| `bagel_choice` | ~10 files | Move to `attribute_values["bagel_choice"]` or DB-defined `{side}_choice` |
-| `toasted` | ~20 files | Already has property accessor → keep as-is |
-| `spread` | ~15 files | Already has property accessor → keep as-is |
-| `spread_price` | ~5 files | Store as `attribute_values["spread_price"]` |
-| `requires_side_choice` | ~8 files | Derive from DB: `item_type_has_attribute(type, "side_choice")` |
+Replace domain-specific examples with generic ones or remove entirely.
 
-### Phase 2: Create Generic Property Accessors
+---
 
-Instead of hardcoded fields, create a **dynamic property pattern**:
+## Phase 5: Clean Up Display Logic
 
+### 5.1 Remove `{side_choice}_choice` pattern from display
+**File:** `orderbot/services/order.py`
+**Lines:** ~356-365
+
+This code builds display names using `{side_choice}_choice` (e.g., "bagel_choice"). With child item model, the side item has its own display name.
+
+Analyze if this code path is still used. If the child item model handles display correctly, this can be simplified or removed.
+
+---
+
+## Phase 6: Clean Up Deterministic Parser
+
+### 6.1 Rename misleading variable
+**File:** `orderbot/tasks/parsers/deterministic.py`
+**Lines:** ~4120, ~4235
+
+The variable `bagel_choice` is used but actually maps to `bread` attribute. Rename for clarity:
 ```python
-class MenuItemTask(ItemTask):
-    attribute_values: dict[str, Any] = Field(default_factory=dict)
+# BEFORE
+bagel_choice = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
 
-    def get_attr(self, slug: str, default: Any = None) -> Any:
-        """Get attribute value by slug."""
-        return self.attribute_values.get(slug, default)
-
-    def set_attr(self, slug: str, value: Any) -> None:
-        """Set attribute value by slug."""
-        if value is not None:
-            self.attribute_values[slug] = value
-        elif slug in self.attribute_values:
-            del self.attribute_values[slug]
+# AFTER
+bread_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
 ```
 
-Keep backward-compatible property accessors for commonly-used fields during migration:
+---
 
-```python
-@property
-def side_choice(self) -> str | None:
-    return self.get_attr("side_choice")
+## Phase 7: Database Cleanup
 
-@side_choice.setter
-def side_choice(self, value: str | None) -> None:
-    self.set_attr("side_choice", value)
+### 7.1 Remove `bagel_choice` attribute from omelette item type
+Create migration to:
+1. Delete `attribute_options` rows linked to `bagel_choice` attribute for omelette
+2. Delete `item_type_attributes` row for `bagel_choice` on omelette
+
+The bagel type is now stored on the child bagel item's `bread` attribute.
+
+---
+
+## Phase 8: Update Tests
+
+### 8.1 Fix tests using wrong pattern
+Tests that use `attribute_values={"requires_side_choice": True}` are testing a code path that doesn't exist in production.
+
+**Files to check:**
+- `tests/test_omelette_cream_cheese.py`
+- `tests/test_slot_orchestrator.py`
+- `tests/test_tasks_integration.py`
+- `tests/test_resiliency_batch1.py`
+
+Update these tests to:
+1. Use the child item model (create child MenuItemTask for bagel side)
+2. Remove direct `bagel_choice` attribute setting on parent items
+3. Remove `requires_side_choice` from `attribute_values`
+
+### 8.2 Remove tests for dead methods
+Any tests for `get_missing_customizations()` or `is_fully_customized()` should be removed.
+
+---
+
+## Execution Order
+
+1. **Phase 1** - Remove dead handler/parser (safe, no dependencies)
+2. **Phase 2** - Remove dead model methods (safe, never called)
+3. **Phase 3** - Remove no-op constructor args (safe, already ignored)
+4. **Phase 8** - Update tests (needed before Phase 4-7 to avoid test failures)
+5. **Phase 4** - Clean up LLM prompts
+6. **Phase 5** - Clean up display logic
+7. **Phase 6** - Clean up deterministic parser
+8. **Phase 7** - Database migration (last, after code is clean)
+
+---
+
+## Verification
+
+After each phase, run:
+```bash
+python -m pytest tests/test_tasks_integration.py -v -k "omelette or side"
+python -m pytest tests/test_slot_orchestrator.py -v
 ```
 
-### Phase 3: Make from_dict() Data-Driven
-
-Replace hardcoded field mapping with dynamic attribute restoration:
-
-```python
-def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
-    menu_item_type = item_dict.get("menu_item_type") or item_dict.get("item_type")
-
-    # Start with explicit attribute_values from dict
-    attribute_values = item_dict.get("attribute_values") or {}
-
-    # Data-driven: get expected attributes from DB
-    if menu_item_type:
-        item_attrs = menu_cache.get_item_type_attributes(menu_item_type)
-
-        # Restore any top-level fields that match DB-defined attributes
-        for attr_slug in item_attrs.keys():
-            if attr_slug not in attribute_values and attr_slug in item_dict:
-                attribute_values[attr_slug] = item_dict[attr_slug]
-            # Also check for {attr_slug}_price companion fields
-            price_key = f"{attr_slug}_price"
-            if price_key in item_dict:
-                attribute_values[price_key] = item_dict[price_key]
-
-    # Also restore common legacy fields that may not be in item_attrs
-    # (for backward compatibility during migration)
-    for legacy_field in ["side_choice", "bagel_choice", "spread_price"]:
-        if legacy_field not in attribute_values and legacy_field in item_dict:
-            attribute_values[legacy_field] = item_dict[legacy_field]
-
-    menu_item = MenuItemTask(
-        menu_item_name=item_dict.get("menu_item_name") or "Unknown",
-        menu_item_id=item_dict.get("menu_item_id"),
-        menu_item_type=menu_item_type,
-        modifications=item_dict.get("modifications") or [],
-        quantity=item_dict.get("quantity", 1),
-        attribute_values=attribute_values,
-    )
-    self._restore_common_fields(menu_item, item_dict)
-    return menu_item
-```
-
-### Phase 4: Make to_dict() Data-Driven
-
-Replace hardcoded field output with dynamic attribute serialization:
-
-```python
-def to_dict(self, item: ItemTask, pricing: "PricingEngine | None" = None) -> Dict[str, Any]:
-    attribute_values = getattr(item, 'attribute_values', {}) or {}
-    menu_item_type = getattr(item, 'menu_item_type', None)
-
-    result = self._build_common_dict_fields(item)
-    result.update({
-        "menu_item_name": item.menu_item_name,
-        "menu_item_id": getattr(item, 'menu_item_id', None),
-        "menu_item_type": menu_item_type,
-        "attribute_values": attribute_values,
-        # ... modifiers, display_name, etc.
-    })
-
-    # Data-driven: output DB-defined attributes at top level for backward compatibility
-    if menu_item_type:
-        item_attrs = menu_cache.get_item_type_attributes(menu_item_type)
-        for attr_slug in item_attrs.keys():
-            if attr_slug in attribute_values:
-                result[attr_slug] = attribute_values[attr_slug]
-
-    # Also output legacy fields for backward compatibility
-    for legacy_field in ["side_choice", "bagel_choice", "spread_price", "requires_side_choice"]:
-        if legacy_field in attribute_values:
-            result[legacy_field] = attribute_values[legacy_field]
-
-    return result
-```
-
-### Phase 5: Remove Hardcoded Fields from Model
-
-After all usages migrate to property accessors:
-
-```python
-class MenuItemTask(ItemTask):
-    item_type: Literal["menu_item"] = "menu_item"
-
-    # Core identity (keep these)
-    menu_item_name: str
-    menu_item_id: int | None = None
-    menu_item_type: str | None = None
-
-    # Lists (keep these - not attribute-like)
-    modifications: list[str] = Field(default_factory=list)
-    removed_ingredients: list[str] = Field(default_factory=list)
-
-    # Dynamic attributes (replaces all hardcoded fields)
-    attribute_values: dict[str, Any] = Field(default_factory=dict)
-
-    # REMOVED:
-    # - side_choice (now in attribute_values)
-    # - bagel_choice (now in attribute_values)
-    # - bagel_choice_upcharge (now in attribute_values)
-    # - spread_price (now in attribute_values)
-    # - requires_side_choice (derived from DB)
+Final verification:
+```bash
+python -m pytest
 ```
 
 ---
 
 ## Risk Assessment
 
-| Risk | Mitigation |
-|------|------------|
-| Breaking existing serialized orders | Keep backward-compat properties during migration |
-| Test failures | Update tests incrementally, run regression suite |
-| Performance (extra DB lookups) | Already cached in `menu_cache._item_type_attributes` |
-| Frontend expects specific fields | Keep top-level output for backward compatibility |
+| Phase | Risk | Mitigation |
+|-------|------|------------|
+| 1-3 | Very Low | Code is confirmed dead/no-op |
+| 4 | Low | LLM prompts are guidance, not logic |
+| 5 | Medium | Display logic may have edge cases - test thoroughly |
+| 6 | Low | Variable rename only |
+| 7 | Medium | Database migration - test in staging first |
+| 8 | Medium | Test updates may reveal hidden dependencies |
 
 ---
 
-## Recommended Approach
+## Success Criteria
 
-**Incremental migration** over 3-4 PRs:
-
-1. **PR 1**: Add `get_attr()`/`set_attr()` helpers + property accessors for `side_choice`, `bagel_choice`, etc.
-2. **PR 2**: Update `from_dict()` to be data-driven (restore to attribute_values)
-3. **PR 3**: Update `to_dict()` to be data-driven (serialize from attribute_values)
-4. **PR 4**: Remove hardcoded fields from model, keep only property accessors
-
-This approach ensures backward compatibility at each step and allows testing incrementally.
-
----
-
-## Questions for Clarification
-
-1. Should we keep `requires_side_choice` as a derived property (from DB) or store it in `attribute_values`?
-2. Are there any external systems (APIs, webhooks) that depend on the exact output format?
-3. What's the priority: full data-driven purity vs. shipping features?
+1. No references to `bagel_choice` in `orderbot/` directory (except comments explaining removal)
+2. No `parse_bagel_choice` function or imports
+3. No `get_missing_customizations` or `is_fully_customized` methods
+4. No `requires_side_choice` constructor kwargs
+5. All tests pass
+6. Side selection flow works correctly with child item model

@@ -12,6 +12,7 @@ import re
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
+from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
@@ -327,26 +328,6 @@ class ConfiguringItemHandler:
         if order.pending_field == "side_choice":
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
 
-        # Handle bread_choice for menu items with bread-based sides (e.g., omelettes, salads)
-        # Data-driven: check if side_choice references an item type that has bread attribute
-        # bread_choice is canonical; bagel_choice is legacy
-        if order.pending_field in ("bread_choice", "bagel_choice") and isinstance(item, MenuItemTask):
-            side_choice = item["side_choice"]  # Use dict-style access for attribute_values
-            if side_choice:
-                # Check if the side choice item type has a bread attribute (data-driven)
-                side_attrs = menu_cache.get_item_type_attributes(side_choice)
-                if "bread" in side_attrs:
-                    return self.config_helper_handler.handle_bagel_choice_for_side(
-                        user_input, item, order
-                    )
-
-        # Handle espresso legacy fields - route to menu_item_handler
-        if order.pending_field in ("espresso_modifiers", "espresso_syrup_flavor"):
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                return self.menu_item_handler.get_first_question(item, order)
-            order.clear_pending()
-            return self.checkout_utils_handler.get_next_question(order)
-
         # Handle menu item configuration (deli sandwiches, etc.)
         if order.pending_field == "customization_checkpoint":
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
@@ -408,21 +389,11 @@ class ConfiguringItemHandler:
             )
 
         # Try to match by number (1, 2, 3, "first", "second", etc.)
-        # IMPORTANT: Sorted by length descending so longer matches are checked first
-        # (e.g., "the second one" should match "the second" not "one")
-        number_patterns = sorted([
-            ("the first", 0), ("number one", 0), ("number 1", 0), ("first", 0), ("one", 0), ("1", 0),
-            ("the second", 1), ("number two", 1), ("number 2", 1), ("second", 1), ("two", 1), ("2", 1),
-            ("the third", 2), ("number three", 2), ("number 3", 2), ("third", 2), ("three", 2), ("3", 2),
-            ("the fourth", 3), ("number four", 3), ("number 4", 3), ("fourth", 3), ("four", 3), ("4", 3),
-            ("the fifth", 4), ("number five", 4), ("number 5", 4), ("fifth", 4), ("five", 4), ("5", 4),
-            ("the sixth", 5), ("number six", 5), ("number 6", 5), ("sixth", 5), ("six", 5), ("6", 5),
-        ], key=lambda x: len(x[0]), reverse=True)
-
+        # Uses shared _SELECTION_PATTERNS from constants (sorted by length descending)
         selected_item = None
 
         # Check for number/ordinal selection (longer patterns first)
-        for key, idx in number_patterns:
+        for key, idx in _SELECTION_PATTERNS:
             if key in user_lower:
                 if idx < len(options):
                     selected_item = options[idx]
@@ -488,7 +459,6 @@ class ConfiguringItemHandler:
                 menu_item_name=selected_name,
                 menu_item_id=selected_id,
                 unit_price=selected_price,
-                requires_side_choice=requires_side_choice,
                 menu_item_type=selected_item_type,
             )
             # Infer attributes from item name (data-driven)

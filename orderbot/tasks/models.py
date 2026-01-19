@@ -478,26 +478,6 @@ class MenuItemTask(ItemTask):
 
         return summary
 
-    def get_missing_customizations(self) -> list[str]:
-        """Get list of missing required customizations.
-
-        Uses data-driven approach: check for {side_choice}_choice field dynamically.
-        """
-        missing = []
-        if self["requires_side_choice"] and not self["side_choice"]:
-            missing.append("side_choice")
-        # Check if side_choice type needs a specific choice (e.g., bagel_choice for bagel)
-        side_choice = self["side_choice"]
-        if side_choice:
-            choice_field = f"{side_choice}_choice"
-            if self[choice_field] is None:
-                missing.append(choice_field)
-        return missing
-
-    def is_fully_customized(self) -> bool:
-        """Check if all required customizations are complete."""
-        return len(self.get_missing_customizations()) == 0
-
 
 # =============================================================================
 # Order Flow Tasks

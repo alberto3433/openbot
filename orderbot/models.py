@@ -67,9 +67,8 @@ class ItemType(Base):
     item_type_category_id = Column(Integer, ForeignKey("item_type_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     item_type_category = relationship("ItemTypeCategory", back_populates="item_types")
 
-    # By-pound items: sold by weight (cheese, cold cuts, fish, salads, spreads)
-    # These have quantity-based pricing and no configuration attributes
-    is_by_pound = Column(Boolean, nullable=False, default=False)
+    # Note: is_by_pound column was removed - use MenuItem.unit_type instead
+    # Items sold by weight have unit_type="by_weight" on the MenuItem level
 
     # Side choice: some items (e.g., omelettes) prompt for a side dish
     has_side_choice = Column(Boolean, nullable=False, default=False)

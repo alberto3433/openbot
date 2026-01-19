@@ -309,38 +309,6 @@ def chat_message_stream(
     )
 
 
-@chat_router.post("/debug/add-coffee")
-def debug_add_coffee(
-    session_id: str,
-    size: str = "small",
-    db: Session = Depends(get_db),
-):
-    """DEBUG: Directly add a coffee to a session, bypassing the LLM."""
-    session = get_or_create_session(db, session_id)
-    if session is None:
-        return {"error": "Invalid session_id"}
-
-    order_state = session["order"]
-    menu_index = menu_cache.get_menu_index()
-
-    slots = {
-        "menu_item_name": "Coffee",
-        "quantity": 1,
-        "item_config": {"size": size, "milk": "black"}
-    }
-
-    updated_state = apply_intent_to_order_state(order_state, "add_drink", slots, menu_index)
-    session["order"] = updated_state
-    save_session(db, session_id, session)
-
-    return {
-        "success": True,
-        "items_count": len(updated_state.get("items", [])),
-        "items": [{"name": i.get("menu_item_name"), "price": i.get("unit_price")} for i in updated_state.get("items", [])],
-        "order_state": updated_state,
-    }
-
-
 @chat_router.post("/abandon", status_code=204)
 def log_abandoned_session(
     payload: AbandonedSessionRequest,

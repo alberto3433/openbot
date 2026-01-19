@@ -54,7 +54,6 @@ from .deterministic import (
 from .llm_parsers import (
     get_instructor_client,
     parse_side_choice,
-    parse_bagel_choice,
     parse_open_input,
     parse_delivery_choice,
     parse_name,
@@ -75,8 +74,8 @@ from .constants import (
     find_by_pound_item,
     # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
     # - use menu_cache.get_global_attribute_options("spread") instead
-    # Note: get_by_pound_items(), get_by_pound_category_names() were removed - dead code
-    # - use menu_cache.get_by_pound_items() or menu_cache.get_by_pound_category_names() directly
+    # Note: get_by_pound_items(), get_by_pound_category_names(), find_by_pound_item() were removed
+    # - use menu_cache.get_menu_items_by_unit_type() or find_item_by_unit_type() instead
     # Note: get_proteins(), get_cheeses(), get_toppings() were removed
     # - use menu_cache.get_ingredients("protein"), etc. instead
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
@@ -148,7 +147,6 @@ __all__ = [
     # LLM parsers
     "get_instructor_client",
     "parse_side_choice",
-    "parse_bagel_choice",
     "parse_open_input",
     "parse_delivery_choice",
     "parse_name",
@@ -160,12 +158,14 @@ __all__ = [
     "WORD_TO_NUM",
     # Constants - Signature items (loaded from database via dynamic function)
     "get_signature_item_aliases",
-    # Constants - By-the-pound item lookup (loaded from database via dynamic function)
+    # Constants - Generic unit type item lookup (data-driven)
+    "find_item_by_unit_type",
+    # Constants - Legacy alias (DEPRECATED: use find_item_by_unit_type instead)
     "find_by_pound_item",
     # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
-    # Note: get_by_pound_items(), get_by_pound_category_names() were removed - dead code
+    # Note: get_by_pound_items(), get_by_pound_category_names(), find_by_pound_item() were removed
     # Note: get_proteins(), get_cheeses(), get_toppings() were removed - dead code
-    # - use menu_cache directly for all of these
+    # - use menu_cache or find_item_by_unit_type() instead for all of these
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
     # Constants - Regex patterns (basic)
     "QUALIFIER_PATTERNS",

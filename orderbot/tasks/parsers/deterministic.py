@@ -42,7 +42,7 @@ from .constants import (
     MODIFIER_INQUIRY_PATTERNS,
     MORE_MENU_ITEMS_PATTERNS,
     CUSTOMER_SERVICE_PATTERNS,
-    find_by_pound_item,
+    find_item_by_unit_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -2534,20 +2534,21 @@ BY_POUND_PATTERN = re.compile(
 )
 
 
-def _find_by_pound_item_category(item_name: str) -> tuple[str, str] | None:
+def _find_by_weight_item(item_name: str) -> tuple[str, str] | None:
     """
-    Find the category for a by-pound item.
+    Find a by-weight item and its item type by name or alias.
 
-    Uses the menu cache to look up items by name or alias. The cache handles
-    exact matches, partial matches, and aliases (e.g., "lox" -> "Nova Scotia Salmon").
+    Uses the generic find_item_by_unit_type() to look up items sold by weight.
+    The cache handles exact matches, partial matches, and aliases
+    (e.g., "lox" -> "Nova Scotia Salmon").
 
     Args:
         item_name: The item name to look up (e.g., "whitefish salad", "muenster", "lox")
 
     Returns:
-        Tuple of (canonical_name, category) or None if not found.
+        Tuple of (canonical_name, item_type_slug) or None if not found.
     """
-    return find_by_pound_item(item_name)
+    return find_item_by_unit_type(item_name, "by_weight")
 
 
 def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
@@ -2624,23 +2625,23 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
         size = "1 lb"
         item_quantity = 1
 
-    # Look up the item in database via find_by_pound_item
-    result = _find_by_pound_item_category(item_name)
+    # Look up the item in database via find_item_by_unit_type
+    result = _find_by_weight_item(item_name)
     if not result:
-        logger.debug("By-pound pattern matched but item not found: '%s'", item_name)
+        logger.debug("By-weight pattern matched but item not found: '%s'", item_name)
         return None
 
-    canonical_name, category = result
+    canonical_name, item_type_slug = result
     logger.info(
-        "BY-POUND ORDER: '%s' -> %s (size=%s, qty=%d, category=%s)",
-        text[:50], canonical_name, size, item_quantity, category
+        "BY-WEIGHT ORDER: '%s' -> %s (size=%s, qty=%d, item_type=%s)",
+        text[:50], canonical_name, size, item_quantity, item_type_slug
     )
 
     # Build parsed_items using ParsedItemEntry (unified type)
-    # By-pound items are just sized menu items
+    # By-weight items are just sized menu items
     parsed_items = [
         ParsedItemEntry(
-            item_type=category,  # "cheese", "fish", "spread", etc.
+            item_type=item_type_slug,  # "cheese", "fish", "spread", etc.
             item_name=canonical_name,
             quantity=item_quantity,
             attribute_values={"size": size},
@@ -3989,14 +3990,27 @@ def parse_open_input_deterministic(
 
         # Validate against data-driven category keywords or item type triggers
         # This replaces the hardcoded ANOTHER_ITEM_TYPE_KEYWORDS mapping
+        resolved_item_type: str | None = None
+
+        # 1. Check category keyword mapping - returns the item type slug
         category_info = menu_cache.get_category_keyword_mapping(item_keyword)
         if not category_info:
             category_info = menu_cache.get_category_keyword_mapping(item_keyword_singular)
-
         if category_info:
-            # Valid item type keyword - pass to downstream handler
-            logger.info("Deterministic parse: 'another %s' detected, treating as new item", item_keyword)
-            return OpenInputResponse(duplicate_new_item_type=item_keyword)
+            resolved_item_type = category_info.get("slug")
+
+        # 2. Check if keyword is a trigger for any item type (reverse lookup)
+        if not resolved_item_type:
+            all_triggers = menu_cache.get_item_type_triggers()  # Returns dict[str, set[str]]
+            for item_type_slug, triggers in all_triggers.items():
+                if item_keyword in triggers or item_keyword_singular in triggers:
+                    resolved_item_type = item_type_slug
+                    break
+
+        if resolved_item_type:
+            # Valid item type keyword - pass the canonical item type to downstream handler
+            logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword, resolved_item_type)
+            return OpenInputResponse(duplicate_new_item_type=resolved_item_type)
 
     # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)
     if ONE_MORE_PATTERN.match(text):

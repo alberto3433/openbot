@@ -271,13 +271,11 @@ class MultiAttributeChoiceResponse(BaseModel):
 
 # Backward-compatible aliases for existing code
 # TODO: Update callers to use AttributeChoiceResponse directly
-BagelChoiceResponse = AttributeChoiceResponse
 SpreadChoiceResponse = AttributeChoiceResponse
 ToastedChoiceResponse = AttributeChoiceResponse
 CoffeeSizeResponse = AttributeChoiceResponse
 CoffeeStyleResponse = AttributeChoiceResponse
 SideChoiceResponse = AttributeChoiceResponse
-MultiBagelChoiceResponse = MultiAttributeChoiceResponse
 MultiToastedResponse = MultiAttributeChoiceResponse
 MultiSpreadResponse = MultiAttributeChoiceResponse
 

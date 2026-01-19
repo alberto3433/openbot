@@ -13,7 +13,6 @@ import instructor
 from openai import OpenAI
 
 from ..schemas import (
-    BagelChoiceResponse,
     ConfirmationResponse,
     DeliveryChoiceResponse,
     EmailResponse,
@@ -110,41 +109,6 @@ like specific types or modifications. Those will be asked separately.
     return client.chat.completions.create(
         model=model,
         response_model=SideChoiceResponse,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-
-def parse_bagel_choice(user_input: str, num_pending_bagels: int = 1, model: str = "gpt-4o-mini") -> BagelChoiceResponse:
-    """Parse user input when waiting for bagel type."""
-    client = get_instructor_client()
-
-    prompt = f"""We asked the user "What kind of bagel?" for ONE specific bagel.
-The user said: "{user_input}"
-
-Extract the bagel type. Common types: plain, everything, sesame, poppy, onion, cinnamon raisin, pumpernickel, whole wheat, salt, garlic, bialy.
-
-CRITICAL: quantity should be 1 UNLESS the user EXPLICITLY uses quantity words.
-- Just a bagel type like "plain" or "everything" -> quantity: 1
-- "2 of them plain" or "both plain" -> quantity: 2
-- "all of them plain" or "all plain" -> quantity: {num_pending_bagels}
-
-The user has {num_pending_bagels} bagel(s) remaining that need types, but we are asking about them ONE AT A TIME.
-Only set quantity > 1 if the user EXPLICITLY says "both", "all", "2 of them", "two", "three", etc.
-
-Examples:
-- "plain" -> bagel_type: "plain", quantity: 1
-- "everything" -> bagel_type: "everything", quantity: 1
-- "sesame please" -> bagel_type: "sesame", quantity: 1
-- "I'll do plain" -> bagel_type: "plain", quantity: 1
-- "2 of them plain" -> bagel_type: "plain", quantity: 2
-- "both plain" -> bagel_type: "plain", quantity: 2
-- "all plain" -> bagel_type: "plain", quantity: {num_pending_bagels}
-- "make them all everything" -> bagel_type: "everything", quantity: {num_pending_bagels}
-"""
-
-    return client.chat.completions.create(
-        model=model,
-        response_model=BagelChoiceResponse,
         messages=[{"role": "user", "content": prompt}],
     )
 

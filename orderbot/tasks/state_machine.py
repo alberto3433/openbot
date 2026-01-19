@@ -97,7 +97,6 @@ from .parsers import (
     _parse_configurable_item,
     # LLM parsers
     parse_side_choice,
-    parse_bagel_choice,
     parse_open_input,
     parse_confirmation,
 )

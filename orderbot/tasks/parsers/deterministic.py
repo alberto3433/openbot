@@ -895,6 +895,26 @@ def extract_attribute_values(
     return result
 
 
+def _extract_bagel_attributes(text: str) -> dict[str, any]:
+    """Extract all bagel attributes using generic data-driven extraction.
+
+    This is a thin wrapper around extract_attribute_values() that:
+    1. Extracts all bagel attributes (bread, toasted, scooped, spread) generically
+    2. Converts the bread slug to display format for backwards compatibility
+
+    Args:
+        text: User input text
+
+    Returns:
+        Dict of attribute values ready for use in ParsedItem.attribute_values
+    """
+    attrs = extract_attribute_values(text, "bagel")
+    # Convert bread slug to display name if present (backwards compat)
+    if "bread" in attrs:
+        attrs["bread"] = _slug_to_display(attrs["bread"])
+    return attrs
+
+
 # =============================================================================
 # Helper Extraction Functions
 # =============================================================================
@@ -1083,12 +1103,23 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
     # Get all item type triggers from cache
     all_triggers = menu_cache.get_item_type_triggers()
 
+    # Common words that should not be treated as item triggers
+    # - Quantity words (e.g., "two" from "Two Egg Sandwich" shouldn't match "two coffees")
+    # - Articles and prepositions (e.g., "the" from "The Leo Omelette" shouldn't match "on the side")
+    skip_trigger_words = {
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+    }
+
     # Collect all matches with their position and length
     # Format: (item_type, keyword, match_length, end_position, is_at_end_region, slug_matches)
     matches: list[tuple[str, str, int, int, bool, bool]] = []
 
     for item_type_slug, triggers in all_triggers.items():
         for keyword in triggers:
+            # Skip common words that appear as triggers from menu item names
+            if keyword.lower() in skip_trigger_words:
+                continue
             keyword_lower = keyword.lower()
             # Find all occurrences
             idx = text_lower.find(keyword_lower)
@@ -1515,24 +1546,6 @@ def _extract_boolean_global_attribute(text: str, attr_slug: str) -> bool | None:
     return None
 
 
-def _extract_toasted(text: str) -> bool | None:
-    """Extract toasted preference from text (data-driven).
-
-    Uses global attribute options with aliases for pattern matching.
-    Delegates to _extract_boolean_global_attribute for data-driven lookup.
-    """
-    return _extract_boolean_global_attribute(text, "toasted")
-
-
-def _extract_scooped(text: str) -> bool | None:
-    """Extract scooped preference from text (data-driven).
-
-    Uses global attribute options with aliases for pattern matching.
-    Delegates to _extract_boolean_global_attribute for data-driven lookup.
-    """
-    return _extract_boolean_global_attribute(text, "scooped")
-
-
 def _extract_single_select_global_attribute(text: str, attr_slug: str) -> str | None:
     """Extract a single-select global attribute value from text (data-driven).
 
@@ -1581,162 +1594,6 @@ def _extract_single_select_global_attribute(text: str, attr_slug: str) -> str | 
         pass
 
     return None
-
-
-# Wrapper functions for backwards compatibility during refactoring
-# These delegate to the generic data-driven extraction functions
-
-def _extract_toasted(text: str) -> bool | None:
-    """Extract toasted preference from text.
-
-    DEPRECATED: Wrapper for backwards compatibility.
-    Use _extract_boolean_global_attribute(text, "toasted") directly.
-    """
-    return _extract_boolean_global_attribute(text, "toasted")
-
-
-def _extract_scooped(text: str) -> bool | None:
-    """Extract scooped preference from text.
-
-    DEPRECATED: Wrapper for backwards compatibility.
-    Use _extract_boolean_global_attribute(text, "scooped") directly.
-    """
-    return _extract_boolean_global_attribute(text, "scooped")
-
-
-def _extract_spread(text: str) -> str | None:
-    """Extract spread from text. Returns atomic spread slug.
-
-    Matches user input against spread options from the database.
-    Returns a single atomic slug (e.g., "scallion_cream_cheese", "butter").
-
-    The slug can be looked up in GlobalAttributeOption for display_name and pricing.
-    """
-    text_lower = text.lower()
-
-    # Get all spread options from database
-    try:
-        spread_options = menu_cache.get_global_attribute_options("spread")
-    except Exception:
-        # Fallback if spread attribute not found
-        return None
-
-    # Build list of (match_text, slug) tuples for matching
-    # Include both display_name and aliases
-    match_candidates: list[tuple[str, str]] = []
-    for opt in spread_options:
-        slug = opt.get("slug", "")
-        display_name = opt.get("display_name", "").lower()
-        if display_name:
-            match_candidates.append((display_name, slug))
-        # Also check aliases
-        aliases = opt.get("aliases", [])
-        if aliases:
-            for alias in aliases:
-                match_candidates.append((alias.lower(), slug))
-
-    # Sort by match text length (longest first) to prefer specific matches
-    match_candidates.sort(key=lambda x: len(x[0]), reverse=True)
-
-    # Find the first (longest) match in the text
-    for match_text, slug in match_candidates:
-        if match_text in text_lower:
-            return slug
-
-    return None
-
-
-def extract_spread_with_disambiguation(
-    text: str,
-) -> tuple[str | None, list[str]]:
-    """
-    Extract spread from text with disambiguation support.
-
-    This function extends _extract_spread by using partial matching to find
-    potential spread matches. When the user says something like "walnut
-    cream cheese", it will find all spreads containing "walnut" and
-    return them for disambiguation if there are multiple matches.
-
-    Args:
-        text: User input text
-
-    Returns:
-        Tuple of (spread_slug, disambiguation_options):
-        - spread_slug: Atomic spread slug (e.g., "scallion_cream_cheese", "butter")
-        - disambiguation_options: List of matching spread display names if ambiguous,
-          empty list if exact match or no partial matches found
-
-    Examples:
-        >>> extract_spread_with_disambiguation("scallion cream cheese")
-        ("scallion_cream_cheese", [])
-
-        >>> extract_spread_with_disambiguation("walnut cream cheese")
-        (None, ["Honey Walnut Cream Cheese", "Maple Raisin Walnut Cream Cheese"])
-
-        >>> extract_spread_with_disambiguation("butter")
-        ("butter", [])
-    """
-    text_lower = text.lower()
-    disambiguation_options: list[str] = []
-
-    # Get all spread options from database
-    try:
-        spread_options = menu_cache.get_global_attribute_options("spread")
-    except Exception:
-        return None, []
-
-    # Build list of (match_text, slug, display_name) tuples for matching
-    match_candidates: list[tuple[str, str, str]] = []
-    for opt in spread_options:
-        slug = opt.get("slug", "")
-        display_name = opt.get("display_name", "")
-        display_lower = display_name.lower()
-        if display_lower:
-            match_candidates.append((display_lower, slug, display_name))
-        # Also check aliases
-        aliases = opt.get("aliases", [])
-        if aliases:
-            for alias in aliases:
-                match_candidates.append((alias.lower(), slug, display_name))
-
-    # Sort by match text length (longest first) to prefer specific matches
-    match_candidates.sort(key=lambda x: len(x[0]), reverse=True)
-
-    # Try exact match first
-    for match_text, slug, _ in match_candidates:
-        if match_text in text_lower:
-            return slug, []
-
-    # No exact match - try partial matching for disambiguation
-    words_to_check = text_lower
-    for remove in ["cream cheese", "butter", "spread", "please", "thanks", "with", "on", "the", "a"]:
-        words_to_check = words_to_check.replace(remove, " ")
-
-    words = [w.strip() for w in words_to_check.split() if w.strip() and len(w.strip()) > 2]
-
-    for word in words:
-        matches = []
-        for match_text, slug, display_name in match_candidates:
-            if word in match_text:
-                matches.append((slug, display_name))
-
-        # Deduplicate by slug
-        seen_slugs = set()
-        unique_matches = []
-        for slug, display_name in matches:
-            if slug not in seen_slugs:
-                seen_slugs.add(slug)
-                unique_matches.append((slug, display_name))
-
-        if unique_matches:
-            if len(unique_matches) == 1:
-                return unique_matches[0][0], []
-            else:
-                # Multiple matches - return display names for disambiguation
-                disambiguation_options = [m[1] for m in unique_matches]
-                return None, disambiguation_options
-
-    return None, []
 
 
 def _extract_side_item(text: str) -> tuple[str | None, int]:
@@ -2228,6 +2085,12 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
 
     # Only do trigger-based detection if no signature item was found
     if not detected_item_type:
+        # Common words that should not be treated as item triggers
+        skip_trigger_words = {
+            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+            "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+        }
+
         # Collect all matches with position info for smarter selection
         # Format: (item_type, trigger, length, end_pos, is_at_end, slug_matches)
         matches: list[tuple[str, str, int, int, bool, bool]] = []
@@ -2236,6 +2099,9 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         for item_type_slug in configurable_slugs:
             triggers = menu_cache.get_item_type_triggers(item_type_slug)
             for trigger in triggers:
+                # Skip common words that appear as triggers from menu item names
+                if trigger.lower() in skip_trigger_words:
+                    continue
                 # Check for word boundary match
                 pattern = rf'\b{re.escape(trigger)}s?\b'
                 match = re.search(pattern, text_lower)
@@ -2284,6 +2150,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - bool for boolean
     attr_values = extract_attribute_values(text, detected_item_type)
 
+    # 4b. Extract special instructions (e.g., "sugar on the side", "extra hot")
+    instructions_list = extract_special_instructions_from_input(text)
+    special_instructions = "; ".join(instructions_list) if instructions_list else None
+
     # 5. Try to match a specific menu item name within this type
     # If we already found a signature item, use that name; otherwise try to match
     item_name = signature_item_name or _match_menu_item_name_for_type(text, detected_item_type)
@@ -2307,6 +2177,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             item_type=detected_item_type,
             item_name=item_name,
             attribute_values=attr_values.copy(),
+            special_instructions=special_instructions,
             original_text=text,
             is_signature=is_signature,
         )
@@ -2372,6 +2243,14 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     text_lower = text.lower()
     text_len = len(text_lower)
 
+    # Common words that should not be treated as item triggers
+    # - Quantity words (e.g., "two" from "Two Egg Sandwich" shouldn't match "two coffees")
+    # - Articles and prepositions (e.g., "the" from "The Leo Omelette" shouldn't match "on the side")
+    skip_trigger_words = {
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+    }
+
     # Collect all matches with position info for smarter selection
     # Format: (item_type, trigger, length, start_pos, slug_matches)
     matches: list[tuple[str, str, int, int, bool]] = []
@@ -2379,6 +2258,9 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     for item_type_slug in configurable_slugs:
         triggers = menu_cache.get_item_type_triggers(item_type_slug)
         for trigger in triggers:
+            # Skip common words that appear as triggers from menu item names
+            if trigger.lower() in skip_trigger_words:
+                continue
             # Match trigger with optional plural 's'
             pattern = rf'\b{re.escape(trigger)}s?\b'
             match = re.search(pattern, text_lower)
@@ -2537,6 +2419,13 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     # 5. Process each part
     parsed_items: list[ParsedItemEntry] = []
     item_count = 0
+
+    # Filter out the base part if it's captured (first part with qty == total_quantity)
+    # The base part describes ALL items, not a differentiated specification
+    if parts and parts[0][0] == total_quantity:
+        # First part is the base description (e.g., "two plain bagels"), skip it
+        # We already extracted base_attrs from initial_part
+        parts = parts[1:]
 
     for part_qty, part_text in parts:
         if item_count >= total_quantity:
@@ -3461,11 +3350,20 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Check for item type triggers - prioritize early matches
     all_triggers = menu_cache.get_item_type_triggers()
 
+    # Common words that should not be treated as item triggers
+    skip_trigger_words = {
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+    }
+
     # Find all matches and their positions
     matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
 
     for item_type_slug, triggers in all_triggers.items():
         for keyword in triggers:
+            # Skip common words that appear as triggers from menu item names
+            if keyword.lower() in skip_trigger_words:
+                continue
             keyword_lower = keyword.lower()
             pos = text_lower.find(keyword_lower)
             if pos >= 0:
@@ -4438,12 +4336,14 @@ def parse_open_input_deterministic(
         # This ensures espresso, latte, bagels, etc. are processed with proper attribute config
         configurable_item_names = menu_cache.get_configurable_item_names()
         if menu_item.lower() not in configurable_item_names:
-            toasted = _extract_toasted(text)
-            bread_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
+            # Extract bagel attributes (bread, toasted) for menu items served on bagels
+            bagel_attrs = _extract_bagel_attributes(text)
+            # Only keep bread and toasted for menu items (not scooped/spread)
+            menu_item_attrs = {k: v for k, v in bagel_attrs.items() if k in ("bread", "toasted")}
             # Get item_type for data-driven modification extraction
             item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, toasted=%s, bread=%s, mods=%s)", text[:50], menu_item, qty, toasted, bread_type, modifications)
+            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, menu_item_attrs, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
             from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
             # Convert structured modifications to QuantifiedModifier objects
@@ -4458,9 +4358,7 @@ def parse_open_input_deterministic(
                     item_type="menu_item",
                     item_name=menu_item,
                     quantity=1,
-                    attribute_values={
-                        k: v for k, v in [("bread", bread_type), ("toasted", toasted)] if v is not None
-                    },
+                    attribute_values=menu_item_attrs,
                     modifiers=mod_list,
                 )
                 for _ in range(qty)
@@ -4476,29 +4374,19 @@ def parse_open_input_deterministic(
         quantity = _extract_quantity(quantity_str)
 
         if quantity:
-            bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-            toasted = _extract_toasted(text)
-            scooped = _extract_scooped(text)
-            spread = _extract_spread(text)
+            bagel_attrs = _extract_bagel_attributes(text)
             side_item, side_qty = _extract_side_item(text)
 
             logger.debug(
-                "Deterministic parse: bagel order - qty=%d, type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
-                quantity, bagel_type, toasted, scooped, spread, side_item
+                "Deterministic parse: bagel order - qty=%d, attrs=%s, side=%s",
+                quantity, bagel_attrs, side_item
             )
 
             # Build parsed_items for unified handler
             bagel_qty_parsed_items = [
                 build_parsed_item(
                     item_type="bagel",
-                    attribute_values={
-                        k: v for k, v in [
-                            ("bread", bagel_type),
-                            ("toasted", toasted),
-                            ("scooped", scooped),
-                            ("spread", spread),
-                        ] if v is not None
-                    },
+                    attribute_values=bagel_attrs,
                 )
                 for _ in range(quantity)
             ]
@@ -4510,28 +4398,18 @@ def parse_open_input_deterministic(
 
     # Check for simple "a bagel" / "bagel please"
     if __SIMPLE_BAGEL_PATTERN.search(text):
-        bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-        toasted = _extract_toasted(text)
-        scooped = _extract_scooped(text)
-        spread = _extract_spread(text)
+        bagel_attrs = _extract_bagel_attributes(text)
         side_item, side_qty = _extract_side_item(text)
 
         logger.debug(
-            "Deterministic parse: single bagel - type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
-            bagel_type, toasted, scooped, spread, side_item
+            "Deterministic parse: single bagel - attrs=%s, side=%s",
+            bagel_attrs, side_item
         )
 
         # Build parsed_items for unified handler
         simple_bagel_parsed_items = [build_parsed_item(
             item_type="bagel",
-            attribute_values={
-                k: v for k, v in [
-                    ("bread", bagel_type),
-                    ("toasted", toasted),
-                    ("scooped", scooped),
-                    ("spread", spread),
-                ] if v is not None
-            },
+            attribute_values=bagel_attrs,
         )]
         if side_item:
             simple_bagel_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
@@ -4541,28 +4419,18 @@ def parse_open_input_deterministic(
 
     # Check if text contains "bagel" anywhere (but only if no menu item was matched earlier)
     if re.search(r"\bbagels?\b", text, re.IGNORECASE):
-        bagel_type = _slug_to_display(_extract_attribute_value(text, "bagel", "bread"))
-        toasted = _extract_toasted(text)
-        scooped = _extract_scooped(text)
-        spread = _extract_spread(text)
+        bagel_attrs = _extract_bagel_attributes(text)
         side_item, side_qty = _extract_side_item(text)
 
-        if bagel_type or toasted is not None or scooped is not None or spread or side_item:
+        if bagel_attrs or side_item:
             logger.debug(
-                "Deterministic parse: bagel mention - type=%s, toasted=%s, scooped=%s, spread=%s, side=%s",
-                bagel_type, toasted, scooped, spread, side_item
+                "Deterministic parse: bagel mention - attrs=%s, side=%s",
+                bagel_attrs, side_item
             )
             # Build parsed_items for unified handler
             bagel_mention_parsed_items = [build_parsed_item(
                 item_type="bagel",
-                attribute_values={
-                    k: v for k, v in [
-                        ("bread", bagel_type),
-                        ("toasted", toasted),
-                        ("scooped", scooped),
-                        ("spread", spread),
-                    ] if v is not None
-                },
+                attribute_values=bagel_attrs,
             )]
             if side_item:
                 bagel_mention_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])

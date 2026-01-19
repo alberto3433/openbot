@@ -48,8 +48,7 @@ from .deterministic import (
     parse_open_input_deterministic,
     # Internal helpers (used by tests)
     _extract_quantity,
-    _extract_toasted,
-    _extract_spread,
+    # Note: _extract_toasted and _extract_spread removed - use extract_attribute_values() instead
 )
 
 from .llm_parsers import (
@@ -146,8 +145,7 @@ __all__ = [
     "parse_open_input_deterministic",
     # Internal helpers (used by tests)
     "_extract_quantity",
-    "_extract_toasted",
-    "_extract_spread",
+    # Note: _extract_toasted and _extract_spread removed - use extract_attribute_values() instead
     # LLM parsers
     "get_instructor_client",
     "parse_side_choice",

@@ -586,11 +586,11 @@ class MenuInquiryHandler(MenuDataMixin):
             last_menu_category = pagination.get("category")
 
         # Use the unified data-driven lookup
-        result = menu_cache.resolve_price_inquiry(
-            query=item_query,
-            current_item_type=current_item_type,
-            last_menu_category=last_menu_category,
-        )
+        context = {
+            "current_item_type": current_item_type,
+            "last_menu_category": last_menu_category,
+        }
+        result = menu_cache.resolve_price_inquiry(query=item_query, context=context)
 
         result_type = result.get("type")
 

@@ -272,8 +272,8 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                     base_attr_key = attr_key.replace("_selections", "")
                     for sel in attr_value:
                         if isinstance(sel, dict):
-                            sel_display = sel.get("display_name", "").lower()
-                            sel_slug = sel.get("slug", "").lower()
+                            sel_display = (sel.get("display_name") or "").lower()
+                            sel_slug = (sel.get("slug") or "").lower()
 
                             # Check if any input variant matches the display_name or slug
                             for variant in input_variants:

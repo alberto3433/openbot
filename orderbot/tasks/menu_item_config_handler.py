@@ -1408,8 +1408,6 @@ class MenuItemConfigHandler(BaseHandler):
         skip_keys = {"_quantity"}
         # Suffix for quantity keys (e.g., "sweetener_quantity")
         quantity_suffix = "_quantity"
-        # Alias mappings for normalized field names
-        key_aliases = {"flavor_syrup": "syrup"}
 
         # Track processed keys to avoid double-processing
         processed: set[str] = set()
@@ -1419,8 +1417,8 @@ class MenuItemConfigHandler(BaseHandler):
             if key in skip_keys or key.endswith(quantity_suffix) or key in processed:
                 continue
 
-            # Normalize key (e.g., flavor_syrup -> syrup)
-            normalized_key = key_aliases.get(key, key)
+            # Normalize key using data-driven field mapping from database
+            normalized_key = menu_cache.resolve_field_to_slug(item.menu_item_type, key)
 
             # Get field config to determine if this is a multi-select field
             field_config = menu_cache.get_ingredient_category_field_config(normalized_key)

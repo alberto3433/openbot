@@ -948,31 +948,6 @@ def _extract_attribute_value(
     return None
 
 
-def _extract_all_attributes(
-    text: str,
-    item_type: str
-) -> dict[str, any]:
-    """Extract all attribute values for an item type from text.
-
-    Args:
-        text: User input text
-        item_type: Item type slug
-
-    Returns:
-        Dict mapping attribute slugs to extracted values
-    """
-    text_lower = text.lower()
-    attrs = menu_cache.get_item_type_attributes(item_type)
-    extracted = {}
-
-    for attr_slug in attrs.keys():
-        value = _extract_attribute_value(text_lower, item_type, attr_slug)
-        if value is not None:
-            extracted[attr_slug] = value
-
-    return extracted
-
-
 def _extract_modifiers_generic(
     text: str,
     item_type: str
@@ -1233,128 +1208,13 @@ def _parse_item_generic(
             quantity = extracted_qty
 
     # Extract all attributes for this item type using database config
-    attribute_values = _extract_all_attributes(text_lower, item_type)
+    # This handles all attribute types (single_select, multi_select, boolean)
+    # including combined attributes like milk_sweetener_syrup
+    attribute_values = extract_attribute_values(text, item_type)
 
-    # Extract modifiers (proteins, spreads, toppings, etc.)
-    modifiers = _extract_modifiers_generic(text_lower, item_type)
-
-    # Extract sweeteners, syrups, milk using generic data-driven extraction
-    # This works for ANY item type that has these attributes defined in the database
-    sweeteners = []
-    syrups = []
-    if item_type:
-        attrs = menu_cache.get_item_type_attributes(item_type)
-        generic_extracted = extract_attribute_values(text, item_type)
-
-        # Helper to filter extracted values by category (data-driven from database)
-        def matches_category(opt: dict, category: str) -> bool:
-            """Check if option belongs to category (data-driven from database)."""
-            opt_category = opt.get("category") or ""
-            return opt_category.lower() == category.lower()
-
-        def extract_from_combined_attr(attr_slug: str, filter_fn) -> list[dict]:
-            """Extract values from a combined attribute, filtering by type."""
-            values = generic_extracted.get(attr_slug)
-            if not values:
-                return []
-            if isinstance(values, list):
-                return [v for v in values if isinstance(v, dict) and filter_fn(v)]
-            if isinstance(values, str):
-                # Single value - check if it matches the filter
-                options = attrs.get(attr_slug, {}).get("options", [])
-                for opt in options:
-                    if opt.get("slug") == values and filter_fn(opt):
-                        return [{
-                            "slug": values,
-                            "quantity": 1,
-                            "display_name": opt.get("display_name", values),
-                            "category": opt.get("category") or ""
-                        }]
-            return []
-
-        # Check for combined milk_sweetener_syrup attribute
-        combined_attr = "milk_sweetener_syrup"
-        has_combined = combined_attr in attrs
-
-        # Extract sweeteners
-        if has_combined:
-            sweetener_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "sweetener"))
-        else:
-            sweetener_attr_slug = menu_cache.resolve_field_to_slug(item_type, "sweetener")
-            if sweetener_attr_slug in attrs:
-                values = generic_extracted.get(sweetener_attr_slug)
-                sweetener_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
-            else:
-                sweetener_items = []
-
-        for item in sweetener_items:
-            if isinstance(item, dict):
-                sweeteners.append(Selection(
-                    slug=item.get("slug", ""),
-                    category=item.get("category") or "",
-                    quantity=item.get("quantity", 1)
-                ))
-
-        # Extract syrups
-        if has_combined:
-            syrup_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "syrup"))
-        else:
-            syrup_attr_slug = menu_cache.resolve_field_to_slug(item_type, "syrup")
-            if syrup_attr_slug not in attrs:
-                syrup_attr_slug = menu_cache.resolve_field_to_slug(item_type, "flavor_syrup")
-            if syrup_attr_slug in attrs:
-                values = generic_extracted.get(syrup_attr_slug)
-                syrup_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
-            else:
-                syrup_items = []
-
-        for item in syrup_items:
-            if isinstance(item, dict):
-                syrups.append(Selection(
-                    slug=item.get("slug", ""),
-                    category=item.get("category") or "",
-                    quantity=item.get("quantity", 1)
-                ))
-
-        # Extract milk
-        if "milk" not in attribute_values:
-            if has_combined:
-                milk_items = extract_from_combined_attr(combined_attr, lambda opt: matches_category(opt, "milk"))
-            else:
-                milk_attr_slug = menu_cache.resolve_field_to_slug(item_type, "milk")
-                if milk_attr_slug in attrs:
-                    values = generic_extracted.get(milk_attr_slug)
-                    milk_items = values if isinstance(values, list) else ([{"slug": values, "quantity": 1}] if values else [])
-                else:
-                    milk_items = []
-
-            if milk_items:
-                # Store just the slug without "_milk" suffix for backwards compatibility
-                milk_slug = milk_items[0].get("slug", "")
-                # Normalize: remove "_milk" suffix if present (e.g., "oat_milk" -> "oat")
-                if milk_slug.endswith("_milk") and milk_slug != "whole_milk":
-                    milk_slug = milk_slug[:-5]
-                attribute_values["milk"] = milk_slug
-            elif has_combined:
-                # No specific milk type extracted, but check for generic "milk" patterns
-                # e.g., "with milk", "splash of milk" should default to whole milk
-                milk_patterns = [
-                    r'\bwith\s+(?:a\s+)?(?:splash\s+of\s+)?milk\b',
-                    r'\bwith\s+milk\b',
-                    r'\bsplash\s+of\s+milk\b',
-                    r'\bmilk\s+(?:on\s+the\s+side|please)\b',
-                    r'\badd\s+(?:some\s+)?milk\b',
-                ]
-                for pattern in milk_patterns:
-                    if re.search(pattern, text_lower):
-                        attribute_values["milk"] = "whole"
-                        break
-
-        # Extract cream_level if item type has that attribute
-        if "cream_level" in attrs and "cream_level" not in attribute_values:
-            cream_value = generic_extracted.get("cream_level")
-            if cream_value:
-                attribute_values["cream_level"] = cream_value
+    # Extract food modifiers (proteins, spreads, toppings, etc.)
+    # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
+    food_modifiers = _extract_modifiers_generic(text_lower, item_type)
 
     # Check if this is a signature/speed menu item
     is_signature = False
@@ -1369,28 +1229,12 @@ def _parse_item_generic(
     instructions_list = extract_special_instructions_from_input(text)
     special_instructions = ", ".join(instructions_list) if instructions_list else None
 
-    # Build unified modifiers list with category
-    # modifiers is list[str] from _extract_modifiers_generic
-    # sweeteners/syrups are already list[Selection]
-    unified_modifiers: list[Selection] = []
-
-    # Add food modifiers (proteins, cheeses, toppings)
-    for mod in modifiers:
+    # Build food modifiers list with category from database
+    modifier_selections: list[Selection] = []
+    for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
-        unified_modifiers.append(Selection(
+        modifier_selections.append(Selection(
             slug=mod, category=category, quantity=1
-        ))
-
-    # Add sweeteners with category from database
-    for sw in sweeteners:
-        unified_modifiers.append(Selection(
-            slug=sw.slug, category=sw.category, quantity=sw.quantity
-        ))
-
-    # Add syrups with category from database
-    for sy in syrups:
-        unified_modifiers.append(Selection(
-            slug=sy.slug, category=sy.category, quantity=sy.quantity
         ))
 
     return build_parsed_item(
@@ -1398,7 +1242,7 @@ def _parse_item_generic(
         item_name=item_name,
         quantity=quantity,
         attribute_values=attribute_values,
-        modifiers=unified_modifiers,
+        modifiers=modifier_selections,
         special_instructions=special_instructions,
         is_signature=is_signature,
         original_text=text,

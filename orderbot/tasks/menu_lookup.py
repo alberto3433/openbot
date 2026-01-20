@@ -10,12 +10,13 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 
 from .parsers.constants import normalize_for_match
+from .mixins import MenuDataMixin
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
 
-class MenuLookup:
+class MenuLookup(MenuDataMixin):
     """
     Handles menu item lookups and searching.
 
@@ -34,16 +35,6 @@ class MenuLookup:
             menu_data: Menu data dictionary containing items by category.
         """
         self._menu_data = menu_data or {}
-
-    @property
-    def menu_data(self) -> dict:
-        """Get current menu data."""
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict | None):
-        """Update menu data."""
-        self._menu_data = value or {}
 
     def _get_all_items(self) -> list[dict]:
         """

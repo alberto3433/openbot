@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 from .models import OrderTask
 from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
+from .mixins import MenuDataMixin
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -26,7 +27,7 @@ from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_na
 logger = logging.getLogger(__name__)
 
 
-class StoreInfoHandler:
+class StoreInfoHandler(MenuDataMixin):
     """
     Handles store information inquiries and recommendations.
 
@@ -45,14 +46,6 @@ class StoreInfoHandler:
         """
         self._menu_data = menu_data or {}
         self._store_info: dict | None = None
-
-    @property
-    def menu_data(self) -> dict:
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        self._menu_data = value or {}
 
     def set_store_info(self, store_info: dict | None) -> None:
         """Set the store info for this request (legacy method)."""

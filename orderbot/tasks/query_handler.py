@@ -17,6 +17,7 @@ from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_item_type_display_name,
 )
+from .mixins import MenuDataMixin
 
 # All category behavior is now data-driven via database:
 # - Category table + MenuItemCategory join: groups items by category (e.g., "sandwich", "drink")
@@ -39,7 +40,7 @@ class StateMachineResult:
         self.order = order
 
 
-class QueryHandler:
+class QueryHandler(MenuDataMixin):
     """
     Handles informational queries about menu, prices, store info, and recommendations.
 
@@ -67,14 +68,6 @@ class QueryHandler:
         self._menu_data = menu_data or {}
         self._store_info = store_info or {}
         self._pricing = pricing
-
-    @property
-    def menu_data(self) -> dict:
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict | None):
-        self._menu_data = value or {}
 
     @property
     def store_info(self) -> dict:

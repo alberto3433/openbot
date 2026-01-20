@@ -14,11 +14,12 @@ import logging
 import re
 from typing import Any, Callable
 
+from .mixins import MenuDataMixin
 
 logger = logging.getLogger(__name__)
 
 
-class PricingEngine:
+class PricingEngine(MenuDataMixin):
     """
     Handles price lookups and calculations for all order items.
 
@@ -46,18 +47,8 @@ class PricingEngine:
             menu_lookup_func: Function to look up menu items by name.
                              Signature: (item_name: str) -> dict | None
         """
-        self._menu_data = menu_data
+        self._menu_data = menu_data or {}
         self._lookup_menu_item = menu_lookup_func
-
-    @property
-    def menu_data(self) -> dict | None:
-        """Get current menu data."""
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict | None):
-        """Update menu data."""
-        self._menu_data = value
 
     # =========================================================================
     # Generic Pricing Methods (Data-Driven)

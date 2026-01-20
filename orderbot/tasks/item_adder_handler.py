@@ -18,12 +18,13 @@ from .models import (
 from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
+from .mixins import MenuDataMixin
 from ..menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
 
-class ItemAdderHandler:
+class ItemAdderHandler(MenuDataMixin):
     """
     Handles adding items to orders.
 
@@ -123,14 +124,6 @@ class ItemAdderHandler:
                         attr_slug, opt_slug, item.menu_item_name
                     )
                     break  # Only match first option per attribute
-
-    @property
-    def menu_data(self) -> dict:
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        self._menu_data = value or {}
 
     def add_item(
         self,

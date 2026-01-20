@@ -37,6 +37,7 @@ from .modifier_operations import (
     remove_default_ingredient_from_item,
 )
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
+from .mixins import MenuDataMixin
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -610,7 +611,7 @@ def _has_any_selections(selections: list[Selection] | None) -> bool:
     return bool(selections)
 
 
-class TakingItemsHandler:
+class TakingItemsHandler(MenuDataMixin):
     """
     Handles the taking items phase of order flow.
 
@@ -664,16 +665,6 @@ class TakingItemsHandler:
         # Context set per-request
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
-
-    @property
-    def menu_data(self) -> dict:
-        """Get menu data for configuration checks."""
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        """Set menu data for configuration checks."""
-        self._menu_data = value or {}
 
     @property
     def _modifier_category_keywords(self) -> dict[str, str]:

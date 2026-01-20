@@ -22,6 +22,7 @@ from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_item_type_display_name,
 )
+from .mixins import MenuDataMixin
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 # NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 
-class MenuInquiryHandler:
+class MenuInquiryHandler(MenuDataMixin):
     """
     Handles menu-related inquiries.
 
@@ -53,14 +54,6 @@ class MenuInquiryHandler:
         """
         self._menu_data = config.menu_data or {}
         self.pricing = config.pricing
-
-    @property
-    def menu_data(self) -> dict:
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        self._menu_data = value or {}
 
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.

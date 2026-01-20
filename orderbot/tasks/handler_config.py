@@ -8,6 +8,8 @@ across all handler classes, reducing boilerplate in handler initialization.
 from dataclasses import dataclass
 from typing import Callable, Any, TYPE_CHECKING
 
+from .mixins import MenuDataMixin
+
 if TYPE_CHECKING:
     from .models import OrderTask, ItemTask
     from .schemas import StateMachineResult
@@ -63,7 +65,7 @@ class HandlerConfig:
         return HandlerConfig(**current)
 
 
-class BaseHandler:
+class BaseHandler(MenuDataMixin):
     """
     Base class for state machine handlers.
 
@@ -96,16 +98,6 @@ class BaseHandler:
         self.message_builder = config.message_builder
         self._get_next_question = config.get_next_question
         self._check_redirect = config.check_redirect
-
-    @property
-    def menu_data(self) -> dict:
-        """Get menu data dictionary."""
-        return self._menu_data
-
-    @menu_data.setter
-    def menu_data(self, value: dict) -> None:
-        """Set menu data dictionary."""
-        self._menu_data = value or {}
 
     @property
     def store_info(self) -> dict | None:

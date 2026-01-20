@@ -47,23 +47,8 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# ParsedItem Type Checking Helpers (Data-Driven)
+# Helper Functions
 # =============================================================================
-# These helpers check item type capabilities using database-driven attribute lookups.
-# They do NOT check for specific item type slugs - they check what attributes an item has.
-
-def _parsed_item_has_attribute(item: "ParsedItem", attr_slug: str) -> bool:
-    """Check if a ParsedItem's item_type has a specific attribute (data-driven)."""
-    item_type = getattr(item, 'item_type', None)
-    if not item_type:
-        return False
-    return menu_cache.item_type_has_attribute(item_type, attr_slug)
-
-
-def _get_parsed_item_attribute(item: "ParsedItem", attr_slug: str) -> str | None:
-    """Get an attribute value from a ParsedItem (data-driven)."""
-    return getattr(item, attr_slug, None)
-
 
 def _get_dynamic_help_text() -> str:
     """Generate help text dynamically from database item types.

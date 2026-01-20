@@ -6,7 +6,7 @@ across all handler classes, reducing boilerplate in handler initialization.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Any, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from .mixins import MenuDataMixin
 
@@ -108,28 +108,3 @@ class BaseHandler(MenuDataMixin):
     def store_info(self, value: dict | None) -> None:
         """Set store info dictionary."""
         self._store_info = value
-
-
-@dataclass
-class HandlerCallbacks:
-    """
-    Handler-specific callbacks that vary between handlers.
-
-    These are callbacks that are specific to certain handlers and aren't
-    shared across all handlers. Handlers that need these can accept them
-    as a separate parameter or include them in a handler-specific config.
-    """
-
-    # Item configuration callbacks
-    get_item_by_id: Callable[["OrderTask", str], "ItemTask | None"] | None = None
-
-    # Flow transition callbacks
-    transition_to_next_slot: Callable[["OrderTask"], None] | None = None
-    transition_callback: Callable[..., Any] | None = None
-
-    # Input processing callbacks
-    process_taking_items_input: Callable[[str, "OrderTask"], "StateMachineResult"] | None = None
-    handle_taking_items_with_parsed: Callable[..., "StateMachineResult"] | None = None
-
-    # Menu callbacks
-    build_order_summary: Callable[["OrderTask"], str] | None = None

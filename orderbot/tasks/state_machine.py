@@ -22,7 +22,6 @@ from .models import (
 from .context import OrderContext
 from .pricing import PricingEngine
 from .menu_lookup import MenuLookup
-from .query_handler import QueryHandler
 from .message_builder import MessageBuilder
 from .checkout_handler import CheckoutHandler
 from .menu_item_config_handler import MenuItemConfigHandler
@@ -223,8 +222,6 @@ class OrderStateMachine:
         self.menu_lookup = MenuLookup(self._menu_data)
         # Initialize pricing engine with menu lookup callback
         self.pricing = PricingEngine(self._menu_data, self.menu_lookup.lookup_menu_item)
-        # Initialize query handler (store_info set per-request in process())
-        self.query_handler = QueryHandler(self._menu_data, None, self.pricing)
         # Initialize message builder
         self.message_builder = MessageBuilder()
         # Create shared handler configuration
@@ -320,7 +317,6 @@ class OrderStateMachine:
             self._handler_config,
             self.menu_lookup,
             self.pricing,
-            self.query_handler,
             self.store_info_handler,
             self.menu_inquiry_handler,
             self.item_adder_handler,
@@ -370,7 +366,6 @@ class OrderStateMachine:
         self._store_info = store_info or {}
 
         # Distribute to all handlers
-        self.query_handler.store_info = ctx.store_info
         self.checkout_handler.set_context(ctx)
         self.store_info_handler.set_context(ctx)
         self.order_utils_handler.set_context(ctx)

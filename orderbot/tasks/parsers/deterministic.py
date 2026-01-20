@@ -290,22 +290,23 @@ MAKE_IT_N_PATTERN = re.compile(
 
 # "just one" / "only one" pattern - reduces quantity to 1 (removes extras)
 # e.g., "actually just one bagel", "only one", "just one", "make it just one"
+# The item type word is optional and validated at runtime against menu_cache (data-driven)
 REDUCE_TO_ONE_PATTERN = re.compile(
     r"^(?:"
     # "actually just one bagel", "actually only one coffee"
-    r"actually\s+(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"actually\s+(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
     r"|"
     # "just one bagel", "only one coffee", "just one", "only one"
-    r"(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
     r"|"
     # "make it just one", "make it only one"
-    r"make\s+(?:it|that)\s+(?:just|only)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"make\s+(?:it|that)\s+(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
     r"|"
     # "i only want one", "i just want one bagel", "i only need one"
-    r"i\s+(?:only|just)\s+(?:want|need|wanted)\s+(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?"
+    r"i\s+(?:only|just)\s+(?:want|need|wanted)\s+(?:one|1)(?:\s+(\w+))?"
     r"|"
     # "one is enough", "one bagel is enough"
-    r"(?:one|1)(?:\s+(bagel|bagels|coffee|coffees|drink|drinks|sandwich|sandwiches))?\s+is\s+(?:enough|fine|good)"
+    r"(?:one|1)(?:\s+(\w+))?\s+is\s+(?:enough|fine|good)"
     r")"
     r"[\s!.,?]*$",
     re.IGNORECASE
@@ -4145,6 +4146,38 @@ def parse_open_input_deterministic(
     if split_qty_result:
         return split_qty_result
 
+    # Data-driven menu item lookup - runs BEFORE configurable item parsing
+    # This matches direct menu items from the database (known_menu_items already excludes
+    # configurable items, so no additional filtering needed)
+    menu_item, qty = _extract_menu_item_from_text(text)
+    if menu_item:
+        # Get item_type for data-driven attribute and modification extraction
+        item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
+        # Extract attributes using the item's actual item_type (fully data-driven)
+        attr_values = {}
+        if item_type_for_mods:
+            attr_values = extract_attribute_values(text, item_type_for_mods)
+        modifications = _extract_menu_item_modifications(text, item_type_for_mods)
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications)
+        from orderbot.tasks.schemas.parser_responses import Selection
+        # Convert structured modifications to Selection objects
+        mod_list = []
+        for add in modifications.get("additions", []):
+            mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
+        for rem in modifications.get("removals", []):
+            mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
+        menu_item_parsed_items = [
+            build_parsed_item(
+                item_type="menu_item",
+                item_name=menu_item,
+                quantity=1,
+                attribute_values=attr_values,
+                modifiers=mod_list,
+            )
+            for _ in range(qty)
+        ]
+        return OpenInputResponse(parsed_items=menu_item_parsed_items)
+
     # Check for configurable items using data-driven patterns
     # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
     # interpreted as multiple items. Also prevents "bacon" from matching as a side item.
@@ -4157,174 +4190,6 @@ def parse_open_input_deterministic(
     multi_item_result = _parse_multi_item_order(text)
     if multi_item_result:
         return multi_item_result
-
-    # Early check for spread/salad sandwiches
-    text_lower = text.lower()
-    has_bagel_mention = re.search(r"\bbagels?\b", text_lower)
-    has_sandwich_mention = "sandwich" in text_lower
-
-    if (has_sandwich_mention or not has_bagel_mention) and any(term in text_lower for term in [
-        "cream cheese sandwich", "cream cheese",
-        "salad sandwich", "tuna salad", "whitefish salad", "egg salad",
-        "chicken salad", "salmon salad",
-        "butter sandwich", "peanut butter", "nutella", "hummus",
-        "avocado spread", "tofu"
-    ]):
-        menu_item, qty = _extract_menu_item_from_text(text)
-        if menu_item:
-            # Get item_type for data-driven modification and attribute extraction
-            item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
-            # Extract attributes using data-driven approach
-            attr_values = {}
-            if item_type_for_mods:
-                attr_values = extract_attribute_values(text, item_type_for_mods)
-            else:
-                # Fallback: extract common global attributes for items without a specific type
-                toasted = _extract_boolean_global_attribute(text, "toasted")
-                bread_type = _extract_single_select_global_attribute(text, "bread")
-                if toasted is not None:
-                    attr_values["toasted"] = toasted
-                if bread_type:
-                    attr_values["bread"] = bread_type
-            modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications)
-            # Phase 4: Only use parsed_items (deprecated fields removed)
-            from orderbot.tasks.schemas.parser_responses import Selection
-            # Convert structured modifications to Selection objects
-            mod_list = []
-            for add in modifications.get("additions", []):
-                mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
-            for rem in modifications.get("removals", []):
-                # Prefix with "no_" to indicate removal
-                mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
-            early_parsed_items = [
-                build_parsed_item(
-                    item_type="menu_item",
-                    item_name=menu_item,
-                    quantity=1,
-                    attribute_values=attr_values,
-                    modifiers=mod_list,
-                )
-                for _ in range(qty)
-            ]
-            return OpenInputResponse(parsed_items=early_parsed_items)
-
-    # Early check for standalone side items
-    # NOTE: "bagel chips" goes through menu lookup for disambiguation (multiple flavors exist)
-    standalone_side_items = {
-        "latkes": "Latkes",
-        "latke": "Latkes",
-        "fruit cup": "Fruit Cup",
-        "home fries": "Home Fries",
-    }
-    for keyword, canonical_name in standalone_side_items.items():
-        if keyword in text_lower:
-            qty = 1
-            qty_match = re.match(r'^(\d+|one|two|three|four|five)\s+', text_lower)
-            if qty_match:
-                qty_str = qty_match.group(1)
-                if qty_str.isdigit():
-                    qty = int(qty_str)
-                else:
-                    qty = WORD_TO_NUM.get(qty_str, 1)
-            logger.info("STANDALONE SIDE ITEM: matched '%s' -> %s (qty=%d)", text[:50], canonical_name, qty)
-            # Phase 4: Only use parsed_items (deprecated fields removed)
-            standalone_side_parsed_items = [build_parsed_item(item_type="side", item_name=canonical_name, quantity=1) for _ in range(qty)]
-            return OpenInputResponse(parsed_items=standalone_side_parsed_items)
-
-    # Early check for dessert/pastry items (cookies, brownies, muffins)
-    # These get passed through to menu lookup for disambiguation
-    # BUT skip if this looks like a menu query ("what X do you have?")
-    is_menu_query = any(pattern in text_lower for pattern in [
-        "what kind of", "what types of", "what do you have",
-        "what's available", "what options", "do you have any",
-        "what muffins", "what cookies", "what brownies", "what pastries", "what donuts",
-    ])
-    if not is_menu_query:
-        # Keywords that should trigger menu lookup for disambiguation
-        # Includes desserts, snacks, and other generic item categories
-        dessert_keywords = [
-            "cookie", "cookies",
-            "brownie", "brownies",
-            "muffin", "muffins",
-            "pastry", "pastries",
-            "donut", "donuts", "doughnut", "doughnuts",
-            "chips",  # For disambiguation among bagel chips, potato chips, kettle chips, etc.
-            "omelette", "omelettes", "omelet", "omelets",  # For disambiguation among omelette types
-            "egg omelette", "egg omelet",  # Generic omelette requests
-            "juice",  # For disambiguation among juice types (orange, apple, cranberry, etc.)
-        ]
-        for keyword in dessert_keywords:
-            if keyword in text_lower:
-                qty = 1
-                qty_match = re.match(r'^(\d+|one|two|three|four|five|six)\s+', text_lower)
-                if qty_match:
-                    qty_str = qty_match.group(1)
-                    if qty_str.isdigit():
-                        qty = int(qty_str)
-                    else:
-                        qty = WORD_TO_NUM.get(qty_str, 1)
-
-                # Extract the full item name including any qualifier (e.g., "blueberry muffin")
-                # Look for pattern like "[qualifier] [qualifier] keyword" before the keyword
-                # Common qualifiers: blueberry, chocolate chip, corn, banana walnut, etc.
-                item_match = re.search(
-                    rf'((?:[a-z]+\s+){{0,3}}){re.escape(keyword)}',
-                    text_lower
-                )
-                if item_match:
-                    full_item = item_match.group(0).strip()
-                    # Remove common non-qualifier prefixes (articles, verbs, numbers)
-                    full_item = re.sub(r'^(a|an|the|please|add|get|have|want|some|\d+|one|two|three|four|five|six)\s+', '', full_item)
-                    # Clean up again in case of double articles like "a the blueberry"
-                    full_item = re.sub(r'^(a|an|the)\s+', '', full_item)
-                else:
-                    full_item = keyword
-
-                logger.info("DESSERT ITEM: matched '%s' -> %s (qty=%d)", text[:50], full_item, qty)
-                # Phase 4: Only use parsed_items (deprecated fields removed)
-                dessert_parsed_items = [build_parsed_item(item_type="menu_item", item_name=full_item, quantity=1) for _ in range(qty)]
-                return OpenInputResponse(parsed_items=dessert_parsed_items)
-
-    # Check for known menu items FIRST - BEFORE any bagel patterns
-    # This ensures specific items like "whitefish salad on everything bagel" are recognized
-    # as menu items rather than just "everything bagel"
-    menu_item, qty = _extract_menu_item_from_text(text)
-    if menu_item:
-        # Skip if this is a configurable item - let configurable item parser handle it instead
-        # This ensures espresso, latte, bagels, etc. are processed with proper attribute config
-        configurable_item_names = menu_cache.get_configurable_item_names()
-        if menu_item.lower() not in configurable_item_names:
-            # Extract bagel attributes (bread, toasted) for menu items served on bagels
-            bagel_attrs = extract_attribute_values(text, "bagel")
-            # Only keep bread and toasted for menu items (not scooped/spread)
-            menu_item_attrs = {k: v for k, v in bagel_attrs.items() if k in ("bread", "toasted")}
-            # Get item_type for data-driven modification extraction
-            item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
-            modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-            logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, menu_item_attrs, modifications)
-            # Phase 4: Only use parsed_items (deprecated fields removed)
-            from orderbot.tasks.schemas.parser_responses import Selection
-            # Convert structured modifications to Selection objects
-            mod_list = []
-            for add in modifications.get("additions", []):
-                mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
-            for rem in modifications.get("removals", []):
-                # Prefix with "no_" to indicate removal
-                mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
-            menu_item_parsed_items = [
-                build_parsed_item(
-                    item_type="menu_item",
-                    item_name=menu_item,
-                    quantity=1,
-                    attribute_values=menu_item_attrs,
-                    modifiers=mod_list,
-                )
-                for _ in range(qty)
-            ]
-            return OpenInputResponse(parsed_items=menu_item_parsed_items)
-        else:
-            logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s'", menu_item)
 
     # Check for soda/bottled drink order (more specific names like "Snapple Iced Tea")
     soda_result = _parse_soda_deterministic(text)

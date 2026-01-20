@@ -363,10 +363,12 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             .all()
         )
         unavail_ids = {sa.ingredient_id for sa in store_unavail}
-        for ing_id in unavail_ids:
-            ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
-            if ing:
-                unavailable_ingredients.append({"name": ing.name, "category": ing.category})
+        if unavail_ids:
+            unavail_ings = db.query(Ingredient).filter(Ingredient.id.in_(unavail_ids)).all()
+            unavailable_ingredients = [
+                {"name": ing.name, "category": ing.category}
+                for ing in unavail_ings
+            ]
     else:
         # Fall back to global unavailable
         unavailable = (
@@ -395,11 +397,17 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             .all()
         )
         unavail_item_ids = {sa.menu_item_id for sa in store_unavail_items}
-        for item_id in unavail_item_ids:
-            item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-            if item:
-                category = item.item_type.display_name if item.item_type else None
-                unavailable_menu_items.append({"name": item.name, "category": category})
+        if unavail_item_ids:
+            unavail_items = (
+                db.query(MenuItem)
+                .options(joinedload(MenuItem.item_type))
+                .filter(MenuItem.id.in_(unavail_item_ids))
+                .all()
+            )
+            unavailable_menu_items = [
+                {"name": item.name, "category": item.item_type.display_name if item.item_type else None}
+                for item in unavail_items
+            ]
     index["unavailable_menu_items"] = unavailable_menu_items
 
     # Pre-load attribute and option data for _build_item_types_data
@@ -759,6 +767,18 @@ def _build_modifier_categories(db: Session) -> Dict[str, Any]:
             }
         }
     """
+    # Pre-load all available ingredients once to avoid N+1 queries in the loop
+    all_available_ingredients = (
+        db.query(Ingredient)
+        .filter(Ingredient.is_available == True)  # noqa: E712
+        .order_by(Ingredient.category, Ingredient.name)
+        .all()
+    )
+    ingredients_by_category: Dict[str, List[str]] = {}
+    for ing in all_available_ingredients:
+        if ing.category:
+            ingredients_by_category.setdefault(ing.category, []).append(ing.name)
+
     categories = db.query(ModifierCategory).all()
 
     keyword_to_category: Dict[str, str] = {}
@@ -778,18 +798,9 @@ def _build_modifier_categories(db: Session) -> Dict[str, Any]:
             "prompt_suffix": cat.prompt_suffix,
         }
 
-        # For database-backed categories, load options from Ingredient table
+        # For database-backed categories, use pre-loaded ingredients by category
         if cat.loads_from_ingredients and cat.ingredient_category:
-            ingredients = (
-                db.query(Ingredient)
-                .filter(
-                    Ingredient.category == cat.ingredient_category,
-                    Ingredient.is_available == True
-                )
-                .order_by(Ingredient.name)
-                .all()
-            )
-            cat_info["options"] = [ing.name for ing in ingredients]
+            cat_info["options"] = ingredients_by_category.get(cat.ingredient_category, [])
 
             # Build description dynamically if not set
             if not cat.description and cat_info["options"]:

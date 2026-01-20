@@ -9,12 +9,11 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-import re
 from typing import Optional, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask
 from .schemas import OrderPhase, StateMachineResult
-from .parsers import parse_side_choice
+from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
 from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
 from orderbot.menu_data_cache import menu_cache
@@ -61,14 +60,6 @@ def _get_removable_modifiers() -> set[str]:
     modifiers.update(menu_cache.get_all_modifier_words())
 
     return modifiers
-
-# Pattern to detect cancel/remove requests during configuration
-CANCEL_ITEM_PATTERN = re.compile(
-    r"^(?:(?:can\s+you\s+)?(?:please\s+)?)?(?:remove|cancel|delete|take\s+off|get\s+rid\s+of|forget|nevermind|never\s+mind)"
-    r"(?:\s+(?:the|my|that|this))?\s*(.+?)(?:\s+please)?$",
-    re.IGNORECASE
-)
-
 
 class ConfigHelperHandler:
     """

@@ -148,17 +148,10 @@ class OrderUtilsHandler:
         # Add copies of the first matching item
         template_item = matching_items[0]
         for _ in range(to_add):
-            # Create a copy of the item - all attributes stored in attribute_values
+            # Create a copy of the item using selections API
             if isinstance(template_item, MenuItemTask):
-                # Deep copy attribute_values for nested dicts/lists
-                copied_attrs = {}
-                for k, v in (template_item.attribute_values or {}).items():
-                    if isinstance(v, list):
-                        copied_attrs[k] = list(v)
-                    elif isinstance(v, dict):
-                        copied_attrs[k] = dict(v)
-                    else:
-                        copied_attrs[k] = v
+                # Deep copy selections list
+                copied_selections = [dict(sel) for sel in template_item.selections]
 
                 new_item = MenuItemTask(
                     menu_item_name=template_item.menu_item_name,
@@ -168,8 +161,7 @@ class OrderUtilsHandler:
                     modifications=list(template_item.modifications) if template_item.modifications else [],
                     removed_ingredients=list(template_item.removed_ingredients) if template_item.removed_ingredients else [],
                     special_instructions=template_item.special_instructions,
-                    attribute_values=copied_attrs,
-                    modifiers=list(template_item.modifiers) if template_item.modifiers else [],
+                    selections=copied_selections,
                     customization_offered=template_item.customization_offered,
                 )
                 new_item.mark_complete()

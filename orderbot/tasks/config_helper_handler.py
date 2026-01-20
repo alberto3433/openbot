@@ -161,71 +161,25 @@ class ConfigHelperHandler:
             # Also handle the reverse: "egg" -> also check "eggs"
             cancel_desc_plural = cancel_desc + 's' if not cancel_desc.endswith('s') else cancel_desc
 
-            # Check all attribute_values for selections that match the cancel description
-            attrs_to_clear = []
-            for attr_slug, attr_value in list(current_item.attribute_values.items()):
-                # Skip metadata fields
-                if attr_slug.endswith("_price") or attr_slug.endswith("_selections"):
-                    continue
+            # Check all selections for ones that match the cancel description
+            selections_to_remove = []
+            for sel in current_item.selections:
+                sel_display = sel.get("display_name", "").lower()
+                sel_slug = sel.get("slug", "").lower()
+                sel_category = sel.get("category", "")
+                # Check if this selection matches the cancel description (singular or plural)
+                if (cancel_desc in sel_display or cancel_desc_singular in sel_display or
+                    cancel_desc_plural in sel_display or
+                    cancel_desc in sel_slug or cancel_desc_singular in sel_slug or
+                    cancel_desc_plural in sel_slug):
+                    selections_to_remove.append((sel_category, sel_slug))
+                    modifier_removed = True
+                    removed_modifier_name = sel.get("display_name", cancel_desc)
+                    logger.info("Modifier removal during config: removed '%s' from %s", removed_modifier_name, current_item.menu_item_name)
 
-                # Check _selections data for this attribute (modern format)
-                selections_key = f"{attr_slug}_selections"
-                selections = current_item.attribute_values.get(selections_key, [])
-                if selections and isinstance(selections, list):
-                    new_selections = []
-                    for sel in selections:
-                        sel_display = sel.get("display_name", "").lower()
-                        sel_slug = sel.get("slug", "").lower()
-                        # Check if this selection matches the cancel description (singular or plural)
-                        if (cancel_desc in sel_display or cancel_desc_singular in sel_display or
-                            cancel_desc in sel_slug or cancel_desc_singular in sel_slug):
-                            modifier_removed = True
-                            removed_modifier_name = sel.get("display_name", cancel_desc)
-                            logger.info("Modifier removal during config: removed '%s' from %s", removed_modifier_name, current_item.menu_item_name)
-                        else:
-                            new_selections.append(sel)
-
-                    if len(new_selections) != len(selections):
-                        # Some selections were removed
-                        if new_selections:
-                            current_item.attribute_values[selections_key] = new_selections
-                            # Update the main attribute value too
-                            current_item.attribute_values[attr_slug] = [s["slug"] for s in new_selections]
-                        else:
-                            # All selections removed - clear the attribute
-                            attrs_to_clear.append(attr_slug)
-                            attrs_to_clear.append(selections_key)
-
-                # Also check legacy direct attribute values (string or list, not _selections)
-                # This handles items that store modifiers directly without _selections format
-                elif attr_value is not None and not selections:
-                    if isinstance(attr_value, str):
-                        # String value - check if it matches the cancel description
-                        if cancel_desc in attr_value.lower() or cancel_desc_singular in attr_value.lower():
-                            attrs_to_clear.append(attr_slug)
-                            modifier_removed = True
-                            removed_modifier_name = attr_value
-                            logger.info("Modifier removal during config: removed '%s' from %s", attr_value, current_item.menu_item_name)
-                    elif isinstance(attr_value, list) and all(isinstance(v, str) for v in attr_value):
-                        # List of strings - filter out matching items
-                        new_list = []
-                        for item_val in attr_value:
-                            if cancel_desc in item_val.lower() or cancel_desc_singular in item_val.lower():
-                                modifier_removed = True
-                                removed_modifier_name = item_val
-                                logger.info("Modifier removal during config: removed '%s' from %s", item_val, current_item.menu_item_name)
-                            else:
-                                new_list.append(item_val)
-                        if len(new_list) != len(attr_value):
-                            if new_list:
-                                current_item.attribute_values[attr_slug] = new_list
-                            else:
-                                attrs_to_clear.append(attr_slug)
-
-            # Clear any attributes that had all selections removed
-            for attr_key in attrs_to_clear:
-                if attr_key in current_item.attribute_values:
-                    del current_item.attribute_values[attr_key]
+            # Remove matching selections
+            for category, slug in selections_to_remove:
+                current_item.remove_selection(category, slug)
 
             if modifier_removed:
                 updated_summary = current_item.get_summary()
@@ -649,7 +603,7 @@ class ConfigHelperHandler:
             )
 
         # Record the side choice on parent for reference
-        item.attribute_values["side_choice"] = parsed.choice
+        item["side_choice"] = parsed.choice
 
         # Create a child MenuItemTask for the chosen side
         # The side item type slug is the parsed choice (e.g., "bagel", "fruit_salad")

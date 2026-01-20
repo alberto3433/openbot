@@ -860,7 +860,7 @@ class CheckoutHandler(BaseHandler):
                 # Copy if it's a known attribute OR if we don't have known attrs
                 # (i.e., item_type not in DB, so accept all keys)
                 if value is not None and (key in known_attrs or not known_attrs):
-                    item.attribute_values[key] = value
+                    item[key] = value
 
         # Mark complete and add to order
         item.status = TaskStatus.COMPLETE

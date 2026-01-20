@@ -1084,7 +1084,7 @@ class TakingItemsHandler:
 
                             # Prefer item without value set
                             for item, attr_slug in reversed(items_accepting_modifier):
-                                if item.attribute_values.get(attr_slug) is None:
+                                if item.get(attr_slug) is None:
                                     target_item = item
                                     target_attr = attr_slug
                                     break
@@ -1095,8 +1095,8 @@ class TakingItemsHandler:
 
                             # Normalize and set the value (REPLACE behavior for single_select)
                             normalized_modifier = menu_cache.normalize_modifier(detected_modifier)
-                            old_value = target_item.attribute_values.get(target_attr)
-                            target_item.attribute_values[target_attr] = normalized_modifier
+                            old_value = target_item.get(target_attr)
+                            target_item[target_attr] = normalized_modifier
 
                             # Recalculate price
                             self.pricing.recalculate_item_price(target_item)
@@ -1265,8 +1265,8 @@ class TakingItemsHandler:
                             # Check if this is a single_select attribute on the target item
                             input_type = menu_cache.get_attribute_input_type(item_type, attr_slug)
                             if input_type == "single_select" and last_item.has_attribute(attr_slug):
-                                old_value = last_item.attribute_values.get(attr_slug)
-                                last_item.attribute_values[attr_slug] = new_value
+                                old_value = last_item.get(attr_slug)
+                                last_item[attr_slug] = new_value
                                 attrs_updated.append((attr_slug, old_value, new_value))
 
                     if attrs_updated:
@@ -1330,10 +1330,10 @@ class TakingItemsHandler:
                                         # Find selections with this category
                                         cat_selections = [s.slug for s in selections if s.category == category]
                                         if cat_selections:
-                                            last_item.attribute_values[attr_slug] = cat_selections[0]
+                                            last_item[attr_slug] = cat_selections[0]
                                         else:
                                             # Clear to None if not specified (don't use "none" string)
-                                            last_item.attribute_values[attr_slug] = None
+                                            last_item[attr_slug] = None
 
                             # Recalculate price with new modifiers
                             self.pricing.recalculate_item_price(last_item)
@@ -1367,9 +1367,8 @@ class TakingItemsHandler:
                                     break
 
                             if new_value:
-                                last_attr = last_item.attribute_values
-                                old_value = last_attr.get(attr_slug)
-                                last_attr[attr_slug] = new_value
+                                old_value = last_item.get(attr_slug)
+                                last_item[attr_slug] = new_value
                                 category_display = menu_cache.get_ingredient_category_display_name(category)
                                 logger.info("Replacement: changed %s from '%s' to '%s'", category, old_value, new_value)
 

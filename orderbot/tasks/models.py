@@ -364,14 +364,15 @@ class MenuItemTask(ItemTask):
         return False
 
     # -------------------------------------------------------------------------
-    # Backward compatibility - DEPRECATED, will be removed
+    # Dict-style access API (primary interface)
     # -------------------------------------------------------------------------
 
     @property
     def attribute_values(self) -> dict[str, Any]:
-        """DEPRECATED: Use selections and get_selection_value() instead.
+        """Get selection values as a dict for display/serialization.
 
-        Returns a dict for backward compatibility with code that expects attribute_values.
+        Returns a dict with category->value mapping. Used for logging, display, and
+        backward compatibility with code that reads attribute_values.
         """
         result: dict[str, Any] = {}
         for sel in self.selections:
@@ -410,7 +411,7 @@ class MenuItemTask(ItemTask):
 
     @attribute_values.setter
     def attribute_values(self, value: dict[str, Any]) -> None:
-        """DEPRECATED: Convert dict to selections for backward compatibility."""
+        """Set selection values from a dict. Used for bulk initialization."""
         # Clear existing selections that would be overwritten
         # This is for backward compat when code sets attribute_values directly
         for key, val in value.items():
@@ -431,17 +432,12 @@ class MenuItemTask(ItemTask):
             elif val is not None:
                 self.add_selection(str(val), key)
 
-    @property
-    def modifiers(self) -> list[dict]:
-        """DEPRECATED: Use selections instead. Returns selections for backward compat."""
-        return self.selections
-
     def __getitem__(self, key: str) -> Any:
-        """DEPRECATED: Get selection value: item["size"], item["bread"], etc."""
+        """Get selection value by category: item["size"], item["bread"], etc."""
         return self.attribute_values.get(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
-        """DEPRECATED: Set selection: item["size"] = "large"."""
+        """Set selection by category: item["size"] = "large"."""
         # Remove existing selection for this category
         self.remove_selection(key)
 
@@ -459,42 +455,17 @@ class MenuItemTask(ItemTask):
             self.add_selection(str(value), key)
 
     def __delitem__(self, key: str) -> None:
-        """DEPRECATED: Delete selection: del item["size"]."""
+        """Delete selection by category: del item["size"]."""
         self.remove_selection(key)
 
     def __contains__(self, key: str) -> bool:
-        """DEPRECATED: Check if selection exists: "size" in item."""
+        """Check if selection exists: "size" in item."""
         return self.has_selection(key)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """DEPRECATED: Get selection value with default."""
+        """Get selection value with default."""
         val = self.attribute_values.get(key)
         return val if val is not None else default
-
-    def add_modifier(
-        self,
-        category: str,
-        slug: str,
-        quantity: int = 1,
-        price: float = 0.0,
-        display_name: str | None = None,
-    ) -> None:
-        """DEPRECATED: Use add_selection instead."""
-        self.add_selection(slug, category, quantity, price, display_name)
-
-    def get_modifiers_by_category(self, category: str) -> list[dict]:
-        """DEPRECATED: Use get_selections instead."""
-        return self.get_selections(category)
-
-    def remove_modifier(self, slug: str, category: str | None = None) -> bool:
-        """DEPRECATED: Use remove_selection instead."""
-        if category:
-            return self.remove_selection(category, slug)
-        # If no category, find and remove first match
-        for sel in self.selections:
-            if sel.get("slug") == slug:
-                return self.remove_selection(sel.get("category", ""), slug)
-        return False
 
     # -------------------------------------------------------------------------
     # Attribute query method (data-driven)

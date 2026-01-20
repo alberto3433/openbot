@@ -81,7 +81,7 @@ def build_parsed_item(
     provided for backward compatibility during migration.
 
     Args:
-        item_type: The item type slug (e.g., "bagel", "sized_beverage", "menu_item")
+        item_type: The item type slug
         item_name: Specific menu item name if known
         quantity: Number of items
         selections: List of Selection objects (preferred)
@@ -233,7 +233,7 @@ FILLER_WORDS_PATTERN = re.compile(
     r"|ok(?:ay)?[,\s]+"  # "ok/okay" is always filler
     r"|hey[,\s]+"    # "hey" is always filler
     r"|like[,\s]+"   # "like" is always filler
-    r"|sorry[,\s]+"  # "sorry" is filler (e.g., "sorry, I meant plain bagel")
+    r"|sorry[,\s]+"  # "sorry" is filler 
     r")",
     re.IGNORECASE
 )
@@ -407,32 +407,6 @@ ADD_MORE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Bagel quantity pattern - internal use only for parsing (not for detection)
-# Note: Detection of new orders should use _get_configurable_item_pattern() instead
-# This pattern is only used for extracting quantity from bagel orders
-__BAGEL_QUANTITY_PATTERN = re.compile(
-    r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
-    r"(?:can|could|may)\s+i\s+(?:get|have)|"
-    r"give\s+me|"
-    r"let\s*(?:me|'s)\s*(?:get|have)|"
-    r")?\s*"
-    r"(\d+|(?:a\s+)?half(?:\s+a)?\s+dozen|a\s+dozen|a\s+couple(?:\s+of)?|couple(?:\s+of)?|a\s+few|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)\s+"
-    r"(?:\w+\s+)*"
-    r"bagels?",
-    re.IGNORECASE
-)
-
-# Simple bagel mention pattern - internal use only for parsing (not for detection)
-__SIMPLE_BAGEL_PATTERN = re.compile(
-    r"(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
-    r"(?:can|could|may)\s+i\s+(?:get|have)|"
-    r"give\s+me|"
-    r"let\s*(?:me|'s)\s*(?:get|have)|"
-    r")?\s*"
-    r"(?:a\s+)?bagel(?:\s|$|[.,!?])",
-    re.IGNORECASE
-)
-
 # Unified configurable item pattern - lazily built from database
 _CONFIGURABLE_ITEM_PATTERN_CACHE: re.Pattern | None = None
 
@@ -441,12 +415,8 @@ def _get_configurable_item_pattern() -> re.Pattern:
     """Get regex pattern for detecting configurable item orders from database.
 
     Builds a unified pattern that matches any of:
-    - Item type triggers (e.g., "bagel", "latte", "omelette")
+    - Item type triggers
     - Attribute option words (e.g., "small", "medium", "large", "iced", "hot")
-
-    This replaces domain-specific patterns (_BAGEL_QUANTITY_PATTERN,
-    _SIMPLE_BAGEL_PATTERN, etc.) with a single
-    data-driven pattern.
 
     The pattern doesn't enforce word order - it detects presence of
     item-related keywords to signal a potential new order attempt.
@@ -702,7 +672,7 @@ def extract_attribute_values(
 
     Args:
         user_input: The raw user input string
-        item_type: The item type slug (e.g., "sized_beverage", "bagel", "steak")
+        item_type: The item type slug
 
     Returns:
         Dict mapping attribute slugs to extracted values:
@@ -710,15 +680,6 @@ def extract_attribute_values(
         - For multi_select: {attr_slug: [{slug, quantity, display_name}, ...]}
         - For boolean: {attr_slug: True/False}
 
-    Examples:
-        >>> extract_attribute_values("large iced with oat milk", "sized_beverage")
-        {"size": "large", "temperature": "iced", "milk": "oat"}
-
-        >>> extract_attribute_values("medium rare with a side salad", "steak")
-        {"doneness": "medium_rare", "side": "side_salad"}
-
-        >>> extract_attribute_values("toasted with cream cheese", "bagel")
-        {"toasted": True, "spread": [{"slug": "cream_cheese", "quantity": 1, ...}]}
     """
     result: dict[str, any] = {}
     input_lower = user_input.lower()
@@ -893,26 +854,6 @@ def extract_attribute_values(
         item_type, result
     )
     return result
-
-
-def _extract_bagel_attributes(text: str) -> dict[str, any]:
-    """Extract all bagel attributes using generic data-driven extraction.
-
-    This is a thin wrapper around extract_attribute_values() that:
-    1. Extracts all bagel attributes (bread, toasted, scooped, spread) generically
-    2. Converts the bread slug to display format for backwards compatibility
-
-    Args:
-        text: User input text
-
-    Returns:
-        Dict of attribute values ready for use in ParsedItem.attribute_values
-    """
-    attrs = extract_attribute_values(text, "bagel")
-    # Convert bread slug to display name if present (backwards compat)
-    if "bread" in attrs:
-        attrs["bread"] = _slug_to_display(attrs["bread"])
-    return attrs
 
 
 # =============================================================================
@@ -1092,11 +1033,6 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
     Returns:
         (item_type_slug, menu_item_name) or (None, None)
 
-    Example:
-        >>> _detect_item_type("large iced latte")
-        ("sized_beverage", "latte")
-        >>> _detect_item_type("everything bagel toasted")
-        ("bagel", "bagel")
     """
     text_lower = text.lower()
 
@@ -1129,7 +1065,7 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
                 text_len = len(text_lower)
                 end_region_start = max(text_len - 15, int(text_len * 0.8))
                 is_at_end = end_pos >= end_region_start
-                # Prefer item types where the slug matches the trigger (e.g., bagel -> bagel)
+                # Prefer item types where the slug matches the trigger
                 slug_matches = keyword_lower == item_type_slug or keyword_lower.rstrip("s") == item_type_slug
                 matches.append((item_type_slug, keyword, len(keyword_lower), end_pos, is_at_end, slug_matches))
                 idx = text_lower.find(keyword_lower, idx + 1)
@@ -1244,7 +1180,7 @@ def _parse_item_generic(
 
     Args:
         text: User input text
-        item_type: Detected item type slug (e.g., "bagel", "sized_beverage").
+        item_type: Detected item type slug
                    If None, will attempt to detect from text.
         item_name: Matched menu item name (if any)
 
@@ -1750,7 +1686,7 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     - "make it with butter"
 
     Item type names are loaded dynamically from the database, so this function
-    works with any item types (bagels, sandwiches, omelettes, etc.).
+    works with any item types.
 
     This must be called BEFORE menu item matching to prevent modifiers like
     "scallion cream cheese" from being matched to menu items.
@@ -1764,7 +1700,7 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     if not item_type_names:
         return None
 
-    # Build regex alternation: (bagel|sandwich|omelette|...)
+    # Build regex alternation:
     # Names are sorted by length (longest first) so "deli sandwich" matches before "sandwich"
     item_type_pattern = "(?:" + "|".join(re.escape(name) for name in item_type_names) + ")"
 
@@ -2229,7 +2165,7 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     Detect configurable item type from text using database-driven keywords.
 
     Uses smart matching to prefer:
-    1. Triggers that match the item type slug (e.g., "bagel" for bagel type)
+    1. Triggers that match the item type slug
     2. Triggers that appear at the start of the text
     3. Longer triggers
 
@@ -2347,7 +2283,6 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     Parse orders with multiple configurable items that have different configurations.
 
     This is a generic, data-driven parser that works for any configurable item type.
-    It replaces the hardcoded _parse_split_quantity_bagels and _parse_split_quantity_drinks.
 
     Detects patterns like:
         - "two plain bagels one with scallion cream cheese one with lox"
@@ -2423,7 +2358,7 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     # Filter out the base part if it's captured (first part with qty == total_quantity)
     # The base part describes ALL items, not a differentiated specification
     if parts and parts[0][0] == total_quantity:
-        # First part is the base description (e.g., "two plain bagels"), skip it
+        # First part is the base description, skip it
         # We already extracted base_attrs from initial_part
         parts = parts[1:]
 
@@ -2847,7 +2782,7 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
             if not term:
                 continue
 
-            # Singularize the term (teas -> tea, bagels -> bagel)
+            # Singularize the term
             term_singular = singularize(term)
 
             logger.info(
@@ -3056,6 +2991,48 @@ def _parse_more_menu_items(text: str) -> OpenInputResponse | None:
 # Ingredient-Based Menu Search
 # =============================================================================
 
+# Module-level cache for order signals (built once when first needed)
+_ORDER_SIGNALS_CACHE: list[str] | None = None
+
+
+def _get_order_signals() -> list[str]:
+    """Build order signals list combining data-driven food terms with hardcoded command terms.
+
+    Food-related signals (item types, trigger words) are loaded from database.
+    Command signals (ordering verbs, cancel/add commands) remain hardcoded as they
+    are domain-agnostic.
+
+    Returns:
+        List of order signal terms for detecting ordering context vs ingredient queries.
+    """
+    global _ORDER_SIGNALS_CACHE
+    if _ORDER_SIGNALS_CACHE is not None:
+        return _ORDER_SIGNALS_CACHE
+
+    # Data-driven: Get all item type trigger words from database
+    food_signals: set[str] = set()
+    item_type_triggers = menu_cache.get_item_type_triggers()
+    for triggers in item_type_triggers.values():
+        food_signals.update(triggers)
+
+    # Also include item type slugs themselves
+    food_signals.update(menu_cache.get_all_item_type_slugs())
+
+    # Hardcoded: Non-food command terms (domain-agnostic)
+    command_signals = [
+        # Ordering verbs
+        "please", "want", "like", "get",
+        # Cancel/remove commands - should not trigger ingredient search
+        "remove", "cancel", "delete", "take off", "no more", "drop",
+        "forget", "skip", "hold the", "without", "lose the", "scratch",
+        # Add-modifier commands - should not trigger ingredient search
+        "add", "extra", "more", "put",
+    ]
+
+    _ORDER_SIGNALS_CACHE = list(food_signals) + command_signals
+    return _ORDER_SIGNALS_CACHE
+
+
 def _parse_ingredient_search(
     text: str,
     ingredient_to_items: dict[str, list[dict]] | None = None,
@@ -3138,15 +3115,7 @@ def _parse_ingredient_search(
             # Make sure it's not part of an obvious order ("chicken sandwich", "bacon egg")
             # or a modification/removal command ("remove the bacon", "cancel the ham")
             # or an add-modifier command ("add bacon", "extra cheese")
-            order_signals = [
-                "bagel", "sandwich", "salad", "soup", "egg", "omelette",
-                "omelet", "coffee", "latte", "please", "want", "like", "get",
-                # Cancel/remove commands - should not trigger ingredient search
-                "remove", "cancel", "delete", "take off", "no more", "drop",
-                "forget", "skip", "hold the", "without", "lose the", "scratch",
-                # Add-modifier commands - should not trigger ingredient search
-                "add", "extra", "more", "put",
-            ]
+            order_signals = _get_order_signals()
             has_order_signal = any(signal in text_lower for signal in order_signals)
 
             if not has_order_signal:
@@ -3209,7 +3178,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         logger.info("ADD MORE: parsed as soda '%s' (qty=1)", item_name)
         return soda_result
 
-    # Try configurable item types (bagels, coffees, etc.) using data-driven parser
+    # Try configurable item types using data-driven parser
     configurable_result = _parse_configurable_item(item_text)
     if configurable_result and configurable_result.parsed_items:
         # Set quantity to 1 for "add another"
@@ -4337,7 +4306,7 @@ def parse_open_input_deterministic(
         configurable_item_names = menu_cache.get_configurable_item_names()
         if menu_item.lower() not in configurable_item_names:
             # Extract bagel attributes (bread, toasted) for menu items served on bagels
-            bagel_attrs = _extract_bagel_attributes(text)
+            bagel_attrs = extract_attribute_values(text, "bagel")
             # Only keep bread and toasted for menu items (not scooped/spread)
             menu_item_attrs = {k: v for k, v in bagel_attrs.items() if k in ("bread", "toasted")}
             # Get item_type for data-driven modification extraction
@@ -4366,77 +4335,6 @@ def parse_open_input_deterministic(
             return OpenInputResponse(parsed_items=menu_item_parsed_items)
         else:
             logger.debug("DETERMINISTIC MENU ITEM (early): skipping '%s'", menu_item)
-
-    # Check for bagel order with quantity
-    quantity_match = __BAGEL_QUANTITY_PATTERN.search(text)
-    if quantity_match:
-        quantity_str = quantity_match.group(1)
-        quantity = _extract_quantity(quantity_str)
-
-        if quantity:
-            bagel_attrs = _extract_bagel_attributes(text)
-            side_item, side_qty = _extract_side_item(text)
-
-            logger.debug(
-                "Deterministic parse: bagel order - qty=%d, attrs=%s, side=%s",
-                quantity, bagel_attrs, side_item
-            )
-
-            # Build parsed_items for unified handler
-            bagel_qty_parsed_items = [
-                build_parsed_item(
-                    item_type="bagel",
-                    attribute_values=bagel_attrs,
-                )
-                for _ in range(quantity)
-            ]
-            if side_item:
-                bagel_qty_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
-
-            # Phase 4: Only use parsed_items (deprecated fields removed)
-            return OpenInputResponse(parsed_items=bagel_qty_parsed_items)
-
-    # Check for simple "a bagel" / "bagel please"
-    if __SIMPLE_BAGEL_PATTERN.search(text):
-        bagel_attrs = _extract_bagel_attributes(text)
-        side_item, side_qty = _extract_side_item(text)
-
-        logger.debug(
-            "Deterministic parse: single bagel - attrs=%s, side=%s",
-            bagel_attrs, side_item
-        )
-
-        # Build parsed_items for unified handler
-        simple_bagel_parsed_items = [build_parsed_item(
-            item_type="bagel",
-            attribute_values=bagel_attrs,
-        )]
-        if side_item:
-            simple_bagel_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
-
-        # Phase 4: Only use parsed_items (deprecated fields removed)
-        return OpenInputResponse(parsed_items=simple_bagel_parsed_items)
-
-    # Check if text contains "bagel" anywhere (but only if no menu item was matched earlier)
-    if re.search(r"\bbagels?\b", text, re.IGNORECASE):
-        bagel_attrs = _extract_bagel_attributes(text)
-        side_item, side_qty = _extract_side_item(text)
-
-        if bagel_attrs or side_item:
-            logger.debug(
-                "Deterministic parse: bagel mention - attrs=%s, side=%s",
-                bagel_attrs, side_item
-            )
-            # Build parsed_items for unified handler
-            bagel_mention_parsed_items = [build_parsed_item(
-                item_type="bagel",
-                attribute_values=bagel_attrs,
-            )]
-            if side_item:
-                bagel_mention_parsed_items.extend([build_parsed_item(item_type="side", item_name=side_item) for _ in range(side_qty)])
-
-            # Phase 4: Only use parsed_items (deprecated fields removed)
-            return OpenInputResponse(parsed_items=bagel_mention_parsed_items)
 
     # Check for soda/bottled drink order (more specific names like "Snapple Iced Tea")
     soda_result = _parse_soda_deterministic(text)

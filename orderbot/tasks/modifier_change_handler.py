@@ -438,8 +438,8 @@ class ModifierChangeHandler:
             # Try property accessor first (handles special cases)
             if hasattr(item, attr_slug):
                 return getattr(item, attr_slug)
-            # Fall back to attribute_values dict
-            return item.attribute_values.get(attr_slug)
+            # Fall back to selection lookup
+            return item.get(attr_slug)
         # For other item types, try direct attribute access
         return getattr(item, attr_slug, None)
 
@@ -462,8 +462,8 @@ class ModifierChangeHandler:
                     return True
                 except AttributeError:
                     pass
-            # Fall back to attribute_values dict
-            item.attribute_values[attr_slug] = value
+            # Fall back to selection API
+            item[attr_slug] = value
             return True
         # For other item types, try direct attribute setting
         if hasattr(item, attr_slug):

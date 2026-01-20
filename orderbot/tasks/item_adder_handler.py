@@ -89,7 +89,7 @@ class ItemAdderHandler:
 
         for attr_slug, attr_data in attrs.items():
             # Skip if attribute is already set
-            if attr_slug in item.attribute_values:
+            if attr_slug in item:
                 continue
 
             options = attr_data.get("options", [])
@@ -99,7 +99,7 @@ class ItemAdderHandler:
             if input_type == "boolean":
                 attr_display = attr_data.get("display_name", attr_slug).lower()
                 if attr_display in item_name_lower:
-                    item.attribute_values[attr_slug] = True
+                    item[attr_slug] = True
                     logger.info(
                         "Inferred %s=True from item name '%s'",
                         attr_slug, item.menu_item_name
@@ -117,7 +117,7 @@ class ItemAdderHandler:
                         opt_display in item_name_lower or
                         opt_slug.lower() in item_name_lower):
                     # Set the attribute value
-                    item.attribute_values[attr_slug] = opt_slug
+                    item[attr_slug] = opt_slug
                     logger.info(
                         "Inferred %s='%s' from item name '%s'",
                         attr_slug, opt_slug, item.menu_item_name
@@ -476,7 +476,7 @@ class ItemAdderHandler:
             if attributes:
                 for attr_name, attr_value in attributes.items():
                     if attr_value is not None:
-                        item.attribute_values[attr_name] = attr_value
+                        item[attr_name] = attr_value
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             self._infer_attributes_from_item_name(item)
             item.mark_in_progress()
@@ -663,7 +663,7 @@ class ItemAdderHandler:
             if pre_filled_attributes:
                 for attr_name, attr_value in pre_filled_attributes.items():
                     if attr_value is not None:
-                        item.attribute_values[attr_name] = attr_value
+                        item[attr_name] = attr_value
 
             # Apply extracted selections if provided
             if extracted_selections and self.menu_item_handler:

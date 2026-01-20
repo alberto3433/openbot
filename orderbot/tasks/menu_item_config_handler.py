@@ -126,7 +126,7 @@ class MenuItemConfigHandler(BaseHandler):
             slug = attr["slug"]
             # Check canonical slug in attribute_values
             # All properties (bread, toasted, etc.) now use attribute_values as backing store
-            if slug in item.attribute_values:
+            if slug in item:
                 logger.debug("  %s: FOUND in attribute_values", slug)
                 continue
             logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
@@ -150,7 +150,7 @@ class MenuItemConfigHandler(BaseHandler):
         for attr in optional:
             slug = attr["slug"]
             # Check canonical slug in attribute_values
-            if slug in item.attribute_values:
+            if slug in item:
                 continue
             unanswered.append(attr)
         return unanswered
@@ -1054,14 +1054,11 @@ class MenuItemConfigHandler(BaseHandler):
         base_price = self._get_item_base_price(item)
         total = base_price
 
-        # Sum up prices from attribute selections
-        for key, value in item.attribute_values.items():
-            if key.endswith("_selections") and isinstance(value, list):
-                for sel in value:
-                    if isinstance(sel, dict):
-                        price = sel.get("price", 0) or 0
-                        qty = sel.get("quantity", 1) or 1
-                        total += price * qty
+        # Sum up prices from selections
+        for sel in item.selections:
+            price = sel.get("price", 0) or 0
+            qty = sel.get("quantity", 1) or 1
+            total += price * qty
 
         # Round and update
         new_price = round(total, 2)
@@ -1109,13 +1106,10 @@ class MenuItemConfigHandler(BaseHandler):
         # Fallback: calculate from current price minus selections
         if item.unit_price:
             selections_total = 0.0
-            for key, value in item.attribute_values.items():
-                if key.endswith("_selections") and isinstance(value, list):
-                    for sel in value:
-                        if isinstance(sel, dict):
-                            price = sel.get("price", 0) or 0
-                            qty = sel.get("quantity", 1) or 1
-                            selections_total += price * qty
+            for sel in item.selections:
+                price = sel.get("price", 0) or 0
+                qty = sel.get("quantity", 1) or 1
+                selections_total += price * qty
             return max(0.0, item.unit_price - selections_total)
 
         return 0.0
@@ -1423,19 +1417,14 @@ class MenuItemConfigHandler(BaseHandler):
         if qualifier:
             selection["qualifier"] = qualifier
 
-        input_type = attr.get("input_type", "single_select")
-        if input_type == "multi_select":
-            item.attribute_values[attr_slug] = [selected["slug"]]
-            item.attribute_values[f"{attr_slug}_selections"] = [selection]
-        else:
-            item.attribute_values[attr_slug] = selected["slug"]
-            item.attribute_values[f"{attr_slug}_selections"] = [selection]
-            # Update price if applicable
-            if opt_price > 0:
-                price_key = f"{attr_slug}_price"
-                item.attribute_values[price_key] = opt_price
-                if item.unit_price is not None:
-                    item.unit_price = item.unit_price + opt_price
+        # Add selection using the unified API
+        item.add_selection(
+            selected["slug"],
+            attr_slug,
+            quantity=quantity,
+            price=opt_price,
+            display_name=selected["display_name"],
+        )
 
         # Apply any stored modifiers (e.g., milk type, sweetener extracted before disambiguation)
         if stored_modifiers:
@@ -1556,7 +1545,7 @@ class MenuItemConfigHandler(BaseHandler):
             return self._handle_select_input(user_input, item, order, attr, options)
 
         # Default: store raw input
-        item.attribute_values[attr_slug] = user_input.strip()
+        item[attr_slug] = user_input.strip()
         return self._advance_to_next_question(item, order, attr)
 
     def _handle_boolean_input(
@@ -1587,8 +1576,8 @@ class MenuItemConfigHandler(BaseHandler):
                 order=order,
             )
 
-        # Store in attribute_values
-        item.attribute_values[attr_slug] = bool_value
+        # Store in selections
+        item[attr_slug] = bool_value
 
         # Extract and apply any additional selections from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)
@@ -1616,7 +1605,7 @@ class MenuItemConfigHandler(BaseHandler):
         if attr.get("allow_none", False):
             skip_patterns = menu_cache.get_response_patterns("negative")
             if any(user_lower == p or user_lower.startswith(p + " ") for p in skip_patterns):
-                item.attribute_values[attr_slug] = None
+                item[attr_slug] = None
                 return self._advance_to_next_question(item, order, attr)
 
         # For multi_select, try to match ALL options in the input
@@ -1652,26 +1641,14 @@ class MenuItemConfigHandler(BaseHandler):
                     )
 
             if matched_options:
-                # Store as list of slugs
-                existing = item.attribute_values.get(attr_slug)
-                if isinstance(existing, list):
-                    # Append to existing selections
-                    slugs = existing
-                else:
-                    slugs = []
-
-                # Store list of {slug, display_name, price, quantity} for each matched option
-                selections = item.attribute_values.get(f"{attr_slug}_selections", [])
-                if not isinstance(selections, list):
-                    selections = []
-
-                # Track count before adding new selections (for price update below)
-                existing_count = len(selections)
+                # Get existing selections for this category
+                existing_selections = item.get_selections(attr_slug)
+                existing_slugs = {sel.get("slug") for sel in existing_selections}
 
                 user_lower = user_input.lower()
+                added_selections = []
                 for opt in matched_options:
-                    if opt["slug"] not in slugs:
-                        slugs.append(opt["slug"])
+                    if opt["slug"] not in existing_slugs:
                         # Extract qualifier (extra, light, on the side, etc.)
                         qualifier = self._extract_qualifier_for_option(user_input, opt["display_name"])
                         # Extract quantity specific to this option (e.g., "2 vanilla syrups")
@@ -1679,50 +1656,45 @@ class MenuItemConfigHandler(BaseHandler):
                         if opt_quantity == 1:
                             # Also try with slug pattern
                             opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
-                        selection = {
+
+                        opt_price = opt.get("price") or opt.get("price_modifier") or 0
+
+                        # Look up price from pricing engine if not in option
+                        if opt_price == 0 and self.pricing:
+                            opt_price = self.pricing.lookup_generic_modifier_price(opt["slug"], item.menu_item_type) or 0.0
+
+                        # Add selection using unified API (handles price accumulation)
+                        item.add_selection(
+                            opt["slug"],
+                            attr_slug,
+                            quantity=opt_quantity,
+                            price=opt_price,
+                            display_name=opt["display_name"],
+                        )
+                        added_selections.append({
                             "slug": opt["slug"],
                             "display_name": opt["display_name"],
-                            "price": opt.get("price") or opt.get("price_modifier") or 0,
+                            "price": opt_price,
                             "quantity": opt_quantity,
-                        }
-                        if qualifier:
-                            selection["qualifier"] = qualifier
-                        selections.append(selection)
+                            "qualifier": qualifier,
+                        })
 
-                item.attribute_values[attr_slug] = slugs
-                item.attribute_values[f"{attr_slug}_selections"] = selections
+                        if opt_price > 0:
+                            logger.info(
+                                "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
+                                item.id, opt["slug"], opt_price, opt_quantity, item.unit_price
+                            )
+
+                all_selections = existing_selections + added_selections
+                all_slugs = [sel.get("slug") for sel in all_selections]
                 logger.info(
-                    "STORED multi_select: %s = %s, attribute_values keys: %s",
-                    attr_slug, slugs, list(item.attribute_values.keys())
+                    "STORED multi_select: %s = %s, selections count: %d",
+                    attr_slug, all_slugs, len(item.selections)
                 )
-
-                # Update unit_price for NEWLY added selections only (skip previously existing ones)
-                for sel in selections[existing_count:]:
-                    sel_price = sel.get("price", 0) or 0.0
-                    sel_qty = sel.get("quantity", 1) or 1
-                    sel_slug = sel.get("slug", "")
-
-                    # Look up price from pricing engine if not in option
-                    # Pass actual item type - pricing engine returns 0 for non-applicable types
-                    if sel_price == 0 and self.pricing:
-                        # Search all attributes for this item type (no category hint needed)
-                        sel_price = self.pricing.lookup_generic_modifier_price(sel_slug, item.menu_item_type) or 0.0
-                        # Update the selection with the looked-up price
-                        if sel_price > 0:
-                            sel["price"] = sel_price
-
-                    # Update unit_price
-                    total_sel_price = sel_price * sel_qty
-                    if total_sel_price > 0 and item.unit_price is not None:
-                        item.unit_price = item.unit_price + total_sel_price
-                        logger.info(
-                            "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
-                            item.id, sel_slug, sel_price, sel_qty, item.unit_price
-                        )
 
                 # Build acknowledgment text with quantity and qualifier
                 display_names = []
-                for sel in selections:
+                for sel in all_selections:
                     name = sel["display_name"]
                     qual = sel.get("qualifier")
                     qty = sel.get("quantity", 1)
@@ -1762,56 +1734,56 @@ class MenuItemConfigHandler(BaseHandler):
             if qualifier:
                 selection["qualifier"] = qualifier
 
-            if input_type == "multi_select":
-                # Store as list even for single match in multi_select
-                item.attribute_values[attr_slug] = [matched["slug"]]
-                item.attribute_values[f"{attr_slug}_selections"] = [selection]
-            else:
-                # Single select - store slug and use _selections format to support quantity
-                item.attribute_values[attr_slug] = matched["slug"]
+            # Determine the price for this option
+            option_price = sel_price or 0.0
+            variant_price_applied = False
 
-                # Determine the price for this option
-                option_price = sel_price or 0.0
-
+            if input_type != "multi_select" and option_price == 0 and self.pricing:
                 # Look up price from pricing engine if not set
                 # First check for variant pricing (menu_item_size_prices), then fall back to upcharges
-                variant_price_applied = False
-                if option_price == 0 and self.pricing:
-                    # Check if this item has variant pricing for this attribute
-                    # Variant pricing: full price per option (from menu_item_size_prices)
-                    # Upcharge pricing: base price + modifier (from attribute_options)
-                    variant_price, _ = self.pricing.lookup_size_price(
-                        item.menu_item_name, matched["slug"]
+                # Variant pricing: full price per option (from menu_item_size_prices)
+                # Upcharge pricing: base price + modifier (from attribute_options)
+                variant_price, _ = self.pricing.lookup_size_price(
+                    item.menu_item_name, matched["slug"]
+                )
+                if variant_price is not None:
+                    # Variant pricing found - set unit_price to the looked-up price
+                    item.unit_price = variant_price
+                    variant_price_applied = True
+                    logger.info(
+                        "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
+                        item.id, attr_slug, matched["slug"], variant_price
                     )
-                    if variant_price is not None:
-                        # Variant pricing found - set unit_price to the looked-up price
-                        item.unit_price = variant_price
-                        variant_price_applied = True
-                        logger.info(
-                            "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
-                            item.id, attr_slug, matched["slug"], variant_price
-                        )
-                    else:
-                        # No variant pricing - try upcharge from attribute_options
-                        option_price = self.pricing.lookup_attribute_option_upcharge(
-                            item.menu_item_type, attr_slug, matched["slug"]
-                        ) or 0.0
+                else:
+                    # No variant pricing - try upcharge from attribute_options
+                    option_price = self.pricing.lookup_attribute_option_upcharge(
+                        item.menu_item_type, attr_slug, matched["slug"]
+                    ) or 0.0
 
-                # Store price if applicable and update unit_price (for upcharge-based pricing)
-                if not variant_price_applied and option_price > 0:
-                    price_key = f"{attr_slug}_price"
-                    item.attribute_values[price_key] = option_price
-                    # Update unit_price to include this modifier price (multiplied by quantity)
-                    total_price = option_price * quantity
-                    if item.unit_price is not None:
-                        item.unit_price = item.unit_price + total_price
-                        logger.info(
-                            "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
-                            item.id, attr_slug, option_price, quantity, item.unit_price
-                        )
-
-                # Always use _selections format to support quantity
-                item.attribute_values[f"{attr_slug}_selections"] = [selection]
+            # Add selection using unified API
+            # Note: add_selection handles price accumulation automatically for non-variant pricing
+            if variant_price_applied:
+                # Variant pricing - don't add price to selection (already set on unit_price)
+                item.add_selection(
+                    matched["slug"],
+                    attr_slug,
+                    quantity=quantity,
+                    price=0,  # Price handled via variant pricing
+                    display_name=matched["display_name"],
+                )
+            else:
+                item.add_selection(
+                    matched["slug"],
+                    attr_slug,
+                    quantity=quantity,
+                    price=option_price,
+                    display_name=matched["display_name"],
+                )
+                if option_price > 0:
+                    logger.info(
+                        "Updated unit_price for %s: added %s price %.2f (qty=%d), new total %.2f",
+                        item.id, attr_slug, option_price, quantity, item.unit_price
+                    )
 
             # NOTE: Generally do NOT call _extract_and_apply_selections here.
             # The user's input was a direct answer to the attribute question.
@@ -2177,15 +2149,16 @@ class MenuItemConfigHandler(BaseHandler):
                 # For multi_select, try to match multiple options
                 matched = self._match_multiple_options_from_input(user_clean, options)
                 if matched:
-                    # Build list with qualifiers and quantities
-                    added_values = []
-                    display_parts = []
-                    selections = item.attribute_values.get(f"{attr_slug}_selections", [])
-                    if not isinstance(selections, list):
-                        selections = []
+                    # Get existing selections for this category
+                    existing_selections = item.get_selections(attr_slug)
+                    existing_slugs = {sel.get("slug") for sel in existing_selections}
 
+                    display_parts = []
                     user_lower = user_input.lower()
                     for opt in matched:
+                        if opt["slug"] in existing_slugs:
+                            continue  # Skip already added
+
                         opt_name = opt["display_name"]
                         qualifier = self._extract_qualifier_for_option(user_input, opt_name)
                         # Extract quantity for this specific option
@@ -2194,54 +2167,38 @@ class MenuItemConfigHandler(BaseHandler):
                             opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
 
                         if qualifier:
-                            value = f"{opt['slug']}_{qualifier}"
                             display = f"{opt_name} ({qualifier})"
                         else:
-                            value = opt["slug"]
                             display = opt_name
 
                         if opt_quantity > 1:
                             display = f"{opt_quantity} {display}"
 
                         display_parts.append(display)
-                        added_values.append(value)
 
-                        # Store selection metadata
-                        selection = {
-                            "slug": opt["slug"],
-                            "display_name": opt_name,
-                            "price": opt.get("price") or opt.get("price_modifier") or 0,
-                            "quantity": opt_quantity,
-                        }
-                        if qualifier:
-                            selection["qualifier"] = qualifier
-                        selections.append(selection)
+                        # Add selection using unified API
+                        opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                        item.add_selection(
+                            opt["slug"],
+                            attr_slug,
+                            quantity=opt_quantity,
+                            price=opt_price,
+                            display_name=opt_name,
+                        )
 
-                    # Add to existing values for this attribute
-                    existing = item.attribute_values.get(attr_slug, [])
-                    if isinstance(existing, list):
-                        for val in added_values:
-                            if val not in existing:
-                                existing.append(val)
-                        item.attribute_values[attr_slug] = existing
-                    else:
-                        item.attribute_values[attr_slug] = added_values
+                    if display_parts:
+                        logger.info(
+                            "Direct option match: added %s to %s (item %s)",
+                            [opt["slug"] for opt in matched], attr_slug, item.id
+                        )
 
-                    # Store selections metadata with quantities
-                    item.attribute_values[f"{attr_slug}_selections"] = selections
-
-                    logger.info(
-                        "Direct option match: added %s to %s (item %s)",
-                        added_values, attr_slug, item.id
-                    )
-
-                    # Confirm and stay at checkpoint for more customizations
-                    display_text = ", ".join(display_parts)
-                    order.pending_field = "customization_checkpoint"
-                    return StateMachineResult(
-                        message=f"Okay, {display_text} added. Anything else to customize?",
-                        order=order,
-                    )
+                        # Confirm and stay at checkpoint for more customizations
+                        display_text = ", ".join(display_parts)
+                        order.pending_field = "customization_checkpoint"
+                        return StateMachineResult(
+                            message=f"Okay, {display_text} added. Anything else to customize?",
+                            order=order,
+                        )
             else:
                 # For single_select, match one option
                 matched_opt, _ = self._match_option_from_input(user_clean, options)
@@ -2249,16 +2206,22 @@ class MenuItemConfigHandler(BaseHandler):
                     opt_name = matched_opt["display_name"]
                     qualifier = self._extract_qualifier_for_option(user_input, opt_name)
                     if qualifier:
-                        value = f"{matched_opt['slug']}_{qualifier}"
                         display = f"{opt_name} ({qualifier})"
                     else:
-                        value = matched_opt["slug"]
                         display = opt_name
 
-                    item.attribute_values[attr_slug] = value
+                    # Add selection using unified API
+                    opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
+                    item.add_selection(
+                        matched_opt["slug"],
+                        attr_slug,
+                        quantity=1,
+                        price=opt_price,
+                        display_name=opt_name,
+                    )
                     logger.info(
                         "Direct option match: set %s = %s (item %s)",
-                        attr_slug, value, item.id
+                        attr_slug, matched_opt["slug"], item.id
                     )
 
                     order.pending_field = "customization_checkpoint"
@@ -2291,7 +2254,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         for attr_slug, attr in attrs.items():
             # Skip if already answered
-            if attr_slug in item.attribute_values:
+            if attr_slug in item:
                 continue
 
             options = attr.get("options", [])
@@ -2301,18 +2264,21 @@ class MenuItemConfigHandler(BaseHandler):
                 # Check for explicit mentions
                 attr_name = attr["display_name"].lower()
                 if f"not {attr_name}" in user_lower:
-                    item.attribute_values[attr_slug] = False
+                    item[attr_slug] = False
                     logger.info("Captured %s=False from input", attr_slug)
                 elif attr_name in user_lower:
-                    item.attribute_values[attr_slug] = True
+                    item[attr_slug] = True
                     logger.info("Captured %s=True from input", attr_slug)
 
             elif input_type in ("single_select", "multi_select") and options:
                 # Only capture if we get a unique match (ignore disambiguation cases)
                 matched, _ = self._match_option_from_input(user_input, options)
                 if matched:
-                    item.attribute_values[attr_slug] = matched["slug"]
                     opt_price = matched.get("price") or matched.get("price_modifier") or 0
-                    if opt_price > 0:
-                        item.attribute_values[f"{attr_slug}_price"] = opt_price
+                    item.add_selection(
+                        matched["slug"],
+                        attr_slug,
+                        price=opt_price,
+                        display_name=matched.get("display_name"),
+                    )
                     logger.info("Captured %s=%s from input", attr_slug, matched["slug"])

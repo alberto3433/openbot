@@ -15,6 +15,9 @@ Item Types:
 - PUT /admin/modifiers/item-types/{id}: Update item type
 - DELETE /admin/modifiers/item-types/{id}: Delete item type
 
+Item Type Categories:
+- GET /admin/modifiers/item-type-categories: List all categories
+
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
@@ -25,29 +28,10 @@ Structure:
    - Defines a category of configurable items
    - Links to menu items via MenuItem.item_type_id
    - Links to global attributes via ItemTypeGlobalAttribute
-
-2. GlobalAttribute / GlobalAttributeOption
-   - Shared attribute definitions (e.g., "Size", "Bread")
-   - Options with price modifiers (e.g., "Small", "Large")
-   - Linked to item types via ItemTypeGlobalAttribute junction table
-   - Managed via separate admin routes (/admin/global-attributes)
-
-Example:
---------
-    ItemType: "Coffee"
-    └── Linked GlobalAttributes:
-        ├── "Size" (via ItemTypeGlobalAttribute)
-        │   ├── Option: "Small" (+$0)
-        │   ├── Option: "Medium" (+$0.50)
-        │   └── Option: "Large" (+$1.00)
-        └── "Milk" (via ItemTypeGlobalAttribute)
-            ├── Option: "None" (default)
-            ├── Option: "Whole"
-            └── Option: "Oat" (+$0.75)
 """
 
 import logging
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -65,15 +49,10 @@ from ..schemas.modifiers import (
     ItemTypeUpdate,
     ItemTypeCategoryOut,
 )
+from .crud_factory import CRUDRouterFactory
 
 
 logger = logging.getLogger(__name__)
-
-# Router definition
-admin_modifiers_router = APIRouter(
-    prefix="/admin/modifiers",
-    tags=["Admin - Modifiers"]
-)
 
 
 # =============================================================================
@@ -161,8 +140,105 @@ def _set_item_type_aliases(db: Session, item_type: ItemType, aliases_str: str | 
             db.add(ItemTypeAlias(item_type=item_type, alias=alias))
 
 
+def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload."""
+    # Validate category ID if provided
+    if payload.item_type_category_id is not None:
+        category = db.query(ItemTypeCategory).filter(
+            ItemTypeCategory.id == payload.item_type_category_id
+        ).first()
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Item type category with id {payload.item_type_category_id} not found"
+            )
+
+    return {
+        "slug": payload.slug,
+        "display_name": payload.display_name,
+        "item_type_category_id": payload.item_type_category_id,
+    }
+
+
+def _handle_create_pre_commit(
+    item: ItemType,
+    payload: ItemTypeCreate,
+    db: Session,
+) -> None:
+    """Add aliases after item has ID but before commit."""
+    if payload.aliases is not None:
+        _set_item_type_aliases(db, item, payload.aliases)
+
+
+def _handle_before_update(
+    item: ItemType,
+    payload: ItemTypeUpdate,
+    db: Session,
+) -> None:
+    """Apply update payload to item."""
+    if payload.slug is not None:
+        item.slug = payload.slug
+    if payload.display_name is not None:
+        item.display_name = payload.display_name
+    if payload.item_type_category_id is not None:
+        # Validate category ID
+        category = db.query(ItemTypeCategory).filter(
+            ItemTypeCategory.id == payload.item_type_category_id
+        ).first()
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Item type category with id {payload.item_type_category_id} not found"
+            )
+        item.item_type_category_id = payload.item_type_category_id
+    if payload.aliases is not None:
+        _set_item_type_aliases(db, item, payload.aliases)
+
+
+def _handle_before_delete(item: ItemType, db: Session) -> None:
+    """Check if item type can be deleted."""
+    menu_item_count = db.query(MenuItem).filter(
+        MenuItem.item_type_id == item.id
+    ).count()
+    if menu_item_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete: {menu_item_count} menu items use this type"
+        )
+
+
 # =============================================================================
-# Item Type Category Endpoints
+# Router Setup
+# =============================================================================
+
+# Create the main router for item types
+admin_modifiers_router = APIRouter(
+    prefix="/admin/modifiers",
+    tags=["Admin - Modifiers"]
+)
+
+# Create CRUD factory for item types (will be mounted at /item-types)
+_item_type_crud = CRUDRouterFactory(
+    model=ItemType,
+    create_schema=ItemTypeCreate,
+    update_schema=ItemTypeUpdate,
+    response_schema=ItemTypeOut,
+    prefix="/item-types",
+    tags=["Admin - Modifiers"],
+    id_param="item_type_id",
+    not_found_message="Item type not found",
+    unique_fields=["slug"],
+    order_by=["display_name"],
+    to_response=build_item_type_response,
+    on_before_create=_build_create_kwargs,
+    on_create_pre_commit=_handle_create_pre_commit,
+    on_before_update=_handle_before_update,
+    on_before_delete=_handle_before_delete,
+)
+
+
+# =============================================================================
+# Additional Endpoints (not covered by factory)
 # =============================================================================
 
 @admin_modifiers_router.get("/item-type-categories", response_model=List[ItemTypeCategoryOut])
@@ -174,10 +250,6 @@ def list_item_type_categories(
     categories = db.query(ItemTypeCategory).order_by(ItemTypeCategory.display_name).all()
     return [ItemTypeCategoryOut.model_validate(c) for c in categories]
 
-
-# =============================================================================
-# Item Type Endpoints
-# =============================================================================
 
 @admin_modifiers_router.get("/item-types/list", response_model=List[ItemTypeListOut])
 def list_item_types_minimal(
@@ -192,131 +264,5 @@ def list_item_types_minimal(
     ]
 
 
-@admin_modifiers_router.get("/item-types", response_model=List[ItemTypeOut])
-def list_item_types(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> List[ItemTypeOut]:
-    """List all item types with their attributes and options."""
-    item_types = db.query(ItemType).order_by(ItemType.display_name).all()
-    return [build_item_type_response(it, db) for it in item_types]
-
-
-@admin_modifiers_router.post("/item-types", response_model=ItemTypeOut, status_code=201)
-def create_item_type(
-    payload: ItemTypeCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ItemTypeOut:
-    """Create a new item type."""
-    existing = db.query(ItemType).filter(ItemType.slug == payload.slug).first()
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Item type '{payload.slug}' already exists")
-
-    # Validate category ID if provided
-    if payload.item_type_category_id is not None:
-        category = db.query(ItemTypeCategory).filter(
-            ItemTypeCategory.id == payload.item_type_category_id
-        ).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Item type category with id {payload.item_type_category_id} not found"
-            )
-
-    # Note: is_configurable and skip_config are derived from linked global attributes
-    # so we don't set them from the payload anymore
-    item_type = ItemType(
-        slug=payload.slug,
-        display_name=payload.display_name,
-        item_type_category_id=payload.item_type_category_id,
-    )
-    db.add(item_type)
-    db.flush()  # Get the item ID before adding aliases
-
-    # Add aliases if provided
-    if payload.aliases is not None:
-        _set_item_type_aliases(db, item_type, payload.aliases)
-
-    db.commit()
-    db.refresh(item_type)
-    logger.info("Created item type: %s", item_type.slug)
-    return build_item_type_response(item_type, db)
-
-
-@admin_modifiers_router.get("/item-types/{item_type_id}", response_model=ItemTypeOut)
-def get_item_type(
-    item_type_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ItemTypeOut:
-    """Get a specific item type with attributes and options."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
-    return build_item_type_response(item_type, db)
-
-
-@admin_modifiers_router.put("/item-types/{item_type_id}", response_model=ItemTypeOut)
-def update_item_type(
-    item_type_id: int,
-    payload: ItemTypeUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ItemTypeOut:
-    """Update an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
-
-    if payload.slug is not None:
-        item_type.slug = payload.slug
-    if payload.display_name is not None:
-        item_type.display_name = payload.display_name
-    if payload.item_type_category_id is not None:
-        # Validate category ID
-        category = db.query(ItemTypeCategory).filter(
-            ItemTypeCategory.id == payload.item_type_category_id
-        ).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Item type category with id {payload.item_type_category_id} not found"
-            )
-        item_type.item_type_category_id = payload.item_type_category_id
-    if payload.aliases is not None:
-        _set_item_type_aliases(db, item_type, payload.aliases)
-    # Note: is_configurable and skip_config are derived from linked global attributes
-    # so we ignore any values provided in the payload
-
-    db.commit()
-    db.refresh(item_type)
-    logger.info("Updated item type: %s", item_type.slug)
-    return build_item_type_response(item_type, db)
-
-
-@admin_modifiers_router.delete("/item-types/{item_type_id}", status_code=204)
-def delete_item_type(
-    item_type_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an item type and its attributes/options."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
-
-    # Check if any menu items use this type
-    menu_item_count = db.query(MenuItem).filter(
-        MenuItem.item_type_id == item_type_id
-    ).count()
-    if menu_item_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete: {menu_item_count} menu items use this type"
-        )
-
-    logger.info("Deleting item type: %s", item_type.slug)
-    db.delete(item_type)
-    db.commit()
-    return None
+# Include the CRUD routes
+admin_modifiers_router.include_router(_item_type_crud.router)

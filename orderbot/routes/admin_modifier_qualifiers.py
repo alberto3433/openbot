@@ -24,32 +24,12 @@ Qualifiers are organized into categories for conflict detection:
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
-
-Usage:
-------
-    # Add a new qualifier
-    POST /admin/modifier-qualifiers
-    {
-        "pattern": "super extra",
-        "normalized_form": "extra",
-        "category": "amount"
-    }
-
-    # Update a qualifier
-    PUT /admin/modifier-qualifiers/5
-    {
-        "is_active": false
-    }
 """
 
-import logging
-from typing import List
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import verify_admin_credentials
-from ..db import get_db
 from ..models import ModifierQualifier
 from ..schemas.modifier_qualifiers import (
     ModifierQualifierCreate,
@@ -57,160 +37,60 @@ from ..schemas.modifier_qualifiers import (
     ModifierQualifierOut,
     ModifierQualifierList,
 )
+from .crud_factory import CRUDRouterFactory
 
 
-logger = logging.getLogger(__name__)
+def _build_create_kwargs(payload: ModifierQualifierCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload with normalization."""
+    return {
+        "pattern": payload.pattern.lower().strip(),
+        "normalized_form": payload.normalized_form.lower().strip(),
+        "category": payload.category,
+        "is_active": payload.is_active,
+    }
 
-# Router definition
-admin_modifier_qualifiers_router = APIRouter(
+
+def _handle_before_update(
+    item: ModifierQualifier,
+    payload: ModifierQualifierUpdate,
+    db: Session,
+) -> None:
+    """Apply update payload to item with normalization."""
+    if payload.pattern is not None:
+        item.pattern = payload.pattern.lower().strip()
+    if payload.normalized_form is not None:
+        item.normalized_form = payload.normalized_form.lower().strip()
+    if payload.category is not None:
+        item.category = payload.category
+    if payload.is_active is not None:
+        item.is_active = payload.is_active
+
+
+def _build_list_response(
+    items: list[ModifierQualifierOut],
+    total: int,
+) -> ModifierQualifierList:
+    """Build list response wrapper."""
+    return ModifierQualifierList(qualifiers=items, total=total)
+
+
+# Create the CRUD router using the factory
+_crud = CRUDRouterFactory(
+    model=ModifierQualifier,
+    create_schema=ModifierQualifierCreate,
+    update_schema=ModifierQualifierUpdate,
+    response_schema=ModifierQualifierOut,
     prefix="/admin/modifier-qualifiers",
-    tags=["Admin - Modifier Qualifiers"]
+    tags=["Admin - Modifier Qualifiers"],
+    id_param="qualifier_id",
+    not_found_message="Modifier qualifier not found",
+    unique_fields=["pattern"],
+    order_by=["category", "normalized_form", "pattern"],
+    on_before_create=_build_create_kwargs,
+    on_before_update=_handle_before_update,
+    list_response_schema=ModifierQualifierList,
+    list_response_builder=_build_list_response,
 )
 
-
-# =============================================================================
-# Modifier Qualifier Endpoints
-# =============================================================================
-
-@admin_modifier_qualifiers_router.get("", response_model=ModifierQualifierList)
-def list_modifier_qualifiers(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierQualifierList:
-    """List all modifier qualifiers."""
-    qualifiers = db.query(ModifierQualifier).order_by(
-        ModifierQualifier.category,
-        ModifierQualifier.normalized_form,
-        ModifierQualifier.pattern
-    ).all()
-
-    return ModifierQualifierList(
-        qualifiers=[ModifierQualifierOut.model_validate(q) for q in qualifiers],
-        total=len(qualifiers)
-    )
-
-
-@admin_modifier_qualifiers_router.post("", response_model=ModifierQualifierOut, status_code=201)
-def create_modifier_qualifier(
-    payload: ModifierQualifierCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierQualifierOut:
-    """Create a new modifier qualifier."""
-    # Check for duplicate pattern
-    existing = db.query(ModifierQualifier).filter(
-        ModifierQualifier.pattern == payload.pattern.lower().strip()
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A qualifier with pattern '{payload.pattern}' already exists"
-        )
-
-    qualifier = ModifierQualifier(
-        pattern=payload.pattern.lower().strip(),
-        normalized_form=payload.normalized_form.lower().strip(),
-        category=payload.category,
-        is_active=payload.is_active,
-    )
-    db.add(qualifier)
-    db.commit()
-    db.refresh(qualifier)
-
-    logger.info(
-        "Created modifier qualifier: %s -> %s (%s)",
-        qualifier.pattern,
-        qualifier.normalized_form,
-        qualifier.category
-    )
-    return ModifierQualifierOut.model_validate(qualifier)
-
-
-@admin_modifier_qualifiers_router.get("/{qualifier_id}", response_model=ModifierQualifierOut)
-def get_modifier_qualifier(
-    qualifier_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierQualifierOut:
-    """Get a specific modifier qualifier by ID."""
-    qualifier = db.query(ModifierQualifier).filter(
-        ModifierQualifier.id == qualifier_id
-    ).first()
-
-    if not qualifier:
-        raise HTTPException(status_code=404, detail="Modifier qualifier not found")
-
-    return ModifierQualifierOut.model_validate(qualifier)
-
-
-@admin_modifier_qualifiers_router.put("/{qualifier_id}", response_model=ModifierQualifierOut)
-def update_modifier_qualifier(
-    qualifier_id: int,
-    payload: ModifierQualifierUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierQualifierOut:
-    """Update a modifier qualifier."""
-    qualifier = db.query(ModifierQualifier).filter(
-        ModifierQualifier.id == qualifier_id
-    ).first()
-
-    if not qualifier:
-        raise HTTPException(status_code=404, detail="Modifier qualifier not found")
-
-    # Update fields if provided
-    if payload.pattern is not None:
-        new_pattern = payload.pattern.lower().strip()
-        # Check for duplicate pattern (excluding self)
-        existing = db.query(ModifierQualifier).filter(
-            ModifierQualifier.pattern == new_pattern,
-            ModifierQualifier.id != qualifier_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A qualifier with pattern '{payload.pattern}' already exists"
-            )
-        qualifier.pattern = new_pattern
-
-    if payload.normalized_form is not None:
-        qualifier.normalized_form = payload.normalized_form.lower().strip()
-
-    if payload.category is not None:
-        qualifier.category = payload.category
-
-    if payload.is_active is not None:
-        qualifier.is_active = payload.is_active
-
-    db.commit()
-    db.refresh(qualifier)
-
-    logger.info(
-        "Updated modifier qualifier %d: %s -> %s (%s)",
-        qualifier.id,
-        qualifier.pattern,
-        qualifier.normalized_form,
-        qualifier.category
-    )
-    return ModifierQualifierOut.model_validate(qualifier)
-
-
-@admin_modifier_qualifiers_router.delete("/{qualifier_id}", status_code=204)
-def delete_modifier_qualifier(
-    qualifier_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a modifier qualifier."""
-    qualifier = db.query(ModifierQualifier).filter(
-        ModifierQualifier.id == qualifier_id
-    ).first()
-
-    if not qualifier:
-        raise HTTPException(status_code=404, detail="Modifier qualifier not found")
-
-    pattern = qualifier.pattern
-    db.delete(qualifier)
-    db.commit()
-
-    logger.info("Deleted modifier qualifier: %s", pattern)
+# Export the router
+admin_modifier_qualifiers_router = _crud.router

@@ -1,0 +1,1430 @@
+"""
+Loader mixin for MenuDataCache.
+
+Contains all _load_* methods that populate the cache from the database.
+"""
+
+import logging
+import re
+import time
+from collections import defaultdict
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
+logger = logging.getLogger(__name__)
+
+
+class LoaderMixin:
+    """Mixin containing all database loading methods for the cache."""
+
+    def load_from_db(self, db: Session, fail_on_error: bool = True, force: bool = False) -> None:
+        """
+        Load all menu data from the database.
+
+        Args:
+            db: SQLAlchemy database session
+            fail_on_error: If True, raise exception on DB errors (for startup)
+                          If False, log warning and keep existing cache
+            force: If True, reload even if already loaded (for manual refresh)
+
+        Raises:
+            RuntimeError: If fail_on_error=True and DB load fails
+        """
+        from datetime import datetime
+
+        # Skip if already loaded (unless forced)
+        if self._is_loaded and not force:
+            logger.info("Menu data cache already loaded, skipping reload")
+            return
+
+        with self._refresh_lock:
+            # Double-check after acquiring lock
+            if self._is_loaded and not force:
+                logger.info("Menu data cache already loaded, skipping reload")
+                return
+
+            try:
+                logger.info("Loading menu data cache from database...")
+
+                # Load each category
+                self._load_known_menu_items(db)
+                self._load_signature_item_aliases(db)
+                self._load_modifier_aliases(db)
+                self._load_side_items(db)
+                self._load_category_keywords(db)
+                self._load_abbreviations(db)
+                self._load_item_type_fields(db)
+                self._load_response_patterns(db)
+                self._load_modifier_qualifiers(db)
+                self._load_global_attribute_options(db)
+                self._load_global_attribute_aliases(db)
+                self._load_item_type_metadata(db)
+                self._load_menu_index(db)
+
+                # Data-driven parsing support loaders
+                self._load_compound_phrases(db)
+                self._load_item_type_triggers(db)
+                self._load_configurable_item_types(db)
+                self._load_items_with_required_phrases(db)
+                self._load_by_unit_type_items(db)
+
+                # Generic data-driven loaders (replace domain-specific functions)
+                self._load_generic_item_names(db)
+                self._load_generic_ingredients(db)
+                self._load_generic_ingredients_for_item_types(db)
+                self._load_ingredient_category_metadata(db)
+
+                # Load menu item categories (drink, food, etc.)
+                self._load_menu_item_categories(db)
+
+                # Load modifier categories (toppings, proteins, milks, etc.)
+                self._load_modifier_categories(db)
+
+                # Price inquiry support (pre-compute resolved prices)
+                self._load_priced_attributes(db)
+                self._load_resolved_item_prices(db)
+                self._load_ingredient_price_contexts(db)
+
+                # Build keyword indices for partial matching
+                self._build_keyword_indices()
+
+                # Recommendation search support (includes ALL menu items)
+                self._load_recommendation_search_data(db)
+
+                self._last_refresh = datetime.now()
+                self._is_loaded = True
+
+                logger.info(
+                    "Menu data cache loaded: %d menu_items, %d signature_item_aliases, "
+                    "%d abbreviations, %d item_types, %d ingredient_categories, "
+                    "%d unit_type_items",
+                    len(self._known_menu_items),
+                    len(self._signature_item_aliases),
+                    len(self._abbreviations),
+                    len(self._item_names_by_type),
+                    len(self._ingredients_by_category),
+                    sum(len(v) for v in self._by_unit_type_items.values()),
+                )
+
+            except Exception as e:
+                logger.error("Failed to load menu data cache: %s", e)
+                if fail_on_error:
+                    raise RuntimeError(f"Failed to load menu data cache: {e}") from e
+                # Keep existing cache if available
+
+    def _load_known_menu_items(self, db: Session) -> None:
+        """Load all menu item names and aliases for recognition."""
+        from ..models import MenuItem, ItemType, ItemTypeGlobalAttribute
+
+        menu_items = set()
+        alias_to_canonical: dict[str, str] = {}
+        menu_items_cache: dict[str, dict] = {}
+
+        # Data-driven: exclude item types that have askable attributes
+        exclude_type_ids = set(
+            row[0] for row in db.query(ItemTypeGlobalAttribute.item_type_id)
+            .filter(ItemTypeGlobalAttribute.ask_in_conversation == True)  # noqa: E712
+            .distinct()
+            .all()
+        )
+
+        all_items = (
+            db.query(MenuItem)
+            .options(
+                joinedload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type),
+            )
+            .all()
+        )
+        for item in all_items:
+            # Build menu items cache for get_items_by_item_type
+            item_type_slug = item.item_type.slug if item.item_type else None
+            menu_items_cache[item.name.lower()] = {
+                "id": item.id,
+                "name": item.name,
+                "item_type": item_type_slug,
+                "base_price": float(item.base_price) if item.base_price else 0.0,
+            }
+
+            # Skip items that have their own configuration flows
+            # BUT always include signature items
+            if item.item_type_id in exclude_type_ids and not item.is_signature:
+                continue
+
+            canonical_name = item.name
+            name_lower = item.name.lower()
+
+            menu_items.add(name_lower)
+            alias_to_canonical[name_lower] = canonical_name
+
+            if name_lower.startswith("the "):
+                without_the = name_lower[4:]
+                menu_items.add(without_the)
+                alias_to_canonical[without_the] = canonical_name
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    menu_items.add(alias)
+                    alias_to_canonical[alias] = canonical_name
+
+        self._known_menu_items = menu_items
+        self._menu_item_alias_to_canonical = alias_to_canonical
+        self._menu_items = menu_items_cache
+
+        logger.debug(
+            "Loaded %d known menu items with %d alias mappings",
+            len(menu_items),
+            len(alias_to_canonical),
+        )
+
+    def _load_signature_item_aliases(self, db: Session) -> None:
+        """Load signature item aliases from database."""
+        from ..models import MenuItem, ItemType
+
+        signature_item_aliases: dict[str, str] = {}
+        signature_item_types: dict[str, str] = {}
+
+        signature_items = (
+            db.query(MenuItem)
+            .options(
+                joinedload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type)
+            )
+            .filter(MenuItem.is_signature == True)  # noqa: E712
+            .all()
+        )
+
+        for item in signature_items:
+            canonical_name = item.name
+
+            if item.item_type:
+                signature_item_types[canonical_name] = item.item_type.slug
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    signature_item_aliases[alias] = canonical_name
+
+            name_lower = item.name.lower()
+            signature_item_aliases[name_lower] = canonical_name
+
+            if name_lower.startswith("the "):
+                signature_item_aliases[name_lower[4:]] = canonical_name
+
+        self._signature_item_aliases = signature_item_aliases
+        self._signature_item_types = signature_item_types
+
+        logger.debug(
+            "Loaded %d signature item aliases from %d items (%d with item types)",
+            len(signature_item_aliases),
+            len(signature_items),
+            len(signature_item_types),
+        )
+
+    def _load_modifier_aliases(self, db: Session) -> None:
+        """Load modifier alias mappings from ingredient aliases."""
+        from ..models import Ingredient
+
+        modifier_aliases: dict[str, str] = {}
+
+        all_ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
+
+        ingredients_with_aliases_count = 0
+        for ing in all_ingredients:
+            canonical_name = ing.name
+
+            if ing.aliases:
+                ingredients_with_aliases_count += 1
+                for alias in ing.aliases:
+                    alias = alias.strip().lower()
+                    if alias:
+                        modifier_aliases[alias] = canonical_name
+
+            name_lower = ing.name.lower()
+            modifier_aliases[name_lower] = canonical_name
+
+        self._modifier_aliases = modifier_aliases
+
+        logger.debug(
+            "Loaded %d modifier aliases from %d ingredients",
+            len(modifier_aliases),
+            ingredients_with_aliases_count,
+        )
+
+    def _load_side_items(self, db: Session) -> None:
+        """Load side items and their aliases from menu_items."""
+        from ..models import MenuItem, Category, MenuItemCategory
+
+        side_items: set[str] = set()
+        alias_to_canonical: dict[str, str] = {}
+
+        items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records))
+            .join(MenuItemCategory, MenuItemCategory.menu_item_id == MenuItem.id)
+            .join(Category, Category.id == MenuItemCategory.category_id)
+            .filter(Category.slug == "side")
+            .all()
+        )
+
+        for item in items:
+            canonical_name = item.name
+            name_lower = canonical_name.lower()
+
+            side_items.add(name_lower)
+            alias_to_canonical[name_lower] = canonical_name
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    side_items.add(alias)
+                    alias_to_canonical[alias] = canonical_name
+
+        self._side_items = side_items
+        self._side_alias_to_canonical = alias_to_canonical
+
+        logger.debug(
+            "Loaded %d side item aliases from %d items",
+            len(alias_to_canonical),
+            len(items),
+        )
+
+    def _load_category_keywords(self, db: Session) -> None:
+        """Load category keyword mappings from item_types and categories tables."""
+        from ..models import ItemType, Category
+
+        category_keywords: dict[str, dict] = {}
+
+        # 1. Load ItemTypes
+        item_types = (
+            db.query(ItemType)
+            .options(joinedload(ItemType.alias_records))
+            .all()
+        )
+
+        item_types_count = 0
+        for item_type in item_types:
+            slug = item_type.slug
+            display_name = item_type.display_name
+            display_name_plural = item_type.display_name_plural or f"{display_name}s"
+
+            category_info = {
+                "slug": slug,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+                "lookup_type": "item_type",
+            }
+
+            category_keywords[slug] = category_info
+            item_types_count += 1
+
+            for alias in item_type.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    category_keywords[alias] = category_info
+
+        # 2. Load Categories
+        categories = db.query(Category).all()
+
+        categories_count = 0
+        for category in categories:
+            slug = category.slug
+            display_name = category.name
+            display_name_plural = f"{display_name}s" if not display_name.endswith('s') else display_name
+
+            category_info = {
+                "slug": slug,
+                "category_id": category.id,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+                "lookup_type": "category",
+            }
+
+            category_keywords[slug] = category_info
+            categories_count += 1
+
+            name_lower = display_name.lower()
+            if name_lower != slug:
+                category_keywords[name_lower] = category_info
+            plural_lower = display_name_plural.lower()
+            if plural_lower != slug and plural_lower != name_lower:
+                category_keywords[plural_lower] = category_info
+
+        if not category_keywords:
+            raise RuntimeError(
+                "No category keywords found in database. Run migrations to populate "
+                "item_types and categories tables."
+            )
+
+        self._category_keywords = category_keywords
+
+        logger.debug(
+            "Loaded %d category keywords from %d item_types and %d categories",
+            len(category_keywords),
+            item_types_count,
+            categories_count,
+        )
+
+    def _load_item_type_metadata(self, db: Session) -> None:
+        """Load item type metadata: modifier_category, item_keywords, and configurable types."""
+        from ..models import ItemType, MenuItem, ItemTypeAttribute, ItemTypeGlobalAttribute
+
+        modifier_categories: dict[str, str | None] = {}
+        item_keywords: set[str] = set()
+        configurable_types: set[str] = set()
+        side_choice_config: dict[str, dict] = {}
+
+        item_types = (
+            db.query(ItemType)
+            .options(
+                joinedload(ItemType.alias_records),
+                joinedload(ItemType.item_type_category),
+                joinedload(ItemType.side_choice_attribute),
+            )
+            .all()
+        )
+        for item_type in item_types:
+            slug = item_type.slug
+            if item_type.item_type_category:
+                modifier_categories[slug] = item_type.item_type_category.slug
+            else:
+                modifier_categories[slug] = None
+
+            side_choice_config[slug] = {
+                "has_side_choice": item_type.has_side_choice,
+                "side_choice_attribute_id": item_type.side_choice_attribute_id,
+                "side_choice_attribute": None,
+            }
+            if item_type.has_side_choice and item_type.side_choice_attribute:
+                attr = item_type.side_choice_attribute
+                side_choice_config[slug]["side_choice_attribute"] = {
+                    "slug": attr.slug,
+                    "question_text": attr.question_text,
+                    "display_name": attr.display_name,
+                }
+
+            item_keywords.add(slug.lower())
+
+            for alias in item_type.aliases:
+                item_keywords.add(alias.lower())
+
+        types_with_attrs = set()
+
+        attr_types = (
+            db.query(ItemTypeAttribute.item_type_id)
+            .distinct()
+            .all()
+        )
+        types_with_attrs.update(t[0] for t in attr_types)
+
+        global_attr_types = (
+            db.query(ItemTypeGlobalAttribute.item_type_id)
+            .distinct()
+            .all()
+        )
+        types_with_attrs.update(t[0] for t in global_attr_types)
+
+        for item_type in item_types:
+            if item_type.id in types_with_attrs:
+                configurable_types.add(item_type.slug)
+
+        menu_items = db.query(MenuItem.name).all()
+        for (name,) in menu_items:
+            item_keywords.add(name.lower())
+            words = name.lower().split()
+            for word in words:
+                if len(word) > 2:
+                    item_keywords.add(word)
+
+        self._item_type_modifier_categories = modifier_categories
+        self._item_keywords = item_keywords
+        self._configurable_item_types = configurable_types
+        self._item_type_side_choice = side_choice_config
+
+        logger.debug(
+            "Loaded item type metadata: %d modifier_categories, %d item_keywords, %d configurable_types, %d side_choice_configs",
+            len(modifier_categories),
+            len(item_keywords),
+            len(configurable_types),
+            len(side_choice_config),
+        )
+
+    def _load_abbreviations(self, db: Session) -> None:
+        """Load abbreviations from ingredients and menu_items tables."""
+        from ..models import Ingredient, MenuItem
+
+        abbreviations: dict[str, str] = {}
+
+        ingredients = (
+            db.query(Ingredient)
+            .filter(Ingredient.abbreviation.isnot(None))
+            .filter(Ingredient.abbreviation != "")
+            .all()
+        )
+
+        for ingredient in ingredients:
+            abbrev = ingredient.abbreviation.strip().lower()
+            canonical = ingredient.name.lower()
+            if abbrev and canonical:
+                abbreviations[abbrev] = canonical
+
+        menu_items = (
+            db.query(MenuItem)
+            .filter(MenuItem.abbreviation.isnot(None))
+            .filter(MenuItem.abbreviation != "")
+            .all()
+        )
+
+        for item in menu_items:
+            abbrev = item.abbreviation.strip().lower()
+            canonical = item.name.lower()
+            if abbrev and canonical:
+                abbreviations[abbrev] = canonical
+
+        self._abbreviations = abbreviations
+
+        logger.debug(
+            "Loaded %d abbreviations from %d ingredients and %d menu items",
+            len(abbreviations),
+            len(ingredients),
+            len(menu_items),
+        )
+
+    def _load_item_type_fields(self, db: Session) -> None:
+        """Load item type attribute configurations from the database."""
+        from ..models import ItemType, ItemTypeAttribute
+
+        item_type_fields: dict[str, list[dict]] = {}
+
+        attributes = (
+            db.query(ItemTypeAttribute)
+            .join(ItemType, ItemTypeAttribute.item_type_id == ItemType.id)
+            .order_by(ItemType.slug, ItemTypeAttribute.display_order)
+            .all()
+        )
+
+        for attr in attributes:
+            slug = attr.item_type.slug
+            if slug not in item_type_fields:
+                item_type_fields[slug] = []
+
+            item_type_fields[slug].append({
+                "field_name": attr.slug,
+                "display_order": attr.display_order,
+                "required": attr.is_required,
+                "ask": attr.ask_in_conversation,
+                "question_text": attr.question_text,
+                "input_type": attr.input_type,
+                "display_name": attr.display_name,
+            })
+
+        self._item_type_fields = item_type_fields
+
+        logger.debug(
+            "Loaded item type attributes for %d item types (%d total attributes)",
+            len(item_type_fields),
+            sum(len(fields) for fields in item_type_fields.values()),
+        )
+
+    def _load_response_patterns(self, db: Session) -> None:
+        """Load response patterns from the database."""
+        from ..models import ResponsePattern
+
+        response_patterns: dict[str, set[str]] = {}
+        regex_patterns: dict[str, list[str]] = {}
+
+        patterns = db.query(ResponsePattern).all()
+
+        for pattern in patterns:
+            pattern_type = pattern.pattern_type
+            if pattern.is_regex:
+                if pattern_type not in regex_patterns:
+                    regex_patterns[pattern_type] = []
+                regex_patterns[pattern_type].append(pattern.pattern)
+            else:
+                if pattern_type not in response_patterns:
+                    response_patterns[pattern_type] = set()
+                response_patterns[pattern_type].add(pattern.pattern.lower())
+
+        self._response_patterns = response_patterns
+        self._response_regex_raw = regex_patterns
+
+        # Build combined regex for each type
+        all_types = set(response_patterns.keys()) | set(regex_patterns.keys())
+        response_regex_compiled: dict[str, re.Pattern | None] = {}
+
+        for pattern_type in all_types:
+            pattern_parts = []
+
+            exact = response_patterns.get(pattern_type, set())
+            if exact:
+                escaped = [re.escape(p) for p in exact]
+                pattern_parts.extend(escaped)
+
+            regex_list = regex_patterns.get(pattern_type, [])
+            pattern_parts.extend(regex_list)
+
+            if pattern_parts:
+                combined = "|".join(f"({p})" for p in pattern_parts)
+                full_pattern = f"^({combined})[\\s!.,]*$"
+                try:
+                    response_regex_compiled[pattern_type] = re.compile(full_pattern, re.IGNORECASE)
+                except re.error as e:
+                    logger.error("Failed to compile regex for %s: %s", pattern_type, e)
+                    response_regex_compiled[pattern_type] = None
+            else:
+                response_regex_compiled[pattern_type] = None
+
+        self._response_regex_compiled = response_regex_compiled
+
+        total_exact = sum(len(p) for p in response_patterns.values())
+        total_regex = sum(len(p) for p in regex_patterns.values())
+        logger.debug(
+            "Loaded %d exact + %d regex response patterns across %d types: %s",
+            total_exact,
+            total_regex,
+            len(all_types),
+            ", ".join(
+                f"{k}({len(response_patterns.get(k, set()))}+{len(regex_patterns.get(k, []))}r)"
+                for k in sorted(all_types)
+            ),
+        )
+
+    def _load_modifier_qualifiers(self, db: Session) -> None:
+        """Load modifier qualifier patterns from the database."""
+        from ..models import ModifierQualifier
+
+        modifier_qualifiers: dict[str, dict] = {}
+        qualifier_patterns_by_category: dict[str, set[str]] = {}
+
+        try:
+            qualifiers = (
+                db.query(ModifierQualifier)
+                .filter(ModifierQualifier.is_active == True)  # noqa: E712
+                .order_by(ModifierQualifier.category, ModifierQualifier.pattern)
+                .all()
+            )
+        except Exception as e:
+            logger.warning("Could not load modifier qualifiers (table may not exist): %s", e)
+            self._modifier_qualifiers = {}
+            self._qualifier_patterns_by_category = {}
+            return
+
+        for qualifier in qualifiers:
+            pattern = qualifier.pattern.lower()
+            category = qualifier.category
+
+            modifier_qualifiers[pattern] = {
+                "normalized_form": qualifier.normalized_form,
+                "category": category,
+            }
+
+            if category not in qualifier_patterns_by_category:
+                qualifier_patterns_by_category[category] = set()
+            qualifier_patterns_by_category[category].add(pattern)
+
+        self._modifier_qualifiers = modifier_qualifiers
+        self._qualifier_patterns_by_category = qualifier_patterns_by_category
+
+        logger.debug(
+            "Loaded %d modifier qualifiers across %d categories: %s",
+            len(modifier_qualifiers),
+            len(qualifier_patterns_by_category),
+            ", ".join(f"{k}({len(v)})" for k, v in qualifier_patterns_by_category.items()),
+        )
+
+    def _load_global_attribute_options(self, db: Session) -> None:
+        """Load global attribute options from the database."""
+        from ..models import GlobalAttribute, GlobalAttributeOption, Ingredient
+
+        global_attribute_options: dict[str, list[dict]] = {}
+
+        try:
+            attributes = db.query(GlobalAttribute).all()
+
+            for attr in attributes:
+                options = (
+                    db.query(GlobalAttributeOption)
+                    .options(
+                        joinedload(GlobalAttributeOption.ingredient)
+                        .joinedload(Ingredient.alias_records),
+                        joinedload(GlobalAttributeOption.ingredient)
+                        .joinedload(Ingredient.must_match_records),
+                        joinedload(GlobalAttributeOption.modifier_category),
+                    )
+                    .filter(GlobalAttributeOption.global_attribute_id == attr.id)
+                    .order_by(GlobalAttributeOption.display_order)
+                    .all()
+                )
+
+                global_attribute_options[attr.slug] = [
+                    self._build_global_option_dict(opt)
+                    for opt in options
+                ]
+
+            self._global_attribute_options = global_attribute_options
+
+            property_names: dict[str, str] = {}
+            for attr in attributes:
+                if attr.property_name:
+                    property_names[attr.slug] = attr.property_name
+            self._global_attribute_property_names = property_names
+
+            global_attribute_metadata: dict[str, dict] = {}
+            for attr in attributes:
+                global_attribute_metadata[attr.slug] = {
+                    "display_name": attr.display_name,
+                    "input_type": attr.input_type,
+                }
+            self._global_attribute_metadata = global_attribute_metadata
+
+            modifier_category_to_attrs: dict[str, set[str]] = {}
+            for attr_slug, options in global_attribute_options.items():
+                for opt in options:
+                    mod_cat = opt.get("modifier_category")
+                    if mod_cat:
+                        if mod_cat not in modifier_category_to_attrs:
+                            modifier_category_to_attrs[mod_cat] = set()
+                        modifier_category_to_attrs[mod_cat].add(attr_slug)
+            self._modifier_category_to_attrs = modifier_category_to_attrs
+
+            logger.debug(
+                "Loaded global attribute options for %d attributes, %d modifier categories",
+                len(global_attribute_options),
+                len(modifier_category_to_attrs),
+            )
+        except Exception as e:
+            logger.warning("Could not load global attribute options: %s", e)
+            self._global_attribute_options = {}
+            self._global_attribute_property_names = {}
+            self._global_attribute_metadata = {}
+            self._modifier_category_to_attrs = {}
+
+    def _build_global_option_dict(self, opt) -> dict:
+        """Build option dict, reading aliases/must_match ONLY from linked Ingredient."""
+        if opt.ingredient:
+            aliases = opt.ingredient.aliases
+            must_match = opt.ingredient.must_match
+        else:
+            aliases = None
+            must_match = None
+
+        modifier_category_slug = None
+        if opt.modifier_category:
+            modifier_category_slug = opt.modifier_category.slug
+
+        return {
+            "slug": opt.slug,
+            "display_name": opt.display_name,
+            "price_modifier": opt.price_modifier,
+            "iced_price_modifier": opt.iced_price_modifier,
+            "is_default": opt.is_default,
+            "is_available": opt.is_available,
+            "aliases": aliases,
+            "must_match": must_match,
+            "modifier_category": modifier_category_slug,
+        }
+
+    def _load_global_attribute_aliases(self, db: Session) -> None:
+        """Load global attribute aliases from the database."""
+        from ..models import GlobalAttribute, GlobalAttributeAlias
+
+        global_attribute_aliases: dict[str, str] = {}
+
+        try:
+            aliases = (
+                db.query(GlobalAttributeAlias)
+                .join(GlobalAttribute)
+                .all()
+            )
+
+            for alias_record in aliases:
+                alias_lower = alias_record.alias.lower()
+                attr_slug = alias_record.global_attribute.slug
+                global_attribute_aliases[alias_lower] = attr_slug
+
+            self._global_attribute_aliases = global_attribute_aliases
+
+            logger.debug(
+                "Loaded %d global attribute aliases",
+                len(global_attribute_aliases),
+            )
+        except Exception as e:
+            logger.warning("Could not load global attribute aliases: %s", e)
+            self._global_attribute_aliases = {}
+
+    def _load_menu_index(self, db: Session) -> None:
+        """Load and cache the menu index."""
+        from ..menu_index_builder import build_menu_index
+
+        logger.info("Building menu index (this may take a moment)...")
+        start = time.time()
+        self._menu_index = build_menu_index(db)
+        elapsed = time.time() - start
+        logger.info(
+            "Menu index built in %.1f seconds with %d total items",
+            elapsed,
+            sum(len(v) for k, v in self._menu_index.items() if isinstance(v, list)),
+        )
+
+    def _load_compound_phrases(self, db: Session) -> None:
+        """Load compound phrases that shouldn't be split during multi-item parsing."""
+        from ..models import MenuItem, MenuItemAlias, Ingredient, IngredientAlias
+
+        compound_phrases: set[str] = set()
+
+        menu_items_with_and = (
+            db.query(MenuItem.name)
+            .filter(MenuItem.name.ilike("% and %"))
+            .all()
+        )
+        for (name,) in menu_items_with_and:
+            compound_phrases.add(name.lower())
+
+        menu_aliases_with_and = (
+            db.query(MenuItemAlias.alias)
+            .filter(MenuItemAlias.alias.ilike("% and %"))
+            .all()
+        )
+        for (alias,) in menu_aliases_with_and:
+            compound_phrases.add(alias.lower())
+
+        ingredients_with_and = (
+            db.query(Ingredient.name)
+            .filter(Ingredient.name.ilike("% and %"))
+            .all()
+        )
+        for (name,) in ingredients_with_and:
+            compound_phrases.add(name.lower())
+
+        ingredient_aliases_with_and = (
+            db.query(IngredientAlias.alias)
+            .filter(IngredientAlias.alias.ilike("% and %"))
+            .all()
+        )
+        for (alias,) in ingredient_aliases_with_and:
+            compound_phrases.add(alias.lower())
+
+        self._compound_phrases = compound_phrases
+        logger.debug("Loaded %d compound phrases", len(compound_phrases))
+
+    def _load_item_type_triggers(self, db: Session) -> None:
+        """Load item type trigger keywords from menu item names."""
+        from ..models import MenuItem, ItemType, MenuItemAlias
+
+        item_type_triggers: dict[str, set[str]] = {}
+
+        item_types = db.query(ItemType).all()
+
+        for item_type in item_types:
+            triggers: set[str] = set()
+
+            triggers.add(item_type.slug.lower())
+
+            if item_type.display_name:
+                triggers.add(item_type.display_name.lower())
+                if item_type.display_name.lower().endswith("s"):
+                    triggers.add(item_type.display_name.lower()[:-1])
+
+            menu_items = (
+                db.query(MenuItem)
+                .options(joinedload(MenuItem.alias_records))
+                .filter(MenuItem.item_type_id == item_type.id)
+                .all()
+            )
+
+            for item in menu_items:
+                name_lower = item.name.lower()
+                triggers.add(name_lower)
+
+                for suffix in [" sandwich", " bagel", " omelette", " salad"]:
+                    if name_lower.endswith(suffix):
+                        triggers.add(name_lower[:-len(suffix)])
+
+                words = name_lower.split()
+                if len(words) > 1:
+                    triggers.add(words[0])
+
+                for alias in item.aliases:
+                    alias_lower = alias.strip().lower()
+                    if alias_lower:
+                        triggers.add(alias_lower)
+
+            if triggers:
+                item_type_triggers[item_type.slug] = triggers
+
+        self._item_type_triggers = item_type_triggers
+        logger.debug(
+            "Loaded item type triggers: %s",
+            {k: len(v) for k, v in item_type_triggers.items()}
+        )
+
+    def _load_configurable_item_types(self, db: Session) -> None:
+        """Load slugs of item types that have askable attributes."""
+        from ..models import ItemType, ItemTypeGlobalAttribute
+
+        configurable_slugs: set[str] = set()
+
+        item_type_ids = (
+            db.query(ItemTypeGlobalAttribute.item_type_id)
+            .filter(ItemTypeGlobalAttribute.ask_in_conversation == True)  # noqa: E712
+            .distinct()
+            .all()
+        )
+        item_type_ids = {row[0] for row in item_type_ids}
+
+        if item_type_ids:
+            item_types = (
+                db.query(ItemType)
+                .filter(ItemType.id.in_(item_type_ids))
+                .all()
+            )
+            for it in item_types:
+                configurable_slugs.add(it.slug)
+
+        self._configurable_item_type_slugs = configurable_slugs
+        logger.debug(
+            "Loaded %d configurable item type slugs: %s",
+            len(configurable_slugs), configurable_slugs
+        )
+
+    def _load_items_with_required_phrases(self, db: Session) -> None:
+        """Load menu items that have required_match_phrases set."""
+        from ..models import MenuItem
+
+        items_with_phrases: dict[str, str] = {}
+
+        items = (
+            db.query(MenuItem.name, MenuItem.required_match_phrases)
+            .filter(MenuItem.required_match_phrases.isnot(None))
+            .filter(MenuItem.required_match_phrases != "")
+            .all()
+        )
+
+        for name, phrases in items:
+            items_with_phrases[name.lower()] = phrases
+
+        self._items_with_required_phrases = items_with_phrases
+        logger.debug(
+            "Loaded %d items with required_match_phrases",
+            len(items_with_phrases)
+        )
+
+    def _load_by_unit_type_items(self, db: Session) -> None:
+        """Load menu items grouped by unit_type, including aliases."""
+        from ..models import MenuItem, ItemType
+
+        by_unit_type: dict[str, set[str]] = {}
+        unit_type_aliases: dict[str, dict[str, tuple[str, str]]] = {}
+
+        all_items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
+            .all()
+        )
+
+        seen_base_names: dict[str, set[str]] = {}
+
+        for item in all_items:
+            unit_type = item.unit_type or "each"
+            item_type_slug = item.item_type.slug if item.item_type else "unknown"
+            name = item.name
+
+            base_name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+            base_name_lower = base_name.lower()
+
+            if unit_type not in by_unit_type:
+                by_unit_type[unit_type] = set()
+            if unit_type not in unit_type_aliases:
+                unit_type_aliases[unit_type] = {}
+            if unit_type not in seen_base_names:
+                seen_base_names[unit_type] = set()
+
+            by_unit_type[unit_type].add(base_name_lower)
+
+            if base_name_lower in seen_base_names[unit_type]:
+                continue
+            seen_base_names[unit_type].add(base_name_lower)
+
+            unit_type_aliases[unit_type][base_name_lower] = (base_name, item_type_slug)
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    unit_type_aliases[unit_type][alias] = (base_name, item_type_slug)
+
+        self._by_unit_type_items = by_unit_type
+        self._unit_type_aliases = unit_type_aliases
+
+        logger.debug(
+            "Loaded items by unit_type: %s, aliases: %s",
+            {k: len(v) for k, v in by_unit_type.items()},
+            {k: len(v) for k, v in unit_type_aliases.items()}
+        )
+
+    def _load_generic_item_names(self, db: Session) -> None:
+        """Load all item names grouped by ItemType slug."""
+        from ..models import MenuItem, ItemType
+
+        item_names_by_type: dict[str, set[str]] = {}
+        alias_to_canonical_by_type: dict[str, dict[str, str]] = {}
+
+        items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.alias_records), joinedload(MenuItem.item_type))
+            .all()
+        )
+
+        for item in items:
+            if not item.item_type:
+                continue
+
+            item_type_slug = item.item_type.slug
+            canonical_name = item.name
+
+            if item_type_slug not in item_names_by_type:
+                item_names_by_type[item_type_slug] = set()
+                alias_to_canonical_by_type[item_type_slug] = {}
+
+            name_lower = canonical_name.lower()
+            item_names_by_type[item_type_slug].add(name_lower)
+            alias_to_canonical_by_type[item_type_slug][name_lower] = canonical_name
+
+            for alias in item.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    item_names_by_type[item_type_slug].add(alias_lower)
+                    alias_to_canonical_by_type[item_type_slug][alias_lower] = canonical_name
+
+        self._item_names_by_type = item_names_by_type
+        self._item_alias_to_canonical_by_type = alias_to_canonical_by_type
+
+        logger.debug(
+            "Loaded generic item names for %d item types: %s",
+            len(item_names_by_type),
+            {k: len(v) for k, v in item_names_by_type.items()}
+        )
+
+    def _load_generic_ingredients(self, db: Session) -> None:
+        """Load all ingredients grouped by category."""
+        from ..models import Ingredient
+
+        ingredients_by_category: dict[str, set[str]] = {}
+        ingredient_details_by_category: dict[str, list[dict]] = {}
+
+        ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
+
+        for ing in ingredients:
+            category = ing.category
+            if not category:
+                continue
+
+            if category not in ingredients_by_category:
+                ingredients_by_category[category] = set()
+                ingredient_details_by_category[category] = []
+
+            name_lower = ing.name.lower()
+            ingredients_by_category[category].add(name_lower)
+
+            patterns = [name_lower]
+            for alias in ing.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_by_category[category].add(alias_lower)
+                    patterns.append(alias_lower)
+
+            ingredient_details_by_category[category].append({
+                "slug": ing.slug,
+                "name": ing.name,
+                "patterns": patterns,
+            })
+
+        self._ingredients_by_category = ingredients_by_category
+        self._ingredient_details_by_category = ingredient_details_by_category
+
+        logger.debug(
+            "Loaded generic ingredients for %d categories: %s",
+            len(ingredients_by_category),
+            {k: len(v) for k, v in ingredients_by_category.items()}
+        )
+
+    def _load_generic_ingredients_for_item_types(self, db: Session) -> None:
+        """Load ingredients valid for each ItemType, grouped by category."""
+        from ..models import ItemTypeIngredient, ItemType, Ingredient
+
+        ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}
+
+        type_ingredients = (
+            db.query(ItemTypeIngredient)
+            .options(
+                joinedload(ItemTypeIngredient.item_type),
+                joinedload(ItemTypeIngredient.ingredient).joinedload(Ingredient.alias_records)
+            )
+            .all()
+        )
+
+        for ti in type_ingredients:
+            if not ti.item_type or not ti.ingredient:
+                continue
+
+            item_type_slug = ti.item_type.slug
+            category = ti.ingredient.category or "uncategorized"
+
+            if item_type_slug not in ingredients_for_item_type:
+                ingredients_for_item_type[item_type_slug] = {}
+            if category not in ingredients_for_item_type[item_type_slug]:
+                ingredients_for_item_type[item_type_slug][category] = set()
+
+            ingredients_for_item_type[item_type_slug][category].add(ti.ingredient.name.lower())
+
+            for alias in ti.ingredient.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_for_item_type[item_type_slug][category].add(alias_lower)
+
+        self._ingredients_for_item_type = ingredients_for_item_type
+
+        logger.debug(
+            "Loaded ingredients for %d item types",
+            len(ingredients_for_item_type)
+        )
+
+    def _load_ingredient_category_metadata(self, db: Session) -> None:
+        """Load ingredient category metadata for data-driven modifier type lookups."""
+        from ..models import IngredientCategory
+
+        categories_by_modifier_type: dict[str, set[str]] = {}
+        category_field_config: dict[str, dict] = {}
+        category_order: dict[str, int] = {}
+
+        categories = db.query(IngredientCategory).all()
+
+        for cat in categories:
+            if cat.modifier_type:
+                if cat.modifier_type not in categories_by_modifier_type:
+                    categories_by_modifier_type[cat.modifier_type] = set()
+                categories_by_modifier_type[cat.modifier_type].add(cat.slug)
+
+            category_field_config[cat.slug] = {
+                "code_field_name": cat.code_field_name or cat.slug,
+                "is_multi_select": cat.is_multi_select or False,
+                "display_name": cat.display_name,
+            }
+
+            category_order[cat.slug] = cat.display_order or 999
+
+        self._ingredient_categories_by_modifier_type = categories_by_modifier_type
+        self._ingredient_category_field_config = category_field_config
+        self._ingredient_category_order = category_order
+
+        logger.debug(
+            "Loaded ingredient category metadata: %s modifier types, %s field configs, %s orders",
+            {k: len(v) for k, v in categories_by_modifier_type.items()},
+            len(category_field_config),
+            len(category_order)
+        )
+
+    def _load_menu_item_categories(self, db: Session) -> None:
+        """Load menu item categories (drink, food, etc.) for category-based searches."""
+        from ..models import Category, MenuItemCategory, MenuItem, ItemType, MenuItemSizePrice
+
+        available_categories: dict[str, str] = {}
+        menu_items_by_category: dict[str, list[dict]] = {}
+
+        categories = db.query(Category).all()
+        for cat in categories:
+            available_categories[cat.slug] = cat.name
+            menu_items_by_category[cat.slug] = []
+
+        price_subq = (
+            db.query(
+                MenuItemSizePrice.menu_item_id,
+                func.min(MenuItemSizePrice.price).label("min_price")
+            )
+            .group_by(MenuItemSizePrice.menu_item_id)
+            .subquery()
+        )
+
+        category_assignments = (
+            db.query(MenuItemCategory)
+            .join(MenuItem, MenuItemCategory.menu_item_id == MenuItem.id)
+            .join(Category, MenuItemCategory.category_id == Category.id)
+            .outerjoin(price_subq, MenuItem.id == price_subq.c.menu_item_id)
+            .add_columns(
+                MenuItem.id.label("menu_item_id"),
+                MenuItem.name.label("menu_item_name"),
+                func.coalesce(price_subq.c.min_price, 0.0).label("base_price"),
+                MenuItem.item_type_id.label("item_type_id"),
+                Category.slug.label("category_slug"),
+            )
+            .all()
+        )
+
+        item_type_slugs = {it.id: it.slug for it in db.query(ItemType).all()}
+
+        for assignment in category_assignments:
+            item_type_slug = item_type_slugs.get(assignment.item_type_id)
+            item_dict = {
+                "id": assignment.menu_item_id,
+                "name": assignment.menu_item_name,
+                "base_price": assignment.base_price,
+                "item_type": item_type_slug,
+            }
+            if assignment.category_slug in menu_items_by_category:
+                menu_items_by_category[assignment.category_slug].append(item_dict)
+
+        self._available_categories = available_categories
+        self._menu_items_by_category_slug = menu_items_by_category
+
+        logger.debug(
+            "Loaded menu item categories: %d categories, items by category: %s",
+            len(available_categories),
+            {k: len(v) for k, v in menu_items_by_category.items()}
+        )
+
+    def _load_modifier_categories(self, db: Session) -> None:
+        """Load modifier categories for menu inquiries (toppings, proteins, milks, etc.)."""
+        from ..models import ModifierCategory
+
+        modifier_categories: dict[str, dict] = {}
+
+        categories = db.query(ModifierCategory).all()
+        for cat in categories:
+            modifier_categories[cat.slug] = {
+                "display_name": cat.display_name,
+                "loads_from_ingredients": cat.loads_from_ingredients,
+                "ingredient_category": cat.ingredient_category,
+                "description": cat.description,
+                "prompt_suffix": cat.prompt_suffix,
+            }
+
+        self._modifier_categories = modifier_categories
+
+        logger.debug(
+            "Loaded modifier categories: %d categories (%s)",
+            len(modifier_categories),
+            list(modifier_categories.keys())
+        )
+
+    def _load_priced_attributes(self, db: Session) -> None:
+        """Load item types that have priced attributes."""
+        from ..models import (
+            ItemType, ItemTypeAttribute, GlobalAttributeOption,
+            ItemTypeGlobalAttribute, GlobalAttribute, ItemTypeIngredient,
+        )
+
+        self._item_type_priced_attribute = {}
+
+        item_types = db.query(ItemType).all()
+
+        for it in item_types:
+            priced_attr = None
+
+            global_links = (
+                db.query(ItemTypeGlobalAttribute)
+                .filter(ItemTypeGlobalAttribute.item_type_id == it.id)
+                .all()
+            )
+            for link in global_links:
+                has_priced_options = (
+                    db.query(GlobalAttributeOption)
+                    .filter(
+                        GlobalAttributeOption.global_attribute_id == link.global_attribute_id,
+                        GlobalAttributeOption.price_modifier > 0,
+                    )
+                    .first()
+                )
+                if has_priced_options:
+                    attr = db.query(GlobalAttribute).filter(
+                        GlobalAttribute.id == link.global_attribute_id
+                    ).first()
+                    if attr:
+                        priced_attr = attr.slug
+                        break
+
+            if not priced_attr:
+                local_attrs = (
+                    db.query(ItemTypeAttribute)
+                    .filter(ItemTypeAttribute.item_type_id == it.id)
+                    .all()
+                )
+                for attr in local_attrs:
+                    if attr.loads_from_ingredients and attr.ingredient_group:
+                        ingredient_ids = [
+                            link.ingredient_id for link in
+                            db.query(ItemTypeIngredient.ingredient_id)
+                            .filter(
+                                ItemTypeIngredient.item_type_id == it.id,
+                                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
+                            )
+                            .all()
+                        ]
+                        if ingredient_ids:
+                            has_priced_ing = (
+                                db.query(GlobalAttributeOption)
+                                .filter(
+                                    GlobalAttributeOption.ingredient_id.in_(ingredient_ids),
+                                    GlobalAttributeOption.price_modifier > 0,
+                                )
+                                .first()
+                            )
+                            if has_priced_ing:
+                                priced_attr = attr.slug
+                                break
+
+            self._item_type_priced_attribute[it.slug] = priced_attr
+
+        logger.debug(
+            "Loaded priced attributes for %d item types",
+            len([k for k, v in self._item_type_priced_attribute.items() if v]),
+        )
+
+    def _load_resolved_item_prices(self, db: Session) -> None:
+        """Pre-compute resolved prices for menu items."""
+        from ..models import MenuItem, ItemType
+
+        self._resolved_item_prices = {}
+
+        items = (
+            db.query(MenuItem)
+            .options(joinedload(MenuItem.item_type))
+            .all()
+        )
+
+        for item in items:
+            if not item.item_type:
+                continue
+
+            self._resolved_item_prices[item.name.lower()] = float(item.base_price or 0)
+
+        logger.debug("Pre-loaded %d resolved item prices", len(self._resolved_item_prices))
+
+    def _load_ingredient_price_contexts(self, db: Session) -> None:
+        """Load ingredient price contexts for data-driven price inquiries."""
+        from ..models import Ingredient, ItemTypeIngredient, ItemType, MenuItem, GlobalAttributeOption
+
+        self._ingredient_price_contexts = {}
+
+        ingredients = (
+            db.query(Ingredient)
+            .options(joinedload(Ingredient.alias_records))
+            .all()
+        )
+
+        ingredient_prices = {}
+        global_options = (
+            db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+            .filter(GlobalAttributeOption.ingredient_id.isnot(None))
+            .all()
+        )
+        for opt in global_options:
+            ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
+
+        for ing in ingredients:
+            contexts = []
+            ing_name_lower = ing.name.lower()
+
+            item_type_links = (
+                db.query(ItemTypeIngredient, ItemType)
+                .join(ItemType, ItemTypeIngredient.item_type_id == ItemType.id)
+                .filter(ItemTypeIngredient.ingredient_id == ing.id)
+                .all()
+            )
+            ing_price = ingredient_prices.get(ing.id, 0.0)
+            for link, item_type in item_type_links:
+                contexts.append({
+                    "context_type": "modifier",
+                    "item_type_slug": item_type.slug,
+                    "label": f"{item_type.display_name} topping",
+                    "price": ing_price,
+                })
+
+            by_weight_items = (
+                db.query(MenuItem)
+                .join(ItemType, MenuItem.item_type_id == ItemType.id)
+                .filter(
+                    MenuItem.unit_type == "by_weight",
+                    MenuItem.name.ilike(f"%{ing.name}%"),
+                )
+                .all()
+            )
+            for item in by_weight_items:
+                contexts.append({
+                    "context_type": "standalone",
+                    "item_type_slug": item.item_type.slug if item.item_type else None,
+                    "label": "by the pound",
+                    "price": float(item.base_price) if item.base_price else 0.0,
+                    "unit": "lb",
+                    "menu_item_name": item.name,
+                })
+
+            if contexts:
+                self._ingredient_price_contexts[ing_name_lower] = contexts
+                for alias in ing.aliases:
+                    alias_lower = alias.lower().strip()
+                    if alias_lower and alias_lower != ing_name_lower:
+                        self._ingredient_price_contexts[alias_lower] = contexts
+
+        logger.debug(
+            "Loaded price contexts for %d ingredients",
+            len(self._ingredient_price_contexts),
+        )
+
+    def _load_recommendation_search_data(self, db: Session) -> None:
+        """Load ALL menu items for recommendation search (no filtering)."""
+        from ..models import MenuItem, ItemType
+
+        all_items: dict[str, dict] = {}
+        keyword_index: dict[str, list[str]] = defaultdict(list)
+
+        items = (
+            db.query(MenuItem)
+            .options(
+                joinedload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type),
+            )
+            .all()
+        )
+
+        for item in items:
+            canonical_name = item.name
+            name_lower = canonical_name.lower()
+            item_type_slug = item.item_type.slug if item.item_type else None
+
+            item_data = {
+                "id": item.id,
+                "name": canonical_name,
+                "item_type_slug": item_type_slug,
+            }
+            all_items[name_lower] = item_data
+
+            for word in name_lower.split():
+                if len(word) >= 3 and word not in {"the", "and", "with"}:
+                    keyword_index[word].append(name_lower)
+
+            for alias in item.aliases:
+                alias_lower = alias.lower().strip()
+                if alias_lower:
+                    all_items[alias_lower] = item_data
+                    for word in alias_lower.split():
+                        if len(word) >= 3 and word not in {"the", "and", "with"}:
+                            keyword_index[word].append(name_lower)
+
+        self._all_menu_items_by_name = all_items
+        self._recommendation_keyword_index = dict(keyword_index)
+
+        logger.debug(
+            "Loaded recommendation search data: %d items, %d keywords",
+            len(all_items),
+            len(keyword_index),
+        )

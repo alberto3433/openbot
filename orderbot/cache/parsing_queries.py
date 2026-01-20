@@ -1,0 +1,297 @@
+"""
+Parsing query mixin for MenuDataCache.
+
+Contains methods for response patterns, parsing helpers, and text matching.
+"""
+
+import re
+import logging
+from typing import Pattern
+
+logger = logging.getLogger(__name__)
+
+
+class ParsingQueryMixin:
+    """Mixin containing parsing-related query methods."""
+
+    def get_response_patterns(self, pattern_type: str) -> set[str]:
+        """Get all patterns for a response type.
+
+        Args:
+            pattern_type: The type of response (affirmative, negative, cancel, done)
+
+        Returns:
+            Set of patterns for the type, or empty set if pattern_type not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._response_patterns.get(pattern_type, set()).copy()
+
+    def is_response_type(self, text: str, pattern_type: str) -> bool:
+        """Check if text matches a response pattern type.
+
+        Args:
+            text: User input to check
+            pattern_type: The type of response to check
+
+        Returns:
+            True if text matches any pattern of the given type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        normalized = text.lower().strip()
+
+        exact_patterns = self._response_patterns.get(pattern_type, set())
+        if normalized in exact_patterns:
+            return True
+
+        regex = self._response_regex_compiled.get(pattern_type)
+        if regex and regex.match(normalized):
+            return True
+
+        return False
+
+    def get_response_regex(self, pattern_type: str) -> Pattern | None:
+        """Get compiled regex pattern for a response type.
+
+        Args:
+            pattern_type: The type of response
+
+        Returns:
+            Compiled regex Pattern, or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._response_regex_compiled.get(pattern_type)
+
+    def is_affirmative(self, text: str) -> bool:
+        """Check if text is an affirmative response.
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text is affirmative.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self.is_response_type(text, "affirmative")
+
+    def is_negative(self, text: str) -> bool:
+        """Check if text is a negative response.
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text is negative.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self.is_response_type(text, "negative")
+
+    def is_cancel(self, text: str) -> bool:
+        """Check if text is a cancel signal.
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text is a cancel signal.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self.is_response_type(text, "cancel")
+
+    def is_done(self, text: str) -> bool:
+        """Check if text is a done signal.
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text is a done signal.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self.is_response_type(text, "done")
+
+    def is_greeting(self, text: str) -> bool:
+        """Check if text is a greeting.
+
+        Args:
+            text: User input to check
+
+        Returns:
+            True if text is a greeting.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self.is_response_type(text, "greeting")
+
+    def get_standalone_instruction_patterns(self) -> list[Pattern]:
+        """Get compiled patterns for standalone instructions.
+
+        Returns:
+            List of compiled regex patterns for standalone instructions.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        patterns = []
+
+        instruction_regex = self._response_regex_compiled.get("standalone_instruction")
+        if instruction_regex:
+            patterns.append(instruction_regex)
+
+        return patterns
+
+    def get_compound_phrases(self) -> set[str]:
+        """Get compound phrases that shouldn't be split during parsing.
+
+        Returns:
+            Set of compound phrases (lowercase).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._compound_phrases.copy()
+
+    def get_item_type_triggers(self, item_type_slug: str | None = None) -> dict[str, set[str]] | set[str]:
+        """Get item type trigger keywords.
+
+        Args:
+            item_type_slug: Optional specific item type to get triggers for.
+                           If None, returns all triggers.
+
+        Returns:
+            If item_type_slug is provided: set of trigger keywords for that type
+            If None: dict mapping item_type_slug -> set of triggers
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        if item_type_slug:
+            return self._item_type_triggers.get(item_type_slug, set()).copy()
+        return {k: v.copy() for k, v in self._item_type_triggers.items()}
+
+    def get_configurable_item_type_slugs(self) -> set[str]:
+        """Get slugs of item types that have askable attributes.
+
+        Returns:
+            Set of configurable item type slugs.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._configurable_item_type_slugs.copy()
+
+    def is_configurable_item_type(self, item_type_slug: str) -> bool:
+        """Check if an item type is configurable.
+
+        Args:
+            item_type_slug: The item type slug to check
+
+        Returns:
+            True if the item type has askable attributes.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return item_type_slug in self._configurable_item_type_slugs
+
+    def get_configurable_item_names(self) -> set[str]:
+        """Get all item names for configurable item types.
+
+        Returns:
+            Set of item names (lowercase) from configurable item types.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        if self._configurable_item_names is not None:
+            return self._configurable_item_names.copy()
+
+        result = set()
+        for item_type_slug in self._configurable_item_type_slugs:
+            names = self._item_names_by_type.get(item_type_slug, set())
+            result.update(names)
+
+        self._configurable_item_names = result
+        return result.copy()
+
+    def get_items_with_required_phrases(self) -> dict[str, str]:
+        """Get items that have required_match_phrases set.
+
+        Returns:
+            Dict mapping item_name (lowercase) -> required_match_phrases string.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._items_with_required_phrases.copy()
+
+    def text_matches_exclusion_phrase(self, text: str) -> bool:
+        """Check if text contains an item with required match phrases.
+
+        This is used to detect items like "coffee cake" that should NOT
+        match generic patterns for "coffee".
+
+        Args:
+            text: User input text (lowercase)
+
+        Returns:
+            True if the text matches an item with required phrases.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        text_lower = text.lower()
+
+        for item_name, phrases in self._items_with_required_phrases.items():
+            if item_name in text_lower:
+                # Check if required phrases are present
+                for phrase in phrases.split(","):
+                    phrase = phrase.strip().lower()
+                    if phrase and phrase in text_lower:
+                        return True
+
+        return False
+
+    def detect_item_type_from_keyword(self, keyword: str) -> str | None:
+        """Detect item type from a keyword in the item type triggers.
+
+        Args:
+            keyword: A keyword that might indicate an item type
+
+        Returns:
+            The item type slug if keyword matches a trigger, None otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        keyword_lower = keyword.lower()
+        for item_type_slug, triggers in self._item_type_triggers.items():
+            if keyword_lower in triggers:
+                return item_type_slug
+        return None

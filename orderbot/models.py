@@ -646,7 +646,8 @@ class Ingredient(Base):
     category = Column(String, nullable=False)
     unit = Column(String, nullable=False)       # 'slice', 'piece', 'oz', 'bag', 'ml', etc.
     track_inventory = Column(Boolean, nullable=False, default=True)
-    base_price = Column(Float, nullable=False, default=0.0)  # Price for custom sandwiches (proteins mainly)
+    # NOTE: Pricing for ingredients is managed via GlobalAttributeOption.price_modifier,
+    # not in this table. See the data model documentation for details.
     is_available = Column(Boolean, nullable=False, default=True)  # False = "86'd" / out of stock
 
     # Dietary attributes (source of truth - ingredients define what they are)
@@ -779,10 +780,13 @@ class ItemTypeIngredient(Base):
     When an attribute has loads_from_ingredients=True, its options come from
     this table filtered by ingredient_group, instead of from attribute_options.
 
+    NOTE: Pricing comes from GlobalAttributeOption.price_modifier (where ingredient_id matches),
+    NOT from this table. This table only handles linking and display configuration.
+
     Examples:
-    - Oat Milk linked to 'sized_beverage' with ingredient_group='milk', price_modifier=0.75
-    - Bacon linked to 'bagel' with ingredient_group='protein', price_modifier=3.00
-    - Vanilla Syrup linked to 'sized_beverage' with ingredient_group='syrup', price_modifier=0.50
+    - Oat Milk linked to 'sized_beverage' with ingredient_group='milk'
+    - Bacon linked to 'bagel' with ingredient_group='protein'
+    - Vanilla Syrup linked to 'sized_beverage' with ingredient_group='syrup'
     """
     __tablename__ = "item_type_ingredients"
 
@@ -793,9 +797,6 @@ class ItemTypeIngredient(Base):
     # Grouping - which selector/category this appears in
     # e.g., 'milk', 'sweetener', 'syrup', 'spread', 'protein', 'topping', 'cheese'
     ingredient_group = Column(String(50), nullable=False)
-
-    # Pricing - can vary by item type (oat milk might cost different for latte vs iced coffee)
-    price_modifier = Column(Numeric(10, 2), nullable=False, default=0.00)
 
     # Display configuration
     display_order = Column(Integer, nullable=False, default=0)

@@ -127,9 +127,11 @@ class ItemTypeAttributeUpdate(BaseModel):
 # =============================================================================
 
 class IngredientLinkCreate(BaseModel):
-    """Request model for linking an ingredient to an attribute."""
+    """Request model for linking an ingredient to an attribute.
+
+    NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not here.
+    """
     ingredient_id: int
-    price_modifier: float = 0.0
     display_name_override: Optional[str] = None
     is_default: bool = False
     is_available: bool = True
@@ -137,8 +139,10 @@ class IngredientLinkCreate(BaseModel):
 
 
 class IngredientLinkUpdate(BaseModel):
-    """Request model for updating an ingredient link."""
-    price_modifier: Optional[float] = None
+    """Request model for updating an ingredient link.
+
+    NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not here.
+    """
     display_name_override: Optional[str] = None
     is_default: Optional[bool] = None
     is_available: Optional[bool] = None

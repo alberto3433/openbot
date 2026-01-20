@@ -403,11 +403,13 @@ class UnifiedItemConverter:
         customization_offered = getattr(item, 'customization_offered', False)
 
         # Get base_price from pricing engine if available, or from item
-        # Data-driven: lookup by menu_item_name only, no attribute checks
+        # Data-driven: lookup by menu_item_name and size (if present)
         base_price = getattr(item, 'base_price', None)
         if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
             try:
-                base_price = pricing.lookup_base_price(menu_item_name)
+                # Pass size from attribute_values for size-based pricing
+                size_name = attribute_values.get('size')
+                base_price = pricing.lookup_base_price(menu_item_name, size_name)
             except (ValueError, KeyError):
                 # Item not in menu data, will fall back to unit_price
                 pass

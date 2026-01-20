@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache, singularize
 from .models import OrderTask, MenuItemTask
+from .normalization import normalize_for_option_match
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
+from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
 
@@ -164,74 +166,17 @@ class MenuItemConfigHandler(BaseHandler):
               "two fried eggs" → (2, "fried eggs")
               "scrambled egg" → (1, "scrambled egg")
         """
-        text = user_input.strip()
-        quantity = 1
-
-        # Check for leading numeric quantity (e.g., "2", "2x", "10")
-        match = re.match(r'^(\d+)x?\s+', text, re.IGNORECASE)
-        if match:
-            quantity = int(match.group(1))
-            text = text[match.end():]
-            return (quantity, text)
-
-        # Check for word quantities
-        word_quantities = {
-            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-        }
-        for word, num in word_quantities.items():
-            pattern = rf'^{word}\s+'
-            match = re.match(pattern, text, re.IGNORECASE)
-            if match:
-                quantity = num
-                text = text[match.end():]
-                return (quantity, text)
-
-        return (quantity, text)
+        quantity, remaining = extract_leading_quantity(user_input)
+        return (quantity or 1, remaining)
 
     def _normalize_for_matching(self, text: str) -> str:
         """
         Normalize user input for option matching.
 
-        Handles common patterns users type when ordering:
-        - Shot quantities: "two shots" → "double", "3 shots" → "triple"
-        - Leading quantities: "2 scrambled eggs" → "scrambled eggs"
-        - Plural forms: "scrambled eggs" → "scrambled egg"
+        Delegates to normalization.normalize_for_option_match() for unified handling.
+        Handles common patterns: shot quantities, leading quantities, plural forms.
         """
-        text = text.lower().strip()
-
-        # Normalize numeric shot quantities to words
-        # "1" → "single", "2" → "double", etc.
-        SHOT_NORMALIZATIONS = {
-            "1": "single", "one": "single",
-            "2": "double", "two": "double",
-            "3": "triple", "three": "triple",
-            "4": "quad", "four": "quad",
-        }
-
-        # Handle "X shot(s)" pattern FIRST before stripping quantities:
-        # "two shots" → "double", "3 shots" → "triple", "one shot" → "single"
-        shot_pattern = re.match(r'^(\w+)\s+shots?$', text)
-        if shot_pattern:
-            num_word = shot_pattern.group(1)
-            if num_word in SHOT_NORMALIZATIONS:
-                return SHOT_NORMALIZATIONS[num_word]
-
-        # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
-        text = re.sub(r'^(\d+x?\s+)', '', text)  # "2 ", "2x ", "10 "
-        text = re.sub(r'^(one|two|three|four|five|six|seven|eight|nine|ten)\s+', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'^(a|an)\s+', '', text)  # "a scrambled egg", "an egg"
-
-        # Normalize plurals to singular for matching using generic singularize function
-        # "eggs" → "egg", "bagels" → "bagel", "syrups" → "syrup", etc.
-        words = text.split()
-        text = " ".join(singularize(word) for word in words)
-
-        # Also handle exact matches: "two" → "double", "3" → "triple"
-        if text in SHOT_NORMALIZATIONS:
-            text = SHOT_NORMALIZATIONS[text]
-
-        return text.strip()
+        return normalize_for_option_match(text)
 
     def _match_option_from_input(
         self, user_input: str, options: list[dict]

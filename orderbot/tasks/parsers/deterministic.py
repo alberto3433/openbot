@@ -8,6 +8,7 @@ input patterns
 
 import re
 import logging
+from collections import namedtuple
 
 from orderbot.menu_data_cache import menu_cache, singularize
 
@@ -662,8 +663,13 @@ def extract_attribute_values(
     This is the generic, data-driven function. It queries the database for what
     attributes the item type has and matches input against those options.
 
-    The same function works for any item type
-    What gets extracted depends entirely on what the database says the item type accepts.
+    Uses cross-attribute longest-match-first algorithm:
+    1. Collect ALL potential matches from ALL attributes
+    2. Sort by match length descending
+    3. Apply matches in order, skipping overlaps
+
+    This ensures longer matches always win regardless of attribute processing order.
+    For example, "plain cream cheese" will match spread before "plain" matches bread.
 
     Args:
         user_input: The raw user input string
@@ -685,22 +691,15 @@ def extract_attribute_values(
         logger.debug("No attributes found for item type '%s'", item_type)
         return result
 
-    # Track matched spans to avoid overlapping matches
-    matched_spans: list[tuple[int, int]] = []
-
     def is_word_boundary(text: str, start: int, end: int) -> bool:
         """Check if the match is at word boundaries."""
         before_ok = start == 0 or not text[start - 1].isalnum()
         after_ok = end >= len(text) or not text[end].isalnum()
         return before_ok and after_ok
 
-    def spans_overlap(start: int, end: int) -> bool:
-        """Check if position overlaps with any matched span."""
-        return any(not (end <= s or start >= e) for s, e in matched_spans)
-
-    def extract_quantity_before(pos: int) -> int:
+    def extract_quantity_before(text: str, pos: int) -> int:
         """Extract quantity prefix before a match position."""
-        before_text = input_lower[:pos].strip()
+        before_text = text[:pos].strip()
         if not before_text:
             return 1
 
@@ -730,114 +729,112 @@ def extract_attribute_values(
             return True  # No must_match requirement
         return all(pattern.lower() in text for pattern in must_match)
 
-    def find_option_match(
-        options: list[dict], text: str, is_multi_select: bool
-    ) -> list[dict]:
-        """Find all matching options in text, longest match first."""
-        matches = []
-
-        # Build list of (pattern, option, pattern_length) tuples
-        # Sorted by pattern length descending for longest-match-first
-        all_patterns: list[tuple[str, dict, int]] = []
-        for opt in options:
-            # Add display_name as a pattern
-            display_name = opt.get("display_name", "").lower()
-            if display_name:
-                all_patterns.append((display_name, opt, len(display_name)))
-
-            # Add slug as a pattern (convert underscores to spaces)
-            slug = opt.get("slug", "")
-            if slug:
-                slug_as_words = slug.replace("_", " ").lower()
-                all_patterns.append((slug_as_words, opt, len(slug_as_words)))
-                # Also try slug as-is (with underscores)
-                all_patterns.append((slug.lower(), opt, len(slug)))
-
-            # Add aliases as patterns
-            for alias in opt.get("aliases", []):
-                alias_lower = alias.lower()
-                all_patterns.append((alias_lower, opt, len(alias_lower)))
-
-        # Sort by pattern length descending
-        all_patterns.sort(key=lambda x: x[2], reverse=True)
-
-        # Track which options we've already matched (by slug)
-        matched_slugs: set[str] = set()
-
-        for pattern, opt, _ in all_patterns:
-            slug = opt.get("slug", "")
-            if slug in matched_slugs:
-                continue  # Already matched this option
-
-            # Find all occurrences of pattern in text
-            start = 0
-            while True:
-                pos = text.find(pattern, start)
-                if pos == -1:
-                    break
-
-                end = pos + len(pattern)
-
-                if is_word_boundary(text, pos, end) and not spans_overlap(pos, end):
-                    # Check must_match patterns
-                    if check_must_match(opt, text):
-                        matched_spans.append((pos, end))
-                        matched_slugs.add(slug)
-
-                        quantity = extract_quantity_before(pos)
-                        matches.append({
-                            "slug": slug,
-                            "display_name": opt.get("display_name", slug),
-                            "quantity": quantity,
-                            "price": opt.get("price", 0),
-                            "category": opt.get("category"),
-                        })
-                        logger.debug(
-                            "Extracted attribute value: '%s' -> '%s' (qty=%d)",
-                            pattern, slug, quantity
-                        )
-
-                        if not is_multi_select:
-                            return matches  # Single select - stop after first match
-                        break  # Move to next option
-
-                start = pos + 1
-
-        return matches
-
-    # Process each attribute
+    # Phase 1: Handle boolean attributes first (they don't overlap with option matches)
     for attr_slug, attr_config in attributes.items():
-        options = attr_config.get("options", [])
-        input_type = attr_config.get("input_type", "single_select")
-        is_multi_select = input_type == "multi_select"
-
-        if input_type == "boolean":
-            # Handle boolean attributes (e.g., "toasted", "decaf")
+        if attr_config.get("input_type") == "boolean":
             display_name = attr_config.get("display_name", attr_slug).lower()
             # Check for negative patterns FIRST (before positive check)
             # This prevents "not toasted" from matching just "toasted"
-            # Handles: "not toasted", "no toasted", "untoasted"
             if re.search(rf'\b(?:not\s+{re.escape(display_name)}|un{re.escape(display_name)}|no\s+{re.escape(display_name)})\b', input_lower):
                 result[attr_slug] = False
                 logger.debug("Extracted boolean attribute: %s = False", attr_slug)
-            # Check for positive patterns
             elif re.search(rf'\b{re.escape(display_name)}\b', input_lower):
                 result[attr_slug] = True
                 logger.debug("Extracted boolean attribute: %s = True", attr_slug)
+
+    # Phase 2: Collect all potential option matches from all attributes
+    CandidateMatch = namedtuple('CandidateMatch', [
+        'attr_slug', 'option', 'pattern', 'start', 'end', 'length', 'is_multi_select'
+    ])
+    candidates: list[CandidateMatch] = []
+
+    for attr_slug, attr_config in attributes.items():
+        if attr_config.get("input_type") == "boolean":
+            continue  # Already handled in Phase 1
+
+        options = attr_config.get("options", [])
+        if not options:
             continue
 
-        if not options:
-            continue  # Skip attributes without options
+        is_multi_select = attr_config.get("input_type") == "multi_select"
 
-        matches = find_option_match(options, input_lower, is_multi_select)
+        for opt in options:
+            patterns = []
+            # Add display_name
+            if opt.get("display_name"):
+                patterns.append(opt["display_name"].lower())
+            # Add slug as words
+            if opt.get("slug"):
+                patterns.append(opt["slug"].replace("_", " ").lower())
+                patterns.append(opt["slug"].lower())
+            # Add aliases
+            patterns.extend(alias.lower() for alias in opt.get("aliases", []))
 
-        if matches:
-            if is_multi_select:
-                # Store list of matched values with quantities
-                result[attr_slug] = matches
-            else:
-                # Store single value (just the slug)
-                result[attr_slug] = matches[0]["slug"]
+            for pattern in patterns:
+                start = 0
+                while True:
+                    pos = input_lower.find(pattern, start)
+                    if pos == -1:
+                        break
+                    end = pos + len(pattern)
+                    if is_word_boundary(input_lower, pos, end) and check_must_match(opt, input_lower):
+                        candidates.append(CandidateMatch(
+                            attr_slug=attr_slug,
+                            option=opt,
+                            pattern=pattern,
+                            start=pos,
+                            end=end,
+                            length=len(pattern),
+                            is_multi_select=is_multi_select,
+                        ))
+                    start = pos + 1
+
+    # Phase 3: Sort by length descending (longest matches first)
+    candidates.sort(key=lambda c: c.length, reverse=True)
+
+    # Phase 4: Apply matches, tracking spans and avoiding overlaps
+    matched_spans: list[tuple[int, int]] = []
+    matched_options_per_attr: dict[str, set[str]] = {}  # Track matched option slugs per attribute
+
+    def spans_overlap(start: int, end: int) -> bool:
+        """Check if position overlaps with any matched span."""
+        return any(not (end <= s or start >= e) for s, e in matched_spans)
+
+    for cand in candidates:
+        slug = cand.option.get("slug", "")
+
+        # Skip if this option already matched for this attribute
+        if slug in matched_options_per_attr.get(cand.attr_slug, set()):
+            continue
+
+        # Skip if overlaps with existing match
+        if spans_overlap(cand.start, cand.end):
+            continue
+
+        # Record the match
+        matched_spans.append((cand.start, cand.end))
+        matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
+
+        quantity = extract_quantity_before(input_lower, cand.start)
+        match_data = {
+            "slug": slug,
+            "display_name": cand.option.get("display_name", slug),
+            "quantity": quantity,
+            "price": cand.option.get("price", 0),
+            "category": cand.option.get("category"),
+        }
+
+        if cand.is_multi_select:
+            result.setdefault(cand.attr_slug, []).append(match_data)
+        else:
+            # Single select: only set if not already set
+            if cand.attr_slug not in result:
+                result[cand.attr_slug] = slug
+
+        logger.debug(
+            "Extracted attribute value: '%s' -> '%s' (qty=%d, attr=%s)",
+            cand.pattern, slug, quantity, cand.attr_slug
+        )
 
     # Extract special instructions (applicable to all item types)
     instructions = extract_special_instructions_from_input(user_input)
@@ -2320,17 +2317,6 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
     # Extract base attributes using data-driven extractor
     base_attrs = extract_attribute_values(initial_part, item_type)
 
-    # Also extract global attributes for base (spread, toasted, scooped)
-    base_spread = _extract_single_select_global_attribute(initial_part, "spread")
-    if base_spread:
-        base_attrs["spread"] = base_spread
-    base_toasted = _extract_boolean_global_attribute(initial_part, "toasted")
-    if base_toasted is not None:
-        base_attrs["toasted"] = base_toasted
-    base_scooped = _extract_boolean_global_attribute(initial_part, "scooped")
-    if base_scooped is not None:
-        base_attrs["scooped"] = base_scooped
-
     # Try to match a specific menu item name within the type
     base_item_name = _match_menu_item_name_for_type(initial_part, item_type)
 
@@ -2363,17 +2349,6 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
 
         # Extract part-specific attributes (item-type-specific)
         part_attrs = extract_attribute_values(part_text, item_type)
-
-        # Also extract global attributes (spread, toasted, scooped) that apply across item types
-        spread = _extract_single_select_global_attribute(part_text, "spread")
-        if spread:
-            part_attrs["spread"] = spread
-        toasted = _extract_boolean_global_attribute(part_text, "toasted")
-        if toasted is not None:
-            part_attrs["toasted"] = toasted
-        scooped = _extract_boolean_global_attribute(part_text, "scooped")
-        if scooped is not None:
-            part_attrs["scooped"] = scooped
 
         # Merge: part overrides base (only for non-None values)
         merged_attrs = {**base_attrs}

@@ -37,6 +37,11 @@ from .modifier_operations import (
     remove_default_ingredient_from_item,
 )
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
+from .parsers.quantity_utils import (
+    BASIC_WORD_TO_NUM,
+    extract_quantity_for_pattern,
+    parse_make_it_n_quantity,
+)
 from .mixins import MenuDataMixin
 
 if TYPE_CHECKING:
@@ -170,15 +175,7 @@ def _extract_quantity_from_input(input_lower: str, pattern: str) -> int:
     Returns:
         Quantity (defaults to 1 if not found)
     """
-    word_to_num = {
-        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-        "double": 2, "triple": 3
-    }
-    qty_match = re.search(rf'(\d+|one|two|three|four|five|double|triple)\s+{re.escape(pattern)}', input_lower)
-    if qty_match:
-        qty_str = qty_match.group(1)
-        return int(qty_str) if qty_str.isdigit() else word_to_num.get(qty_str, 1)
-    return 1
+    return extract_quantity_for_pattern(input_lower, pattern)
 
 
 def _add_modifier_to_item(
@@ -737,16 +734,8 @@ class TakingItemsHandler(MenuDataMixin):
                     num_str = make_it_n_match.group(i).lower()
                     break
             if num_str:
-                word_to_num = {
-                    "two": 2, "three": 3, "four": 4, "five": 5,
-                    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-                }
-                if num_str.isdigit():
-                    target_qty = int(num_str)
-                else:
-                    target_qty = word_to_num.get(num_str, 0)
-
-                if target_qty >= 2:
+                target_qty = parse_make_it_n_quantity(num_str)
+                if target_qty:
                     active_items = order.items.get_active_items()
                     if active_items:
                         last_item = active_items[-1]

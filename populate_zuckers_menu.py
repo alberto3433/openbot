@@ -388,11 +388,10 @@ def ensure_bread_ingredients(db: Session):
     for name, price in bagel_types:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if existing:
-            # Update price if it changed
-            if existing.base_price != price:
-                existing.base_price = price
+            pass  # Ingredient already exists
         else:
-            db.add(Ingredient(name=name, category="bread", unit="each", is_available=True, base_price=price))
+            # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not here
+            db.add(Ingredient(name=name, category="bread", unit="each", is_available=True))
 
     db.commit()
     print(f"Ensured {len(bagel_types)} bagel bread types exist with prices")
@@ -435,20 +434,19 @@ def ensure_schmear_ingredients(db: Session):
         ("Avocado Spread", 4.00),
     ]
 
+    # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not Ingredient.base_price
     for name, price in cream_cheeses:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if not existing:
-            db.add(Ingredient(name=name, category="cheese", unit="portion", is_available=True, base_price=price))
+            db.add(Ingredient(name=name, category="cheese", unit="portion", is_available=True))
         else:
-            existing.base_price = price
             existing.category = "cheese"
 
     for name, price in other_spreads:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if not existing:
-            db.add(Ingredient(name=name, category="spread", unit="portion", is_available=True, base_price=price))
+            db.add(Ingredient(name=name, category="spread", unit="portion", is_available=True))
         else:
-            existing.base_price = price
             existing.category = "spread"
 
     db.commit()
@@ -474,12 +472,12 @@ def ensure_protein_ingredients(db: Session):
         ("Avocado", 3.00),
     ]
 
+    # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not Ingredient.base_price
     for name, price in proteins:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if not existing:
-            db.add(Ingredient(name=name, category="protein", unit="portion", is_available=True, base_price=price))
+            db.add(Ingredient(name=name, category="protein", unit="portion", is_available=True))
         else:
-            existing.base_price = price
             existing.category = "protein"
 
     db.commit()
@@ -501,12 +499,12 @@ def ensure_topping_ingredients(db: Session):
         ("Everything Seeds", 0.50),
     ]
 
+    # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not Ingredient.base_price
     for name, price in toppings:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if not existing:
-            db.add(Ingredient(name=name, category="topping", unit="portion", is_available=True, base_price=price))
+            db.add(Ingredient(name=name, category="topping", unit="portion", is_available=True))
         else:
-            existing.base_price = price
             existing.category = "topping"
 
     db.commit()
@@ -523,12 +521,12 @@ def ensure_sauce_ingredients(db: Session):
         ("Olive Oil", 0.50),
     ]
 
+    # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not Ingredient.base_price
     for name, price in sauces:
         existing = db.query(Ingredient).filter(Ingredient.name == name).first()
         if not existing:
-            db.add(Ingredient(name=name, category="sauce", unit="portion", is_available=True, base_price=price))
+            db.add(Ingredient(name=name, category="sauce", unit="portion", is_available=True))
         else:
-            existing.base_price = price
             existing.category = "sauce"
 
     db.commit()

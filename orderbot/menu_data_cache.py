@@ -3130,12 +3130,14 @@ class MenuDataCache:
     def _load_attribute_options_from_db(self, db, attr, item_type_id: int) -> list[dict]:
         """Load options for an attribute from ingredients.
 
-        Note: Options from the deprecated attribute_options table are no longer loaded.
-        All options should come from either:
-        1. ItemTypeIngredient (when loads_from_ingredients=True)
-        2. GlobalAttributeOption (via item_type_global_attributes)
+        Pricing is sourced from GlobalAttributeOption.price_modifier (where ingredient_id matches),
+        NOT from ItemTypeIngredient.price_modifier. ItemTypeIngredient is only used for:
+        - Linking ingredients to item types
+        - Per-item-type availability (is_available)
+        - Display configuration (display_order, display_name_override)
+        - Default selection (is_default)
         """
-        from .models import ItemTypeIngredient, Ingredient
+        from .models import ItemTypeIngredient, Ingredient, GlobalAttributeOption
 
         opts_data = []
 
@@ -3159,12 +3161,26 @@ class MenuDataCache:
                 .all()
             )
 
+            # Build a map of ingredient_id -> price_modifier from GlobalAttributeOption
+            # This is the source of truth for pricing (not ItemTypeIngredient.price_modifier)
+            ingredient_ids = [link.ingredient_id for link in ingredient_links]
+            price_map = {}
+            if ingredient_ids:
+                global_options = (
+                    db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+                    .filter(GlobalAttributeOption.ingredient_id.in_(ingredient_ids))
+                    .all()
+                )
+                price_map = {opt.ingredient_id: opt.price_modifier for opt in global_options}
+
             for link in ingredient_links:
                 ingredient = link.ingredient
+                # Look up price from GlobalAttributeOption (source of truth)
+                price = price_map.get(ingredient.id, 0.0)
                 opt_data = {
                     "slug": ingredient.slug or ingredient.name.lower().replace(" ", "_"),
                     "display_name": link.display_name_override or ingredient.name,
-                    "price": float(link.price_modifier or 0),
+                    "price_modifier": float(price),  # Use standard key name
                     "is_default": getattr(link, 'is_default', False),
                     "category": ingredient.category,
                 }
@@ -5246,18 +5262,29 @@ class MenuDataCache:
                 )
                 for attr in local_attrs:
                     if attr.loads_from_ingredients and attr.ingredient_group:
-                        has_priced_ing = (
-                            db.query(ItemTypeIngredient)
+                        # Get ingredient IDs linked to this item type/group
+                        ingredient_ids = [
+                            link.ingredient_id for link in
+                            db.query(ItemTypeIngredient.ingredient_id)
                             .filter(
                                 ItemTypeIngredient.item_type_id == it.id,
                                 ItemTypeIngredient.ingredient_group == attr.ingredient_group,
-                                ItemTypeIngredient.price_modifier > 0,
                             )
-                            .first()
-                        )
-                        if has_priced_ing:
-                            priced_attr = attr.slug
-                            break
+                            .all()
+                        ]
+                        # Check if any GlobalAttributeOption has price for these ingredients
+                        if ingredient_ids:
+                            has_priced_ing = (
+                                db.query(GlobalAttributeOption)
+                                .filter(
+                                    GlobalAttributeOption.ingredient_id.in_(ingredient_ids),
+                                    GlobalAttributeOption.price_modifier > 0,
+                                )
+                                .first()
+                            )
+                            if has_priced_ing:
+                                priced_attr = attr.slug
+                                break
 
             self._item_type_priced_attribute[it.slug] = priced_attr
 
@@ -5296,8 +5323,11 @@ class MenuDataCache:
         For each ingredient, determine all contexts in which it can be priced:
         - As a modifier on specific item types (e.g., lox on bagel)
         - As a standalone item (e.g., lox by the pound)
+
+        NOTE: Pricing comes from GlobalAttributeOption.price_modifier (where ingredient_id matches),
+        NOT from ItemTypeIngredient.
         """
-        from .models import Ingredient, ItemTypeIngredient, ItemType, MenuItem
+        from .models import Ingredient, ItemTypeIngredient, ItemType, MenuItem, GlobalAttributeOption
 
         self._ingredient_price_contexts = {}
 
@@ -5306,6 +5336,16 @@ class MenuDataCache:
             .options(joinedload(Ingredient.alias_records))
             .all()
         )
+
+        # Pre-fetch all ingredient prices from GlobalAttributeOption (source of truth)
+        ingredient_prices = {}
+        global_options = (
+            db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+            .filter(GlobalAttributeOption.ingredient_id.isnot(None))
+            .all()
+        )
+        for opt in global_options:
+            ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
 
         for ing in ingredients:
             contexts = []
@@ -5318,12 +5358,14 @@ class MenuDataCache:
                 .filter(ItemTypeIngredient.ingredient_id == ing.id)
                 .all()
             )
+            # Look up price from GlobalAttributeOption (source of truth)
+            ing_price = ingredient_prices.get(ing.id, 0.0)
             for link, item_type in item_type_links:
                 contexts.append({
                     "context_type": "modifier",
                     "item_type_slug": item_type.slug,
                     "label": f"{item_type.display_name} topping",
-                    "price": float(link.price_modifier) if link.price_modifier else 0.0,
+                    "price": ing_price,
                 })
 
             # Context 2: As standalone by-weight item (uses unit_type instead of is_by_pound)

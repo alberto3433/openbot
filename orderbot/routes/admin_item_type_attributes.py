@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, ItemTypeAttribute, ItemTypeIngredient, Ingredient
+from ..models import ItemType, ItemTypeAttribute, ItemTypeIngredient, Ingredient, GlobalAttributeOption
 from ..schemas.item_type_attributes import (
     ItemTypeAttributeOut,
     ItemTypeAttributeCreate,
@@ -68,7 +68,8 @@ def _serialize_attribute(attr: ItemTypeAttribute, db: Session) -> ItemTypeAttrib
     """Convert ItemTypeAttribute model to response schema with options.
 
     If loads_from_ingredients=True, options come from item_type_ingredients table
-    joined to ingredients, instead of from attribute_options.
+    joined to ingredients. Pricing comes from GlobalAttributeOption.price_modifier
+    (where ingredient_id matches).
     """
     options_out = []
 
@@ -85,12 +86,25 @@ def _serialize_attribute(attr: ItemTypeAttribute, db: Session) -> ItemTypeAttrib
             .all()
         )
 
+        # Build price map from GlobalAttributeOption (source of truth for pricing)
+        ingredient_ids = [link.ingredient_id for link in ingredient_links]
+        price_map = {}
+        if ingredient_ids:
+            global_options = (
+                db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+                .filter(GlobalAttributeOption.ingredient_id.in_(ingredient_ids))
+                .all()
+            )
+            price_map = {opt.ingredient_id: opt.price_modifier for opt in global_options}
+
         for link in ingredient_links:
+            # Look up price from GlobalAttributeOption (source of truth)
+            price = price_map.get(link.ingredient_id, 0.0)
             options_out.append(AttributeOptionOut(
                 id=link.id,  # Use ItemTypeIngredient.id as the option ID
                 slug=link.ingredient.slug,
                 display_name=link.display_name_override or link.ingredient.name,
-                price_modifier=float(link.price_modifier or 0),
+                price_modifier=float(price),
                 is_default=link.is_default,
                 is_available=link.is_available and link.ingredient.is_available,
                 display_order=link.display_order,
@@ -324,12 +338,23 @@ def list_attribute_options(
             .all()
         )
 
+        # Build price map from GlobalAttributeOption (source of truth for pricing)
+        ingredient_ids = [link.ingredient_id for link in ingredient_links]
+        price_map = {}
+        if ingredient_ids:
+            global_options = (
+                db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+                .filter(GlobalAttributeOption.ingredient_id.in_(ingredient_ids))
+                .all()
+            )
+            price_map = {opt.ingredient_id: opt.price_modifier for opt in global_options}
+
         return [
             AttributeOptionOut(
                 id=link.id,
                 slug=link.ingredient.slug,
                 display_name=link.display_name_override or link.ingredient.name,
-                price_modifier=float(link.price_modifier or 0),
+                price_modifier=float(price_map.get(link.ingredient_id, 0.0)),
                 is_default=link.is_default,
                 is_available=link.is_available and link.ingredient.is_available,
                 display_order=link.display_order,
@@ -445,12 +470,11 @@ def create_ingredient_link(
             detail=f"Ingredient '{ingredient.name}' is already linked to this attribute"
         )
 
-    # Create the link
+    # Create the link (pricing is managed via GlobalAttributeOption, not here)
     link = ItemTypeIngredient(
         item_type_id=attr.item_type_id,
         ingredient_id=payload.ingredient_id,
         ingredient_group=attr.ingredient_group,
-        price_modifier=payload.price_modifier,
         display_name_override=payload.display_name_override,
         is_default=payload.is_default,
         is_available=payload.is_available,
@@ -467,11 +491,17 @@ def create_ingredient_link(
         link.id
     )
 
+    # Look up price from GlobalAttributeOption (source of truth)
+    global_opt = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.ingredient_id == ingredient.id
+    ).first()
+    price_modifier = float(global_opt.price_modifier) if global_opt else 0.0
+
     return AttributeOptionOut(
         id=link.id,
         slug=ingredient.slug,
         display_name=link.display_name_override or ingredient.name,
-        price_modifier=float(link.price_modifier or 0),
+        price_modifier=price_modifier,
         is_default=link.is_default,
         is_available=link.is_available and ingredient.is_available,
         display_order=link.display_order,
@@ -492,7 +522,10 @@ def update_ingredient_link(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> AttributeOptionOut:
-    """Update an ingredient link's settings (price, display name, etc.)."""
+    """Update an ingredient link's settings (display name, availability, etc.).
+
+    NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not here.
+    """
     attr = db.query(ItemTypeAttribute).filter(ItemTypeAttribute.id == attr_id).first()
     if not attr:
         raise HTTPException(status_code=404, detail="Item type attribute not found")
@@ -512,9 +545,7 @@ def update_ingredient_link(
     if not link:
         raise HTTPException(status_code=404, detail="Ingredient link not found")
 
-    # Apply updates
-    if payload.price_modifier is not None:
-        link.price_modifier = payload.price_modifier
+    # Apply updates (pricing is managed via GlobalAttributeOption, not here)
     if payload.display_name_override is not None:
         link.display_name_override = payload.display_name_override
     if payload.is_default is not None:
@@ -529,11 +560,17 @@ def update_ingredient_link(
 
     logger.info("Updated ingredient link: %s (id=%d)", link.ingredient.name, link.id)
 
+    # Look up price from GlobalAttributeOption (source of truth)
+    global_opt = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.ingredient_id == link.ingredient_id
+    ).first()
+    price_modifier = float(global_opt.price_modifier) if global_opt else 0.0
+
     return AttributeOptionOut(
         id=link.id,
         slug=link.ingredient.slug,
         display_name=link.display_name_override or link.ingredient.name,
-        price_modifier=float(link.price_modifier or 0),
+        price_modifier=price_modifier,
         is_default=link.is_default,
         is_available=link.is_available and link.ingredient.is_available,
         display_order=link.display_order,

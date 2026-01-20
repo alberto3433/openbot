@@ -17,24 +17,14 @@ logger = logging.getLogger(__name__)
 
 # Standard pagination size for all list displays
 DEFAULT_PAGINATION_SIZE = 5
-# =============================================================================
-# Word to Number Mapping
-# =============================================================================
 
-WORD_TO_NUM = {
-    "a": 1, "an": 1, "one": 1,
-    "two": 2, "couple": 2, "a couple": 2, "a couple of": 2, "couple of": 2, "double": 2,
-    "three": 3, "a few": 3, "few": 3, "triple": 3,
-    "four": 4, "quad": 4, "quadruple": 4,
-    "five": 5,
-    "six": 6, "half dozen": 6, "half a dozen": 6, "a half dozen": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12, "dozen": 12, "a dozen": 12,
-}
+# =============================================================================
+# Word to Number Mapping (imported from quantity_utils for single source of truth)
+# =============================================================================
+from orderbot.tasks.parsers.quantity_utils import (
+    WORD_TO_NUM,
+    extract_quantity_for_pattern,
+)
 
 # =============================================================================
 # Ordinal Words Mapping
@@ -92,37 +82,8 @@ def extract_selection_index(user_input: str, max_options: int) -> int | None:
     return None
 
 
-def extract_quantity(user_input: str, pattern: str) -> int:
-    """Extract quantity from user input for a given pattern.
-
-    Handles both numeric ("2 vanilla") and word ("two vanilla") quantities.
-    Used for extracting counts of syrups, shots, and other modifiers.
-
-    Args:
-        user_input: The user's input string (will be lowercased)
-        pattern: The pattern to look for (e.g., "vanilla", "shot")
-
-    Returns:
-        The extracted quantity, defaulting to 1 if not found.
-    """
-    user_input = user_input.lower()
-    escaped_pattern = re.escape(pattern)
-
-    # Try digit match first: "2 vanilla syrups"
-    digit_match = re.search(rf'(\d+)\s*{escaped_pattern}s?', user_input)
-    if digit_match:
-        return int(digit_match.group(1))
-
-    # Try word match: "two vanilla syrups", "double shot", "triple espresso"
-    word_pattern = (
-        r'(one|two|three|four|five|six|seven|eight|nine|ten|'
-        r'double|triple|quad|quadruple)\s+' + escaped_pattern + r's?'
-    )
-    word_match = re.search(word_pattern, user_input)
-    if word_match:
-        return WORD_TO_NUM.get(word_match.group(1).lower(), 1)
-
-    return 1
+# Re-export extract_quantity_for_pattern as extract_quantity for backward compatibility
+extract_quantity = extract_quantity_for_pattern
 
 # =============================================================================
 # Regex Patterns

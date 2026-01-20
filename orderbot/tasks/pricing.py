@@ -184,7 +184,9 @@ class PricingEngine(MenuDataMixin):
 
                     if opt_slug == normalized or opt_name == normalized or \
                        opt_slug == option_lower:
-                        return opt.get("price_modifier", 0.0)
+                        # Check both keys: "price_modifier" for attribute options,
+                        # "price" for ingredient-based options
+                        return opt.get("price_modifier") or opt.get("price") or 0.0
 
         # Not found - log and return 0.0
         logger.debug(
@@ -272,7 +274,9 @@ class PricingEngine(MenuDataMixin):
 
                 if opt_slug == normalized or opt_name == normalized or \
                    opt_slug == modifier_lower or modifier_lower in opt_slug:
-                    price = opt.get("price_modifier", 0.0)
+                    # Check both keys: "price_modifier" for attribute options,
+                    # "price" for ingredient-based options
+                    price = opt.get("price_modifier") or opt.get("price") or 0.0
                     logger.debug(
                         "Found modifier price: %s = $%.2f (from %s.%s)",
                         modifier_name, price, item_type, attr_slug
@@ -354,7 +358,9 @@ class PricingEngine(MenuDataMixin):
                 # Match by slug or display_name (normalized)
                 if opt_slug == normalized or opt_name == normalized or \
                    opt_slug == modifier_lower or opt.get("display_name", "").lower() == modifier_lower:
-                    price = opt.get("price_modifier", 0.0)
+                    # Check both keys: "price_modifier" for attribute options,
+                    # "price" for ingredient-based options
+                    price = opt.get("price_modifier") or opt.get("price") or 0.0
                     logger.debug(
                         "Found modifier price: %s = $%.2f (from %s.%s)",
                         modifier_name, price, item_type, attr.get("slug")

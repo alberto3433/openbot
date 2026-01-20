@@ -50,8 +50,6 @@ from .parsers import (
     validate_phone_number,
     extract_zip_code,
     validate_delivery_zip_code,
-    # Constants - Number mapping
-    WORD_TO_NUM,
     # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
     # - use menu_cache.is_greeting() / menu_cache.is_done() instead
     REPEAT_ORDER_PATTERNS,
@@ -90,6 +88,7 @@ from .parsers import (
     parse_open_input,
     parse_confirmation,
 )
+from .parsers.quantity_utils import parse_make_it_n_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -441,16 +440,8 @@ class OrderStateMachine:
                     num_str = make_it_n_match.group(i).lower()
                     break
             if num_str:
-                word_to_num = {
-                    "two": 2, "three": 3, "four": 4, "five": 5,
-                    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-                }
-                if num_str.isdigit():
-                    target_qty = int(num_str)
-                else:
-                    target_qty = word_to_num.get(num_str, 0)
-
-                if target_qty >= 2:
+                target_qty = parse_make_it_n_quantity(num_str)
+                if target_qty:
                     active_items = order.items.get_active_items()
                     if active_items:
                         last_item = active_items[-1]

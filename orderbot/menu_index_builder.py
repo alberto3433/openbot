@@ -341,12 +341,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     for category, ingredients in preloaded_ingredients.items():
         # Create {category}_types list (e.g., bread_types, cheese_types)
         index[f"{category}_types"] = [ing.name for ing in ingredients]
-
-        # Create {category}_prices dict for categories where ingredients have prices
-        # (useful for custom item pricing)
-        prices = {ing.name.lower(): ing.base_price for ing in ingredients if ing.base_price}
-        if prices:
-            index[f"{category}_prices"] = prices
+        # NOTE: Ingredient pricing is managed via GlobalAttributeOption.price_modifier,
+        # not via Ingredient.base_price (which has been removed)
 
 
     # Unavailable ingredients (86'd items) - so LLM knows what's out of stock
@@ -614,6 +610,16 @@ def _build_item_types_data(
     if preloaded_type_ingredients is None:
         preloaded_type_ingredients = _preload_item_type_ingredients(db)
 
+    # Pre-fetch ingredient prices from GlobalAttributeOption (source of truth for pricing)
+    ingredient_prices = {}
+    global_price_options = (
+        db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
+        .filter(GlobalAttributeOption.ingredient_id.isnot(None))
+        .all()
+    )
+    for opt in global_price_options:
+        ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
+
     item_types = db.query(ItemType).all()
     for it in item_types:
         # Use pre-loaded config status instead of N+1 queries
@@ -661,7 +667,8 @@ def _build_item_types_data(
                                 "display_name": link.display_name_override or link.ingredient.name,
                                 "ingredient_id": link.ingredient_id,
                                 "ingredient_name": link.ingredient.name,
-                                "price_modifier": float(link.price_modifier),
+                                # Look up price from GlobalAttributeOption (source of truth)
+                                "price_modifier": ingredient_prices.get(link.ingredient_id, 0.0),
                                 "iced_price_modifier": 0.0,  # No iced modifier for ingredients (handled elsewhere)
                                 "is_default": link.is_default,
                             }

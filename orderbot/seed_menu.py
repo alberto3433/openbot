@@ -214,14 +214,15 @@ def seed_ingredients():
             print(f"Ingredients table already has {existing} items. Not seeding again.")
             return
 
+        # NOTE: Pricing is managed via GlobalAttributeOption.price_modifier, not Ingredient.base_price
         ingredients = [
-            # Breads (base_price for premium breads)
-            Ingredient(name="White", category="bread", unit="piece", track_inventory=False, base_price=0.0),
-            Ingredient(name="Wheat", category="bread", unit="piece", track_inventory=False, base_price=0.0),
-            Ingredient(name="Italian", category="bread", unit="piece", track_inventory=False, base_price=0.0),
-            Ingredient(name="Multigrain", category="bread", unit="piece", track_inventory=False, base_price=0.50),
-            Ingredient(name="Ciabatta", category="bread", unit="piece", track_inventory=False, base_price=1.00),
-            Ingredient(name="Sourdough", category="bread", unit="piece", track_inventory=False, base_price=0.50),
+            # Breads
+            Ingredient(name="White", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Wheat", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Italian", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Multigrain", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Ciabatta", category="bread", unit="piece", track_inventory=False),
+            Ingredient(name="Sourdough", category="bread", unit="piece", track_inventory=False),
             # Cheeses
             Ingredient(name="Cheddar", category="cheese", unit="slice", track_inventory=False),
             Ingredient(name="Swiss", category="cheese", unit="slice", track_inventory=False),
@@ -229,16 +230,16 @@ def seed_ingredients():
             Ingredient(name="Pepper Jack", category="cheese", unit="slice", track_inventory=False),
             Ingredient(name="Mozzarella", category="cheese", unit="slice", track_inventory=False),
             Ingredient(name="American", category="cheese", unit="slice", track_inventory=False),
-            # Proteins (base_price used for custom sandwich pricing)
-            Ingredient(name="Turkey", category="protein", unit="oz", track_inventory=False, base_price=2.50),
-            Ingredient(name="Ham", category="protein", unit="oz", track_inventory=False, base_price=2.50),
-            Ingredient(name="Roast Beef", category="protein", unit="oz", track_inventory=False, base_price=3.50),
-            Ingredient(name="Chicken", category="protein", unit="oz", track_inventory=False, base_price=3.00),
-            Ingredient(name="Salami", category="protein", unit="oz", track_inventory=False, base_price=2.50),
-            Ingredient(name="Bacon", category="protein", unit="strip", track_inventory=False, base_price=2.00),
-            Ingredient(name="Meatball", category="protein", unit="piece", track_inventory=False, base_price=3.00),
-            Ingredient(name="Tuna Salad", category="protein", unit="scoop", track_inventory=False, base_price=2.50),
-            Ingredient(name="Steak", category="protein", unit="oz", track_inventory=False, base_price=4.00),
+            # Proteins
+            Ingredient(name="Turkey", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Ham", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Roast Beef", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Chicken", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Salami", category="protein", unit="oz", track_inventory=False),
+            Ingredient(name="Bacon", category="protein", unit="strip", track_inventory=False),
+            Ingredient(name="Meatball", category="protein", unit="piece", track_inventory=False),
+            Ingredient(name="Tuna Salad", category="protein", unit="scoop", track_inventory=False),
+            Ingredient(name="Steak", category="protein", unit="oz", track_inventory=False),
             # Toppings
             Ingredient(name="Lettuce", category="topping", unit="portion", track_inventory=False),
             Ingredient(name="Tomato", category="topping", unit="slice", track_inventory=False),

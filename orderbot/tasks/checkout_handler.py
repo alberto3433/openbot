@@ -36,6 +36,7 @@ from .parsers import (
     TAX_QUESTION_PATTERN,
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
+from .parsers.quantity_utils import parse_make_it_n_quantity
 from .parsers.llm_parsers import (
     parse_delivery_choice,
     parse_name,
@@ -540,16 +541,8 @@ class CheckoutHandler(BaseHandler):
         if not num_str:
             return None
 
-        word_to_num = {
-            "two": 2, "three": 3, "four": 4, "five": 5,
-            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-        }
-        if num_str.isdigit():
-            target_qty = int(num_str)
-        else:
-            target_qty = word_to_num.get(num_str, 0)
-
-        if target_qty < 2:
+        target_qty = parse_make_it_n_quantity(num_str)
+        if not target_qty:
             return None
 
         active_items = order.items.get_active_items()

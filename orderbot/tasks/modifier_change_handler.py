@@ -17,15 +17,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .models import MenuItemTask
+from .normalization import (
+    resolve_to_canonical,
+    get_attribute_display_name as _get_attr_display_name_from_db,
+)
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
-
-
-# Patterns that indicate user wants to remove/clear an optional attribute
-# These result in None being set for nullable attributes
-NEGATION_PATTERNS = frozenset({"no", "none", "black", "without", "remove", "clear"})
 
 
 @dataclass
@@ -355,82 +354,21 @@ class ModifierChangeHandler:
     ) -> str | bool | None:
         """Normalize an attribute value using data-driven option resolution.
 
-        Uses menu_cache.resolve_option_by_alias() to find canonical option values
-        from the database. Handles special cases:
-        - Negation patterns ("no", "none", "black") return None for nullable attrs
-        - Boolean attributes return True/False based on option match
-        - Falls back to cleaned input if no option match found
+        Delegates to normalization.resolve_to_canonical() for unified handling.
 
         Args:
             attr_slug: The attribute slug (e.g., "size", "milk", "bread")
-            value: The raw user input value (already lowercased)
+            value: The raw user input value
             item_type_slug: Optional item type for context-specific resolution
 
         Returns:
             Normalized value: canonical option slug, boolean, None, or cleaned input
         """
-        value_clean = value.lower().strip()
-
-        # Check for negation patterns - user wants to remove/clear the attribute
-        # Split on spaces to check individual words (e.g., "no milk" -> check "no")
-        first_word = value_clean.split()[0] if value_clean else ""
-        if first_word in NEGATION_PATTERNS:
-            return None
-
-        # Get attribute info to check input_type
-        attr_info = None
-        if item_type_slug:
-            try:
-                attrs = menu_cache.get_item_type_attributes(item_type_slug)
-                attr_info = attrs.get(attr_slug)
-            except Exception:
-                pass
-
-        # If no item_type provided, search all item types for this attribute
-        if not attr_info:
-            try:
-                for type_slug in menu_cache.get_all_item_type_slugs():
-                    attrs = menu_cache.get_item_type_attributes(type_slug)
-                    if attr_slug in attrs:
-                        attr_info = attrs[attr_slug]
-                        break
-            except Exception:
-                pass
-
-        # Handle boolean attributes (data-driven via options with "true"/"false" slugs)
-        input_type = attr_info.get("input_type") if attr_info else None
-        if input_type == "boolean":
-            # Boolean attributes have options with slugs "true" and "false"
-            # Aliases like "decaf", "yes" -> "true" and "regular", "no" -> "false"
-            # are resolved via the option's linked ingredient aliases
-            option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
-            if option:
-                return option.get("slug", "").lower() == "true"
-            # No match found - return None to indicate unknown value
-            return None
-
-        # Try to resolve via option alias lookup (data-driven)
-        # Aliases like "oat milk" -> "oat_milk", "everything bagel" -> "everything"
-        # are handled by ingredient aliases in the database
-        option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
-        if option:
-            return option.get("slug", value_clean)
-
-        # Return the cleaned value as fallback (no hardcoded suffix stripping needed)
-        return value_clean
+        return resolve_to_canonical(attr_slug, value, item_type_slug)
 
     def _get_attr_display_name(self, attr_slug: str) -> str:
         """Get human-readable display name for an attribute."""
-        # Try to get from database first
-        try:
-            for item_type_slug in menu_cache.get_all_item_type_slugs():
-                attrs = menu_cache.get_item_type_attributes(item_type_slug)
-                if attr_slug in attrs:
-                    return attrs[attr_slug].get("display_name", attr_slug)
-        except Exception:
-            pass
-        # Fallback: convert slug to readable form
-        return attr_slug.replace("_", " ")
+        return _get_attr_display_name_from_db(attr_slug)
 
     def _get_attr_value(self, item, attr_slug: str):
         """Get current value of an attribute from an item."""
